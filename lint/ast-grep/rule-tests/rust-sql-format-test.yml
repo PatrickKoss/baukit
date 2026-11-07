@@ -1,0 +1,23 @@
+id: rust-sql-format
+valid:
+  - |
+    fn f() { let q = format!("SELECT * FROM {TABLE} WHERE id = $1"); }
+  - |
+    fn f() { let q = format!("SELECT {} FROM {}", COLUMNS, TABLE); }
+  - |
+    fn f() { let s = format!("selected {count} items"); }
+  - |
+    fn f() { let s = format!("hello {name}"); }
+  - |
+    fn f() { let e = format!("create output directory {}", dir.display()); }
+  - |
+    fn f() { let e = format!("Update failed for {id}"); }
+invalid:
+  - |
+    fn f() { let q = format!("CREATE TABLE IF NOT EXISTS {name} (id int)"); }
+  - |
+    fn f() { let q = format!("SELECT * FROM users WHERE name = '{name}'"); }
+  - |
+    fn f() { let q = format!("delete from {} where id = {}", TABLE, id); }
+  - |
+    fn f() { let q = format!(r#"INSERT INTO t VALUES ({})"#, value.to_string()); }

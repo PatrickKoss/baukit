@@ -1,0 +1,58 @@
+id: rust-raw-http-client
+snapshots:
+  "async fn f() { reqwest::get(\"https://x\").await; }\n":
+    labels:
+    - source: reqwest::get("https://x")
+      style: primary
+      start: 15
+      end: 40
+  "fn f() { let c = reqwest::Client::builder().build(); }\n":
+    labels:
+    - source: reqwest::Client::builder()
+      style: primary
+      start: 17
+      end: 43
+  "fn f() { let c = reqwest::Client::new(); }\n":
+    labels:
+    - source: reqwest::Client::new()
+      style: primary
+      start: 17
+      end: 39
+  "fn f() { let c = reqwest::ClientBuilder::new(); }\n":
+    labels:
+    - source: reqwest::ClientBuilder::new()
+      style: primary
+      start: 17
+      end: 46
+  "use reqwest::Client;\nfn f() { let c = Client::new(); }\n":
+    labels:
+    - source: Client::new()
+      style: primary
+      start: 38
+      end: 51
+    - source: use reqwest::Client;
+      style: secondary
+      start: 0
+      end: 20
+    - source: |
+        use reqwest::Client;
+        fn f() { let c = Client::new(); }
+      style: secondary
+      start: 0
+      end: 55
+  "use reqwest::{Client, Url};\nfn f() { let c = Client::builder(); }\n":
+    labels:
+    - source: Client::builder()
+      style: primary
+      start: 45
+      end: 62
+    - source: use reqwest::{Client, Url};
+      style: secondary
+      start: 0
+      end: 27
+    - source: |
+        use reqwest::{Client, Url};
+        fn f() { let c = Client::builder(); }
+      style: secondary
+      start: 0
+      end: 66

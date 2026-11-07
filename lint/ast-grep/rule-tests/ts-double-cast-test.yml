@@ -1,0 +1,13 @@
+id: ts-double-cast
+valid:
+  - |
+    const a = value as Foo;
+  - |
+    const a = value as unknown;
+  - |
+    if (isFoo(value)) { use(value); }
+invalid:
+  - |
+    const a = value as unknown as Foo;
+  - |
+    const el = <div ref={(r) => (ref.current = r as unknown as HTMLElement)} />;
