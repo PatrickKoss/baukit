@@ -282,10 +282,11 @@ Next to the CSP, `vite preview` and the chart's nginx send
 `Cross-Origin-Resource-Policy: same-origin`. The template sign-in is a
 same-window redirect and the silent-token frame talks to `window.parent`,
 which COOP does not touch. The interactive `SilentTokenBroker` popup reads
-`window.opener` on its callback page after a cross-origin hop to the issuer;
-no template wires it, and `same-origin-allow-popups` would not keep it either,
-because the callback document's own COOP still switches browsing context
-groups. A product that adds that popup serves its callback page without COOP.
+`window.opener` on its callback page after a cross-origin hop to the issuer.
+No template wires it. Under `same-origin` the popup inherits the opener's COOP,
+so the hop to the issuer switches browsing context groups and `opener` is gone
+before the callback loads. A product that adds that popup sends
+`same-origin-allow-popups` on its app pages and no COOP on the callback page.
 COEP stays unset: `require-corp` blocks third-party images and analytics
 unless every subresource opts in.
 
