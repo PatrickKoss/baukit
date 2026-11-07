@@ -110,11 +110,12 @@ tenancy and rate-limit audit of the products (S-08).
   Acceptance: `make ci` green with `-D warnings`, no new `#[allow]`, each `#[expect]` has a reason.
 - [ ] P1.2 `missing_errors_doc` on core, http, config, auth first, then the rest (255 docs).
 - [~] P1.3 cargo-deny: `allow-wildcard-paths`, full `check` for `rust/`, new `cli/deny.toml`, template `deny.toml`.
-- [ ] P1.4 `baukit check` subcommand framework in the CLI, with rules:
+- [ ] P1.4 `baukit check` subcommand framework (also: `patterns` runs lint/ast-grep with ast-grep 0.51.1, skips
+  `vendor/`, `target/`, `node_modules`, and rejects `ast-grep-ignore` comments without a `-- reason`) in the CLI, with rules:
   `lints` (baseline subset check for Cargo lint tables and clippy.toml), `file-size` (Rust/TS, shrinking
   allowlist in `baukit.toml`), `agent-docs` (Q-09), `template-files` (Q-07). Unit + CLI tests.
   Wired into `baukit doctor` and the template quality gate.
-- [ ] P1.5 ast-grep rules with tests: `as unknown as` outside tests, `derive(Debug)` on secret-named fields,
+- [x] P1.5 (rules merged; CLI wiring is P1.4) ast-grep rules with tests: `as unknown as` outside tests, `derive(Debug)` on secret-named fields,
   `format!` starting with an SQL keyword, raw `reqwest::Client` outside adapters, `localStorage.setItem` with
   token-named keys. `baukit check patterns` runs them.
 - [~] P1.6 `@baukit/eslint-config` package: typescript-eslint strictTypeChecked, react-hooks, jsx-a11y (web),
@@ -207,4 +208,9 @@ tenancy and rate-limit audit of the products (S-08).
   credentials scope, Keycloak idle note), accepted and merged. Worktree removed.
 - 2026-11-07: W2-1 (ADR 0006 task 1, baukit-auth BFF) and W2-2 (task 2, baukit-http headers) started in
   parallel with W1-A; both check against the new lint set via CLIPPY_CONF_DIR without editing the lint table.
+- 2026-11-07: W1-G merged. Re-ran `ast-grep test` (7/7) and scans of baukit and hebkit (counts match).
+  Sampled secret-debug hits: real tokens plus one borderline (`preview_token`). `rust-sql-unscoped-by-id`
+  is hint-only (455 hits, mostly global tables). Baseline hits: ts-double-cast 17 (P1.7), raw client 6,
+  secret-debug 2, token storage 1 (P2.2). Product totals are in the W1-G report numbers in the merge commit's
+  lint/README.md context; rollout must fix them.
 - 2026-11-07: findings catalog and phases written. User chose D2 = BFF refresh cookie, D3 = CLAUDE.md + symlink.
