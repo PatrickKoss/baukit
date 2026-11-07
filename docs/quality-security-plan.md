@@ -274,3 +274,28 @@ tenancy and rate-limit audit of the products (S-08).
   secret-debug 2, token storage 1 (P2.2). Product totals are in the W1-G report numbers in the merge commit's
   lint/README.md context; rollout must fix them.
 - 2026-11-07: findings catalog and phases written. User chose D2 = BFF refresh cookie, D3 = CLAUDE.md + symlink.
+- 2026-11-07: W1-C merged after a rework round.
+  - Re-ran the TS gate on main: build 25/25, format 26/26, lint 26/26, test 51/51. cli: clippy clean, 254
+    tests passed. osv: clean with 5 ignores. Versions coherent.
+  - A planted bare `eslint-disable` fails `require-description`.
+  - glob 14.0.2 and minimatch 11.0.1 are forced through overrides: OSV lists the fixes only in those majors.
+  - The navigation re-export regression was found by the mobile fixture and fixed.
+- 2026-11-07: W3-1 `baukit check` merged locally (not pushed). Planted violations are caught (bare
+  `#[allow]`, bare `eslint-disable`, a 1001-line file).
+  - Bug the agent missed: the walker ignores .gitignore, so `deploy/platform/.local-state` and
+    `rust/target-msrv` are scanned. Sent back with the `examples/minimal-api` lint adoption.
+  - main stays local until `baukit check` is green.
+  - Open patterns findings on main went to the W4 batch: 6 raw HTTP clients, 3 secret-Debug, 10 TS double
+    casts, and 1 web-storage token (auth-web).
+- 2026-11-07: tenancy audit parts for SLS, eigenruhe and schluesselbund verified. The P4.2 list is updated.
+  - The template merges `platform.router` outside the limiter too. That goes into the template wave.
+  - SLS OAuth linking CSRF: baukit-integrations has no OAuth state helper. Consider one (state bound to a
+    browser cookie, single-use) before the SLS rollout.
+- 2026-11-07: W4 batch started, 7 agents:
+  - B: P2.3 secret Debug.
+  - C: egress migration plus P2.9.
+  - D: TS double casts.
+  - E: ADR task 3 BFF client.
+  - F: P2.4 Clerk azp plus the HSTS config field.
+  - G: P1.10 suite builder plus a limiter on unauthenticated suite routes.
+  - H: P2.8 test helpers.
