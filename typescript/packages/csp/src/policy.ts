@@ -1,6 +1,6 @@
 /**
- * Content Security Policy for the built app (ADR 0006 section 7). Pure, so the
- * build plugin, the build check and the unit tests share one definition.
+ * Content Security Policy for a built web app (ADR 0006 section 7). Pure, so
+ * build plugins, build checks and tests share one definition.
  */
 
 /** `files`: CSS ships as files. `runtime-injected`: the UI library writes `<style>` at runtime. */

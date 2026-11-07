@@ -220,8 +220,9 @@ Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops a
 `web.enabled` adds an nginx Deployment, Service, optional Ingress and NetworkPolicy for the
 static web app or the Expo web export. Build the image `FROM nginxinc/nginx-unprivileged` with the
 build output in `/usr/share/nginx/html`. The chart mounts its own `default.conf`, which sends the
-product CSP (ADR 0006 section 7), `X-Content-Type-Options: nosniff` and `Referrer-Policy:
-no-referrer` on every response and falls back to `index.html` for client routes.
+product CSP (ADR 0006 section 7), `Cross-Origin-Opener-Policy: same-origin`,
+`Cross-Origin-Resource-Policy: same-origin`, `X-Content-Type-Options: nosniff` and
+`Referrer-Policy: no-referrer` on every response and falls back to `index.html` for client routes.
 
 The policy comes from the build, which hashes every inline script into `dist/csp.txt`:
 

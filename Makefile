@@ -103,7 +103,7 @@ native-android-gate: android-sdk-setup
 	mkdir -p "$$fixture_parent"; \
 	if [ "$${BAUKIT_TYPESCRIPT_BUILT:-0}" != 1 ]; then \
 		corepack pnpm@12.9.1 --dir $(TS_DIR) install --frozen-lockfile --ignore-scripts; \
-		corepack pnpm@12.9.1 --dir $(TS_DIR) --filter @baukit/type-guards --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/localization-core --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat run build; \
+		corepack pnpm@12.9.1 --dir $(TS_DIR) --filter @baukit/type-guards --filter @baukit/csp --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/data-contracts --filter @baukit/data-contracts-expo-sqlite --filter @baukit/localization-core --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat run build; \
 	fi; \
 	cargo build --manifest-path $(CLI_MANIFEST) --bin baukit; \
 	cli/target/debug/baukit new fixture --mobile $(NATIVE_FLAGS) --dir "$$fixture_parent" --baukit-path rust; \

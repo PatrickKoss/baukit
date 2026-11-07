@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { findUnhashedInlineScripts } from './check-build.ts';
-import { contentSecurityPolicy } from './policy.ts';
+import { contentSecurityPolicy } from '@baukit/csp';
 import { POLICY_FILE, scriptHashSources } from './vite-plugin.ts';
 
 const directories: string[] = [];

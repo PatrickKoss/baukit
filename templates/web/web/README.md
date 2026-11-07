@@ -48,7 +48,7 @@ the check verifies that no copied artifact is present.
 
 ## Content Security Policy
 
-`vite build` writes `dist/csp.txt` from `csp/origins.ts` and the `VITE_*` values the app uses, with a `'sha256-...'` source for every inline script, and `node csp/check-build.ts dist` then fails the build if any inline script lacks its hash. Scripts never get `'unsafe-inline'`; CSS ships as files, so `style-src` is `'self'`. `vite preview` sends the built policy, and only `vite` dev sends the relaxed variant with inline styles and the HMR socket. Set `VITE_POSTHOG_HOST`, `VITE_MEDIA_ORIGIN` or `VITE_SUITE_HUB_API_URL` when the app talks to those origins. Deploy with the `Dockerfile` here and the chart's `web` component: `--set-file web.contentSecurityPolicy=web/dist/csp.txt`.
+`vite build` writes `dist/csp.txt` with `@baukit/csp` from `csp/origins.ts` and the `VITE_*` values the app uses, with a `'sha256-...'` source for every inline script, and `node csp/check-build.ts dist` then fails the build if any inline script lacks its hash. Scripts never get `'unsafe-inline'`; CSS ships as files, so `style-src` is `'self'`. `vite preview` sends the built policy with COOP and CORP `same-origin`; COEP stays unset because `require-corp` blocks third-party images and analytics that do not opt in, and only `vite` dev sends the relaxed variant with inline styles and the HMR socket. Set `VITE_POSTHOG_HOST`, `VITE_MEDIA_ORIGIN` or `VITE_SUITE_HUB_API_URL` when the app talks to those origins. Deploy with the `Dockerfile` here and the chart's `web` component: `--set-file web.contentSecurityPolicy=web/dist/csp.txt`.
 
 ## Checks
 
