@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-repository_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repository_root"
 
 usage() {
@@ -21,6 +21,11 @@ example-lockfiles fast - always -
 rust-fmt fast - always -
 cli-fmt fast - always -
 cargo-deny fast - always -
+workflow-lint fast - always -
+secret-scan fast - always -
+osv fast - always -
+python-lint fast - always -
+shell-lint fast - always -
 metric-names fast - always -
 observability-tests fast - always -
 observability-rules fast - always -
@@ -61,8 +66,26 @@ step_example_lockfiles() { python3 scripts/check-example-lockfiles.py; }
 step_rust_fmt() { cargo fmt --manifest-path rust/Cargo.toml --all --check; }
 step_cli_fmt() { cargo fmt --manifest-path cli/Cargo.toml --all --check; }
 step_cargo_deny() {
-  cargo deny --manifest-path rust/Cargo.toml --config rust/deny.toml check advisories licenses
+  cargo deny --manifest-path rust/Cargo.toml --config rust/deny.toml check
+  cargo deny --manifest-path cli/Cargo.toml --config cli/deny.toml check
 }
+step_workflow_lint() {
+  actionlint
+  zizmor --offline --persona regular --config zizmor.yml .github/workflows
+}
+step_secret_scan() { gitleaks git --no-banner --redact --config .gitleaks.toml .; }
+step_osv() {
+  set -- -L rust/Cargo.lock -L cli/Cargo.lock -L typescript/pnpm-lock.yaml -L pnpm-lock.yaml
+  for lockfile in examples/*/Cargo.lock examples/*/pnpm-lock.yaml; do
+    set -- "$@" -L "$lockfile"
+  done
+  osv-scanner scan source --config osv-scanner.toml "$@"
+}
+step_python_lint() {
+  ruff check scripts
+  ruff format --check scripts
+}
+step_shell_lint() { shellcheck scripts/*.sh; }
 step_metric_names() { python3 deploy/observability/lint/check-metric-names.py; }
 step_observability_tests() {
   python3 -m unittest discover -s deploy/observability/lint -p 'test_*.py'
@@ -122,6 +145,7 @@ step_ts_browser() {
 
 step_generated_fixture() {
   typescript_built
+  # shellcheck disable=SC2086 # the flavor list is space-separated words, one argument each
   ./scripts/generated-fixture-gate.sh ${BAUKIT_FIXTURE_FLAVORS:-$generated_flavors}
 }
 step_platform_fixture() {
