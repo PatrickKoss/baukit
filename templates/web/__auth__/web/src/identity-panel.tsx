@@ -36,6 +36,14 @@ export function IdentityPanel({ session }: { readonly session: AuthSession }): R
     <section className="panel" aria-labelledby="identity-title">
       <h2 id="identity-title">Identity</h2>
       {session.authError === undefined ? null : <p className="error">{session.authError}</p>}
+      {session.sessionUnavailable ? (
+        <p className="error" role="alert">
+          Could not reach sign-in. You are still signed in.{' '}
+          <button className="action secondary" type="button" onClick={session.retrySession}>
+            Retry
+          </button>
+        </p>
+      ) : null}
       {session.localData.state.status === 'blocked' ? (
         <p className="error" role="alert">
           Local account data is blocked. Sign in again or contact support before continuing.

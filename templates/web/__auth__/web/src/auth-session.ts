@@ -9,6 +9,7 @@ import {
 import { analytics } from './analytics';
 import { currentUser, type CurrentUser } from './api';
 import { authClient } from './auth';
+import { sessionFailure } from './session-failure';
 import {
   useAuthenticatedLocalData,
   type AuthenticatedLocalData,
@@ -25,6 +26,9 @@ export interface AuthSession {
   readonly setAuthError: (message: string | undefined) => void;
   readonly user: CurrentUser | undefined;
   readonly signInSession: SignInSession | undefined;
+  /** True after a retryable failure loading the session; the account stays signed in. */
+  readonly sessionUnavailable: boolean;
+  readonly retrySession: () => void;
   readonly localData: AuthenticatedLocalData;
   /** The open local partition, once it belongs to the confirmed user. */
   readonly partition: CachePartition | undefined;
@@ -62,12 +66,19 @@ function useSessionEvents(
   }, [markSignedOut, setAuthError, setAuthenticated, setReason]);
 }
 
-function useSignedInIdentity(
+interface SignedInIdentity {
+  readonly signInSession: SignInSession | undefined;
+  readonly sessionUnavailable: boolean;
+  readonly retrySession: () => void;
+}
+
+function useSignInSession(
   authenticated: boolean,
-  setUser: (user: CurrentUser) => void,
-  setSignInSession: (session: SignInSession | undefined) => void,
   setAuthError: (message: string) => void,
-): void {
+): SignedInIdentity {
+  const [signInSession, setSignInSession] = useState<SignInSession>();
+  const [sessionUnavailable, setSessionUnavailable] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!authenticated) {
       return;
@@ -76,9 +87,40 @@ function useSignedInIdentity(
     void authClient
       .session()
       .then((nextSession) => {
-        if (active) setSignInSession(nextSession);
+        if (!active) return;
+        setSessionUnavailable(false);
+        setSignInSession(nextSession);
       })
-      .catch(() => undefined);
+      .catch((cause: unknown) => {
+        if (!active) return;
+        const failure = sessionFailure(cause);
+        if (failure.kind === 'retry') {
+          setSessionUnavailable(true);
+        } else {
+          setAuthError(failure.message);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [attempt, authenticated, setAuthError]);
+  const retrySession = useCallback((): void => {
+    setSessionUnavailable(false);
+    setAttempt((current) => current + 1);
+  }, []);
+  return { signInSession, sessionUnavailable, retrySession };
+}
+
+function useCurrentUser(
+  authenticated: boolean,
+  setUser: (user: CurrentUser) => void,
+  setAuthError: (message: string) => void,
+): void {
+  useEffect(() => {
+    if (!authenticated) {
+      return;
+    }
+    let active = true;
     void currentUser()
       .then((nextUser) => {
         if (active) setUser(nextUser);
@@ -89,7 +131,7 @@ function useSignedInIdentity(
     return () => {
       active = false;
     };
-  }, [authenticated, setAuthError, setSignInSession, setUser]);
+  }, [authenticated, setAuthError, setUser]);
 }
 
 /** Identifies the user for analytics once the server confirms the partition's subject. */
@@ -123,14 +165,17 @@ export function useAuthSession(queryClient: QueryClient): AuthSession {
   const [sessionExpiredReason, setSessionExpiredReason] = useState<SessionExpiredReason>();
   const [authError, setAuthError] = useState<string>();
   const [user, setUser] = useState<CurrentUser>();
-  const [signInSession, setSignInSession] = useState<SignInSession>();
   const localData = useAuthenticatedLocalData(user?.id, sessionExpiredReason, queryClient);
   const markSignedOut = useCallback((): void => {
     setAuthenticated(false);
     setUser(undefined);
   }, []);
   useSessionEvents(markSignedOut, setSessionExpiredReason, setAuthenticated, setAuthError);
-  useSignedInIdentity(authenticated, setUser, setSignInSession, setAuthError);
+  const { signInSession, sessionUnavailable, retrySession } = useSignInSession(
+    authenticated,
+    setAuthError,
+  );
+  useCurrentUser(authenticated, setUser, setAuthError);
   const partition =
     localData.state.status === 'ready' &&
     localData.state.partition.subject === user?.id &&
@@ -145,6 +190,8 @@ export function useAuthSession(queryClient: QueryClient): AuthSession {
     setAuthError,
     user,
     signInSession,
+    sessionUnavailable,
+    retrySession,
     localData,
     partition,
     markSignedOut,
