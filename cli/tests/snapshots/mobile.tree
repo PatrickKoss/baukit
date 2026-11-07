@@ -1,4 +1,5 @@
-c2422177258cac52b13187cf0e345083149d4d6ec2be983b90ade30a54a46a80  .github/workflows/ci.yml
+54605905c2cc7fd8e91c111a3ef2c8907499c84e0cc89cb6dc93fbf3a7853a7e  .baukit/template-files.toml
+de050f96982f758e8d787786ceb49e48cda5bf41931090211ca4fcbd5fc8547b  .github/workflows/ci.yml
 98238345ced7e6b6c84b76f4626d1dafaab7c5f8a2931be68db2cde8748b82b2  .github/workflows/native.yml
 7eb998b9767225d73d919e6aa0f548df3e6b7d4cf44f9b863e26c54363b07f06  .shellcheckrc
 -> CLAUDE.md  AGENTS.md

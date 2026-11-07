@@ -3,8 +3,10 @@ mod comments;
 mod config;
 mod file_size;
 mod lints;
+mod observability;
 mod patterns;
 mod suppressions;
+mod template_files;
 mod walk;
 
 use std::{
@@ -15,6 +17,9 @@ use std::{
 use anyhow::{Result, bail};
 
 pub use config::{CONFIG_FILE, CheckConfig};
+pub(crate) use template_files::{
+    MANIFEST_PATH as TEMPLATE_FILES_MANIFEST, render_manifest, sha256_hex,
+};
 
 /// A rule violation, or a note that does not fail the check.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,6 +105,8 @@ fn all_rules() -> Vec<Box<dyn Rule>> {
         Box::new(suppressions::Suppressions),
         Box::new(patterns::Patterns),
         Box::new(agent_docs::AgentDocs),
+        Box::new(observability::Observability),
+        Box::new(template_files::TemplateFiles),
     ]
 }
 

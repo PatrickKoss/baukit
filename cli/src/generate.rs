@@ -1,6 +1,7 @@
 mod dependencies;
 mod manifest_source;
 mod render;
+mod template_files;
 
 use std::{
     collections::BTreeMap,
@@ -14,6 +15,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use crate::{
     LAST_TEMPLATE_MIGRATION_VERSION, MAX_APPLICATION_NAME_LEN, PLATFORM_MIGRATION_PATH,
     REMOTE_MCP_CLIENT_SCOPES, TEMPLATE_VERSION,
+    check::TEMPLATE_FILES_MANIFEST,
     components::Components,
     doctor_layout,
     generate::dependencies::dependency_context,
@@ -169,14 +171,15 @@ fn template_context(
     })
 }
 
-/// Writes new files and reports existing files whose content differs as conflicts.
+/// Writes new files and reports existing files whose content differs as conflicts. The
+/// template-files manifest is derived from the other files, so it is always rewritten.
 fn write_rendered(destination: &Path, rendered: BTreeMap<PathBuf, Vec<u8>>) -> Result<()> {
     let mut conflicts = Vec::new();
     fs::create_dir_all(destination)
         .with_context(|| format!("could not create {}", destination.display()))?;
     for (relative, bytes) in rendered {
-        let output = destination.join(relative);
-        if output.exists() {
+        let output = destination.join(&relative);
+        if output.exists() && relative != Path::new(TEMPLATE_FILES_MANIFEST) {
             let existing = fs::read(&output)
                 .with_context(|| format!("could not read existing file {}", output.display()))?;
             if existing != bytes {

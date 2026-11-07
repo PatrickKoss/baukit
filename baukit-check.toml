@@ -30,3 +30,8 @@ rust-allow = 76
 rust-expect = 34
 eslint-disable = 1
 ast-grep-ignore = 0
+
+# `baukit check observability`: baukit's own dashboards and rules use only catalog metrics.
+[observability]
+dashboards = ["deploy/observability/dashboards"]
+rules = ["deploy/observability/alerts", "deploy/observability/recording-rules"]

@@ -1,0 +1,4 @@
+[observability]
+dashboards = ["dashboards"]
+rules = ["alerts", "recording-rules"]
+metrics = ["product-metrics.txt"]

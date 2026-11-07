@@ -78,6 +78,8 @@ Lines marked `note:` never fail the run.
 | `suppressions` | Counts `#[allow]`, `#[expect]`, `eslint-disable` and `ast-grep-ignore` against `[suppressions.max]`. Flags `#[allow]` without `reason =` and comment suppressions without ` -- reason`. |
 | `patterns` | Runs the ast-grep rules above with ast-grep 0.51.1, embedded in the CLI. `error` rules fail; `hint` rules print with `--verbose`. |
 | `agent-docs` | `CLAUDE.md` holds exactly one managed block equal to `lint/agent-rules.md`, and `AGENTS.md` is a symlink to `CLAUDE.md`. |
+| `observability` | Dashboards, alerts and recording rules from `[observability]` in `baukit-check.toml`. See below. Without that table it prints a note and passes. |
+| `template-files` | Every file in `.baukit/template-files.toml` still has the SHA-256 that `baukit new` recorded. `--update` rewrites the hashes after a deliberate upgrade. Without the manifest it prints a note and passes. |
 
 `target/`, `node_modules/`, `vendor/`, `.generated-fixture/` and `.git/` are never scanned.
 
@@ -115,3 +117,35 @@ values.
 
 The Rust baseline lives in `lint/rust/`, the agent rules in `lint/agent-rules.md`. Both are compiled into
 the CLI, so a product checks against the rules of the baukit version it pins.
+
+## `observability`
+
+```toml
+[observability]
+dashboards = ["deploy/observability/dashboards"]   # files, or directories of *.json
+rules = ["deploy/observability/alerts"]             # files, or directories of *.yml and *.yaml
+sources = ["backend"]                               # Rust files that emit metrics
+metrics = ["deploy/observability/product-metrics.txt"]  # check-metric-names.py --allowlist format
+datasource-uids = ["prometheus"]                    # fixed uids allowed besides datasource variables
+metric-prefix = "shop_"                             # optional
+```
+
+The rule runs the expression checks of `deploy/observability/lint/check-metric-names.py` on every
+dashboard `expr` and every rule `expr:`: no `http_requests_duration_seconds`, no `service_name` in
+Loki selectors, no status classes like `"5xx"`, `job_kind` instead of `job` on worker metrics, and
+every referenced metric must exist. A metric exists when it is in Baukit's catalog, a recording rule,
+a `metrics` list, or a `counter!`, `gauge!` or `histogram!` call (or its `describe_` form) with a
+literal name under `sources`. The Python script stays the source of truth for Baukit's CI;
+`cli/tests/check_observability.rs` runs both on the same fixtures and on `deploy/observability`.
+
+On top of that it checks what the product linters checked:
+
+- counters end in `_total`, gauges and histograms don't, and product
+  metrics start with `metric-prefix` when it is set;
+- every emitted product metric appears on a dashboard;
+- every dashboard `datasource` names a datasource variable declared in `templating` or `__inputs`,
+  a uid from `datasource-uids`, or a Grafana built-in;
+- a recording rule does not reuse the name of an emitted metric.
+
+`promtool check rules` and `promtool test rules` still run in the product gate; they need Docker.
+

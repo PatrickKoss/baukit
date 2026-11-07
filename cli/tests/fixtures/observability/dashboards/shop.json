@@ -1,0 +1,29 @@
+{
+  "title": "Shop",
+  "templating": {
+    "list": [
+      { "name": "DS_PROMETHEUS", "type": "datasource", "query": "prometheus" },
+      { "name": "DS_LOKI", "type": "datasource", "query": "loki" }
+    ]
+  },
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "expr": "sum by (route) (rate(http_requests_total{status=~\"5..\"}[5m]))" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(shop_checkout_duration_seconds_bucket[5m])))" },
+        { "expr": "rate(http_requests_duration_seconds_count[5m])" },
+        { "expr": "sum(rate(http_requests_total{status=\"5xx\"}[5m]))" },
+        { "expr": "sum by (job) (rate(worker_job_runs_total[5m]))" },
+        { "expr": "shop_queue_depth + shop_missing_total + shop:orders:rate5m" }
+      ]
+    },
+    {
+      "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
+      "targets": [
+        { "expr": "{service_name=\"shop\"} | json" },
+        { "expr": "sum(count_over_time({app=\"shop\"} | json [5m]))" }
+      ]
+    }
+  ]
+}
