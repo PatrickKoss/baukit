@@ -136,7 +136,7 @@ tenancy and rate-limit audit of the products (S-08).
 - [~] P2.1 (W2-2) `SecurityHeadersLayer` in baukit-http on by default (nosniff, Referrer-Policy, frame-ancestors via
   CSP for HTML, `Cache-Control: no-store` on authenticated JSON, HSTS behind config); CSP for the web template
   and the chart's edge config; header assertions in the fixture gate.
-- [~] P2.2 (W2-1 baukit-auth BFF running; auth-web waits for W1-C; design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
+- [~] P2.2 (ADR task 2 headers merged; W2-1 baukit-auth BFF running; auth-web waits for W1-C; design: ADR 0006 accepted; implementation = its 4 tasks) auth-web token storage per D2, with a test that no storage write contains a refresh token.
 - [ ] P2.3 `IssuedApiToken` and every secret-holding type: redacting Debug / `SecretString`.
 - [ ] P2.4 Clerk missing-azp opt-in; negative tests for every token profile.
 - [~] P2.5 Supply chain: SHA-pin all actions in baukit and the template workflows, renovate digest pinning,
@@ -228,6 +228,9 @@ tenancy and rate-limit audit of the products (S-08).
   credentials scope, Keycloak idle note), accepted and merged. Worktree removed.
 - 2026-11-07: W2-1 (ADR 0006 task 1, baukit-auth BFF) and W2-2 (task 2, baukit-http headers) started in
   parallel with W1-A; both check against the new lint set via CLIPPY_CONF_DIR without editing the lint table.
+- 2026-11-07: W2-2 merged (ADR 0006 task 2). Re-read the layer against ADR section 7, re-ran its 9 tests, and
+  grepped rust/, cli/ and templates/ for HTML-serving routes (none, so the API CSP on every response is safe).
+  Follow-up: `hsts_max_age` in baukit-config `HttpConfig`, so products set HSTS from config (template wave).
 - 2026-11-07: W1-D merged after re-running its 7 gate steps, checking 14 action pins against upstream tags and
   diffing version-coherence output. 46 time-boxed osv ignores and narrowed ruff/shellcheck scopes went back as
   W1-D2 (example lock bumps, repo-wide script lint). typescript/pnpm-lock bumps wait for W1-C.
