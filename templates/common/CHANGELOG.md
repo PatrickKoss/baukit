@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.19.0] - 2026-11-07
+{% if context.quality_strict %}- `scripts/quality-gate.sh` fuzz step passes the nightly host triple to `cargo fuzz`. The prebuilt cargo-fuzz from `install-action` is a musl binary and otherwise builds the targets for musl, which ASan rejects.
+
+{% endif %}## [0.19.0] - 2026-11-07
 
 - Breaking: `AGENTS.md` is a symlink to `CLAUDE.md`, and `CLAUDE.md` ends with the managed Baukit agent-rules block. Replace an existing `AGENTS.md` copy with the symlink, then run `baukit check agent-docs --fix --root .` from the matching Baukit checkout.
 - Every workflow action is pinned to a commit SHA with its version in a comment, and every checkout sets `persist-credentials: false`. `rust-toolchain` and `install-action` take the toolchain and tools as inputs.

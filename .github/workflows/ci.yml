@@ -506,6 +506,11 @@ jobs:
           install_args: >-
             aqua:rhysd/actionlint aqua:zizmorcore/zizmor aqua:gitleaks/gitleaks
             aqua:google/osv-scanner aqua:astral-sh/ruff aqua:koalaman/shellcheck
+      - name: Allow unprivileged user namespaces for loopback network tests
+        run: |
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
       - name: Generate and verify the fixture
         env:
           BAUKIT_FIXTURE_FLAVORS: ${{ matrix.flavor }}

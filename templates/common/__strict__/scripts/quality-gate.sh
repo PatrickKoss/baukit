@@ -269,10 +269,12 @@ step_fuzz() {
   cargo fmt --manifest-path backend/fuzz/Cargo.toml --all --check
   (
     cd backend/fuzz
-    cargo +nightly fuzz build
+    # cargo-fuzz defaults --target to the triple it was built for; prebuilt binaries are musl.
+    host=$(rustc +nightly -vV | sed -n 's/^host: //p')
+    cargo +nightly fuzz build --target "$host"
     for target in $(cargo +nightly fuzz list); do
       mkdir -p "corpus/$target" "artifacts/$target"
-      cargo +nightly fuzz run "$target" "corpus/$target" -- \
+      cargo +nightly fuzz run --target "$host" "$target" "corpus/$target" -- \
         -max_total_time="$fuzz_seconds" \
         -artifact_prefix="artifacts/$target/"
     done
