@@ -1,6 +1,6 @@
 ---
 name: baukit-upgrade
-description: Move a generated product to a newer coordinated Baukit release train and verify dependency, template, API, backend, mobile, and web compatibility. Use when updating pinned Baukit git tags, responding to Renovate release-train changes, or resolving `baukit doctor` version drift.
+description: Move a generated product to a newer coordinated Baukit release train and verify dependency, template, API, backend, mobile, and web compatibility. Use when bumping Baukit registry pins, responding to Renovate release-train changes, or resolving `baukit doctor` version drift.
 ---
 
 # Upgrade a Baukit product
@@ -13,7 +13,7 @@ Upgrade every Baukit component as one release train. Do not invent or call a `ba
 2. Read the target release notes and the target checkout's:
    - `docs/platform/compatibility-matrix.md`
    - `docs/platform/baukit-conventions.md`
-3. Install the CLI from the same target tag when necessary:
+3. The CLI is not on crates.io. Install it from the target tag when necessary:
 
    ```sh
    cargo install --git https://github.com/PatrickKoss/baukit --tag vX.Y.Z --locked baukit-cli
@@ -21,9 +21,10 @@ Upgrade every Baukit component as one release train. Do not invent or call a `ba
 
 ## Update the train coherently
 
-1. Change every Baukit git dependency in `backend/Cargo.toml` from the old tag to the target tag. Keep all `baukit-*` crates on exactly the same tag.
-2. Change every `@baukit/*` git dependency in `mobile/package.json` and/or `web/package.json` to that same tag while preserving each package's `path:typescript/packages/...` selector.
-3. Update `baukit.toml` so `template_version` and `[dependencies.baukit].tag` describe the target train. Apply release-note migrations to template-owned files deliberately; preserve product-owned behavior and surface conflicts for review.
+1. Set every `baukit-*` crate in `backend/Cargo.toml` (and `backend/fuzz/Cargo.toml` if present) to the target version, for example `baukit-core = "0.19.1"`. All crates move together.
+2. Set every `@baukit/*` dependency in `mobile/package.json` and/or `web/package.json` to the exact target version, for example `"@baukit/api-runtime": "0.19.1"`.
+3. Update `baukit.toml` so `template_version` and `[dependencies.baukit].version` name the target train, with `source = "registry"`. A product still on `source = "git"` with `tag = "vX.Y.Z"` pins switches to registry pins in the same change; `doctor` reports any pin that differs from `[dependencies.baukit].version`.
+   Read every `templates/common/CHANGELOG.md` entry after the current version and the target's section in `docs/platform/compatibility-matrix.md` first. Apply release-note migrations to template-owned files deliberately; preserve product-owned behavior and surface conflicts for review.
    Preserve `[quality]` thresholds, critical paths, the full-stack E2E opt-in, and every `openapi.consumers` entry. Add generated strict-profile scripts only when the product selects `profile = "strict"`.
 4. Refresh the managed agent-rules block at the end of `CLAUDE.md` from the target checkout. There is no `baukit upgrade` command for it; `check agent-docs --fix` rewrites the block and turns a copied `AGENTS.md` into the symlink to `CLAUDE.md`:
 
@@ -31,7 +32,7 @@ Upgrade every Baukit component as one release train. Do not invent or call a `ba
    cargo run --manifest-path <target-baukit>/cli/Cargo.toml --bin baukit -- check agent-docs --fix --root .
    ```
 
-5. Refresh Cargo and pnpm lockfiles. Do not mix unrelated dependency upgrades into this change, and do not switch to public registries while the project remains private-first.
+5. Refresh Cargo and pnpm lockfiles. Do not mix unrelated dependency upgrades into this change.
 
 ## Validate and verify
 
