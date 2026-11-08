@@ -87,13 +87,21 @@ impl BrowserSessionConfig {
     }
 
     /// Sets the redirect URIs a code exchange may name. At least one is required.
+    ///
+    /// Each URI is stored in its WHATWG URL serialization, so `http://localhost:5573`
+    /// and `http://localhost:5573/` are the same entry. Exchanges compare the
+    /// serialized form too; path, query and port must still match. A URI that does
+    /// not parse fails [`Self::validate`].
     #[must_use]
     pub fn with_redirect_uris<I, S>(mut self, redirect_uris: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: Into<String>,
     {
-        self.redirect_uris = redirect_uris.into_iter().map(Into::into).collect();
+        self.redirect_uris = redirect_uris
+            .into_iter()
+            .map(|uri| normalize_or_keep(uri.into()))
+            .collect();
         self
     }
 
@@ -146,10 +154,11 @@ impl BrowserSessionConfig {
         self
     }
 
-    /// Sets `post_logout_redirect_uri` for the IdP end-session URL.
+    /// Sets `post_logout_redirect_uri` for the IdP end-session URL, in its WHATWG
+    /// URL serialization. A URI that does not parse fails [`Self::validate`].
     #[must_use]
     pub fn with_post_logout_redirect_uri(mut self, uri: impl Into<String>) -> Self {
-        self.post_logout_redirect_uri = Some(uri.into());
+        self.post_logout_redirect_uri = Some(normalize_or_keep(uri.into()));
         self
     }
 
@@ -216,13 +225,24 @@ impl BrowserSessionConfig {
     ///
     /// # Errors
     ///
-    /// Returns [`BrowserSessionConfigError::NoRedirectUris`],
+    /// Returns [`BrowserSessionConfigError::NoRedirectUris`], `InvalidRedirectUri`
+    /// naming the first redirect or post-logout URI that is not an absolute URL,
     /// `CredentialsDisabled`, `InvalidAllowedOrigin` or `NoAllowedOrigins` for the
     /// CORS and redirect cases, `InsecureCookieNotLocal` for a non-local insecure
     /// cookie, and `CrossSiteOrigin` naming the first cross-site origin.
     pub fn validate(&self, http: &HttpOptions) -> Result<Vec<Url>, BrowserSessionConfigError> {
         if self.redirect_uris.is_empty() {
             return Err(BrowserSessionConfigError::NoRedirectUris);
+        }
+        if let Some(invalid) = self
+            .redirect_uris
+            .iter()
+            .chain(&self.post_logout_redirect_uri)
+            .find(|uri| normalize_uri(uri).is_none())
+        {
+            return Err(BrowserSessionConfigError::InvalidRedirectUri(
+                invalid.clone(),
+            ));
         }
         if !http.allow_credentials {
             return Err(BrowserSessionConfigError::CredentialsDisabled);
@@ -300,6 +320,9 @@ pub enum BrowserSessionConfigError {
     /// No redirect URI is configured.
     #[error("browser session needs at least one redirect URI")]
     NoRedirectUris,
+    /// A redirect or post-logout URI is not an absolute URL.
+    #[error("browser session redirect URI {0:?} is not an absolute URL")]
+    InvalidRedirectUri(String),
     /// `HttpOptions.allowed_origins` is empty.
     #[error("browser session needs at least one allowed CORS origin")]
     NoAllowedOrigins,
@@ -321,6 +344,15 @@ pub enum BrowserSessionConfigError {
     /// The egress options are invalid.
     #[error("invalid IdP egress options: {0}")]
     Egress(#[source] EgressOptionsError),
+}
+
+/// Returns the WHATWG serialization of `uri`, or `None` when it does not parse.
+pub(crate) fn normalize_uri(uri: &str) -> Option<String> {
+    Url::parse(uri).ok().map(String::from)
+}
+
+fn normalize_or_keep(uri: String) -> String {
+    normalize_uri(&uri).unwrap_or(uri)
 }
 
 fn issuer_only_policy(issuer: &Url) -> Result<AddressPolicy, BrowserSessionConfigError> {

@@ -14,6 +14,7 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use super::{
+    config::normalize_uri,
     crypto::{
         self, CryptoError, GRACE_ACCESS_TOKEN_FIELD, ID_TOKEN_FIELD, REFRESH_TOKEN_FIELD,
         SessionCredential,
@@ -80,6 +81,12 @@ pub(crate) struct SessionSettings {
     pub(crate) absolute_timeout: Duration,
 }
 
+impl SessionSettings {
+    pub(crate) fn accepts_redirect_uri(&self, redirect_uri: &str) -> bool {
+        normalize_uri(redirect_uri).is_some_and(|uri| self.redirect_uris.contains(&uri))
+    }
+}
+
 pub(crate) struct SessionService {
     settings: SessionSettings,
     store: Arc<dyn SessionStore>,
@@ -118,7 +125,7 @@ impl SessionService {
         code_verifier: &str,
         redirect_uri: &str,
     ) -> Result<Issued, SessionError> {
-        if !self.settings.redirect_uris.contains(redirect_uri) {
+        if !self.settings.accepts_redirect_uri(redirect_uri) {
             return Err(SessionError::InvalidGrant);
         }
         let tokens = self
