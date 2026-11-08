@@ -22,6 +22,9 @@ concurrency:
   group: release-train-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  MISE_HTTP_TIMEOUT: 120s
+
 jobs:
   prepare:
     name: Prepare coordinated release PR
