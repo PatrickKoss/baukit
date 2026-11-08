@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.19.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.19.1 train.
+- Updated dependencies
+  - @baukit/type-guards@0.19.1
+
 ## 0.19.0
 
 ### Major Changes

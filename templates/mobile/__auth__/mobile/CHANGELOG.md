@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.19.1] - 2026-11-08
+
 ## [0.19.0] - 2026-11-07
 
 - Lints with `@baukit/eslint-config` and builds the web export's CSP with `@baukit/csp`.

@@ -4,6 +4,8 @@ All notable changes to `baukit-sync` are documented here.
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-08
+
 ## [0.19.0] - 2026-11-07
 
 - Breaking, security: `purge_tombstone_batch` deletes `(id, owner_id)` pairs. `TombstoneTable.delete` now gets the ids as `$1` and the owners as `$2`, for example `DELETE FROM record USING UNNEST($1::uuid[], $2::uuid[]) AS purged (id, owner_id) WHERE record.id = purged.id AND record.owner_id = purged.owner_id`. Before, a tombstone purge deleted every owner's row with the purged id. Keep the owner in the key of every syncable table.

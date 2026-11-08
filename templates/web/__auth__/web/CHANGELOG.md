@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.19.1] - 2026-11-08
+
 ## [0.19.0] - 2026-11-07
 
 - Breaking, security: sign-in goes through the backend browser session (ADR 0006) with `BrowserSessionClient` from `@baukit/auth-web`. The refresh token stays server side behind a `__Host-` HttpOnly cookie, the access token lives in memory only, and tabs hand a refresh over to each other instead of racing it.

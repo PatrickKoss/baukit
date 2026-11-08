@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-08
+
 ## [0.19.0] - 2026-11-07
 
 - Breaking: `IssuedApiToken` no longer implements `PartialEq` or `Eq`, so the secret is never compared in variable time. Its `Debug` output redacts `secret`.

@@ -5,6 +5,18 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.19.1
+
+Last verified release train: `v0.19.1` (patch train on top of `v0.19.0`). The `v0.19.0` tag run died in its verify step, so its crates never reached crates.io; its npm packages were published by hand. `v0.19.1` is the first train the release workflow publishes to both registries through trusted publishing. The strict template's fuzz step passes the nightly host triple to `cargo fuzz`, because the prebuilt cargo-fuzz is a musl binary and ASan rejects musl targets. The release workflow verifies the TypeScript train with the same `ts-check` gate step as CI.
+
+### Upgrade steps
+
+A product on 0.18.x goes straight to 0.19.1: follow every step of the v0.19.0 section below with `0.19.1` in place of `0.19.0`, then apply these.
+
+1. Set every `baukit-*` crate and `@baukit/*` package to `0.19.1` and `baukit.toml`'s `template_version` and `[dependencies.baukit].version` to `0.19.1`. Strict products move the Baukit clone in `scripts/quality-gate.sh` to `--branch v0.19.1`.
+2. Strict products copy the fuzz step from a fresh `baukit new` render (`--target "$host"` on `cargo +nightly fuzz build` and `run`).
+3. pnpm refuses `@baukit/*@0.19.1` for a day after the publish. A product that installs inside that window lists the exact `@baukit/<name>@0.19.1` entries it needs in `minimumReleaseAgeExclude` and removes them once the window ends.
+
 ## v0.19.0
 
 Last verified release train: `v0.19.0` (minor train on top of `v0.18.3`), the quality and security train. The full local gate passed on 2026-11-07 with Rust 1.95 MSRV, Node 26.10.0 and pnpm 12.9.1: every Rust test with `--include-ignored`, all generated fixture flavors (backend, web, mobile, mobile-pwa, combined, mcp, auth, clerk, workos, platform-standalone, platform), the remote MCP fixture against Keycloak, the real-browser Dexie suite and both Android conformance runs. Three npm packages are new: `@baukit/type-guards`, `@baukit/eslint-config` and `@baukit/csp`.

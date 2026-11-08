@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-08
+
 ## [0.19.0] - 2026-11-07
 
 - `compose::PostgresSuite::builder(pool, settings, limiter)` replaces the `SuiteComposition` copied into product bins (P1.10). It takes `SuiteSettings` (`new` parses the catalog JSON, `with_catalog` takes a parsed one) plus the identity, replay, applier and erasure owner lookup ports, and exposes `context`, `outbox`, `store`, `delivery`, `erasure`, `module()`, `module_with(applier)`, `api()`, `notifier()`, `erasure_notifier(links)`, `router(api)` and, with `jobs`, `worker(store)`, `worker_with(store, delivery, config)` and `default_worker_config()`.

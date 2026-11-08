@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-08
+
 {% if context.quality_strict %}- `scripts/quality-gate.sh` fuzz step passes the nightly host triple to `cargo fuzz`. The prebuilt cargo-fuzz from `install-action` is a musl binary and otherwise builds the targets for musl, which ASan rejects.
 
 {% endif %}## [0.19.0] - 2026-11-07

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## 0.19.1
+
+### Patch Changes
+
+- Release the coordinated baukit 0.19.1 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.19.1
+  - @baukit/localization-core@0.19.1
+  - @baukit/type-guards@0.19.1
+
 ## 0.19.0
 
 ### Minor Changes
