@@ -514,6 +514,7 @@ jobs:
       - name: Generate and verify the fixture
         env:
           BAUKIT_FIXTURE_FLAVORS: ${{ matrix.flavor }}
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: scripts/ci-gate.sh --step generated-fixture
 
   affected-fixture:
