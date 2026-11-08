@@ -175,7 +175,7 @@ tenancy and rate-limit audit of the products (S-08).
 
 ## Phase 4. Release and rollout
 
-- [ ] P4.1 Full baukit gate (`sh scripts/ci-gate.sh`, `--include-ignored`, `make generated-fixture-gate`
+- [x] P4.1 (0.19.0 npm by hand, 0.19.1 through the pipeline) Full baukit gate (`sh scripts/ci-gate.sh`, `--include-ignored`, `make generated-fixture-gate`
   all flavors, MSRV, cargo deny, version coherence), release 0.19.0.
 - [ ] P4.2 Product upgrades, one agent per repo, four at a time. Per repo: bump to 0.19.0, adopt the lint
   baseline and clippy.toml, `@baukit/eslint-config`, deny.toml, gitleaks/zizmor/osv steps, managed
@@ -478,3 +478,14 @@ tenancy and rate-limit audit of the products (S-08).
 - Product rollout brief: prompts/P4.2-rollout.md. architecture-health-platform's main checkout has 4 deleted
   tracked fixtures under `node_modules/` and `target/` paths, probably from a broad cleanup. The brief allows only
   `git clean -ffdX`.
+- 2026-11-08: hosted CI on main had been red since T4. The seven generated-fixture jobs hit the AppArmor userns
+  block in `with-loopback-network.sh` (the Dexie job already lifted it, the fixture job did not). The fuzz job
+  had never passed, because install-action ships a musl cargo-fuzz, which defaults to the musl target, and ASan
+  rejects that. Fixed in PR #2 (49b2dad9): a guarded sysctl step, plus `--target` set to the host triple in
+  `scripts/fuzz.sh` and in the strict template's fuzz step. PR checks 37/37 green.
+- v0.19.0 release run 42431811804 died in "Verify tagged train" with exit 137. `pnpm check --concurrency=4`
+  passed the flag to `lint:root`, so turbo ran type-aware eslint at default concurrency and ran out of memory.
+  No crate reached crates.io. The step now calls `ci-gate.sh --step ts-check` with 4 workers (805c5710).
+  0.19.1 is the first train published to both registries by the workflow, and it validates npm trusted
+  publishing. Compatibility-matrix v0.19.1 tells 0.18.x products to go straight to 0.19.1.
+- Follow-up done: the baukit-upgrade skill and baukit-conventions.md describe registry pins (505c7f08).
