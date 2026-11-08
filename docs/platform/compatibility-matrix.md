@@ -5,6 +5,23 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.19.2
+
+Last verified release train: `v0.19.2` (patch train on top of `v0.19.1`).
+- The mobile web build no longer stores tokens in browser storage. On web, `auth-storage.ts` throws `WebTokenStorageRefused`, and Expo web signs in through `@baukit/auth-web`.
+- A backend whose only browser client is the PWA now serves the `/auth/session` browser-session routes. The new `mobile-pwa-auth` fixture flavor covers it.
+- `baukit-auth` normalizes browser-session redirect URIs.
+- `baukit-egress` reads vendor rate-limit headers and trusts extra root certificates.
+- `baukit check suppressions` rejects bulk suppression and lint config weakening, and budgets seven more comment forms.
+
+### Upgrade steps
+
+1. Set every `baukit-*` crate and `@baukit/*` package to `0.19.2`, and set `baukit.toml`'s `template_version` and `[dependencies.baukit].version` to `0.19.2`. Strict products move the Baukit clone in `scripts/quality-gate.sh` to `--branch v0.19.2`. For the first day, list the exact `@baukit/<name>@0.19.2` entries in `minimumReleaseAgeExclude`, as in 0.19.1.
+2. Add the new `[suppressions.max]` keys to `baukit-check.toml`: `ts-expect-error`, `ts-ignore`, `prettier-ignore`, `noqa`, `type-ignore`, `nosec`, `shellcheck-disable` and `nolint`. Each starts at the product's current count, and the counts only go down. Give every remaining directive the reason form `baukit check suppressions` asks for.
+3. Delete any `eslint-suppressions.json` and any `--suppress-*` flag, and fix the findings they hid. Remove every `"allow"` level from `[lints]` tables, every clippy `-A`/`--allow`/`--cap-lints` flag in gate scripts, and every eslint rule a product config sets to `off` or `warn`. Fix the code that each of these hid.
+4. Mobile products with `pwa` and auth apply the mobile template changelog entry for 0.19.2. Then register the web origin as a redirect URI, and the backend serves the browser-session routes, as described in the template changelog.
+5. Products that call vendors with their own rate-limit headers (Fitbit, Whoop, Polar) switch to `EgressOptions::with_retry_after_headers`. Products that pin a private CA switch to `with_extra_root_certificates_pem`.
+
 ## v0.19.1
 
 Last verified release train: `v0.19.1` (patch train on top of `v0.19.0`). The `v0.19.0` tag run died in its verify step, so its crates never reached crates.io; its npm packages were published by hand. `v0.19.1` is the first train the release workflow publishes to both registries through trusted publishing. The strict template's fuzz step passes the nightly host triple to `cargo fuzz`, because the prebuilt cargo-fuzz is a musl binary and ASan rejects musl targets. The release workflow verifies the TypeScript train with the same `ts-check` gate step as CI.

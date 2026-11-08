@@ -4,6 +4,12 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-11-08
+
+### Fixed
+
+- `BrowserSessionConfig` stores redirect and post-logout URIs in their WHATWG serialization, and the code exchange compares the serialized `redirectUri`. `http://localhost:5573` now matches the `http://localhost:5573/` that `@baukit/auth-web` sends. A URI that does not parse fails `validate` with `InvalidRedirectUri`.
+
 ## [0.19.1] - 2026-11-08
 
 ## [0.19.0] - 2026-11-07

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-11-08
+
 - `scripts/repo-lint.sh` passes `--force-exclude` to `ruff check` and `ruff format --check`, so `exclude`, `extend-exclude` and `[format] exclude` in `ruff.toml` apply to the explicit file list.
 {% if context.auth_enabled and context.pwa and not context.web %}- Security: the backend serves the `/auth/session` browser-session routes, CORS for the web origin and the `-web` Keycloak client when `pwa` is set, not only with `web`. Migration: copy the `[auth.browser_session]` and `[http] cors_allowed_origins` blocks from `local.toml`, the `BROWSER_SESSION` compose variable, the `browserSession` Helm values and the `-web` client in `keycloak/realm.json`, then run the browser-session migration.
 

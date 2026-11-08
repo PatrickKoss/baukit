@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-11-08
+
 - `baukit check suppressions` rejects bulk suppression: an `eslint-suppressions.json` file, `eslint --suppress-all`, `--suppress-rule`, `--prune-suppressions` or `--suppressions-location` in a `package.json`, clippy `-A`/`--allow`/`--cap-lints` in gate scripts (`*.sh`, `*.yml`, `Makefile`, `justfile`), a lint set to `allow` in a Cargo `[lints]` or `[workspace.lints]` table, and `-A`/`--cap-lints` in `.cargo/config.toml` rustflags.
 - It also budgets and requires reasons for `@ts-expect-error` (`-- reason`), `prettier-ignore` (a comment on the line above), Python `# noqa: CODE -- reason`, `# type: ignore[code]  # reason` and `# nosec -- reason`, and `# shellcheck disable=` (`# reason` after it or a comment above). `@ts-ignore` is always a finding. Each form has its own `[suppressions.max]` key, and generated products start every key at 0.
 - It also counts Go `//nolint` (new `nolint` key, `//nolint:linter // reason`) and `// #nosec -- reason`, `<!-- prettier-ignore -->` in Markdown, MDX, HTML, Vue and Svelte, and `shellcheck disable=` and clippy allow flags in extensionless shell scripts found by their `#!` line. It rejects golangci configs that disable linters, exclude findings or source paths, or report only new issues. It also rejects eslint configs outside `@baukit/eslint-config` that set rules to `off`/`warn`/`0`/`1` or ignore anything but generated and build output.

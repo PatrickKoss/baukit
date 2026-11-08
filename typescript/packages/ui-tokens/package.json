@@ -1,6 +1,6 @@
 {
   "name": "@baukit/ui-tokens",
-  "version": "0.19.1",
+  "version": "0.19.2",
   "description": "Dependency-free design-token schema, validator, accessibility checker, and deterministic compiler for web and React Native.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -61,6 +61,6 @@
     }
   },
   "dependencies": {
-    "@baukit/type-guards": "^0.19.1"
+    "@baukit/type-guards": "^0.19.2"
   }
 }
