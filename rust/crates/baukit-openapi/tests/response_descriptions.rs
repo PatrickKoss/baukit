@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 use baukit_openapi::{OpenApiMetadata, fill_missing_response_descriptions, serialize_schema};
 use serde_json::{Value, json};
 use utoipa::openapi::OpenApi;

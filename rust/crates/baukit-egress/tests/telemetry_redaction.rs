@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 //! Checks that errors, request debug output, and telemetry never carry URL
 //! secrets or raw error bodies. Runs as its own test binary so its subscriber
 //! sees every callsite.
@@ -142,6 +136,14 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
 
+    assert_failed_requests_redacted().await;
+    for oversized in [false, true] {
+        assert_stream_failure_redacted(oversized).await;
+    }
+    assert_logs_redacted(&logs.text());
+}
+
+async fn assert_failed_requests_redacted() {
     let resolver = StaticResolver::new().with_host("hooks.test", [IpAddr::V4(Ipv4Addr::LOCALHOST)]);
     let options = EgressOptions::default()
         .with_policy(AddressPolicy::AllowLoopback)
@@ -192,40 +194,41 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
             }
         }
     }
+}
 
-    for oversized in [false, true] {
-        let (port, task) = incomplete_server().await;
-        let limit = if oversized { 3 } else { 100 };
-        let options = EgressOptions::default()
-            .with_policy(AddressPolicy::AllowLoopback)
-            .with_max_response_bytes(limit)
-            .expect("limit")
-            .with_request_timeout(Duration::from_secs(2))
-            .expect("timeout");
-        let client = GuardedClient::new(options).expect("client");
-        let mut response = client
-            .execute_stream(EgressRequest::get(secret_url(&format!("127.0.0.1:{port}"))))
-            .await
-            .expect("headers");
-        let error = if oversized {
-            let error = response.chunk().await.expect_err("too large");
-            assert!(matches!(error, EgressError::ResponseTooLarge { limit: 3 }));
-            error
-        } else {
-            assert_eq!(
-                response.chunk().await.expect("first chunk"),
-                Some(b"body-secret".to_vec())
-            );
-            let error = response.chunk().await.expect_err("timeout");
-            assert!(matches!(error, EgressError::Timeout));
-            error
-        };
-        assert_no_secret(&format!("{error:?}"));
-        drop(response);
-        task.abort();
-    }
+async fn assert_stream_failure_redacted(oversized: bool) {
+    let (port, task) = incomplete_server().await;
+    let limit = if oversized { 3 } else { 100 };
+    let options = EgressOptions::default()
+        .with_policy(AddressPolicy::AllowLoopback)
+        .with_max_response_bytes(limit)
+        .expect("limit")
+        .with_request_timeout(Duration::from_secs(2))
+        .expect("timeout");
+    let client = GuardedClient::new(options).expect("client");
+    let mut response = client
+        .execute_stream(EgressRequest::get(secret_url(&format!("127.0.0.1:{port}"))))
+        .await
+        .expect("headers");
+    let error = if oversized {
+        let error = response.chunk().await.expect_err("too large");
+        assert!(matches!(error, EgressError::ResponseTooLarge { limit: 3 }));
+        error
+    } else {
+        assert_eq!(
+            response.chunk().await.expect("first chunk"),
+            Some(b"body-secret".to_vec())
+        );
+        let error = response.chunk().await.expect_err("timeout");
+        assert!(matches!(error, EgressError::Timeout));
+        error
+    };
+    assert_no_secret(&format!("{error:?}"));
+    drop(response);
+    task.abort();
+}
 
-    let logs = logs.text();
+fn assert_logs_redacted(logs: &str) {
     assert!(
         logs.contains("egress.request"),
         "spans were captured: {logs}"
@@ -246,5 +249,5 @@ async fn errors_and_telemetry_do_not_leak_url_secrets() {
         );
     }
     assert!(!logs.contains("requestId"), "raw JSON leaked into: {logs}");
-    assert_no_secret(&logs);
+    assert_no_secret(logs);
 }

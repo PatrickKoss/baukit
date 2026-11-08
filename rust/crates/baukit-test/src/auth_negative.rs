@@ -203,10 +203,6 @@ pub async fn check_auth_negative_suite(
 /// # Panics
 ///
 /// Panics with all violations found by [`check_auth_negative_suite`].
-#[expect(
-    clippy::print_stdout,
-    reason = "every run must show the probed count and each exclusion with its reason; libtest captures stdout per test"
-)]
 pub async fn assert_auth_negative_suite(
     document: &Value,
     target: &SecurityTarget,

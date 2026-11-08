@@ -22,10 +22,17 @@ ts-max-lines = 500
 
 # Suppression budget. Counts may only go down; `baukit check suppressions --update` lowers them.
 [suppressions.max]
-rust-allow = 76
-rust-expect = 34
+rust-allow = 0
+rust-expect = 33
 eslint-disable = 1
 ast-grep-ignore = 0
+ts-expect-error = 7
+ts-ignore = 0
+prettier-ignore = 0
+noqa = 2
+type-ignore = 2
+nosec = 0
+shellcheck-disable = 4
 
 # `baukit check observability`: baukit's own dashboards and rules use only catalog metrics.
 [observability]

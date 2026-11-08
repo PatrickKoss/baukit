@@ -1,7 +1,9 @@
 mod agent_docs;
+mod bulk;
 mod comments;
 mod config;
 mod file_size;
+mod hash_comments;
 mod lints;
 mod observability;
 mod patterns;

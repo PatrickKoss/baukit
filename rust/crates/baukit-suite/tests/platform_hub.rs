@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 #![cfg(feature = "platform")]
 use axum::{
     Json, Router,
@@ -268,6 +262,11 @@ async fn hub_credits_round_trip_recorded_responses() -> TestResult {
     let released = credits.release(released_id).await?;
     assert_eq!(released.status, ReservationStatus::Released);
 
+    assert_recorded_credit_calls(&hub);
+    Ok(())
+}
+
+fn assert_recorded_credit_calls(hub: &MockHub) {
     let requests = hub.state.requests();
     let calls: Vec<_> = requests
         .iter()
@@ -309,7 +308,6 @@ async fn hub_credits_round_trip_recorded_responses() -> TestResult {
         form,
         format!("grant_type=client_credentials&client_id=platform-hebkit&client_secret={SECRET}")
     );
-    Ok(())
 }
 
 #[tokio::test]

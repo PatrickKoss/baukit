@@ -5,10 +5,6 @@ use std::fmt;
 /// Bind one adapter to a clean owner, parent, or time-bucket scope. Calls to
 /// [`Self::create_row`] must obtain independent database connections when they
 /// overlap.
-#[allow(
-    async_fn_in_trait,
-    reason = "the harness awaits adapters on the test task, so their futures need no Send bound"
-)]
 pub trait PostgresLiveRowCapAdapter {
     /// Product row returned after creation.
     type Row;
@@ -16,16 +12,25 @@ pub trait PostgresLiveRowCapAdapter {
     type Error;
 
     /// Creates one distinct live row in the bound scope.
-    async fn create_row(&self, sequence: usize) -> Result<Self::Row, Self::Error>;
+    fn create_row(
+        &self,
+        sequence: usize,
+    ) -> impl std::future::Future<Output = Result<Self::Row, Self::Error>>;
 
     /// Updates a live row without consuming another slot.
-    async fn update_row(&self, row: &Self::Row) -> Result<(), Self::Error>;
+    fn update_row(
+        &self,
+        row: &Self::Row,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>>;
 
     /// Soft-deletes a row and releases its slot.
-    async fn soft_delete_row(&self, row: &Self::Row) -> Result<(), Self::Error>;
+    fn soft_delete_row(
+        &self,
+        row: &Self::Row,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>>;
 
     /// Counts live rows in the bound scope.
-    async fn live_row_count(&self) -> Result<usize, Self::Error>;
+    fn live_row_count(&self) -> impl std::future::Future<Output = Result<usize, Self::Error>>;
 }
 
 /// Inputs for the PostgreSQL live-row cap race check.

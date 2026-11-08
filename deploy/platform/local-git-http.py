@@ -14,10 +14,10 @@ from urllib.parse import urlsplit
 class GitHandler(BaseHTTPRequestHandler):
     server_version = "baukit-local-git/1"
 
-    def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+    def do_GET(self) -> None:  # noqa: N802 -- BaseHTTPRequestHandler API
         self._serve()
 
-    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+    def do_POST(self) -> None:  # noqa: N802 -- BaseHTTPRequestHandler API
         self._serve()
 
     def _serve(self) -> None:
@@ -27,7 +27,7 @@ class GitHandler(BaseHTTPRequestHandler):
         environment = os.environ.copy()
         environment.update(
             {
-                "GIT_PROJECT_ROOT": str(self.server.git_root),  # type: ignore[attr-defined]
+                "GIT_PROJECT_ROOT": str(self.server.git_root),  # type: ignore[attr-defined]  # HTTPServer has no git_root; main sets it for the handler
                 "GIT_HTTP_EXPORT_ALL": "1",
                 "PATH_INFO": parsed.path,
                 "QUERY_STRING": parsed.query,
@@ -73,7 +73,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, required=True)
     args = parser.parse_args()
     server = ThreadingHTTPServer((args.host, args.port), GitHandler)
-    server.git_root = args.root.resolve()  # type: ignore[attr-defined]
+    server.git_root = args.root.resolve()  # type: ignore[attr-defined]  # HTTPServer has no git_root; main sets it for the handler
     server.serve_forever()
 
 

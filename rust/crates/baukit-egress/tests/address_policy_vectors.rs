@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 //! Runs the shared vectors in `fixtures/egress/address-policy-v1.json`.
 
 use std::{

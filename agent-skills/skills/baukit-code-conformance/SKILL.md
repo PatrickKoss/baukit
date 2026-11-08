@@ -42,8 +42,11 @@ baseline lint to `allow` in the workspace table.
 **file-size.** A Rust file is over 1000 lines or a TS/TSX file over 500. Split it by responsibility (see
 "Splitting a file" below). Tests and generated files are exempt.
 
-**suppressions.** A count of `#[allow]`, `#[expect]`, `eslint-disable` or `ast-grep-ignore` exceeds
-`[suppressions.max]`, or a suppression lacks its reason. Remove the suppression by fixing the code. If the
+**suppressions.** A count of `#[allow]`, `#[expect]`, `eslint-disable`, `ast-grep-ignore`,
+`@ts-expect-error`, `prettier-ignore`, `# noqa`, `# type: ignore`, `# nosec` or `# shellcheck disable=`
+exceeds its `[suppressions.max]` key, or a suppression lacks its reason (forms in `lint/README.md`).
+`@ts-ignore` and bulk suppression (`eslint-suppressions.json`, `eslint --suppress-all`, clippy `-A` or
+`--cap-lints` in a gate, a lint at `allow` in `[lints]` or rustflags) are always findings. Remove the suppression by fixing the code. If the
 count drops, lower the max (see "Lowering the budget").
 
 **patterns.** An ast-grep rule from `lint/ast-grep/rules/` matched. Each rule and its fix:

@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 #![cfg(feature = "keycloak")]
 use baukit_config::Secret;
 use baukit_erasure::{
@@ -45,10 +39,42 @@ async fn reconcile_generated_realm(
     base: &str,
     token: &str,
 ) -> Result<(), Box<dyn Error>> {
+    let directory = tempfile::tempdir()?;
+    let root = generate_fixture(directory.path())?;
+    let realm: Value = serde_json::from_slice(&std::fs::read(root.join("keycloak/realm.json"))?)?;
+    client
+        .post(format!("{base}/admin/realms"))
+        .bearer_auth(token)
+        .json(&realm)
+        .send()
+        .await?
+        .error_for_status()?;
+    delete_backend_client(client, base, token).await?;
+    for _ in 0..2 {
+        run_reconcile(base, &root)?;
+    }
+    let token_response = client
+        .post(format!(
+            "{base}/realms/reconcile-fixture/protocol/openid-connect/token"
+        ))
+        .form(&[
+            ("grant_type", "client_credentials"),
+            ("client_id", "reconcile-fixture-backend"),
+            ("client_secret", backend_client_secret(&realm)?),
+        ])
+        .send()
+        .await?
+        .error_for_status()?;
+    let access: Value = token_response.json().await?;
+    assert!(access["access_token"].as_str().is_some());
+    check_sso_and_refresh(base, &root).await?;
+    Ok(())
+}
+
+fn generate_fixture(directory: &std::path::Path) -> Result<PathBuf, Box<dyn Error>> {
     let repository = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
         .canonicalize()?;
-    let directory = tempfile::tempdir()?;
     let generated = Command::new("cargo")
         .args([
             "run",
@@ -67,7 +93,7 @@ async fn reconcile_generated_realm(
             "--auth",
             "oidc",
             "--dir",
-            directory.path().to_str().ok_or("fixture path")?,
+            directory.to_str().ok_or("fixture path")?,
             "--baukit-path",
             repository.join("rust").to_str().ok_or("Rust path")?,
         ])
@@ -78,15 +104,14 @@ async fn reconcile_generated_realm(
         "{}",
         String::from_utf8_lossy(&generated.stderr)
     );
-    let root = directory.path().join("reconcile-fixture");
-    let realm: Value = serde_json::from_slice(&std::fs::read(root.join("keycloak/realm.json"))?)?;
-    client
-        .post(format!("{base}/admin/realms"))
-        .bearer_auth(token)
-        .json(&realm)
-        .send()
-        .await?
-        .error_for_status()?;
+    Ok(directory.join("reconcile-fixture"))
+}
+
+async fn delete_backend_client(
+    client: &Client,
+    base: &str,
+    token: &str,
+) -> Result<(), Box<dyn Error>> {
     let clients: Vec<Value> = client
         .get(format!(
             "{base}/admin/realms/reconcile-fixture/clients?clientId=reconcile-fixture-backend"
@@ -106,45 +131,33 @@ async fn reconcile_generated_realm(
         .send()
         .await?
         .error_for_status()?;
-    for _ in 0..2 {
-        let reconciled = Command::new("python3")
-            .args(["scripts/reconcile_keycloak.py", "--keycloak-url", base])
-            .current_dir(&root)
-            .env("KC_BOOTSTRAP_ADMIN_PASSWORD", "test-admin-password")
-            .output()?;
-        assert!(
-            reconciled.status.success(),
-            "{}{}",
-            String::from_utf8_lossy(&reconciled.stdout),
-            String::from_utf8_lossy(&reconciled.stderr)
-        );
-    }
-    let token_response = client
-        .post(format!(
-            "{base}/realms/reconcile-fixture/protocol/openid-connect/token"
-        ))
-        .form(&[
-            ("grant_type", "client_credentials"),
-            ("client_id", "reconcile-fixture-backend"),
-            (
-                "client_secret",
-                realm["clients"]
-                    .as_array()
-                    .ok_or("clients")?
-                    .iter()
-                    .find(|value| value["clientId"] == "reconcile-fixture-backend")
-                    .ok_or("backend client")?["secret"]
-                    .as_str()
-                    .ok_or("creation secret")?,
-            ),
-        ])
-        .send()
-        .await?
-        .error_for_status()?;
-    let access: Value = token_response.json().await?;
-    assert!(access["access_token"].as_str().is_some());
-    check_sso_and_refresh(base, &root).await?;
     Ok(())
+}
+
+fn run_reconcile(base: &str, root: &std::path::Path) -> Result<(), Box<dyn Error>> {
+    let reconciled = Command::new("python3")
+        .args(["scripts/reconcile_keycloak.py", "--keycloak-url", base])
+        .current_dir(root)
+        .env("KC_BOOTSTRAP_ADMIN_PASSWORD", "test-admin-password")
+        .output()?;
+    assert!(
+        reconciled.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&reconciled.stdout),
+        String::from_utf8_lossy(&reconciled.stderr)
+    );
+    Ok(())
+}
+
+fn backend_client_secret(realm: &Value) -> Result<&str, Box<dyn Error>> {
+    Ok(realm["clients"]
+        .as_array()
+        .ok_or("clients")?
+        .iter()
+        .find(|value| value["clientId"] == "reconcile-fixture-backend")
+        .ok_or("backend client")?["secret"]
+        .as_str()
+        .ok_or("creation secret")?)
 }
 
 async fn check_sso_and_refresh(base: &str, root: &std::path::Path) -> Result<(), Box<dyn Error>> {
@@ -242,22 +255,7 @@ async fn deletes_user_treats_404_as_success_and_requires_manage_users() -> Resul
             "clients":[{"clientId":"backend", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true}, {"clientId":"unprivileged", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true}],
             "users":[{"username":"service-account-backend", "serviceAccountClientId":"backend", "enabled":true, "clientRoles":{"realm-management":["manage-users"]}}]
         })).send().await?.error_for_status()?;
-    let response = client
-        .post(format!("{base}/admin/realms/erasure/users"))
-        .bearer_auth(&token)
-        .json(&json!({"username":"erase-me", "enabled":true}))
-        .send()
-        .await?
-        .error_for_status()?;
-    let subject = response
-        .headers()
-        .get("location")
-        .ok_or("missing user location")?
-        .to_str()?
-        .rsplit('/')
-        .next()
-        .ok_or("missing user id")?
-        .to_owned();
+    let subject = create_user(&client, &base, &token).await?;
     let config = KeycloakDeletionConfig {
         base_url: base.clone(),
         realm: "erasure".into(),
@@ -272,12 +270,7 @@ async fn deletes_user_treats_404_as_success_and_requires_manage_users() -> Resul
         Err(IdentityDeletionError::Permanent)
     );
     assert_eq!(
-        client
-            .get(format!("{base}/admin/realms/erasure/users/{subject}"))
-            .bearer_auth(&token)
-            .send()
-            .await?
-            .status(),
+        user_status(&client, &base, &token, &subject).await?,
         StatusCode::OK
     );
     let adapter = KeycloakAccountDeleter::new(KeycloakDeletionConfig {
@@ -286,14 +279,42 @@ async fn deletes_user_treats_404_as_success_and_requires_manage_users() -> Resul
     })?;
     adapter.delete_account(&subject).await?;
     assert_eq!(
-        client
-            .get(format!("{base}/admin/realms/erasure/users/{subject}"))
-            .bearer_auth(&token)
-            .send()
-            .await?
-            .status(),
+        user_status(&client, &base, &token, &subject).await?,
         StatusCode::NOT_FOUND
     );
     adapter.delete_account(&subject).await?;
     Ok(())
+}
+
+async fn create_user(client: &Client, base: &str, token: &str) -> Result<String, Box<dyn Error>> {
+    let response = client
+        .post(format!("{base}/admin/realms/erasure/users"))
+        .bearer_auth(token)
+        .json(&json!({"username":"erase-me", "enabled":true}))
+        .send()
+        .await?
+        .error_for_status()?;
+    Ok(response
+        .headers()
+        .get("location")
+        .ok_or("missing user location")?
+        .to_str()?
+        .rsplit('/')
+        .next()
+        .ok_or("missing user id")?
+        .to_owned())
+}
+
+async fn user_status(
+    client: &Client,
+    base: &str,
+    token: &str,
+    subject: &str,
+) -> Result<StatusCode, Box<dyn Error>> {
+    Ok(client
+        .get(format!("{base}/admin/realms/erasure/users/{subject}"))
+        .bearer_auth(token)
+        .send()
+        .await?
+        .status())
 }

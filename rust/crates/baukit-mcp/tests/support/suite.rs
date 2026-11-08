@@ -168,6 +168,43 @@ async fn suite_tool_rejects_unmapped_uuid_subjects_without_reading_links()
     Ok(())
 }
 
+async fn assert_ungranted_api_tokens_are_denied(
+    app: &Router,
+    tokens: &baukit_auth::ApiTokenService,
+    token_owner: Uuid,
+    message: &Value,
+) -> Result<(), Box<dyn Error>> {
+    use baukit_auth::NewApiToken;
+    for grants in [vec![], vec!["items:read"]] {
+        let denied = tokens
+            .issue(token_owner, NewApiToken::new("Denied").with_grants(grants))
+            .await?;
+        let (status, _, body) = send(app, Some(&denied.secret), list()).await?;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["result"]["tools"], json!([]));
+        let (status, headers, body) = send(app, Some(&denied.secret), message.clone()).await?;
+        assert_insufficient_scope(status, &headers, &body, "scope=\"links:read\"")?;
+    }
+    Ok(())
+}
+
+fn assert_resolved_api_token_principal(
+    owners: &Owners,
+    issued: &baukit_auth::IssuedApiToken,
+) -> Result<(), Box<dyn Error>> {
+    let resolved = owners.principals.lock().expect("principals").clone();
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0].subject(), API_TOKEN_OWNER);
+    assert_eq!(resolved[0].issuer(), None);
+    assert_eq!(resolved[0].client_id(), None);
+    assert_eq!(resolved[0].scopes(), &issued.token.grants);
+    let identity = resolved[0].verified_identity();
+    assert_eq!(identity.api_token().ok_or("API token")?.id, issued.token.id);
+    assert!(identity.scopes().is_empty());
+    assert_eq!(identity.authenticated_at(), Some(issued.token.created_at));
+    Ok(())
+}
+
 #[tokio::test]
 async fn suite_tool_uses_api_token_grants_and_resolves_the_product_owner()
 -> Result<(), Box<dyn Error>> {
@@ -197,22 +234,7 @@ async fn suite_tool_uses_api_token_grants_and_resolves_the_product_owner()
     .await?;
     let message = json!({"jsonrpc":"2.0","id":20,"method":"tools/call",
         "params":{"name":"list_suite_links","arguments":{}}});
-    for grants in [vec![], vec!["items:read"]] {
-        let denied = tokens
-            .issue(token_owner, NewApiToken::new("Denied").with_grants(grants))
-            .await?;
-        let (status, _, body) = send(&app, Some(&denied.secret), list()).await?;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body["result"]["tools"], json!([]));
-        let (status, headers, body) = send(&app, Some(&denied.secret), message.clone()).await?;
-        assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(body, json!({"error":"insufficient_scope"}));
-        assert!(
-            headers[header::WWW_AUTHENTICATE]
-                .to_str()?
-                .contains("scope=\"links:read\"")
-        );
-    }
+    assert_ungranted_api_tokens_are_denied(&app, &tokens, token_owner, &message).await?;
     assert!(links.owners.lock().expect("owners").is_empty());
     assert!(owners.principals.lock().expect("principals").is_empty());
 
@@ -235,16 +257,7 @@ async fn suite_tool_uses_api_token_grants_and_resolves_the_product_owner()
     assert_eq!(returned.len(), 1);
     assert_eq!(returned[0]["id"], id.to_string());
     assert_eq!(*links.owners.lock().expect("owners"), [owner]);
-    let resolved = owners.principals.lock().expect("principals").clone();
-    assert_eq!(resolved.len(), 1);
-    assert_eq!(resolved[0].subject(), API_TOKEN_OWNER);
-    assert_eq!(resolved[0].issuer(), None);
-    assert_eq!(resolved[0].client_id(), None);
-    assert_eq!(resolved[0].scopes(), &issued.token.grants);
-    let identity = resolved[0].verified_identity();
-    assert_eq!(identity.api_token().ok_or("API token")?.id, issued.token.id);
-    assert!(identity.scopes().is_empty());
-    assert_eq!(identity.authenticated_at(), Some(issued.token.created_at));
+    assert_resolved_api_token_principal(&owners, &issued)?;
 
     let unmapped = tokens
         .issue(
@@ -328,6 +341,53 @@ async fn suite_tool_preserves_safe_resolver_errors_and_cancels_pending_lookups()
     Ok(())
 }
 
+fn assert_single_link_output(output: &Value, id: Uuid) -> Result<(), Box<dyn Error>> {
+    let expected = json!({"links":[{
+        "id":id,"peerApp":"beta","sends":["alpha.activity.completed"],"receives":["beta.activity.completed"],
+        "status":"active","createdAt":"2026-10-06T09:00:00Z","updatedAt":"2026-10-06T09:00:00Z"
+    }],"nextCursor":null});
+    assert_eq!(output, &expected);
+    jsonschema::validator_for(
+        SuiteLinksTool::definition()
+            .output_schema
+            .as_ref()
+            .ok_or("schema")?,
+    )?
+    .validate(&expected)
+    .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+async fn assert_other_subject_sees_only_its_link(
+    app: &Router,
+    issuer: &MockOidcServer,
+    config: &McpConfig,
+    other_subject: &str,
+) -> Result<(), Box<dyn Error>> {
+    let other_token = issuer.mint(
+        &issuer
+            .claims(
+                other_subject,
+                &config.resource_url,
+                Duration::from_secs(300),
+            )?
+            .claim("scope", "links:read"),
+    )?;
+    let (_, _, body) = send(app, Some(&other_token), json!({"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"list_suite_links","arguments":{}}})).await?;
+    assert_eq!(
+        body["result"]["structuredContent"]["links"]
+            .as_array()
+            .ok_or("links")?
+            .len(),
+        1
+    );
+    assert_eq!(
+        body["result"]["structuredContent"]["links"][0]["id"],
+        Uuid::from_u128(4).to_string()
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn suite_tool_enforces_mcp_scope_and_uses_only_the_verified_owner()
 -> Result<(), Box<dyn Error>> {
@@ -362,13 +422,7 @@ async fn suite_tool_enforces_mcp_scope_and_uses_only_the_verified_owner()
     let message = json!({"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"list_suite_links","arguments":{}}});
     let denied = issuer.mint(&claims.clone().claim("scope", "items:read"))?;
     let (status, headers, body) = send(&app, Some(&denied), message.clone()).await?;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body, json!({"error":"insufficient_scope"}));
-    assert!(
-        headers[header::WWW_AUTHENTICATE]
-            .to_str()?
-            .contains("scope=\"links:read\"")
-    );
+    assert_insufficient_scope(status, &headers, &body, "scope=\"links:read\"")?;
     assert!(links.owners.lock().expect("owners").is_empty());
     assert!(owners.principals.lock().expect("principals").is_empty());
     let (_, _, listed) = send(&app, Some(&denied), list()).await?;
@@ -389,46 +443,13 @@ async fn suite_tool_enforces_mcp_scope_and_uses_only_the_verified_owner()
     let token = issuer.mint(&claims.claim("scope", "links:read"))?;
     let (status, _, body) = send(&app, Some(&token), message).await?;
     assert_eq!(status, StatusCode::OK);
-    let expected = json!({"links":[{
-        "id":id,"peerApp":"beta","sends":["alpha.activity.completed"],"receives":["beta.activity.completed"],
-        "status":"active","createdAt":"2026-10-06T09:00:00Z","updatedAt":"2026-10-06T09:00:00Z"
-    }],"nextCursor":null});
-    assert_eq!(body["result"]["structuredContent"], expected);
-    jsonschema::validator_for(
-        SuiteLinksTool::definition()
-            .output_schema
-            .as_ref()
-            .ok_or("schema")?,
-    )?
-    .validate(&expected)
-    .map_err(|error| error.to_string())?;
+    assert_single_link_output(&body["result"]["structuredContent"], id)?;
     assert_eq!(*links.owners.lock().expect("owners"), [owner]);
     let resolved = owners.principals.lock().expect("principals").clone();
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].subject(), subject);
     assert_eq!(resolved[0].issuer(), Some(issuer.issuer()));
-    let other_token = issuer.mint(
-        &issuer
-            .claims(
-                &other_subject,
-                &config.resource_url,
-                Duration::from_secs(300),
-            )?
-            .claim("scope", "links:read"),
-    )?;
-    let (_, _, body) = send(&app, Some(&other_token), json!({"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"list_suite_links","arguments":{}}})).await?;
-    assert_eq!(
-        body["result"]["structuredContent"]["links"]
-            .as_array()
-            .ok_or("links")?
-            .len(),
-        1
-    );
-    assert_eq!(
-        body["result"]["structuredContent"]["links"][0]["id"],
-        Uuid::from_u128(4).to_string()
-    );
-    Ok(())
+    assert_other_subject_sees_only_its_link(&app, &issuer, &config, &other_subject).await
 }
 
 #[tokio::test]
@@ -465,6 +486,26 @@ async fn suite_tool_pages_without_duplicates_and_rejects_account_arguments()
     assert_eq!(page["links"].as_array().ok_or("links")?.len(), 1);
     assert_eq!(page["links"][0]["id"], Uuid::from_u128(101).to_string());
     assert!(page["nextCursor"].is_null());
+    assert_tool_call_rejections(&tool, &principal).await;
+    assert_eq!(source.owners.lock().expect("owners").len(), 2);
+    let empty = SuiteLinksTool::new(reader(Vec::new()), owners);
+    assert_eq!(
+        empty
+            .call(
+                &principal,
+                "list_suite_links",
+                json!({}),
+                Default::default()
+            )
+            .await?,
+        json!({"links":[],"nextCursor":null})
+    );
+    let schema = tool_schema(&tool.tools())?;
+    assert!(schema.to_string().contains("list_suite_links"));
+    Ok(())
+}
+
+async fn assert_tool_call_rejections(tool: &SuiteLinksTool, principal: &Principal) {
     for args in [
         json!({"owner":Uuid::nil()}),
         json!({"after":"invalid"}),
@@ -473,7 +514,7 @@ async fn suite_tool_pages_without_duplicates_and_rejects_account_arguments()
         json!([null]),
     ] {
         assert_eq!(
-            tool.call(&principal, "list_suite_links", args, Default::default())
+            tool.call(principal, "list_suite_links", args, Default::default())
                 .await
                 .expect_err("arguments")
                 .code,
@@ -493,7 +534,7 @@ async fn suite_tool_pages_without_duplicates_and_rejects_account_arguments()
         "unauthenticated"
     );
     assert_eq!(
-        tool.call(&principal, "other_tool", json!({}), Default::default())
+        tool.call(principal, "other_tool", json!({}), Default::default())
             .await
             .expect_err("tool")
             .code,
@@ -502,28 +543,12 @@ async fn suite_tool_pages_without_duplicates_and_rejects_account_arguments()
     let cancelled = CancellationToken::new();
     cancelled.cancel();
     assert_eq!(
-        tool.call(&principal, "list_suite_links", json!({}), cancelled)
+        tool.call(principal, "list_suite_links", json!({}), cancelled)
             .await
             .expect_err("cancelled")
             .code,
         "cancelled"
     );
-    assert_eq!(source.owners.lock().expect("owners").len(), 2);
-    let empty = SuiteLinksTool::new(reader(Vec::new()), owners);
-    assert_eq!(
-        empty
-            .call(
-                &principal,
-                "list_suite_links",
-                json!({}),
-                Default::default()
-            )
-            .await?,
-        json!({"links":[],"nextCursor":null})
-    );
-    let schema = tool_schema(&tool.tools())?;
-    assert!(schema.to_string().contains("list_suite_links"));
-    Ok(())
 }
 
 #[tokio::test]

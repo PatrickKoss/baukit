@@ -126,10 +126,6 @@ pub async fn assert_limit_boundaries<Payload, ValidationError, Build, Validate, 
 /// Product adapter exercised by the live-row capacity checks.
 ///
 /// Bind an adapter instance to the owner or parent whose rows share a cap.
-#[allow(
-    async_fn_in_trait,
-    reason = "the harness awaits adapters on the test task, so their futures need no Send bound"
-)]
 pub trait LiveRowLimitAdapter {
     /// Product row returned after creation.
     type Row;
@@ -137,13 +133,22 @@ pub trait LiveRowLimitAdapter {
     type Error;
 
     /// Creates one distinct live row for the bound owner or parent.
-    async fn create_row(&mut self, sequence: usize) -> Result<Self::Row, Self::Error>;
+    fn create_row(
+        &mut self,
+        sequence: usize,
+    ) -> impl std::future::Future<Output = Result<Self::Row, Self::Error>>;
 
     /// Updates a row without increasing the number of live rows.
-    async fn update_row(&mut self, row: &Self::Row) -> Result<(), Self::Error>;
+    fn update_row(
+        &mut self,
+        row: &Self::Row,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>>;
 
     /// Soft-deletes a row so it no longer counts toward capacity.
-    async fn soft_delete_row(&mut self, row: &Self::Row) -> Result<(), Self::Error>;
+    fn soft_delete_row(
+        &mut self,
+        row: &Self::Row,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>>;
 }
 
 /// Fills a live-row cap, rejects one extra row, and checks that an update succeeds.

@@ -70,10 +70,6 @@ impl PullPause {
 /// Bind the adapter to a database with no other tombstones. The check purges
 /// every table the adapter covers, so it must not share the database with
 /// data another test needs.
-#[allow(
-    async_fn_in_trait,
-    reason = "the harness awaits adapters on the test task, so their futures need no Send bound"
-)]
 pub trait PurgeHorizonAdapter {
     /// Product owner key.
     type Owner: Clone;
@@ -81,41 +77,50 @@ pub trait PurgeHorizonAdapter {
     type Error;
 
     /// Creates an owner with a revision counter and no rows.
-    async fn create_owner(&self) -> Result<Self::Owner, Self::Error>;
+    fn create_owner(&self) -> impl std::future::Future<Output = Result<Self::Owner, Self::Error>>;
 
     /// Writes one live syncable row and returns its revision.
-    async fn write_live_row(&self, owner: &Self::Owner) -> Result<i64, Self::Error>;
+    fn write_live_row(
+        &self,
+        owner: &Self::Owner,
+    ) -> impl std::future::Future<Output = Result<i64, Self::Error>>;
 
     /// Writes one row, tombstones it with `deleted_at`, and returns the
     /// tombstone's revision.
-    async fn write_tombstone(
+    fn write_tombstone(
         &self,
         owner: &Self::Owner,
         deleted_at: DateTime<Utc>,
-    ) -> Result<i64, Self::Error>;
+    ) -> impl std::future::Future<Output = Result<i64, Self::Error>>;
 
     /// Runs one purge transaction that removes at most `limit` tombstones
     /// deleted before `cutoff`, and returns how many it removed.
-    async fn purge_batch(
+    fn purge_batch(
         &self,
         cutoff: DateTime<Utc>,
         limit: NonZeroU32,
-    ) -> Result<u64, Self::Error>;
+    ) -> impl std::future::Future<Output = Result<u64, Self::Error>>;
 
     /// Runs the product pull for `cursor`, calling `pause.reached()` after the
     /// horizon check and before reading rows.
-    async fn pull(
+    fn pull(
         &self,
         owner: &Self::Owner,
         cursor: i64,
         pause: PullPause,
-    ) -> Result<PurgeHorizonPull, Self::Error>;
+    ) -> impl std::future::Future<Output = Result<PurgeHorizonPull, Self::Error>>;
 
     /// Reads the owner's stored purge horizon. `None` means no horizon row.
-    async fn purge_horizon(&self, owner: &Self::Owner) -> Result<Option<i64>, Self::Error>;
+    fn purge_horizon(
+        &self,
+        owner: &Self::Owner,
+    ) -> impl std::future::Future<Output = Result<Option<i64>, Self::Error>>;
 
     /// Runs the product's owner erasure.
-    async fn erase_owner(&self, owner: &Self::Owner) -> Result<(), Self::Error>;
+    fn erase_owner(
+        &self,
+        owner: &Self::Owner,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>>;
 }
 
 /// Violations found by the purge-horizon conformance check.

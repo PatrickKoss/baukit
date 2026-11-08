@@ -231,46 +231,13 @@ impl Fixture {
     ) -> Result<Self, Box<dyn Error>> {
         let container = baukit_test::start_postgres().await?;
         let pool = PgPool::connect(container.connection_url()).await?;
-        for sql in [
-            baukit_jobs::POSTGRES_MIGRATION_SQL,
-            baukit_jobs::POSTGRES_MIGRATION_0002_SQL,
-            baukit_jobs::POSTGRES_MIGRATION_0003_SQL,
-            baukit_jobs::POSTGRES_MIGRATION_0004_SQL,
-            baukit_erasure::POSTGRES_MIGRATION_SQL,
-            baukit_erasure::POSTGRES_REONBOARDING_MIGRATION_SQL,
-            POSTGRES_MIGRATION_SQL,
-            POSTGRES_EXPORTS_MIGRATION_SQL,
-            "CREATE TABLE product_subjects (id TEXT PRIMARY KEY, authentication_subject TEXT, lookup_hash BYTEA NOT NULL); CREATE TABLE legal_records (subject_id TEXT NOT NULL); INSERT INTO legal_records VALUES ('internal-restricted');",
-        ] {
-            sqlx::raw_sql(sql).execute(&pool).await?;
-        }
-        for (id, subject, identifier) in [
-            ("internal-erased", "auth-erased", "erase@example.invalid"),
-            ("internal-other", "auth-other", "other@example.invalid"),
-            (
-                "internal-restricted",
-                "auth-restricted",
-                "restricted@example.invalid",
-            ),
-        ] {
-            sqlx::query("INSERT INTO product_subjects (id, authentication_subject, lookup_hash) VALUES ($1, $2, $3)")
-                .bind(id).bind(subject).bind(lookup_hash(identifier)).execute(&pool).await?;
-        }
+        seed_database(&pool).await?;
         let erasure_store = PostgresErasureStore::new(
             pool.clone(),
             Secret::new("fixture-fence-key-with-at-least-32-bytes".into()),
         )?;
         let deleter = Arc::new(FakeIdentityAccountDeleter::default());
-        let retention = if delete_identity {
-            IdentityRetention::Delete {
-                deleter: deleter.clone(),
-                provider_id: "fixture".into(),
-                inline_timeout: Duration::from_secs(1),
-                max_attempts: 2,
-            }
-        } else {
-            IdentityRetention::Retain
-        };
+        let retention = identity_retention(delete_identity, &deleter);
         let erasure = ErasureService::new(erasure_store, retention)?;
         let product = Arc::new(Product::default());
         let mut config = DataSubjectConfig::new(
@@ -297,33 +264,7 @@ impl Fixture {
         configure(&mut config);
         let store = PostgresDataSubjectStore::new(pool.clone(), config)?;
         let issuer = MockOidcServer::start().await?;
-        let verifier = OidcVerifier::from_jwks_uri(
-            OidcConfig::new(issuer.issuer(), "fixture")?.with_principal_claims(
-                PrincipalClaimMapping::default().client_id_claim("client_id"),
-            ),
-            issuer.jwks_url(),
-        )?;
-        let (_, tokens) = InMemoryApiTokenStore::with_service();
-        let api_token = tokens
-            .issue(
-                Uuid::now_v7(),
-                NewApiToken::new("fixture")
-                    .with_grants(["data-subject.erase", "data-subject.export"]),
-            )
-            .await?
-            .secret;
-        let auth = AuthState::new(ApiTokenVerifier::new(tokens, Arc::new(verifier)));
-        let session_routes = Router::new()
-            .route("/session", get(session))
-            .with_state(erasure.clone());
-        let router = authenticated_routes(store.clone(), product.clone())
-            .merge(session_routes)
-            .layer(middleware::from_fn_with_state(
-                auth.clone(),
-                establish_principal,
-            ))
-            .merge(discovery_routes(store.clone()));
-        let router = baukit_http::layers(router, baukit_http::HttpOptions::default());
+        let (router, api_token) = fixture_router(&issuer, &store, &product, &erasure).await?;
         Ok(Self {
             _container: container,
             pool,
@@ -586,6 +527,85 @@ impl Fixture {
     }
 }
 
+async fn seed_database(pool: &PgPool) -> Result<(), Box<dyn Error>> {
+    for sql in [
+        baukit_jobs::POSTGRES_MIGRATION_SQL,
+        baukit_jobs::POSTGRES_MIGRATION_0002_SQL,
+        baukit_jobs::POSTGRES_MIGRATION_0003_SQL,
+        baukit_jobs::POSTGRES_MIGRATION_0004_SQL,
+        baukit_erasure::POSTGRES_MIGRATION_SQL,
+        baukit_erasure::POSTGRES_REONBOARDING_MIGRATION_SQL,
+        POSTGRES_MIGRATION_SQL,
+        POSTGRES_EXPORTS_MIGRATION_SQL,
+        "CREATE TABLE product_subjects (id TEXT PRIMARY KEY, authentication_subject TEXT, lookup_hash BYTEA NOT NULL); CREATE TABLE legal_records (subject_id TEXT NOT NULL); INSERT INTO legal_records VALUES ('internal-restricted');",
+    ] {
+        sqlx::raw_sql(sql).execute(pool).await?;
+    }
+    for (id, subject, identifier) in [
+        ("internal-erased", "auth-erased", "erase@example.invalid"),
+        ("internal-other", "auth-other", "other@example.invalid"),
+        (
+            "internal-restricted",
+            "auth-restricted",
+            "restricted@example.invalid",
+        ),
+    ] {
+        sqlx::query("INSERT INTO product_subjects (id, authentication_subject, lookup_hash) VALUES ($1, $2, $3)")
+            .bind(id).bind(subject).bind(lookup_hash(identifier)).execute(pool).await?;
+    }
+    Ok(())
+}
+
+fn identity_retention(
+    delete_identity: bool,
+    deleter: &Arc<FakeIdentityAccountDeleter>,
+) -> IdentityRetention {
+    if delete_identity {
+        IdentityRetention::Delete {
+            deleter: deleter.clone(),
+            provider_id: "fixture".into(),
+            inline_timeout: Duration::from_secs(1),
+            max_attempts: 2,
+        }
+    } else {
+        IdentityRetention::Retain
+    }
+}
+
+async fn fixture_router(
+    issuer: &MockOidcServer,
+    store: &PostgresDataSubjectStore,
+    product: &Arc<Product>,
+    erasure: &ErasureService,
+) -> Result<(Router, String), Box<dyn Error>> {
+    let verifier = OidcVerifier::from_jwks_uri(
+        OidcConfig::new(issuer.issuer(), "fixture")?
+            .with_principal_claims(PrincipalClaimMapping::default().client_id_claim("client_id")),
+        issuer.jwks_url(),
+    )?;
+    let (_, tokens) = InMemoryApiTokenStore::with_service();
+    let api_token = tokens
+        .issue(
+            Uuid::now_v7(),
+            NewApiToken::new("fixture").with_grants(["data-subject.erase", "data-subject.export"]),
+        )
+        .await?
+        .secret;
+    let auth = AuthState::new(ApiTokenVerifier::new(tokens, Arc::new(verifier)));
+    let session_routes = Router::new()
+        .route("/session", get(session))
+        .with_state(erasure.clone());
+    let router = authenticated_routes(store.clone(), product.clone())
+        .merge(session_routes)
+        .layer(middleware::from_fn_with_state(
+            auth.clone(),
+            establish_principal,
+        ))
+        .merge(discovery_routes(store.clone()));
+    let router = baukit_http::layers(router, baukit_http::HttpOptions::default());
+    Ok((router, api_token))
+}
+
 async fn session(
     State(erasure): State<ErasureService>,
     axum::Extension(principal): axum::Extension<Principal>,
@@ -693,4 +713,41 @@ impl baukit_test::DataSubjectConformanceAdapter for Fixture {
             },
         ).await.map_err(|_| std::io::Error::other("fixture worker failed"))
     }
+}
+
+pub fn as_export(mut request: Request<Body>) -> Request<Body> {
+    *request.uri_mut() = request
+        .uri()
+        .to_string()
+        .replace("/erasures", "/exports")
+        .parse()
+        .expect("export URI");
+    request
+}
+
+pub fn part_request(
+    f: &Fixture,
+    token: Option<&str>,
+    id: Uuid,
+    number: &str,
+) -> Result<Request<Body>, Box<dyn Error>> {
+    let mut request = as_export(f.get_request(token, id)?);
+    *request.uri_mut() = format!("/api/v1/data-subject/exports/{id}/parts/{number}").parse()?;
+    Ok(request)
+}
+
+pub async fn post_export(
+    f: &Fixture,
+    token: &str,
+    key: &str,
+    inputs: &[&str],
+) -> Result<(StatusCode, OperationResource), Box<dyn Error>> {
+    let (status, _, body) = f
+        .send(as_export(f.post_request(
+            Some(token),
+            &[key],
+            &request_body(inputs),
+        )?))
+        .await?;
+    Ok((status, serde_json::from_value(body)?))
 }

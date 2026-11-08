@@ -143,45 +143,50 @@ mod tests {
         name: String,
     }
 
-    #[utoipa::path(
-        put,
-        path = "/items/{id}",
-        params(
-            ("id" = String, Path, description = "Item id"),
-            ("if-match" = Option<String>, Header, description = "Hand-written")
-        ),
-        responses(
-            (status = 200, description = "Updated", body = Item),
-            (status = 400, description = "Invalid item", body = ErrorEnvelope),
-            (status = 404, description = "Missing", body = ErrorEnvelope)
-        )
+    #[expect(
+        dead_code,
+        reason = "OpenAPI path stubs: only their annotations are read, by the derived ApiDoc"
     )]
-    #[allow(dead_code, reason = "OpenAPI path stub: only its annotation is used")]
-    fn update_item() {}
+    mod stubs {
+        use super::{ErrorEnvelope, Item};
 
-    #[utoipa::path(
-        patch,
-        path = "/settings",
-        responses((status = 200, description = "Updated", body = Item))
-    )]
-    #[allow(dead_code, reason = "OpenAPI path stub: only its annotation is used")]
-    fn patch_settings() {}
+        #[utoipa::path(
+            put,
+            path = "/items/{id}",
+            params(
+                ("id" = String, Path, description = "Item id"),
+                ("if-match" = Option<String>, Header, description = "Hand-written")
+            ),
+            responses(
+                (status = 200, description = "Updated", body = Item),
+                (status = 400, description = "Invalid item", body = ErrorEnvelope),
+                (status = 404, description = "Missing", body = ErrorEnvelope)
+            )
+        )]
+        fn update_item() {}
 
-    #[utoipa::path(
-        get,
-        path = "/items/{id}",
-        params(("id" = String, Path, description = "Item id")),
-        responses(
-            (status = 200, description = "Found", body = Item),
-            (status = 404, description = "Missing", body = ErrorEnvelope)
-        )
-    )]
-    #[allow(dead_code, reason = "OpenAPI path stub: only its annotation is used")]
-    fn get_item() {}
+        #[utoipa::path(
+            patch,
+            path = "/settings",
+            responses((status = 200, description = "Updated", body = Item))
+        )]
+        fn patch_settings() {}
+
+        #[utoipa::path(
+            get,
+            path = "/items/{id}",
+            params(("id" = String, Path, description = "Item id")),
+            responses(
+                (status = 200, description = "Found", body = Item),
+                (status = 404, description = "Missing", body = ErrorEnvelope)
+            )
+        )]
+        fn get_item() {}
+    }
 
     #[derive(utoipa::OpenApi)]
     #[openapi(
-        paths(update_item, patch_settings, get_item),
+        paths(stubs::update_item, stubs::patch_settings, stubs::get_item),
         components(schemas(ErrorEnvelope, Item))
     )]
     struct ApiDoc;

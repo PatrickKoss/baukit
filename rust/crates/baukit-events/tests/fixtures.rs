@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 use baukit_events::{
     EVENT_SCHEMA_VERSION, EventEnvelope, EventValidationCode, MAX_EVENT_AGE_SECONDS,
     MAX_EVENT_ID_CHARACTERS, MAX_EVENT_PAYLOAD_KEYS, MAX_EVENT_TYPE_SEGMENT_CHARACTERS,

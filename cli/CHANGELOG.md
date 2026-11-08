@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `baukit check suppressions` rejects bulk suppression: an `eslint-suppressions.json` file, `eslint --suppress-all`, `--suppress-rule`, `--prune-suppressions` or `--suppressions-location` in a `package.json`, clippy `-A`/`--allow`/`--cap-lints` in gate scripts (`*.sh`, `*.yml`, `Makefile`, `justfile`), a lint set to `allow` in a Cargo `[lints]` or `[workspace.lints]` table, and `-A`/`--cap-lints` in `.cargo/config.toml` rustflags.
+- It also budgets and requires reasons for `@ts-expect-error` (`-- reason`), `prettier-ignore` (a comment on the line above), Python `# noqa: CODE -- reason`, `# type: ignore[code]  # reason` and `# nosec -- reason`, and `# shellcheck disable=` (`# reason` after it or a comment above). `@ts-ignore` is always a finding. Each form has its own `[suppressions.max]` key, and generated products start every key at 0.
+
 ## [0.19.1] - 2026-11-08
 
 ## [0.19.0] - 2026-11-07

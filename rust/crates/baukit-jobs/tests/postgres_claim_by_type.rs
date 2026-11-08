@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 use std::{
     collections::HashSet,
     error::Error,
@@ -53,83 +47,100 @@ async fn cancelled_claim_finishes_and_recovers_without_poisoning_the_pool()
         ClaimCancellation::ShutdownRunner,
         ClaimCancellation::AbortStore,
     ] {
-        let job = store.enqueue(NewJob::new(ALPHA, json!({}), 3)).await?.job;
-        let mut lock = pool.begin().await?;
-        sqlx::query("LOCK TABLE job_outbox IN SHARE MODE")
-            .execute(&mut *lock)
-            .await?;
-        let shutdown = ShutdownToken::new(Duration::from_secs(5));
-        let worker = runner(
-            &store,
-            Arc::new(BlockingHandler),
-            "cancelled-worker",
-            "cancelled",
-        )?;
-        let task = match cancellation {
-            ClaimCancellation::AbortStore => {
-                let store = Arc::clone(&store);
-                tokio::spawn(async move {
-                    store
-                        .claim(
-                            "cancelled-worker",
-                            &[ALPHA],
-                            Utc::now(),
-                            Duration::from_secs(30),
-                        )
-                        .await
-                        .map(|_| ())
-                        .map_err(Into::into)
-                })
-            }
-            _ => tokio::spawn(worker.run(shutdown.clone())),
-        };
-        wait_until(|| async {
-            sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE 'UPDATE job_outbox SET status%')")
-                .fetch_one(&pool).await.expect("claim lock probe")
-        }).await;
-        if matches!(cancellation, ClaimCancellation::ShutdownRunner) {
-            shutdown.trigger();
-            task.await??;
-        } else {
-            task.abort();
-            assert!(task.await.expect_err("caller aborted").is_cancelled());
-        }
-        lock.commit().await?;
-        wait_until(|| async {
-            status_and_attempts(&pool, job.id)
-                .await
-                .expect("committed claim probe")
-                .0
-                == "running"
-        })
-        .await;
-        assert_eq!(
-            sqlx::query_scalar::<_, i32>("SELECT 42")
-                .fetch_one(&worker_pool)
-                .await?,
-            42
-        );
-        let recovery_time = Utc::now() + TimeDelta::minutes(2);
-        let recovered = store
-            .claim(
-                "recovery-worker",
-                &[ALPHA],
-                recovery_time,
-                Duration::from_secs(30),
-            )
-            .await?
-            .expect("abandoned claim recovers after lease expiry");
-        assert_eq!(recovered.id, job.id);
-        assert_eq!(recovered.attempts, 2);
-        assert!(
-            store
-                .complete(job.id, "recovery-worker", recovery_time)
-                .await?
-        );
+        cancel_claim_and_recover(&pool, &worker_pool, &store, cancellation).await?;
     }
     worker_pool.close().await;
     pool.close().await;
     drop(fixture);
+    Ok(())
+}
+
+async fn cancel_claim_and_recover(
+    pool: &PgPool,
+    worker_pool: &PgPool,
+    store: &Arc<PostgresJobStore>,
+    cancellation: ClaimCancellation,
+) -> Result<(), Box<dyn Error>> {
+    let job = store.enqueue(NewJob::new(ALPHA, json!({}), 3)).await?.job;
+    let mut lock = pool.begin().await?;
+    sqlx::query("LOCK TABLE job_outbox IN SHARE MODE")
+        .execute(&mut *lock)
+        .await?;
+    let shutdown = ShutdownToken::new(Duration::from_secs(5));
+    let worker = runner(
+        store,
+        Arc::new(BlockingHandler),
+        "cancelled-worker",
+        "cancelled",
+    )?;
+    let task = match cancellation {
+        ClaimCancellation::AbortStore => {
+            let store = Arc::clone(store);
+            tokio::spawn(async move {
+                store
+                    .claim(
+                        "cancelled-worker",
+                        &[ALPHA],
+                        Utc::now(),
+                        Duration::from_secs(30),
+                    )
+                    .await
+                    .map(|_| ())
+                    .map_err(Into::into)
+            })
+        }
+        _ => tokio::spawn(worker.run(shutdown.clone())),
+    };
+    wait_until(|| async {
+            sqlx::query_scalar::<_, bool>("SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE 'UPDATE job_outbox SET status%')")
+                .fetch_one(pool).await.expect("claim lock probe")
+        }).await;
+    if matches!(cancellation, ClaimCancellation::ShutdownRunner) {
+        shutdown.trigger();
+        task.await??;
+    } else {
+        task.abort();
+        assert!(task.await.expect_err("caller aborted").is_cancelled());
+    }
+    lock.commit().await?;
+    wait_until(|| async {
+        status_and_attempts(pool, job.id)
+            .await
+            .expect("committed claim probe")
+            .0
+            == "running"
+    })
+    .await;
+    assert_eq!(
+        sqlx::query_scalar::<_, i32>("SELECT 42")
+            .fetch_one(worker_pool)
+            .await?,
+        42
+    );
+    recover_abandoned_claim(store, job.id).await
+}
+
+async fn recover_abandoned_claim(
+    store: &PostgresJobStore,
+    job_id: Uuid,
+) -> Result<(), Box<dyn Error>> {
+    let recovery_time = Utc::now() + TimeDelta::minutes(2);
+    let recovered = store
+        .claim(
+            "recovery-worker",
+            &[ALPHA],
+            recovery_time,
+            Duration::from_secs(30),
+        )
+        .await?
+        .expect("abandoned claim recovers after lease expiry");
+    assert_eq!(recovered.id, job_id);
+    assert_eq!(recovered.attempts, 2);
+    assert!(
+        store
+            .complete(job_id, "recovery-worker", recovery_time)
+            .await?
+    );
     Ok(())
 }
 

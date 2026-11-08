@@ -38,19 +38,19 @@ describe('typed catalog segments', () => {
     };
     expect(valid.title).toBe('Konto');
 
-    // @ts-expect-error The reference locale requires devices.
+    // @ts-expect-error -- The reference locale requires devices.
     const missingKey: LocalizedCatalogSegment<typeof english> = {
       title: 'Konto',
     };
     const wrongShape: LocalizedCatalogSegment<typeof english> = {
       title: 'Konto',
-      // @ts-expect-error A plural reference message requires one and other.
+      // @ts-expect-error -- A plural reference message requires one and other.
       devices: 'Geräte',
     };
     const extraKey: LocalizedCatalogSegment<typeof english> = {
       title: 'Konto',
       devices: { one: 'Gerät', other: 'Geräte' },
-      // @ts-expect-error Translations cannot add keys absent from the reference.
+      // @ts-expect-error -- Translations cannot add keys absent from the reference.
       retry: 'Erneut versuchen',
     };
     expect(missingKey.title).toBe('Konto');

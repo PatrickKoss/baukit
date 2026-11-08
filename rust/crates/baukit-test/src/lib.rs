@@ -30,13 +30,14 @@
 //! ```
 
 #![deny(missing_docs)]
-#![allow(
+#![expect(
     clippy::expect_used,
     clippy::panic,
     clippy::indexing_slicing,
     clippy::missing_panics_doc,
     clippy::too_many_lines,
-    reason = "test-support library: its assertion helpers and conformance scenarios fail the calling test by panicking"
+    clippy::print_stdout,
+    reason = "test-support library: its assertion helpers and conformance scenarios fail the calling test by panicking, and print their reports through libtest's captured stdout"
 )]
 
 mod api_token;

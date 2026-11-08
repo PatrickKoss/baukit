@@ -1,9 +1,9 @@
 //! Connect to a generated remote MCP server with an already-issued access token.
-#![allow(
-    clippy::print_stdout,
-    reason = "example binary: printed protocol results are its output"
-)]
-use std::{env, error::Error};
+use std::{
+    env,
+    error::Error,
+    io::{self, Write},
+};
 
 use rmcp::{
     ClientServiceExt,
@@ -34,19 +34,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
             },
         )
         .await?;
-    println!(
+    let mut out = io::stdout().lock();
+    writeln!(
+        out,
         "server/discover: {}",
         serde_json::to_string(&client.peer_info())?
-    );
+    )?;
     let tools = client.list_all_tools().await?;
     if !tools.iter().any(|tool| tool.name == "list_items") {
         return Err("list_items is not registered".into());
     }
-    println!("tools/list: {}", serde_json::to_string(&tools)?);
+    writeln!(out, "tools/list: {}", serde_json::to_string(&tools)?)?;
     let result = client
         .call_tool(CallToolRequestParams::new("list_items"))
         .await?;
-    println!("tools/call list_items: {}", serde_json::to_string(&result)?);
+    writeln!(
+        out,
+        "tools/call list_items: {}",
+        serde_json::to_string(&result)?
+    )?;
     if result.is_error != Some(false) {
         return Err("list_items returned a tool error".into());
     }

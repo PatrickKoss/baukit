@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use super::walk;
+use super::{hash_comments, walk};
 
 /// The suppression kinds that `baukit check suppressions` budgets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -9,14 +9,28 @@ pub enum SuppressionKind {
     RustExpect,
     EslintDisable,
     AstGrepIgnore,
+    TsExpectError,
+    TsIgnore,
+    PrettierIgnore,
+    Noqa,
+    TypeIgnore,
+    Nosec,
+    ShellcheckDisable,
 }
 
 impl SuppressionKind {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 11] = [
         Self::RustAllow,
         Self::RustExpect,
         Self::EslintDisable,
         Self::AstGrepIgnore,
+        Self::TsExpectError,
+        Self::TsIgnore,
+        Self::PrettierIgnore,
+        Self::Noqa,
+        Self::TypeIgnore,
+        Self::Nosec,
+        Self::ShellcheckDisable,
     ];
 
     pub const fn key(self) -> &'static str {
@@ -25,6 +39,34 @@ impl SuppressionKind {
             Self::RustExpect => "rust-expect",
             Self::EslintDisable => "eslint-disable",
             Self::AstGrepIgnore => "ast-grep-ignore",
+            Self::TsExpectError => "ts-expect-error",
+            Self::TsIgnore => "ts-ignore",
+            Self::PrettierIgnore => "prettier-ignore",
+            Self::Noqa => "noqa",
+            Self::TypeIgnore => "type-ignore",
+            Self::Nosec => "nosec",
+            Self::ShellcheckDisable => "shellcheck-disable",
+        }
+    }
+
+    /// What a finding says when this suppression lacks its reason.
+    pub const fn missing_reason_message(self) -> &'static str {
+        match self {
+            Self::RustAllow => "`#[allow]` without `reason = \"...\"`",
+            Self::RustExpect => "`#[expect]` without a reason",
+            Self::EslintDisable => "`eslint-disable` without ` -- reason`",
+            Self::AstGrepIgnore => "`ast-grep-ignore` without ` -- reason`",
+            Self::TsExpectError => "`@ts-expect-error` without ` -- reason`",
+            Self::TsIgnore => "`@ts-ignore` is forbidden; use `@ts-expect-error -- reason`",
+            Self::PrettierIgnore => "`prettier-ignore` without a reason comment on the line above",
+            Self::Noqa => "`# noqa` must name codes and give a reason: `# noqa: CODE -- reason`",
+            Self::TypeIgnore => {
+                "`# type: ignore` must name codes and give a reason: `# type: ignore[code]  # reason`"
+            }
+            Self::Nosec => "`# nosec` without ` -- reason`",
+            Self::ShellcheckDisable => {
+                "`# shellcheck disable=` without a reason (`# reason` after it or a comment on the line above)"
+            }
         }
     }
 }
@@ -42,10 +84,14 @@ pub struct Suppression {
 enum Language {
     Rust,
     Script,
+    Python,
+    Shell,
 }
 
 const RUST_EXTENSIONS: &[&str] = &["rs"];
 const SCRIPT_EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
+const PYTHON_EXTENSIONS: &[&str] = &["py", "pyi"];
+const SHELL_EXTENSIONS: &[&str] = &["sh", "bash"];
 const TEMPLATE_SUFFIXES: &[&str] = &[".j2", ".jinja"];
 const REASON_SEPARATOR: &str = " -- ";
 const ATTRIBUTE_SCAN_LINES: usize = 20;
@@ -61,6 +107,10 @@ fn language(path: &Path) -> Option<Language> {
         Some(Language::Rust)
     } else if SCRIPT_EXTENSIONS.contains(&extension) {
         Some(Language::Script)
+    } else if PYTHON_EXTENSIONS.contains(&extension) {
+        Some(Language::Python)
+    } else if SHELL_EXTENSIONS.contains(&extension) {
+        Some(Language::Shell)
     } else {
         None
     }
@@ -76,6 +126,11 @@ pub fn scan(path: &Path, source: &str) -> Vec<Suppression> {
         return Vec::new();
     };
     let lines: Vec<&str> = source.lines().collect();
+    match language {
+        Language::Python => return hash_comments::scan(&lines, hash_comments::Dialect::Python),
+        Language::Shell => return hash_comments::scan(&lines, hash_comments::Dialect::Shell),
+        Language::Rust | Language::Script => {}
+    }
     let mut found = Vec::new();
     for (index, line) in lines.iter().enumerate() {
         if language == Language::Rust
@@ -84,7 +139,7 @@ pub fn scan(path: &Path, source: &str) -> Vec<Suppression> {
             found.push(suppression);
         }
         if let Some(comment) = comment_text(line, language) {
-            found.extend(comment_suppression(comment, index + 1));
+            found.extend(comment_suppression(comment, &lines, index));
         }
     }
     found
@@ -166,31 +221,68 @@ fn comment_text(line: &str, language: Language) -> Option<&str> {
 fn is_quote(character: char, language: Language) -> bool {
     match language {
         Language::Rust => character == '"',
-        Language::Script => matches!(character, '"' | '\'' | '`'),
+        Language::Script | Language::Python | Language::Shell => {
+            matches!(character, '"' | '\'' | '`')
+        }
     }
 }
 
-fn comment_suppression(comment: &str, line: usize) -> Option<Suppression> {
+fn comment_suppression(comment: &str, lines: &[&str], index: usize) -> Option<Suppression> {
     let comment = comment.trim_start_matches(['/', '*', '!']).trim_start();
-    let kind = if comment.starts_with("eslint-disable") {
-        SuppressionKind::EslintDisable
+    let (kind, missing_reason) = if comment.starts_with("eslint-disable") {
+        (SuppressionKind::EslintDisable, !has_comment_reason(comment))
     } else if comment.starts_with("ast-grep-ignore") {
-        SuppressionKind::AstGrepIgnore
+        (SuppressionKind::AstGrepIgnore, !has_comment_reason(comment))
+    } else if comment.starts_with("@ts-expect-error") {
+        (SuppressionKind::TsExpectError, !has_comment_reason(comment))
+    } else if comment.starts_with("@ts-ignore") {
+        (SuppressionKind::TsIgnore, true)
+    } else if comment.starts_with("prettier-ignore") {
+        let above = index.checked_sub(1).and_then(|above| lines.get(above));
+        let reasoned = above.is_some_and(|line| is_reason_line(line, &["//", "/*", "*"]));
+        (SuppressionKind::PrettierIgnore, !reasoned)
     } else {
         return None;
     };
     Some(Suppression {
         kind,
-        line,
-        missing_reason: !has_comment_reason(comment),
+        line: index + 1,
+        missing_reason,
     })
 }
 
-fn has_comment_reason(comment: &str) -> bool {
+pub(super) fn has_comment_reason(comment: &str) -> bool {
     comment
         .split_once(REASON_SEPARATOR)
         .is_some_and(|(_, reason)| !reason.trim().trim_end_matches("*/").trim().is_empty())
 }
+
+/// A comment-only line with text that is not itself a suppression directive.
+pub(super) fn is_reason_line(line: &str, openers: &[&str]) -> bool {
+    let trimmed = line.trim();
+    let Some(text) = openers
+        .iter()
+        .find_map(|opener| trimmed.strip_prefix(opener))
+    else {
+        return false;
+    };
+    let text = text.trim_start_matches(['/', '*', '#', '!']).trim();
+    !text.is_empty()
+        && !DIRECTIVE_PREFIXES
+            .iter()
+            .any(|prefix| text.starts_with(prefix))
+}
+
+const DIRECTIVE_PREFIXES: &[&str] = &[
+    "eslint-",
+    "ast-grep-ignore",
+    "@ts-",
+    "prettier-ignore",
+    "shellcheck ",
+    "noqa",
+    "type:",
+    "nosec",
+];
 
 #[cfg(test)]
 mod tests {
@@ -245,6 +337,50 @@ mod tests {
                 (SuppressionKind::AstGrepIgnore, 5, true),
                 (SuppressionKind::AstGrepIgnore, 6, true),
             ]
+        );
+    }
+
+    #[test]
+    fn typescript_directives_need_a_reason() {
+        let source = [
+            "// @ts-expect-error -- a Date is not a JSON value",
+            "// @ts-expect-error a Date is not a JSON value",
+            "// @ts-ignore -- even with a reason",
+            "const s = '// @ts-ignore';",
+            "// keeps the table aligned",
+            "// prettier-ignore",
+            "const table = [1,0];",
+            "",
+            "// prettier-ignore",
+            "// eslint-disable-next-line x -- reason",
+            "// prettier-ignore",
+        ]
+        .join("\n");
+        assert_eq!(
+            kinds("a.ts", &source),
+            vec![
+                (SuppressionKind::TsExpectError, 1, false),
+                (SuppressionKind::TsExpectError, 2, true),
+                (SuppressionKind::TsIgnore, 3, true),
+                (SuppressionKind::PrettierIgnore, 6, false),
+                (SuppressionKind::PrettierIgnore, 9, true),
+                (SuppressionKind::EslintDisable, 10, false),
+                (SuppressionKind::PrettierIgnore, 11, true),
+            ]
+        );
+    }
+
+    #[test]
+    fn python_and_shell_files_are_scanned() {
+        assert!(is_scanned(Path::new("tool.py")));
+        assert!(is_scanned(Path::new("gate.sh.j2")));
+        assert_eq!(
+            kinds("tool.py", "x()  # noqa\n"),
+            vec![(SuppressionKind::Noqa, 1, true)]
+        );
+        assert_eq!(
+            kinds("gate.sh", "# shellcheck disable=SC2086\n"),
+            vec![(SuppressionKind::ShellcheckDisable, 1, true)]
         );
     }
 
