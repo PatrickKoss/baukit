@@ -35,6 +35,12 @@ let response = client
 Defaults are a 3 s lookup, a 5 s connect, a 10 s request, a 1 MiB body, and a
 300 s `Retry-After` cap. `EgressOptions` changes them and refuses zero.
 
+`with_retry_after_headers(["fitbit-rate-limit-reset"])` reads vendor delay
+headers before `Retry-After`, and `with_retry_after_first_field()` takes the
+first field of a list such as Polar's `ratelimit-reset: 30, 3600`.
+`with_extra_root_certificates_pem(pem)` trusts a private CA on top of the
+built-in roots; the address policy still applies.
+
 ## Address policy
 
 `AddressPolicy::PublicOnly` (the default) allows only globally reachable unicast

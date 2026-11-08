@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{fmt, str::FromStr, sync::Arc, time::Duration};
+
+use axum::http::HeaderName;
+use reqwest::Certificate;
 
 use crate::AddressPolicy;
 
@@ -26,6 +29,9 @@ pub struct EgressOptions {
     max_retry_after: Duration,
     forbidden_rate_limit: bool,
     redirect_responses: bool,
+    retry_after_headers: Vec<HeaderName>,
+    retry_after_first_field: bool,
+    extra_roots: ExtraRoots,
 }
 
 /// A rejected [`EgressOptions`] value.
@@ -46,6 +52,36 @@ pub enum EgressOptionsError {
     /// The `Retry-After` cap was zero.
     #[error("egress retry-after cap must be greater than zero")]
     ZeroRetryAfterCap,
+    /// A retry-after header name was not a valid HTTP header name.
+    #[error("egress retry-after header name is not a valid HTTP header name")]
+    InvalidRetryHeaderName,
+    /// The root certificate PEM held no certificate or a malformed one.
+    #[error("egress root certificate PEM holds no valid certificate")]
+    InvalidRootCertificate,
+}
+
+/// Extra trusted roots, compared by the PEM they were parsed from.
+#[derive(Clone, Default)]
+struct ExtraRoots {
+    pem: Vec<Arc<[u8]>>,
+    certificates: Vec<Certificate>,
+}
+
+impl PartialEq for ExtraRoots {
+    fn eq(&self, other: &Self) -> bool {
+        self.pem == other.pem
+    }
+}
+
+impl Eq for ExtraRoots {}
+
+impl fmt::Debug for ExtraRoots {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ExtraRoots")
+            .field("certificates", &self.certificates.len())
+            .finish()
+    }
 }
 
 impl Default for EgressOptions {
@@ -60,6 +96,9 @@ impl Default for EgressOptions {
             max_retry_after: DEFAULT_MAX_RETRY_AFTER,
             forbidden_rate_limit: false,
             redirect_responses: false,
+            retry_after_headers: Vec::new(),
+            retry_after_first_field: false,
+            extra_roots: ExtraRoots::default(),
         }
     }
 }
@@ -184,6 +223,84 @@ impl EgressOptions {
     pub const fn with_forbidden_rate_limit(mut self) -> Self {
         self.forbidden_rate_limit = true;
         self
+    }
+
+    /// Reads retry delays from the named vendor headers, in order, before `Retry-After`.
+    ///
+    /// Use it for vendor rate-limit headers such as `fitbit-rate-limit-reset`
+    /// (Fitbit), `x-ratelimit-reset` (Whoop) or `ratelimit-reset` (Polar) whose
+    /// value is a delay in seconds. Each call appends to the list. Delays are
+    /// clamped to [`Self::max_retry_after`], and headers that are not named are
+    /// ignored. With [`Self::with_forbidden_rate_limit`] the named headers are
+    /// also read on `403` and win over the `x-ratelimit-reset` epoch fallback,
+    /// so do not name `x-ratelimit-reset` for an API that sends an epoch there.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressOptionsError::InvalidRetryHeaderName`] when a name is not
+    /// a valid HTTP header name.
+    pub fn with_retry_after_headers<I, S>(mut self, names: I) -> Result<Self, EgressOptionsError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        for name in names {
+            let name = HeaderName::from_str(name.as_ref())
+                .map_err(|_| EgressOptionsError::InvalidRetryHeaderName)?;
+            self.retry_after_headers.push(name);
+        }
+        Ok(self)
+    }
+
+    /// Parses only the first comma-separated field of vendor retry header values.
+    ///
+    /// For APIs such as Polar that send one delay per quota window, for example
+    /// `ratelimit-reset: 30, 3600`. `Retry-After` is always parsed whole.
+    #[must_use]
+    pub const fn with_retry_after_first_field(mut self) -> Self {
+        self.retry_after_first_field = true;
+        self
+    }
+
+    /// Trusts the root certificates in `pem` in addition to the built-in roots.
+    ///
+    /// For upstreams such as FinTS bank endpoints that chain to a private or
+    /// extra CA. The PEM may hold several certificates and is parsed here, once.
+    /// Each call adds more roots. The built-in roots stay trusted; there is no
+    /// option to replace them. The address policy still applies.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressOptionsError::InvalidRootCertificate`] when `pem` holds no
+    /// certificate or a malformed one.
+    pub fn with_extra_root_certificates_pem(
+        mut self,
+        pem: &[u8],
+    ) -> Result<Self, EgressOptionsError> {
+        let certificates = Certificate::from_pem_bundle(pem)
+            .map_err(|_| EgressOptionsError::InvalidRootCertificate)?;
+        if certificates.is_empty() {
+            return Err(EgressOptionsError::InvalidRootCertificate);
+        }
+        self.extra_roots.pem.push(Arc::from(pem));
+        self.extra_roots.certificates.extend(certificates);
+        Ok(self)
+    }
+
+    /// Returns the vendor retry-after header names, in the order they are read.
+    #[must_use]
+    pub fn retry_after_headers(&self) -> &[HeaderName] {
+        &self.retry_after_headers
+    }
+
+    /// Returns whether only the first field of vendor retry headers is parsed.
+    #[must_use]
+    pub const fn retry_after_first_field(&self) -> bool {
+        self.retry_after_first_field
+    }
+
+    pub(crate) fn extra_root_certificates(&self) -> &[Certificate] {
+        &self.extra_roots.certificates
     }
 
     /// Returns the address policy.

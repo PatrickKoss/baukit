@@ -26,6 +26,9 @@ tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+rcgen = { version = "0.14.7", default-features = false, features = ["aws_lc_rs", "pem"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
+tokio-rustls = { version = "0.26.6", default-features = false }
 serde.workspace = true
 time.workspace = true
 tokio.workspace = true

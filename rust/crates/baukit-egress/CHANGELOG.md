@@ -4,6 +4,11 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `EgressOptions::with_retry_after_headers` reads vendor rate-limit delays such as `fitbit-rate-limit-reset`, `x-ratelimit-reset` and `ratelimit-reset` before `Retry-After`, clamped to `max_retry_after`. `with_retry_after_first_field` parses only the first comma-separated field, as Polar sends it. Invalid names fail with `EgressOptionsError::InvalidRetryHeaderName`.
+- `EgressOptions::with_extra_root_certificates_pem` trusts extra root certificates, for example a bank's private CA, on top of the built-in roots. Malformed or empty PEM fails with `EgressOptionsError::InvalidRootCertificate`.
+
 ## [0.19.1] - 2026-11-08
 
 ## [0.19.0] - 2026-11-07
