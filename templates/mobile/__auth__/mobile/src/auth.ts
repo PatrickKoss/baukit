@@ -23,11 +23,15 @@ import {
   type SignOutResult,
 } from '@baukit/auth-native';
 {% if context.auth_oidc %}import { completeExpoAuthSession, createExpoOidcClient } from '@baukit/auth-native/expo';
+{% endif %}{% if context.auth_oidc and context.pwa and not context.web %}import { BrowserSessionClient } from '@baukit/auth-web';
+import { Platform } from 'react-native';
 {% endif %}
 import type { ThemePreference } from './app-preferences';
 import { signInFeedback } from './auth-feedback';
-{% if context.auth_oidc %}import { authStorage } from './auth-storage';
-{% endif %}import type { {% if context.auth_oidc %}SignInAdapter, {% endif %}SignInSession } from './sign-in/port';
+{% if context.auth_oidc and context.pwa and not context.web %}import { apiBaseUrl } from './api-base-url';
+{% endif %}{% if context.auth_oidc %}import { authStorage } from './auth-storage';
+{% endif %}{% if context.auth_oidc and context.pwa and not context.web %}import { browserSignInClient } from './sign-in/browser-client';
+{% endif %}import type { {% if context.auth_oidc %}SignInAdapter, SignInClient, {% endif %}SignInSession } from './sign-in/port';
 {% if context.auth_oidc %}
 import { PRODUCT_NAME } from './product';
 
@@ -40,26 +44,31 @@ const configuredResource: unknown = Constants.expoConfig?.extra?.['oidcResource'
 const configuredScopes: unknown = Constants.expoConfig?.extra?.['oidcScopes'];
 const offlineAccess = Constants.expoConfig?.extra?.['oidcOfflineAccess'] !== false;
 
-const signInAdapter: SignInAdapter = {
-  providerLabel: 'local Keycloak',
-  client: createExpoOidcClient(
+const scopes =
+  typeof configuredScopes === 'string' && configuredScopes.trim()
+    ? configuredScopes.trim().split(/\s+/u)
+    : ['openid', 'profile', 'email'];
+const issuer =
+  typeof configuredIssuer === 'string'
+    ? configuredIssuer
+    : `http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`;
+const tokenBinding = {
+  ...(typeof configuredAudience === 'string' && configuredAudience.trim()
+    ? { audience: configuredAudience }
+    : {}),
+  ...(typeof configuredResource === 'string' && configuredResource.trim()
+    ? { resource: configuredResource }
+    : {}),
+};
+
+function nativeClient(): SignInClient {
+  return createExpoOidcClient(
     {
-      issuer:
-        typeof configuredIssuer === 'string'
-          ? configuredIssuer
-          : `http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`,
+      issuer,
       clientId: typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`,
       redirectUri: AuthSession.makeRedirectUri({ scheme: PRODUCT_NAME, path: 'oauth' }),
-      scopes:
-        typeof configuredScopes === 'string' && configuredScopes.trim()
-          ? configuredScopes.trim().split(/\s+/u)
-          : ['openid', 'profile', 'email'],
-      ...(typeof configuredAudience === 'string' && configuredAudience.trim()
-        ? { audience: configuredAudience }
-        : {}),
-      ...(typeof configuredResource === 'string' && configuredResource.trim()
-        ? { resource: configuredResource }
-        : {}),
+      scopes,
+      ...tokenBinding,
       offlineAccess,
       storageKeyPrefix: `${PRODUCT_NAME}.oidc`,
     },
@@ -67,7 +76,31 @@ const signInAdapter: SignInAdapter = {
       randomBytes: (size) => Crypto.getRandomBytesAsync(size),
       storage: authStorage,
     },
-  ),
+  );
+}
+{% if context.pwa and not context.web %}
+const configuredWebClientId: unknown = Constants.expoConfig?.extra?.['oidcWebClientId'];
+
+/** The web build redeems the code through the backend's `/auth/session`, which keeps the refresh token (ADR 0006). */
+function browserClient(): SignInClient {
+  return browserSignInClient(
+    () =>
+      new BrowserSessionClient({
+        apiBaseUrl: apiBaseUrl || window.location.origin,
+        issuer,
+        clientId: typeof configuredWebClientId === 'string' ? configuredWebClientId : `${PRODUCT_NAME}-web`,
+        redirectUri: `${window.location.origin}/`,
+        scopes,
+        ...tokenBinding,
+        offlineAccess,
+        storageKeyPrefix: `${PRODUCT_NAME}:oidc`,
+      }),
+  );
+}
+{% endif %}
+const signInAdapter: SignInAdapter = {
+  providerLabel: 'local Keycloak',
+  client: {% if context.pwa and not context.web %}Platform.OS === 'web' ? browserClient() : {% endif %}nativeClient(),
 };
 {% else %}// Metro swaps this import for ./sign-in/production in production builds (metro.config.js).
 import { signInAdapter } from './sign-in/local';

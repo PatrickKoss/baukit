@@ -333,6 +333,9 @@ fn validate_mobile(
     }
     if capabilities.auth.is_some() {
         dependencies.extend(EXPECTED_MOBILE_AUTH_DEPENDENCIES);
+        if capabilities.components.pwa() && pwa_app_directory(capabilities) == Some("mobile") {
+            dependencies.extend(EXPECTED_WEB_AUTH_DEPENDENCIES);
+        }
     }
     validate_frontend_capability(root, "mobile", &dependencies, successes, failures)?;
     validate_mobile_router_configuration(root, successes, failures)?;

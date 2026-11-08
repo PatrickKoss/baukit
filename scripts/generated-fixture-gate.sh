@@ -17,7 +17,7 @@ if [[ "${BAUKIT_TYPESCRIPT_BUILT:-0}" != 1 ]]; then
     corepack pnpm --dir typescript --filter @baukit/type-guards --filter @baukit/csp --filter @baukit/a11y-core --filter @baukit/analytics-core --filter @baukit/analytics-posthog-native --filter @baukit/api-runtime --filter @baukit/auth-native --filter @baukit/auth-node --filter @baukit/auth-web --filter @baukit/data-contracts --filter @baukit/ui-tokens --filter @baukit/navigation --filter @baukit/purchases-core --filter @baukit/purchases-revenuecat --filter @baukit/pwa-web run build
 fi
 
-flavors=(backend web mobile mobile-pwa combined mcp auth clerk workos platform-standalone platform)
+flavors=(backend web mobile mobile-pwa mobile-pwa-auth combined mcp auth clerk workos platform-standalone platform)
 if (($#)); then flavors=("$@"); fi
 for flavor in "${flavors[@]}"; do
     backend=false mobile=false web=false mcp=false
@@ -27,6 +27,7 @@ for flavor in "${flavors[@]}"; do
         web) flags=(--web); web=true ;;
         mobile) flags=(--mobile); mobile=true ;;
         mobile-pwa) flags=(--mobile --pwa); mobile=true ;;
+        mobile-pwa-auth) flags=(--backend --mobile --pwa --auth oidc); name="mobile-pwa-auth-fixture"; backend=true mobile=true ;;
         combined) flags=(--backend --mobile --web); backend=true mobile=true web=true ;;
         mcp) flags=(--backend --mcp --auth oidc); backend=true mcp=true ;;
         auth) flags=(--backend --mobile --web --auth oidc --mcp); name=long-product-name-fixture; backend=true mobile=true web=true mcp=true ;;
@@ -80,7 +81,7 @@ for flavor in "${flavors[@]}"; do
         (cd "$fixture/mobile" && node --test scripts/check-production-bundle.test.mjs)
         corepack pnpm --dir "$fixture/mobile" run check:bundle
     fi
-    if [[ "$flavor" == mobile-pwa ]]; then
+    if [[ "$flavor" == mobile-pwa || "$flavor" == mobile-pwa-auth ]]; then
         corepack pnpm --dir "$fixture/mobile" exec expo export --platform web --max-workers 4
         corepack pnpm --dir "$fixture/mobile" run build:sw
         corepack pnpm --dir "$fixture/mobile" run build:sw:check

@@ -83,7 +83,7 @@ Keycloak-specific. For another issuer, supply its `IdentityAccountDeleter` in
 `identity_erasure`; do not point the Keycloak Admin API adapter at its OIDC URL.
 The product erasure transaction, fences and durable worker stay the same.
 
-{% if context.web %}### Browser sessions
+{% if context.web or context.pwa %}### Browser sessions
 
 The web client never holds a refresh token (baukit ADR 0006). It redirects to
 the IdP with PKCE, then posts the code and verifier to `POST /auth/session/exchange`.
@@ -91,7 +91,15 @@ The API redeems them as the `{{ context.app_name }}-web` client, stores the
 refresh token encrypted in `baukit_auth_browser_sessions`, and sets an HttpOnly
 `SameSite=Strict` cookie. The browser keeps only the access token in memory and
 renews it with `POST /auth/session/refresh`.
-
+{% if context.pwa and not context.web %}
+The Expo web build of the mobile app is that web client. `Platform.OS === 'web'`
+selects `@baukit/auth-web` sign-in (`BrowserSessionClient` for OIDC and the
+local realm, `ClerkWebClient` and `WorkOsWebClient` for the hosted providers),
+and `mobile/src/auth-storage.ts` refuses every read and write on web. iOS and
+Android keep their tokens in SecureStore. `corepack pnpm web` serves the build
+on the declared web port, the origin the realm and
+`[http] cors_allowed_origins` allow.
+{% endif %}
 Settings live under `[auth.browser_session]`. Outside local development set
 `{{ context.app_env }}__AUTH__BROWSER_SESSION__CREDENTIAL_KEYS` to a
 `1:<base64 of 32 random bytes>` keyring, list the web origins in

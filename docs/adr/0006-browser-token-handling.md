@@ -299,6 +299,30 @@ the BFF router checks that each allowed origin shares the registrable domain of
 `BrowserSessionConfig.public_api_origin` (public suffix list) and fails
 otherwise. Local dev on `localhost` with two ports passes.
 
+### 9. Mobile web build
+
+A generated mobile app with `--pwa` and no `--web` app exports an Expo web
+build. That build runs in a browser, so the rules above apply to it as well.
+`expo-secure-store` has no secure backend on web, and the old `auth-storage.ts`
+fell back to `localStorage` there.
+
+- `auth-storage.ts` throws `WebTokenStorageRefused` on web for every call. It
+  has no browser fallback, so a native client loaded by mistake fails loudly.
+- OIDC (Keycloak and the local realm) uses `BrowserSessionClient` against the
+  backend `/auth/session` routes. The backend template enables those routes and
+  the `-web` Keycloak client when either `web` or `pwa` is set.
+- Clerk uses `ClerkWebClient` with no token cache. `@clerk/expo` on web ignores
+  `tokenCache`, loads clerk-js from a CDN that the CSP blocks, and refuses
+  http(s) redirect URLs, so the browser SDK is the only option that works.
+- WorkOS uses `WorkOsWebClient` (authkit-js). The native WorkOS flow calls the
+  vendor's JSON `authenticate` endpoint rather than OIDC, so the BFF cannot
+  serve it. Section 6 applies, as it does for the web template.
+- iOS and Android keep `expo-secure-store` unchanged.
+
+A guard test in the template (`src/web-sign-in-storage.test.ts`) signs in on
+web against a fake browser and fails if any `localStorage` or `sessionStorage`
+write carries a token, or if IndexedDB, Cache Storage or SecureStore is used.
+
 ## Migration
 
 No product is live, so baukit 0.19.0 removes token storage from `OidcClient`

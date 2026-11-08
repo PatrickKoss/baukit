@@ -69,7 +69,7 @@ example-lockfiles-check:
 examples-test:
 	cargo test --locked --manifest-path examples/minimal-api/Cargo.toml
 
-# backend, web, mobile, mobile-pwa, combined, mcp, auth, clerk, workos, platform-standalone, platform
+# backend, web, mobile, mobile-pwa, mobile-pwa-auth, combined, mcp, auth, clerk, workos, platform-standalone, platform
 # Override with FIXTURE_FLAVORS="backend platform" for a targeted check.
 generated-fixture-gate:
 	./scripts/generated-fixture-gate.sh $(FIXTURE_FLAVORS)

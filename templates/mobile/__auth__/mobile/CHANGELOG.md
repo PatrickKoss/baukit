@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Security: `auth-storage.ts` throws `WebTokenStorageRefused` on web and no longer falls back to `localStorage`. iOS and Android keep `expo-secure-store`.
+{% if context.pwa and not context.web %}- The Expo web build signs in through `@baukit/auth-web`: {% if context.auth_oidc %}`BrowserSessionClient` against the backend `/auth/session` routes{% elif context.auth_clerk %}`ClerkWebClient` with no token cache{% else %}`WorkOsWebClient`{% endif %} in production, and `BrowserSessionClient` with the local realm in development. `src/sign-in/browser-client.ts` maps the browser client onto `SignInClient`, and `src/web-sign-in-storage.test.ts` fails if a token reaches browser storage. `corepack pnpm web` starts the web build on the declared web port.
+- Migration: add `@baukit/auth-web`{% if context.auth_clerk %} and `@clerk/clerk-js`{% elif context.auth_workos %} and `@workos-inc/authkit-js`{% endif %} to `mobile/package.json`, copy `src/api-base-url.ts`, `src/sign-in/browser-client.ts` and the guard test, and take the `Platform.OS === 'web'` branch in {% if context.auth_oidc %}`src/auth.ts`{% else %}`src/sign-in/local.ts` and `src/sign-in/production.ts`{% endif %}. Register the web origin, with or without a trailing `/`, as a redirect URI for the `-web` client. Signed-in web users sign in once more after the update.
+{% endif %}
 ## [0.19.1] - 2026-11-08
 
 ## [0.19.0] - 2026-11-07

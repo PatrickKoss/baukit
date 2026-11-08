@@ -40,7 +40,7 @@ pub struct BrowserSessionSettings {
 impl Default for BrowserSessionSettings {
     fn default() -> Self {
         Self {
-            enabled: {{ "true" if context.web and context.auth_oidc else "false" }},
+            enabled: {{ "true" if (context.web or context.pwa) and context.auth_oidc else "false" }},
             client_id: format!("{PRODUCT}-web"),
             client_secret: None,
             redirect_uris: vec!["http://localhost:{{ context.web_port }}/".to_owned()],

@@ -2322,6 +2322,7 @@ keycloak = { host = 17004, container = 8080 }
         "mobile/.env.example",
         "mobile/app.config.ts",
         "mobile/src/api.ts",
+        "mobile/src/api-base-url.ts",
         "web/.env.example",
         "web/src/api.ts",
         "mobile/src/auth.ts",
@@ -4843,6 +4844,13 @@ fn pwa_requires_an_app_and_selects_the_web_host_first() -> anyhow::Result<()> {
             package["dependencies"]["@baukit/pwa-web"],
             baukit_cli::TEMPLATE_VERSION
         );
+        if name == "auth-pwa" {
+            assert_eq!(
+                package["dependencies"]["@baukit/auth-web"],
+                baukit_cli::TEMPLATE_VERSION,
+                "the Expo web build signs in through the browser session client"
+            );
+        }
         let output = if host == "mobile" {
             " --output-dir dist"
         } else {
@@ -4903,6 +4911,16 @@ fn mobile_pwa_host_generates_expo_web_export_configuration() -> anyhow::Result<(
         assert_eq!(
             package["scripts"]["build:sw:check"],
             format!("node scripts/build-sw.mjs{output} --check")
+        );
+        assert_eq!(
+            package["scripts"]["csp"].is_string(),
+            mobile_hosts_pwa,
+            "{name}"
+        );
+        assert_eq!(
+            package["dependencies"]["@baukit/auth-web"].is_string(),
+            mobile_hosts_pwa && auth,
+            "{name}"
         );
         let config = fs::read_to_string(root.join("mobile/app.config.ts"))?;
         assert_eq!(config.contains("output: 'single'"), mobile_hosts_pwa);

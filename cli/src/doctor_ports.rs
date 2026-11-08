@@ -177,7 +177,11 @@ fn expected_port_snippets(
     }
     let oidc_keycloak = oidc_clients_use_bundled_keycloak(root, manifest)?;
     if components.mobile() {
-        expected.extend(mobile_snippets(ports, oidc_keycloak));
+        expected.extend(mobile_snippets(
+            ports,
+            manifest.capabilities.auth.is_some(),
+            oidc_keycloak,
+        ));
     }
     if components.web() {
         expected.extend(web_snippets(ports, oidc_keycloak));
@@ -237,11 +241,17 @@ fn backend_snippets(
     Ok(expected)
 }
 
-fn mobile_snippets(ports: &PortConfiguration, oidc_keycloak: bool) -> Vec<Snippet> {
+fn mobile_snippets(ports: &PortConfiguration, auth: bool, oidc_keycloak: bool) -> Vec<Snippet> {
     let mut expected = vec![
         ("mobile/.env.example", format!("localhost:{}", ports.api)),
         ("mobile/src/api.ts", format!("localhost:{}", ports.api)),
     ];
+    if auth {
+        expected.push((
+            "mobile/src/api-base-url.ts",
+            format!("localhost:{}", ports.api),
+        ));
+    }
     if oidc_keycloak {
         let realm = format!("localhost:{}/realms/", ports.keycloak);
         expected.extend([
@@ -388,7 +398,10 @@ fn loopback_snippet_mismatches(
     } else {
         source
     };
-    if matches!(relative, "mobile/src/api.ts" | "web/src/api.ts") {
+    if matches!(
+        relative,
+        "mobile/src/api.ts" | "mobile/src/api-base-url.ts" | "web/src/api.ts"
+    ) {
         return Ok(loopback_ports(&source, issuer).iter().any(|port| {
             *port != expected_port && !(issuer && ports.keycloak_extra.contains(port))
         }));
@@ -407,6 +420,7 @@ pub(crate) fn is_environment_capable_source(relative: &str) -> bool {
         "mobile/.env.example"
             | "web/.env.example"
             | "mobile/src/api.ts"
+            | "mobile/src/api-base-url.ts"
             | "mobile/src/auth.ts"
             | "mobile/src/delete-profile.ts"
             | "mobile/app.config.ts"

@@ -12,7 +12,7 @@ usage() {
 gate_mode=${BAUKIT_GATE_MODE:-full}
 workers=${BAUKIT_GATE_WORKERS:-2}
 msrv=1.95
-generated_flavors="backend web mobile mobile-pwa combined mcp auth clerk workos"
+generated_flavors="backend web mobile mobile-pwa mobile-pwa-auth combined mcp auth clerk workos"
 
 list_steps() {
   cat <<'STEPS'
@@ -88,8 +88,8 @@ tracked_sources() {
   git ls-files -z -- "$@" | grep -zvE '(^|/)(node_modules|target|vendor)/|^templates/'
 }
 step_python_lint() {
-  tracked_sources '*.py' | xargs -0 ruff check
-  tracked_sources '*.py' | xargs -0 ruff format --check
+  tracked_sources '*.py' | xargs -0 ruff check --force-exclude
+  tracked_sources '*.py' | xargs -0 ruff format --check --force-exclude
 }
 step_shell_lint() { tracked_sources '*.sh' | xargs -0 shellcheck; }
 step_metric_names() { python3 deploy/observability/lint/check-metric-names.py; }
