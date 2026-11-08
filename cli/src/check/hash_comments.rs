@@ -13,6 +13,7 @@ const TRIPLE_QUOTES: &[&str] = &["\"\"\"", "'''"];
 pub fn scan(lines: &[&str], dialect: Dialect) -> Vec<Suppression> {
     let mut found = Vec::new();
     let mut open_triple: Option<&str> = None;
+    let mut continued: Option<char> = None;
     for (index, line) in lines.iter().enumerate() {
         if dialect == Dialect::Python {
             let was_open = open_triple.is_some();
@@ -21,7 +22,9 @@ pub fn scan(lines: &[&str], dialect: Dialect) -> Vec<Suppression> {
                 continue;
             }
         }
-        let Some(comment) = comment_text(line, dialect) else {
+        let scanned = comment_text(line, dialect, continued);
+        continued = scanned.continued;
+        let Some(comment) = scanned.comment else {
             continue;
         };
         found.extend(comment_suppressions(comment, lines, index, dialect));
@@ -61,31 +64,58 @@ fn triple_quote_state<'a>(line: &str, open: Option<&'a str>) -> Option<&'a str> 
     }
 }
 
-/// Returns the text after the first `#` that opens a comment outside a string literal.
-fn comment_text(line: &str, dialect: Dialect) -> Option<&str> {
-    let mut quote: Option<char> = None;
+/// Where a line's comment starts, and the quote a backslash continues onto the next line.
+struct LineScan<'a> {
+    comment: Option<&'a str>,
+    continued: Option<char>,
+}
+
+/// Finds the first `#` that opens a comment outside a string literal. `carried` is a Python
+/// string continued from the previous line. A quote that never closes and is not continued is
+/// a stray character, so the scan resumes after it instead of hiding the rest of the line.
+fn comment_text(line: &str, dialect: Dialect, carried: Option<char>) -> LineScan<'_> {
+    let mut quote = carried;
+    let mut opened_at: Option<usize> = None;
     let mut escaped = false;
     let mut previous: Option<char> = None;
     for (offset, character) in line.char_indices() {
         if let Some(open) = quote {
             if escaped {
                 escaped = false;
-            } else if character == '\\' && open != '\'' {
+            } else if character == '\\' && (open != '\'' || dialect == Dialect::Python) {
                 escaped = true;
             } else if character == open {
                 quote = None;
+                opened_at = None;
             }
             previous = Some(character);
             continue;
         }
         if matches!(character, '"' | '\'') {
             quote = Some(character);
+            opened_at = Some(offset);
         } else if character == '#' && opens_comment(previous, dialect) {
-            return line.get(offset + 1..);
+            return LineScan {
+                comment: line.get(offset + 1..),
+                continued: None,
+            };
         }
         previous = Some(character);
     }
-    None
+    let continues = dialect == Dialect::Python && line.trim_end().ends_with('\\');
+    if continues {
+        return LineScan {
+            comment: None,
+            continued: quote,
+        };
+    }
+    let resumed = opened_at
+        .and_then(|offset| line.get(offset + 1..))
+        .and_then(|rest| comment_text(rest, dialect, None).comment);
+    LineScan {
+        comment: resumed,
+        continued: None,
+    }
 }
 
 fn opens_comment(previous: Option<char>, dialect: Dialect) -> bool {
@@ -220,6 +250,35 @@ mod tests {
                 (SuppressionKind::TypeIgnore, 5, false),
                 (SuppressionKind::Noqa, 5, false),
             ]
+        );
+    }
+
+    #[test]
+    fn quotes_continued_or_stray_classify_the_hash_correctly() {
+        let source = [
+            "message = \"first half \\",
+            "    # noqa inside the continued string\"",
+            "x = 1  # noqa",
+            "label = 'it''s fine'  # noqa: E501 -- long label",
+            "y = 2 ' # noqa",
+        ]
+        .join("\n");
+        assert_eq!(
+            kinds(&source, Dialect::Python),
+            vec![
+                (SuppressionKind::Noqa, 3, true),
+                (SuppressionKind::Noqa, 4, false),
+                (SuppressionKind::Noqa, 5, true),
+            ]
+        );
+    }
+
+    #[test]
+    fn extensionless_shell_quotes_do_not_hide_directives() {
+        let source = "echo don't  # shellcheck disable=SC2086\n";
+        assert_eq!(
+            kinds(source, Dialect::Shell),
+            vec![(SuppressionKind::ShellcheckDisable, 1, true)]
         );
     }
 

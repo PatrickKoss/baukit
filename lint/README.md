@@ -108,6 +108,7 @@ noqa = 0
 type-ignore = 0
 nosec = 0
 shellcheck-disable = 0
+nolint = 0
 ```
 
 Each key and the reason its form needs:
@@ -120,17 +121,31 @@ Each key and the reason its form needs:
 | `ast-grep-ignore` | `ast-grep-ignore: rule` | ` -- reason` |
 | `ts-expect-error` | `// @ts-expect-error` | ` -- reason` |
 | `ts-ignore` | `// @ts-ignore` | always a finding; use `@ts-expect-error -- reason` |
-| `prettier-ignore` | `// prettier-ignore` | a comment on the line above (prettier needs the directive alone) |
+| `prettier-ignore` | `// prettier-ignore`, and `<!-- prettier-ignore -->` or `<!-- prettier-ignore-start -->` in `.md`, `.mdx`, `.html`, `.vue`, `.svelte` (outside Markdown code fences) | a comment on the line above (prettier needs the directive alone) |
 | `noqa` | `# noqa` | codes and a reason: `# noqa: S311 -- reason` |
 | `type-ignore` | `# type: ignore` | codes and a trailing comment: `# type: ignore[attr-defined]  # reason` (mypy's grammar has no ` -- `) |
-| `nosec` | `# nosec` | ` -- reason` |
-| `shellcheck-disable` | `# shellcheck disable=` | `# reason` after the directive, or a comment on the line above |
+| `nosec` | Python `# nosec`, Go `// #nosec` | ` -- reason` |
+| `shellcheck-disable` | `# shellcheck disable=` in `*.sh`, `*.bash` and extensionless files whose `#!` names sh, bash, zsh or dash | `# reason` after the directive, or a comment on the line above |
+| `nolint` | Go `//nolint` | linters and a reason: `//nolint:errcheck // reason` |
 
 Bulk suppression has no budget; each one is a finding. That covers `eslint-suppressions.json`, the eslint
 `--suppress-all`, `--suppress-rule`, `--prune-suppressions` and `--suppressions-location` flags in a
 `package.json` (and the file the last one names), clippy `-A`, `--allow` or `--cap-lints` after `clippy` or
-in `RUSTFLAGS` in gate scripts (`*.sh`, `*.yml`, `Makefile`, `justfile`), a lint set to `allow` in a Cargo
+in `RUSTFLAGS` in gate scripts (`*.sh`, `*.yml`, `Makefile`, `justfile`, extensionless shell scripts), a lint set to `allow` in a Cargo
 `[lints]` or `[workspace.lints]` table, and `-A`, `--allow` or `--cap-lints` in `.cargo/config.toml`.
+
+golangci configs (`.golangci.yml`, `.yaml`, `.toml`) may not set `disable-all: true` or
+`linters.default: none`, list `linters.disable` entries, set `issues.new` or `new-from-*`, or use
+`exclude`, `exclude-rules`, `exclude-files`, `skip-files`, or the v2 `exclusions.rules` and
+`exclusions.presets`. `exclude-dirs`, `skip-dirs` and `exclusions.paths` may name only generated, build
+or dependency output.
+
+eslint configs (`eslint.config.*`) outside `@baukit/eslint-config` may not set a rule to `off`, `warn`, `0`
+or `1`, or `reportUnusedDisableDirectives` below error. `ignores`, `ignorePatterns` and `.eslintignore`
+may name only generated, build or dependency output: `dist`, `build`, `coverage`, `out`, `node_modules`,
+`vendor`, `target`, `generated`, `.expo`, `.turbo`, `.next`, `.nuxt`, `.output`, `.svelte-kit` and
+`storybook-static`.
+
 Fix the findings instead.
 
 The allowlist and the maxima only shrink. A listed file that grows, drops under the limit, or no longer

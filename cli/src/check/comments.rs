@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use super::{hash_comments, walk};
+use super::{hash_comments, markup_comments, walk};
 
 /// The suppression kinds that `baukit check suppressions` budgets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -16,10 +16,11 @@ pub enum SuppressionKind {
     TypeIgnore,
     Nosec,
     ShellcheckDisable,
+    Nolint,
 }
 
 impl SuppressionKind {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::RustAllow,
         Self::RustExpect,
         Self::EslintDisable,
@@ -31,6 +32,7 @@ impl SuppressionKind {
         Self::TypeIgnore,
         Self::Nosec,
         Self::ShellcheckDisable,
+        Self::Nolint,
     ];
 
     pub const fn key(self) -> &'static str {
@@ -46,6 +48,7 @@ impl SuppressionKind {
             Self::TypeIgnore => "type-ignore",
             Self::Nosec => "nosec",
             Self::ShellcheckDisable => "shellcheck-disable",
+            Self::Nolint => "nolint",
         }
     }
 
@@ -63,7 +66,10 @@ impl SuppressionKind {
             Self::TypeIgnore => {
                 "`# type: ignore` must name codes and give a reason: `# type: ignore[code]  # reason`"
             }
-            Self::Nosec => "`# nosec` without ` -- reason`",
+            Self::Nosec => "`nosec` without ` -- reason`",
+            Self::Nolint => {
+                "`//nolint` must name linters and give a reason: `//nolint:linter // reason`"
+            }
             Self::ShellcheckDisable => {
                 "`# shellcheck disable=` without a reason (`# reason` after it or a comment on the line above)"
             }
@@ -86,23 +92,23 @@ enum Language {
     Script,
     Python,
     Shell,
+    Go,
+    Markdown,
+    Html,
+    Component,
 }
 
 const RUST_EXTENSIONS: &[&str] = &["rs"];
 const SCRIPT_EXTENSIONS: &[&str] = &["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"];
 const PYTHON_EXTENSIONS: &[&str] = &["py", "pyi"];
 const SHELL_EXTENSIONS: &[&str] = &["sh", "bash"];
+const SHELL_INTERPRETERS: &[&str] = &["sh", "bash", "zsh", "dash"];
 const TEMPLATE_SUFFIXES: &[&str] = &[".j2", ".jinja"];
 const REASON_SEPARATOR: &str = " -- ";
 const ATTRIBUTE_SCAN_LINES: usize = 20;
 
 fn language(path: &Path) -> Option<Language> {
-    let name = walk::file_name(path);
-    let name = TEMPLATE_SUFFIXES
-        .iter()
-        .find_map(|suffix| name.strip_suffix(suffix))
-        .unwrap_or(name);
-    let extension = name.rsplit_once('.')?.1;
+    let extension = base_name(path).rsplit_once('.')?.1;
     if RUST_EXTENSIONS.contains(&extension) {
         Some(Language::Rust)
     } else if SCRIPT_EXTENSIONS.contains(&extension) {
@@ -112,34 +118,93 @@ fn language(path: &Path) -> Option<Language> {
     } else if SHELL_EXTENSIONS.contains(&extension) {
         Some(Language::Shell)
     } else {
-        None
+        match extension {
+            "go" => Some(Language::Go),
+            "md" | "mdx" => Some(Language::Markdown),
+            "html" => Some(Language::Html),
+            "vue" | "svelte" => Some(Language::Component),
+            _ => None,
+        }
     }
 }
 
+fn base_name(path: &Path) -> &str {
+    let name = walk::file_name(path);
+    TEMPLATE_SUFFIXES
+        .iter()
+        .find_map(|suffix| name.strip_suffix(suffix))
+        .unwrap_or(name)
+}
+
+/// A file name without an extension, which may be a script that only a `#!` line identifies.
+pub(super) fn has_no_extension(path: &Path) -> bool {
+    !base_name(path).contains('.')
+}
+
+/// Whether the first line is a `#!` naming sh, bash, zsh or dash, directly or through `env`.
+pub(super) fn has_shell_shebang(source: &str) -> bool {
+    let Some(command) = source
+        .lines()
+        .next()
+        .and_then(|line| line.strip_prefix("#!"))
+    else {
+        return false;
+    };
+    let mut words = command.split_whitespace();
+    let Some(program) = words
+        .next()
+        .map(|word| word.rsplit('/').next().unwrap_or(word))
+    else {
+        return false;
+    };
+    let interpreter = if program == "env" {
+        words.find(|word| !word.starts_with('-'))
+    } else {
+        Some(program)
+    };
+    interpreter.is_some_and(|name| SHELL_INTERPRETERS.contains(&name))
+}
+
 pub fn is_scanned(path: &Path) -> bool {
-    language(path).is_some()
+    language(path).is_some() || has_no_extension(path)
 }
 
 /// Lists the suppressions in one file's source text.
 pub fn scan(path: &Path, source: &str) -> Vec<Suppression> {
-    let Some(language) = language(path) else {
+    let shebang =
+        || (has_no_extension(path) && has_shell_shebang(source)).then_some(Language::Shell);
+    let Some(language) = language(path).or_else(shebang) else {
         return Vec::new();
     };
     let lines: Vec<&str> = source.lines().collect();
     match language {
         Language::Python => return hash_comments::scan(&lines, hash_comments::Dialect::Python),
         Language::Shell => return hash_comments::scan(&lines, hash_comments::Dialect::Shell),
-        Language::Rust | Language::Script => {}
+        Language::Markdown => {
+            return markup_comments::scan(&lines, markup_comments::Markup::Markdown);
+        }
+        Language::Html => return markup_comments::scan(&lines, markup_comments::Markup::Html),
+        Language::Component => {
+            let mut found = markup_comments::scan(&lines, markup_comments::Markup::Html);
+            found.extend(scan_line_comments(&lines, Language::Script));
+            found.sort_by_key(|suppression| suppression.line);
+            return found;
+        }
+        Language::Rust | Language::Script | Language::Go => {}
     }
+    scan_line_comments(&lines, language)
+}
+
+fn scan_line_comments(lines: &[&str], language: Language) -> Vec<Suppression> {
     let mut found = Vec::new();
     for (index, line) in lines.iter().enumerate() {
         if language == Language::Rust
-            && let Some(suppression) = rust_attribute(&lines, index)
+            && let Some(suppression) = rust_attribute(lines, index)
         {
             found.push(suppression);
         }
         if let Some(comment) = comment_text(line, language) {
-            found.extend(comment_suppression(comment, &lines, index));
+            found.extend(comment_suppression(comment, lines, index, language));
         }
     }
     found
@@ -221,15 +286,58 @@ fn comment_text(line: &str, language: Language) -> Option<&str> {
 fn is_quote(character: char, language: Language) -> bool {
     match language {
         Language::Rust => character == '"',
-        Language::Script | Language::Python | Language::Shell => {
-            matches!(character, '"' | '\'' | '`')
-        }
+        Language::Script
+        | Language::Python
+        | Language::Shell
+        | Language::Go
+        | Language::Markdown
+        | Language::Html
+        | Language::Component => matches!(character, '"' | '\'' | '`'),
     }
 }
 
-fn comment_suppression(comment: &str, lines: &[&str], index: usize) -> Option<Suppression> {
+fn comment_suppression(
+    comment: &str,
+    lines: &[&str],
+    index: usize,
+    language: Language,
+) -> Option<Suppression> {
+    let raw = comment;
     let comment = comment.trim_start_matches(['/', '*', '!']).trim_start();
-    let (kind, missing_reason) = if comment.starts_with("eslint-disable") {
+    let detected = if language == Language::Go {
+        go_directive(raw, comment)
+    } else {
+        script_directive(comment, lines, index)
+    };
+    let (kind, missing_reason) = detected?;
+    Some(Suppression {
+        kind,
+        line: index + 1,
+        missing_reason,
+    })
+}
+
+/// golangci-lint only reads `//nolint` with no space after the slashes, so `raw` is the text
+/// right after the opener and `comment` the trimmed text.
+fn go_directive(raw: &str, comment: &str) -> Option<(SuppressionKind, bool)> {
+    if comment.starts_with("#nosec") {
+        return Some((SuppressionKind::Nosec, !has_comment_reason(comment)));
+    }
+    let rest = raw.strip_prefix("nolint")?;
+    let reasoned = rest.strip_prefix(':').is_some_and(|rest| {
+        rest.split_once("//").is_some_and(|(linters, reason)| {
+            !linters.trim().is_empty() && !reason.trim().is_empty()
+        })
+    });
+    Some((SuppressionKind::Nolint, !reasoned))
+}
+
+fn script_directive(
+    comment: &str,
+    lines: &[&str],
+    index: usize,
+) -> Option<(SuppressionKind, bool)> {
+    let detected = if comment.starts_with("eslint-disable") {
         (SuppressionKind::EslintDisable, !has_comment_reason(comment))
     } else if comment.starts_with("ast-grep-ignore") {
         (SuppressionKind::AstGrepIgnore, !has_comment_reason(comment))
@@ -244,11 +352,7 @@ fn comment_suppression(comment: &str, lines: &[&str], index: usize) -> Option<Su
     } else {
         return None;
     };
-    Some(Suppression {
-        kind,
-        line: index + 1,
-        missing_reason,
-    })
+    Some(detected)
 }
 
 pub(super) fn has_comment_reason(comment: &str) -> bool {
@@ -282,6 +386,8 @@ const DIRECTIVE_PREFIXES: &[&str] = &[
     "noqa",
     "type:",
     "nosec",
+    "#nosec",
+    "nolint",
 ];
 
 #[cfg(test)]
@@ -385,9 +491,84 @@ mod tests {
     }
 
     #[test]
+    fn extensionless_scripts_are_shell_only_with_a_shell_shebang() {
+        let directive = "# shellcheck disable=SC2086\n";
+        for shebang in [
+            "#!/bin/sh",
+            "#!/usr/bin/env bash",
+            "#!/bin/zsh -e",
+            "#!/usr/bin/env -S dash",
+        ] {
+            let source = format!("{shebang}\n{directive}");
+            assert_eq!(
+                kinds("bin/gate", &source),
+                vec![(SuppressionKind::ShellcheckDisable, 2, false)],
+                "{shebang}"
+            );
+        }
+        for other in ["#!/usr/bin/env python3\n", "#!/usr/bin/env fish\n", ""] {
+            let source = format!("{other}{directive}");
+            assert!(kinds("bin/tool", &source).is_empty(), "{other}");
+        }
+        assert!(kinds("gate.txt", &format!("#!/bin/sh\n{directive}")).is_empty());
+        assert!(is_scanned(Path::new("bin/gate")));
+        assert!(is_scanned(Path::new("bin/gate.j2")));
+    }
+
+    #[test]
+    fn go_nosec_and_nolint_need_reasons() {
+        let source = [
+            "x := run() // #nosec G204 -- argv is a fixed list",
+            "y := run() // #nosec G204",
+            "z := f() //nolint:errcheck // close errors are logged by the caller",
+            "w := f() //nolint:errcheck",
+            "v := f() //nolint // no linter named",
+            "s := \"//nolint:errcheck\"",
+            "r := `//nolint`",
+            "// nolint is a word in this sentence",
+        ]
+        .join("\n");
+        assert_eq!(
+            kinds("main.go", &source),
+            vec![
+                (SuppressionKind::Nosec, 1, false),
+                (SuppressionKind::Nosec, 2, true),
+                (SuppressionKind::Nolint, 3, false),
+                (SuppressionKind::Nolint, 4, true),
+                (SuppressionKind::Nolint, 5, true),
+            ]
+        );
+    }
+
+    #[test]
+    fn markup_and_components_count_prettier_ignore() {
+        assert_eq!(
+            kinds("README.md", "<!-- prettier-ignore -->\n"),
+            vec![(SuppressionKind::PrettierIgnore, 1, true)]
+        );
+        assert_eq!(
+            kinds(
+                "page.html",
+                "<!-- layout is hand-aligned -->\n<!-- prettier-ignore -->\n"
+            ),
+            vec![(SuppressionKind::PrettierIgnore, 2, false)]
+        );
+        let component = "<!-- prettier-ignore -->\n<script>\n// @ts-ignore\n</script>\n";
+        assert_eq!(
+            kinds("App.vue", component),
+            vec![
+                (SuppressionKind::PrettierIgnore, 1, true),
+                (SuppressionKind::TsIgnore, 3, true),
+            ]
+        );
+        assert_eq!(kinds("App.svelte", component).len(), 2);
+        assert!(kinds("notes.txt", "<!-- prettier-ignore -->\n").is_empty());
+    }
+
+    #[test]
     fn template_suffixes_and_other_files() {
         assert!(is_scanned(Path::new("lib.rs.j2")));
         assert!(is_scanned(Path::new("a.mjs")));
-        assert!(!is_scanned(Path::new("README.md")));
+        assert!(!is_scanned(Path::new("notes.txt")));
     }
 }

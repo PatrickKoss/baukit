@@ -43,10 +43,12 @@ baseline lint to `allow` in the workspace table.
 "Splitting a file" below). Tests and generated files are exempt.
 
 **suppressions.** A count of `#[allow]`, `#[expect]`, `eslint-disable`, `ast-grep-ignore`,
-`@ts-expect-error`, `prettier-ignore`, `# noqa`, `# type: ignore`, `# nosec` or `# shellcheck disable=`
-exceeds its `[suppressions.max]` key, or a suppression lacks its reason (forms in `lint/README.md`).
-`@ts-ignore` and bulk suppression (`eslint-suppressions.json`, `eslint --suppress-all`, clippy `-A` or
-`--cap-lints` in a gate, a lint at `allow` in `[lints]` or rustflags) are always findings. Remove the suppression by fixing the code. If the
+`@ts-expect-error`, `prettier-ignore`, `# noqa`, `# type: ignore`, `# nosec`, `# shellcheck disable=` or
+Go `//nolint` exceeds its `[suppressions.max]` key, or a suppression lacks its reason (forms in
+`lint/README.md`). `@ts-ignore` and bulk suppression are always findings: `eslint-suppressions.json`,
+`eslint --suppress-all`, clippy `-A` or `--cap-lints` in a gate, a lint at `allow` in `[lints]` or
+rustflags, an eslint rule at `off`/`warn` or an ignore of source outside `@baukit/eslint-config`, and
+golangci `disable`/`exclude` settings. Remove the suppression by fixing the code. If the
 count drops, lower the max (see "Lowering the budget").
 
 **patterns.** An ast-grep rule from `lint/ast-grep/rules/` matched. Each rule and its fix:

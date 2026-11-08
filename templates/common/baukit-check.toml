@@ -20,6 +20,7 @@ noqa = 0
 type-ignore = 0
 nosec = 0
 shellcheck-disable = 0
+nolint = 0
 {% if context.backend %}
 # Dashboards and rules may only reference metrics the backend emits or the baukit catalog defines.
 [observability]

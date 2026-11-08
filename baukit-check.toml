@@ -33,6 +33,7 @@ noqa = 2
 type-ignore = 2
 nosec = 0
 shellcheck-disable = 4
+nolint = 0
 
 # `baukit check observability`: baukit's own dashboards and rules use only catalog metrics.
 [observability]

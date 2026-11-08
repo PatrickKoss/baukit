@@ -2,7 +2,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use super::{Finding, relative, walk};
+use super::{Finding, bulk_eslint, bulk_golangci, comments, relative, walk};
 
 const NAME: &str = "suppressions";
 const ESLINT_SUPPRESSIONS_FILE: &str = "eslint-suppressions.json";
@@ -13,6 +13,24 @@ const GATE_SCRIPT_EXTENSIONS: &[&str] = &["sh", "bash", "mk", "yml", "yaml"];
 const GATE_SCRIPT_NAMES: &[&str] = &["Makefile", "justfile", "Justfile"];
 const LINT_TABLE_PREFIXES: &[&str] = &["[lints", "[workspace.lints"];
 const BULK_FILE_MESSAGE: &str = "bulk suppression file; fix the findings instead";
+const ESLINT_CONFIG_PACKAGE_DIR: &str = "eslint-config";
+const GENERATED_OUTPUT: &[&str] = &[
+    "dist",
+    "build",
+    "coverage",
+    "out",
+    "node_modules",
+    "vendor",
+    "target",
+    "generated",
+    ".expo",
+    ".turbo",
+    ".next",
+    ".nuxt",
+    ".output",
+    ".svelte-kit",
+    "storybook-static",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Candidate {
@@ -21,6 +39,10 @@ enum Candidate {
     CargoManifest,
     CargoConfig,
     GateScript,
+    /// A file without an extension, checked as a gate script when its `#!` names a shell.
+    ExtensionlessScript,
+    Golangci,
+    Eslint(bulk_eslint::File),
 }
 
 /// Findings for every mechanism that silences lints wholesale instead of at one site.
@@ -38,17 +60,53 @@ pub fn scan(root: &Path) -> Result<Vec<Finding>> {
         let Some(source) = walk::read_text(&path)? else {
             continue;
         };
-        findings.extend(scan_source(kind, &display, &source, &path));
+        let name = base_name(&path);
+        let located = match kind {
+            Candidate::Golangci => bulk_golangci::findings(name, &source),
+            Candidate::Eslint(file) if !in_eslint_config_package(&path) => {
+                bulk_eslint::findings(file, &source)
+            }
+            Candidate::Eslint(_) => Vec::new(),
+            Candidate::ExtensionlessScript if !comments::has_shell_shebang(&source) => Vec::new(),
+            _ => {
+                findings.extend(scan_source(kind, &display, &source, &path));
+                Vec::new()
+            }
+        };
+        findings.extend(
+            located.into_iter().map(|(line, message)| {
+                Finding::error(NAME, display.clone(), message).at_line(line)
+            }),
+        );
     }
     Ok(findings)
 }
 
-fn candidate(path: &Path) -> Option<Candidate> {
+/// Whether a path entry in an ignore or exclude list only names generated, build or
+/// dependency output.
+pub(super) fn is_generated_output(entry: &str) -> bool {
+    entry
+        .trim_start_matches('!')
+        .split('/')
+        .any(|segment| GENERATED_OUTPUT.contains(&segment))
+}
+
+/// `@baukit/eslint-config` itself defines the shared levels, including its relaxed presets.
+fn in_eslint_config_package(path: &Path) -> bool {
+    path.parent()
+        .is_some_and(|parent| walk::file_name(parent) == ESLINT_CONFIG_PACKAGE_DIR)
+}
+
+fn base_name(path: &Path) -> &str {
     let name = walk::file_name(path);
-    let name = TEMPLATE_SUFFIXES
+    TEMPLATE_SUFFIXES
         .iter()
         .find_map(|suffix| name.strip_suffix(suffix))
-        .unwrap_or(name);
+        .unwrap_or(name)
+}
+
+fn candidate(path: &Path) -> Option<Candidate> {
+    let name = base_name(path);
     let in_cargo_dir = path
         .parent()
         .is_some_and(|parent| walk::file_name(parent) == ".cargo");
@@ -59,6 +117,9 @@ fn candidate(path: &Path) -> Option<Candidate> {
         "Cargo.toml" => Some(Candidate::CargoManifest),
         "config" | "config.toml" if in_cargo_dir => Some(Candidate::CargoConfig),
         _ if GATE_SCRIPT_NAMES.contains(&name) => Some(Candidate::GateScript),
+        _ if bulk_golangci::is_config(name) => Some(Candidate::Golangci),
+        _ if let Some(file) = bulk_eslint::file(name) => Some(Candidate::Eslint(file)),
+        _ if comments::has_no_extension(path) => Some(Candidate::ExtensionlessScript),
         _ if extension.is_some_and(|extension| GATE_SCRIPT_EXTENSIONS.contains(&extension)) => {
             Some(Candidate::GateScript)
         }
@@ -81,8 +142,8 @@ fn scan_source(kind: Candidate, display: &str, source: &str, path: &Path) -> Vec
             }
             Candidate::CargoManifest => lint_table_allow(&table, trimmed),
             Candidate::CargoConfig => rustflags_allow(trimmed),
-            Candidate::GateScript => clippy_allow(trimmed),
-            Candidate::EslintSuppressions => None,
+            Candidate::GateScript | Candidate::ExtensionlessScript => clippy_allow(trimmed),
+            Candidate::EslintSuppressions | Candidate::Golangci | Candidate::Eslint(_) => None,
         };
         if let Some(message) = message {
             findings.push(Finding::error(NAME, display, message).at_line(index + 1));
@@ -252,6 +313,65 @@ mod tests {
                 "suppressions: scripts/gate.sh:2: `--cap-lints` silences lints in the gate; fix the findings instead",
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn extensionless_shell_scripts_are_gate_scripts() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        write(
+            root.path(),
+            "bin/gate",
+            "#!/usr/bin/env bash\ncargo clippy -- -A clippy::panic\n",
+        )?;
+        write(
+            root.path(),
+            "bin/notes",
+            "#!/usr/bin/env python3\ncargo clippy -- -A clippy::panic\n",
+        )?;
+        write(root.path(), "LICENSE", "cargo clippy -- -A x\n")?;
+        assert_eq!(
+            messages(root.path())?,
+            vec![
+                "suppressions: bin/gate:2: `-A` silences lints in the gate; fix the findings instead"
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn golangci_and_eslint_configs_are_scanned() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        write(
+            root.path(),
+            "api/.golangci.yml",
+            "linters:\n  disable:\n    - gosec\n",
+        )?;
+        write(
+            root.path(),
+            "web/eslint.config.js",
+            "export default [{ rules: { 'no-undef': 'off' } }, { ignores: ['dist/**'] }];\n",
+        )?;
+        write(
+            root.path(),
+            "typescript/packages/eslint-config/index.js",
+            "export const relaxed = { rules: { 'max-lines': 'off' } };\n",
+        )?;
+        write(
+            root.path(),
+            "typescript/packages/eslint-config/eslint.config.js",
+            "export default [{ rules: { 'max-lines': 'off' } }];\n",
+        )?;
+        let lines = messages(root.path())?;
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("suppressions: api/.golangci.yml:3: linter `gosec`"))
+        );
+        assert!(lines.iter().any(|line| {
+            line.starts_with("suppressions: web/eslint.config.js:1: eslint rule `no-undef`")
+        }));
         Ok(())
     }
 

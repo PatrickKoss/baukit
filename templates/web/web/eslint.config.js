@@ -34,19 +34,13 @@ export default defineConfig(
   {
     files: e2eFiles,
     languageOptions: {
-      globals: globals.node,
+      // Specs read the browser DOM inside page.evaluate callbacks, where the
+      // page's own globals are in scope next to Node's.
+      globals: { ...globals.node, ...globals.browser },
       parserOptions: {
         project: ['./e2e/tsconfig.json'],
         tsconfigRootDir: import.meta.dirname,
       },
-    },
-    rules: {
-      // Specs read the browser DOM inside page.evaluate callbacks, where the
-      // page's own globals are in scope rather than Node's.
-      'no-undef': 'off',
-      // Playwright's page.evaluate returns values typed from the callback, and
-      // config-driven loops branch on optional entries.
-      '@typescript-eslint/no-unnecessary-condition': 'off',
     },
   },
   { files: ['e2e/**/*.spec.ts'], rules: testRelaxedRules },

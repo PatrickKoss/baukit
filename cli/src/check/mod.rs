@@ -1,10 +1,13 @@
 mod agent_docs;
 mod bulk;
+mod bulk_eslint;
+mod bulk_golangci;
 mod comments;
 mod config;
 mod file_size;
 mod hash_comments;
 mod lints;
+mod markup_comments;
 mod observability;
 mod patterns;
 mod suppressions;
