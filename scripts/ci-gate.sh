@@ -12,7 +12,7 @@ usage() {
 gate_mode=${BAUKIT_GATE_MODE:-full}
 workers=${BAUKIT_GATE_WORKERS:-2}
 msrv=1.95
-generated_flavors="backend web mobile mobile-pwa combined mcp auth clerk workos"
+generated_flavors="backend web mobile mobile-pwa mobile-pwa-auth combined mcp auth clerk workos"
 
 list_steps() {
   cat <<'STEPS'

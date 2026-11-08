@@ -417,6 +417,13 @@ jobs:
             mobile: true
             web: false
             mcp: false
+          - flavor: mobile-pwa-auth
+            product_name: mobile-pwa-auth-fixture
+            flags: --backend --mobile --pwa --auth oidc
+            backend: true
+            mobile: true
+            web: false
+            mcp: false
           - flavor: combined
             product_name: fixture
             flags: --backend --mobile --web

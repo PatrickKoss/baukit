@@ -92,7 +92,7 @@ git diff --stat cli/tests/snapshots/
 ### Generated-fixture check
 
 `make generated-fixture-gate` runs all fixture flavors from CI: backend, web,
-mobile, mobile-pwa, combined, mcp, auth, clerk, workos, platform-standalone and
+mobile, mobile-pwa, mobile-pwa-auth, combined, mcp, auth, clerk, workos, platform-standalone and
 platform. `make platform-fixture-gate` checks standalone and OIDC platform
 backends with web clients, including signed-event PostgreSQL tests and the daily
 worker purge. Use `FIXTURE_FLAVORS="backend platform"` with the full target for a
@@ -172,5 +172,5 @@ Edit it there, not here.
   dashboards/alerts/recording rules reference those names, keep them in sync.
 - Templates in `templates/` generate downstream products: any template change
   must keep the generated fixture green in all CI flavors
-  (backend, web, mobile, mobile-pwa, combined, mcp, auth, clerk, workos,
+  (backend, web, mobile, mobile-pwa, mobile-pwa-auth, combined, mcp, auth, clerk, workos,
   platform-standalone, platform).
