@@ -35,6 +35,10 @@ jest.mock('expo-constants', () => ({
 }));
 
 {% endif %}const ORIGIN = 'http://localhost:4100';
+/** Each test loads a fresh module registry, including Expo's lazily installed URL globals. */
+const FRESH_REGISTRY_TIMEOUT_MS = 30_000;
+
+jest.setTimeout(FRESH_REGISTRY_TIMEOUT_MS);
 
 function unsignedJwt(payload: unknown): string {
   const encoded = btoa(JSON.stringify(payload)).replaceAll('+', '-').replaceAll('/', '_');
