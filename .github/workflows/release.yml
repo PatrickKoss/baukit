@@ -131,9 +131,12 @@ jobs:
         run: scripts/check-version-coherence.py --tag "$GITHUB_REF_NAME"
 
       - name: Verify tagged train
+        env:
+          BAUKIT_GATE_WORKERS: 4
         run: |
           cargo test --manifest-path rust/Cargo.toml
-          (cd typescript && pnpm check --concurrency=4)
+          scripts/ci-gate.sh --step ts-check
+          (cd typescript && pnpm run lint:root)
           cargo test --manifest-path examples/minimal-api/Cargo.toml
 
       - name: Aggregate release notes
