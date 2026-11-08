@@ -27,7 +27,7 @@ for flavor in "${flavors[@]}"; do
         web) flags=(--web); web=true ;;
         mobile) flags=(--mobile); mobile=true ;;
         mobile-pwa) flags=(--mobile --pwa); mobile=true ;;
-        mobile-pwa-auth) flags=(--backend --mobile --pwa --auth oidc); name=mobile-pwa-auth-fixture; backend=true mobile=true ;;
+        mobile-pwa-auth) flags=(--backend --mobile --pwa --auth oidc); name="mobile-pwa-auth-fixture"; backend=true mobile=true ;;
         combined) flags=(--backend --mobile --web); backend=true mobile=true web=true ;;
         mcp) flags=(--backend --mcp --auth oidc); backend=true mcp=true ;;
         auth) flags=(--backend --mobile --web --auth oidc --mcp); name=long-product-name-fixture; backend=true mobile=true web=true mcp=true ;;
