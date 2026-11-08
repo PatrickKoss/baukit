@@ -53,7 +53,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         : `http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`,
     oidcClientId:
       typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`,
-{% elif context.auth_workos %}    workosClientId: environmentText('EXPO_PUBLIC_WORKOS_CLIENT_ID'),
+{% if context.pwa and not context.web %}    oidcWebClientId: environmentText('EXPO_PUBLIC_OIDC_WEB_CLIENT_ID') || `${PRODUCT_NAME}-web`,
+{% endif %}{% elif context.auth_workos %}    workosClientId: environmentText('EXPO_PUBLIC_WORKOS_CLIENT_ID'),
     workosApiHostname: environmentText('EXPO_PUBLIC_WORKOS_API_HOSTNAME') || 'api.workos.com',
     workosRedirectUri: environmentText('EXPO_PUBLIC_WORKOS_REDIRECT_URI') || `${PRODUCT_NAME}://oauth`,
 {% endif %}{% if context.auth_oidc %}    oidcAudience: typeof configuredAudience === 'string' ? configuredAudience : undefined,

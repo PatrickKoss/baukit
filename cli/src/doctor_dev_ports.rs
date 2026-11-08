@@ -31,6 +31,7 @@ pub(crate) fn validate(
         }
         check_authorized_parties(root, manifest, &browser_ports, failures)?;
         check_redirect_default(root, port, failures)?;
+        check_expo_scripts(root, ExpoServer::Browser, port, failures)?;
         record_success("web", port, before, successes, failures);
     }
     if let Some(port) = ports.web_preview {
@@ -46,7 +47,7 @@ pub(crate) fn validate(
     }
     if let Some(port) = ports.metro {
         let before = failures.len();
-        check_expo_scripts(root, port, failures)?;
+        check_expo_scripts(root, ExpoServer::Metro, port, failures)?;
         for directory in ["scripts", "mobile/scripts"] {
             check_metro_directory(root, &root.join(directory), port, failures)?;
         }
@@ -241,7 +242,35 @@ fn check_origins(relative: &str, source: &str, port: u16, failures: &mut Vec<Str
     }
 }
 
-fn check_expo_scripts(root: &Path, port: u16, failures: &mut Vec<String>) -> Result<()> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ExpoServer {
+    Metro,
+    Browser,
+}
+
+impl ExpoServer {
+    fn of(flags: &[&str]) -> Self {
+        if flags.contains(&"--web") {
+            Self::Browser
+        } else {
+            Self::Metro
+        }
+    }
+
+    fn port_name(self) -> &'static str {
+        match self {
+            Self::Metro => "metro",
+            Self::Browser => "web",
+        }
+    }
+}
+
+fn check_expo_scripts(
+    root: &Path,
+    server: ExpoServer,
+    port: u16,
+    failures: &mut Vec<String>,
+) -> Result<()> {
     let relative = "mobile/package.json";
     let Some(source) = read_optional(root, relative)? else {
         return Ok(());
@@ -270,13 +299,17 @@ fn check_expo_scripts(root: &Path, port: u16, failures: &mut Vec<String>) -> Res
                 let Some(flags) = words.get(index + 2..) else {
                     continue;
                 };
+                if ExpoServer::of(flags) != server {
+                    continue;
+                }
                 let found = expo_port_flags(flags);
                 let relative = format!("{relative} scripts.{name}");
+                let name = server.port_name();
                 if found.is_empty() {
-                    check_port(&relative, "metro", port, None, failures);
+                    check_port(&relative, name, port, None, failures);
                 }
                 for found in found {
-                    check_port(&relative, "metro", port, found, failures);
+                    check_port(&relative, name, port, found, failures);
                 }
             }
         }

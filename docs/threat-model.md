@@ -64,6 +64,7 @@ Baukit is a library, so this model covers the controls the crates, packages, tem
 | S-09 | all parsers | D, T | Panics or bypasses in decoders of untrusted bytes | none | to write: `rust/fuzz` targets and proptest properties | gap, P2.6, P2.7 |
 | S-10 | all | all | New boundaries ship without a threat review | this file and the `baukit-threat-model` skill | product `docs/threat-model.md` checked in review | gap, P2.10, P2.11 |
 | S-11 | IdP to API | S | Products lack negative auth tests | `baukit_test::jwt` fixtures only | to write: `baukit-test` auth negative suite (expired, iss, aud, alg none, HS256 confusion, unknown kid, tampered payload) | gap, P2.8 |
+| S-12 | mobile web build to API | I | Expo web build keeps tokens in `localStorage` through the `expo-secure-store` fallback | `auth-storage.ts` refuses on web; OIDC uses the `/auth/session` BFF, Clerk and WorkOS their browser SDKs (ADR 0006 section 9) | `templates/mobile/__auth__/mobile/src/web-sign-in-storage.test.ts`, `src/auth-storage.test.ts` | covered |
 
 ## Re-run when
 

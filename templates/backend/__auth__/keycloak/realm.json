@@ -169,7 +169,7 @@
       "defaultClientScopes": ["basic"],
       "optionalClientScopes": [],
       "protocolMappers": {{ shape_mappers() }}
-    }{% endif %}{% if context.web %},
+    }{% endif %}{% if context.web or context.pwa %},
     {
       "clientId": "{{ context.app_name }}-web",
       "name": "Web public PKCE client, redeemed by the backend /auth/session",

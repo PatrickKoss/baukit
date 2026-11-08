@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `scripts/repo-lint.sh` passes `--force-exclude` to `ruff check` and `ruff format --check`, so `exclude`, `extend-exclude` and `[format] exclude` in `ruff.toml` apply to the explicit file list.
+{% if context.auth_enabled and context.pwa and not context.web %}- Security: the backend serves the `/auth/session` browser-session routes, CORS for the web origin and the `-web` Keycloak client when `pwa` is set, not only with `web`. Migration: copy the `[auth.browser_session]` and `[http] cors_allowed_origins` blocks from `local.toml`, the `BROWSER_SESSION` compose variable, the `browserSession` Helm values and the `-web` client in `keycloak/realm.json`, then run the browser-session migration.
+
+{% endif %}
 ## [0.19.1] - 2026-11-08
 
 {% if context.quality_strict %}- `scripts/quality-gate.sh` fuzz step passes the nightly host triple to `cargo fuzz`. The prebuilt cargo-fuzz from `install-action` is a musl binary and otherwise builds the targets for musl, which ASan rejects.

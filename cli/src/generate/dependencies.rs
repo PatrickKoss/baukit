@@ -64,6 +64,9 @@ impl BaukitPackages {
         let mut mobile_packages = typescript_packages(mobile, mobile && auth_enabled, false);
         if pwa && mobile && !web {
             mobile_packages.push("@baukit/pwa-web");
+            if auth_enabled {
+                mobile_packages.extend(EXPECTED_WEB_AUTH_DEPENDENCIES);
+            }
         }
         let mobile_dev = if mobile {
             vec![CSP_PACKAGE, ESLINT_CONFIG_PACKAGE]

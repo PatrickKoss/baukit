@@ -88,8 +88,8 @@ tracked_sources() {
   git ls-files -z -- "$@" | grep -zvE '(^|/)(node_modules|target|vendor)/|^templates/'
 }
 step_python_lint() {
-  tracked_sources '*.py' | xargs -0 ruff check
-  tracked_sources '*.py' | xargs -0 ruff format --check
+  tracked_sources '*.py' | xargs -0 ruff check --force-exclude
+  tracked_sources '*.py' | xargs -0 ruff format --check --force-exclude
 }
 step_shell_lint() { tracked_sources '*.sh' | xargs -0 shellcheck; }
 step_metric_names() { python3 deploy/observability/lint/check-metric-names.py; }

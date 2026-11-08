@@ -69,8 +69,8 @@ python_lint() {
     echo "repo lint: no Python files"
     return
   fi
-  repository_files '*.py' | xargs -0 ruff check
-  repository_files '*.py' | xargs -0 ruff format --check
+  repository_files '*.py' | xargs -0 ruff check --force-exclude
+  repository_files '*.py' | xargs -0 ruff format --check --force-exclude
 }
 
 shell_lint() {

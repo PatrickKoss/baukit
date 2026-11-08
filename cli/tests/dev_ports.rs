@@ -478,12 +478,7 @@ fn doctor_checks_each_expo_command_including_compound_scripts() -> anyhow::Resul
     declared_product(root, "metro = { host = 8093 }\n")?;
     let path = root.join("mobile/package.json");
     let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
-    for command in [
-        "expo start",
-        "expo run:android",
-        "expo run:ios",
-        "expo start --web",
-    ] {
+    for command in ["expo start", "expo run:android", "expo run:ios"] {
         for suffix in [
             "",
             " --port nonsense",
@@ -508,6 +503,30 @@ fn doctor_checks_each_expo_command_including_compound_scripts() -> anyhow::Resul
         fs::write(&path, serde_json::to_string_pretty(&package)?)?;
         doctor(root)?;
     }
+    Ok(())
+}
+
+#[test]
+fn doctor_checks_expo_web_commands_against_the_web_port() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    declared_product(root, "web = { host = 5673 }\nmetro = { host = 8093 }\n")?;
+    let path = root.join("mobile/package.json");
+    let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+    for suffix in ["", " --port 8093", " --port 5673 --port 8081"] {
+        package["scripts"]["port-test"] = format!("expo start --web{suffix}").into();
+        fs::write(&path, serde_json::to_string_pretty(&package)?)?;
+        let error = doctor(root)
+            .expect_err("the Expo web server needs the declared web port")
+            .to_string();
+        assert!(
+            error.contains("mobile/package.json scripts.port-test") && error.contains("ports.web"),
+            "{error}"
+        );
+    }
+    package["scripts"]["port-test"] = "expo start --web --port 5673".into();
+    fs::write(&path, serde_json::to_string_pretty(&package)?)?;
+    doctor(root)?;
     Ok(())
 }
 

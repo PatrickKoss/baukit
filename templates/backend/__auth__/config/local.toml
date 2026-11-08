@@ -7,10 +7,10 @@ provider = "{{ context.auth_provider }}"
 # The local Keycloak realm issues {{ context.auth_provider }}-shaped tokens for the production verifier.
 issuer = "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}"
 jwks_uri = "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}/protocol/openid-connect/certs"
-{% if context.auth_clerk %}authorized_parties = [{% if context.web %}"{{ context.app_name }}-web", {% endif %}{% if context.mobile %}"{{ context.app_name }}-mobile", {% endif %}"{{ context.app_name }}-local"]
+{% if context.auth_clerk %}authorized_parties = [{% if context.web or context.pwa %}"{{ context.app_name }}-web", {% endif %}{% if context.mobile %}"{{ context.app_name }}-mobile", {% endif %}"{{ context.app_name }}-local"]
 allow_missing_azp = {{ "true" if context.mobile else "false" }}
 {% else %}client_id = "client_{{ context.app_crate }}_local"
-{% endif %}{% endif %}{% if context.web %}
+{% endif %}{% endif %}{% if context.web or context.pwa %}
 # Backend-for-frontend for the web client (ADR 0006). Safari refuses Secure
 # cookies over plain http; set insecure_local_cookie = true to test there.
 [auth.browser_session]
@@ -22,7 +22,7 @@ enabled = true
 {% else %}issuer = "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}"
 jwks_uri = "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}/protocol/openid-connect/certs"
 {% if context.auth_clerk %}required_scopes = ["items:read"]
-{% endif %}{% endif %}{% endif %}{% if context.web %}
+{% endif %}{% endif %}{% endif %}{% if context.web or context.pwa %}
 [http]
 cors_allowed_origins = ["http://localhost:{{ context.web_port }}"]
 {% endif %}
