@@ -64,7 +64,8 @@ of routing and the PWA shell works unchanged.
 `expiresAt` is epoch milliseconds. `subject` is the `sub` claim, so the client
 can detect an account switch without an ID token. The backend keeps the ID
 token server side for `id_token_hint` on logout. `redirectUri` must match an
-entry in `BrowserSessionConfig.redirect_uris`. Errors use the baukit-http
+entry in `BrowserSessionConfig.redirect_uris` after WHATWG URL serialization on
+both sides, so an origin registered with or without the trailing slash works. Errors use the baukit-http
 problem shape with codes `invalid_grant`, `session_expired`, `csrf_rejected`,
 `idp_unavailable` (503, retryable).
 

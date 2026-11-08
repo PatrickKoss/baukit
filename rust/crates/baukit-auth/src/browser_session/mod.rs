@@ -51,6 +51,8 @@ mod cookie;
 mod crypto;
 mod idp;
 mod rate_limit;
+#[cfg(test)]
+mod redirect_tests;
 mod router;
 mod service;
 mod store;
