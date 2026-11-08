@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use axum::http::{HeaderMap, Method, StatusCode, header::CONTENT_TYPE};
+use axum::http::{HeaderMap, HeaderName, Method, StatusCode, header::CONTENT_TYPE};
 use baukit_http::{RetryHeaderOptions, classify_http_status_with_options};
 use reqwest::{
     dns::{Addrs, Name, Resolve, Resolving},
@@ -343,8 +343,17 @@ impl GuardedClient {
         if status.is_success() || (status.is_redirection() && self.options.redirect_responses()) {
             return Ok(response);
         }
+        let names: Vec<&str> = self
+            .options
+            .retry_after_headers()
+            .iter()
+            .map(HeaderName::as_str)
+            .collect();
         let mut retry_headers =
-            RetryHeaderOptions::default().with_max_retry_after(self.options.max_retry_after());
+            RetryHeaderOptions::new(&names).with_max_retry_after(self.options.max_retry_after());
+        if self.options.retry_after_first_field() {
+            retry_headers = retry_headers.with_first_field();
+        }
         if self.options.forbidden_rate_limit() {
             retry_headers = retry_headers.with_forbidden_rate_limit();
         }
@@ -444,6 +453,7 @@ fn build_client(
         .https_only(transport == Transport::Https)
         .connect_timeout(options.connect_timeout())
         .timeout(options.request_timeout())
+        .tls_certs_merge(options.extra_root_certificates().iter().cloned())
         .build()
         .map_err(EgressClientError)
 }
