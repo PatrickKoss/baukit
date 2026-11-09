@@ -24,3 +24,8 @@ reason = "No fix available: unsafe-libyaml is unmaintained with no successor rel
 id = "RUSTSEC-2026-0440"
 ignoreUntil = 2027-02-05
 reason = "No fix available: astral-tokio-tar is unmaintained with no patched release; reached through testcontainers in baukit-test. Mirrors the rust/deny.toml ignore."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0459"
+ignoreUntil = 2027-02-07
+reason = "No compatible fix: libsqlite3-sys is lockfile-only through sqlx's optional sqlx-sqlite dependency, which no crate enables (cargo tree -i libsqlite3-sys is empty); sqlx 0.9.0 caps it below 0.38 and the fix is 0.39."

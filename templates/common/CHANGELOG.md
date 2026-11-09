@@ -4,7 +4,9 @@
 
 ## [0.19.2] - 2026-11-08
 
-- `scripts/repo-lint.sh` passes `--force-exclude` to `ruff check` and `ruff format --check`, so `exclude`, `extend-exclude` and `[format] exclude` in `ruff.toml` apply to the explicit file list.
+{% if context.backend %}- Security: `osv-scanner.toml` ignores RUSTSEC-2026-0459 until 2027-02-07. sqlx 0.9.0 caps `libsqlite3-sys` below the fixed 0.39, and no backend crate compiles it. Copy the entry from the new template.
+{% endif %}{% if context.mcp %}- Security: `rmcp` is 3.9.0, past RUSTSEC-2026-0457, RUSTSEC-2026-0461 and RUSTSEC-2026-0462. Run `cargo update -p rmcp`.
+{% endif %}- `scripts/repo-lint.sh` passes `--force-exclude` to `ruff check` and `ruff format --check`, so `exclude`, `extend-exclude` and `[format] exclude` in `ruff.toml` apply to the explicit file list.
 {% if context.auth_enabled and context.pwa and not context.web %}- Security: the backend serves the `/auth/session` browser-session routes, CORS for the web origin and the `-web` Keycloak client when `pwa` is set, not only with `web`. Migration: copy the `[auth.browser_session]` and `[http] cors_allowed_origins` blocks from `local.toml`, the `BROWSER_SESSION` compose variable, the `browserSession` Helm values and the `-web` client in `keycloak/realm.json`, then run the browser-session migration.
 
 {% endif %}

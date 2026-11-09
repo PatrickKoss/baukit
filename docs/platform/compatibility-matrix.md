@@ -13,6 +13,7 @@ Last verified release train: `v0.19.2` (patch train on top of `v0.19.1`).
 - `baukit-auth` normalizes browser-session redirect URIs.
 - `baukit-egress` reads vendor rate-limit headers and trusts extra root certificates.
 - `baukit check suppressions` rejects bulk suppression and lint config weakening, and budgets seven more comment forms.
+- `rmcp` is 3.9.0, past RUSTSEC-2026-0457, RUSTSEC-2026-0461 and RUSTSEC-2026-0462.
 
 ### Upgrade steps
 
@@ -21,6 +22,7 @@ Last verified release train: `v0.19.2` (patch train on top of `v0.19.1`).
 3. Delete any `eslint-suppressions.json` and any `--suppress-*` flag, and fix the findings they hid. Remove every `"allow"` level from `[lints]` tables, every clippy `-A`/`--allow`/`--cap-lints` flag in gate scripts, and every eslint rule a product config sets to `off` or `warn`. Fix the code that each of these hid.
 4. Mobile products with `pwa` and auth apply the mobile template changelog entry for 0.19.2. Then register the web origin as a redirect URI, and the backend serves the browser-session routes, as described in the template changelog.
 5. Products that call vendors with their own rate-limit headers (Fitbit, Whoop, Polar) switch to `EgressOptions::with_retry_after_headers`. Products that pin a private CA switch to `with_extra_root_certificates_pem`.
+6. Products with an MCP server run `cargo update -p rmcp` to reach 3.9.0. Backend products add the RUSTSEC-2026-0459 `[[IgnoredVulns]]` entry from the new `osv-scanner.toml` (`ignoreUntil = 2027-02-07`), because sqlx 0.9.0 caps `libsqlite3-sys` below the fixed 0.39 and no crate compiles it.
 
 ## v0.19.1
 
@@ -362,7 +364,7 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 | Provider registry | `@baukit/integrations-client` | 0.5.2 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
 | Client sync primitives | `@baukit/sync-client` | 0.5.2 | Scheduler with optional retry, request-function and HTTP transports, status store, push-batch ranking, a persisted hybrid logical clock, and tombstone-horizon conformance. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.2 and React Native 0.86.3; the root entry has no runtime dependencies and no React. |
 | PWA cache strategy | `@baukit/pwa-web` | 0.5.2 | ESM and CJS builds, request classification, `navigationFallback`, and strategy execution for a product-owned service worker; no dependencies and no service-worker globals. |
-| MCP server | `rmcp` | 3.5.1 | `--mcp --backend --auth oidc` generates Rust Streamable HTTP with resource OAuth and service ports. |
+| MCP server | `rmcp` | 3.9.0 | `--mcp --backend --auth oidc` generates Rust Streamable HTTP with resource OAuth and service ports. |
 | Web build | Vite | 8.3.2 | |
 | Styling | Tailwind CSS | 4 | |
 | Web persistence | `@baukit/data-contracts-dexie` / Dexie | 4.4.6 | only when offline is enabled; Chromium and WebKit conformance-tested |
