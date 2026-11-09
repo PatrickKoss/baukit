@@ -45,6 +45,7 @@ mod auth;
 mod auth_negative;
 mod connector;
 mod container_labels;
+mod container_start;
 mod credential_probe;
 mod cross_tenant;
 #[cfg(feature = "data-subject")]
@@ -93,6 +94,7 @@ pub use connector::{
     UnknownScenario,
 };
 pub use container_labels::container_labels;
+pub use container_start::StartContainer;
 pub use credential_probe::{
     CredentialProbeConformanceCases, CredentialProbeConformanceError, ScriptedCredentialProbeHttp,
     ScriptedCredentialProbeResponse, assert_credential_probe_conformance,

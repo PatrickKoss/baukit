@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt as _,
     core::{IntoContainerPort as _, WaitFor},
-    runners::AsyncRunner,
 };
 
 #[cfg(feature = "sqlx-postgres")]
+use crate::StartContainer as _;
 use crate::postgres_database::{PostgresAppRole, PostgresTestDatabase, PostgresTestDatabases};
 #[cfg(feature = "sqlx-postgres")]
 use crate::{CleanupKind, OwnedResourceCheck};
@@ -169,7 +169,7 @@ impl PostgresTestOptions {
             .with_env_var("POSTGRES_PASSWORD", "postgres")
             .with_env_var("POSTGRES_DB", "postgres")
             .with_labels(crate::container_labels())
-            .start()
+            .start_container()
             .await?;
         let host = container.get_host().await?;
         let port = container.get_host_port_ipv4(POSTGRES_PORT).await?;

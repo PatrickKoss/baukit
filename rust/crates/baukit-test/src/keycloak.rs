@@ -1,5 +1,6 @@
 use std::{fmt, time::Duration};
 
+use crate::StartContainer as _;
 use aws_lc_rs::digest;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use reqwest::{
@@ -10,7 +11,6 @@ use reqwest::{
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt as _,
     core::{IntoContainerPort as _, WaitFor},
-    runners::AsyncRunner,
 };
 use thiserror::Error;
 
@@ -80,7 +80,7 @@ impl KeycloakTestContainer {
             .with_copy_to(IMPORT_PATH, realm_json.into())
             .with_labels(crate::container_labels())
             .with_startup_timeout(STARTUP_TIMEOUT)
-            .start()
+            .start_container()
             .await?;
         let port = container.get_host_port_ipv4(KEYCLOAK_PORT.tcp()).await?;
         Ok(Self {

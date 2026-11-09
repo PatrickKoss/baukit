@@ -6,6 +6,10 @@ All notable changes to `baukit-test` are documented here.
 
 ## [0.19.2] - 2026-11-08
 
+### Fixed
+
+- Fixture containers start through `StartContainer::start_container`, which serializes only the first start in a process. Concurrent first starts could panic with `internal error: entered unreachable code` inside conquer-once 0.4.0, which testcontainers' `watchdog` feature uses to register containers.
+
 ## [0.19.1] - 2026-11-08
 
 ## [0.19.0] - 2026-11-07
