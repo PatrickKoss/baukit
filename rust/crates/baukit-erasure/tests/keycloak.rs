@@ -4,13 +4,14 @@ use baukit_config::Secret;
 use baukit_erasure::{
     IdentityAccountDeleter, IdentityDeletionError, KeycloakAccountDeleter, KeycloakDeletionConfig,
 };
+use baukit_test::StartContainer as _;
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 use std::{error::Error, path::PathBuf, process::Command};
 use testcontainers::{
     GenericBuildableImage, ImageExt,
     core::{IntoContainerPort, WaitFor},
-    runners::{AsyncBuilder, AsyncRunner},
+    runners::AsyncBuilder,
 };
 
 async fn admin(client: &Client, base: &str) -> Result<String, Box<dyn Error>> {
@@ -240,7 +241,7 @@ async fn deletes_user_treats_404_as_success_and_requires_manage_users() -> Resul
             "--hostname-strict=false",
         ])
         .with_labels(baukit_test::container_labels())
-        .start()
+        .start_container()
         .await?;
     let base = format!(
         "http://{}:{}",

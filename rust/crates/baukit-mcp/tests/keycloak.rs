@@ -2,6 +2,7 @@
 #[path = "support/resources.rs"]
 mod resources;
 
+use baukit_test::StartContainer as _;
 use std::{
     error::Error,
     sync::Arc,
@@ -26,7 +27,7 @@ use serde_json::{Value, json};
 use testcontainers::{
     GenericBuildableImage, ImageExt,
     core::{IntoContainerPort, WaitFor, logs::LogFrame},
-    runners::{AsyncBuilder, AsyncRunner},
+    runners::AsyncBuilder,
 };
 use tokio::net::TcpListener;
 
@@ -127,7 +128,7 @@ async fn start_keycloak() -> Result<(KeycloakContainer, String), Box<dyn Error>>
             "--hostname-strict=false",
         ])
         .with_labels(baukit_test::container_labels())
-        .start()
+        .start_container()
         .await?;
     let base = format!(
         "http://127.0.0.1:{}",

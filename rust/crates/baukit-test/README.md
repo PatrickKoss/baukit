@@ -14,14 +14,15 @@ Products must replace testcontainers-modules with `GenericImage` to use this
 version of baukit-test. The advanced fixture guards also use `GenericImage`.
 
 ```rust,no_run
-use testcontainers::{GenericImage, ImageExt, core::{IntoContainerPort, WaitFor}, runners::AsyncRunner};
+use baukit_test::StartContainer as _;
+use testcontainers::{GenericImage, ImageExt, core::{IntoContainerPort, WaitFor}};
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 let container = GenericImage::new("redis", "8.10.2-alpine")
     .with_exposed_port(6379_u16.tcp())
     .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
     .with_labels(baukit_test::container_labels())
-    .start()
+    .start_container()
     .await?;
 let port = container.get_host_port_ipv4(6379).await?;
 let url = format!("redis://{}:{port}/", container.get_host().await?);
@@ -190,7 +191,9 @@ Every Baukit container fixture has these labels:
 - `dev.baukit.test.started-at` records Unix seconds.
 
 For a container started directly with testcontainers, apply `baukit_test::container_labels()`
-with `ImageExt::with_labels` before `.start()`.
+with `ImageExt::with_labels` before `.start_container()`. Use `StartContainer::start_container`
+instead of `AsyncRunner::start` because concurrent first starts in one process can panic inside
+conquer-once 0.4.0, which testcontainers' watchdog uses.
 
 Run [`scripts/reap-test-containers.sh`](../../../scripts/reap-test-containers.sh) on the
 local Linux Docker host to remove running or stopped containers whose owning process is
