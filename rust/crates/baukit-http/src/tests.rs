@@ -27,23 +27,26 @@ use utoipa::OpenApi as _;
 
 use super::*;
 
-#[allow(
+#[expect(
     dead_code,
-    reason = "fields are read only through the derived OpenAPI params"
+    reason = "OpenAPI path stub: only its annotation is read, by the derived InferredQueryApi"
 )]
-#[derive(serde::Deserialize, utoipa::IntoParams)]
-struct InferredListQuery {
-    tag: Vec<String>,
-}
+mod inferred_stub {
+    use super::Query;
 
-#[utoipa::path(get, path = "/inferred-items", params(InferredListQuery))]
-#[allow(dead_code, reason = "OpenAPI path stub: only its annotation is used")]
-fn inferred_list_query(Query(query): Query<InferredListQuery>) {
-    let _ = query.tag;
+    #[derive(serde::Deserialize, utoipa::IntoParams)]
+    pub(super) struct InferredListQuery {
+        tag: Vec<String>,
+    }
+
+    #[utoipa::path(get, path = "/inferred-items", params(InferredListQuery))]
+    fn inferred_list_query(Query(query): Query<InferredListQuery>) {
+        let _ = query.tag;
+    }
 }
 
 #[derive(utoipa::OpenApi)]
-#[openapi(paths(inferred_list_query))]
+#[openapi(paths(inferred_stub::inferred_list_query))]
 struct InferredQueryApi;
 
 async fn response_json(response: axum::response::Response) -> Value {

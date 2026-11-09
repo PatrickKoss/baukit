@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 use std::{error::Error, path::PathBuf, sync::Arc};
 
 use sqlx::PgPool;
@@ -192,13 +186,23 @@ async fn rename_sql_upgrades_the_old_counter_shape() -> Result<(), Box<dyn Error
         .execute(&pool)
         .await?;
 
+    assert_upgraded_columns(&pool).await?;
+    assert_upgraded_constraints(&pool).await?;
+    assert_owner_cascade_and_revision_check(&pool).await?;
+
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
+async fn assert_upgraded_columns(pool: &PgPool) -> Result<(), Box<dyn Error>> {
     let columns: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
         "SELECT column_name, data_type, is_nullable, column_default
          FROM information_schema.columns
          WHERE table_schema = 'public' AND table_name = 'sync_revisions'
          ORDER BY ordinal_position",
     )
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await?;
     assert_eq!(columns.len(), 2);
     assert_eq!(
@@ -223,14 +227,17 @@ async fn rename_sql_upgrades_the_old_counter_shape() -> Result<(), Box<dyn Error
             .as_deref()
             .is_some_and(|default| default.contains('0'))
     );
+    Ok(())
+}
 
+async fn assert_upgraded_constraints(pool: &PgPool) -> Result<(), Box<dyn Error>> {
     let constraints: Vec<(String, String)> = sqlx::query_as(
         "SELECT constraint_name, constraint_type
          FROM information_schema.table_constraints
          WHERE table_schema = 'public' AND table_name = 'sync_revisions'
          ORDER BY constraint_name",
     )
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await?;
     assert!(constraints.contains(&(
         "sync_revisions_owner_id_fkey".to_owned(),
@@ -248,42 +255,42 @@ async fn rename_sql_upgrades_the_old_counter_shape() -> Result<(), Box<dyn Error
          WHERE constraint_schema = 'public'
            AND constraint_name = 'sync_revisions_owner_id_fkey'",
     )
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await?;
     assert_eq!(delete_rule, "CASCADE");
+    Ok(())
+}
 
+async fn assert_owner_cascade_and_revision_check(pool: &PgPool) -> Result<(), Box<dyn Error>> {
     let owner = Uuid::new_v4();
     sqlx::query("INSERT INTO users (id) VALUES ($1)")
         .bind(owner)
-        .execute(&pool)
+        .execute(pool)
         .await?;
     sqlx::query("INSERT INTO sync_revisions (owner_id) VALUES ($1)")
         .bind(owner)
-        .execute(&pool)
+        .execute(pool)
         .await?;
     sqlx::query("DELETE FROM users WHERE id = $1")
         .bind(owner)
-        .execute(&pool)
+        .execute(pool)
         .await?;
     let remaining: i64 = sqlx::query_scalar("SELECT count(*) FROM sync_revisions")
-        .fetch_one(&pool)
+        .fetch_one(pool)
         .await?;
     assert_eq!(remaining, 0);
 
     let negative_owner = Uuid::new_v4();
     sqlx::query("INSERT INTO users (id) VALUES ($1)")
         .bind(negative_owner)
-        .execute(&pool)
+        .execute(pool)
         .await?;
     let negative =
         sqlx::query("INSERT INTO sync_revisions (owner_id, last_revision) VALUES ($1, -1)")
             .bind(negative_owner)
-            .execute(&pool)
+            .execute(pool)
             .await;
     assert!(negative.is_err(), "negative revisions must fail the check");
-
-    pool.close().await;
-    drop(fixture);
     Ok(())
 }
 

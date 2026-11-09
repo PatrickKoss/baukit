@@ -15,8 +15,11 @@ Edit it there, not here.
   errors outside tests. Propagate the error or encode the invariant in the type (`let ... else`, `get`,
   `try_from`). `unwrap_or_default` or `.ok()` on a failure that is a bug is not a fix.
 - Suppressions carry a reason that names the invariant. Use `#[expect(lint, reason = "...")]`, not
-  `#[allow]`. Comment forms (`eslint-disable`, `ast-grep-ignore`) need `-- reason`. The counts in
-  `baukit-check.toml` only go down.
+  `#[allow]`. Comment forms (`eslint-disable`, `ast-grep-ignore`, `@ts-expect-error`, `# noqa: CODE`,
+  `# nosec`) need `-- reason`, `//nolint:linter` needs `// reason`; `@ts-ignore` is forbidden. The counts in `baukit-check.toml` only go down.
+- No bulk suppression: no `eslint-suppressions.json` or `--suppress-all`, no clippy `-A`/`--cap-lints`
+  in gate scripts, no lint set to `allow` in `[lints]` or `.cargo/config.toml` rustflags, no eslint rule
+  set to `off`/`warn` outside `@baukit/eslint-config`, no golangci `disable`/`exclude` settings.
 - No file grows past 1000 lines (Rust) or 500 lines (TS). Allowlisted files may not grow at all: split them.
 - Domain logic stays free of frameworks. I/O sits behind a port with an adapter, and services orchestrate.
 - TypeScript parses untrusted data with guards (`@baukit/type-guards`), never `as unknown as T`.

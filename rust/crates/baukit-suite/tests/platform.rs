@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 #![cfg(feature = "platform")]
 use async_trait::async_trait;
 use axum::{
@@ -182,6 +176,85 @@ fn request(body: &str, secret: &str, timestamp: i64) -> Request<Body> {
         .body(Body::from(body.to_owned()))
         .expect("request")
 }
+async fn assert_unknown_conflict_and_retry(app: axum::Router, body: &str, handler: &Handler) {
+    let mut unknown: Value = serde_json::from_str(body).expect("json");
+    unknown["eventId"] = json!("unknown");
+    unknown["type"] = json!("hub.unknown.changed");
+    let unknown = unknown.to_string();
+    assert_eq!(
+        app.clone()
+            .oneshot(request(&unknown, "current", 1_800_000_000))
+            .await
+            .expect("response")
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(handler.calls.load(Ordering::SeqCst), 1);
+    let mut changed: Value = serde_json::from_str(body).expect("json");
+    changed["payload"]["revision"] = json!(8);
+    assert_eq!(
+        app.clone()
+            .oneshot(request(&changed.to_string(), "current", 1_800_000_000))
+            .await
+            .expect("response")
+            .status(),
+        StatusCode::CONFLICT
+    );
+    changed["eventId"] = json!("retry");
+    handler.fail.store(1, Ordering::SeqCst);
+    assert_eq!(
+        app.clone()
+            .oneshot(request(&changed.to_string(), "current", 1_800_000_000))
+            .await
+            .expect("response")
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    handler.fail.store(0, Ordering::SeqCst);
+    assert_eq!(
+        app.oneshot(request(&changed.to_string(), "current", 1_800_000_000))
+            .await
+            .expect("response")
+            .status(),
+        StatusCode::NO_CONTENT
+    );
+}
+
+async fn assert_malformed_requests_rejected(app: &axum::Router, body: &str) {
+    let mut doubled = request(body, "current", 1_800_000_000);
+    doubled
+        .headers_mut()
+        .append("x-suite-timestamp", "1800000000".parse().expect("header"));
+    assert_eq!(
+        app.clone()
+            .oneshot(doubled)
+            .await
+            .expect("response")
+            .status(),
+        StatusCode::UNAUTHORIZED
+    );
+    let mut wrong_content = request(body, "current", 1_800_000_000);
+    wrong_content
+        .headers_mut()
+        .insert("content-type", "text/plain".parse().expect("header"));
+    assert_eq!(
+        app.clone()
+            .oneshot(wrong_content)
+            .await
+            .expect("response")
+            .status(),
+        StatusCode::UNSUPPORTED_MEDIA_TYPE
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(request("{}", "current", 1_800_000_000))
+            .await
+            .expect("response")
+            .status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+}
+
 #[tokio::test]
 async fn receiver_statuses_rotation_window_body_limit_and_unknown_type() {
     let handler = Arc::new(Handler::default());
@@ -214,38 +287,7 @@ async fn receiver_statuses_rotation_window_body_limit_and_unknown_type() {
             status
         );
     }
-    let mut doubled = request(&body, "current", 1_800_000_000);
-    doubled
-        .headers_mut()
-        .append("x-suite-timestamp", "1800000000".parse().expect("header"));
-    assert_eq!(
-        app.clone()
-            .oneshot(doubled)
-            .await
-            .expect("response")
-            .status(),
-        StatusCode::UNAUTHORIZED
-    );
-    let mut wrong_content = request(&body, "current", 1_800_000_000);
-    wrong_content
-        .headers_mut()
-        .insert("content-type", "text/plain".parse().expect("header"));
-    assert_eq!(
-        app.clone()
-            .oneshot(wrong_content)
-            .await
-            .expect("response")
-            .status(),
-        StatusCode::UNSUPPORTED_MEDIA_TYPE
-    );
-    assert_eq!(
-        app.clone()
-            .oneshot(request("{}", "current", 1_800_000_000))
-            .await
-            .expect("response")
-            .status(),
-        StatusCode::UNPROCESSABLE_ENTITY
-    );
+    assert_malformed_requests_rejected(&app, &body).await;
     let limited = router(receiver.with_body_limit(1).expect("limit"));
     assert_eq!(
         limited
@@ -255,47 +297,7 @@ async fn receiver_statuses_rotation_window_body_limit_and_unknown_type() {
             .status(),
         StatusCode::PAYLOAD_TOO_LARGE
     );
-    let mut unknown: Value = serde_json::from_str(&body).expect("json");
-    unknown["eventId"] = json!("unknown");
-    unknown["type"] = json!("hub.unknown.changed");
-    let unknown = unknown.to_string();
-    assert_eq!(
-        app.clone()
-            .oneshot(request(&unknown, "current", 1_800_000_000))
-            .await
-            .expect("response")
-            .status(),
-        StatusCode::NO_CONTENT
-    );
-    assert_eq!(handler.calls.load(Ordering::SeqCst), 1);
-    let mut changed: Value = serde_json::from_str(&body).expect("json");
-    changed["payload"]["revision"] = json!(8);
-    assert_eq!(
-        app.clone()
-            .oneshot(request(&changed.to_string(), "current", 1_800_000_000))
-            .await
-            .expect("response")
-            .status(),
-        StatusCode::CONFLICT
-    );
-    changed["eventId"] = json!("retry");
-    handler.fail.store(1, Ordering::SeqCst);
-    assert_eq!(
-        app.clone()
-            .oneshot(request(&changed.to_string(), "current", 1_800_000_000))
-            .await
-            .expect("response")
-            .status(),
-        StatusCode::SERVICE_UNAVAILABLE
-    );
-    handler.fail.store(0, Ordering::SeqCst);
-    assert_eq!(
-        app.oneshot(request(&changed.to_string(), "current", 1_800_000_000))
-            .await
-            .expect("response")
-            .status(),
-        StatusCode::NO_CONTENT
-    );
+    assert_unknown_conflict_and_retry(app, &body, &handler).await;
 }
 fn snapshot(revision: u64, until: i64) -> EntitlementSnapshot {
     EntitlementSnapshot {
@@ -308,6 +310,33 @@ fn snapshot(revision: u64, until: i64) -> EntitlementSnapshot {
         grace_until: None,
     }
 }
+async fn erasure_conformance(cache: &dyn EntitlementCache) {
+    let mut erased = snapshot(22, 10);
+    erased.subject = "erased".into();
+    cache.store(&erased).await.expect("expired erasure row");
+    erased.product_id = "other".into();
+    cache.store(&erased).await.expect("second product");
+    cache.forget("erased").await.expect("forget");
+    cache.forget("erased").await.expect("repeat forget");
+    for product in ["hebkit", "other"] {
+        assert_eq!(cache.get("erased", product, 0).await.expect("erased"), None);
+        assert_eq!(
+            cache
+                .revision("erased", product)
+                .await
+                .expect("cursor erased"),
+            0
+        );
+    }
+    assert_eq!(
+        cache
+            .revision("suite|person-123", "hebkit")
+            .await
+            .expect("other subject retained"),
+        10
+    );
+}
+
 async fn cache_conformance(cache: &dyn EntitlementCache) {
     assert_eq!(
         cache
@@ -363,30 +392,7 @@ async fn cache_conformance(cache: &dyn EntitlementCache) {
             .expect("product"),
         None
     );
-    let mut erased = snapshot(22, 10);
-    erased.subject = "erased".into();
-    cache.store(&erased).await.expect("expired erasure row");
-    erased.product_id = "other".into();
-    cache.store(&erased).await.expect("second product");
-    cache.forget("erased").await.expect("forget");
-    cache.forget("erased").await.expect("repeat forget");
-    for product in ["hebkit", "other"] {
-        assert_eq!(cache.get("erased", product, 0).await.expect("erased"), None);
-        assert_eq!(
-            cache
-                .revision("erased", product)
-                .await
-                .expect("cursor erased"),
-            0
-        );
-    }
-    assert_eq!(
-        cache
-            .revision("suite|person-123", "hebkit")
-            .await
-            .expect("other subject retained"),
-        10
-    );
+    erasure_conformance(cache).await;
     organization_conformance(cache).await;
 }
 async fn organization_conformance(cache: &dyn EntitlementCache) {
@@ -756,73 +762,53 @@ mod postgres {
     }
 }
 
-#[test]
-fn platform_settings_load_through_nested_environment() {
-    use baukit_config::{ConfigLoader, Environment, ValidationErrors};
-    const CHILD: &str = "BAUKIT_PLATFORM_SETTINGS_CHILD";
-    if std::env::var_os(CHILD).is_none() {
-        let output = std::process::Command::new(std::env::current_exe().expect("executable"))
-            .args([
-                "--exact",
-                "platform_settings_load_through_nested_environment",
-            ])
-            .env(CHILD, "1")
-            .env(
-                "PLATFORM_SETTINGS_TEST__PLATFORM__HUB_ISSUER",
-                "https://hub.example",
-            )
-            .env(
-                "PLATFORM_SETTINGS_TEST__PLATFORM__JWKS_URL",
-                "https://hub.example/keys",
-            )
-            .env("PLATFORM_SETTINGS_TEST__PLATFORM__PRODUCT_ID", "alpha")
-            .env(
-                "PLATFORM_SETTINGS_TEST__PLATFORM__SOURCE_APP",
-                fixture_source(),
-            )
-            .env(
-                "PLATFORM_SETTINGS_TEST__PLATFORM__EVENT_TYPE_PREFIX",
-                "events",
-            )
-            .env(
-                "PLATFORM_SETTINGS_TEST__PLATFORM__RECEIVER_SECRET",
-                "secret-test-value",
-            )
-            .env(
-                "PLATFORM_SETTINGS_TEST__PLATFORM__PREVIOUS_RECEIVER_SECRET",
-                "previous-test-value",
-            )
-            .env(
-                "PLATFORM_SETTINGS_TEST__PLATFORM__STANDALONE_DEFAULT__TIER",
-                "premium",
-            )
-            .output()
-            .expect("child");
-        assert!(
-            output.status.success(),
-            "{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        return;
-    }
-    #[derive(Default, Deserialize)]
-    struct Product {
-        platform: PlatformConfig,
-    }
-    impl Validate for Product {
-        fn validate(&self) -> Result<(), ValidationErrors> {
-            self.platform.validate()
-        }
-    }
-    let settings = ConfigLoader::new("platform-settings-test", Environment::Local)
-        .expect("loader")
-        .without_dotenv()
-        .without_local_file()
-        .load::<Product>()
-        .expect("settings")
-        .product
-        .platform;
+fn run_settings_test_in_child(child: &str) {
+    let output = std::process::Command::new(std::env::current_exe().expect("executable"))
+        .args([
+            "--exact",
+            "platform_settings_load_through_nested_environment",
+        ])
+        .env(child, "1")
+        .env(
+            "PLATFORM_SETTINGS_TEST__PLATFORM__HUB_ISSUER",
+            "https://hub.example",
+        )
+        .env(
+            "PLATFORM_SETTINGS_TEST__PLATFORM__JWKS_URL",
+            "https://hub.example/keys",
+        )
+        .env("PLATFORM_SETTINGS_TEST__PLATFORM__PRODUCT_ID", "alpha")
+        .env(
+            "PLATFORM_SETTINGS_TEST__PLATFORM__SOURCE_APP",
+            fixture_source(),
+        )
+        .env(
+            "PLATFORM_SETTINGS_TEST__PLATFORM__EVENT_TYPE_PREFIX",
+            "events",
+        )
+        .env(
+            "PLATFORM_SETTINGS_TEST__PLATFORM__RECEIVER_SECRET",
+            "secret-test-value",
+        )
+        .env(
+            "PLATFORM_SETTINGS_TEST__PLATFORM__PREVIOUS_RECEIVER_SECRET",
+            "previous-test-value",
+        )
+        .env(
+            "PLATFORM_SETTINGS_TEST__PLATFORM__STANDALONE_DEFAULT__TIER",
+            "premium",
+        )
+        .output()
+        .expect("child");
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn assert_loaded_settings(settings: &PlatformConfig) {
     assert_eq!(settings.hub_issuer.as_deref(), Some("https://hub.example"));
     assert_eq!(settings.product_id, "alpha");
     assert_eq!(settings.source_app, fixture_source());
@@ -858,6 +844,34 @@ fn platform_settings_load_through_nested_environment() {
             .expect("standalone")
             .is_none()
     );
+}
+
+#[test]
+fn platform_settings_load_through_nested_environment() {
+    use baukit_config::{ConfigLoader, Environment, ValidationErrors};
+    const CHILD: &str = "BAUKIT_PLATFORM_SETTINGS_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        run_settings_test_in_child(CHILD);
+        return;
+    }
+    #[derive(Default, Deserialize)]
+    struct Product {
+        platform: PlatformConfig,
+    }
+    impl Validate for Product {
+        fn validate(&self) -> Result<(), ValidationErrors> {
+            self.platform.validate()
+        }
+    }
+    let settings = ConfigLoader::new("platform-settings-test", Environment::Local)
+        .expect("loader")
+        .without_dotenv()
+        .without_local_file()
+        .load::<Product>()
+        .expect("settings")
+        .product
+        .platform;
+    assert_loaded_settings(&settings);
 }
 
 struct BlockingHandler {
@@ -1249,6 +1263,73 @@ impl EntitlementSource for BlockingSource {
     }
 }
 #[cfg(feature = "postgres")]
+async fn assert_purge_batches(
+    pool: &sqlx::PgPool,
+    inbox: &PostgresPlatformInbox,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cutoff = Utc::now() - chrono::TimeDelta::days(30);
+    for (id, at) in [
+        ("old-1", cutoff - chrono::TimeDelta::days(1)),
+        ("old-2", cutoff - chrono::TimeDelta::days(1)),
+        ("old-3", cutoff - chrono::TimeDelta::seconds(1)),
+        ("boundary", cutoff),
+        ("recent", Utc::now()),
+    ] {
+        sqlx::query("INSERT INTO platform_inbound_receipts(event_id,body_hash,received_at) VALUES($1,$2,$3)").bind(id).bind([0_u8;32].as_slice()).bind(at).execute(pool).await?;
+    }
+    assert_eq!(
+        inbox.purge_received_before(cutoff, 0).await,
+        Err(PlatformError::Invalid)
+    );
+    assert_eq!(inbox.purge_received_before(cutoff, 2).await?, 2);
+    assert_eq!(inbox.purge_received_before(cutoff, 2).await?, 1);
+    assert_eq!(inbox.purge_received_before(cutoff, 2).await?, 0);
+    let ids: Vec<String> =
+        sqlx::query_scalar("SELECT event_id FROM platform_inbound_receipts ORDER BY event_id")
+            .fetch_all(pool)
+            .await?;
+    assert_eq!(
+        ids,
+        vec![
+            "boundary".to_owned(),
+            event().envelope().event_id.clone(),
+            "recent".to_owned()
+        ]
+    );
+    Ok(())
+}
+
+#[cfg(feature = "postgres")]
+async fn assert_forget_is_transactional(
+    pool: &sqlx::PgPool,
+    cache: &PostgresEntitlementCache,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut tx = pool.begin().await?;
+    let mut context = EventContext::with_postgres(&mut tx);
+    PostgresEntitlementCache::forget_in_transaction(
+        "suite|person-123",
+        context.postgres().expect("transaction"),
+    )
+    .await?;
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM platform_entitlement_cache")
+        .fetch_one(&mut *tx)
+        .await?;
+    assert_eq!(count, 0);
+    tx.rollback().await?;
+    assert_eq!(
+        cache.revision("suite|person-123", "hebkit").await?,
+        9,
+        "erasure rolls back with the product transaction"
+    );
+    let mut tx = pool.begin().await?;
+    PostgresEntitlementCache::forget_in_transaction("suite|person-123", &mut tx).await?;
+    tx.commit().await?;
+    assert_eq!(cache.revision("suite|person-123", "hebkit").await?, 0);
+
+    Ok(())
+}
+
+#[cfg(feature = "postgres")]
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn postgres_prepares_without_a_connection_erases_transactionally_and_purges_batches()
@@ -1296,57 +1377,9 @@ async fn postgres_prepares_without_a_connection_erases_transactionally_and_purge
         "a pull must not overwrite a concurrent newer event"
     );
 
-    let mut tx = pool.begin().await?;
-    let mut context = EventContext::with_postgres(&mut tx);
-    PostgresEntitlementCache::forget_in_transaction(
-        "suite|person-123",
-        context.postgres().expect("transaction"),
-    )
-    .await?;
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM platform_entitlement_cache")
-        .fetch_one(&mut *tx)
-        .await?;
-    assert_eq!(count, 0);
-    tx.rollback().await?;
-    assert_eq!(
-        cache.revision("suite|person-123", "hebkit").await?,
-        9,
-        "erasure rolls back with the product transaction"
-    );
-    let mut tx = pool.begin().await?;
-    PostgresEntitlementCache::forget_in_transaction("suite|person-123", &mut tx).await?;
-    tx.commit().await?;
-    assert_eq!(cache.revision("suite|person-123", "hebkit").await?, 0);
+    assert_forget_is_transactional(&pool, &cache).await?;
 
-    let cutoff = Utc::now() - chrono::TimeDelta::days(30);
-    for (id, at) in [
-        ("old-1", cutoff - chrono::TimeDelta::days(1)),
-        ("old-2", cutoff - chrono::TimeDelta::days(1)),
-        ("old-3", cutoff - chrono::TimeDelta::seconds(1)),
-        ("boundary", cutoff),
-        ("recent", Utc::now()),
-    ] {
-        sqlx::query("INSERT INTO platform_inbound_receipts(event_id,body_hash,received_at) VALUES($1,$2,$3)").bind(id).bind([0_u8;32].as_slice()).bind(at).execute(&pool).await?;
-    }
-    assert_eq!(
-        inbox.purge_received_before(cutoff, 0).await,
-        Err(PlatformError::Invalid)
-    );
-    assert_eq!(inbox.purge_received_before(cutoff, 2).await?, 2);
-    assert_eq!(inbox.purge_received_before(cutoff, 2).await?, 1);
-    assert_eq!(inbox.purge_received_before(cutoff, 2).await?, 0);
-    let ids: Vec<String> =
-        sqlx::query_scalar("SELECT event_id FROM platform_inbound_receipts ORDER BY event_id")
-            .fetch_all(&pool)
-            .await?;
-    assert_eq!(
-        ids,
-        vec![
-            "boundary".to_owned(),
-            event().envelope().event_id.clone(),
-            "recent".to_owned()
-        ]
-    );
+    assert_purge_batches(&pool, &inbox).await?;
     pool.close().await;
     Ok(())
 }

@@ -22,8 +22,8 @@ use super::{
     cookie::CookieSettings,
     idp::{IdentityProvider, IdpDiscoveryError, OidcTokenClient},
     rate_limit::{
-        AUTH_SESSION_ID_LIMIT, AUTH_SESSION_IP_LIMIT, BrowserSessionRateLimit,
-        BrowserSessionRateLimiter, RateLimitOutcome, RateLimitSubject,
+        BrowserSessionRateLimit, BrowserSessionRateLimiter, BrowserSessionRateLimits,
+        RateLimitOutcome, RateLimitSubject,
     },
     service::{Clock, Issued, SessionError, SessionService, SessionSettings, SystemClock},
     store::{PostgresSessionStore, SessionStore},
@@ -46,6 +46,7 @@ struct StateInner {
     cookie: CookieSettings,
     allowed_origins: Vec<String>,
     rate_limiter: Arc<dyn BrowserSessionRateLimiter>,
+    rate_limits: BrowserSessionRateLimits,
 }
 
 impl std::fmt::Debug for BrowserSessionState {
@@ -114,6 +115,7 @@ impl BrowserSessionState {
             .iter()
             .map(|origin| origin.origin().ascii_serialization())
             .collect();
+        let rate_limits = config.rate_limits;
         let cookie = CookieSettings::new(config.cookie_name(), !config.insecure_local_cookie);
         let settings = SessionSettings {
             cipher: config.cipher,
@@ -127,6 +129,7 @@ impl BrowserSessionState {
                 cookie,
                 allowed_origins,
                 rate_limiter,
+                rate_limits,
             }),
         })
     }
@@ -279,12 +282,12 @@ impl BrowserSessionState {
             ));
         }
         let ip = RateLimitSubject::ClientIp { headers, peer };
-        if let Some(limited) = self.limited(AUTH_SESSION_IP_LIMIT, ip).await {
+        if let Some(limited) = self.limited(self.inner.rate_limits.client_ip, ip).await {
             return Some(limited);
         }
         let session_id = session_id?;
         self.limited(
-            AUTH_SESSION_ID_LIMIT,
+            self.inner.rate_limits.session_id,
             RateLimitSubject::SessionId(session_id),
         )
         .await

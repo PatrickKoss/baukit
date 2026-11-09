@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 use baukit_telemetry::{
     DB_POOL_ACQUIRE_DURATION_BUCKETS, DeploymentEnvironment, HTTP_DURATION_BUCKETS, LogFormat,
     ProcessKind, ServiceIdentity, TelemetryBuilder, TelemetryError, WORKER_DURATION_BUCKETS,

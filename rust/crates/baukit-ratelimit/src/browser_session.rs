@@ -160,6 +160,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn custom_limit_is_enforced_at_its_own_count() -> TestResult {
+        let limiter = limiter()?;
+        let custom = BrowserSessionRateLimit {
+            requests_per_minute: 100,
+            burst: 20,
+            ..AUTH_SESSION_IP_LIMIT
+        };
+        let headers = HeaderMap::new();
+        let client = RateLimitSubject::ClientIp {
+            headers: &headers,
+            peer: Some(PEER),
+        };
+        for _ in 0..admitted(custom) {
+            assert_eq!(
+                limiter.check(custom, client).await,
+                RateLimitOutcome::Allowed
+            );
+        }
+        assert!(matches!(
+            limiter.check(custom, client).await,
+            RateLimitOutcome::Limited { .. }
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn session_buckets_are_independent() -> TestResult {
         let limiter = limiter()?;
         for _ in 0..admitted(AUTH_SESSION_ID_LIMIT) {

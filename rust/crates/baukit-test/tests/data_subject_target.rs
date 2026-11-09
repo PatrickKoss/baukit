@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 #![cfg(feature = "data-subject")]
 
 use std::time::Duration;
@@ -27,6 +21,7 @@ const KEY: &str = "idempotency-key-0001";
 const TOKEN: &str = "test-bearer-credential";
 const ERASE: &str = "/api/v1/data-subject/erasures";
 const EXPORT: &str = "/api/v1/data-subject/exports";
+const NOT_FOUND: &str = "data_subject_operation_not_found";
 
 type Result<T = ()> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -53,10 +48,7 @@ fn body(subject: &str) -> Value {
 }
 
 async fn post(client: &Client, server: &Server, path: &str, subject: &str) -> Result<Response> {
-    Ok(client
-        .post(format!("{}{path}", server.base_url()))
-        .bearer_auth(TOKEN)
-        .header("idempotency-key", KEY)
+    Ok(keyed_post(client, &format!("{}{path}", server.base_url()))
         .json(&body(subject))
         .send()
         .await?)
@@ -141,19 +133,7 @@ fn categories() -> Vec<CategoryEntry> {
 async fn discovery_and_every_terminal_outcome_have_contract_receipts() -> Result {
     let server = target().await?;
     let client = client();
-    let response = client
-        .get(format!(
-            "{}/.well-known/baukit/data-subject",
-            server.base_url()
-        ))
-        .send()
-        .await?;
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.headers()["cache-control"], "public, max-age=300");
-    let discovery: DiscoveryDocument = response.json().await?;
-    assert_eq!(discovery, server.discovery());
-    assert_eq!(discovery.receipt_keys, vec![server.receipt_key()]);
-    ReceiptVerifier::from_discovery(&discovery)?;
+    assert_discovery(&client, &server).await?;
     let restrictions = vec![Restriction {
         category: "invoices".into(),
         reason: "Statutory retention".into(),
@@ -194,56 +174,9 @@ async fn discovery_and_every_terminal_outcome_have_contract_receipts() -> Result
         let pending = start(&client, &server, ERASE, &reference).await?;
         let url = operation_url(&server, ERASE, &pending);
         let terminal = poll(&client, &url).await?;
-        assert_eq!(terminal.status, expected);
-        assert!(terminal.completed_at.is_some());
-        if expected == OperationStatus::Failed {
-            assert!(terminal.receipt.is_none());
-            assert_eq!(
-                terminal.error.as_ref().expect("failure").code,
-                "product_unavailable"
-            );
-        } else {
-            verify(&server, &terminal)?;
-            assert!(terminal.error.is_none());
-        }
-        if expected == OperationStatus::NotFound {
-            assert!(
-                terminal.categories.is_empty()
-                    && terminal.restrictions.is_empty()
-                    && terminal.parts.is_empty()
-            );
-        }
-        if expected == OperationStatus::Restricted {
-            assert_eq!(terminal.restrictions, restrictions);
-            assert_eq!(
-                terminal.categories,
-                vec![CategoryEntry {
-                    category: "invoices".into(),
-                    action: CategoryAction::Retained,
-                    count: 2,
-                }]
-            );
-        }
-        if expected == OperationStatus::Completed {
-            assert_eq!(terminal.categories, categories());
-        }
+        assert_terminal_outcome(&server, &terminal, expected, &restrictions)?;
         assert_eq!(poll(&client, &url).await?, terminal);
-        let replay = post(&client, &server, ERASE, &reference).await?;
-        assert_eq!(replay.status(), StatusCode::OK);
-        assert_eq!(replay.json::<OperationResource>().await?, terminal);
-        let conflict = client
-            .post(format!("{}{ERASE}", server.base_url()))
-            .bearer_auth(TOKEN)
-            .header("idempotency-key", KEY)
-            .json(&body("different-reference-01"))
-            .send()
-            .await?;
-        error(
-            conflict,
-            StatusCode::CONFLICT,
-            "data_subject_idempotency_conflict",
-        )
-        .await?;
+        assert_replay_and_conflict(&client, &server, &reference, &terminal).await?;
         // Each iteration uses an independent client registration to isolate the same key.
         server.register_token(
             TOKEN,
@@ -252,6 +185,96 @@ async fn discovery_and_every_terminal_outcome_have_contract_receipts() -> Result
         );
     }
     Ok(())
+}
+
+async fn assert_discovery(client: &Client, server: &Server) -> Result {
+    let response = client
+        .get(format!(
+            "{}/.well-known/baukit/data-subject",
+            server.base_url()
+        ))
+        .send()
+        .await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["cache-control"], "public, max-age=300");
+    let discovery: DiscoveryDocument = response.json().await?;
+    assert_eq!(discovery, server.discovery());
+    assert_eq!(discovery.receipt_keys, vec![server.receipt_key()]);
+    ReceiptVerifier::from_discovery(&discovery)?;
+    Ok(())
+}
+
+fn assert_terminal_outcome(
+    server: &Server,
+    terminal: &OperationResource,
+    expected: OperationStatus,
+    restrictions: &[Restriction],
+) -> Result {
+    assert_eq!(terminal.status, expected);
+    assert!(terminal.completed_at.is_some());
+    if expected == OperationStatus::Failed {
+        assert!(terminal.receipt.is_none());
+        assert_eq!(
+            terminal.error.as_ref().expect("failure").code,
+            "product_unavailable"
+        );
+    } else {
+        verify(server, terminal)?;
+        assert!(terminal.error.is_none());
+    }
+    if expected == OperationStatus::NotFound {
+        assert!(
+            terminal.categories.is_empty()
+                && terminal.restrictions.is_empty()
+                && terminal.parts.is_empty()
+        );
+    }
+    if expected == OperationStatus::Restricted {
+        assert_eq!(terminal.restrictions, restrictions);
+        assert_eq!(
+            terminal.categories,
+            vec![CategoryEntry {
+                category: "invoices".into(),
+                action: CategoryAction::Retained,
+                count: 2,
+            }]
+        );
+    }
+    if expected == OperationStatus::Completed {
+        assert_eq!(terminal.categories, categories());
+    }
+    Ok(())
+}
+
+async fn assert_replay_and_conflict(
+    client: &Client,
+    server: &Server,
+    reference: &str,
+    terminal: &OperationResource,
+) -> Result {
+    let replay = post(client, server, ERASE, reference).await?;
+    assert_eq!(replay.status(), StatusCode::OK);
+    assert_eq!(&replay.json::<OperationResource>().await?, terminal);
+    let conflict = keyed_post(client, &format!("{}{ERASE}", server.base_url()))
+        .json(&body("different-reference-01"))
+        .send()
+        .await?;
+    error(
+        conflict,
+        StatusCode::CONFLICT,
+        "data_subject_idempotency_conflict",
+    )
+    .await?;
+    Ok(())
+}
+
+async fn get_error(client: &Client, url: &str, status: StatusCode, code: &str) -> Result {
+    error(
+        client.get(url).bearer_auth(TOKEN).send().await?,
+        status,
+        code,
+    )
+    .await
 }
 
 #[tokio::test]
@@ -280,10 +303,7 @@ async fn pending_polls_normalized_replay_and_concurrent_posts_preserve_one_opera
     assert_eq!(a, b);
     let url = operation_url(&server, ERASE, &a);
     for _ in 0..3 {
-        let replay = client
-            .post(format!("{}{ERASE}", server.base_url()))
-            .bearer_auth(TOKEN)
-            .header("idempotency-key", KEY)
+        let replay = keyed_post(&client, &format!("{}{ERASE}", server.base_url()))
             .json(
                 &json!({"identifiers": [{"value": " fixture@example.INVALID ", "type": "email"}],
                 "subjectReference": SUBJECT}),
@@ -301,10 +321,7 @@ async fn pending_polls_normalized_replay_and_concurrent_posts_preserve_one_opera
     let fallback = poll(&client, &operation_url(&server, EXPORT, &fallback)).await?;
     assert_eq!(fallback.status, OperationStatus::NotFound);
     verify(&server, &fallback)?;
-    let conflict = client
-        .post(format!("{}{ERASE}", server.base_url()))
-        .bearer_auth(TOKEN)
-        .header("idempotency-key", KEY)
+    let conflict = keyed_post(&client, &format!("{}{ERASE}", server.base_url()))
         .json(&json!({"subjectReference": SUBJECT,
             "identifiers": [{"type": "email", "value": "other@example.invalid"}]}))
         .send()
@@ -350,95 +367,104 @@ async fn auth_ownership_scope_and_operation_kind_apply_to_all_routes() -> Result
             routes.push((Method::GET, format!("{url}/parts/1")));
         }
         for (method, route) in routes {
-            for token in [None, Some("unknown-credential")] {
-                let mut request = client
-                    .request(method.clone(), &route)
-                    .header("idempotency-key", KEY)
-                    .json(&body(SUBJECT));
-                if let Some(token) = token {
-                    request = request.bearer_auth(token);
-                }
-                error(
-                    request.send().await?,
-                    StatusCode::UNAUTHORIZED,
-                    "unauthenticated",
-                )
-                .await?;
-            }
-            for (token, code) in [
-                ("no-scope", "insufficient_scope"),
-                ("no-client", "data_subject_client_not_allowed"),
-            ] {
-                error(
-                    client
-                        .request(method.clone(), &route)
-                        .bearer_auth(token)
-                        .header("idempotency-key", KEY)
-                        .json(&body(SUBJECT))
-                        .send()
-                        .await?,
-                    StatusCode::FORBIDDEN,
-                    code,
-                )
-                .await?;
-            }
-            if method == Method::GET {
-                error(
-                    client
-                        .get(&route)
-                        .bearer_auth("other-client")
-                        .send()
-                        .await?,
-                    StatusCode::NOT_FOUND,
-                    "data_subject_operation_not_found",
-                )
-                .await?;
-            }
-            if path == EXPORT {
-                error(
-                    client
-                        .request(method, &route)
-                        .bearer_auth("erase-only")
-                        .header("idempotency-key", KEY)
-                        .json(&body(SUBJECT))
-                        .send()
-                        .await?,
-                    StatusCode::FORBIDDEN,
-                    "insufficient_scope",
-                )
-                .await?;
-            }
+            assert_route_rejections(&client, path, method, &route).await?;
         }
-        let same: OperationResource = client
-            .get(&url)
-            .bearer_auth("same-client")
-            .send()
-            .await?
-            .json()
-            .await?;
-        assert_eq!(same.operation_id, pending.operation_id);
-        let other_kind = if path == ERASE { EXPORT } else { ERASE };
+        assert_owner_and_kind(&client, &server, path, &pending).await?;
+    }
+    Ok(())
+}
+
+async fn assert_route_rejections(
+    client: &Client,
+    path: &str,
+    method: Method,
+    route: &str,
+) -> Result {
+    for token in [None, Some("unknown-credential")] {
+        let mut request = client
+            .request(method.clone(), route)
+            .header("idempotency-key", KEY)
+            .json(&body(SUBJECT));
+        if let Some(token) = token {
+            request = request.bearer_auth(token);
+        }
         error(
-            client
-                .get(operation_url(&server, other_kind, &pending))
-                .bearer_auth(TOKEN)
-                .send()
-                .await?,
-            StatusCode::NOT_FOUND,
-            "data_subject_operation_not_found",
+            request.send().await?,
+            StatusCode::UNAUTHORIZED,
+            "unauthenticated",
         )
         .await?;
-        let independent: OperationResource = client
-            .post(format!("{}{path}", server.base_url()))
-            .bearer_auth("other-client")
-            .header("idempotency-key", KEY)
-            .json(&body(SUBJECT))
-            .send()
-            .await?
-            .json()
-            .await?;
-        assert_ne!(independent.operation_id, pending.operation_id);
     }
+    for (token, code) in [
+        ("no-scope", "insufficient_scope"),
+        ("no-client", "data_subject_client_not_allowed"),
+    ] {
+        error(
+            client
+                .request(method.clone(), route)
+                .bearer_auth(token)
+                .header("idempotency-key", KEY)
+                .json(&body(SUBJECT))
+                .send()
+                .await?,
+            StatusCode::FORBIDDEN,
+            code,
+        )
+        .await?;
+    }
+    if method == Method::GET {
+        error(
+            client.get(route).bearer_auth("other-client").send().await?,
+            StatusCode::NOT_FOUND,
+            NOT_FOUND,
+        )
+        .await?;
+    }
+    if path == EXPORT {
+        error(
+            client
+                .request(method, route)
+                .bearer_auth("erase-only")
+                .header("idempotency-key", KEY)
+                .json(&body(SUBJECT))
+                .send()
+                .await?,
+            StatusCode::FORBIDDEN,
+            "insufficient_scope",
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn assert_owner_and_kind(
+    client: &Client,
+    server: &Server,
+    path: &str,
+    pending: &OperationResource,
+) -> Result {
+    let url = operation_url(server, path, pending);
+    let same: OperationResource = client
+        .get(url)
+        .bearer_auth("same-client")
+        .send()
+        .await?
+        .json()
+        .await?;
+    assert_eq!(same.operation_id, pending.operation_id);
+    let other_kind = if path == ERASE { EXPORT } else { ERASE };
+    let other_url = operation_url(server, other_kind, pending);
+    get_error(client, &other_url, StatusCode::NOT_FOUND, NOT_FOUND).await?;
+    let independent: OperationResource = client
+        .post(format!("{}{path}", server.base_url()))
+        .bearer_auth("other-client")
+        .header("idempotency-key", KEY)
+        .json(&body(SUBJECT))
+        .send()
+        .await?
+        .json()
+        .await?;
+    assert_ne!(independent.operation_id, pending.operation_id);
     Ok(())
 }
 
@@ -457,8 +483,15 @@ async fn invalid_requests_use_safe_contract_errors() -> Result {
     server.register_token(TOKEN, "privacy-client", ["data-subject.erase"]);
     let client = client();
     let url = format!("{}{ERASE}", server.base_url());
+    assert_idempotency_key_errors(&client, &url).await?;
+    assert_body_errors(&client, &url).await?;
+    assert_script_validation(&server);
+    Ok(())
+}
+
+async fn assert_idempotency_key_errors(client: &Client, url: &str) -> Result {
     for key in [None, Some("short"), Some("invalid key with spaces")] {
-        let mut request = client.post(&url).bearer_auth(TOKEN).json(&body(SUBJECT));
+        let mut request = client.post(url).bearer_auth(TOKEN).json(&body(SUBJECT));
         if let Some(key) = key {
             request = request.header("idempotency-key", key);
         }
@@ -470,10 +503,7 @@ async fn invalid_requests_use_safe_contract_errors() -> Result {
         .await?;
     }
     error(
-        client
-            .post(&url)
-            .bearer_auth(TOKEN)
-            .header("idempotency-key", KEY)
+        keyed_post(client, url)
             .header("idempotency-key", KEY)
             .json(&body(SUBJECT))
             .send()
@@ -482,6 +512,17 @@ async fn invalid_requests_use_safe_contract_errors() -> Result {
         "data_subject_idempotency_key_invalid",
     )
     .await?;
+    Ok(())
+}
+
+fn keyed_post(client: &Client, url: &str) -> reqwest::RequestBuilder {
+    client
+        .post(url)
+        .bearer_auth(TOKEN)
+        .header("idempotency-key", KEY)
+}
+
+async fn assert_body_errors(client: &Client, url: &str) -> Result {
     let mut invalid = vec![
         json!({}),
         json!({"subjectReference": "short", "identifiers": []}),
@@ -501,35 +542,27 @@ async fn invalid_requests_use_safe_contract_errors() -> Result {
     invalid.push(json!({"subjectReference": SUBJECT, "identifiers": vec![json!({"type": "email", "value": "a"}); 3]}));
     for body in invalid {
         error(
-            client
-                .post(&url)
-                .bearer_auth(TOKEN)
-                .header("idempotency-key", KEY)
-                .json(&body)
-                .send()
-                .await?,
+            keyed_post(client, url).json(&body).send().await?,
             StatusCode::UNPROCESSABLE_ENTITY,
             "data_subject_request_invalid",
         )
         .await?;
     }
     error(
-        client
-            .post(&url)
-            .bearer_auth(TOKEN)
-            .header("idempotency-key", KEY)
-            .body("{broken")
-            .send()
-            .await?,
+        keyed_post(client, url).body("{broken").send().await?,
         StatusCode::UNPROCESSABLE_ENTITY,
         "data_subject_request_invalid",
     )
     .await?;
     for kind in ["accountId", "x-custom"] {
-        error(client.post(&url).bearer_auth(TOKEN).header("idempotency-key", KEY)
+        error(keyed_post(client, url)
             .json(&json!({"subjectReference": SUBJECT, "identifiers": [{"type": kind, "value": "value"}]})).send().await?,
             StatusCode::UNPROCESSABLE_ENTITY, "data_subject_identifier_type_unsupported").await?;
     }
+    Ok(())
+}
+
+fn assert_script_validation(server: &Server) {
     let oversized = server.set_script(
         SUBJECT,
         Outcome::Export {
@@ -550,7 +583,6 @@ async fn invalid_requests_use_safe_contract_errors() -> Result {
         ),
         Err(DataSubjectScriptError::ServerStatus)
     );
-    Ok(())
 }
 
 #[tokio::test]
@@ -566,12 +598,9 @@ async fn exports_sign_exact_parts_and_enforce_readiness_expiry_and_retention() -
     )?;
     let pending = start(&client, &server, EXPORT, SUBJECT).await?;
     let url = operation_url(&server, EXPORT, &pending);
-    error(
-        client
-            .get(format!("{url}/parts/1"))
-            .bearer_auth(TOKEN)
-            .send()
-            .await?,
+    get_error(
+        &client,
+        &format!("{url}/parts/1"),
         StatusCode::CONFLICT,
         "data_subject_export_not_ready",
     )
@@ -595,51 +624,29 @@ async fn exports_sign_exact_parts_and_enforce_readiness_expiry_and_retention() -
                 == expected_parts[part.part_number as usize - 1]
         );
     }
-    for part in ["0", "3", "invalid"] {
-        error(
-            client
-                .get(format!("{url}/parts/{part}"))
-                .bearer_auth(TOKEN)
-                .send()
-                .await?,
-            StatusCode::NOT_FOUND,
-            "data_subject_operation_not_found",
-        )
-        .await?;
-    }
+    assert_parts_not_found(&client, &url, &["0", "3", "invalid"]).await?;
     server.advance_time(Duration::from_secs(7 * 24 * 60 * 60))?;
-    error(
-        client
-            .get(format!("{url}/parts/1"))
-            .bearer_auth(TOKEN)
-            .send()
-            .await?,
+    get_error(
+        &client,
+        &format!("{url}/parts/1"),
         StatusCode::GONE,
         "data_subject_export_expired",
     )
     .await?;
-    for part in ["0", "3", "invalid"] {
-        error(
-            client
-                .get(format!("{url}/parts/{part}"))
-                .bearer_auth(TOKEN)
-                .send()
-                .await?,
-            StatusCode::NOT_FOUND,
-            "data_subject_operation_not_found",
-        )
-        .await?;
-    }
+    assert_parts_not_found(&client, &url, &["0", "3", "invalid"]).await?;
     assert_eq!(poll(&client, &url).await?, done);
     server.advance_time(Duration::from_secs(400 * 24 * 60 * 60))?;
-    error(
-        client.get(&url).bearer_auth(TOKEN).send().await?,
-        StatusCode::NOT_FOUND,
-        "data_subject_operation_not_found",
-    )
-    .await?;
+    get_error(&client, &url, StatusCode::NOT_FOUND, NOT_FOUND).await?;
     let replacement = start(&client, &server, EXPORT, SUBJECT).await?;
     assert_ne!(replacement.operation_id, done.operation_id);
+    Ok(())
+}
+
+async fn assert_parts_not_found(client: &Client, url: &str, parts: &[&str]) -> Result {
+    for part in parts {
+        let part_url = format!("{url}/parts/{part}");
+        get_error(client, &part_url, StatusCode::NOT_FOUND, NOT_FOUND).await?;
+    }
     Ok(())
 }
 
@@ -775,12 +782,7 @@ async fn transient_faults_retry_post_poll_and_download_without_losing_state() ->
             times: 1,
         },
     )?;
-    error(
-        client.get(&url).bearer_auth(TOKEN).send().await?,
-        StatusCode::BAD_GATEWAY,
-        "server_error",
-    )
-    .await?;
+    get_error(&client, &url, StatusCode::BAD_GATEWAY, "server_error").await?;
     let done = poll(&client, &url).await?;
     verify(&server, &done)?;
     server.push_fault(
@@ -866,10 +868,7 @@ async fn delay_allows_lost_response_reconciliation_and_request_observations() ->
         Script::new(Outcome::NotFound).with_fault(Fault::Delay(Duration::from_millis(120))),
     )?;
     let client = client();
-    let result = client
-        .post(format!("{}{ERASE}", server.base_url()))
-        .bearer_auth(TOKEN)
-        .header("idempotency-key", KEY)
+    let result = keyed_post(&client, &format!("{}{ERASE}", server.base_url()))
         .json(&body(SUBJECT))
         .timeout(Duration::from_millis(40))
         .send()
@@ -923,14 +922,7 @@ async fn drop_closes_listener_keep_alive_and_delayed_requests() -> Result {
     let port = reqwest::Url::parse(server.base_url())?
         .port()
         .expect("loopback port");
-    let mut waiting = Box::pin(
-        client
-            .post(url)
-            .bearer_auth(TOKEN)
-            .header("idempotency-key", KEY)
-            .json(&body(SUBJECT))
-            .send(),
-    );
+    let mut waiting = Box::pin(keyed_post(&client, &url).json(&body(SUBJECT)).send());
     tokio::select! {
         response = &mut waiting => panic!("delayed request returned early: {}", response.is_ok()),
         _ = async {
@@ -979,18 +971,7 @@ async fn terminal_exports_without_parts_return_not_found() -> Result {
             OperationStatus::NotFound | OperationStatus::Failed
         ));
         assert!(done.parts.is_empty());
-        for part in ["1", "0", "invalid"] {
-            error(
-                client
-                    .get(format!("{url}/parts/{part}"))
-                    .bearer_auth(TOKEN)
-                    .send()
-                    .await?,
-                StatusCode::NOT_FOUND,
-                "data_subject_operation_not_found",
-            )
-            .await?;
-        }
+        assert_parts_not_found(&client, &url, &["1", "0", "invalid"]).await?;
         assert_eq!(poll(&client, &url).await?, done);
     }
     Ok(())

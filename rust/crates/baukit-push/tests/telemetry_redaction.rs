@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 //! Receipt failure logs report retryability without notification data.
 
 use std::{
@@ -47,47 +41,57 @@ async fn receipt_failures_log_retryability_and_keep_notification_data_private()
 
     for guarded in [false, true] {
         for status in [StatusCode::SERVICE_UNAVAILABLE, StatusCode::BAD_REQUEST] {
-            let app = Router::new()
-                .route(
-                    "/push/send",
-                    post(|| async {
-                        Json(json!({"data": [{"status": "ok", "id": "ticket-secret"}]}))
-                    }),
-                )
-                .route(
-                    "/push/getReceipts",
-                    post(move || async move { (status, "provider-body-secret") }),
-                );
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-            let endpoint = format!("http://{}/push/send?key=url-secret", listener.local_addr()?);
-            let task = tokio::spawn(async move {
-                axum::serve(listener, app).await.expect("server");
-            });
-            let sender = ExpoPushSender::with_options(
-                PushOptions::new(endpoint)?.with_access_token("access-secret")?,
-            )?;
-            let sender = if guarded {
-                sender.with_guarded_client(GuardedClient::new(
-                    EgressOptions::default().with_policy(AddressPolicy::AllowLoopback),
-                )?)
-            } else {
-                sender
-            };
-            let message = PushMessage::new(
-                DeviceToken::new("token-secret")?,
-                "title-secret",
-                "body-secret",
-            )
-            .with_data("payload-secret", "value-secret");
-            let outcomes = sender.send(vec![message]).await?;
-            assert!(
-                matches!(&outcomes[0].status, PushDeliveryStatus::Accepted(id) if id.as_str() == "ticket-secret")
-            );
-            task.abort();
+            send_with_failing_receipts(guarded, status).await?;
         }
     }
 
-    let logs = String::from_utf8(logs.0.lock().expect("logs").clone())?;
+    assert_logs_redacted(&String::from_utf8(logs.0.lock().expect("logs").clone())?);
+    Ok(())
+}
+
+async fn send_with_failing_receipts(
+    guarded: bool,
+    status: StatusCode,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let app = Router::new()
+        .route(
+            "/push/send",
+            post(|| async { Json(json!({"data": [{"status": "ok", "id": "ticket-secret"}]})) }),
+        )
+        .route(
+            "/push/getReceipts",
+            post(move || async move { (status, "provider-body-secret") }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let endpoint = format!("http://{}/push/send?key=url-secret", listener.local_addr()?);
+    let task = tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("server");
+    });
+    let sender = ExpoPushSender::with_options(
+        PushOptions::new(endpoint)?.with_access_token("access-secret")?,
+    )?;
+    let sender = if guarded {
+        sender.with_guarded_client(GuardedClient::new(
+            EgressOptions::default().with_policy(AddressPolicy::AllowLoopback),
+        )?)
+    } else {
+        sender
+    };
+    let message = PushMessage::new(
+        DeviceToken::new("token-secret")?,
+        "title-secret",
+        "body-secret",
+    )
+    .with_data("payload-secret", "value-secret");
+    let outcomes = sender.send(vec![message]).await?;
+    assert!(
+        matches!(&outcomes[0].status, PushDeliveryStatus::Accepted(id) if id.as_str() == "ticket-secret")
+    );
+    task.abort();
+    Ok(())
+}
+
+fn assert_logs_redacted(logs: &str) {
     let failures = logs
         .lines()
         .filter(|line| line.contains("immediate receipt fetch failed; tickets stay accepted"))
@@ -123,5 +127,4 @@ async fn receipt_failures_log_retryability_and_keep_notification_data_private()
     ] {
         assert!(!logs.contains(secret), "{secret} leaked into {logs}");
     }
-    Ok(())
 }

@@ -3,10 +3,10 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use crate::StartContainer as _;
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt as _,
     core::{ExecCommand, IntoContainerPort as _, WaitFor},
-    runners::AsyncRunner,
 };
 const REDIS_PORT: u16 = 6379;
 
@@ -390,7 +390,7 @@ pub async fn start_redis() -> Result<RedisTestContainer, RedisTestError> {
     let container = redis_image()
         .with_tag(REDIS_IMAGE_TAG)
         .with_labels(crate::container_labels())
-        .start()
+        .start_container()
         .await?;
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(REDIS_PORT).await?;
@@ -435,7 +435,7 @@ pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisT
         ])
         .with_network(&network)
         .with_labels(crate::container_labels())
-        .start()
+        .start_container()
         .await?;
     let master_ip = master.get_bridge_ip_address().await?;
 
@@ -458,7 +458,7 @@ pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisT
         ])
         .with_network(&network)
         .with_labels(crate::container_labels())
-        .start()
+        .start_container()
         .await?;
 
     let sentinel_configuration = format!(
@@ -478,7 +478,7 @@ pub async fn start_redis_sentinel() -> Result<RedisSentinelTestContainer, RedisT
         .with_cmd(["redis-sentinel", SENTINEL_CONFIG_PATH])
         .with_network(&network)
         .with_labels(crate::container_labels())
-        .start()
+        .start_container()
         .await?;
     let host = sentinel.get_host().await?;
     let port = sentinel.get_host_port_ipv4(REDIS_SENTINEL_PORT).await?;

@@ -13,6 +13,14 @@ rust-allow = 0
 rust-expect = 0
 eslint-disable = 0
 ast-grep-ignore = 0
+ts-expect-error = 0
+ts-ignore = 0
+prettier-ignore = 0
+noqa = 0
+type-ignore = 0
+nosec = 0
+shellcheck-disable = 0
+nolint = 0
 {% if context.backend %}
 # Dashboards and rules may only reference metrics the backend emits or the baukit catalog defines.
 [observability]

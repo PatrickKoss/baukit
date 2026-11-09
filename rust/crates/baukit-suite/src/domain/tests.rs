@@ -1,5 +1,3 @@
-#![allow(clippy::too_many_lines, reason = "scenario tests read top to bottom")]
-
 use super::*;
 use baukit_core::webhook_signature::{
     sign_webhook_hmac_sha256, verify_webhook_hmac_sha256, webhook_signing_input,
@@ -640,6 +638,41 @@ fn persisted_suite_enum_values_round_trip() {
     assert!("bad".parse::<LinkRole>().is_err());
 }
 
+fn assert_delivery_action_outcomes() {
+    let state = DeliveryState {
+        status: LinkStatus::Active,
+        health: DeliveryHealth::Degraded,
+        consecutive_failures: 7,
+    };
+    for (action, outcome) in [
+        (DeliveryAction::LinkMissing, None),
+        (DeliveryAction::LinkRevoked, None),
+        (DeliveryAction::Disabled, Some("disabled")),
+        (DeliveryAction::Delivered, Some("delivered")),
+        (DeliveryAction::Retry { after: None }, Some("retry")),
+        (DeliveryAction::Rejected, Some("rejected")),
+        (DeliveryAction::Unauthorized, Some("unauthorized")),
+        (DeliveryAction::Revoked, Some("revoked")),
+    ] {
+        assert_eq!(action.outcome(), outcome);
+    }
+    for action in [
+        DeliveryAction::LinkMissing,
+        DeliveryAction::LinkRevoked,
+        DeliveryAction::Disabled,
+    ] {
+        assert_eq!(
+            action.permanent_code(),
+            if action == DeliveryAction::Disabled {
+                Some("suite_link_disabled")
+            } else {
+                None
+            }
+        );
+        assert_eq!(after_delivery(state, action), state);
+    }
+}
+
 #[test]
 fn enqueue_gate_and_delivery_preflight_respect_status_and_the_breaker() {
     let cases = [
@@ -706,38 +739,7 @@ fn enqueue_gate_and_delivery_preflight_respect_status_and_the_breaker() {
         assert_eq!(delivery_preflight(Some(&link)), action);
     }
     assert_eq!(delivery_preflight(None), Some(DeliveryAction::LinkMissing));
-    let state = DeliveryState {
-        status: LinkStatus::Active,
-        health: DeliveryHealth::Degraded,
-        consecutive_failures: 7,
-    };
-    for (action, outcome) in [
-        (DeliveryAction::LinkMissing, None),
-        (DeliveryAction::LinkRevoked, None),
-        (DeliveryAction::Disabled, Some("disabled")),
-        (DeliveryAction::Delivered, Some("delivered")),
-        (DeliveryAction::Retry { after: None }, Some("retry")),
-        (DeliveryAction::Rejected, Some("rejected")),
-        (DeliveryAction::Unauthorized, Some("unauthorized")),
-        (DeliveryAction::Revoked, Some("revoked")),
-    ] {
-        assert_eq!(action.outcome(), outcome);
-    }
-    for action in [
-        DeliveryAction::LinkMissing,
-        DeliveryAction::LinkRevoked,
-        DeliveryAction::Disabled,
-    ] {
-        assert_eq!(
-            action.permanent_code(),
-            if action == DeliveryAction::Disabled {
-                Some("suite_link_disabled")
-            } else {
-                None
-            }
-        );
-        assert_eq!(after_delivery(state, action), state);
-    }
+    assert_delivery_action_outcomes();
 }
 
 #[test]
@@ -1140,37 +1142,12 @@ fn exchange_fixtures_pin_verifier_subject_and_idempotent_retry_rules() {
     assert_eq!(checked, 15);
 }
 
-#[test]
-fn exchange_retries_cannot_bypass_authentication_subjects_or_the_recorded_link() {
-    let corpus = protocol();
-    let sample = corpus["payloads"]
-        .as_array()
-        .expect("valid fixture")
-        .iter()
-        .find(|case| case["name"] == "exchange-retry")
-        .expect("valid fixture");
-    let mut code = protocol_code(&sample["context"]["storedCode"]).expect("valid fixture");
-    let request: ExchangeRequest =
-        serde_json::from_value(sample["request"].clone()).expect("valid fixture");
-    let link = protocol_link(&sample["context"]["existingLink"]).expect("valid fixture");
-    let now = sample["context"]["now"]
-        .as_str()
-        .expect("valid fixture")
-        .parse()
-        .expect("valid fixture");
-    assert_eq!(
-        validate_exchange(Some(&code), &request, Some(&link), code.expires_at),
-        Err(LinkProtocolError::CodeInvalid)
-    );
-    assert_eq!(
-        validate_exchange(
-            Some(&code),
-            &request,
-            Some(&link),
-            code.expires_at - chrono::TimeDelta::seconds(1)
-        ),
-        Ok(ExchangeDecision::ExistingLink(link.id))
-    );
+fn assert_changed_requests_or_links_rejected(
+    code: &LinkCode,
+    request: &ExchangeRequest,
+    link: &SuiteLink,
+    now: DateTime<Utc>,
+) {
     for (request, expected) in [
         (
             ExchangeRequest {
@@ -1202,7 +1179,7 @@ fn exchange_retries_cannot_bypass_authentication_subjects_or_the_recorded_link()
         ),
     ] {
         assert_eq!(
-            validate_exchange(Some(&code), &request, Some(&link), now),
+            validate_exchange(Some(code), &request, Some(link), now),
             Err(expected)
         );
     }
@@ -1225,10 +1202,44 @@ fn exchange_retries_cannot_bypass_authentication_subjects_or_the_recorded_link()
         },
     ] {
         assert_eq!(
-            validate_exchange(Some(&code), &request, Some(&link), now),
+            validate_exchange(Some(code), request, Some(&link), now),
             Err(LinkProtocolError::CodeInvalid)
         );
     }
+}
+
+#[test]
+fn exchange_retries_cannot_bypass_authentication_subjects_or_the_recorded_link() {
+    let corpus = protocol();
+    let sample = corpus["payloads"]
+        .as_array()
+        .expect("valid fixture")
+        .iter()
+        .find(|case| case["name"] == "exchange-retry")
+        .expect("valid fixture");
+    let mut code = protocol_code(&sample["context"]["storedCode"]).expect("valid fixture");
+    let request: ExchangeRequest =
+        serde_json::from_value(sample["request"].clone()).expect("valid fixture");
+    let link = protocol_link(&sample["context"]["existingLink"]).expect("valid fixture");
+    let now = sample["context"]["now"]
+        .as_str()
+        .expect("valid fixture")
+        .parse()
+        .expect("valid fixture");
+    assert_eq!(
+        validate_exchange(Some(&code), &request, Some(&link), code.expires_at),
+        Err(LinkProtocolError::CodeInvalid)
+    );
+    assert_eq!(
+        validate_exchange(
+            Some(&code),
+            &request,
+            Some(&link),
+            code.expires_at - chrono::TimeDelta::seconds(1)
+        ),
+        Ok(ExchangeDecision::ExistingLink(link.id))
+    );
+    assert_changed_requests_or_links_rejected(&code, &request, &link, now);
     code.auto_approved = true;
     for subject in [
         None,
@@ -1327,33 +1338,7 @@ fn preview_fixtures_and_absent_subjects_pin_hint_mismatch() {
     );
 }
 
-#[test]
-fn start_fixtures_validate_urls_nonces_and_peer_availability() {
-    let corpus = protocol();
-    let sample = corpus["payloads"]
-        .as_array()
-        .expect("valid fixture")
-        .iter()
-        .find(|case| case["operation"] == "start")
-        .expect("valid fixture");
-    let wire: LinkStartRequest =
-        serde_json::from_value(sample["request"].clone()).expect("valid fixture");
-    assert_eq!(
-        serde_json::to_value(&wire).expect("valid fixture"),
-        sample["request"]
-    );
-    let registry = configured_registry();
-    assert_eq!(
-        validate_link_start(&registry, &wire)
-            .expect("valid fixture")
-            .metadata
-            .id,
-        "beta"
-    );
-    let replacement =
-        protocol_request(&sample["context"]["replacementRequest"]).expect("valid fixture");
-    assert_eq!(replacement.client_state_nonce, "replacement-nonce");
-    assert_eq!(replacement.id.to_string(), sample["response"]["requestId"]);
+fn assert_start_authorize_url_and_replacement_state(sample: &Value) {
     let authorization = Url::parse(
         sample["response"]["authorizeUrl"]
             .as_str()
@@ -1391,11 +1376,9 @@ fn start_fixtures_validate_urls_nonces_and_peer_availability() {
             .expect("valid fixture"),
         (96..128).collect::<Vec<u8>>()
     );
-    assert!(
-        sample["expectedSuperseded"]
-            .as_bool()
-            .expect("valid fixture")
-    );
+}
+
+fn assert_invalid_starts_rejected(registry: &PeerRegistry, wire: &LinkStartRequest) {
     for (request, expected) in [
         (
             LinkStartRequest {
@@ -1433,8 +1416,44 @@ fn start_fixtures_validate_urls_nonces_and_peer_availability() {
             LinkProtocolError::PayloadInvalid,
         ),
     ] {
-        assert_eq!(validate_link_start(&registry, &request), Err(expected));
+        assert_eq!(validate_link_start(registry, &request), Err(expected));
     }
+}
+
+#[test]
+fn start_fixtures_validate_urls_nonces_and_peer_availability() {
+    let corpus = protocol();
+    let sample = corpus["payloads"]
+        .as_array()
+        .expect("valid fixture")
+        .iter()
+        .find(|case| case["operation"] == "start")
+        .expect("valid fixture");
+    let wire: LinkStartRequest =
+        serde_json::from_value(sample["request"].clone()).expect("valid fixture");
+    assert_eq!(
+        serde_json::to_value(&wire).expect("valid fixture"),
+        sample["request"]
+    );
+    let registry = configured_registry();
+    assert_eq!(
+        validate_link_start(&registry, &wire)
+            .expect("valid fixture")
+            .metadata
+            .id,
+        "beta"
+    );
+    let replacement =
+        protocol_request(&sample["context"]["replacementRequest"]).expect("valid fixture");
+    assert_eq!(replacement.client_state_nonce, "replacement-nonce");
+    assert_eq!(replacement.id.to_string(), sample["response"]["requestId"]);
+    assert_start_authorize_url_and_replacement_state(sample);
+    assert!(
+        sample["expectedSuperseded"]
+            .as_bool()
+            .expect("valid fixture")
+    );
+    assert_invalid_starts_rejected(&registry, &wire);
     assert_eq!(
         validate_link_start(
             &PeerRegistry::new(
@@ -1773,6 +1792,56 @@ fn registry_requires_both_public_urls_and_a_configured_peer_with_event_flow() {
     assert!(PeerRegistry::new("missing", SUITE_PEERS_JSON, settings).is_err());
 }
 
+fn assert_envelope_rules(
+    catalog: &PayloadCatalog,
+    envelope: &EventEnvelope,
+    link: &SuiteLink,
+    replay: bool,
+) {
+    use baukit_events::EventValidationCode as Code;
+    assert!(validate_inbound(catalog, envelope, link, link.created_at, replay).is_ok());
+    for (mut invalid, code) in [
+        (
+            EventEnvelope {
+                schema_version: 2,
+                ..envelope.clone()
+            },
+            Code::EventSchemaUnsupported,
+        ),
+        (
+            EventEnvelope {
+                event_type: "Beta.activity.completed".into(),
+                ..envelope.clone()
+            },
+            Code::EventTypeInvalid,
+        ),
+        (
+            EventEnvelope {
+                user_id: "different".into(),
+                ..envelope.clone()
+            },
+            Code::EventUserMismatch,
+        ),
+    ] {
+        assert_eq!(
+            validate_inbound(catalog, &invalid, link, link.created_at, replay),
+            Err(InboundValidationError::Envelope(code))
+        );
+        invalid.event_id.clear();
+        assert!(validate_inbound(catalog, &invalid, link, link.created_at, replay).is_err());
+    }
+    for id in ["", " padded", &"x".repeat(65)] {
+        let invalid = EventEnvelope {
+            event_id: id.into(),
+            ..envelope.clone()
+        };
+        assert_eq!(
+            validate_inbound(catalog, &invalid, link, link.created_at, replay),
+            Err(InboundValidationError::Envelope(Code::EventIdInvalid))
+        );
+    }
+}
+
 #[test]
 fn inbound_checks_every_envelope_rule_during_replay_and_protocol_tests() {
     use baukit_events::{EventValidationCode as Code, MAX_EVENT_AGE_SECONDS};
@@ -1792,47 +1861,7 @@ fn inbound_checks_every_envelope_rule_during_replay_and_protocol_tests() {
     }
     .envelope("sender-subject", "beta");
     for replay in [false, true] {
-        assert!(validate_inbound(&catalog, &envelope, &link, link.created_at, replay).is_ok());
-        for (mut invalid, code) in [
-            (
-                EventEnvelope {
-                    schema_version: 2,
-                    ..envelope.clone()
-                },
-                Code::EventSchemaUnsupported,
-            ),
-            (
-                EventEnvelope {
-                    event_type: "Beta.activity.completed".into(),
-                    ..envelope.clone()
-                },
-                Code::EventTypeInvalid,
-            ),
-            (
-                EventEnvelope {
-                    user_id: "different".into(),
-                    ..envelope.clone()
-                },
-                Code::EventUserMismatch,
-            ),
-        ] {
-            assert_eq!(
-                validate_inbound(&catalog, &invalid, &link, link.created_at, replay),
-                Err(InboundValidationError::Envelope(code))
-            );
-            invalid.event_id.clear();
-            assert!(validate_inbound(&catalog, &invalid, &link, link.created_at, replay).is_err());
-        }
-        for id in ["", " padded", &"x".repeat(65)] {
-            let invalid = EventEnvelope {
-                event_id: id.into(),
-                ..envelope.clone()
-            };
-            assert_eq!(
-                validate_inbound(&catalog, &invalid, &link, link.created_at, replay),
-                Err(InboundValidationError::Envelope(Code::EventIdInvalid))
-            );
-        }
+        assert_envelope_rules(&catalog, &envelope, &link, replay);
     }
     let boundary = envelope.occurred_at + chrono::Duration::seconds(MAX_EVENT_AGE_SECONDS);
     assert!(validate_inbound(&catalog, &envelope, &link, boundary, false).is_ok());

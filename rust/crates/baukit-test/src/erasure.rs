@@ -23,16 +23,15 @@ pub struct OwnedResourceCheck {
 }
 
 /// Product adapter exercised by the erasure conformance harness.
-#[allow(
-    async_fn_in_trait,
-    reason = "the harness awaits adapters on the test task, so their futures need no Send bound"
-)]
 pub trait ProductProfileErasureAdapter {
     /// Adapter-specific failure type. Its message is not included in harness output.
     type Error: std::error::Error + Send + Sync + 'static;
 
     /// Creates a representative owned-resource graph for `subject`.
-    async fn seed_user_owned_resource_graph(&mut self, subject: &str) -> Result<(), Self::Error>;
+    fn seed_user_owned_resource_graph(
+        &mut self,
+        subject: &str,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>>;
 
     /// Explains why the seed cannot create a row for one cascade or explicit check.
     fn unseeded_resource_reason(&self, _resource: &OwnedResourceCheck) -> Option<&'static str> {
@@ -40,17 +39,23 @@ pub trait ProductProfileErasureAdapter {
     }
 
     /// Counts resources selected by one registry entry for `subject`.
-    async fn owned_resource_count(
+    fn owned_resource_count(
         &self,
         subject: &str,
         resource: &OwnedResourceCheck,
-    ) -> Result<u64, Self::Error>;
+    ) -> impl std::future::Future<Output = Result<u64, Self::Error>>;
 
     /// Invokes the product's authoritative profile-erasure operation.
-    async fn erase_product_profile(&mut self, subject: &str) -> Result<(), Self::Error>;
+    fn erase_product_profile(
+        &mut self,
+        subject: &str,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>>;
 
     /// Counts registered background jobs that still contain work for `subject`.
-    async fn registered_background_job_count(&self, subject: &str) -> Result<u64, Self::Error>;
+    fn registered_background_job_count(
+        &self,
+        subject: &str,
+    ) -> impl std::future::Future<Output = Result<u64, Self::Error>>;
 }
 
 /// Failure reported by the product-profile erasure conformance harness.

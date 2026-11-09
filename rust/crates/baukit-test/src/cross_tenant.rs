@@ -216,10 +216,6 @@ pub async fn check_cross_tenant_denied(
 /// # Panics
 ///
 /// Panics with all violations found by [`check_cross_tenant_denied`].
-#[expect(
-    clippy::print_stdout,
-    reason = "every run must show the probed count and each exclusion with its reason; libtest captures stdout per test"
-)]
 pub async fn assert_cross_tenant_denied(
     document: &Value,
     target: &SecurityTarget,

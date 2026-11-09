@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 use async_trait::async_trait;
 use axum::{
     Router,
@@ -256,6 +250,180 @@ async fn exchange_link(
     Ok((service.get(owner, response.link_id).await?, request))
 }
 
+async fn authorize_on_peer(
+    b: &Router,
+    b_token: &str,
+    http: &reqwest::Client,
+    authorize: &str,
+) -> Result<(String, String), Box<dyn Error>> {
+    let state = query(authorize, "state");
+    let challenge = query(authorize, "code_challenge");
+    let (status, preview) = call(
+        b,
+        "GET",
+        "/suite/authorizations/preview?client=alpha",
+        Some(b_token),
+        Value::Null,
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!preview["autoApprove"].as_bool().expect("valid test value"));
+    let (status, authorized) = call(
+        b,
+        "POST",
+        "/suite/authorizations",
+        Some(b_token),
+        json!({"client":"alpha","state":state,"codeChallenge":challenge}),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::OK);
+    let callback = authorized["redirectUrl"]
+        .as_str()
+        .expect("valid test value");
+    let response = http.get(callback).send().await?;
+    assert_eq!(response.status(), 303);
+    let location = response.headers()["location"].to_str()?;
+    assert_eq!(query(location, "state"), "client nonce");
+    let code = query(location, "code");
+    let request = query(location, "request");
+    Ok((code, request))
+}
+
+async fn complete_twice_concurrently(
+    a: &Router,
+    a_token: &str,
+    b_token: &str,
+    pool: &PgPool,
+    request: &str,
+    code: &str,
+) -> Result<Value, Box<dyn Error>> {
+    let wrong = call(
+        a,
+        "POST",
+        &format!("/suite/links/requests/{request}/complete"),
+        Some(b_token),
+        json!({"code":code}),
+    )
+    .await?;
+    assert_eq!(wrong.0, StatusCode::NOT_FOUND);
+    assert_eq!(wrong.1["error"]["code"], "not_found");
+    let complete_path = format!("/suite/links/requests/{request}/complete");
+    let (first, concurrent) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::join!(
+            call(
+                a,
+                "POST",
+                &complete_path,
+                Some(a_token),
+                json!({"code":code})
+            ),
+            call(
+                a,
+                "POST",
+                &complete_path,
+                Some(a_token),
+                json!({"code":code})
+            )
+        )
+    })
+    .await?;
+    let (status, completed) = first?;
+    assert_eq!(concurrent?, (status, completed.clone()));
+    assert_eq!(status, StatusCode::CREATED, "{completed}");
+    let retained: (bool, bool, bool, bool) = sqlx::query_as(
+        "SELECT initiator_link_id IS NULL, secret_ciphertext IS NULL, secret_nonce IS NULL,
+             secret_key_version IS NULL FROM suite_link_requests WHERE id=$1",
+    )
+    .bind(Uuid::parse_str(request)?)
+    .fetch_one(pool)
+    .await?;
+    assert_eq!(retained, (true, true, true, true));
+    let retry = call(
+        a,
+        "POST",
+        &format!("/suite/links/requests/{request}/complete"),
+        Some(a_token),
+        json!({"code":code}),
+    )
+    .await?;
+    assert_eq!(retry.0, StatusCode::CREATED);
+    assert_eq!(retry.1, completed);
+    Ok(completed)
+}
+
+async fn assert_old_links_revoked(
+    a_context: &SuiteContext,
+    b_context: &SuiteContext,
+    old_a: Uuid,
+    old_b: Uuid,
+) -> TestResult {
+    assert_eq!(
+        a_context
+            .store
+            .find_link(old_a)
+            .await?
+            .expect("valid test value")
+            .status,
+        LinkStatus::Revoked
+    );
+    assert_eq!(
+        b_context
+            .store
+            .find_link(old_b)
+            .await?
+            .expect("valid test value")
+            .status,
+        LinkStatus::Revoked
+    );
+    Ok(())
+}
+
+async fn assert_delete_is_idempotent(
+    a: &Router,
+    a_token: &str,
+    pool: &PgPool,
+    a_id: Uuid,
+) -> TestResult {
+    assert_eq!(
+        call(
+            a,
+            "DELETE",
+            &format!("/suite/links/{a_id}"),
+            Some(a_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let before: i64 = sqlx::query_scalar("SELECT count(*) FROM job_outbox WHERE job_type='suite.links.revoke' AND payload->>'link_id'=$1").bind(a_id.to_string()).fetch_one(pool).await?;
+    assert_eq!(
+        call(
+            a,
+            "DELETE",
+            &format!("/suite/links/{a_id}"),
+            Some(a_token),
+            Value::Null
+        )
+        .await?
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    let after: i64 = sqlx::query_scalar("SELECT count(*) FROM job_outbox WHERE job_type='suite.links.revoke' AND payload->>'link_id'=$1").bind(a_id.to_string()).fetch_one(pool).await?;
+    assert_eq!(before, after);
+    Ok(())
+}
+
+fn assert_mirrored_links(a_link: &SuiteLink, b_link: &SuiteLink, a_user: Uuid, b_user: Uuid) {
+    assert_eq!(a_link.role, LinkRole::Initiator);
+    assert_eq!(b_link.role, LinkRole::Authorizer);
+    assert_eq!(a_link.remote_subject, b_user.to_string());
+    assert_eq!(b_link.remote_subject, a_user.to_string());
+    assert_eq!(a_link.remote_display_name.as_deref(), Some("suite-b"));
+    assert_eq!(b_link.remote_display_name.as_deref(), Some("suite-a"));
+    assert_eq!(secret(a_link), secret(b_link));
+}
+
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn two_routers_link_both_roles_reconnect_relay_and_disconnect() -> TestResult {
@@ -292,146 +460,20 @@ async fn two_routers_link_both_roles_reconnect_relay_and_disconnect() -> TestRes
         .await?;
         assert_eq!(status, StatusCode::CREATED);
         let authorize = start["authorizeUrl"].as_str().expect("valid test value");
-        let state = query(authorize, "state");
-        let challenge = query(authorize, "code_challenge");
-        let (status, preview) = call(
-            &b,
-            "GET",
-            "/suite/authorizations/preview?client=alpha",
-            Some(&b_token),
-            Value::Null,
-        )
-        .await?;
-        assert_eq!(status, StatusCode::OK);
-        assert!(!preview["autoApprove"].as_bool().expect("valid test value"));
-        let (status, authorized) = call(
-            &b,
-            "POST",
-            "/suite/authorizations",
-            Some(&b_token),
-            json!({"client":"alpha","state":state,"codeChallenge":challenge}),
-        )
-        .await?;
-        assert_eq!(status, StatusCode::OK);
-        let callback = authorized["redirectUrl"]
-            .as_str()
-            .expect("valid test value");
-        let response = http.get(callback).send().await?;
-        assert_eq!(response.status(), 303);
-        let location = response.headers()["location"].to_str()?;
-        assert_eq!(query(location, "state"), "client nonce");
-        let code = query(location, "code");
-        let request = query(location, "request");
-        let wrong = call(
-            &a,
-            "POST",
-            &format!("/suite/links/requests/{request}/complete"),
-            Some(&b_token),
-            json!({"code":code}),
-        )
-        .await?;
-        assert_eq!(wrong.0, StatusCode::NOT_FOUND);
-        assert_eq!(wrong.1["error"]["code"], "not_found");
+        let (code, request) = authorize_on_peer(&b, &b_token, &http, authorize).await?;
+        let completed =
+            complete_twice_concurrently(&a, &a_token, &b_token, pool, &request, &code).await?;
         let complete_path = format!("/suite/links/requests/{request}/complete");
-        let (first, concurrent) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            tokio::join!(
-                call(
-                    &a,
-                    "POST",
-                    &complete_path,
-                    Some(&a_token),
-                    json!({"code":code})
-                ),
-                call(
-                    &a,
-                    "POST",
-                    &complete_path,
-                    Some(&a_token),
-                    json!({"code":code})
-                )
-            )
-        })
-        .await?;
-        let (status, completed) = first?;
-        assert_eq!(concurrent?, (status, completed.clone()));
-        assert_eq!(status, StatusCode::CREATED, "{completed}");
-        let retained: (bool, bool, bool, bool) = sqlx::query_as(
-            "SELECT initiator_link_id IS NULL, secret_ciphertext IS NULL, secret_nonce IS NULL,
-             secret_key_version IS NULL FROM suite_link_requests WHERE id=$1",
-        )
-        .bind(Uuid::parse_str(&request)?)
-        .fetch_one(pool)
-        .await?;
-        assert_eq!(retained, (true, true, true, true));
-        let retry = call(
-            &a,
-            "POST",
-            &format!("/suite/links/requests/{request}/complete"),
-            Some(&a_token),
-            json!({"code":code}),
-        )
-        .await?;
-        assert_eq!(retry.0, StatusCode::CREATED);
-        assert_eq!(retry.1, completed);
         let a_id = Uuid::parse_str(completed["id"].as_str().expect("valid test value"))?;
         let a_link = a_api.get(a_user, a_id).await?.link;
         let b_link = b_api.get(b_user, a_link.remote_link_id).await?.link;
-        assert_eq!(a_link.role, LinkRole::Initiator);
-        assert_eq!(b_link.role, LinkRole::Authorizer);
-        assert_eq!(a_link.remote_subject, b_user.to_string());
-        assert_eq!(b_link.remote_subject, a_user.to_string());
-        assert_eq!(a_link.remote_display_name.as_deref(), Some("suite-b"));
-        assert_eq!(b_link.remote_display_name.as_deref(), Some("suite-a"));
-        assert_eq!(secret(&a_link), secret(&b_link));
+        assert_mirrored_links(&a_link, &b_link, a_user, b_user);
         if let Some((old_a, old_b)) = old_links {
-            assert_eq!(
-                a_context
-                    .store
-                    .find_link(old_a)
-                    .await?
-                    .expect("valid test value")
-                    .status,
-                LinkStatus::Revoked
-            );
-            assert_eq!(
-                b_context
-                    .store
-                    .find_link(old_b)
-                    .await?
-                    .expect("valid test value")
-                    .status,
-                LinkStatus::Revoked
-            )
+            assert_old_links_revoked(&a_context, &b_context, old_a, old_b).await?;
         }
         old_links = Some((a_link.id, b_link.id));
         if attempt == 1 {
-            assert_eq!(
-                call(
-                    &a,
-                    "DELETE",
-                    &format!("/suite/links/{a_id}"),
-                    Some(&a_token),
-                    Value::Null
-                )
-                .await?
-                .0,
-                StatusCode::NO_CONTENT
-            );
-            let before: i64 = sqlx::query_scalar("SELECT count(*) FROM job_outbox WHERE job_type='suite.links.revoke' AND payload->>'link_id'=$1").bind(a_id.to_string()).fetch_one(pool).await?;
-            assert_eq!(
-                call(
-                    &a,
-                    "DELETE",
-                    &format!("/suite/links/{a_id}"),
-                    Some(&a_token),
-                    Value::Null
-                )
-                .await?
-                .0,
-                StatusCode::NO_CONTENT
-            );
-            let after: i64 = sqlx::query_scalar("SELECT count(*) FROM job_outbox WHERE job_type='suite.links.revoke' AND payload->>'link_id'=$1").bind(a_id.to_string()).fetch_one(pool).await?;
-            assert_eq!(before, after);
+            assert_delete_is_idempotent(&a, &a_token, pool, a_id).await?;
             assert_eq!(
                 call(
                     &a,
@@ -462,14 +504,11 @@ async fn two_routers_link_both_roles_reconnect_relay_and_disconnect() -> TestRes
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires Docker PostgreSQL"]
-async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult {
-    let (db, c, owner) = authorizer_fixture().await?;
-    let service = SuiteLinkService::new(c.clone());
-    let fixture: Value = serde_json::from_str(include_str!(
-        "../../../../fixtures/suite-events/v1/link-protocol.json"
-    ))?;
+async fn assert_fixture_errors(
+    service: &SuiteLinkService,
+    owner: Uuid,
+    fixture: &Value,
+) -> TestResult {
     for vector in fixture["errors"].as_array().expect("valid test value") {
         if vector["name"] == "unknown-peer" {
             assert_eq!(
@@ -512,8 +551,15 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
             );
         }
     }
+    Ok(())
+}
+
+async fn assert_exchange_retry_rejects_changed_requests(
+    service: &SuiteLinkService,
+    owner: Uuid,
+) -> TestResult {
     let (link, mut request) = exchange_link(
-        &service,
+        service,
         owner,
         Some("one|person".to_owned()),
         Some("two|person".to_owned()),
@@ -540,11 +586,10 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
             .code(),
         "suite_code_invalid"
     );
-    let u = SuiteUser {
-        id: owner,
-        suite_subject: Some("one|person".to_owned()),
-        display_name: None,
-    };
+    Ok(())
+}
+
+async fn assert_account_hint_matching(service: &SuiteLinkService, u: &SuiteUser) -> TestResult {
     let mismatched = service
         .preview(
             u.clone(),
@@ -605,13 +650,17 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
             .code(),
         "suite_code_invalid"
     );
-    let start = LinkStartRequest {
-        peer_app: "beta".to_owned(),
-        return_url: "http://127.0.0.1:12340/suite/linked".to_owned(),
-        state_nonce: "nonce".to_owned(),
-    };
+    Ok(())
+}
+
+async fn assert_invalid_nonces_store_nothing(
+    service: &SuiteLinkService,
+    u: &SuiteUser,
+    start: &LinkStartRequest,
+    pool: &PgPool,
+) -> TestResult {
     let before: i64 = sqlx::query_scalar("SELECT count(*) FROM suite_link_requests")
-        .fetch_one(&db.pool)
+        .fetch_one(pool)
         .await?;
     for nonce in ["", "invalid\nnonce", &"x".repeat(129)] {
         let invalid = LinkStartRequest {
@@ -629,11 +678,21 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
     }
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM suite_link_requests")
-            .fetch_one(&db.pool)
+            .fetch_one(pool)
             .await?,
         before
     );
-    let other_owner = user(&db.pool, "supersession-other").await?;
+    Ok(())
+}
+
+async fn assert_start_supersedes_prepared_exchange(
+    service: &SuiteLinkService,
+    c: &SuiteContext,
+    u: &SuiteUser,
+    start: &LinkStartRequest,
+    pool: &PgPool,
+) -> Result<LinkStartResponse, Box<dyn Error>> {
+    let other_owner = user(pool, "supersession-other").await?;
     let untouched_owner = service
         .start(
             SuiteUser {
@@ -670,7 +729,7 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
     };
     let mut tx = c.store.begin_transaction().await?;
     c.store
-        .prepare_exchange_in_transaction(&mut tx, first.request_id, owner, &prepared)
+        .prepare_exchange_in_transaction(&mut tx, first.request_id, u.id, &prepared)
         .await?;
     c.store.commit_transaction(tx).await?;
     let second = service.start(u.clone(), start.clone(), Utc::now()).await?;
@@ -678,7 +737,7 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
         let open: bool =
             sqlx::query_scalar("SELECT consumed_at IS NULL FROM suite_link_requests WHERE id=$1")
                 .bind(untouched)
-                .fetch_one(&db.pool)
+                .fetch_one(pool)
                 .await?;
         assert!(open, "supersession changed another owner or peer");
     }
@@ -688,7 +747,7 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
          FROM suite_link_requests WHERE id=$1",
     )
     .bind(first.request_id)
-    .fetch_one(&db.pool)
+    .fetch_one(pool)
     .await?;
     assert!(
         cleared,
@@ -702,6 +761,15 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
             .code(),
         "suite_code_invalid"
     );
+    Ok(second)
+}
+
+async fn assert_callbacks_and_starts_reject_bad_input(
+    service: &SuiteLinkService,
+    u: &SuiteUser,
+    start: LinkStartRequest,
+    second: &LinkStartResponse,
+) -> TestResult {
     for wrong_source in ["unknown", "hebkit"] {
         let bad = service
             .callback(
@@ -743,12 +811,40 @@ async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult 
     bad_start.return_url = "https://evil.example/suite/linked".to_owned();
     assert_eq!(
         service
-            .start(u, bad_start, Utc::now())
+            .start(u.clone(), bad_start, Utc::now())
             .await
             .expect_err("rejected input")
             .code(),
         "suite_return_url_invalid"
     );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn codes_subjects_supersession_and_expiry_follow_fixtures() -> TestResult {
+    let (db, c, owner) = authorizer_fixture().await?;
+    let service = SuiteLinkService::new(c.clone());
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../fixtures/suite-events/v1/link-protocol.json"
+    ))?;
+    assert_fixture_errors(&service, owner, &fixture).await?;
+    assert_exchange_retry_rejects_changed_requests(&service, owner).await?;
+    let u = SuiteUser {
+        id: owner,
+        suite_subject: Some("one|person".to_owned()),
+        display_name: None,
+    };
+    assert_account_hint_matching(&service, &u).await?;
+    let start = LinkStartRequest {
+        peer_app: "beta".to_owned(),
+        return_url: "http://127.0.0.1:12340/suite/linked".to_owned(),
+        state_nonce: "nonce".to_owned(),
+    };
+    assert_invalid_nonces_store_nothing(&service, &u, &start, &db.pool).await?;
+    let second =
+        assert_start_supersedes_prepared_exchange(&service, &c, &u, &start, &db.pool).await?;
+    assert_callbacks_and_starts_reject_bad_input(&service, &u, start, &second).await?;
     let linked_replays: i64 =
         sqlx::query_scalar("SELECT count(*) FROM suite_links WHERE last_replay_at IS NOT NULL")
             .fetch_one(&db.pool)
@@ -797,57 +893,63 @@ async fn exchange_client_length_is_bounded_before_peer_lookup() -> TestResult {
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires Docker PostgreSQL"]
-async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResult {
-    let (db, c, owner) = authorizer_fixture().await?;
-    let service = SuiteLinkService::new(c.clone());
-    let (link, _) = exchange_link(&service, owner, None, None).await?;
-    let outbox = make_outbox(db.pool.clone(), &c.clone(), true);
-    let event = activity(3, Some(17));
-    let mut event = event;
-    event.natural_key = (Utc::now().date_naive()).to_string();
+async fn assert_enqueue_rolls_back_and_dedupes(
+    c: &SuiteContext,
+    outbox: &PostgresSuiteEventOutbox,
+    owner: Uuid,
+    event: &SuiteEvent,
+    pool: &PgPool,
+) -> TestResult {
     let mut tx = c.store.begin_transaction().await?;
     assert_eq!(
         outbox
-            .enqueue_in_transaction(&mut tx, owner, std::slice::from_ref(&event))
+            .enqueue_in_transaction(&mut tx, owner, std::slice::from_ref(event))
             .await?,
         1
     );
     tx.rollback().await?;
     let count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM job_outbox WHERE job_type='suite.events.deliver'")
-            .fetch_one(&db.pool)
+            .fetch_one(pool)
             .await?;
     assert_eq!(count, 0);
     let mut tx = c.store.begin_transaction().await?;
     assert_eq!(
         outbox
-            .enqueue_in_transaction(&mut tx, owner, std::slice::from_ref(&event))
+            .enqueue_in_transaction(&mut tx, owner, std::slice::from_ref(event))
             .await?,
         1
     );
     assert_eq!(
         outbox
-            .enqueue_in_transaction(&mut tx, owner, std::slice::from_ref(&event))
+            .enqueue_in_transaction(&mut tx, owner, std::slice::from_ref(event))
             .await?,
         0
     );
     c.store.commit_transaction(tx).await?;
     let payload: Value =
         sqlx::query_scalar("SELECT payload FROM job_outbox WHERE job_type='suite.events.deliver'")
-            .fetch_one(&db.pool)
+            .fetch_one(pool)
             .await?;
     assert_eq!(payload["envelope"]["payload"]["xp"], 17);
     assert_eq!(payload["envelope"]["userId"], owner.to_string());
+    Ok(())
+}
+
+async fn assert_xp_shared_only_when_both_preferences_allow(
+    c: &Arc<SuiteContext>,
+    owner: Uuid,
+    link_id: Uuid,
+    pool: &PgPool,
+) -> TestResult {
     for (index, (global, per_link)) in [(true, false), (false, true), (false, false)]
         .into_iter()
         .enumerate()
     {
         c.store
-            .update_preferences(owner, link.id, Some(per_link), None, Utc::now())
+            .update_preferences(owner, link_id, Some(per_link), None, Utc::now())
             .await?;
-        let outbox = make_outbox(db.pool.clone(), &c.clone(), global);
+        let outbox = make_outbox(pool.clone(), &c.clone(), global);
         let event = activity(2, Some(9));
         let mut event = event;
         event.natural_key = (Utc::now().date_naive()
@@ -862,9 +964,96 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
     let xp_jobs: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM job_outbox WHERE payload->'envelope'->'payload' ? 'xp'",
     )
-    .fetch_one(&db.pool)
+    .fetch_one(pool)
     .await?;
     assert_eq!(xp_jobs, 1);
+    Ok(())
+}
+
+async fn assert_permanent_failures_disable_delivery(
+    c: &SuiteContext,
+    service: &SuiteLinkService,
+    jobs: &PostgresJobStore,
+    owner: Uuid,
+    link_id: Uuid,
+    pool: &PgPool,
+) -> TestResult {
+    for n in 0..20 {
+        let job = jobs
+            .enqueue(NewJob::new(
+                SUITE_EVENTS_DELIVER_JOB_TYPE,
+                json!({"link_id":link_id,"n":n}),
+                1,
+            ))
+            .await?
+            .job;
+        sqlx::query("UPDATE job_outbox
+            SET status='failed',last_error='suite_rejected',failure_reason='permanent',updated_at=now()
+            WHERE id=$1")
+        .bind(job.id)
+        .execute(pool)
+        .await?;
+    }
+    let deliveries = c.store.deliveries(owner, link_id, 20).await?;
+    assert_eq!(deliveries.len(), 20);
+    assert!(
+        deliveries
+            .iter()
+            .all(|delivery| delivery.event_type.is_none()
+                && delivery.status == "failed"
+                && delivery.last_error_code.as_deref() == Some("suite_rejected"))
+    );
+    let disabled = service.get(owner, link_id).await?;
+    assert_eq!(disabled.consecutive_failures, 20);
+    assert_eq!(disabled.delivery_health, DeliveryHealth::Disabled);
+    Ok(())
+}
+
+async fn assert_attention_failures_escalate(
+    service: &SuiteLinkService,
+    jobs: &PostgresJobStore,
+    owner: Uuid,
+    link_id: Uuid,
+    pool: &PgPool,
+) -> TestResult {
+    for n in 1..=SUITE_CIRCUIT_FAILURES {
+        let job = jobs
+            .enqueue(NewJob::new(
+                SUITE_EVENTS_DELIVER_JOB_TYPE,
+                json!({"link_id":link_id,"attention_failure":n}),
+                1,
+            ))
+            .await?
+            .job;
+        sqlx::query("UPDATE job_outbox SET status='failed',last_error='suite_rejected',failure_reason='permanent',updated_at=now() WHERE id=$1")
+            .bind(job.id).execute(pool).await?;
+        let link = service.get(owner, link_id).await?;
+        assert_eq!(link.status, LinkStatus::NeedsAttention);
+        assert_eq!(link.consecutive_failures, n);
+        assert_eq!(
+            link.delivery_health,
+            if n < SUITE_CIRCUIT_FAILURES {
+                DeliveryHealth::NeedsAttention
+            } else {
+                DeliveryHealth::Disabled
+            }
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResult {
+    let (db, c, owner) = authorizer_fixture().await?;
+    let service = SuiteLinkService::new(c.clone());
+    let (link, _) = exchange_link(&service, owner, None, None).await?;
+    let outbox = make_outbox(db.pool.clone(), &c.clone(), true);
+    let event = activity(3, Some(17));
+    let mut event = event;
+    event.natural_key = (Utc::now().date_naive()).to_string();
+    assert_enqueue_rolls_back_and_dedupes(&c, &outbox, owner, &event, &db.pool).await?;
+    assert_xp_shared_only_when_both_preferences_allow(&c, owner, link.id, &db.pool).await?;
     c.store
         .record_delivery(link.id, DeliveryAction::Unauthorized, Utc::now())
         .await?;
@@ -877,34 +1066,8 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
         .execute(&db.pool)
         .await?;
     let jobs = PostgresJobStore::new(db.pool.clone());
-    for n in 0..20 {
-        let job = jobs
-            .enqueue(NewJob::new(
-                SUITE_EVENTS_DELIVER_JOB_TYPE,
-                json!({"link_id":link.id,"n":n}),
-                1,
-            ))
-            .await?
-            .job;
-        sqlx::query("UPDATE job_outbox
-            SET status='failed',last_error='suite_rejected',failure_reason='permanent',updated_at=now()
-            WHERE id=$1")
-        .bind(job.id)
-        .execute(&db.pool)
+    assert_permanent_failures_disable_delivery(&c, &service, &jobs, owner, link.id, &db.pool)
         .await?;
-    }
-    let deliveries = c.store.deliveries(owner, link.id, 20).await?;
-    assert_eq!(deliveries.len(), 20);
-    assert!(
-        deliveries
-            .iter()
-            .all(|delivery| delivery.event_type.is_none()
-                && delivery.status == "failed"
-                && delivery.last_error_code.as_deref() == Some("suite_rejected"))
-    );
-    let disabled = service.get(owner, link.id).await?;
-    assert_eq!(disabled.consecutive_failures, 20);
-    assert_eq!(disabled.delivery_health, DeliveryHealth::Disabled);
     let mut tx = c.store.begin_transaction().await?;
     assert_eq!(
         outbox
@@ -923,29 +1086,7 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
     c.store
         .record_delivery(link.id, DeliveryAction::Unauthorized, Utc::now())
         .await?;
-    for n in 1..=SUITE_CIRCUIT_FAILURES {
-        let job = jobs
-            .enqueue(NewJob::new(
-                SUITE_EVENTS_DELIVER_JOB_TYPE,
-                json!({"link_id":link.id,"attention_failure":n}),
-                1,
-            ))
-            .await?
-            .job;
-        sqlx::query("UPDATE job_outbox SET status='failed',last_error='suite_rejected',failure_reason='permanent',updated_at=now() WHERE id=$1")
-            .bind(job.id).execute(&db.pool).await?;
-        let link = service.get(owner, link.id).await?;
-        assert_eq!(link.status, LinkStatus::NeedsAttention);
-        assert_eq!(link.consecutive_failures, n);
-        assert_eq!(
-            link.delivery_health,
-            if n < SUITE_CIRCUIT_FAILURES {
-                DeliveryHealth::NeedsAttention
-            } else {
-                DeliveryHealth::Disabled
-            }
-        );
-    }
+    assert_attention_failures_escalate(&service, &jobs, owner, link.id, &db.pool).await?;
     assert_eq!(
         service
             .reenable(owner, link.id, Utc::now())
@@ -961,6 +1102,80 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
         service.get(owner, link.id).await?.status,
         LinkStatus::Revoked
     );
+    Ok(())
+}
+
+fn signed_inbound_request(
+    now: chrono::DateTime<Utc>,
+    id: Uuid,
+    event: &EventEnvelope,
+    key: &[u8],
+) -> Result<Request<Body>, Box<dyn Error>> {
+    let body = serde_json::to_vec(event)?;
+    let signature = sign_webhook_hmac_sha256(key, now.timestamp(), &event.event_id, &body);
+    Ok(Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/suite/inbound/{id}"))
+        .header("content-type", "application/json")
+        .header("x-suite-source", "beta")
+        .header("x-suite-delivery-id", &event.event_id)
+        .header("x-suite-timestamp", now.timestamp().to_string())
+        .header("x-suite-signature", signature)
+        .body(Body::from(body))?)
+}
+
+fn assert_only_known_link_keys_were_limited(
+    limiter: &FixedWindowLimiter,
+    links: &[(SuiteLink, Vec<u8>, EventEnvelope)],
+) {
+    let expected: Vec<_> = links
+        .iter()
+        .map(|(link, _, _)| {
+            (
+                format!("suite:inbound:{}", link.id),
+                120,
+                std::time::Duration::from_secs(60),
+            )
+        })
+        .collect();
+    assert_eq!(*limiter.calls.lock().expect("calls"), expected);
+    assert!(
+        !limiter
+            .counts
+            .lock()
+            .expect("counts")
+            .keys()
+            .any(|key| key.starts_with("suite:inbound:unknown:"))
+    );
+}
+
+async fn assert_unknown_ids_hit_their_own_limit(
+    app: &Router,
+    now: chrono::DateTime<Utc>,
+    event: &EventEnvelope,
+    key: &[u8],
+) -> TestResult {
+    for index in 0..=SUITE_INBOUND_UNKNOWN_LIMIT {
+        let response = app
+            .clone()
+            .oneshot(signed_inbound_request(now, Uuid::now_v7(), event, key)?)
+            .await?;
+        if index < SUITE_INBOUND_UNKNOWN_LIMIT {
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            let body: Value = serde_json::from_slice(
+                &axum::body::to_bytes(response.into_body(), SUITE_MAX_BODY_BYTES).await?,
+            )?;
+            assert_eq!(body["error"]["code"], "suite_signature_invalid");
+        } else {
+            assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+            let retry_after = response.headers()["retry-after"].to_str()?.parse::<u64>()?;
+            assert!((1..=SUITE_RATE_WINDOW_SECONDS).contains(&retry_after));
+            let body: Value = serde_json::from_slice(
+                &axum::body::to_bytes(response.into_body(), SUITE_MAX_BODY_BYTES).await?,
+            )?;
+            assert_eq!(body["error"]["code"], "rate_limited");
+        }
+    }
     Ok(())
 }
 
@@ -982,20 +1197,6 @@ async fn inbound_limits_isolate_known_links_from_unknown_id_traffic() -> TestRes
     envelope.event_type = "beta.activity.completed".into();
     envelope.user_id = "remote".to_owned();
     envelope.occurred_at = now;
-    let make_request =
-        |id: Uuid, event: &EventEnvelope, key: &[u8]| -> Result<Request<Body>, Box<dyn Error>> {
-            let body = serde_json::to_vec(event)?;
-            let signature = sign_webhook_hmac_sha256(key, now.timestamp(), &event.event_id, &body);
-            Ok(Request::builder()
-                .method("POST")
-                .uri(format!("/api/v1/suite/inbound/{id}"))
-                .header("content-type", "application/json")
-                .header("x-suite-source", "beta")
-                .header("x-suite-delivery-id", &event.event_id)
-                .header("x-suite-timestamp", now.timestamp().to_string())
-                .header("x-suite-signature", signature)
-                .body(Body::from(body))?)
-        };
     let mut links = Vec::new();
     for index in 0..25 {
         let owner = user(&db.pool, &format!("suite-inbound-rate-{index}")).await?;
@@ -1008,77 +1209,44 @@ async fn inbound_limits_isolate_known_links_from_unknown_id_traffic() -> TestRes
         .to_string();
         let response = app
             .clone()
-            .oneshot(make_request(link.id, &envelope, &key)?)
+            .oneshot(signed_inbound_request(now, link.id, &envelope, &key)?)
             .await?;
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         links.push((link, key, envelope.clone()));
     }
-    let expected: Vec<_> = links
-        .iter()
-        .map(|(link, _, _)| {
-            (
-                format!("suite:inbound:{}", link.id),
-                120,
-                std::time::Duration::from_secs(60),
-            )
-        })
-        .collect();
-    assert_eq!(*limiter.calls.lock().expect("calls"), expected);
-    assert!(
-        !limiter
-            .counts
-            .lock()
-            .expect("counts")
-            .keys()
-            .any(|key| key.starts_with("suite:inbound:unknown:"))
-    );
+    assert_only_known_link_keys_were_limited(&limiter, &links);
     assert_eq!(applier.calls.lock().expect("valid test value").len(), 25);
     let (link, key, mut event) = links[0].clone();
-    for index in 0..=SUITE_INBOUND_UNKNOWN_LIMIT {
-        let response = app
-            .clone()
-            .oneshot(make_request(Uuid::now_v7(), &event, &key)?)
-            .await?;
-        if index < SUITE_INBOUND_UNKNOWN_LIMIT {
-            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-            let body: Value = serde_json::from_slice(
-                &axum::body::to_bytes(response.into_body(), SUITE_MAX_BODY_BYTES).await?,
-            )?;
-            assert_eq!(body["error"]["code"], "suite_signature_invalid");
-        } else {
-            assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-            let retry_after = response.headers()["retry-after"].to_str()?.parse::<u64>()?;
-            assert!((1..=SUITE_RATE_WINDOW_SECONDS).contains(&retry_after));
-            let body: Value = serde_json::from_slice(
-                &axum::body::to_bytes(response.into_body(), SUITE_MAX_BODY_BYTES).await?,
-            )?;
-            assert_eq!(body["error"]["code"], "rate_limited");
-        }
-    }
+    assert_unknown_ids_hit_their_own_limit(&app, now, &event, &key).await?;
     event.event_id = Uuid::new_v5(&SUITE_EVENT_NAMESPACE, b"known-after-unknown-limit").to_string();
     let response = app
         .clone()
-        .oneshot(make_request(link.id, &event, &key)?)
+        .oneshot(signed_inbound_request(now, link.id, &event, &key)?)
         .await?;
     assert_eq!(response.status(), StatusCode::ACCEPTED);
     assert_eq!(applier.calls.lock().expect("valid test value").len(), 26);
     for _ in 2..SUITE_INBOUND_LINK_LIMIT {
         let response = app
             .clone()
-            .oneshot(make_request(link.id, &event, &key)?)
+            .oneshot(signed_inbound_request(now, link.id, &event, &key)?)
             .await?;
         assert_eq!(response.status(), StatusCode::OK);
     }
     let response = app
         .clone()
-        .oneshot(make_request(link.id, &event, &key)?)
+        .oneshot(signed_inbound_request(now, link.id, &event, &key)?)
         .await?;
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     let retry_after = response.headers()["retry-after"].to_str()?.parse::<u64>()?;
     assert!((1..=SUITE_RATE_WINDOW_SECONDS).contains(&retry_after));
     let (other_link, other_key, other_event) = &links[1];
     let response = app
-        .oneshot(make_request(other_link.id, other_event, other_key)?)
+        .oneshot(signed_inbound_request(
+            now,
+            other_link.id,
+            other_event,
+            other_key,
+        )?)
         .await?;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(applier.calls.lock().expect("valid test value").len(), 26);
@@ -1164,6 +1332,32 @@ async fn receiving_signature_fixture_matrix_uses_raw_bytes() -> TestResult {
     Ok(())
 }
 
+fn assert_deliveries_signed_with(
+    received: &[baukit_test::ReceivedWebhookRequest],
+    key: &[u8],
+) -> TestResult {
+    for request in received {
+        assert_eq!(request.header("content-type"), Some("application/json"));
+        assert_eq!(request.header("x-suite-source"), Some("alpha"));
+        assert_eq!(request.header("x-suite-replay"), None);
+        assert!(verify_webhook_hmac_sha256(
+            [key],
+            request
+                .header("x-suite-timestamp")
+                .expect("valid test value")
+                .parse()?,
+            request
+                .header("x-suite-delivery-id")
+                .expect("valid test value"),
+            request.body(),
+            request
+                .header("x-suite-signature")
+                .expect("valid test value")
+        ));
+    }
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn worker_retries_then_commits_delivery_and_health_with_its_lease() -> TestResult {
@@ -1230,25 +1424,7 @@ async fn worker_retries_then_commits_delivery_and_health_with_its_lease() -> Tes
     assert_eq!(received.len(), 2);
     assert_eq!(received[0].body(), received[1].body());
     let key = secret(&link);
-    for request in &received {
-        assert_eq!(request.header("content-type"), Some("application/json"));
-        assert_eq!(request.header("x-suite-source"), Some("alpha"));
-        assert_eq!(request.header("x-suite-replay"), None);
-        assert!(verify_webhook_hmac_sha256(
-            [key.as_slice()],
-            request
-                .header("x-suite-timestamp")
-                .expect("valid test value")
-                .parse()?,
-            request
-                .header("x-suite-delivery-id")
-                .expect("valid test value"),
-            request.body(),
-            request
-                .header("x-suite-signature")
-                .expect("valid test value")
-        ));
-    }
+    assert_deliveries_signed_with(&received, &key)?;
     let fresh = links.get(owner, link.id).await?;
     assert_eq!(fresh.delivery_health, DeliveryHealth::Healthy);
     assert!(fresh.last_delivery_at.is_some());
@@ -1256,18 +1432,12 @@ async fn worker_retries_then_commits_delivery_and_health_with_its_lease() -> Tes
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires Docker PostgreSQL"]
-async fn suite_cleanup_retains_its_history_until_30_days_after_generic_cleanup() -> TestResult {
-    let (db, context, owner) = authorizer_fixture().await?;
-    let (link, _) =
-        exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
-    let now = Utc::now();
-    context
-        .store
-        .record_delivery(link.id, DeliveryAction::Delivered, now)
-        .await?;
-    let jobs = PostgresJobStore::new(db.pool.clone()).retain_kinds(&baukit_suite::SUITE_JOB_TYPES);
+async fn seed_terminal_suite_jobs(
+    jobs: &PostgresJobStore,
+    pool: &PgPool,
+    link_id: Uuid,
+    now: chrono::DateTime<Utc>,
+) -> Result<(Vec<Uuid>, Vec<Uuid>), Box<dyn Error>> {
     let mut suite_jobs = Vec::new();
     let mut retained = Vec::new();
     for old in [true, false] {
@@ -1284,7 +1454,7 @@ async fn suite_cleanup_retains_its_history_until_30_days_after_generic_cleanup()
                 };
                 let mut pending = NewJob::new(
                     kind,
-                    json!({"link_id":link.id,"envelope":{"type":event_type}}),
+                    json!({"link_id":link_id,"envelope":{"type":event_type}}),
                     1,
                 );
                 pending.created_at = updated;
@@ -1297,7 +1467,7 @@ async fn suite_cleanup_retains_its_history_until_30_days_after_generic_cleanup()
                 .bind(status)
                 .bind(updated)
                 .bind((status == "failed").then_some("permanent"))
-                .execute(&db.pool)
+                .execute(pool)
                 .await?;
                 suite_jobs.push(job.id);
                 if !old {
@@ -1306,6 +1476,23 @@ async fn suite_cleanup_retains_its_history_until_30_days_after_generic_cleanup()
             }
         }
     }
+    Ok((suite_jobs, retained))
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn suite_cleanup_retains_its_history_until_30_days_after_generic_cleanup() -> TestResult {
+    let (db, context, owner) = authorizer_fixture().await?;
+    let (link, _) =
+        exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
+    let now = Utc::now();
+    context
+        .store
+        .record_delivery(link.id, DeliveryAction::Delivered, now)
+        .await?;
+    let jobs = PostgresJobStore::new(db.pool.clone()).retain_kinds(&baukit_suite::SUITE_JOB_TYPES);
+    let (mut suite_jobs, mut retained) =
+        seed_terminal_suite_jobs(&jobs, &db.pool, link.id, now).await?;
     let ordinary_updated = now - chrono::Duration::days(31);
     let mut pending = NewJob::new("email.send", json!({}), 1);
     pending.created_at = ordinary_updated;
@@ -1348,6 +1535,45 @@ async fn suite_cleanup_retains_its_history_until_30_days_after_generic_cleanup()
     retained.sort();
     assert_eq!(remaining, retained);
     assert!(context.store.find_link(link.id).await?.is_some());
+    Ok(())
+}
+
+async fn assert_corrupt_request_state_fails_completion(
+    links: &SuiteLinkService,
+    corrupt: &Router,
+    owner: Uuid,
+    pool: &PgPool,
+) -> TestResult {
+    let started = links
+        .start(
+            SuiteUser {
+                id: owner,
+                suite_subject: None,
+                display_name: None,
+            },
+            LinkStartRequest {
+                peer_app: "beta".to_owned(),
+                state_nonce: "nonce".to_owned(),
+                return_url: "http://127.0.0.1:12340/suite/linked".to_owned(),
+            },
+            Utc::now(),
+        )
+        .await?;
+    sqlx::query("UPDATE suite_link_requests SET state_hash='\\x01'::bytea WHERE id=$1")
+        .bind(started.request_id)
+        .execute(pool)
+        .await?;
+    let token = common::TestTokenIssuer::new().user_token(owner)?;
+    let (status, body) = call(
+        corrupt,
+        "POST",
+        &format!("/suite/links/requests/{}/complete", started.request_id),
+        Some(&token),
+        json!({"code":"unused-code"}),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(body["error"]["code"], "internal_server_error");
     Ok(())
 }
 
@@ -1428,36 +1654,70 @@ async fn unavailable_appliers_and_corrupt_storage_fail_with_retryable_or_interna
         .fetch_one(&db.pool)
         .await?;
     assert_eq!(writes, 0);
-    let started = links
-        .start(
-            SuiteUser {
-                id: owner,
-                suite_subject: None,
-                display_name: None,
-            },
-            LinkStartRequest {
-                peer_app: "beta".to_owned(),
-                state_nonce: "nonce".to_owned(),
-                return_url: "http://127.0.0.1:12340/suite/linked".to_owned(),
-            },
-            Utc::now(),
+    assert_corrupt_request_state_fails_completion(&links, &corrupt, owner, &db.pool).await?;
+    Ok(())
+}
+
+async fn assert_link_operations_rejected(
+    app: &Router,
+    token: &str,
+    link_id: Uuid,
+    expected: StatusCode,
+    code: &str,
+) -> TestResult {
+    for operation in ["test", "replay"] {
+        let body = if operation == "replay" {
+            json!({"since":Utc::now().date_naive().to_string()})
+        } else {
+            json!({})
+        };
+        let (status, body) = call(
+            app,
+            "POST",
+            &format!("/suite/links/{link_id}/{operation}"),
+            Some(token),
+            body,
         )
         .await?;
-    sqlx::query("UPDATE suite_link_requests SET state_hash='\\x01'::bytea WHERE id=$1")
-        .bind(started.request_id)
-        .execute(&db.pool)
-        .await?;
-    let token = common::TestTokenIssuer::new().user_token(owner)?;
-    let (status, body) = call(
-        &corrupt,
-        "POST",
-        &format!("/suite/links/requests/{}/complete", started.request_id),
-        Some(&token),
-        json!({"code":"unused-code"}),
-    )
-    .await?;
-    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(body["error"]["code"], "internal_server_error");
+        assert_eq!(status, expected);
+        assert_eq!(body["error"]["code"], code);
+    }
+    Ok(())
+}
+
+async fn run_worker_until_delivery_fails(pool: &PgPool, context: &Arc<SuiteContext>) -> TestResult {
+    use baukit_jobs::{WorkerConfig, WorkerRunner};
+    use baukit_suite::adapters::jobs::SuiteJobHandler;
+    let shutdown = baukit_runtime::ShutdownToken::new(std::time::Duration::from_secs(5));
+    let runner = WorkerRunner::new(
+        Arc::new(PostgresJobStore::new(pool.clone())),
+        Arc::new(SuiteJobHandler::new(Arc::new(SuiteDeliveryService::new(
+            context.clone(),
+        )))),
+        WorkerConfig {
+            queue: "suite-events",
+            poll_interval: std::time::Duration::from_millis(10),
+            ..WorkerConfig::default()
+        },
+    )?;
+    let task = tokio::spawn(runner.run(shutdown.clone()));
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let status: String = sqlx::query_scalar(
+                "SELECT status FROM job_outbox WHERE job_type='suite.events.deliver'",
+            )
+            .fetch_one(pool)
+            .await?;
+            if status == "failed" {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        Ok::<(), sqlx::Error>(())
+    })
+    .await??;
+    shutdown.trigger();
+    task.await??;
     Ok(())
 }
 
@@ -1465,8 +1725,6 @@ async fn unavailable_appliers_and_corrupt_storage_fail_with_retryable_or_interna
 #[ignore = "requires Docker PostgreSQL"]
 async fn disabled_jobs_fail_permanently_and_revoked_failures_leave_link_health_unchanged()
 -> TestResult {
-    use baukit_jobs::{WorkerConfig, WorkerRunner};
-    use baukit_suite::adapters::jobs::SuiteJobHandler;
     let db = common::postgres_database().await?;
     let receiver = ScriptedWebhookReceiver::start().await?;
     let port = Url::parse(&receiver.url("/"))?
@@ -1490,53 +1748,15 @@ async fn disabled_jobs_fail_permanently_and_revoked_failures_leave_link_health_u
         &db.pool,
         module(&db.pool, context.clone(), Arc::new(Applier::default())),
     );
-    for operation in ["test", "replay"] {
-        let body = if operation == "replay" {
-            json!({"since":Utc::now().date_naive().to_string()})
-        } else {
-            json!({})
-        };
-        let (status, body) = call(
-            &app,
-            "POST",
-            &format!("/suite/links/{}/{operation}", link.id),
-            Some(&token),
-            body,
-        )
-        .await?;
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert_eq!(body["error"]["code"], "suite_link_inactive");
-    }
-    let shutdown = baukit_runtime::ShutdownToken::new(std::time::Duration::from_secs(5));
-    let runner = WorkerRunner::new(
-        Arc::new(PostgresJobStore::new(db.pool.clone())),
-        Arc::new(SuiteJobHandler::new(Arc::new(SuiteDeliveryService::new(
-            context.clone(),
-        )))),
-        WorkerConfig {
-            queue: "suite-events",
-            poll_interval: std::time::Duration::from_millis(10),
-            ..WorkerConfig::default()
-        },
-    )?;
-    let task = tokio::spawn(runner.run(shutdown.clone()));
-    tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        loop {
-            let status: String = sqlx::query_scalar(
-                "SELECT status FROM job_outbox WHERE job_type='suite.events.deliver'",
-            )
-            .fetch_one(&db.pool)
-            .await?;
-            if status == "failed" {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        }
-        Ok::<(), sqlx::Error>(())
-    })
-    .await??;
-    shutdown.trigger();
-    task.await??;
+    assert_link_operations_rejected(
+        &app,
+        &token,
+        link.id,
+        StatusCode::CONFLICT,
+        "suite_link_inactive",
+    )
+    .await?;
+    run_worker_until_delivery_fails(&db.pool, &context).await?;
     let history = context.store.deliveries(owner, link.id, 20).await?;
     assert_eq!(history.len(), 1);
     assert_eq!(history[0].status, "failed");
@@ -1571,23 +1791,14 @@ async fn disabled_jobs_fail_permanently_and_revoked_failures_leave_link_health_u
     assert_eq!(after.consecutive_failures, before.consecutive_failures);
     assert_eq!(after.last_failure_code, before.last_failure_code);
     assert_eq!(after.delivery_health, before.delivery_health);
-    for operation in ["test", "replay"] {
-        let body = if operation == "replay" {
-            json!({"since":Utc::now().date_naive().to_string()})
-        } else {
-            json!({})
-        };
-        let (status, body) = call(
-            &app,
-            "POST",
-            &format!("/suite/links/{}/{operation}", link.id),
-            Some(&token),
-            body,
-        )
-        .await?;
-        assert_eq!(status, StatusCode::GONE);
-        assert_eq!(body["error"]["code"], "suite_link_revoked");
-    }
+    assert_link_operations_rejected(
+        &app,
+        &token,
+        link.id,
+        StatusCode::GONE,
+        "suite_link_revoked",
+    )
+    .await?;
     Ok(())
 }
 const PEERS: &str = include_str!("../../../../fixtures/suite-events/v1/peers.json");
@@ -2104,9 +2315,89 @@ async fn erasure_retains_shared_identity_and_completes_after_suite_cleanup() -> 
     check_suite_erasure(baukit_erasure::IdentityRetention::Retain).await
 }
 
-async fn check_suite_erasure(identity_retention: baukit_erasure::IdentityRetention) -> TestResult {
-    use baukit_suite::services::erase_with_suite;
-    let mut db = common::postgres_database().await?;
+async fn seed_owner_suite_rows(
+    pool: &PgPool,
+    context: &Arc<SuiteContext>,
+    links: &SuiteLinkService,
+    owner: Uuid,
+    link: &SuiteLink,
+) -> TestResult {
+    let event = activity(10, Some(2));
+    let mut connection = pool.begin().await?;
+    context
+        .outbox
+        .enqueue_in_transaction(&mut connection, owner, &[event])
+        .await?;
+    context
+        .outbox
+        .enqueue_revoke_in_transaction(&mut connection, link.id)
+        .await?;
+    connection.commit().await?;
+    let mut inbound = activity(10, Some(2)).envelope("remote", "beta");
+    inbound.event_type = "beta.activity.completed".into();
+    let app = common::app_with_suite(
+        pool,
+        module(pool, context.clone(), Arc::new(Applier::default())),
+    );
+    assert_eq!(
+        signed_route(&app, link.id, &inbound, &secret(link), false)
+            .await?
+            .0,
+        StatusCode::ACCEPTED
+    );
+    links
+        .start(
+            SuiteUser {
+                id: owner,
+                ..SuiteUser::default()
+            },
+            LinkStartRequest {
+                peer_app: "beta".into(),
+                return_url: "http://127.0.0.1:12340/suite/linked".into(),
+                state_nonce: "nonce".into(),
+            },
+            Utc::now(),
+        )
+        .await?;
+    Ok(())
+}
+
+async fn assert_owner_suite_rows_erased(pool: &PgPool, owner: Uuid) -> TestResult {
+    let remaining: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM users WHERE id=$1), (SELECT count(*) FROM job_outbox WHERE job_type='identity.account.delete')")
+            .bind(owner).fetch_one(pool).await?;
+    assert_eq!(remaining, (0, 0));
+    let rows: (i64,i64,i64,i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM suite_links WHERE user_id=$1),(SELECT count(*) FROM suite_link_codes WHERE user_id=$1),(SELECT count(*) FROM suite_link_requests WHERE user_id=$1),(SELECT count(*) FROM suite_inbound_events WHERE user_id=$1),(SELECT count(*) FROM suite_failed_delivery_jobs),(SELECT count(*) FROM job_outbox WHERE job_type=ANY($2))")
+            .bind(owner).bind(SUITE_JOB_TYPES.as_slice()).fetch_one(pool).await?;
+    assert_eq!(rows, (0, 0, 0, 0, 0, 0));
+    Ok(())
+}
+
+fn assert_last_request_is_signed_revoke(
+    receiver: &ScriptedWebhookReceiver,
+    link: &SuiteLink,
+) -> TestResult {
+    let request = receiver.received_requests().last().expect("revoke").clone();
+    assert!(
+        request
+            .uri()
+            .path()
+            .ends_with(&format!("/suite/links/{}/revoke", link.remote_link_id))
+    );
+    assert_eq!(request.header("x-suite-source"), Some("alpha"));
+    assert!(verify_webhook_hmac_sha256(
+        [secret(link).as_slice()],
+        request
+            .header("x-suite-timestamp")
+            .expect("timestamp")
+            .parse()?,
+        request.header("x-suite-delivery-id").expect("id"),
+        request.body(),
+        request.header("x-suite-signature").expect("signature")
+    ));
+    Ok(())
+}
+
+async fn use_single_connection_with_erasure_schema(db: &mut common::TestDatabase) -> TestResult {
     db.pool.close().await;
     db.pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
@@ -2119,6 +2410,13 @@ async fn check_suite_erasure(identity_retention: baukit_erasure::IdentityRetenti
     ] {
         sqlx::raw_sql(migration).execute(&db.pool).await?;
     }
+    Ok(())
+}
+
+async fn check_suite_erasure(identity_retention: baukit_erasure::IdentityRetention) -> TestResult {
+    use baukit_suite::services::erase_with_suite;
+    let mut db = common::postgres_database().await?;
+    use_single_connection_with_erasure_schema(&mut db).await?;
     let receiver = Arc::new(ScriptedWebhookReceiver::start().await?);
     let port = Url::parse(&receiver.url("/"))?.port().expect("port");
     let context = make_context(&db.pool, registry("alpha", "beta", 12340, port));
@@ -2132,43 +2430,7 @@ async fn check_suite_erasure(identity_retention: baukit_erasure::IdentityRetenti
     ] {
         let owner = user(&db.pool, &format!("erase-{expected_calls}")).await?;
         let (link, _) = exchange_link(&links, owner, None, None).await?;
-        let event = activity(10, Some(2));
-        let mut connection = db.pool.begin().await?;
-        context
-            .outbox
-            .enqueue_in_transaction(&mut connection, owner, &[event])
-            .await?;
-        context
-            .outbox
-            .enqueue_revoke_in_transaction(&mut connection, link.id)
-            .await?;
-        connection.commit().await?;
-        let mut inbound = activity(10, Some(2)).envelope("remote", "beta");
-        inbound.event_type = "beta.activity.completed".into();
-        let app = common::app_with_suite(
-            &db.pool,
-            module(&db.pool, context.clone(), Arc::new(Applier::default())),
-        );
-        assert_eq!(
-            signed_route(&app, link.id, &inbound, &secret(&link), false)
-                .await?
-                .0,
-            StatusCode::ACCEPTED
-        );
-        links
-            .start(
-                SuiteUser {
-                    id: owner,
-                    ..SuiteUser::default()
-                },
-                LinkStartRequest {
-                    peer_app: "beta".into(),
-                    return_url: "http://127.0.0.1:12340/suite/linked".into(),
-                    state_nonce: "nonce".into(),
-                },
-                Utc::now(),
-            )
-            .await?;
+        seed_owner_suite_rows(&db.pool, &context, &links, owner, &link).await?;
         sqlx::query("UPDATE suite_links SET status=$2,delivery_health=$3 WHERE id=$1")
             .bind(link.id)
             .bind(status)
@@ -2220,32 +2482,52 @@ async fn check_suite_erasure(identity_retention: baukit_erasure::IdentityRetenti
             Some(receipt)
         );
         assert!(service.store().is_fenced(&owner.to_string(), None).await?);
-        let remaining: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM users WHERE id=$1), (SELECT count(*) FROM job_outbox WHERE job_type='identity.account.delete')")
-            .bind(owner).fetch_one(&db.pool).await?;
-        assert_eq!(remaining, (0, 0));
-        let rows: (i64,i64,i64,i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM suite_links WHERE user_id=$1),(SELECT count(*) FROM suite_link_codes WHERE user_id=$1),(SELECT count(*) FROM suite_link_requests WHERE user_id=$1),(SELECT count(*) FROM suite_inbound_events WHERE user_id=$1),(SELECT count(*) FROM suite_failed_delivery_jobs),(SELECT count(*) FROM job_outbox WHERE job_type=ANY($2))")
-            .bind(owner).bind(SUITE_JOB_TYPES.as_slice()).fetch_one(&db.pool).await?;
-        assert_eq!(rows, (0, 0, 0, 0, 0, 0));
-        let request = receiver.received_requests().last().expect("revoke").clone();
-        assert!(
-            request
-                .uri()
-                .path()
-                .ends_with(&format!("/suite/links/{}/revoke", link.remote_link_id))
-        );
-        assert_eq!(request.header("x-suite-source"), Some("alpha"));
-        assert!(verify_webhook_hmac_sha256(
-            [secret(&link).as_slice()],
-            request
-                .header("x-suite-timestamp")
-                .expect("timestamp")
-                .parse()?,
-            request.header("x-suite-delivery-id").expect("id"),
-            request.body(),
-            request.header("x-suite-signature").expect("signature")
-        ));
+        assert_owner_suite_rows_erased(&db.pool, owner).await?;
+        assert_last_request_is_signed_revoke(&receiver, &link)?;
     }
     Ok(())
+}
+
+async fn link_in_process(
+    a: &Router,
+    b: &Router,
+    a_owner: Uuid,
+    b_owner: Uuid,
+    a_api: &Arc<dyn SuiteApi>,
+) -> Result<SuiteLink, Box<dyn Error>> {
+    let start = call(
+        a,
+        "POST",
+        "/suite/links",
+        Some(&a_owner.to_string()),
+        json!({"peerApp":"beta","returnUrl":"alpha://suite/linked","stateNonce":"client-nonce"}),
+    )
+    .await?;
+    assert_eq!(start.0, StatusCode::CREATED);
+    let url = start.1["authorizeUrl"].as_str().expect("authorization URL");
+    let authorization = call(b, "POST", "/suite/authorizations", Some(&b_owner.to_string()), json!({"client":"alpha","state":query(url,"state"),"codeChallenge":query(url,"code_challenge")})).await?;
+    assert_eq!(authorization.0, StatusCode::OK);
+    let callback = authorization.1["redirectUrl"].as_str().expect("callback");
+    let complete = call(
+        a,
+        "POST",
+        &format!(
+            "/suite/links/requests/{}/complete",
+            start.1["requestId"].as_str().expect("request")
+        ),
+        Some(&a_owner.to_string()),
+        json!({"code":query(callback,"code")}),
+    )
+    .await?;
+    assert_eq!(complete.0, StatusCode::CREATED, "{}", complete.1);
+    let link = a_api
+        .get(
+            a_owner,
+            Uuid::parse_str(complete.1["id"].as_str().expect("link"))?,
+        )
+        .await?
+        .link;
+    Ok(link)
 }
 
 #[tokio::test]
@@ -2276,38 +2558,7 @@ async fn in_process_peer_links_the_second_app_and_delivers_to_its_real_router() 
     ))?;
     let a = common::app_with_suite(&db.pool, a_api.clone());
     let b = common::app_with_suite(&db.pool, b_api.clone());
-    let start = call(
-        &a,
-        "POST",
-        "/suite/links",
-        Some(&a_owner.to_string()),
-        json!({"peerApp":"beta","returnUrl":"alpha://suite/linked","stateNonce":"client-nonce"}),
-    )
-    .await?;
-    assert_eq!(start.0, StatusCode::CREATED);
-    let url = start.1["authorizeUrl"].as_str().expect("authorization URL");
-    let authorization = call(&b, "POST", "/suite/authorizations", Some(&b_owner.to_string()), json!({"client":"alpha","state":query(url,"state"),"codeChallenge":query(url,"code_challenge")})).await?;
-    assert_eq!(authorization.0, StatusCode::OK);
-    let callback = authorization.1["redirectUrl"].as_str().expect("callback");
-    let complete = call(
-        &a,
-        "POST",
-        &format!(
-            "/suite/links/requests/{}/complete",
-            start.1["requestId"].as_str().expect("request")
-        ),
-        Some(&a_owner.to_string()),
-        json!({"code":query(callback,"code")}),
-    )
-    .await?;
-    assert_eq!(complete.0, StatusCode::CREATED, "{}", complete.1);
-    let link = a_api
-        .get(
-            a_owner,
-            Uuid::parse_str(complete.1["id"].as_str().expect("link"))?,
-        )
-        .await?
-        .link;
+    let link = link_in_process(&a, &b, a_owner, b_owner, &a_api).await?;
     let remote = b_api.get(b_owner, link.remote_link_id).await?.link;
     assert_eq!(secret(&link), secret(&remote));
     let event = activity(15, Some(4));
@@ -2369,24 +2620,8 @@ async fn unknown_source_is_rejected_without_a_database_read_or_limiter_key() -> 
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires Docker PostgreSQL"]
-async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contract() -> TestResult
-{
-    let (db, mut context, owner) = authorizer_fixture().await?;
-    let history = Arc::new(History::default());
-    Arc::get_mut(&mut context).expect("unique context").replay = history.clone();
-    let limiter = Arc::new(FixedWindowLimiter::default());
-    Arc::get_mut(&mut context).expect("unique context").limiter = limiter.clone();
-    Arc::get_mut(&mut context).expect("unique context").share_xp = false;
-    let service = SuiteLinkService::new(context.clone());
-    let (link, request) = exchange_link(&service, owner, None, None).await?;
-    let app = common::app_with_suite(
-        &db.pool,
-        module(&db.pool, context.clone(), Arc::new(Applier::default())),
-    );
-    let token = owner.to_string();
-    let peers = call(&app, "GET", "/suite/peers", Some(&token), Value::Null).await?;
+async fn assert_peer_metadata(app: &Router, token: &str) -> TestResult {
+    let peers = call(app, "GET", "/suite/peers", Some(token), Value::Null).await?;
     assert_eq!(peers.1[0]["scheme"], "beta");
     assert_eq!(peers.1[0]["webUrl"], "http://127.0.0.1:12341");
     assert_eq!(peers.1[0]["shareXpAvailable"], false);
@@ -2395,34 +2630,22 @@ async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contr
         json!(["native", "source_xp", "off"])
     );
     assert!(peers.1[0].get("mappableMetrics").is_none());
-    history.reads.store(0, std::sync::atomic::Ordering::SeqCst);
-    let last: chrono::DateTime<Utc> =
-        sqlx::query_scalar("SELECT last_replay_at FROM suite_links WHERE id=$1")
-            .bind(link.id)
-            .fetch_one(&db.pool)
-            .await?;
-    let exact = SuiteDeliveryService::new(context.clone())
-        .replay(
-            owner,
-            link.id,
-            last.date_naive(),
-            last + chrono::Duration::seconds(1),
-        )
-        .await
-        .expect_err("cooldown");
-    assert!(matches!(
-        exact,
-        SuiteServiceError::Store(SuiteStoreError::ReplayTooSoon(86_399))
-    ));
-    assert_eq!(history.reads.load(std::sync::atomic::Ordering::SeqCst), 0);
-    let today = Utc::now().date_naive();
+    Ok(())
+}
+
+async fn assert_replay_window_and_rate_limit(
+    app: &Router,
+    token: &str,
+    link_id: Uuid,
+    today: chrono::NaiveDate,
+) -> TestResult {
     let earliest = today - chrono::Duration::days(i64::from(SUITE_MAX_REPLAY_DAYS));
-    let path = format!("/suite/links/{}/replay", link.id);
+    let path = format!("/suite/links/{}/replay", link_id);
     for since in [
         earliest - chrono::Duration::days(1),
         today + chrono::Duration::days(1),
     ] {
-        let response = call(&app, "POST", &path, Some(&token), json!({"since":since})).await?;
+        let response = call(app, "POST", &path, Some(token), json!({"since":since})).await?;
         assert_eq!(response.0, StatusCode::UNPROCESSABLE_ENTITY);
         assert_eq!(response.1["error"]["code"], "suite_replay_window");
         assert_eq!(
@@ -2444,7 +2667,15 @@ async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contr
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     let retry: u64 = response.headers()["retry-after"].to_str()?.parse()?;
     assert!((1..=u64::try_from(SUITE_REPLAY_INTERVAL_SECONDS)?).contains(&retry));
-    assert_eq!(history.reads.load(std::sync::atomic::Ordering::SeqCst), 0);
+    Ok(())
+}
+
+async fn assert_exchange_failure_budget(
+    service: &SuiteLinkService,
+    request: ExchangeRequest,
+    limiter: &FixedWindowLimiter,
+    link_id: Uuid,
+) -> TestResult {
     for _ in 0..SUITE_EXCHANGE_FAILURE_LIMIT {
         let mut wrong = request.clone();
         wrong.code_verifier = URL_SAFE_NO_PAD.encode([11u8; 32]);
@@ -2465,7 +2696,7 @@ async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contr
     ));
     assert_eq!(
         service.exchange(request, Utc::now()).await?.link_id,
-        link.id
+        link_id
     );
     assert_eq!(
         limiter
@@ -2475,21 +2706,10 @@ async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contr
             .get("suite:exchange:beta"),
         Some(&u64::from(SUITE_EXCHANGE_FAILURE_LIMIT))
     );
-    service.disconnect(owner, link.id, Utc::now()).await?;
-    let mut removed = (*context).clone();
-    removed.registry = Arc::new(PeerRegistry::new(
-        "alpha",
-        PEERS,
-        PeerRegistrySettings::default(),
-    )?);
-    assert!(matches!(
-        SuiteDeliveryService::new(Arc::new(removed))
-            .replay(owner, link.id, today, Utc::now())
-            .await,
-        Err(SuiteServiceError::LinkRevoked)
-    ));
-    assert_eq!(history.reads.load(std::sync::atomic::Ordering::SeqCst), 0);
-    db.pool.close().await;
+    Ok(())
+}
+
+async fn assert_unknown_clients_are_rejected(service: &SuiteLinkService) {
     for i in 0..200 {
         let input = ExchangeRequest {
             client: format!("unknown-{i}"),
@@ -2510,6 +2730,66 @@ async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contr
             "suite_peer_unknown"
         );
     }
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contract() -> TestResult
+{
+    let (db, mut context, owner) = authorizer_fixture().await?;
+    let history = Arc::new(History::default());
+    Arc::get_mut(&mut context).expect("unique context").replay = history.clone();
+    let limiter = Arc::new(FixedWindowLimiter::default());
+    Arc::get_mut(&mut context).expect("unique context").limiter = limiter.clone();
+    Arc::get_mut(&mut context).expect("unique context").share_xp = false;
+    let service = SuiteLinkService::new(context.clone());
+    let (link, request) = exchange_link(&service, owner, None, None).await?;
+    let app = common::app_with_suite(
+        &db.pool,
+        module(&db.pool, context.clone(), Arc::new(Applier::default())),
+    );
+    let token = owner.to_string();
+    assert_peer_metadata(&app, &token).await?;
+    history.reads.store(0, std::sync::atomic::Ordering::SeqCst);
+    let last: chrono::DateTime<Utc> =
+        sqlx::query_scalar("SELECT last_replay_at FROM suite_links WHERE id=$1")
+            .bind(link.id)
+            .fetch_one(&db.pool)
+            .await?;
+    let exact = SuiteDeliveryService::new(context.clone())
+        .replay(
+            owner,
+            link.id,
+            last.date_naive(),
+            last + chrono::Duration::seconds(1),
+        )
+        .await
+        .expect_err("cooldown");
+    assert!(matches!(
+        exact,
+        SuiteServiceError::Store(SuiteStoreError::ReplayTooSoon(86_399))
+    ));
+    assert_eq!(history.reads.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let today = Utc::now().date_naive();
+    assert_replay_window_and_rate_limit(&app, &token, link.id, today).await?;
+    assert_eq!(history.reads.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_exchange_failure_budget(&service, request, &limiter, link.id).await?;
+    service.disconnect(owner, link.id, Utc::now()).await?;
+    let mut removed = (*context).clone();
+    removed.registry = Arc::new(PeerRegistry::new(
+        "alpha",
+        PEERS,
+        PeerRegistrySettings::default(),
+    )?);
+    assert!(matches!(
+        SuiteDeliveryService::new(Arc::new(removed))
+            .replay(owner, link.id, today, Utc::now())
+            .await,
+        Err(SuiteServiceError::LinkRevoked)
+    ));
+    assert_eq!(history.reads.load(std::sync::atomic::Ordering::SeqCst), 0);
+    db.pool.close().await;
+    assert_unknown_clients_are_rejected(&service).await;
     assert_eq!(limiter.counts.lock().expect("counts").len(), 1);
     Ok(())
 }
@@ -2580,17 +2860,13 @@ async fn ingest_authenticates_before_locking_and_rechecks_revocation_after_the_l
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires Docker PostgreSQL"]
-async fn signed_http_matrix_hides_revocation_and_protocol_tests_skip_the_applier() -> TestResult {
-    let (db, context, owner) = authorizer_fixture().await?;
-    let links = SuiteLinkService::new(context.clone());
-    let (link, _) = exchange_link(&links, owner, None, None).await?;
-    let applier = Arc::new(Applier::default());
-    let app = common::app_with_suite(&db.pool, module(&db.pool, context.clone(), applier.clone()));
-    let event = SuiteEvent::connection_test(Uuid::now_v7(), Utc::now()).envelope("remote", "beta");
-    let raw = serde_json::to_vec(&event)?;
-    let key = secret(&link);
+async fn assert_missing_headers_and_stale_timestamps_rejected(
+    app: &Router,
+    link_id: Uuid,
+    event: &EventEnvelope,
+    key: &[u8],
+) -> TestResult {
+    let raw = serde_json::to_vec(event)?;
     for missing in [
         "x-suite-source",
         "x-suite-delivery-id",
@@ -2600,10 +2876,10 @@ async fn signed_http_matrix_hides_revocation_and_protocol_tests_skip_the_applier
     ] {
         let timestamp = Utc::now().timestamp();
         let stamp = timestamp.to_string();
-        let signature = sign_webhook_hmac_sha256(&key, timestamp, &event.event_id, &raw);
+        let signature = sign_webhook_hmac_sha256(key, timestamp, &event.event_id, &raw);
         let mut request = Request::builder()
             .method("POST")
-            .uri(format!("/api/v1/suite/inbound/{}", link.id));
+            .uri(format!("/api/v1/suite/inbound/{}", link_id));
         for (name, value) in [
             ("content-type", "application/json"),
             ("x-suite-source", "beta"),
@@ -2629,14 +2905,14 @@ async fn signed_http_matrix_hides_revocation_and_protocol_tests_skip_the_applier
         let timestamp = Utc::now().timestamp() + delta;
         let request = Request::builder()
             .method("POST")
-            .uri(format!("/api/v1/suite/inbound/{}", link.id))
+            .uri(format!("/api/v1/suite/inbound/{}", link_id))
             .header("content-type", "application/json")
             .header("x-suite-source", "beta")
             .header("x-suite-delivery-id", &event.event_id)
             .header("x-suite-timestamp", timestamp.to_string())
             .header(
                 "x-suite-signature",
-                sign_webhook_hmac_sha256(&key, timestamp, &event.event_id, &raw),
+                sign_webhook_hmac_sha256(key, timestamp, &event.event_id, &raw),
             )
             .body(Body::from(raw.clone()))?;
         let response = app.clone().oneshot(request).await?;
@@ -2646,6 +2922,20 @@ async fn signed_http_matrix_hides_revocation_and_protocol_tests_skip_the_applier
         )?;
         assert_eq!(body["error"]["code"], "suite_signature_invalid");
     }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn signed_http_matrix_hides_revocation_and_protocol_tests_skip_the_applier() -> TestResult {
+    let (db, context, owner) = authorizer_fixture().await?;
+    let links = SuiteLinkService::new(context.clone());
+    let (link, _) = exchange_link(&links, owner, None, None).await?;
+    let applier = Arc::new(Applier::default());
+    let app = common::app_with_suite(&db.pool, module(&db.pool, context.clone(), applier.clone()));
+    let event = SuiteEvent::connection_test(Uuid::now_v7(), Utc::now()).envelope("remote", "beta");
+    let key = secret(&link);
+    assert_missing_headers_and_stale_timestamps_rejected(&app, link.id, &event, &key).await?;
     let mut wrong_source = event.clone();
     wrong_source.source_app = "hebkit".into();
     let response = signed_route(&app, link.id, &wrong_source, &key, false).await?;
@@ -2730,6 +3020,141 @@ impl SuitePeerClient for ScriptedExchangePeer {
         self.transport.revoke(peer, call).await
     }
 }
+async fn assert_invalid_peer_responses_leave_requests_pending(
+    service: &SuiteLinkService,
+    scripted: &ScriptedExchangePeer,
+    valid: &ExchangeResponse,
+    code: &str,
+    pool: &PgPool,
+) -> TestResult {
+    for invalid in 0..5 {
+        let mut response = valid.clone();
+        match invalid {
+            0 => response.link_id = Uuid::nil(),
+            1 => response.display_name = Some("é".repeat(129)),
+            2 => response.display_name = Some("remote\nname".into()),
+            3 => response
+                .authorizer_sends
+                .push("unknown.activity.completed".into()),
+            _ => response.subject.clear(),
+        }
+        scripted
+            .responses
+            .lock()
+            .expect("responses")
+            .push_back(Ok(response));
+        let owner = user(pool, &format!("invalid-owner-{invalid}")).await?;
+        let principal = SuiteUser {
+            id: owner,
+            ..SuiteUser::default()
+        };
+        let start = start_app_link(service, &principal).await?;
+        assert_eq!(
+            service
+                .complete(principal, start.request_id, code.to_owned(), Utc::now())
+                .await
+                .expect_err("invalid peer response")
+                .code(),
+            "suite_peer_unreachable"
+        );
+        let pending: (Option<chrono::DateTime<Utc>>, Option<Uuid>) =
+            sqlx::query_as("SELECT consumed_at,link_id FROM suite_link_requests WHERE id=$1")
+                .bind(start.request_id)
+                .fetch_one(pool)
+                .await?;
+        assert_eq!(pending, (None, None));
+        let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM suite_links WHERE user_id=$1")
+            .bind(owner)
+            .fetch_one(pool)
+            .await?;
+        assert_eq!(rows, 0);
+    }
+    Ok(())
+}
+
+async fn assert_concurrent_completes_share_one_exchange(
+    service: &SuiteLinkService,
+    scripted: &ScriptedExchangePeer,
+    valid: &ExchangeResponse,
+    owner: Uuid,
+    code: String,
+    pool: &PgPool,
+) -> TestResult {
+    scripted
+        .responses
+        .lock()
+        .expect("responses")
+        .extend([Ok(valid.clone()), Ok(valid.clone())]);
+    scripted.exchanges.lock().expect("exchanges").clear();
+    *scripted.barrier.lock().expect("barrier") = Some(Arc::new(tokio::sync::Barrier::new(2)));
+    let principal = SuiteUser {
+        id: owner,
+        ..SuiteUser::default()
+    };
+    let started = start_app_link(service, &principal).await?;
+    let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(3), async {
+        tokio::join!(
+            service.complete(
+                principal.clone(),
+                started.request_id,
+                code.clone(),
+                Utc::now()
+            ),
+            service.complete(
+                principal.clone(),
+                started.request_id,
+                code.clone(),
+                Utc::now()
+            ),
+        )
+    })
+    .await
+    .expect("both completes reach exchange without holding the transaction");
+    let first = first?;
+    assert_eq!(first, second?);
+    let exchanges = scripted.exchanges.lock().expect("exchanges").clone();
+    assert_eq!(exchanges.len(), 2);
+    assert_eq!(exchanges[0], exchanges[1]);
+    assert_eq!(exchanges[0].initiator_link_id, first.id);
+    let active: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM suite_links WHERE user_id=$1 AND status='active'")
+            .bind(owner)
+            .fetch_one(pool)
+            .await?;
+    assert_eq!(active, 1);
+    service.disconnect(owner, first.id, Utc::now()).await?;
+    service.disconnect(owner, first.id, Utc::now()).await?;
+    let revokes: i64 = sqlx::query_scalar("SELECT count(*) FROM job_outbox WHERE payload->>'link_id'=$1 AND job_type='suite.links.revoke'")
+        .bind(first.id.to_string()).fetch_one(pool).await?;
+    assert_eq!(revokes, 1);
+    assert_eq!(
+        service
+            .complete(principal, started.request_id, code, Utc::now())
+            .await
+            .expect_err("revoked completed request")
+            .code(),
+        "not_found"
+    );
+    Ok(())
+}
+
+async fn start_app_link(
+    service: &SuiteLinkService,
+    principal: &SuiteUser,
+) -> Result<LinkStartResponse, Box<dyn Error>> {
+    Ok(service
+        .start(
+            principal.clone(),
+            LinkStartRequest {
+                peer_app: "beta".into(),
+                return_url: "alpha://suite/linked".into(),
+                state_nonce: "nonce".into(),
+            },
+            Utc::now(),
+        )
+        .await?)
+}
+
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn completion_retries_identical_sealed_credentials_outside_the_transaction_and_rejects_invalid_responses()
@@ -2768,17 +3193,7 @@ async fn completion_retries_identical_sealed_credentials_outside_the_transaction
         id: owner,
         ..SuiteUser::default()
     };
-    let start = service
-        .start(
-            principal.clone(),
-            LinkStartRequest {
-                peer_app: "beta".into(),
-                return_url: "alpha://suite/linked".into(),
-                state_nonce: "nonce".into(),
-            },
-            Utc::now(),
-        )
-        .await?;
+    let start = start_app_link(&service, &principal).await?;
     let code = URL_SAFE_NO_PAD.encode([9u8; 32]);
     let completed = service
         .complete(
@@ -2807,127 +3222,18 @@ async fn completion_retries_identical_sealed_credentials_outside_the_transaction
     assert_eq!(scripted.exchanges.lock().expect("exchanges").len(), 2);
     let retained: (bool,bool,bool,bool) = sqlx::query_as("SELECT initiator_link_id IS NULL,secret_ciphertext IS NULL,secret_nonce IS NULL,secret_key_version IS NULL FROM suite_link_requests WHERE id=$1").bind(start.request_id).fetch_one(&db.pool).await?;
     assert_eq!(retained, (true, true, true, true));
-    for invalid in 0..5 {
-        let mut response = valid.clone();
-        match invalid {
-            0 => response.link_id = Uuid::nil(),
-            1 => response.display_name = Some("é".repeat(129)),
-            2 => response.display_name = Some("remote\nname".into()),
-            3 => response
-                .authorizer_sends
-                .push("unknown.activity.completed".into()),
-            _ => response.subject.clear(),
-        }
-        scripted
-            .responses
-            .lock()
-            .expect("responses")
-            .push_back(Ok(response));
-        let owner = user(&db.pool, &format!("invalid-owner-{invalid}")).await?;
-        let principal = SuiteUser {
-            id: owner,
-            ..SuiteUser::default()
-        };
-        let start = service
-            .start(
-                principal.clone(),
-                LinkStartRequest {
-                    peer_app: "beta".into(),
-                    return_url: "alpha://suite/linked".into(),
-                    state_nonce: "nonce".into(),
-                },
-                Utc::now(),
-            )
-            .await?;
-        assert_eq!(
-            service
-                .complete(principal, start.request_id, code.clone(), Utc::now())
-                .await
-                .expect_err("invalid peer response")
-                .code(),
-            "suite_peer_unreachable"
-        );
-        let pending: (Option<chrono::DateTime<Utc>>, Option<Uuid>) =
-            sqlx::query_as("SELECT consumed_at,link_id FROM suite_link_requests WHERE id=$1")
-                .bind(start.request_id)
-                .fetch_one(&db.pool)
-                .await?;
-        assert_eq!(pending, (None, None));
-        let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM suite_links WHERE user_id=$1")
-            .bind(owner)
-            .fetch_one(&db.pool)
-            .await?;
-        assert_eq!(rows, 0);
-    }
+    assert_invalid_peer_responses_leave_requests_pending(
+        &service, &scripted, &valid, &code, &db.pool,
+    )
+    .await?;
     let jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM job_outbox")
         .fetch_one(&db.pool)
         .await?;
     assert_eq!(jobs, 0);
-    scripted
-        .responses
-        .lock()
-        .expect("responses")
-        .extend([Ok(valid.clone()), Ok(valid.clone())]);
-    scripted.exchanges.lock().expect("exchanges").clear();
-    *scripted.barrier.lock().expect("barrier") = Some(Arc::new(tokio::sync::Barrier::new(2)));
-    let principal = SuiteUser {
-        id: owner,
-        ..SuiteUser::default()
-    };
-    let started = service
-        .start(
-            principal.clone(),
-            LinkStartRequest {
-                peer_app: "beta".into(),
-                return_url: "alpha://suite/linked".into(),
-                state_nonce: "nonce".into(),
-            },
-            Utc::now(),
-        )
-        .await?;
-    let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(3), async {
-        tokio::join!(
-            service.complete(
-                principal.clone(),
-                started.request_id,
-                code.clone(),
-                Utc::now()
-            ),
-            service.complete(
-                principal.clone(),
-                started.request_id,
-                code.clone(),
-                Utc::now()
-            ),
-        )
-    })
-    .await
-    .expect("both completes reach exchange without holding the transaction");
-    let first = first?;
-    assert_eq!(first, second?);
-    let exchanges = scripted.exchanges.lock().expect("exchanges").clone();
-    assert_eq!(exchanges.len(), 2);
-    assert_eq!(exchanges[0], exchanges[1]);
-    assert_eq!(exchanges[0].initiator_link_id, first.id);
-    let active: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM suite_links WHERE user_id=$1 AND status='active'")
-            .bind(owner)
-            .fetch_one(&db.pool)
-            .await?;
-    assert_eq!(active, 1);
-    service.disconnect(owner, first.id, Utc::now()).await?;
-    service.disconnect(owner, first.id, Utc::now()).await?;
-    let revokes: i64 = sqlx::query_scalar("SELECT count(*) FROM job_outbox WHERE payload->>'link_id'=$1 AND job_type='suite.links.revoke'")
-        .bind(first.id.to_string()).fetch_one(&db.pool).await?;
-    assert_eq!(revokes, 1);
-    assert_eq!(
-        service
-            .complete(principal, started.request_id, code, Utc::now())
-            .await
-            .expect_err("revoked completed request")
-            .code(),
-        "not_found"
-    );
+    assert_concurrent_completes_share_one_exchange(
+        &service, &scripted, &valid, owner, code, &db.pool,
+    )
+    .await?;
     Ok(())
 }
 
@@ -2986,11 +3292,69 @@ async fn a_replay_grant_or_ledger_entry_rolls_back_the_inbox_and_product_write()
     Ok(())
 }
 
-#[tokio::test]
-#[ignore = "requires Docker PostgreSQL"]
-async fn exchange_and_complete_lock_the_owner_before_codes_and_requests_during_erasure()
--> TestResult {
-    let (db, context, owner) = authorizer_fixture().await?;
+async fn assert_erasure_removes_pending_request(
+    pool: &PgPool,
+    context: &Arc<SuiteContext>,
+    owner: Uuid,
+) -> TestResult {
+    let service = SuiteLinkService::new(context.clone());
+    let principal = SuiteUser {
+        id: owner,
+        ..SuiteUser::default()
+    };
+    let request = service
+        .start(
+            principal.clone(),
+            LinkStartRequest {
+                peer_app: "beta".into(),
+                return_url: format!(
+                    "{}/suite/linked",
+                    context.registry.public_web_url().expect("web URL")
+                ),
+                state_nonce: URL_SAFE_NO_PAD.encode([1u8; 32]),
+            },
+            Utc::now(),
+        )
+        .await?;
+    let mut erasure = pool.begin().await?;
+    let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
+        .fetch_one(&mut *erasure)
+        .await?;
+    context.store.lock_ingest_user(&mut erasure, owner).await?;
+    let completion = tokio::spawn(async move {
+        service
+            .complete(
+                principal,
+                request.request_id,
+                URL_SAFE_NO_PAD.encode([2u8; 32]),
+                Utc::now(),
+            )
+            .await
+    });
+    wait_for_blocked_connection(pool, blocker).await?;
+    sqlx::query("SET LOCAL lock_timeout='1s'")
+        .execute(&mut *erasure)
+        .await?;
+    PostgresSuiteLinkStore::new(pool.clone())
+        .erase_owner(&mut erasure, owner)
+        .await?;
+    erasure.commit().await?;
+    assert_eq!(
+        completion.await?.expect_err("erased request").code(),
+        "not_found"
+    );
+    let requests: i64 = sqlx::query_scalar("SELECT count(*) FROM suite_link_requests")
+        .fetch_one(pool)
+        .await?;
+    assert_eq!(requests, 0);
+    Ok(())
+}
+
+async fn assert_erasure_invalidates_pending_exchange(
+    pool: &PgPool,
+    context: &Arc<SuiteContext>,
+    owner: Uuid,
+) -> TestResult {
     let service = Arc::new(SuiteLinkService::new(context.clone()));
     let verifier = URL_SAFE_NO_PAD.encode([9u8; 32]);
     let authorized = service
@@ -3018,17 +3382,17 @@ async fn exchange_and_complete_lock_the_owner_before_codes_and_requests_during_e
         initiator_suite_subject: None,
         initiator_display_name: None,
     };
-    let mut erasure = db.pool.begin().await?;
+    let mut erasure = pool.begin().await?;
     let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
         .fetch_one(&mut *erasure)
         .await?;
     context.store.lock_ingest_user(&mut erasure, owner).await?;
     let exchange = tokio::spawn(async move { service.exchange(input, Utc::now()).await });
-    wait_for_blocked_connection(&db.pool, blocker).await?;
+    wait_for_blocked_connection(pool, blocker).await?;
     sqlx::query("SET LOCAL lock_timeout='1s'")
         .execute(&mut *erasure)
         .await?;
-    PostgresSuiteLinkStore::new(db.pool.clone())
+    PostgresSuiteLinkStore::new(pool.clone())
         .erase_owner(&mut erasure, owner)
         .await?;
     erasure.commit().await?;
@@ -3039,60 +3403,21 @@ async fn exchange_and_complete_lock_the_owner_before_codes_and_requests_during_e
     let rows: (i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM suite_links),(SELECT count(*) FROM suite_link_codes)",
     )
-    .fetch_one(&db.pool)
+    .fetch_one(pool)
     .await?;
     assert_eq!(rows, (0, 0));
 
-    let service = SuiteLinkService::new(context.clone());
-    let principal = SuiteUser {
-        id: owner,
-        ..SuiteUser::default()
-    };
-    let request = service
-        .start(
-            principal.clone(),
-            LinkStartRequest {
-                peer_app: "beta".into(),
-                return_url: format!(
-                    "{}/suite/linked",
-                    context.registry.public_web_url().expect("web URL")
-                ),
-                state_nonce: URL_SAFE_NO_PAD.encode([1u8; 32]),
-            },
-            Utc::now(),
-        )
-        .await?;
-    let mut erasure = db.pool.begin().await?;
-    let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
-        .fetch_one(&mut *erasure)
-        .await?;
-    context.store.lock_ingest_user(&mut erasure, owner).await?;
-    let completion = tokio::spawn(async move {
-        service
-            .complete(
-                principal,
-                request.request_id,
-                URL_SAFE_NO_PAD.encode([2u8; 32]),
-                Utc::now(),
-            )
-            .await
-    });
-    wait_for_blocked_connection(&db.pool, blocker).await?;
-    sqlx::query("SET LOCAL lock_timeout='1s'")
-        .execute(&mut *erasure)
-        .await?;
-    PostgresSuiteLinkStore::new(db.pool.clone())
-        .erase_owner(&mut erasure, owner)
-        .await?;
-    erasure.commit().await?;
-    assert_eq!(
-        completion.await?.expect_err("erased request").code(),
-        "not_found"
-    );
-    let requests: i64 = sqlx::query_scalar("SELECT count(*) FROM suite_link_requests")
-        .fetch_one(&db.pool)
-        .await?;
-    assert_eq!(requests, 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn exchange_and_complete_lock_the_owner_before_codes_and_requests_during_erasure()
+-> TestResult {
+    let (db, context, owner) = authorizer_fixture().await?;
+    assert_erasure_invalidates_pending_exchange(&db.pool, &context, owner).await?;
+
+    assert_erasure_removes_pending_request(&db.pool, &context, owner).await?;
     Ok(())
 }
 
@@ -3701,6 +4026,58 @@ async fn failed_exchange_budget_counts_every_invalid_code_and_allows_a_fresh_val
     Ok(())
 }
 
+async fn assert_new_failures_accounted_once(
+    jobs: &PostgresJobStore,
+    store: &PostgresSuiteLinkStore,
+    link: Uuid,
+    pool: &PgPool,
+) -> TestResult {
+    let new_job = jobs
+        .enqueue(NewJob::new(
+            SUITE_EVENTS_DELIVER_JOB_TYPE,
+            json!({"link_id":link}),
+            1,
+        ))
+        .await?
+        .job;
+    sqlx::query("UPDATE job_outbox SET status='failed',failure_reason='permanent',last_error='suite_unauthorized' WHERE id=$1")
+        .bind(new_job.id).execute(pool).await?;
+    let pending: bool =
+        sqlx::query_scalar("SELECT NOT accounted FROM suite_failed_delivery_jobs WHERE job_id=$1")
+            .bind(new_job.id)
+            .fetch_one(pool)
+            .await?;
+    assert!(pending);
+    let counted = store.find_link(link).await?.expect("link");
+    assert_eq!(counted.consecutive_failures, 2);
+    assert_eq!(
+        counted.last_failure_code.as_deref(),
+        Some("suite_unauthorized")
+    );
+    sqlx::query("UPDATE job_outbox SET status='pending',failure_reason=NULL WHERE id=$1")
+        .bind(new_job.id)
+        .execute(pool)
+        .await?;
+    sqlx::query("UPDATE job_outbox SET status='failed',failure_reason='permanent' WHERE id=$1")
+        .bind(new_job.id)
+        .execute(pool)
+        .await?;
+    assert_eq!(
+        store
+            .find_link(link)
+            .await?
+            .expect("link")
+            .consecutive_failures,
+        2
+    );
+    let pending_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM suite_failed_delivery_jobs WHERE NOT accounted")
+            .fetch_one(pool)
+            .await?;
+    assert_eq!(pending_count, 0);
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn lock_order_migration_preserves_old_failures_and_accounts_new_jobs_once() -> TestResult {
@@ -3747,49 +4124,7 @@ async fn lock_order_migration_preserves_old_failures_and_accounts_new_jobs_once(
             .await?;
     assert!(old_accounted);
 
-    let new_job = jobs
-        .enqueue(NewJob::new(
-            SUITE_EVENTS_DELIVER_JOB_TYPE,
-            json!({"link_id":link}),
-            1,
-        ))
-        .await?
-        .job;
-    sqlx::query("UPDATE job_outbox SET status='failed',failure_reason='permanent',last_error='suite_unauthorized' WHERE id=$1")
-        .bind(new_job.id).execute(&db.pool).await?;
-    let pending: bool =
-        sqlx::query_scalar("SELECT NOT accounted FROM suite_failed_delivery_jobs WHERE job_id=$1")
-            .bind(new_job.id)
-            .fetch_one(&db.pool)
-            .await?;
-    assert!(pending);
-    let counted = store.find_link(link).await?.expect("link");
-    assert_eq!(counted.consecutive_failures, 2);
-    assert_eq!(
-        counted.last_failure_code.as_deref(),
-        Some("suite_unauthorized")
-    );
-    sqlx::query("UPDATE job_outbox SET status='pending',failure_reason=NULL WHERE id=$1")
-        .bind(new_job.id)
-        .execute(&db.pool)
-        .await?;
-    sqlx::query("UPDATE job_outbox SET status='failed',failure_reason='permanent' WHERE id=$1")
-        .bind(new_job.id)
-        .execute(&db.pool)
-        .await?;
-    assert_eq!(
-        store
-            .find_link(link)
-            .await?
-            .expect("link")
-            .consecutive_failures,
-        2
-    );
-    let pending_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM suite_failed_delivery_jobs WHERE NOT accounted")
-            .fetch_one(&db.pool)
-            .await?;
-    assert_eq!(pending_count, 0);
+    assert_new_failures_accounted_once(&jobs, &store, link, &db.pool).await?;
     Ok(())
 }
 

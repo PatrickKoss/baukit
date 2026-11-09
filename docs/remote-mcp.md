@@ -392,7 +392,7 @@ binds this client to one resource even where Keycloak ignores the OAuth
 `resource` parameter. Clerk uses either the dedicated client or the
 scope-bound dynamic registration described above; WorkOS Connect can use its own dynamic registration settings.
 
-rmcp 3.5.1 serves stateless HTTP and supports the 2026-07-28 protocol, which uses
+rmcp 3.9.0 serves stateless HTTP and supports the 2026-07-28 protocol, which uses
 `server/discover` and per-request metadata. It also accepts the 2025-11-25 and
 2025-06-18 revisions with `initialize`. Tokens are verified for every request;
 there is no authenticated session cookie. The generated `authentication_policy`

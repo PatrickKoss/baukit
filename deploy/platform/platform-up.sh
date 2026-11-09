@@ -62,7 +62,7 @@ ensure_secret_state() {
     } >"$secrets_file"
     chmod 0600 "$secrets_file"
   fi
-  # shellcheck disable=SC1090
+  # shellcheck disable=SC1090 # the secrets file is generated above, so its path is only known at run time
   source "$secrets_file"
   if [[ -z ${RUSTFS_ACCESS_KEY:-} || -z ${RUSTFS_SECRET_KEY:-} ]]; then
     RUSTFS_ACCESS_KEY="local-$(random_value 6)"

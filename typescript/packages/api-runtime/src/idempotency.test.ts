@@ -256,11 +256,11 @@ describe('JSON-compatible bodies', () => {
 
   it('rejects bodies that JSON cannot carry unchanged', () => {
     const keys = store();
-    // @ts-expect-error a Date is not a JSON value
+    // @ts-expect-error -- a Date is not a JSON value
     void keys.keyFor({ account: 'a', operation: 'op', body: { at: new Date(0) } });
-    // @ts-expect-error a function is not a JSON value
+    // @ts-expect-error -- a function is not a JSON value
     void keys.keyFor({ account: 'a', operation: 'op', body: { run: () => 1 } });
-    // @ts-expect-error an unknown member is not known to be JSON
+    // @ts-expect-error -- an unknown member is not known to be JSON
     void keys.keyFor({ account: 'a', operation: 'op', body: { value: 1 as unknown } });
   });
 });

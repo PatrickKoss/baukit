@@ -152,10 +152,6 @@ pub struct ReplayConformanceInputs {
 ///
 /// Bind the adapter to a database that holds no replay records another test
 /// needs, because the cleanup case purges every expired record.
-#[allow(
-    async_fn_in_trait,
-    reason = "the harness awaits adapters on the test task, so their futures need no Send bound"
-)]
 pub trait ReplaySafeMutationAdapter {
     /// Product owner key, the caller scope.
     type Owner: Clone;
@@ -163,35 +159,51 @@ pub trait ReplaySafeMutationAdapter {
     type Error;
 
     /// Creates an owner with no effects and no replay records.
-    async fn create_owner(&self) -> Result<Self::Owner, Self::Error>;
+    fn create_owner(&self) -> impl std::future::Future<Output = Result<Self::Owner, Self::Error>>;
 
     /// Runs one keyed mutation through the product's replay path in one
     /// transaction, calling `checkpoint.reached()` just before commit.
-    async fn execute(
+    fn execute(
         &self,
         request: ReplayRequest<'_, Self::Owner>,
         checkpoint: CommitCheckpoint,
-    ) -> Result<ReplayOutcome, Self::Error>;
+    ) -> impl std::future::Future<Output = Result<ReplayOutcome, Self::Error>>;
 
     /// Counts the committed effects of both operations for the owner.
-    async fn effects(&self, owner: &Self::Owner) -> Result<u64, Self::Error>;
+    fn effects(
+        &self,
+        owner: &Self::Owner,
+    ) -> impl std::future::Future<Output = Result<u64, Self::Error>>;
 
     /// Counts the owner's stored replay records, expired ones included.
-    async fn replay_records(&self, owner: &Self::Owner) -> Result<u64, Self::Error>;
+    fn replay_records(
+        &self,
+        owner: &Self::Owner,
+    ) -> impl std::future::Future<Output = Result<u64, Self::Error>>;
 
     /// Moves every replay record of the owner past its retention horizon.
-    async fn expire_replay_records(&self, owner: &Self::Owner) -> Result<(), Self::Error>;
+    fn expire_replay_records(
+        &self,
+        owner: &Self::Owner,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>>;
 
     /// Runs one cleanup batch that deletes at most `limit` expired replay
     /// records across all owners, and returns how many it deleted.
-    async fn purge_expired(&self, limit: NonZeroU32) -> Result<u64, Self::Error>;
+    fn purge_expired(
+        &self,
+        limit: NonZeroU32,
+    ) -> impl std::future::Future<Output = Result<u64, Self::Error>>;
 
     /// Runs the product's owner erasure.
-    async fn erase_owner(&self, owner: &Self::Owner) -> Result<(), Self::Error>;
+    fn erase_owner(
+        &self,
+        owner: &Self::Owner,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>>;
 
     /// Drops process-local state, such as caches or pools, as a restart would,
     /// without deleting stored rows.
-    async fn discard_transient_state(&self) -> Result<(), Self::Error>;
+    fn discard_transient_state(&self)
+    -> impl std::future::Future<Output = Result<(), Self::Error>>;
 }
 
 /// Violations found by the replay-safe mutation conformance check.

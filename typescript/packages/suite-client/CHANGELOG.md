@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## 0.19.2
+
+### Changed
+
+- `SuiteTransport.request` now returns `Promise<unknown>` and has no type parameter. `SuiteClient` validates every response with `@baukit/type-guards` and rejects with the new `SuiteResponseError` (code `suite_unavailable`) on a shape mismatch. Public `SuiteClient` return types are unchanged.
+- Migration: drop the type parameter and any `as T` cast in custom transports and test fakes. A fetch-based transport returns `response.json()` as is.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.19.2 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.19.2
+  - @baukit/localization-core@0.19.2
+  - @baukit/type-guards@0.19.2
+
 ## 0.19.1
 
 ### Patch Changes

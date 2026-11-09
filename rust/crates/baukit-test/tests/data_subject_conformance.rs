@@ -1,10 +1,4 @@
-#![allow(
-    clippy::expect_used,
-    clippy::panic,
-    clippy::indexing_slicing,
-    clippy::too_many_lines,
-    reason = "integration test code: a failed expectation is the test failure, and scenario tests read top to bottom"
-)]
+#![cfg(test)]
 #![cfg(feature = "data-subject")]
 
 use std::{
@@ -226,9 +220,42 @@ async fn proxy(State(state): State<Proxy>, request: Request) -> Response {
     headers.remove(header::CONTENT_LENGTH);
     let bytes = response.bytes().await.expect("fixture body");
     let mut json: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    complete_before_first_replay(
+        &state,
+        &parts.method,
+        path,
+        authorization,
+        &mut status,
+        &mut json,
+    )
+    .await;
+    if path == "/.well-known/baukit/data-subject" {
+        mutate_discovery(state.mutation, &mut headers, &mut json);
+    } else {
+        mutate_operation(&state, &submitted, &mut status, &mut json);
+    }
+    let mut bytes = serde_json::to_vec(&json).expect("JSON");
+    if matches!(state.mutation, Mutation::EscapedEcho) {
+        let text = String::from_utf8(bytes).expect("JSON UTF-8");
+        bytes = text.replace("lookup-", "\\u006cookup-").into_bytes();
+    }
+    let mut response = Response::new(Body::from(bytes));
+    *response.status_mut() = status;
+    *response.headers_mut() = headers;
+    response
+}
+
+async fn complete_before_first_replay(
+    state: &Proxy,
+    method: &axum::http::Method,
+    path: &str,
+    authorization: Option<axum::http::HeaderValue>,
+    status: &mut StatusCode,
+    json: &mut Value,
+) {
     if matches!(state.mutation, Mutation::TerminalReplay)
-        && parts.method == "POST"
-        && status == StatusCode::ACCEPTED
+        && method == "POST"
+        && *status == StatusCode::ACCEPTED
     {
         let id = json["operationId"]
             .as_str()
@@ -247,75 +274,66 @@ async fn proxy(State(state): State<Proxy>, request: Request) -> Response {
                 .send()
                 .await
                 .expect("complete replay");
-            status = StatusCode::OK;
-            json = response.json().await.expect("terminal operation");
+            *status = StatusCode::OK;
+            *json = response.json().await.expect("terminal operation");
         }
     }
-    if path == "/.well-known/baukit/data-subject" {
-        match state.mutation {
-            Mutation::Cache => {
-                headers.insert(header::CACHE_CONTROL, "no-store".parse().expect("header"));
-            }
-            Mutation::ImplicitPublicCache => {
-                headers.insert(
-                    header::CACHE_CONTROL,
-                    "max-age=300".parse().expect("header"),
-                );
-            }
-            Mutation::Version => json["contractVersion"] = json!("2"),
-            Mutation::Keys => json["receiptKeys"] = json!([]),
-            Mutation::Scopes => json["scopes"]["erasure"] = json!("wrong.scope"),
-            _ => {}
+}
+
+fn mutate_discovery(mutation: Mutation, headers: &mut axum::http::HeaderMap, json: &mut Value) {
+    match mutation {
+        Mutation::Cache => {
+            headers.insert(header::CACHE_CONTROL, "no-store".parse().expect("header"));
         }
-    } else {
-        let code = json["error"]["code"].as_str().unwrap_or("").to_owned();
-        match state.mutation {
-            Mutation::Route => status = StatusCode::NOT_FOUND,
-            Mutation::NoAuth if status == StatusCode::UNAUTHORIZED => status = StatusCode::OK,
-            Mutation::Key if code == "data_subject_idempotency_key_invalid" => {
-                status = StatusCode::UNPROCESSABLE_ENTITY
-            }
-            Mutation::Limit
-                if submitted["identifiers"]
-                    .as_array()
-                    .is_some_and(|v| v.len() > 16) =>
-            {
-                status = StatusCode::BAD_REQUEST
-            }
-            Mutation::BadBodyStatus if code == "data_subject_request_invalid" => {
-                status = StatusCode::BAD_REQUEST
-            }
-            Mutation::Echo | Mutation::EscapedEcho
-                if json["error"].is_object()
-                    && submitted["identifiers"][0]["value"].is_string() =>
-            {
-                json["error"]["message"] = submitted["identifiers"][0]["value"].clone();
-            }
-            Mutation::ReceiptEcho if json["receipt"].is_object() => {
-                use base64::{Engine as _, engine::general_purpose::STANDARD};
-                json["receipt"]["payload"] = json!(STANDARD.encode(serde_json::to_vec(&json!({"lookup": state.lookup.lock().expect("lookup lock").as_deref().expect("submitted lookup")})).expect("JSON")));
-            }
-            Mutation::Conflict if code == "data_subject_idempotency_conflict" => {
-                status = StatusCode::BAD_REQUEST
-            }
-            Mutation::OtherClient if code == "data_subject_operation_not_found" => {
-                status = StatusCode::OK
-            }
-            Mutation::ReceiptFields if json["status"] == "completed" => {
-                json["categories"] = json!([])
-            }
-            _ => {}
+        Mutation::ImplicitPublicCache => {
+            headers.insert(
+                header::CACHE_CONTROL,
+                "max-age=300".parse().expect("header"),
+            );
         }
+        Mutation::Version => json["contractVersion"] = json!("2"),
+        Mutation::Keys => json["receiptKeys"] = json!([]),
+        Mutation::Scopes => json["scopes"]["erasure"] = json!("wrong.scope"),
+        _ => {}
     }
-    let mut bytes = serde_json::to_vec(&json).expect("JSON");
-    if matches!(state.mutation, Mutation::EscapedEcho) {
-        let text = String::from_utf8(bytes).expect("JSON UTF-8");
-        bytes = text.replace("lookup-", "\\u006cookup-").into_bytes();
+}
+
+fn mutate_operation(state: &Proxy, submitted: &Value, status: &mut StatusCode, json: &mut Value) {
+    let code = json["error"]["code"].as_str().unwrap_or("").to_owned();
+    match state.mutation {
+        Mutation::Route => *status = StatusCode::NOT_FOUND,
+        Mutation::NoAuth if *status == StatusCode::UNAUTHORIZED => *status = StatusCode::OK,
+        Mutation::Key if code == "data_subject_idempotency_key_invalid" => {
+            *status = StatusCode::UNPROCESSABLE_ENTITY
+        }
+        Mutation::Limit
+            if submitted["identifiers"]
+                .as_array()
+                .is_some_and(|v| v.len() > 16) =>
+        {
+            *status = StatusCode::BAD_REQUEST
+        }
+        Mutation::BadBodyStatus if code == "data_subject_request_invalid" => {
+            *status = StatusCode::BAD_REQUEST
+        }
+        Mutation::Echo | Mutation::EscapedEcho
+            if json["error"].is_object() && submitted["identifiers"][0]["value"].is_string() =>
+        {
+            json["error"]["message"] = submitted["identifiers"][0]["value"].clone();
+        }
+        Mutation::ReceiptEcho if json["receipt"].is_object() => {
+            use base64::{Engine as _, engine::general_purpose::STANDARD};
+            json["receipt"]["payload"] = json!(STANDARD.encode(serde_json::to_vec(&json!({"lookup": state.lookup.lock().expect("lookup lock").as_deref().expect("submitted lookup")})).expect("JSON")));
+        }
+        Mutation::Conflict if code == "data_subject_idempotency_conflict" => {
+            *status = StatusCode::BAD_REQUEST
+        }
+        Mutation::OtherClient if code == "data_subject_operation_not_found" => {
+            *status = StatusCode::OK
+        }
+        Mutation::ReceiptFields if json["status"] == "completed" => json["categories"] = json!([]),
+        _ => {}
     }
-    let mut response = Response::new(Body::from(bytes));
-    *response.status_mut() = status;
-    *response.headers_mut() = headers;
-    response
 }
 
 #[tokio::test]

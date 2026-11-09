@@ -153,6 +153,11 @@ minute, then the per-minute rate. baukit-auth defines the limiter as a port
 (`BrowserSessionRateLimiter`), because baukit-ratelimit depends on baukit-auth.
 The adapter lives in baukit-ratelimit behind its `browser-session` feature.
 
+These are the defaults. `BrowserSessionConfig::with_rate_limits` overrides both
+buckets, and the template exposes the four numbers under
+`[auth.browser_session]`. Only the local config raises them, for end-to-end
+suites that sign in hundreds of times from one loopback address.
+
 Logout is limited per IP only. Fail mode follows `RateLimitOptions.fail_mode`
 (fail closed in the template). A refused request gets `429` with
 `Retry-After`; the client treats it like a network error and keeps the account

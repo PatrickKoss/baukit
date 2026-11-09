@@ -15,6 +15,13 @@ allow_missing_azp = {{ "true" if context.mobile else "false" }}
 # cookies over plain http; set insecure_local_cookie = true to test there.
 [auth.browser_session]
 enabled = true
+# Playwright suites sign in hundreds of times from one loopback address. These
+# lift the ADR 0006 limits (30/min + 10 per IP, 12/min + 4 per session) for
+# the local stack only; staging and production keep the defaults.
+ip_rate_per_minute = 6000
+ip_rate_burst = 1000
+session_rate_per_minute = 1200
+session_rate_burst = 200
 {% endif %}{% if context.mcp %}
 [mcp]
 {% if context.auth_oidc %}# Keep issuer public. This override fetches keys without changing token checks.

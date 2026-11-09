@@ -9,3 +9,4 @@ export * from './linked.js';
 export * from './error-codes.js';
 export * from './platform.js';
 export * from './plan-catalog.js';
+export { SuiteResponseError } from './responses.js';

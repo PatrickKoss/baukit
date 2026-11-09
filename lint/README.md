@@ -75,7 +75,7 @@ Lines marked `note:` never fail the run.
 |---|---|
 | `lints` | Every Cargo workspace root (or standalone package) has the baseline from `lint/rust/lints.toml` at the same or a stricter level, a `clippy.toml` next to it that covers `lint/rust/clippy.toml`, and members that set `[lints] workspace = true`. Every `eslint.config.{js,mjs,ts}` imports `@baukit/eslint-config` (baukit's own `typescript/` may import it by relative path). `cargo fuzz` crates are skipped. |
 | `file-size` | Rust files stay at or under 1000 lines, TS/TSX files at or under 500. Tests, `*.test.*`, `*.spec.*`, `tests.rs`, `*_tests.rs`, `.d.ts` and generated files are exempt. |
-| `suppressions` | Counts `#[allow]`, `#[expect]`, `eslint-disable` and `ast-grep-ignore` against `[suppressions.max]`. Flags `#[allow]` without `reason =` and comment suppressions without ` -- reason`. |
+| `suppressions` | Counts each suppression form against its `[suppressions.max]` key (see below). Flags a suppression without its reason, `@ts-ignore`, and every bulk suppression mechanism. |
 | `patterns` | Runs the ast-grep rules above with ast-grep 0.51.1, embedded in the CLI. `error` rules fail; `hint` rules print with `--verbose`. |
 | `agent-docs` | `CLAUDE.md` holds exactly one managed block equal to `lint/agent-rules.md`, and `AGENTS.md` is a symlink to `CLAUDE.md`. |
 | `observability` | Dashboards, alerts and recording rules from `[observability]` in `baukit-check.toml`. See below. Without that table it prints a note and passes. |
@@ -101,7 +101,52 @@ rust-allow = 3
 rust-expect = 12
 eslint-disable = 0
 ast-grep-ignore = 1
+ts-expect-error = 0
+ts-ignore = 0
+prettier-ignore = 0
+noqa = 0
+type-ignore = 0
+nosec = 0
+shellcheck-disable = 0
+nolint = 0
 ```
+
+Each key and the reason its form needs:
+
+| Key | Form | Reason |
+|---|---|---|
+| `rust-allow` | `#[allow(...)]` | `reason = "..."`; prefer `#[expect]` |
+| `rust-expect` | `#[expect(...)]` | `reason = "..."` (rustc enforces it) |
+| `eslint-disable` | `eslint-disable*` comments | ` -- reason` |
+| `ast-grep-ignore` | `ast-grep-ignore: rule` | ` -- reason` |
+| `ts-expect-error` | `// @ts-expect-error` | ` -- reason` |
+| `ts-ignore` | `// @ts-ignore` | always a finding; use `@ts-expect-error -- reason` |
+| `prettier-ignore` | `// prettier-ignore`, and `<!-- prettier-ignore -->` or `<!-- prettier-ignore-start -->` in `.md`, `.mdx`, `.html`, `.vue`, `.svelte` (outside Markdown code fences) | a comment on the line above (prettier needs the directive alone) |
+| `noqa` | `# noqa` | codes and a reason: `# noqa: S311 -- reason` |
+| `type-ignore` | `# type: ignore` | codes and a trailing comment: `# type: ignore[attr-defined]  # reason` (mypy's grammar has no ` -- `) |
+| `nosec` | Python `# nosec`, Go `// #nosec` | ` -- reason` |
+| `shellcheck-disable` | `# shellcheck disable=` in `*.sh`, `*.bash` and extensionless files whose `#!` names sh, bash, zsh or dash | `# reason` after the directive, or a comment on the line above |
+| `nolint` | Go `//nolint` | linters and a reason: `//nolint:errcheck // reason` |
+
+Bulk suppression has no budget; each one is a finding. That covers `eslint-suppressions.json`, the eslint
+`--suppress-all`, `--suppress-rule`, `--prune-suppressions` and `--suppressions-location` flags in a
+`package.json` (and the file the last one names), clippy `-A`, `--allow` or `--cap-lints` after `clippy` or
+in `RUSTFLAGS` in gate scripts (`*.sh`, `*.yml`, `Makefile`, `justfile`, extensionless shell scripts), a lint set to `allow` in a Cargo
+`[lints]` or `[workspace.lints]` table, and `-A`, `--allow` or `--cap-lints` in `.cargo/config.toml`.
+
+golangci configs (`.golangci.yml`, `.yaml`, `.toml`) may not set `disable-all: true` or
+`linters.default: none`, list `linters.disable` entries, set `issues.new` or `new-from-*`, or use
+`exclude`, `exclude-rules`, `exclude-files`, `skip-files`, or the v2 `exclusions.rules` and
+`exclusions.presets`. `exclude-dirs`, `skip-dirs` and `exclusions.paths` may name only generated, build
+or dependency output.
+
+eslint configs (`eslint.config.*`) outside `@baukit/eslint-config` may not set a rule to `off`, `warn`, `0`
+or `1`, or `reportUnusedDisableDirectives` below error. `ignores`, `ignorePatterns` and `.eslintignore`
+may name only generated, build or dependency output: `dist`, `build`, `coverage`, `out`, `node_modules`,
+`vendor`, `target`, `generated`, `.expo`, `.turbo`, `.next`, `.nuxt`, `.output`, `.svelte-kit` and
+`storybook-static`.
+
+Fix the findings instead.
 
 The allowlist and the maxima only shrink. A listed file that grows, drops under the limit, or no longer
 exists is a finding, and so is a suppression count above its max. A missing max counts as 0. When a count

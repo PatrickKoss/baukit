@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fs, path::Path};
 use anyhow::{Context, Result};
 
 use super::{
-    CONFIG_FILE, CheckContext, Finding, Rule,
+    CONFIG_FILE, CheckContext, Finding, Rule, bulk,
     comments::{self, Suppression, SuppressionKind},
     relative, walk,
 };
@@ -19,7 +19,7 @@ impl Rule for Suppressions {
     }
 
     fn run(&self, context: &CheckContext<'_>) -> Result<Vec<Finding>> {
-        let mut findings = Vec::new();
+        let mut findings = bulk::scan(context.root)?;
         let mut counts: BTreeMap<SuppressionKind, usize> = BTreeMap::new();
         for (path, suppression) in scan_tree(context.root)? {
             *counts.entry(suppression.kind).or_default() += 1;
@@ -80,13 +80,7 @@ pub fn scan_tree(root: &Path) -> Result<Vec<(String, Suppression)>> {
 }
 
 pub fn missing_reason(path: &str, suppression: &Suppression) -> Finding {
-    let message = match suppression.kind {
-        SuppressionKind::RustAllow => "`#[allow]` without `reason = \"...\"`",
-        SuppressionKind::RustExpect => "`#[expect]` without a reason",
-        SuppressionKind::EslintDisable => "`eslint-disable` without ` -- reason`",
-        SuppressionKind::AstGrepIgnore => "`ast-grep-ignore` without ` -- reason`",
-    };
-    Finding::error(NAME, path, message).at_line(suppression.line)
+    Finding::error(NAME, path, suppression.kind.missing_reason_message()).at_line(suppression.line)
 }
 
 /// Rewrites `[suppressions.max]` values in place; callers pass only values below the current max.

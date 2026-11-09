@@ -89,6 +89,13 @@ library APIs, no mutable globals, TS `strictTypeChecked` + `noUncheckedIndexedAc
 - D6 Worktrees (user, 2026-11-07): each parallel agent works in its own worktree under
   `../baukit-worktrees/<task>` on branch `task/qs-<task>`. After the merge the orchestrator removes the worktree,
   its `target/` and `node_modules`, and the branch.
+- D7 No linter workarounds (user, 2026-11-08): every finding gets fixed in code without human intervention.
+  No `eslint-suppressions.json` or other bulk suppression, no rule turned off or excluded in config, no
+  disguised code that dodges a rule, and no budget raised. A per-site suppression is allowed only for a
+  provable false positive, with a reason that names the invariant. The one crate-root expect per
+  integration test crate stays, because the rule exempts tests. The only open items allowed are external
+  blockers with exact sites. A full gate run takes 30 minutes or less; agents iterate with `--step`.
+  `baukit check suppressions` enforces this (task/qs-suppressions, ships in 0.19.2).
 - D5 Rollout: all baukit work ships as one minor release (0.19.0). Products upgrade one repo per agent,
   in a worktree from origin/main, gate green before push. Never touch a product's main checkout.
 
@@ -489,3 +496,26 @@ tenancy and rate-limit audit of the products (S-08).
   0.19.1 is the first train published to both registries by the workflow, and it validates npm trusted
   publishing. Compatibility-matrix v0.19.1 tells 0.18.x products to go straight to 0.19.1.
 - Follow-up done: the baukit-upgrade skill and baukit-conventions.md describe registry pins (505c7f08).
+- 2026-11-08: D7 replaces rollout policy items 2 and 3 (budget via `--update`, `eslint --suppress-all`).
+  Bulk entries found before the change: hebkit 8213, kassensturz 3644, redemut 486. All three, plus
+  eigenruhe and schluesselbund (rust-allow 50), were re-briefed; prompts/P4.2/POLICY-no-workarounds.md.
+  solo-leveling-system landed before D7 and gets a D7 audit pass. Two runaway gates were stopped:
+  kassensturz ran six full gates in a fix loop, and schluesselbund's playwright step ran 4h50m through
+  about 1500 failing tests with retries.
+
+- 2026-11-08 12:00: lesezeichen's first agent ran out of context with about 830 clippy findings left. Its helper had started 5 sub-agents, against the cap of 1. At 11:54 tiefgang's helper overwrote their shared scratchpad brief. I stopped all five; their partial mobile edits stayed inside the lesezeichen worktree. A continuation agent took over the uncommitted worktree. POLICY-heavy-steps.md now requires per-repo scratch dirs and bans spawning by helpers. The suppressions task (db56dcf3) took rust-allow from 76 to 0 and added 7 comment-form keys plus bulk detection; it is back for 4 scanner gaps (extensionless shell, Go nosec/nolint, HTML/MD prettier-ignore, eslint config weakening).
+- 2026-11-08 12:30: the CI failures on b368e9b8 were all network timeouts (mise GitHub downloads, Maven read timeouts); the failed jobs were re-run. The suppressions follow-up 8d146179 closes the scanner gaps: extensionless shell, Go nosec/nolint plus golangci weakening, markup prettier-ignore, the Python quote edge case, and eslint config weakening. It also drops the `off` block from the web e2e lint template. The branch is rebased onto main and release-trained to 0.19.2 (0e4714c8: matrix section, baukit-auth changelog, snapshots blessed). The full gate runs under both locks before merge and tag.
+- 2026-11-08 12:45: the schlauzug scope is far larger than the brief assumed: 1965 clippy findings and 78 oversized files, including api lib.rs at 7458 lines, room_service.rs at 6990 and crypt-descent.ts at 4492. Four partition agents (domain, services, api+bin, infra) each own a disjoint crate set and their own CARGO_TARGET_DIR. The TS helper owns TypeScript. The schlauzug coordinator resumes for the leftovers and the full gate. The CI mise download timeout is raised to 120 s (6880f1e0, release branch).
+- 2026-11-08 13:00: lesezeichen is split into integrations, core, mobile and security agents. The security agent widened `scopes::granted` to every principal with an issuer. I caught that in review and its continuation restores azp-based grants with a verifier marker for native sessions, plus tests. New baukit follow-up: verify the baukit-suite link reads put the owner in WHERE.
+- 2026-11-08 13:10: disk hit 36G free. Idle per-agent cargo target dirs took 145G: hebkit agent-* and the scratchpad tgt-*/target-*. They were removed, leaving 131G free. The policy now requires agents to delete their own target dir before reporting. hebkit generated files (schema.d.ts at 45702 lines, plan-generator-contract.ts) move under `generated/` dirs, which baukit check already treats as generated output, instead of using a suppression.
+
+### 2026-11-08 afternoon: paused for usage limits
+
+Every running agent was stopped after it wrote a handoff to
+`~/.cache/baukit-orchestrator/quality-security/handoffs/`. The resume point
+with per-repo state and next steps is
+`~/.cache/baukit-orchestrator/quality-security/RESUME-2026-11-08.md`.
+baukit 0.19.2 is staged on `task/qs-suppressions` (6880f1e0), and its full gate
+was still running at the pause. No product has merged its P4.2 work yet.
+lesezeichen-integrations is the only partition finished end to end. Correction
+from tiefgang: the suite 429 limit is 70 requests, not 10.

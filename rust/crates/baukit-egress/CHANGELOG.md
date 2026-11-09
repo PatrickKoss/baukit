@@ -4,6 +4,8 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-11-08
+
 ### Added
 
 - `EgressOptions::with_retry_after_headers` reads vendor rate-limit delays such as `fitbit-rate-limit-reset`, `x-ratelimit-reset` and `ratelimit-reset` before `Retry-After`, clamped to `max_retry_after`. `with_retry_after_first_field` parses only the first comma-separated field, as Polar sends it. Invalid names fail with `EgressOptionsError::InvalidRetryHeaderName`.

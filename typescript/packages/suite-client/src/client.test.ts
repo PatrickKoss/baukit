@@ -57,30 +57,20 @@ const input = {
   hint: 'hint',
   hintDomain: 'shared',
 };
+function respond(method: string, path: string): unknown {
+  if (path.includes('/preview?')) return preview;
+  if (path === '/suite/links' && method === 'POST')
+    return { requestId: 'request', authorizeUrl: 'https://beta.example/suite/authorize' };
+  if (path === '/suite/peers' || path.endsWith('/deliveries') || path === '/suite/links') return [];
+  if (path.startsWith('/suite/authorizations'))
+    return { redirectUrl: 'https://alpha.example/suite/links/callback' };
+  return link;
+}
 function apiFixture() {
   const request = vi.fn<(method: string, path: string, body?: unknown) => Promise<unknown>>(
-    (_method, path) => {
-      if (path.includes('/preview?')) return Promise.resolve(preview);
-      if (path === '/suite/links' && _method === 'POST')
-        return Promise.resolve({
-          requestId: 'request',
-          authorizeUrl: 'https://beta.example/suite/authorize',
-        });
-      if (path === '/suite/peers' || (path === '/suite/links' && _method === 'GET'))
-        return Promise.resolve([]);
-      if (path.endsWith('/complete')) return Promise.resolve(link);
-      return Promise.resolve({ redirectUrl: 'https://alpha.example/suite/links/callback' });
-    },
+    (method, path) => Promise.resolve(respond(method, path)),
   );
-  const transport: SuiteTransport = {
-    async request<T>(
-      method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
-      path: string,
-      body?: unknown,
-    ): Promise<T> {
-      return (await request(method, path, body)) as T;
-    },
-  };
+  const transport: SuiteTransport = { request };
   return { client: new SuiteClient(transport), request };
 }
 function sessionFixture(platform: 'web' | 'native' = 'native') {

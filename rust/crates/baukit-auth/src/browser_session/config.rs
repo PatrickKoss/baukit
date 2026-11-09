@@ -7,6 +7,10 @@ use thiserror::Error;
 use url::{Host, Url};
 use zeroize::Zeroizing;
 
+use super::rate_limit::{
+    AUTH_SESSION_ID_LIMIT, AUTH_SESSION_IP_LIMIT, BrowserSessionRateLimit, BrowserSessionRateLimits,
+};
+
 const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const DEFAULT_ABSOLUTE_TIMEOUT: Duration = Duration::from_secs(90 * 24 * 60 * 60);
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -33,6 +37,7 @@ pub struct BrowserSessionConfig {
     pub(crate) post_logout_redirect_uri: Option<String>,
     pub(crate) request_timeout: Duration,
     pub(crate) egress_policy: Option<AddressPolicy>,
+    pub(crate) rate_limits: BrowserSessionRateLimits,
 }
 
 impl BrowserSessionConfig {
@@ -83,6 +88,7 @@ impl BrowserSessionConfig {
             post_logout_redirect_uri: None,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             egress_policy: None,
+            rate_limits: BrowserSessionRateLimits::default(),
         })
     }
 
@@ -175,6 +181,44 @@ impl BrowserSessionConfig {
             return Err(BrowserSessionConfigError::ZeroTimeout("request"));
         }
         self.request_timeout = timeout;
+        Ok(self)
+    }
+
+    /// Overrides the rate limits. Defaults to 30 requests per minute plus a burst
+    /// of 10 per client IP and 12 plus 4 per session id (ADR 0006).
+    ///
+    /// Raise them only for test stacks that sign in many times from one address.
+    /// The group names stay `auth-session-ip` and `auth-session-id` whatever
+    /// `limits` carries.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BrowserSessionConfigError::ZeroRateLimit`] when a bucket has zero
+    /// `requests_per_minute`.
+    pub fn with_rate_limits(
+        mut self,
+        limits: BrowserSessionRateLimits,
+    ) -> Result<Self, BrowserSessionConfigError> {
+        if limits.client_ip.requests_per_minute == 0 {
+            return Err(BrowserSessionConfigError::ZeroRateLimit(
+                AUTH_SESSION_IP_LIMIT.group,
+            ));
+        }
+        if limits.session_id.requests_per_minute == 0 {
+            return Err(BrowserSessionConfigError::ZeroRateLimit(
+                AUTH_SESSION_ID_LIMIT.group,
+            ));
+        }
+        self.rate_limits = BrowserSessionRateLimits {
+            client_ip: BrowserSessionRateLimit {
+                group: AUTH_SESSION_IP_LIMIT.group,
+                ..limits.client_ip
+            },
+            session_id: BrowserSessionRateLimit {
+                group: AUTH_SESSION_ID_LIMIT.group,
+                ..limits.session_id
+            },
+        };
         Ok(self)
     }
 
@@ -317,6 +361,9 @@ pub enum BrowserSessionConfigError {
     /// A timeout is zero.
     #[error("browser session {0} timeout must be greater than zero")]
     ZeroTimeout(&'static str),
+    /// A rate limit bucket has zero requests per minute.
+    #[error("browser session rate limit {0} must allow at least one request per minute")]
+    ZeroRateLimit(&'static str),
     /// No redirect URI is configured.
     #[error("browser session needs at least one redirect URI")]
     NoRedirectUris,

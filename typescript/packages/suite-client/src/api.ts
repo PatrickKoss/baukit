@@ -1,3 +1,15 @@
+import {
+  isAuthorizationPreview,
+  isSuiteDeliveries,
+  isSuiteLink,
+  isSuiteLinks,
+  isSuiteLinkStart,
+  isSuitePeers,
+  isSuiteRedirect,
+  parseSuiteResponse,
+  type SuiteLinkStart,
+  type SuiteRedirect,
+} from './responses.js';
 export type RewardMode = 'native' | 'source_xp' | 'off';
 export type DeliveryHealth = 'healthy' | 'degraded' | 'needs_attention' | 'disabled';
 export interface SuiteLink {
@@ -56,9 +68,16 @@ export interface SuiteDelivery {
   readonly createdAt: string;
   readonly updatedAt: string;
 }
-/** Supply the product's authenticated, JSON-decoding HTTP transport. */
+/**
+ * Supply the product's authenticated, JSON-decoding HTTP transport. Return the decoded body
+ * untyped; SuiteClient validates every response and throws SuiteResponseError on a mismatch.
+ */
 export interface SuiteTransport {
-  request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown): Promise<T>;
+  request(
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    path: string,
+    body?: unknown,
+  ): Promise<unknown>;
 }
 export class SuiteFlowError extends Error {
   public constructor(public readonly code: string) {
@@ -105,24 +124,37 @@ export function suiteErrorCode(error: unknown): string {
 const linkPath = (id: string) => `/suite/links/${encodeURIComponent(id)}`;
 export class SuiteClient {
   public constructor(private readonly transport: SuiteTransport) {}
+  private async call<T>(
+    guard: (value: unknown) => value is T,
+    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+    path: string,
+    body?: unknown,
+  ): Promise<T> {
+    const response = await this.transport.request(method, path, body);
+    return parseSuiteResponse(`${method} ${path.split('?')[0] ?? path}`, response, guard);
+  }
+  private async send(method: 'POST' | 'DELETE', path: string, body?: unknown): Promise<void> {
+    await this.transport.request(method, path, body);
+  }
   public peers(): Promise<readonly SuitePeer[]> {
-    return this.transport.request('GET', '/suite/peers');
+    return this.call(isSuitePeers, 'GET', '/suite/peers');
   }
   public list(): Promise<readonly SuiteLink[]> {
-    return this.transport.request('GET', '/suite/links');
+    return this.call(isSuiteLinks, 'GET', '/suite/links');
   }
   public get(id: string): Promise<SuiteLink> {
-    return this.transport.request('GET', linkPath(id));
+    return this.call(isSuiteLink, 'GET', linkPath(id));
   }
   public start(input: {
     readonly peerApp: string;
     readonly returnUrl: string;
     readonly stateNonce: string;
-  }): Promise<{ readonly requestId: string; readonly authorizeUrl: string }> {
-    return this.transport.request('POST', '/suite/links', input);
+  }): Promise<SuiteLinkStart> {
+    return this.call(isSuiteLinkStart, 'POST', '/suite/links', input);
   }
   public complete(requestId: string, code: string): Promise<SuiteLink> {
-    return this.transport.request(
+    return this.call(
+      isSuiteLink,
       'POST',
       `/suite/links/requests/${encodeURIComponent(requestId)}/complete`,
       { code },
@@ -136,36 +168,37 @@ export class SuiteClient {
     const query = new URLSearchParams({ client });
     if (hint !== undefined) query.set('hint', hint);
     if (hintDomain !== undefined) query.set('hint_domain', hintDomain);
-    return this.transport.request('GET', `/suite/authorizations/preview?${query.toString()}`);
+    return this.call(
+      isAuthorizationPreview,
+      'GET',
+      `/suite/authorizations/preview?${query.toString()}`,
+    );
   }
-  public authorize(input: AuthorizationInput): Promise<{ readonly redirectUrl: string }> {
-    return this.transport.request('POST', '/suite/authorizations', input);
+  public authorize(input: AuthorizationInput): Promise<SuiteRedirect> {
+    return this.call(isSuiteRedirect, 'POST', '/suite/authorizations', input);
   }
-  public deny(input: {
-    readonly client: string;
-    readonly state: string;
-  }): Promise<{ readonly redirectUrl: string }> {
-    return this.transport.request('POST', '/suite/authorizations/deny', input);
+  public deny(input: { readonly client: string; readonly state: string }): Promise<SuiteRedirect> {
+    return this.call(isSuiteRedirect, 'POST', '/suite/authorizations/deny', input);
   }
   public update(
     id: string,
     input: { readonly shareXp?: boolean; readonly rewardMode?: RewardMode },
   ): Promise<SuiteLink> {
-    return this.transport.request('PATCH', linkPath(id), input);
+    return this.call(isSuiteLink, 'PATCH', linkPath(id), input);
   }
   public disconnect(id: string): Promise<void> {
-    return this.transport.request('DELETE', linkPath(id));
+    return this.send('DELETE', linkPath(id));
   }
   public test(id: string): Promise<void> {
-    return this.transport.request('POST', `${linkPath(id)}/test`);
+    return this.send('POST', `${linkPath(id)}/test`);
   }
   public reenable(id: string): Promise<SuiteLink> {
-    return this.transport.request('POST', `${linkPath(id)}/reenable`);
+    return this.call(isSuiteLink, 'POST', `${linkPath(id)}/reenable`);
   }
   public replay(id: string, since: string): Promise<void> {
-    return this.transport.request('POST', `${linkPath(id)}/replay`, { since });
+    return this.send('POST', `${linkPath(id)}/replay`, { since });
   }
   public deliveries(id: string): Promise<readonly SuiteDelivery[]> {
-    return this.transport.request('GET', `${linkPath(id)}/deliveries`);
+    return this.call(isSuiteDeliveries, 'GET', `${linkPath(id)}/deliveries`);
   }
 }
