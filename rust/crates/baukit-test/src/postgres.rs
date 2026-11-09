@@ -9,8 +9,8 @@ use testcontainers::{
     core::{IntoContainerPort as _, WaitFor},
 };
 
-#[cfg(feature = "sqlx-postgres")]
 use crate::StartContainer as _;
+#[cfg(feature = "sqlx-postgres")]
 use crate::postgres_database::{PostgresAppRole, PostgresTestDatabase, PostgresTestDatabases};
 #[cfg(feature = "sqlx-postgres")]
 use crate::{CleanupKind, OwnedResourceCheck};
