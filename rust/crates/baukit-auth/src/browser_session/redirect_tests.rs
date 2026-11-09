@@ -4,7 +4,10 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use baukit_credential_vault::CredentialCipher;
 use baukit_http::HttpOptions;
 
-use super::{BrowserSessionConfig, BrowserSessionConfigError, service::SessionSettings};
+use super::{
+    AUTH_SESSION_ID_LIMIT, AUTH_SESSION_IP_LIMIT, BrowserSessionConfig, BrowserSessionConfigError,
+    BrowserSessionRateLimit, BrowserSessionRateLimits, service::SessionSettings,
+};
 
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
@@ -89,5 +92,58 @@ fn invalid_configured_uris_fail_validation() -> TestResult {
         Err(BrowserSessionConfigError::InvalidRedirectUri(uri)) if uri == "relative"
     ));
     assert!(config(ORIGIN)?.validate(&http_options()?).is_ok());
+    Ok(())
+}
+
+#[test]
+fn default_rate_limits_equal_the_documented_constants() -> TestResult {
+    let limits = config(ORIGIN)?.rate_limits;
+    assert_eq!(limits.client_ip, AUTH_SESSION_IP_LIMIT);
+    assert_eq!(limits.session_id, AUTH_SESSION_ID_LIMIT);
+    Ok(())
+}
+
+#[test]
+fn zero_requests_per_minute_is_rejected_for_either_bucket() -> TestResult {
+    let defaults = BrowserSessionRateLimits::default();
+    let zero_ip = BrowserSessionRateLimits {
+        client_ip: BrowserSessionRateLimit {
+            requests_per_minute: 0,
+            ..defaults.client_ip
+        },
+        ..defaults
+    };
+    let zero_session = BrowserSessionRateLimits {
+        session_id: BrowserSessionRateLimit {
+            requests_per_minute: 0,
+            ..defaults.session_id
+        },
+        ..defaults
+    };
+    assert!(matches!(
+        config(ORIGIN)?.with_rate_limits(zero_ip),
+        Err(BrowserSessionConfigError::ZeroRateLimit("auth-session-ip"))
+    ));
+    assert!(matches!(
+        config(ORIGIN)?.with_rate_limits(zero_session),
+        Err(BrowserSessionConfigError::ZeroRateLimit("auth-session-id"))
+    ));
+    Ok(())
+}
+
+#[test]
+fn custom_rate_limits_are_stored_with_fixed_groups() -> TestResult {
+    let custom = BrowserSessionRateLimits {
+        client_ip: BrowserSessionRateLimit {
+            group: "other",
+            requests_per_minute: 1_000,
+            burst: 0,
+        },
+        ..BrowserSessionRateLimits::default()
+    };
+    let limits = config(ORIGIN)?.with_rate_limits(custom)?.rate_limits;
+    assert_eq!(limits.client_ip.group, AUTH_SESSION_IP_LIMIT.group);
+    assert_eq!(limits.client_ip.requests_per_minute, 1_000);
+    assert_eq!(limits.session_id, AUTH_SESSION_ID_LIMIT);
     Ok(())
 }

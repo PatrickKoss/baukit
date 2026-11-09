@@ -63,7 +63,8 @@ pub use config::{BrowserSessionConfig, BrowserSessionConfigError};
 pub use idp::IdpDiscoveryError;
 pub use rate_limit::{
     AUTH_SESSION_ID_LIMIT, AUTH_SESSION_IP_LIMIT, BrowserSessionRateLimit,
-    BrowserSessionRateLimiter, RateLimitFuture, RateLimitOutcome, RateLimitSubject,
+    BrowserSessionRateLimiter, BrowserSessionRateLimits, RateLimitFuture, RateLimitOutcome,
+    RateLimitSubject,
 };
 pub use router::{
     BROWSER_SESSION_HEADER, BROWSER_SESSION_PATH_PREFIX, BrowserSessionError, BrowserSessionState,

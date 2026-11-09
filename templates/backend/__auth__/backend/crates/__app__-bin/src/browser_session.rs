@@ -2,7 +2,9 @@ use std::{error::Error, sync::Arc, time::Duration};
 
 use axum::Router;
 use baukit_auth::browser_session::{
-    self, BrowserSessionConfig, BrowserSessionRateLimiter, BrowserSessionState,
+    self, AUTH_SESSION_ID_LIMIT, AUTH_SESSION_IP_LIMIT, BrowserSessionConfig,
+    BrowserSessionRateLimit, BrowserSessionRateLimiter, BrowserSessionRateLimits,
+    BrowserSessionState,
 };
 use baukit_config::{Environment, Secret, Validate, ValidationError, ValidationErrors};
 use baukit_credential_vault::CredentialCipher;
@@ -35,6 +37,12 @@ pub struct BrowserSessionSettings {
     pub insecure_local_cookie: bool,
     /// `version:base64key,...` keyring that encrypts stored refresh tokens.
     pub credential_keys: Option<Secret<String>>,
+    /// Per client IP bucket. Defaults to the ADR 0006 limit; raise it only in test stacks.
+    pub ip_rate_per_minute: u64,
+    pub ip_rate_burst: u64,
+    /// Per session id bucket. Defaults to the ADR 0006 limit; raise it only in test stacks.
+    pub session_rate_per_minute: u64,
+    pub session_rate_burst: u64,
 }
 
 impl Default for BrowserSessionSettings {
@@ -51,6 +59,28 @@ impl Default for BrowserSessionSettings {
             absolute_timeout_seconds: DEFAULT_ABSOLUTE_TIMEOUT_DAYS * SECONDS_PER_DAY,
             insecure_local_cookie: false,
             credential_keys: None,
+            ip_rate_per_minute: AUTH_SESSION_IP_LIMIT.requests_per_minute,
+            ip_rate_burst: AUTH_SESSION_IP_LIMIT.burst,
+            session_rate_per_minute: AUTH_SESSION_ID_LIMIT.requests_per_minute,
+            session_rate_burst: AUTH_SESSION_ID_LIMIT.burst,
+        }
+    }
+}
+
+impl BrowserSessionSettings {
+    fn rate_limits(&self) -> BrowserSessionRateLimits {
+        let defaults = BrowserSessionRateLimits::default();
+        BrowserSessionRateLimits {
+            client_ip: BrowserSessionRateLimit {
+                requests_per_minute: self.ip_rate_per_minute,
+                burst: self.ip_rate_burst,
+                ..defaults.client_ip
+            },
+            session_id: BrowserSessionRateLimit {
+                requests_per_minute: self.session_rate_per_minute,
+                burst: self.session_rate_burst,
+                ..defaults.session_id
+            },
         }
     }
 }
@@ -78,6 +108,17 @@ impl Validate for BrowserSessionSettings {
                 "auth.browser_session.absolute_timeout_seconds",
                 "must not be shorter than the idle timeout",
             ));
+        }
+        for (field, value) in [
+            ("ip_rate_per_minute", self.ip_rate_per_minute),
+            ("session_rate_per_minute", self.session_rate_per_minute),
+        ] {
+            if value == 0 {
+                errors.push(ValidationError::new(
+                    format!("auth.browser_session.{field}"),
+                    "must be greater than zero",
+                ));
+            }
         }
         if errors.is_empty() {
             Ok(())
@@ -126,7 +167,8 @@ pub async fn browser_session_router(
     .with_redirect_uris(settings.redirect_uris.iter().cloned())
     .with_idle_timeout(Duration::from_secs(settings.idle_timeout_seconds))?
     .with_absolute_timeout(Duration::from_secs(settings.absolute_timeout_seconds))?
-    .with_insecure_local_cookie(settings.insecure_local_cookie);
+    .with_insecure_local_cookie(settings.insecure_local_cookie)
+    .with_rate_limits(settings.rate_limits())?;
     if let Some(secret) = &settings.client_secret {
         config = config.with_client_secret(secret.expose().clone());
     }
@@ -161,5 +203,54 @@ fn rate_limiter(
         None => Err(
             "browser sessions require the shared rate-limit store outside local development".into(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn enabled() -> BrowserSessionSettings {
+        BrowserSessionSettings {
+            enabled: true,
+            ..BrowserSessionSettings::default()
+        }
+    }
+
+    #[test]
+    fn rate_limits_default_to_the_adr_values() {
+        assert_eq!(enabled().rate_limits(), BrowserSessionRateLimits::default());
+    }
+
+    #[test]
+    fn rate_limit_overrides_replace_both_buckets() {
+        let limits = BrowserSessionSettings {
+            ip_rate_per_minute: 6_000,
+            ip_rate_burst: 500,
+            session_rate_per_minute: 1_200,
+            session_rate_burst: 100,
+            ..enabled()
+        }
+        .rate_limits();
+        assert_eq!(limits.client_ip.requests_per_minute, 6_000);
+        assert_eq!(limits.client_ip.burst, 500);
+        assert_eq!(limits.session_id.requests_per_minute, 1_200);
+        assert_eq!(limits.session_id.burst, 100);
+    }
+
+    #[test]
+    fn zero_rate_per_minute_fails_validation() {
+        for settings in [
+            BrowserSessionSettings {
+                ip_rate_per_minute: 0,
+                ..enabled()
+            },
+            BrowserSessionSettings {
+                session_rate_per_minute: 0,
+                ..enabled()
+            },
+        ] {
+            assert!(settings.validate().is_err());
+        }
     }
 }

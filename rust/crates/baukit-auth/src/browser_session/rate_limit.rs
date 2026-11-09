@@ -27,6 +27,27 @@ pub const AUTH_SESSION_ID_LIMIT: BrowserSessionRateLimit = BrowserSessionRateLim
     burst: 4,
 };
 
+/// Both buckets of the browser session router.
+///
+/// Defaults to [`AUTH_SESSION_IP_LIMIT`] and [`AUTH_SESSION_ID_LIMIT`]. The group
+/// names are fixed; `BrowserSessionConfig::with_rate_limits` resets them.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BrowserSessionRateLimits {
+    /// Bucket per client IP for exchange, refresh and logout.
+    pub client_ip: BrowserSessionRateLimit,
+    /// Bucket per session id for refresh.
+    pub session_id: BrowserSessionRateLimit,
+}
+
+impl Default for BrowserSessionRateLimits {
+    fn default() -> Self {
+        Self {
+            client_ip: AUTH_SESSION_IP_LIMIT,
+            session_id: AUTH_SESSION_ID_LIMIT,
+        }
+    }
+}
+
 /// What a bucket counts.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]

@@ -23,7 +23,7 @@ b1ecc4345b191cdc16a5530093796bed2a275f59108b6404b07ae97a8b774661  CHANGELOG.md
 eb3e594baeb012e04b9d068dca70d7f5a14ab383ff8e1a8c22969929d9e5f57b  backend/crates/snapshot-app-bin/src/bin/api.rs
 749cfc6eddf5da6fc03098fd2e5f3f849d18c901f73c772939b0785587b508fb  backend/crates/snapshot-app-bin/src/bin/migrate.rs
 5c76cff169307e504f0eae77e32463a45fe8278b1af010034476bd859c0d0587  backend/crates/snapshot-app-bin/src/bin/openapi.rs
-aded1f92faa0068d3b5a5f02aafe52c576086549ebe896f97503f8f2e7c58d73  backend/crates/snapshot-app-bin/src/browser_session.rs
+cdbc8ab94c30bd359fca5b7d39de100d639b85a48346f0093aac05f4a4efb86f  backend/crates/snapshot-app-bin/src/browser_session.rs
 20d3ce7e315f6f67e53e421fffaae567d2c464841dcd5d0fc0f3c52a9dcda11e  backend/crates/snapshot-app-bin/src/config.rs
 3160708a1aa2c3b9340df03b1cbe4fcfbee65676623edf583b7d1b63ec5fa5b7  backend/crates/snapshot-app-bin/src/identity.rs
 12b086decbf4cbc7c9b434fbcada9fa7db78e5f7baf45437511da4097c6a25e8  backend/crates/snapshot-app-bin/src/lib.rs

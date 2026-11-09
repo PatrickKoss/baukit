@@ -31,7 +31,8 @@ use zeroize::Zeroizing;
 use super::{
     AUTH_SESSION_ID_LIMIT, AUTH_SESSION_IP_LIMIT, BROWSER_SESSION_HEADER, BrowserSessionConfig,
     BrowserSessionConfigError, BrowserSessionRateLimit, BrowserSessionRateLimiter,
-    BrowserSessionState, RateLimitFuture, RateLimitOutcome, RateLimitSubject,
+    BrowserSessionRateLimits, BrowserSessionState, RateLimitFuture, RateLimitOutcome,
+    RateLimitSubject,
     config::{is_same_site, parse_origin},
     cookie::CookieSettings,
     crypto::{self, GRACE_ACCESS_TOKEN_FIELD, REFRESH_TOKEN_FIELD, SessionCredential},
@@ -269,16 +270,20 @@ impl Clock for FakeClock {
 
 #[derive(Default)]
 struct RecordingLimiter {
-    calls: StdMutex<Vec<&'static str>>,
+    calls: StdMutex<Vec<BrowserSessionRateLimit>>,
     limited_group: Option<&'static str>,
 }
 
 impl RecordingLimiter {
-    fn calls(&self) -> Vec<&'static str> {
+    fn limits(&self) -> Vec<BrowserSessionRateLimit> {
         self.calls
             .lock()
             .map(|calls| calls.clone())
             .unwrap_or_default()
+    }
+
+    fn calls(&self) -> Vec<&'static str> {
+        self.limits().iter().map(|limit| limit.group).collect()
     }
 }
 
@@ -289,7 +294,7 @@ impl BrowserSessionRateLimiter for RecordingLimiter {
         _subject: RateLimitSubject<'a>,
     ) -> RateLimitFuture<'a> {
         if let Ok(mut calls) = self.calls.lock() {
-            calls.push(limit.group);
+            calls.push(limit);
         }
         let outcome = if self.limited_group == Some(limit.group) {
             RateLimitOutcome::Limited {
@@ -968,6 +973,39 @@ async fn rate_limits_use_the_ip_and_session_buckets() -> TestResult {
         Some(b"7".as_slice())
     );
     assert_eq!(json(response).await?["error"]["code"], "rate_limited");
+    Ok(())
+}
+
+#[tokio::test]
+async fn configured_rate_limits_reach_the_limiter_with_fixed_group_names() -> TestResult {
+    let custom = BrowserSessionRateLimits {
+        client_ip: BrowserSessionRateLimit {
+            group: "ignored",
+            requests_per_minute: 600,
+            burst: 200,
+        },
+        session_id: BrowserSessionRateLimit {
+            group: "ignored",
+            requests_per_minute: 120,
+            burst: 40,
+        },
+    };
+    let harness = harness_with(
+        local_config()?
+            .with_insecure_local_cookie(true)
+            .with_rate_limits(custom)?,
+        &[WEB_ORIGIN],
+        FakeIdp::default(),
+        RecordingLimiter::default(),
+    )?;
+    let first = signed_in(&harness).await?;
+    refreshed(&harness, &first).await?;
+    let limits = harness.limiter.limits();
+    assert_eq!(limits.len(), 3);
+    assert_eq!(limits[0].group, AUTH_SESSION_IP_LIMIT.group);
+    assert_eq!((limits[0].requests_per_minute, limits[0].burst), (600, 200));
+    assert_eq!(limits[2].group, AUTH_SESSION_ID_LIMIT.group);
+    assert_eq!((limits[2].requests_per_minute, limits[2].burst), (120, 40));
     Ok(())
 }
 

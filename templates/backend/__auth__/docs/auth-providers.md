@@ -107,7 +107,13 @@ Settings live under `[auth.browser_session]`. Outside local development set
 `..__REDIRECT_URIS`, and the browser-facing API origin in `..__PUBLIC_API_ORIGIN`.
 Web and API must share a registrable domain, or startup fails. The Helm
 `browserSession` values set all of these. Refresh and exchange are rate limited
-per IP and per session through the Redis store.
+per IP and per session through the Redis store: 30 requests per minute plus a
+burst of 10 per IP, 12 plus 4 per session. `ip_rate_per_minute`, `ip_rate_burst`,
+`session_rate_per_minute` and `session_rate_burst` (for example
+`{{ context.app_env }}__AUTH__BROWSER_SESSION__IP_RATE_PER_MINUTE`) override
+them, and zero per-minute values fail startup. Only `config/local.toml` raises
+them, so end-to-end suites that sign in many times from one address pass. Keep
+the defaults everywhere else.
 
 {% endif %}## Clerk
 

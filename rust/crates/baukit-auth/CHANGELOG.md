@@ -6,6 +6,10 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [0.19.2] - 2026-11-08
 
+### Added
+
+- `BrowserSessionConfig::with_rate_limits(BrowserSessionRateLimits)` sets the per-IP and per-session buckets. Defaults stay at `AUTH_SESSION_IP_LIMIT` (30/min, burst 10) and `AUTH_SESSION_ID_LIMIT` (12/min, burst 4). Group names stay fixed. A zero `requests_per_minute` fails with the new `BrowserSessionConfigError::ZeroRateLimit`. Intended for end-to-end stacks that sign in many times from one address.
+
 ### Fixed
 
 - `BrowserSessionConfig` stores redirect and post-logout URIs in their WHATWG serialization, and the code exchange compares the serialized `redirectUri`. `http://localhost:5573` now matches the `http://localhost:5573/` that `@baukit/auth-web` sends. A URI that does not parse fails `validate` with `InvalidRedirectUri`.
