@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `SuiteTransport.request` now returns `Promise<unknown>` and has no type parameter. `SuiteClient` validates every response with `@baukit/type-guards` and rejects with the new `SuiteResponseError` (code `suite_unavailable`) on a shape mismatch. Public `SuiteClient` return types are unchanged.
+- Migration: drop the type parameter and any `as T` cast in custom transports and test fakes. A fetch-based transport returns `response.json()` as is.
+
 ## 0.19.2
 
 ### Patch Changes
