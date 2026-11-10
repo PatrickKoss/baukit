@@ -329,22 +329,24 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         .try_into()?;
         ensure_active(&link)?;
         let changed = sqlx::query(
-            r#"UPDATE suite_links SET last_replay_at=$2 WHERE id=$1
+            r#"UPDATE suite_links SET last_replay_at=$2 WHERE id=$1 AND user_id=$4
             AND (last_replay_at IS NULL
             OR last_replay_at<=$3)"#,
         )
         .bind(id)
         .bind(now)
         .bind(now - Duration::seconds(SUITE_REPLAY_INTERVAL_SECONDS))
+        .bind(owner)
         .execute(&mut *tx)
         .await
         .map_err(storage)?
         .rows_affected();
         if changed != 1 {
             let last: DateTime<Utc> = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
-                r#"SELECT last_replay_at FROM suite_links WHERE id=$1"#,
+                r#"SELECT last_replay_at FROM suite_links WHERE id=$1 AND user_id=$2"#,
             )
             .bind(id)
+            .bind(owner)
             .fetch_one(&mut *tx)
             .await
             .map_err(storage)?

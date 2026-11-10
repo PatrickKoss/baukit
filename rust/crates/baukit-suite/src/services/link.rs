@@ -151,7 +151,11 @@ impl SuiteLinkService {
             .await?;
         match validate_complete(request.as_ref(), user.id, now)? {
             CompleteDecision::ExistingLink(id) => {
-                let link = self.context.store.link_for_update(&mut tx, id).await?;
+                let link = self
+                    .context
+                    .store
+                    .link_for_update(&mut tx, user.id, id)
+                    .await?;
                 self.context.store.commit_transaction(tx).await?;
                 return if link.status == LinkStatus::Revoked {
                     Err(LinkProtocolError::NotFound.into())
@@ -293,7 +297,7 @@ impl SuiteLinkService {
             let existing = self
                 .context
                 .store
-                .link_for_update(&mut tx, existing_id)
+                .link_for_update(&mut tx, user.id, existing_id)
                 .await?;
             self.context.store.commit_transaction(tx).await?;
             return if existing.status == LinkStatus::Revoked {
@@ -312,7 +316,11 @@ impl SuiteLinkService {
             .record_request_link_in_transaction(&mut tx, id, user.id, link.id)
             .await?;
         self.initial_replay(&mut tx, link, now).await?;
-        let persisted = self.context.store.link_for_update(&mut tx, link.id).await?;
+        let persisted = self
+            .context
+            .store
+            .link_for_update(&mut tx, user.id, link.id)
+            .await?;
         self.context.store.commit_transaction(tx).await?;
         Ok(persisted)
     }
@@ -561,7 +569,7 @@ impl SuiteLinkService {
         {
             self.context
                 .store
-                .revoke_in_transaction(tx, old.id, now)
+                .revoke_in_transaction(tx, link.user_id, old.id, now)
                 .await?;
             self.context
                 .outbox
@@ -642,17 +650,18 @@ impl SuiteLinkService {
     ) -> Result<(), SuiteServiceError> {
         self.get(owner, id).await?;
         let mut tx = self.context.store.begin_transaction().await?;
-        let link = self.context.store.link_for_update(&mut tx, id).await?;
-        if link.user_id != owner {
-            return Err(LinkProtocolError::NotFound.into());
-        }
+        let link = self
+            .context
+            .store
+            .link_for_update(&mut tx, owner, id)
+            .await?;
         if link.status == LinkStatus::Revoked {
             self.context.store.commit_transaction(tx).await?;
             return Ok(());
         }
         self.context
             .store
-            .revoke_in_transaction(&mut tx, id, now)
+            .revoke_in_transaction(&mut tx, owner, id, now)
             .await?;
         self.context
             .outbox

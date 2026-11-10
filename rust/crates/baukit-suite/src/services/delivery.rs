@@ -64,12 +64,12 @@ impl SuiteDeliveryService {
         {
             self.context
                 .store
-                .complete_delivery(link.id, job_id, worker_id, now)
+                .complete_delivery(link.user_id, link.id, job_id, worker_id, now)
                 .await?;
         } else {
             self.context
                 .store
-                .record_delivery(link.id, action, now)
+                .record_delivery(link.user_id, link.id, action, now)
                 .await?;
         }
         delivery_metric(&self.context.metric_prefix, action);
@@ -146,7 +146,11 @@ impl SuiteDeliveryService {
             .ok_or(SuiteStoreError::NotFound)?;
         ensure_active(&link)?;
         self.context.active_peer(&link.peer_app)?;
-        let retry_after = self.context.store.replay_retry_after(id, now).await?;
+        let retry_after = self
+            .context
+            .store
+            .replay_retry_after(owner, id, now)
+            .await?;
         if retry_after > 0 {
             return Err(SuiteStoreError::ReplayTooSoon(retry_after).into());
         }

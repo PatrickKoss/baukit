@@ -151,6 +151,7 @@ pub trait SuiteLinkStore: Send + Sync {
     ) -> Result<(), SuiteStoreError>;
     async fn replay_retry_after(
         &self,
+        owner_id: Uuid,
         link_id: Uuid,
         now: DateTime<Utc>,
     ) -> Result<u64, SuiteStoreError>;
@@ -195,9 +196,11 @@ pub trait SuiteLinkStore: Send + Sync {
         link_id: Uuid,
         now: DateTime<Utc>,
     ) -> Result<(), SuiteStoreError>;
+    /// Locks the owner's link row; another owner's id is NotFound.
     async fn link_for_update(
         &self,
         tx: &mut sqlx::PgConnection,
+        owner_id: Uuid,
         link_id: Uuid,
     ) -> Result<SuiteLink, SuiteStoreError>;
     async fn active_link_for_update(
@@ -214,9 +217,12 @@ pub trait SuiteLinkStore: Send + Sync {
     async fn revoke_in_transaction(
         &self,
         tx: &mut sqlx::PgConnection,
+        owner_id: Uuid,
         link_id: Uuid,
         now: DateTime<Utc>,
     ) -> Result<(), SuiteStoreError>;
+    /// Unscoped lookup for peer-authenticated ingest and background delivery. User-facing reads
+    /// use `find_link_for_owner`.
     async fn find_link(&self, link_id: Uuid) -> Result<Option<SuiteLink>, SuiteStoreError>;
     async fn find_link_for_owner(
         &self,
@@ -240,12 +246,14 @@ pub trait SuiteLinkStore: Send + Sync {
     ) -> Result<SuiteLink, SuiteStoreError>;
     async fn record_delivery(
         &self,
+        owner_id: Uuid,
         link_id: Uuid,
         action: DeliveryAction,
         now: DateTime<Utc>,
     ) -> Result<DeliveryState, SuiteStoreError>;
     async fn complete_delivery(
         &self,
+        owner_id: Uuid,
         link_id: Uuid,
         job_id: Uuid,
         worker_id: &str,
@@ -268,6 +276,7 @@ pub trait SuiteLinkStore: Send + Sync {
     async fn record_received_in_transaction(
         &self,
         tx: &mut sqlx::PgConnection,
+        owner_id: Uuid,
         link_id: Uuid,
         received_at: DateTime<Utc>,
     ) -> Result<(), SuiteStoreError>;
