@@ -236,4 +236,4 @@ authentication in the provider integration before admitting an erased subject.
 
 ## Login options
 
-`login()` takes an optional `{ stateDecoration, entry }`. `appearanceStateDecoration({ mode, primaryColor, secondaryColor })` returns the state segments the `baukit-accessible` Keycloak theme reads (`ap1.<d|l|s>[.PRIMARY.SECONDARY]`). Segments must match `[A-Za-z0-9]+` and colors must be `#RRGGBB`, otherwise `login()` throws. `entry: 'register'` sends `prompt=create`. No other authorization parameter can be set by the caller.
+`login()` takes an optional `{ stateDecoration, entry }`. `appearanceStateDecoration({ mode, primaryColor, secondaryColor })` returns the state segments the `baukit-accessible` Keycloak theme reads (`ap1.<d|l|s>[.PRIMARY.SECONDARY]`). Segments must match `[A-Za-z0-9]+` and colors must be `#RRGGBB`, otherwise `login()` throws. `entry: 'register'` sends `prompt=create`. No other authorization parameter can be set by the caller. The browser builds the authorization URL, so the `/auth/session` backend routes never see these options. They only redeem the code, and the callback rejects a state that differs from the stored one.
