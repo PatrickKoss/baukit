@@ -1,0 +1,20 @@
+id: rust-sql-format-const
+snapshots:
+  "fn f() { let s = format!(\"SELECT {SNAPSHOT_COLUMNS} FROM {SNAPSHOT_FROM} WHERE id = $1\"); }\n":
+    labels:
+    - source: format!("SELECT {SNAPSHOT_COLUMNS} FROM {SNAPSHOT_FROM} WHERE id = $1")
+      style: primary
+      start: 17
+      end: 88
+  "fn f() { let s = format!(\"{COLUMNS} FROM t\"); }\n":
+    labels:
+    - source: format!("{COLUMNS} FROM t")
+      style: primary
+      start: 17
+      end: 44
+  "fn f() { let s = format!(\"{DEPENDENCIES} WHERE organization_id=$1\"); }\n":
+    labels:
+    - source: format!("{DEPENDENCIES} WHERE organization_id=$1")
+      style: primary
+      start: 17
+      end: 67

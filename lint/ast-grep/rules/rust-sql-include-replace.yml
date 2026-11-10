@@ -1,0 +1,62 @@
+id: rust-sql-include-replace
+language: rust
+severity: error
+message: SQL loaded with include_str! is edited with replace or replacen on a slot or placeholder literal. Keep one static query per variant and bind values as parameters.
+note: Substituting text into a .sql file is string-built SQL under another name. The substituted text bypasses parameter binding, and placeholders such as {slot} or $1 are rewritten without checking the query structure.
+ignores:
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/baukit-test/**"
+  - "**/*-test-support/**"
+  - "**/*_test.rs"
+  - "**/tests.rs"
+utils:
+  sql-include:
+    kind: macro_invocation
+    regex: '^include_str!\s*\(\s*"[^"]*\.sql"'
+  sql-let:
+    kind: let_declaration
+    regex: '^let\s+(mut\s+)?\w+\s*(:[^=]+)?=\s*include_str!\s*\(\s*"[^"]*\.sql"'
+rule:
+  not:
+    inside:
+      stopBy: end
+      kind: mod_item
+      follows:
+        kind: attribute_item
+        regex: 'cfg\(test\)'
+  kind: call_expression
+  all:
+    - has:
+        field: function
+        kind: field_expression
+        has:
+          field: field
+          kind: field_identifier
+          regex: '^(replace|replacen)$'
+    - has:
+        field: arguments
+        kind: arguments
+        regex: '^\(\s*r?#*"[^"]*(\{[A-Za-z_]\w*\}|\$\d+|__\w+__)'
+    - any:
+        - has:
+            field: function
+            stopBy: end
+            matches: sql-include
+        - all:
+            - has:
+                field: function
+                stopBy: end
+                kind: identifier
+                pattern: $SQL
+            - inside:
+                stopBy: end
+                kind: function_item
+                has:
+                  stopBy: end
+                  matches: sql-let
+                  any:
+                    - pattern: let $SQL = $INIT
+                    - pattern: let mut $SQL = $INIT
+                    - pattern: 'let $SQL: $TYPE = $INIT'
+                    - pattern: 'let mut $SQL: $TYPE = $INIT'

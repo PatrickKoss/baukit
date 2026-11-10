@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.21.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.21.0 train.
+
 ## 0.20.0
 
 - Add `PolicyOrigins.vendorScripts` (origins in `script-src`, for example the Clerk frontend API) and `PolicyOrigins.vendorFrames` (extra `frame-src` origins).

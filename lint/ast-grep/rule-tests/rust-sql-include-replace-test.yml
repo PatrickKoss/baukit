@@ -1,0 +1,37 @@
+id: rust-sql-include-replace
+valid:
+  - |
+    fn f() -> &'static str { include_str!("q.sql") }
+  - |
+    fn f(text: &str) -> String { text.replace("{x}", "y") }
+  - |
+    fn f() -> String { include_str!("q.sql").replace("\r\n", "\n") }
+  - |
+    fn f() -> String { let text = include_str!("notes.txt"); text.replace("{x}", "y") }
+  - |
+    fn f(other: &str) -> String { let sql = include_str!("x.sql"); other.replace("$1", "y") }
+  - |
+    #[cfg(test)]
+    mod tests {
+        fn f(filter: &str) -> String { include_str!("q.sql").replace("{ownership_filter}", filter) }
+    }
+invalid:
+  - |
+    fn f(filter: &str) -> String { include_str!("q.sql").replace("{ownership_filter}", filter) }
+  - |
+    fn f(filter: &str) -> String { include_str!("q.sql").replacen("{slot}", filter, 1) }
+  - |
+    fn f(org: &str) -> String {
+        let sql = include_str!("x.sql");
+        sql.replace("$1", "__ORG__").replace("__ORG__", org)
+    }
+  - |
+    fn f(org: &str) -> String {
+        let mut sql = include_str!("x.sql");
+        sql.replace("__ORG__", org)
+    }
+  - |
+    fn f(org: &str) -> String {
+        let sql: &str = include_str!("x.sql");
+        sql.replace("{org}", org)
+    }

@@ -1,0 +1,20 @@
+id: rust-sql-format-const
+valid:
+  - |
+    fn f() { let s = format!("{NAME} is ready"); }
+  - |
+    fn f() { let s = format!("select the {ITEM} option"); }
+  - |
+    fn f() { let s = format!("SELECT 1 FROM t WHERE id = $1"); }
+  - |
+    #[cfg(test)]
+    mod tests {
+        fn f() { let s = format!("SELECT {COLUMNS} FROM t"); }
+    }
+invalid:
+  - |
+    fn f() { let s = format!("SELECT {SNAPSHOT_COLUMNS} FROM {SNAPSHOT_FROM} WHERE id = $1"); }
+  - |
+    fn f() { let s = format!("{DEPENDENCIES} WHERE organization_id=$1"); }
+  - |
+    fn f() { let s = format!("{COLUMNS} FROM t"); }

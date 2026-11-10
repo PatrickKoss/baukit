@@ -1,0 +1,24 @@
+id: rust-sql-assert-safe
+language: rust
+severity: error
+message: AssertSqlSafe wraps SQL text that was built at runtime. Use a &'static str per query variant (a literal or include_str!) with bound parameters, or a QueryBuilder with push_bind for truly dynamic shapes.
+note: AssertSqlSafe switches off sqlx's static-string check, so the compiler no longer proves the text carries no runtime values.
+ignores:
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/baukit-test/**"
+  - "**/*-test-support/**"
+  - "**/*_test.rs"
+  - "**/tests.rs"
+rule:
+  not:
+    inside:
+      stopBy: end
+      kind: mod_item
+      follows:
+        kind: attribute_item
+        regex: 'cfg\(test\)'
+  kind: call_expression
+  has:
+    field: function
+    regex: '(^|::)AssertSqlSafe$'

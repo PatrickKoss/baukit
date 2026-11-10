@@ -1,0 +1,18 @@
+id: rust-sql-assert-safe
+valid:
+  - |
+    fn f() { let q = sqlx::query("SELECT 1"); }
+  - |
+    fn f() { let q = Wrapper(format!("x")); }
+  - |
+    #[cfg(test)]
+    mod tests {
+        fn f(q: String) { let _ = sqlx::AssertSqlSafe(q); }
+    }
+invalid:
+  - |
+    fn f(q: String) { let _ = sqlx::AssertSqlSafe(q); }
+  - |
+    fn f(q: String) { let _ = AssertSqlSafe(q); }
+  - |
+    fn f() { let _ = sqlx::AssertSqlSafe(format!("{DEPENDENCIES} WHERE organization_id=$1")); }

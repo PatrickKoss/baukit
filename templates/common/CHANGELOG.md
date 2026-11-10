@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-10
+
+- `scripts/process_runner.py` has `start_process(command, **options)`, which returns a `subprocess.Popen` for long-lived children such as port-forwards and supervised children that need `pass_fds` or `start_new_session`. It resolves the executable with `shutil.which` and holds the single reasoned `noqa: S603`. `run_process` keeps its signature and is built on `start_process` with the `subprocess.run` semantics: `capture_output` and `input` map to pipes, `timeout` kills the child and re-raises, `check` raises `CalledProcessError`. {% if context.quality_strict %}`quality-gate.sh` runs the new `scripts/process_runner.test.py`. {% endif %}Replace direct `subprocess.Popen` calls in your own scripts with `start_process`.
+
 ## [0.20.0] - 2026-11-10
 
 {% if context.mobile %}- `android-adb.py --wait-for-stop` waits for adb to drop the emulator and for the qemu process to release its console port, within `BAUKIT_QA_STOP_TIMEOUT_SECONDS` (120 seconds by default). It used the 10 second device probe timeout as the stop deadline, and a loaded host took longer. It retries a timed-out probe and prints the measured stop time.

@@ -1,0 +1,25 @@
+id: rust-sql-format-const
+language: rust
+severity: error
+message: SQL assembled with format! from a captured identifier such as {COLUMNS} next to SQL keywords. Use a &'static str per query variant (a literal or include_str!) with bound parameters, or a QueryBuilder with push_bind for truly dynamic shapes.
+note: A captured constant still splices text into the statement. One static string per variant keeps every query greppable and checkable at compile time.
+ignores:
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/baukit-test/**"
+  - "**/*-test-support/**"
+  - "**/*_test.rs"
+  - "**/tests.rs"
+rule:
+  not:
+    inside:
+      stopBy: end
+      kind: mod_item
+      follows:
+        kind: attribute_item
+        regex: 'cfg\(test\)'
+  kind: macro_invocation
+  all:
+    - regex: '^format!\s*\('
+    - regex: '^format!\s*\(\s*r?#*"[^"]*\{[A-Za-z_][A-Za-z0-9_]*(:[^}]*)?\}'
+    - regex: '^format!\s*\(\s*r?#*"[^"]*(\sFROM\s|\sWHERE\s|SELECT\s)'

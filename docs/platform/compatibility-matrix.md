@@ -5,6 +5,20 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.21.0
+
+Last verified release train: `v0.21.0` (minor train on top of `v0.20.0`, breaking for products that build SQL at runtime).
+- `baukit check` rejects `AssertSqlSafe` in production Rust, `format!` SQL that captures an identifier such as `{COLUMNS}`, and `replace`/`replacen` on SQL loaded with `include_str!`. Test code is exempt.
+- `baukit-auth` compares the OIDC discovery `issuer` with the configured issuer string, so an issuer without a trailing slash no longer fails with `IssuerMismatch`.
+- Templates: `scripts/process_runner.py` adds `start_process`, the single spawn point for long-running children. `run_process` now runs on it.
+
+### Upgrade steps
+
+1. Set every `baukit-*` crate and `@baukit/*` package to `0.21.0`, and set `baukit.toml`'s `template_version` and `[dependencies.baukit].version` to `0.21.0`. Strict products move the Baukit clone in `scripts/quality-gate.sh` to `--branch v0.21.0`. For the first day, list the exact `@baukit/<name>@0.21.0` entries in `minimumReleaseAgeExclude`.
+2. Copy `scripts/process_runner.py` and replace direct `subprocess.Popen` calls with `start_process`.
+3. Replace runtime-built SQL with one `&'static str` per query variant and bound parameters (optional filters as `($n IS NULL OR ...)`, lists as `= ANY($n)`), or a `QueryBuilder` with `push_bind` for truly dynamic shapes. Keep the owner in the `WHERE`.
+4. Drop fixture workarounds that served the issuer with a trailing slash.
+
 ## v0.20.0
 
 Last verified release train: `v0.20.0` (minor train on top of `v0.19.2`, breaking for `baukit-suite` link stores and `baukit-egress` status errors).
