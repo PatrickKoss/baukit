@@ -61,6 +61,7 @@ class AndroidQaTests(unittest.TestCase):
             "ATTACHED": str(self.attached),
             "FAILURE": "",
             "BAUKIT_QA_ADB_TIMEOUT_SECONDS": "0.15",
+            "BAUKIT_QA_STOP_TIMEOUT_SECONDS": "0.5",
             "BAUKIT_QA_SKIP_BUILD": "1",
             "BAUKIT_QA_POLL_SECONDS": "0",
         }

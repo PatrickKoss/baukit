@@ -8,6 +8,7 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
 AUTH_ENABLED: bool = "{{ context.auth_enabled }}".lower() == "true"
+HAS_BACKEND: bool = "{{ context.backend }}".lower() == "true"
 
 
 class AndroidScriptsTest(unittest.TestCase):
@@ -63,9 +64,9 @@ esac
         path.write_text("#!/usr/bin/env bash\nset -eu\n" + content)
         path.chmod(0o755)
 
-    def run_script(self, name: str) -> None:
+    def run_script(self, name: str, *arguments: str) -> None:
         result = subprocess.run(
-            ["bash", str(self.scripts / name)],
+            ["bash", str(self.scripts / name), *arguments],
             env=self.environment,
             capture_output=True,
             text=True,
@@ -585,6 +586,9 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             '{ flock 9; printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"; } 9>"$EMULATOR_ARGS.lock"\n',
         )
         self.executable(self.scripts / "services.sh", "exit 0\n")
+        (self.scripts / "local.sh").write_text(
+            "qa_emulator_args=(-accel off)\nqa_reverse_ports=(18015)\n"
+        )
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
         apk.touch()
@@ -615,8 +619,7 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
                 *(["-feature", features] if features else []),
                 "-no-snapshot-load",
             ]
-            if headless == "1":
-                expected_args.append("-no-window")
+            expected_args.extend([*(["-no-window"] if headless == "1" else []), "-accel", "off"])
             cold, *shared, rest = emulator_args.read_text().split("--\n")
             self.assertEqual(cold.splitlines(), expected_args)
             self.assertEqual(rest, "")
@@ -631,6 +634,7 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             command = "-s emulator-5556 shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W"
             self.assertEqual(events.count(command), 1)
             launch = events.index(command)
+            self.assertEqual(events.count("-s emulator-5556 reverse tcp:18015 tcp:18015"), 1)
             self.assertFalse(any("monkey" in event for event in events))
             self.assertEqual(events.count(f"-s emulator-5556 emu avd snapshot save {snapshot}"), 1)
             if wifi == "0":
@@ -651,6 +655,74 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
                 self.assertLess(events.index(stop), events.index(flags))
             else:
                 self.assertFalse(any("chrome" in event for event in events))
+
+    def test_maestro_passes_local_hook_arguments_to_every_run(self) -> None:
+        maestro = self.root / "bin/maestro"
+        self.executable(maestro, 'printf "%s\\n" "$*" >> "$EVENTS"\n')
+        self.environment["PATH"] = f"{maestro.parent}:{self.environment['PATH']}"
+        self.environment["BAUKIT_QA_POLL_SECONDS"] = "0"
+        mobile = self.root / "mobile"
+        (mobile / ".maestro").mkdir(parents=True)
+        (mobile / ".maestro/one.yaml").write_text("appId: x\n")
+        (mobile / ".qa").mkdir()
+        (mobile / ".qa/ios-udid").write_text("udid-1\n")
+        (self.scripts / "local.sh").write_text("qa_maestro_args=(--exclude-tags kompass)\n")
+
+        result = subprocess.run(
+            ["bash", str(self.scripts / "run-maestro.sh"), "ios"],
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("--exclude-tags kompass .maestro/one.yaml", self.events.read_text())
+
+    @unittest.skipUnless(HAS_BACKEND, "services.sh hooks need a generated backend")
+    def test_services_local_hooks_run_around_the_api(self) -> None:
+        fake_bin = self.root / "bin"
+        self.executable(fake_bin / "docker", 'echo "docker $*" >> "$EVENTS"\n')
+        self.executable(fake_bin / "curl", "exit 0\n")
+        self.executable(
+            fake_bin / "cargo",
+            'echo "cargo $*" >> "$EVENTS"\n'
+            f'target="{self.root}/backend/target/debug"\n'
+            'mkdir -p "$target"\n'
+            'printf "#!/bin/sh\\nexit 0\\n" > "$target/migrate"\n'
+            'printf "#!/bin/sh\\nexec sleep 30\\n" > "$target/api"\n'
+            'chmod +x "$target/migrate" "$target/api"\n',
+        )
+        self.environment["PATH"] = f"{fake_bin}:{self.environment['PATH']}"
+        (self.scripts / "local.sh").write_text(
+            "qa_compose_services=(postgres redis)\n"
+            "qa_cargo_bins=(seed-catalog)\n"
+            'qa_services_env() { echo "hook env" >> "$EVENTS"; }\n'
+            'qa_before_api() { echo "hook before-api" >> "$EVENTS"; }\n'
+            'qa_after_api() { echo "hook after-api" >> "$EVENTS"; }\n'
+            'qa_stop_services() { echo "hook stop" >> "$EVENTS"; }\n'
+        )
+
+        self.run_script("services.sh")
+        started = self.events.read_text().splitlines()
+        self.run_script("services.sh", "stop")
+        stopped = self.events.read_text().splitlines()[len(started) :]
+
+        up = next(index for index, event in enumerate(started) if "up -d --wait" in event)
+        self.assertTrue(started[up].endswith("up -d --wait postgres redis"))
+        build = next(
+            index for index, event in enumerate(started) if event.startswith("cargo build")
+        )
+        self.assertTrue(started[build].endswith("--bin migrate --bin api --bin seed-catalog"))
+        order = [
+            started.index(event) for event in ("hook env", "hook before-api", "hook after-api")
+        ]
+        self.assertEqual(order, sorted(order))
+        self.assertLess(up, order[0])
+        self.assertLess(order[0], build)
+        self.assertLess(build, order[1])
+        self.assertEqual(stopped[0], "hook stop")
 
     def test_hanging_app_install_is_bounded(self) -> None:
         emulator_args = self.root / "emulator-args"

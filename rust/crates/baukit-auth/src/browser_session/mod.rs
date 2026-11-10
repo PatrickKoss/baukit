@@ -50,6 +50,8 @@ mod config;
 mod cookie;
 mod crypto;
 mod idp;
+#[cfg(test)]
+mod idp_tests;
 mod rate_limit;
 #[cfg(test)]
 mod redirect_tests;

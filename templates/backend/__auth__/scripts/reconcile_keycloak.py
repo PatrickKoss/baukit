@@ -7,9 +7,10 @@ import argparse
 import json
 import os
 import secrets
-import subprocess
+import shutil
 import sys
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
 from urllib.error import HTTPError, URLError
@@ -17,6 +18,7 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 import keycloak_policy
+from process_runner import run_process
 
 SCOPE_REALM_FIELDS = {
     "clientScopes",
@@ -32,7 +34,11 @@ CLIENT_SCOPE_BINDINGS = (
     ("optionalClientScopes", "optional-client-scopes"),
 )
 
+SMTP_ALLOWED_KEYS = {"host", "port", "from", "fromDisplayName", "replyTo", "ssl", "starttls"}
+SMTP_FLAG_VALUES = {"true", "false"}
+
 RECONCILABLE_REALM_FIELDS = SCOPE_REALM_FIELDS | {
+    "smtpServer",
     "displayName",
     "enabled",
     "sslRequired",
@@ -163,7 +169,26 @@ def apply_client_overrides(
         selected[client_id][field] = merge_unique(selected[client_id][field], [value])
 
 
+def validate_smtp_server(smtp: Any) -> None:
+    if not isinstance(smtp, dict):
+        fail("selected realm field 'smtpServer' must be an object")
+    unsupported = sorted(set(smtp) - SMTP_ALLOWED_KEYS)
+    if unsupported:
+        fail(
+            "smtpServer may only hold secret-free settings, "
+            f"rejected keys: {', '.join(unsupported)}"
+        )
+    for key in ("host", "port", "from"):
+        if not isinstance(smtp.get(key), str) or not smtp[key]:
+            fail(f"smtpServer {key} must be a non-empty string")
+    for key in ("ssl", "starttls"):
+        if key in smtp and smtp[key] not in SMTP_FLAG_VALUES:
+            fail(f"smtpServer {key} must be 'true' or 'false'")
+
+
 def validate_realm_fields(realm: dict[str, Any], realm_fields: list[str]) -> None:
+    if "smtpServer" in realm_fields:
+        validate_smtp_server(realm.get("smtpServer"))
     for field in realm_fields:
         if field in SCOPE_REALM_FIELDS and field not in realm:
             fail(f"selected realm field {field!r} is absent from the realm file")
@@ -361,7 +386,7 @@ class KeycloakApi:
     def scope_mappers(self, realm: str, scope: str) -> list[dict[str, Any]]:
         response = self.request(
             "GET",
-            f"/admin/realms/{quote(realm, safe='')}/client-scopes/{quote(scope, safe='')}/protocol-mappers/models",
+            realm_path(realm, "client-scopes", scope, "protocol-mappers", "models"),
         )
         if not isinstance(response, list):
             fail("Keycloak returned invalid scope mapper data")
@@ -398,7 +423,7 @@ class KeycloakApi:
     def service_account(self, realm: str, client_id: str) -> dict[str, Any]:
         response = self.request(
             "GET",
-            f"/admin/realms/{quote(realm, safe='')}/clients/{quote(client_id, safe='')}/service-account-user",
+            realm_path(realm, "clients", client_id, "service-account-user"),
         )
         if not isinstance(response, dict) or not isinstance(response.get("id"), str):
             fail("Keycloak returned invalid service account data")
@@ -407,7 +432,7 @@ class KeycloakApi:
     def client_role(self, realm: str, client_id: str, role: str) -> dict[str, Any]:
         response = self.request(
             "GET",
-            f"/admin/realms/{quote(realm, safe='')}/clients/{quote(client_id, safe='')}/roles/{quote(role, safe='')}",
+            realm_path(realm, "clients", client_id, "roles", role),
         )
         if not isinstance(response, dict):
             fail("Keycloak returned invalid client role data")
@@ -416,7 +441,7 @@ class KeycloakApi:
     def user_client_roles(self, realm: str, user_id: str, client_id: str) -> list[dict[str, Any]]:
         response = self.request(
             "GET",
-            f"/admin/realms/{quote(realm, safe='')}/users/{quote(user_id, safe='')}/role-mappings/clients/{quote(client_id, safe='')}",
+            realm_path(realm, "users", user_id, "role-mappings", "clients", client_id),
         )
         if not isinstance(response, list):
             fail("Keycloak returned invalid service account role data")
@@ -427,7 +452,7 @@ class KeycloakApi:
     ) -> None:
         self.request(
             "POST",
-            f"/admin/realms/{quote(realm, safe='')}/users/{quote(user_id, safe='')}/role-mappings/clients/{quote(client_id, safe='')}",
+            realm_path(realm, "users", user_id, "role-mappings", "clients", client_id),
             payload=roles,
         )
 
@@ -443,7 +468,7 @@ class KeycloakApi:
     def user_realm_roles(self, realm: str, user_id: str) -> list[dict[str, Any]]:
         response = self.request(
             "GET",
-            f"/admin/realms/{quote(realm, safe='')}/users/{quote(user_id, safe='')}/role-mappings/realm",
+            realm_path(realm, "users", user_id, "role-mappings", "realm"),
         )
         if not isinstance(response, list):
             fail("Keycloak returned invalid user role data")
@@ -452,7 +477,7 @@ class KeycloakApi:
     def add_user_realm_roles(self, realm: str, user_id: str, roles: list[dict[str, Any]]) -> None:
         self.request(
             "POST",
-            f"/admin/realms/{quote(realm, safe='')}/users/{quote(user_id, safe='')}/role-mappings/realm",
+            realm_path(realm, "users", user_id, "role-mappings", "realm"),
             payload=roles,
         )
 
@@ -566,9 +591,7 @@ class RealmReconciler:
         clients = self.api.find(realm, "clients", "clientId", client_id)
         managers = self.api.find(realm, "clients", "clientId", "realm-management")
         if len(clients) != 1 or len(managers) != 1:
-            fail(
-                "service account role mapping requires existing backend and realm-management clients"
-            )
+            fail("service account role mapping needs backend and realm-management clients")
         account = self.api.service_account(realm, clients[0]["id"])
         manager_id = managers[0]["id"]
         existing = {
@@ -695,20 +718,21 @@ class RealmReconciler:
             self.api.add_user_realm_roles(realm_name, identity, missing_roles)
 
 
+def realm_path(realm: str, *segments: str) -> str:
+    quoted = [quote(segment, safe="") for segment in (realm, *segments)]
+    return "/".join(["/admin/realms", *quoted])
+
+
 class ComposeRecovery:
     def __init__(self, compose_file: Path, service: str):
         self.compose_file = compose_file
         self.service = service
 
     def command(self, arguments: list[str], environment: dict[str, str] | None = None) -> None:
+        if shutil.which("docker") is None:
+            fail("docker is required for administrator recovery")
         command = ["docker", "compose", "-f", str(self.compose_file), *arguments]
-        result = subprocess.run(
-            command,
-            env=environment,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        result = run_process(command, env=environment, capture_output=True, text=True)
         if result.returncode != 0:
             fail(f"docker compose command failed with exit code {result.returncode}")
 
@@ -780,14 +804,18 @@ def delete_master_user(api: KeycloakApi, username: str) -> None:
     api.delete("master", "users", matches[0]["id"])
 
 
+@dataclass(frozen=True)
+class RecoveryHooks:
+    start: Callable[[str, str], None]
+    repair: Callable[[str, str, str], None]
+    cleanup: Callable[[str, str], None]
+
+
 def run_with_recovery(
     authenticate: Callable[[str, str], str],
     administrator: tuple[str, str],
     action: Callable[[str], None],
-    *,
-    start_recovery: Callable[[str, str], None],
-    repair: Callable[[str, str, str], None],
-    cleanup: Callable[[str, str], None],
+    hooks: RecoveryHooks,
 ) -> bool:
     username, password = administrator
     try:
@@ -795,7 +823,7 @@ def run_with_recovery(
     except AuthenticationError:
         temporary_username = f"baukit-recovery-{secrets.token_hex(10)}"
         temporary_password = secrets.token_urlsafe(32)
-        start_recovery(temporary_username, temporary_password)
+        hooks.start(temporary_username, temporary_password)
         token = authenticate(temporary_username, temporary_password)
         pending: BaseException | None = None
         try:
@@ -803,12 +831,12 @@ def run_with_recovery(
         except BaseException as error:
             pending = error
         try:
-            repair(token, username, password)
+            hooks.repair(token, username, password)
         except BaseException as error:
             if pending is None:
                 pending = error
         try:
-            cleanup(token, temporary_username)
+            hooks.cleanup(token, temporary_username)
         except BaseException as error:
             cleanup_error = ReconcileError("temporary recovery administrator cleanup failed")
             if pending is not None:
@@ -864,12 +892,14 @@ def main(argv: list[str] | None = None) -> int:
             authenticate,
             (arguments.admin_username, admin_password),
             reconcile,
-            start_recovery=recovery.start,
-            repair=lambda token, username, password: repair_master_admin(
-                KeycloakApi(arguments.keycloak_url, token), username, password
-            ),
-            cleanup=lambda token, username: delete_master_user(
-                KeycloakApi(arguments.keycloak_url, token), username
+            RecoveryHooks(
+                start=recovery.start,
+                repair=lambda token, username, password: repair_master_admin(
+                    KeycloakApi(arguments.keycloak_url, token), username, password
+                ),
+                cleanup=lambda token, username: delete_master_user(
+                    KeycloakApi(arguments.keycloak_url, token), username
+                ),
             ),
         )
     except (keycloak_policy.PolicyError, ReconcileError) as error:

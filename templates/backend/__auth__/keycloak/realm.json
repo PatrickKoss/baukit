@@ -177,8 +177,8 @@
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["http://localhost:{{ context.web_port }}/*"],
-      "webOrigins": ["http://localhost:{{ context.web_port }}"],
+      "redirectUris": [{% for port in context.web_origin_ports %}"http://localhost:{{ port }}/*"{{ ", " if not loop.last }}{% endfor %}],
+      "webOrigins": [{% for port in context.web_origin_ports %}"http://localhost:{{ port }}"{{ ", " if not loop.last }}{% endfor %}],
       "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "+" },
       "protocol": "openid-connect",
 {% if context.auth_oidc %}      "protocolMappers": {{ backend_audience() }}

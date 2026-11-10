@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from urllib.parse import unquote
 
+from process_runner import run_process
+
 INLINE_LINK_START = re.compile(r"!?\[[^\]]*\]\(\s*")
 INLINE_LINK_END = re.compile(r"""(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\s*\)""")
 ANGLE_DESTINATION = re.compile(r"<[^>\n]+>")
@@ -15,18 +17,16 @@ EXTERNAL_SCHEME = re.compile(r"^[a-z][a-z\d+.-]*:", re.IGNORECASE)
 DEFAULT_ROOTS = ("README.md", "CLAUDE.md", "AGENTS.md", "docs")
 
 
-def markdown_files(repository_root: Path, roots: list[str]) -> list[Path]:
-    history = subprocess.run(
-        ["git", "-C", str(repository_root), "rev-parse", "--verify", "HEAD"],
-        check=False,
-        capture_output=True,
+def git(repository_root: Path, *arguments: str, check: bool) -> subprocess.CompletedProcess:
+    return run_process(
+        ["git", "-C", str(repository_root), *arguments], check=check, capture_output=True
     )
+
+
+def markdown_files(repository_root: Path, roots: list[str]) -> list[Path]:
+    history = git(repository_root, "rev-parse", "--verify", "HEAD", check=False)
     if history.returncode == 0:
-        completed = subprocess.run(
-            ["git", "-C", str(repository_root), "ls-files", "-z", "--", *roots],
-            check=True,
-            capture_output=True,
-        )
+        completed = git(repository_root, "ls-files", "-z", "--", *roots, check=True)
         return sorted(
             repository_root / Path(raw.decode("utf-8"))
             for raw in completed.stdout.split(b"\0")

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.20.0] - 2026-11-10
+
 ## [0.19.2] - 2026-11-08
 
 - Security: `auth-storage.ts` throws `WebTokenStorageRefused` on web and no longer falls back to `localStorage`. iOS and Android keep `expo-secure-store`.

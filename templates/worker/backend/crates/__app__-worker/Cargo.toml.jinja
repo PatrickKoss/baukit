@@ -10,7 +10,8 @@ workspace = true
 
 [dependencies]
 {% if context.platform %}baukit-suite = { workspace = true, features = ["platform", "postgres"] }
-chrono.workspace = true
+{% endif %}{% if context.auth_enabled %}baukit-auth = { workspace = true, features = ["browser-session"] }
+{% endif %}{% if context.platform or context.auth_enabled %}chrono.workspace = true
 sqlx.workspace = true
 {% endif %}baukit-jobs.workspace = true
 baukit-telemetry.workspace = true

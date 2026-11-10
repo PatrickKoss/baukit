@@ -1055,7 +1055,12 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
     assert_enqueue_rolls_back_and_dedupes(&c, &outbox, owner, &event, &db.pool).await?;
     assert_xp_shared_only_when_both_preferences_allow(&c, owner, link.id, &db.pool).await?;
     c.store
-        .record_delivery(link.id, DeliveryAction::Unauthorized, Utc::now())
+        .record_delivery(
+            link.user_id,
+            link.id,
+            DeliveryAction::Unauthorized,
+            Utc::now(),
+        )
         .await?;
     assert_eq!(
         service.get(owner, link.id).await?.status,
@@ -1084,7 +1089,12 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
         0
     );
     c.store
-        .record_delivery(link.id, DeliveryAction::Unauthorized, Utc::now())
+        .record_delivery(
+            link.user_id,
+            link.id,
+            DeliveryAction::Unauthorized,
+            Utc::now(),
+        )
         .await?;
     assert_attention_failures_escalate(&service, &jobs, owner, link.id, &db.pool).await?;
     assert_eq!(
@@ -1096,7 +1106,7 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
         "not_found"
     );
     c.store
-        .record_delivery(link.id, DeliveryAction::Revoked, Utc::now())
+        .record_delivery(link.user_id, link.id, DeliveryAction::Revoked, Utc::now())
         .await?;
     assert_eq!(
         service.get(owner, link.id).await?.status,
@@ -1488,7 +1498,7 @@ async fn suite_cleanup_retains_its_history_until_30_days_after_generic_cleanup()
     let now = Utc::now();
     context
         .store
-        .record_delivery(link.id, DeliveryAction::Delivered, now)
+        .record_delivery(link.user_id, link.id, DeliveryAction::Delivered, now)
         .await?;
     let jobs = PostgresJobStore::new(db.pool.clone()).retain_kinds(&baukit_suite::SUITE_JOB_TYPES);
     let (mut suite_jobs, mut retained) =
@@ -4302,5 +4312,100 @@ async fn foreign_owner_lookup_returns_none_without_accounting_failures() -> Test
     let own = context.store.find_link_for_owner(link.id, owner).await?;
     assert_eq!(own.map(|found| found.id), Some(link.id));
     assert!(snapshot().await?.2);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn link_id_routes_deny_a_second_principal_and_leave_the_link_untouched() -> TestResult {
+    let db = common::postgres_database().await?;
+    let context = make_context(&db.pool, registry("alpha", "beta", 12340, 12341));
+    let app = common::app_with_suite(
+        &db.pool,
+        module(&db.pool, context.clone(), Arc::new(Applier::default())),
+    );
+    let owner = user(&db.pool, "link-route-owner").await?;
+    let stranger = user(&db.pool, "link-route-stranger").await?;
+    let (link, _) =
+        exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
+    let token = stranger.to_string();
+    let base = format!("/suite/links/{}", link.id);
+    let for_method = |method: &str| match method {
+        "PATCH" => json!({"shareXp":false}),
+        _ => json!({"since":Utc::now().date_naive()}),
+    };
+    for (method, path) in [
+        ("GET", base.clone()),
+        ("PATCH", base.clone()),
+        ("DELETE", base.clone()),
+        ("POST", format!("{base}/test")),
+        ("POST", format!("{base}/reenable")),
+        ("POST", format!("{base}/replay")),
+        ("GET", format!("{base}/deliveries")),
+    ] {
+        let response = call(&app, method, &path, Some(&token), for_method(method)).await?;
+        assert_eq!(response.0, StatusCode::NOT_FOUND, "{method} {path}");
+        assert_eq!(response.1["error"]["code"], "not_found", "{method} {path}");
+    }
+    let stored = context
+        .store
+        .find_link_for_owner(link.id, owner)
+        .await?
+        .ok_or("owner link is missing")?;
+    assert_eq!(stored.status, LinkStatus::Active);
+    assert_eq!(stored.share_xp, link.share_xp);
+    assert_eq!(stored.updated_at, link.updated_at);
+    let jobs: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM job_outbox WHERE payload->>'link_id'=$1")
+            .bind(link.id.to_string())
+            .fetch_one(&db.pool)
+            .await?;
+    assert_eq!(jobs, 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn link_store_writes_by_id_deny_a_second_principal() -> TestResult {
+    let db = common::postgres_database().await?;
+    let context = make_context(&db.pool, registry("alpha", "beta", 12340, 12341));
+    let owner = user(&db.pool, "link-store-owner").await?;
+    let stranger = user(&db.pool, "link-store-stranger").await?;
+    let (link, _) =
+        exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
+    let store = &context.store;
+    let now = Utc::now();
+    let mut tx = store.begin_transaction().await?;
+    assert_eq!(
+        store
+            .link_for_update(&mut tx, stranger, link.id)
+            .await
+            .err(),
+        Some(SuiteStoreError::NotFound)
+    );
+    assert_eq!(
+        store
+            .revoke_in_transaction(&mut tx, stranger, link.id, now)
+            .await
+            .err(),
+        Some(SuiteStoreError::NotFound)
+    );
+    store.commit_transaction(tx).await?;
+    assert_eq!(
+        store
+            .record_delivery(stranger, link.id, DeliveryAction::Revoked, now)
+            .await
+            .err(),
+        Some(SuiteStoreError::NotFound)
+    );
+    assert_eq!(
+        store.replay_retry_after(stranger, link.id, now).await.err(),
+        Some(SuiteStoreError::NotFound)
+    );
+    let status: String = sqlx::query_scalar("SELECT status FROM suite_links WHERE id=$1")
+        .bind(link.id)
+        .fetch_one(&db.pool)
+        .await?;
+    assert_eq!(status, "active");
     Ok(())
 }

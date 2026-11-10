@@ -11,7 +11,8 @@ workspace = true
 [dependencies]
 {% if context.platform %}baukit-suite = { workspace = true, features = ["platform", "postgres"] }
 async-trait.workspace = true
-{% endif %}{% if context.auth_enabled %}baukit-erasure.workspace = true
+{% endif %}{% if context.auth_enabled %}baukit-auth = { workspace = true, features = ["browser-session"] }
+baukit-erasure.workspace = true
 chrono.workspace = true
 {% endif %}
 {{ context.app_crate }}-domain.workspace = true

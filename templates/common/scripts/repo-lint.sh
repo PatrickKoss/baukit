@@ -43,8 +43,14 @@ secret_scan() {
 }
 
 osv() {
+  resolved=$(mktemp -d)
+  trap 'rm -rf "$resolved"' EXIT
   set --
-  for lockfile in backend/Cargo.lock web/pnpm-lock.yaml mobile/pnpm-lock.yaml; do
+  if [ -f backend/Cargo.lock ]; then
+    python3 scripts/osv-resolved-lock.py backend/Cargo.toml "$resolved/backend"
+    set -- "$@" -L "$resolved/backend/Cargo.lock"
+  fi
+  for lockfile in web/pnpm-lock.yaml mobile/pnpm-lock.yaml; do
     if [ -f "$lockfile" ]; then
       set -- "$@" -L "$lockfile"
     fi

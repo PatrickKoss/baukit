@@ -12,7 +12,9 @@ import json
 import secrets
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from html.parser import HTMLParser
+from http import HTTPStatus
 
 
 class LoginFormParser(HTMLParser):
@@ -86,17 +88,17 @@ def discover(client: urllib.request.OpenerDirector, issuer: str) -> dict:
     return metadata
 
 
-def login(
-    client: urllib.request.OpenerDirector,
-    metadata: dict,
-    *,
-    username: str,
-    password: str,
-    client_id: str,
-    redirect_uri: str,
-    scope: str,
-    resource: str | None = None,
-) -> str:
+@dataclass(frozen=True)
+class LoginRequest:
+    username: str
+    password: str
+    client_id: str
+    redirect_uri: str
+    scope: str
+    resource: str | None = None
+
+
+def login(client: urllib.request.OpenerDirector, metadata: dict, request: LoginRequest) -> str:
     verifier = base64.urlsafe_b64encode(secrets.token_bytes(64)).decode().rstrip("=")
     challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
@@ -107,14 +109,14 @@ def login(
         + "?"
         + urllib.parse.urlencode(
             {
-                "client_id": client_id,
-                "redirect_uri": redirect_uri,
+                "client_id": request.client_id,
+                "redirect_uri": request.redirect_uri,
                 "response_type": "code",
-                "scope": scope,
+                "scope": request.scope,
                 "state": state,
                 "code_challenge": challenge,
                 "code_challenge_method": "S256",
-                **({"resource": resource} if resource else {}),
+                **({"resource": request.resource} if request.resource else {}),
             }
         )
     )
@@ -126,7 +128,7 @@ def login(
     if not form.action:
         raise RuntimeError("Keycloak login form was not found")
     fields = dict(form.hidden)
-    fields.update({"username": username, "password": password, "credentialId": ""})
+    fields.update({"username": request.username, "password": request.password, "credentialId": ""})
     try:
         client.open(
             urllib.request.Request(
@@ -154,11 +156,11 @@ def login(
             data=urllib.parse.urlencode(
                 {
                     "grant_type": "authorization_code",
-                    "client_id": client_id,
-                    "redirect_uri": redirect_uri,
+                    "client_id": request.client_id,
+                    "redirect_uri": request.redirect_uri,
                     "code": code,
                     "code_verifier": verifier,
-                    **({"resource": resource} if resource else {}),
+                    **({"resource": request.resource} if request.resource else {}),
                 }
             ).encode(),
             headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -178,7 +180,7 @@ def check_url(url: str, token: str) -> None:
     )
     with urllib.request.urlopen(request, timeout=20) as response:
         response.read()
-        if response.status != 200:
+        if response.status != HTTPStatus.OK:
             raise RuntimeError(f"authenticated check returned HTTP {response.status}")
 
 
@@ -202,11 +204,13 @@ def main() -> None:
     token = login(
         client,
         discover(client, args.issuer),
-        username=args.username,
-        password=args.password,
-        client_id=args.client_id,
-        redirect_uri=args.redirect_uri,
-        scope=args.scope,
+        LoginRequest(
+            username=args.username,
+            password=args.password,
+            client_id=args.client_id,
+            redirect_uri=args.redirect_uri,
+            scope=args.scope,
+        ),
     )
     check_url(args.check_url, token)
     print("headless authorization-code + PKCE login and authenticated check passed")

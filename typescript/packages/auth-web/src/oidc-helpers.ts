@@ -21,7 +21,7 @@ export function buildAuthorizationUrl(
   >,
   authorizationEndpoint: string,
   pkce: PkceAuthorizationRequest,
-  prompt?: 'login',
+  prompt?: 'login' | 'create',
 ): URL {
   const endpoint = new URL(authorizationEndpoint);
   endpoint.search = new URLSearchParams({

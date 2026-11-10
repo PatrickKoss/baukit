@@ -149,6 +149,17 @@ impl PortConfiguration {
         self.local_callback.unwrap_or(LOCAL_CALLBACK_PORT)
     }
 
+    /// Web ports whose `localhost` origin must be allowed for sign-in and CORS.
+    pub fn web_origin_ports(&self) -> Vec<u16> {
+        let mut ports = vec![self.web.unwrap_or(WEB_PORT)];
+        for port in self.web_preview.iter().chain(&self.web_extra) {
+            if !ports.contains(port) {
+                ports.push(*port);
+            }
+        }
+        ports
+    }
+
     pub fn new(offset: u32) -> Result<Self> {
         let shifted = |name, base: u32| {
             base.checked_add(offset)

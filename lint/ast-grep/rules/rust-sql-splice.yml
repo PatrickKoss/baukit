@@ -1,0 +1,33 @@
+id: rust-sql-splice
+language: rust
+severity: error
+message: SQL text edited as a string (replacen, split_once, rsplit_once, find on " WHERE "). Build the query with a query builder or separate constant fragments and bind values.
+note: Splicing into SQL text by searching for a keyword breaks on subqueries and string literals, and it hides which parts of the query come from runtime values.
+ignores:
+  - "**/tests/**"
+  - "**/benches/**"
+  - "**/baukit-test/**"
+  - "**/*-test-support/**"
+  - "**/*_test.rs"
+  - "**/tests.rs"
+rule:
+  not:
+    inside:
+      stopBy: end
+      kind: mod_item
+      follows:
+        kind: attribute_item
+        regex: 'cfg\(test\)'
+  kind: call_expression
+  all:
+    - has:
+        field: arguments
+        kind: arguments
+        regex: '(?i)^\(\s*r?#*"(\s+where\s*|\s*where\s+)"'
+    - has:
+        field: function
+        kind: field_expression
+        has:
+          field: field
+          kind: field_identifier
+          regex: '^(replacen|replace|split_once|rsplit_once|find|rfind)$'

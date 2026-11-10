@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 SOURCE_SCRIPT = Path(__file__).with_name("check-markdown-links.py")
+RUNNER_NAME = "process_runner.py"
 
 
 class MarkdownLinkCheckTest(unittest.TestCase):
@@ -18,6 +19,7 @@ class MarkdownLinkCheckTest(unittest.TestCase):
         scripts.mkdir()
         self.script = scripts / SOURCE_SCRIPT.name
         shutil.copyfile(SOURCE_SCRIPT, self.script)
+        shutil.copyfile(SOURCE_SCRIPT.with_name(RUNNER_NAME), scripts / RUNNER_NAME)
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
         subprocess.run(
             ["git", "-C", str(self.root), "config", "user.email", "links@example.invalid"],

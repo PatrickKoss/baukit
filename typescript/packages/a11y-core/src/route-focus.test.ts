@@ -22,10 +22,6 @@ function runtime(): RouteFocusRuntime {
     cancelAnimationFrame: (handle) => {
       window.clearTimeout(handle);
     },
-    setTimeout: (callback, delayMs) => window.setTimeout(callback, delayMs),
-    clearTimeout: (handle) => {
-      window.clearTimeout(handle);
-    },
     now: () => Date.now(),
   };
 }
@@ -119,6 +115,19 @@ describe('createRouteFocusController', () => {
     expect(callsAtTimeout).toBeGreaterThan(0);
     expect(getTarget).toHaveBeenCalledTimes(callsAtTimeout);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('still focuses the target when the first frame arrives after the timeout', () => {
+    const instance = controller();
+    const trigger = focusable('button');
+    trigger.focus();
+    const heading = focusable('h1');
+
+    instance.enterRoute(() => heading);
+    vi.setSystemTime(RETRY_TIMEOUT_MS * 2);
+    vi.advanceTimersByTime(FRAME_MS);
+
+    expect(document.activeElement).toBe(heading);
   });
 
   it('does not steal focus when the user moves to another reachable control', () => {

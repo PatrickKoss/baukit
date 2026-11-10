@@ -1,3 +1,8 @@
+import {
+  authorizationPrompt,
+  decoratedAuthorizationState,
+  type LoginOptions,
+} from './login-options.js';
 import { OidcError } from './oidc-errors.js';
 import {
   base64UrlEncode,
@@ -103,9 +108,9 @@ export class OidcClient {
   }
 
   /** Stores the PKCE transaction in sessionStorage and navigates to the provider. */
-  public async login(): Promise<void> {
+  public async login(options: LoginOptions = {}): Promise<void> {
     const metadata = await this.discover();
-    const state = randomUrlSafe(this.environment.crypto, 32);
+    const state = this.authorizationState(options);
     const verifier = randomUrlSafe(this.environment.crypto, 64);
     const challenge = base64UrlEncode(
       new Uint8Array(
@@ -120,20 +125,31 @@ export class OidcClient {
       this.config,
       metadata.authorizationEndpoint,
       { state, challenge },
-      this.environment.localStorage.getItem(this.forceLoginStorageKey) === null
-        ? undefined
-        : 'login',
+      authorizationPrompt(
+        options.entry,
+        this.environment.localStorage.getItem(this.forceLoginStorageKey) !== null,
+      ),
     );
     this.environment.navigate(authorizationUrl.toString());
   }
 
+  private authorizationState(options: LoginOptions): string {
+    if (options.stateDecoration === undefined) {
+      return randomUrlSafe(this.environment.crypto, 32);
+    }
+    return decoratedAuthorizationState(
+      options.stateDecoration,
+      this.environment.crypto.getRandomValues(new Uint8Array(32)),
+    );
+  }
+
   /**
    * Strips the callback parameters from the URL and checks state and issuer.
-   * Returns `undefined` when the current URL is not a callback.
+   * Returns `undefined` when the current URL is not a callback on the configured redirect URI.
    */
   public completeCallback(): AuthorizationCallback | undefined {
     const callback = new URL(this.environment.currentUrl());
-    if (!hasCallbackParameters(callback)) {
+    if (!isRedirectTarget(callback, this.config.redirectUri) || !hasCallbackParameters(callback)) {
       return undefined;
     }
     const code = callback.searchParams.get('code');
@@ -200,6 +216,11 @@ function normalizeConfig(config: OidcClientConfig): NormalizedConfig {
     scopes: normalizeScopes(config.scopes, config.offlineAccess),
     storageKeyPrefix,
   };
+}
+
+function isRedirectTarget(url: URL, redirectUri: string): boolean {
+  const redirect = new URL(redirectUri);
+  return url.origin === redirect.origin && url.pathname === redirect.pathname;
 }
 
 function hasCallbackParameters(url: URL): boolean {

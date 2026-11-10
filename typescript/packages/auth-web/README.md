@@ -233,3 +233,7 @@ do not persist a force-login marker or force fresh provider authentication. Thei
 SDK adapters do not expose that control through the current sign-in contract.
 Configure a JWT template with `auth_time` for re-onboarding and require fresh
 authentication in the provider integration before admitting an erased subject.
+
+## Login options
+
+`login()` takes an optional `{ stateDecoration, entry }`. `appearanceStateDecoration({ mode, primaryColor, secondaryColor })` returns the state segments the `baukit-accessible` Keycloak theme reads (`ap1.<d|l|s>[.PRIMARY.SECONDARY]`). Segments must match `[A-Za-z0-9]+` and colors must be `#RRGGBB`, otherwise `login()` throws. `entry: 'register'` sends `prompt=create`. No other authorization parameter can be set by the caller. The browser builds the authorization URL, so the `/auth/session` backend routes never see these options. They only redeem the code, and the callback rejects a state that differs from the stored one.

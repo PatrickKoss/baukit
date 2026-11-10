@@ -16,8 +16,8 @@ use tracing::{Instrument, Span, field::Empty};
 use url::{Host, Url};
 
 use crate::{
-    AddressPolicy, DestinationRejection, EgressError, EgressOptions, ErrorBody, Resolver,
-    SystemResolver, resolve_destination,
+    AddressPolicy, DestinationRejection, EgressError, EgressOptions, ErrorBody,
+    MAX_ERROR_HEADER_VALUE_BYTES, Resolver, SystemResolver, resolve_destination,
 };
 
 const TARGET: &str = "baukit_egress";
@@ -358,6 +358,7 @@ impl GuardedClient {
             retry_headers = retry_headers.with_forbidden_rate_limit();
         }
         let class = classify_http_status_with_options(status, response.headers(), retry_headers);
+        let headers = allowlisted_headers(response.headers(), self.options.error_headers());
         let body = match self.options.error_body_limit() {
             Some(limit) => read_error_body(response, limit).await,
             None => None,
@@ -366,6 +367,7 @@ impl GuardedClient {
             status,
             class,
             body,
+            headers: Box::new(headers),
         })
     }
 
@@ -377,6 +379,18 @@ impl GuardedClient {
             .as_ref()
             .ok_or(EgressError::Destination(DestinationRejection::Scheme))
     }
+}
+
+fn allowlisted_headers(source: &HeaderMap, names: &[HeaderName]) -> HeaderMap {
+    let mut kept = HeaderMap::new();
+    for name in names {
+        for value in source.get_all(name) {
+            if value.len() <= MAX_ERROR_HEADER_VALUE_BYTES {
+                kept.append(name.clone(), value.clone());
+            }
+        }
+    }
+    kept
 }
 
 /// Checks a destination URL without resolving it.

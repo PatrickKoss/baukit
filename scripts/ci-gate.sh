@@ -46,9 +46,9 @@ ts-install ts - always -
 ts-check ts ts-install selected -
 package-dependencies ts ts-check selected -
 ts-browser ts package-dependencies selected -
-generated-fixture fixtures ts-check selected -
-platform-fixture fixtures generated-fixture selected -
-affected-fixture fixtures platform-fixture selected -
+fixture-1 fixtures-1 ts-check selected fixtures
+fixture-2 fixtures-2 ts-check selected fixtures
+affected-fixture fixtures-2 fixture-2 selected fixtures
 mcp-fixture mcp ts-check selected -
 native-android android ts-check selected -
 expo-sqlite android native-android selected -
@@ -77,8 +77,15 @@ step_workflow_lint() {
 }
 step_secret_scan() { gitleaks git --no-banner --redact --config .gitleaks.toml .; }
 step_osv() {
-  set -- -L rust/Cargo.lock -L cli/Cargo.lock -L typescript/pnpm-lock.yaml -L pnpm-lock.yaml
-  for lockfile in examples/*/Cargo.lock examples/*/pnpm-lock.yaml; do
+  resolved=$(mktemp -d)
+  trap 'rm -rf "$resolved"' EXIT
+  set -- -L typescript/pnpm-lock.yaml -L pnpm-lock.yaml
+  for manifest in rust/Cargo.toml cli/Cargo.toml examples/*/Cargo.toml; do
+    directory="$resolved/$(dirname "$manifest")"
+    python3 scripts/osv-resolved-lock.py "$manifest" "$directory"
+    set -- "$@" -L "$directory/Cargo.lock"
+  done
+  for lockfile in examples/*/pnpm-lock.yaml; do
     set -- "$@" -L "$lockfile"
   done
   osv-scanner scan source --config osv-scanner.toml "$@"
@@ -162,15 +169,18 @@ step_ts_browser() {
   scripts/with-loopback-network.sh corepack pnpm --dir typescript --filter @baukit/navigation run test:browser
 }
 
-step_generated_fixture() {
+fixture_shard_1="clerk auth backend mobile-pwa-auth web"
+fixture_shard_2="workos combined platform platform-standalone mcp mobile-pwa mobile"
+
+run_fixture_flavors() {
   typescript_built
   # shellcheck disable=SC2086 # the flavor list is space-separated words, one argument each
-  ./scripts/generated-fixture-gate.sh ${BAUKIT_FIXTURE_FLAVORS:-$generated_flavors}
+  ./scripts/generated-fixture-gate.sh $1
 }
-step_platform_fixture() {
-  typescript_built
-  ./scripts/generated-fixture-gate.sh platform-standalone platform
-}
+step_generated_fixture() { run_fixture_flavors "${BAUKIT_FIXTURE_FLAVORS:-$generated_flavors}"; }
+step_platform_fixture() { run_fixture_flavors "platform-standalone platform"; }
+step_fixture_1() { run_fixture_flavors "$fixture_shard_1"; }
+step_fixture_2() { run_fixture_flavors "$fixture_shard_2"; }
 step_affected_fixture() { ./scripts/affected-fixture-gate.sh; }
 step_mcp_fixture() {
   typescript_built
@@ -198,7 +208,7 @@ case "${1:-}" in
     "step_$(printf %s "$2" | tr - _)"
     ;;
   "" | --affected | --plan)
-    exec python3 templates/common/__strict__/scripts/gate.py run --name "Baukit gate" \
+    PYTHONPATH="templates/common/scripts${PYTHONPATH:+:$PYTHONPATH}" exec python3 templates/common/__strict__/scripts/gate.py run --name "Baukit gate" \
       --script "sh scripts/ci-gate.sh" --settings scripts/ci-gate.toml \
       --log-dir "${BAUKIT_GATE_LOG_DIR:-.ci-gate}" --cargo-workspace rust/Cargo.toml "$@"
     ;;

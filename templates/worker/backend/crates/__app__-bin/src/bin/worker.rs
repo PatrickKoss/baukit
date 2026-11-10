@@ -13,7 +13,7 @@ use tokio::net::TcpListener;
 use {{ context.app_crate }}_bin::ProductConfig;
 use {{ context.app_crate }}_bin::config_loader;
 use {{ context.app_crate }}_bin::worker_operations_router;
-{% if context.platform %}use {{ context.app_crate }}_worker::platform::PlatformJobHandler;
+{% if context.platform or context.auth_enabled %}use {{ context.app_crate }}_worker::retention::RetentionJobHandler;
 {% else %}use {{ context.app_crate }}_worker::DemoJobHandler;
 {% endif %}
 const PRODUCT: &str = "{{ context.app_name }}";
@@ -52,7 +52,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         .connect(database.url.expose())
         .await?;
     let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), POOL_METRICS_INTERVAL)?;
-    let runner = build_runner(&config, &pool){% if context.platform %}.await{% endif %}?;
+    let runner = build_runner(&config, &pool){% if context.platform or context.auth_enabled %}.await{% endif %}?;
 
     let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
     let traffic_gate = TrafficGate::new();
@@ -103,18 +103,18 @@ fn init_telemetry(
     Ok(Arc::new(builder.init()?))
 }
 
-{% if context.platform %}async {% endif %}fn build_runner(
+{% if context.platform or context.auth_enabled %}async {% endif %}fn build_runner(
     config: &BaukitConfig<ProductConfig>,
     pool: &PgPool,
 ) -> Result<WorkerRunner, Box<dyn Error>> {
-{% if context.platform %}    let handler = Arc::new(PlatformJobHandler::new(pool.clone())?);
+{% if context.platform or context.auth_enabled %}    let handler = Arc::new(RetentionJobHandler::new(pool.clone())?);
     handler.enqueue_initial(chrono::Utc::now()).await?;
 {% endif %}    let runner = WorkerRunner::new(
         {% if context.auth_enabled %}Arc::new(
             PostgresJobStore::new(pool.clone())
                 .retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE]),
         ),{% else %}Arc::new(PostgresJobStore::new(pool.clone())),{% endif %}
-        {% if context.platform %}handler,{% else %}Arc::new(DemoJobHandler::new()),{% endif %}
+        {% if context.platform or context.auth_enabled %}handler,{% else %}Arc::new(DemoJobHandler::new()),{% endif %}
         WorkerConfig {
             concurrency: config.product.worker.concurrency,
             poll_interval: Duration::from_millis(config.product.worker.poll_interval_milliseconds),

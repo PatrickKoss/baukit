@@ -12,7 +12,19 @@ valid:
     fn f() { let e = format!("create output directory {}", dir.display()); }
   - |
     fn f() { let e = format!("Update failed for {id}"); }
+  - |
+    fn f() { let s = format!("{TABLE}.id = $1"); }
+  - |
+    fn f() { let s = format!("a AND b {FIELD}"); }
 invalid:
+  - |
+    fn f() { let p = format!("lower({col}) = $1"); }
+  - |
+    fn f() { let p = format!("{predicate} AND owner_id = $2"); }
+  - |
+    fn f() { let p = format!(" ORDER BY {column} DESC LIMIT 10"); }
+  - |
+    fn f() { let p = format!("COALESCE({}, 0) > 3", field_name); }
   - |
     fn f() { let q = format!("CREATE TABLE IF NOT EXISTS {name} (id int)"); }
   - |

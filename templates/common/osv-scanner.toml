@@ -5,11 +5,6 @@
 id = "RUSTSEC-2026-0440"
 ignoreUntil = 2027-02-05
 reason = "No fix available: astral-tokio-tar is unmaintained with no patched release; reached through testcontainers in baukit-test, a backend dev-dependency. Mirrors baukit's ignore."
-
-[[IgnoredVulns]]
-id = "RUSTSEC-2026-0459"
-ignoreUntil = 2027-02-07
-reason = "No compatible fix: libsqlite3-sys is lockfile-only through sqlx's optional sqlx-sqlite dependency, which no backend crate enables; sqlx 0.9.0 caps it below 0.38 and the fix is 0.39. Mirrors baukit's ignore."
 {% endif %}{% if context.mobile %}
 [[IgnoredVulns]]
 id = "GHSA-gcqx-w48m-w2h4"

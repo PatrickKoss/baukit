@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.20.0
+
+- Add `PolicyOrigins.vendorScripts` (origins in `script-src`, for example the Clerk frontend API) and `PolicyOrigins.vendorFrames` (extra `frame-src` origins).
+- Add `PolicyOptions.blobFrames`, which adds `blob:` to `frame-src`.
+- Add `assertProductionOrigins`, which throws for `http:` origins, embedded credentials and loopback hosts (`localhost`, `*.localhost`, `127.*`, `0.0.0.0`, `[::1]`, `[::]`, IPv4-mapped IPv6 loopback).
+
+### Minor Changes
+
+- Release the coordinated baukit 0.20.0 train.
+
 ## 0.19.2
 
 ### Patch Changes

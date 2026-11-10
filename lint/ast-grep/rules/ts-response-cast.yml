@@ -1,0 +1,29 @@
+id: ts-response-cast
+language: tsx
+severity: error
+message: Response body cast to a type. Parse it with a guard from @baukit/type-guards and let the caller receive unknown or the guarded type.
+note: "`await response.json() as T` and `responseBody as T` assert a shape the server never promised. A changed or hostile payload fails far from the cast."
+ignores:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/__tests__/**"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/e2e/**"
+  - "**/test-utils/**"
+  - "**/testing/**"
+rule:
+  any:
+    - pattern: $R.json() as $T
+    - pattern: (await $R.json()) as $T
+    - pattern: $B as $T
+  not:
+    pattern: $E as unknown
+constraints:
+  T:
+    not:
+      regex: '^(unknown|const)$'
+  B:
+    regex: '^(responseBody|responseJson|jsonBody)$'

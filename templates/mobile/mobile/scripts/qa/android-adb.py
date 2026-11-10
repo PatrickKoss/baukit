@@ -3,9 +3,12 @@ import math
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_PROBE_TIMEOUT = 10
@@ -14,14 +17,20 @@ ADB_TIMEOUT_SETTING = "BAUKIT_QA_ADB_TIMEOUT_SECONDS"
 DEFAULT_BOOT_TIMEOUT = 360
 DEFAULT_IDLE_TIMEOUT = 180
 DEFAULT_SETTLE_TIMEOUT = 600
+DEFAULT_STOP_TIMEOUT = 120
 DEFAULT_WIFI_TIMEOUT = 90
 HOST_ALIAS = "10.0.2.2"
+LOOPBACK = "127.0.0.1"
+CONSOLE_CONNECT_TIMEOUT = 1.0
+SERIAL_PATTERN = re.compile(r"^emulator-(\d+)$")
 WIFI_STATUS_LINES = 4
 SETTLE_WINDOW_POLLS = 5
 QUIET_CORES = 1.0
 SNAPSHOT_PREFIX = "baukit-clean"
 SNAPSHOT_HASH_LENGTH = 12
 IDLE_STABLE_PROBES = 3
+MIN_EVENT_FIELDS = 3
+HEALTH_BASE_ARGUMENTS = 4
 POLL_INTERVAL = 2
 SYSTEMUI = "com.android.systemui"
 CRITICAL_PACKAGES = {
@@ -29,6 +38,21 @@ CRITICAL_PACKAGES = {
     "com.android.inputmethod.latin",
     "com.google.android.inputmethod.latin",
 }
+
+
+@dataclass(frozen=True)
+class Timing:
+    clock: Callable[[], float] = time.monotonic
+    sleep: Callable[[float], None] = time.sleep
+
+
+SYSTEM_TIMING = Timing()
+
+
+def run_command(command: list[str], **options) -> subprocess.CompletedProcess:
+    return subprocess.run(  # noqa: S603 -- fixed adb program or the caller's argv list, no shell
+        command, check=False, **options
+    )
 
 
 def timeout_setting(name: str, default: int) -> float:
@@ -42,11 +66,10 @@ def wait_for_boot(adb: str, serial: str, probe_timeout: float, boot_timeout: flo
     deadline = time.monotonic() + boot_timeout
     while (remaining := deadline - time.monotonic()) > 0:
         try:
-            result = subprocess.run(
+            result = run_command(
                 [adb, "-s", serial, "shell", "getprop", "sys.boot_completed"],
                 capture_output=True,
                 text=True,
-                check=False,
                 timeout=min(probe_timeout, remaining),
             )
             if result.returncode == 0 and result.stdout.strip() == "1":
@@ -59,11 +82,10 @@ def wait_for_boot(adb: str, serial: str, probe_timeout: float, boot_timeout: flo
 
 def shell(adb: str, serial: str, timeout: float, *command: str) -> str | None:
     try:
-        result = subprocess.run(
+        result = run_command(
             [adb, "-s", serial, "shell", *command],
             capture_output=True,
             text=True,
-            check=False,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -105,7 +127,7 @@ def wait_for_wifi_route(adb: str, serial: str, probe_timeout: float, wifi_timeou
     )
     print(f"qa: last route: {route.strip() or 'none'}", file=sys.stderr)
     print(
-        f"qa: Wi-Fi status: {' | '.join(status.strip().splitlines()[:WIFI_STATUS_LINES]) or 'none'}",
+        f"qa: Wi-Fi status: {wifi_summary(status)}",
         file=sys.stderr,
     )
     return 124
@@ -148,12 +170,19 @@ def settle(
     probe_timeout: float,
     settle_timeout: float,
     *,
-    clock=time.monotonic,
-    sleep=time.sleep,
+    timing: Timing = SYSTEM_TIMING,
 ) -> int:
+    clock = timing.clock
     start = clock()
     deadline = start + settle_timeout
-    shell(adb, serial, max(probe_timeout, deadline - clock()), "cmd", "package", "bg-dexopt-job")
+    shell(
+        adb,
+        serial,
+        max(probe_timeout, deadline - clock()),
+        "cmd",
+        "package",
+        "bg-dexopt-job",
+    )
     window = SETTLE_WINDOW_POLLS * poll_interval()
     before = None
     while clock() < deadline:
@@ -167,7 +196,7 @@ def settle(
             print(f"qa: {serial} settled in {clock() - start:.0f} s")
             return 0
         before = after
-        sleep(min(window, max(0, deadline - clock())))
+        timing.sleep(min(window, max(0, deadline - clock())))
     print(f"qa: {serial} did not settle within {settle_timeout:.0f} s; saving the snapshot anyway")
     return 0
 
@@ -232,11 +261,10 @@ def prune_snapshots(avd_dir: Path, keep: str, loaded: set[str]) -> int:
 
 def attached(adb: str, serial: str, timeout: float) -> int:
     try:
-        result = subprocess.run(
+        result = run_command(
             [adb, "-s", serial, "get-state"],
             capture_output=True,
             text=True,
-            check=False,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -244,23 +272,59 @@ def attached(adb: str, serial: str, timeout: float) -> int:
     return 0 if result.returncode == 0 and result.stdout.strip() == "device" else 1
 
 
-def wait_for_stop(adb: str, serial: str, timeout: float) -> int:
-    deadline = time.monotonic() + timeout
-    while (remaining := deadline - time.monotonic()) > 0:
-        result = subprocess.run(
-            [adb, "devices"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=remaining,
-        )
-        if result.returncode != 0:
-            print("qa: Android shutdown probe failed", file=sys.stderr)
-            return result.returncode
-        if not any(line.split()[:1] == [serial] for line in result.stdout.splitlines()):
+def console_port_open(serial: str) -> bool:
+    """The emulator console port stays bound until the qemu process has exited."""
+    match = SERIAL_PATTERN.match(serial)
+    if match is None:
+        return False
+    try:
+        with socket.create_connection((LOOPBACK, int(match[1])), timeout=CONSOLE_CONNECT_TIMEOUT):
+            return True
+    except OSError:
+        return False
+
+
+def adb_lists(adb: str, serial: str, timeout: float) -> bool | None:
+    try:
+        result = run_command([adb, "devices"], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        print("qa: Android shutdown probe failed", file=sys.stderr)
+        raise ChildProcessError(result.returncode)
+    return any(line.split()[:1] == [serial] for line in result.stdout.splitlines())
+
+
+def wait_for_stop(
+    adb: str,
+    serial: str,
+    probe_timeout: float,
+    stop_timeout: float,
+    *,
+    timing: Timing = SYSTEM_TIMING,
+) -> int:
+    """Waits until adb forgot `serial` and the qemu process released its console port.
+
+    A probe that times out under load is retried until the stop deadline.
+    """
+    started = timing.clock()
+    deadline = started + stop_timeout
+    listed: bool | None = None
+    while (remaining := deadline - timing.clock()) > 0:
+        try:
+            listed = adb_lists(adb, serial, min(probe_timeout, remaining))
+        except ChildProcessError as failure:
+            return int(failure.args[0])
+        if listed is False and not console_port_open(serial):
+            print(f"qa: {serial} stopped after {timing.clock() - started:.1f} s", file=sys.stderr)
             return 0
-        time.sleep(min(POLL_INTERVAL, max(0, deadline - time.monotonic())))
-    print(f"qa: {serial} did not stop before the ADB deadline", file=sys.stderr)
+        timing.sleep(min(POLL_INTERVAL, max(0, deadline - timing.clock())))
+    state = {
+        True: "still listed by adb",
+        False: "still holding its console port",
+        None: "adb probes timed out",
+    }[listed]
+    print(f"qa: {serial} did not stop within {stop_timeout:g} s ({state})", file=sys.stderr)
     return 124
 
 
@@ -279,11 +343,10 @@ def health_result(status: int, serial: str, lines: list[str], report: Path | Non
 
 def anr_details(adb: str, serial: str, timeout: float) -> tuple[list[str], set[str]]:
     try:
-        result = subprocess.run(
+        result = run_command(
             [adb, "-s", serial, "shell", "dumpsys", "activity", "lastanr"],
             capture_output=True,
             text=True,
-            check=False,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -303,11 +366,10 @@ def anr_details(adb: str, serial: str, timeout: float) -> tuple[list[str], set[s
 
 def check_health(adb: str, serial: str, timeout: float, report: Path | None = None) -> int:
     try:
-        result = subprocess.run(
+        result = run_command(
             [adb, "-s", serial, "logcat", "-d", "-b", "events", "-s", "am_anr", "am_crash"],
             capture_output=True,
             text=True,
-            check=False,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -320,7 +382,7 @@ def check_health(adb: str, serial: str, timeout: float, report: Path | None = No
     anr_packages = set()
     for line in result.stdout.splitlines():
         fields = line.partition("[")[2].split(",")
-        if len(fields) >= 3 and fields[2].strip() in CRITICAL_PACKAGES:
+        if len(fields) >= MIN_EVENT_FIELDS and fields[2].strip() in CRITICAL_PACKAGES:
             package = fields[2].strip()
             evidence.extend((f"qa: Android system process is unhealthy: {package}", line))
             if "am_anr" in line:
@@ -344,8 +406,12 @@ def timed_mode(name: str, setting: str, default: float, action):
     return name, run
 
 
+def wifi_summary(status: str) -> str:
+    return " | ".join(status.strip().splitlines()[:WIFI_STATUS_LINES]) or "none"
+
+
 def check_health_mode(probe_timeout: float) -> int:
-    report = Path(sys.argv[4]) if len(sys.argv) > 4 else None
+    report = Path(sys.argv[4]) if len(sys.argv) > HEALTH_BASE_ARGUMENTS else None
     return check_health(sys.argv[2], sys.argv[3], probe_timeout, report)
 
 
@@ -381,6 +447,9 @@ MODES = dict(
         ),
         ("--attached", attached_mode),
         timed_mode(
+            "--wait-for-stop", "BAUKIT_QA_STOP_TIMEOUT_SECONDS", DEFAULT_STOP_TIMEOUT, wait_for_stop
+        ),
+        timed_mode(
             "--wait-for-boot", "BAUKIT_QA_BOOT_TIMEOUT_SECONDS", DEFAULT_BOOT_TIMEOUT, wait_for_boot
         ),
     ]
@@ -389,10 +458,8 @@ MODES = dict(
 
 def run_adb_command(probe_timeout: float) -> int:
     try:
-        if sys.argv[1] == "--wait-for-stop":
-            return wait_for_stop(sys.argv[2], sys.argv[3], probe_timeout)
         command_timeout = timeout_setting(ADB_TIMEOUT_SETTING, DEFAULT_COMMAND_TIMEOUT)
-        return subprocess.run(sys.argv[1:], timeout=command_timeout, check=False).returncode
+        return run_command(sys.argv[1:], timeout=command_timeout).returncode
     except subprocess.TimeoutExpired:
         print(f"qa: ADB command timed out: {' '.join(sys.argv[1:])}", file=sys.stderr)
         return 124

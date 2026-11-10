@@ -105,7 +105,7 @@ pub use client::{
 };
 pub use endpoint::{AllowedEndpoint, AllowedEndpointError};
 pub use error::{DestinationRejection, EgressError, ErrorBody};
-pub use options::{EgressOptions, EgressOptionsError};
+pub use options::{EgressOptions, EgressOptionsError, MAX_ERROR_HEADER_VALUE_BYTES};
 pub use policy::{
     AddressPolicy, PrivateNetwork, PrivateNetworkError, PrivateNetworks, is_public_address,
 };

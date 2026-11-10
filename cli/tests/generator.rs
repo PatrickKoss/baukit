@@ -970,6 +970,41 @@ fn mcp_flag_generates_the_rust_server_and_records_the_capability() -> anyhow::Re
 }
 
 #[test]
+fn containerized_backend_reaches_keycloak_without_changing_the_issuer() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let output = Command::new(env!("CARGO_BIN_EXE_baukit"))
+        .args([
+            "new",
+            "kc-host",
+            "--backend",
+            "--web",
+            "--mcp",
+            "--auth",
+            "oidc",
+            "--skip-lockfiles",
+            "--dir",
+        ])
+        .arg(parent.path())
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let root = parent.path().join("kc-host");
+    let compose = fs::read_to_string(root.join("compose.yaml"))?;
+    assert!(compose.contains("KC_HOSTNAME: http://localhost:"));
+    assert!(compose.contains("KC_HOSTNAME_BACKCHANNEL_DYNAMIC: \"true\"\n"));
+    assert!(compose.contains(
+        "KC_HOST__AUTH__BROWSER_SESSION__INTERNAL_ISSUER:-http://keycloak:8080/realms/kc-host}"
+    ));
+    assert!(!compose.contains("BROWSER_SESSION__ENABLED"));
+    Ok(())
+}
+
+#[test]
 fn generated_migration_guard_ports_failure_cases() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut strict = options(parent.path(), "strict-migrations");
@@ -3659,6 +3694,10 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
             root.join("tools").join(script),
         )?;
     }
+    fs::copy(
+        root.join("scripts/process_runner.py"),
+        root.join("tools/process_runner.py"),
+    )?;
     fs::create_dir(root.join("database"))?;
     fs::rename(
         root.join("backend/migrations"),
@@ -4057,7 +4096,7 @@ fn doctor_requires_redis_only_for_redis_backed_features() -> anyhow::Result<()> 
 }
 
 #[test]
-fn generated_preview_binds_the_ipv4_readiness_address() -> anyhow::Result<()> {
+fn generated_preview_binds_the_declared_local_origin() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let root = generate_new(&frontend_options(
         parent.path(),
@@ -4066,8 +4105,8 @@ fn generated_preview_binds_the_ipv4_readiness_address() -> anyhow::Result<()> {
         true,
     ))?;
     let config = fs::read_to_string(root.join("web/e2e/playwright.config.ts"))?;
-    assert!(config.contains("http://127.0.0.1:"));
-    assert!(config.contains("vite preview --host 127.0.0.1 --port"));
+    assert!(config.contains("http://localhost:"));
+    assert!(config.contains("vite preview --host localhost --port"));
     Ok(())
 }
 
@@ -6093,7 +6132,7 @@ fn platform_flavors_keep_domain_free_of_transport_and_wire_the_receiver() -> any
         assert_eq!(purge_binary.exists(), !worker);
         let docs = fs::read_to_string(root.join("docs/platform.md"))?;
         assert!(docs.contains("never lower it below 30 days"));
-        assert_eq!(docs.contains("PlatformJobHandler"), worker);
+        assert_eq!(docs.contains("RetentionJobHandler"), worker);
         let api =
             fs::read_to_string(root.join(format!("backend/crates/{name}-bin/src/bin/api.rs")))?;
         assert!(api.contains(".merge(platform.router)"));

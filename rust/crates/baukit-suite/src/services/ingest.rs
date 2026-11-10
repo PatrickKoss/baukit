@@ -207,7 +207,7 @@ impl SuiteIngestService {
             ValidatedInbound::Activity(payload) => payload,
             ValidatedInbound::ConnectionTest => {
                 return self
-                    .acknowledge_received(tx, id, now, "no_rule", IngestResult::no_rule())
+                    .acknowledge_received(tx, &link, now, "no_rule", IngestResult::no_rule())
                     .await;
             }
         };
@@ -220,7 +220,7 @@ impl SuiteIngestService {
         {
             let result = IngestResult::duplicate(stored.ledger_entry_id);
             return self
-                .acknowledge_received(tx, id, now, "duplicate", result)
+                .acknowledge_received(tx, &link, now, "duplicate", result)
                 .await;
         }
         let mut inbound = SuiteInboundEvent {
@@ -282,21 +282,25 @@ impl SuiteIngestService {
         if let Some(applier) = &self.applier {
             applier.lock_owner(&mut tx, owner).await?;
         }
-        let link = self.context.store.link_for_update(&mut tx, id).await?;
+        let link = self
+            .context
+            .store
+            .link_for_update(&mut tx, owner, id)
+            .await?;
         Ok((tx, link))
     }
     /// Records receipt without applying the event and commits.
     async fn acknowledge_received(
         &self,
         mut tx: SuiteTransaction,
-        id: Uuid,
+        link: &SuiteLink,
         now: DateTime<Utc>,
         metric_outcome: &'static str,
         result: IngestResult,
     ) -> Result<IngestResult, SuiteServiceError> {
         self.context
             .store
-            .record_received_in_transaction(&mut tx, id, now)
+            .record_received_in_transaction(&mut tx, link.user_id, link.id, now)
             .await?;
         self.context.store.commit_transaction(tx).await?;
         ingest_metric(&self.context.metric_prefix, metric_outcome);
@@ -344,20 +348,25 @@ impl SuiteIngestService {
         {
             return Err(SuiteServiceError::PayloadInvalid);
         }
-        match self.authenticate(id, &h, &body, now).await {
-            Ok(_) => {}
+        let authenticated = match self.authenticate(id, &h, &body, now).await {
+            Ok(link) => link,
             Err(SuiteServiceError::LinkRevoked) => return Ok(()),
             Err(e) => return Err(e),
-        }
+        };
+        let owner = authenticated.user_id;
         let mut tx = self.context.store.begin_transaction().await?;
-        let link = self.context.store.link_for_update(&mut tx, id).await?;
+        let link = self
+            .context
+            .store
+            .link_for_update(&mut tx, owner, id)
+            .await?;
         match self.verify(&link, &h, &body, now) {
             Ok(()) | Err(SuiteServiceError::LinkRevoked) => {}
             Err(e) => return Err(e),
         }
         self.context
             .store
-            .revoke_in_transaction(&mut tx, id, now)
+            .revoke_in_transaction(&mut tx, owner, id, now)
             .await?;
         self.context.store.commit_transaction(tx).await?;
         Ok(())

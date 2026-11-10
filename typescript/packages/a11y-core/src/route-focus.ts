@@ -9,8 +9,6 @@ export interface RouteFocusRuntime {
   document: Document;
   requestAnimationFrame(callback: FrameRequestCallback): number;
   cancelAnimationFrame(handle: number): void;
-  setTimeout(callback: () => void, delayMs: number): number;
-  clearTimeout(handle: number): void;
   now(): number;
 }
 
@@ -29,10 +27,6 @@ function browserRuntime(): RouteFocusRuntime {
     requestAnimationFrame: (callback) => globalThis.requestAnimationFrame(callback),
     cancelAnimationFrame: (handle) => {
       globalThis.cancelAnimationFrame(handle);
-    },
-    setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
-    clearTimeout: (handle) => {
-      globalThis.clearTimeout(handle);
     },
     now: () => Date.now(),
   };
@@ -91,6 +85,7 @@ function attemptFocus(
   return focused === target || focusMovedElsewhere(document, focused, allowed) ? 'done' : 'retry';
 }
 
+/** Checks the deadline after each attempt, so a renderer stall past the timeout still gets one. */
 function retryFocus(
   scope: FocusScope,
   getTarget: () => RouteFocusTarget | null,
@@ -100,35 +95,21 @@ function retryFocus(
   const { runtime, timeoutMs } = scope;
   const startedAt = runtime.now();
   let frame: number | null = null;
-  let timer: number | null = null;
-  let stopped = false;
 
   const stop = (): void => {
-    if (stopped) return;
-    stopped = true;
     if (frame !== null) runtime.cancelAnimationFrame(frame);
-    if (timer !== null) runtime.clearTimeout(timer);
     frame = null;
-    timer = null;
   };
 
   const attempt = (): void => {
     frame = null;
-    if (stopped) return;
-    if (runtime.now() - startedAt >= timeoutMs) {
-      stop();
-      return;
-    }
     const target = getTarget();
     if (target !== null) observedTargets?.add(target);
-    if (attemptFocus(runtime.document, target, allowedActiveTargets) === 'done') {
-      stop();
-      return;
-    }
+    if (attemptFocus(runtime.document, target, allowedActiveTargets) === 'done') return;
+    if (runtime.now() - startedAt >= timeoutMs) return;
     frame = runtime.requestAnimationFrame(attempt);
   };
 
-  timer = runtime.setTimeout(stop, timeoutMs);
   frame = runtime.requestAnimationFrame(attempt);
   return stop;
 }

@@ -19,7 +19,15 @@ fi
 
 flavors=(backend web mobile mobile-pwa mobile-pwa-auth combined mcp auth clerk workos platform-standalone platform)
 if (($#)); then flavors=("$@"); fi
+report_flavor() {
+    if [[ -n "${previous:-}" ]]; then echo "Fixture flavor $previous took $((SECONDS - flavor_started)) s"; fi
+}
+previous=""
+flavor_started=$SECONDS
 for flavor in "${flavors[@]}"; do
+    report_flavor
+    previous=$flavor
+    flavor_started=$SECONDS
     backend=false mobile=false web=false mcp=false
     name=fixture
     case "$flavor" in
@@ -95,3 +103,4 @@ for flavor in "${flavors[@]}"; do
         cargo test --manifest-path "$fixture/backend/Cargo.toml" -p "$name-mcp" --test tool_drift
     fi
 done
+report_flavor

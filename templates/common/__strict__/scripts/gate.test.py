@@ -230,7 +230,7 @@ class WorkerTests(unittest.TestCase):
 class BudgetTests(unittest.TestCase):
     def test_within_budget(self):
         report = gate.budget_report(
-            {"a": 5, "b": 9}, {"x": ["a", "b"]}, {"x": 14}, 14, budget_minutes=30, mode="full"
+            {"a": 5, "b": 9}, {"x": ["a", "b"]}, {"x": 14}, 14, gate.BudgetLimit(30, "full")
         )
         self.assertEqual(report[1].split(), ["b", "9", "s"])
         self.assertIn("within the 30 minute full budget", report[-1])
@@ -239,7 +239,7 @@ class BudgetTests(unittest.TestCase):
         timings = {"rust-tests": 900, "rust-clippy": 120, "web-build": 60}
         lanes = {"backend": ["rust-clippy", "rust-tests"], "web": ["web-build"]}
         report = gate.budget_report(
-            timings, lanes, {"backend": 1020, "web": 60}, 1020, budget_minutes=15, mode="affected"
+            timings, lanes, {"backend": 1020, "web": 60}, 1020, gate.BudgetLimit(15, "affected")
         )
         self.assertIn(
             "gate: warning: 1020 s is over the 15 minute affected budget by 120 s", report
@@ -307,7 +307,9 @@ class RunnerTests(unittest.TestCase):
             script = root / "steps.sh"
             script.write_text(
                 textwrap.dedent(f"""\
-                if [ "$1" = --list-steps ]; then printf '%s\\n' {" ".join(repr(line) for line in steps)}; exit 0; fi
+                if [ "$1" = --list-steps ]; then
+                  printf '%s\\n' {" ".join(repr(line) for line in steps)}; exit 0
+                fi
                 echo "ran $2" >> "{root}/ran"
                 case " {" ".join(failing)} " in *" $2 "*) exit 3 ;; esac
             """)
@@ -373,7 +375,8 @@ class RunnerTests(unittest.TestCase):
 
     def test_running_steps_share_one_budget(self):
         body = textwrap.dedent("""\
-            echo "env $2 $BAUKIT_GATE_WORKERS $BAUKIT_QA_GRADLE_WORKERS $BAUKIT_QA_NATIVE_JOBS" >> "$(dirname "$0")/ran"
+            echo "env $2 $BAUKIT_GATE_WORKERS $BAUKIT_QA_GRADLE_WORKERS" \\
+              "$BAUKIT_QA_NATIVE_JOBS" >> "$(dirname "$0")/ran"
             sleep 0.3
         """)
         result, ran, _, _ = self.run_gate(
@@ -397,7 +400,8 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("keeps 2 for the emulators; light: docs, fast", result.stdout)
         self.assertRegex(
             result.stdout,
-            r"gate: \[web\] b started with 2 cores, at \+\d+ s after waiting \d+ s, \d+ of \d+ cores free",
+            r"gate: \[web\] b started with 2 cores, at \+\d+ s after waiting \d+ s, "
+            r"\d+ of \d+ cores free",
         )
 
     def test_unknown_light_names_fail(self):
@@ -413,6 +417,18 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(ran, [])
         self.assertIn("gate:   fast/a (full gate)", result.stdout)
+
+
+class SummaryTests(unittest.TestCase):
+    def test_unrun_steps_are_listed_as_not_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            step = gate.Step("a", "fast", (), "always", frozenset({"a", "fast"}))
+            context = gate.RunContext(["missing-gate-binary"], Path(directory), {})
+            runner = gate.Runner([gate.PlannedStep(step, "full gate")], context)
+            runner.status.clear()
+            runner.run_lane = lambda lane, steps: None
+            failures = runner.run()
+        self.assertEqual(failures, ["fast (a not run)"])
 
 
 class SpecPurposeTests(unittest.TestCase):

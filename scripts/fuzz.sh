@@ -30,11 +30,14 @@ fi
 
 cargo +nightly fuzz build --target "$host"
 
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
+
 failed=''
 for name in $targets; do
-  mkdir -p "corpus/$name" "artifacts/$name"
+  mkdir -p "corpus/$name" "artifacts/$name" "$scratch/$name"
   echo "fuzz.sh: $name for ${seconds}s"
-  if ! cargo +nightly fuzz run --target "$host" "$name" "corpus/$name" -- \
+  if ! cargo +nightly fuzz run --target "$host" "$name" "$scratch/$name" "corpus/$name" -- \
     -max_total_time="$seconds" \
     -artifact_prefix="artifacts/$name/" \
     -print_final_stats=1; then

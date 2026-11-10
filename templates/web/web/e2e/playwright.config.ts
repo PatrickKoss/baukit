@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 
 const port = Number(process.env['E2E_WEB_PORT'] ?? '{{ context.web_preview_port }}');
-const baseURL = `http://127.0.0.1:${String(port)}`;
+const baseURL = `http://localhost:${String(port)}`;
 const webRoot = fileURLToPath(new URL('..', import.meta.url));
 const allPurposes = process.env['E2E_ALL_PURPOSES'] === '1';
 const logicOnElsewhere = allPurposes ? [] : [/@logic\b/];
@@ -50,7 +50,7 @@ export default defineConfig({
     { name: 'mobile-safari', ...webkitProject, use: { ...devices['iPhone 14'] } },
   ],
   webServer: {
-    command: `pnpm exec vite preview --host 127.0.0.1 --port ${String(port)} --strictPort`,
+    command: `pnpm exec vite preview --host localhost --port ${String(port)} --strictPort`,
     cwd: webRoot,
     url: baseURL,
     reuseExistingServer: process.env['CI'] === undefined,

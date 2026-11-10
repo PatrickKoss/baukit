@@ -6,13 +6,12 @@ ts-max-lines = 500
 
 # Files over the limit when the rule landed. Entries only shrink: split a file and drop its entry.
 [file_size.allowlist]
-"cli/src/doctor_layout.rs" = 1106
 "examples/expo-sqlite-conformance/src/conformance.ts" = 1174
 "rust/crates/baukit-auth/src/api_token.rs" = 1823
 "rust/crates/baukit-auth/src/verifier.rs" = 1404
 "rust/crates/baukit-jobs/src/runner.rs" = 1057
 "rust/crates/baukit-suite/src/adapters/http.rs" = 1039
-"rust/crates/baukit-suite/src/adapters/postgres/mod.rs" = 1056
+"rust/crates/baukit-suite/src/adapters/postgres/mod.rs" = 1052
 "rust/crates/baukit-test/src/data_subject_conformance.rs" = 1057
 "rust/crates/baukit-test/src/jwt.rs" = 1031
 "typescript/packages/auth-native/src/index.ts" = 542
@@ -29,7 +28,7 @@ ast-grep-ignore = 0
 ts-expect-error = 7
 ts-ignore = 0
 prettier-ignore = 0
-noqa = 2
+noqa = 5
 type-ignore = 2
 nosec = 0
 shellcheck-disable = 4

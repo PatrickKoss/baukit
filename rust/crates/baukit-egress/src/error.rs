@@ -1,6 +1,6 @@
 use std::fmt;
 
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use baukit_http::{RetryClass, classify_transport_error};
 
 /// A bounded non-`2xx` response body, read only when explicitly enabled.
@@ -153,6 +153,11 @@ pub enum EgressError {
         /// The captured body, if [`EgressOptions::with_error_body_limit`](crate::EgressOptions::with_error_body_limit)
         /// is enabled. Truncation at that limit is not an error.
         body: Option<ErrorBody>,
+        /// The response headers named in
+        /// [`EgressOptions::with_error_headers`](crate::EgressOptions::with_error_headers),
+        /// empty by default. Values over
+        /// [`MAX_ERROR_HEADER_VALUE_BYTES`](crate::MAX_ERROR_HEADER_VALUE_BYTES) are dropped.
+        headers: Box<HeaderMap>,
     },
     /// The response body was larger than the configured limit.
     #[error("egress response body exceeded {limit} bytes")]

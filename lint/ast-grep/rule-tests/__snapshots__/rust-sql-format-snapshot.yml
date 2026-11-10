@@ -1,5 +1,37 @@
 id: rust-sql-format
 snapshots:
+  "fn f() { let p = format!(\" ORDER BY {column} DESC LIMIT 10\"); }\n":
+    labels:
+    - source: format!(" ORDER BY {column} DESC LIMIT 10")
+      style: primary
+      start: 17
+      end: 60
+  "fn f() { let p = format!(\"COALESCE({}, 0) > 3\", field_name); }\n":
+    labels:
+    - source: format!("COALESCE({}, 0) > 3", field_name)
+      style: primary
+      start: 17
+      end: 59
+    - source: field_name
+      style: secondary
+      start: 48
+      end: 58
+    - source: ("COALESCE({}, 0) > 3", field_name)
+      style: secondary
+      start: 24
+      end: 59
+  "fn f() { let p = format!(\"lower({col}) = $1\"); }\n":
+    labels:
+    - source: format!("lower({col}) = $1")
+      style: primary
+      start: 17
+      end: 45
+  "fn f() { let p = format!(\"{predicate} AND owner_id = $2\"); }\n":
+    labels:
+    - source: format!("{predicate} AND owner_id = $2")
+      style: primary
+      start: 17
+      end: 57
   "fn f() { let q = format!(\"CREATE TABLE IF NOT EXISTS {name} (id int)\"); }\n":
     labels:
     - source: format!("CREATE TABLE IF NOT EXISTS {name} (id int)")

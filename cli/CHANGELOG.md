@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-10
+
+- The `noqa` budget in baukit's own `baukit-check.toml` is 5: two `N802` overrides in `deploy/platform/local-git-http.py` and three `S603` sites in the `process_runner.py` helpers and `android-adb.py`. Generated products get `noqa = 1` (`2` with a mobile app).
+
+- `baukit doctor` expects `scripts/osv-resolved-lock.py` and its test in every product. They come with the template.
+
+- `baukit check` notes and skips a `Cargo.toml` that does not parse, such as a test fixture, instead of aborting the whole run. `--update` help now lists the `template-files` hash rewrite.
+
+- `baukit check patterns` has three new rules and a wider one. `rust-sql-format` also flags `format!` strings that hold SQL fragments (predicates, `ORDER BY`, text with `$1`) and not just statements that start with a keyword. `rust-sql-splice` flags `replacen`, `split_once`, `rsplit_once` and `find` on a `" WHERE "` text. `ts-lying-type-predicate` flags `(v): v is T => isRecord(v)`. `ts-response-cast` flags `response.json() as T` and `responseBody as T`.
+
+- Doctor accepts an `expo start --web` script on any declared browser port (`ports.web`, `ports.web_preview`, `ports.metro` or `ports.web_extra`). A script with no `--port` flag still needs `ports.web`, and an undeclared port fails with the accepted ports listed.
+- Doctor follows `compilerOptions.paths` from the nearest `tsconfig.json` (comments and trailing commas allowed) when it traces the mobile sign-in screen and product identity constants, so `@/...` imports count as wired. Bare package imports stay unfollowed.
+
 ## [0.19.2] - 2026-11-08
 
 - `baukit check suppressions` rejects bulk suppression: an `eslint-suppressions.json` file, `eslint --suppress-all`, `--suppress-rule`, `--prune-suppressions` or `--suppressions-location` in a `package.json`, clippy `-A`/`--allow`/`--cap-lints` in gate scripts (`*.sh`, `*.yml`, `Makefile`, `justfile`), a lint set to `allow` in a Cargo `[lints]` or `[workspace.lints]` table, and `-A`/`--cap-lints` in `.cargo/config.toml` rustflags.

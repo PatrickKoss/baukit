@@ -140,7 +140,7 @@ impl Default for AuthConfig {
             provider: AuthProvider::{{ "Oidc" if context.auth_oidc else "Clerk" if context.auth_clerk else "Workos" }},
             client_id: String::new(),
             publishable_key: String::new(),
-            authorized_parties: {% if context.auth_clerk %}vec!["http://localhost:{{ context.web_port }}".into()]{% else %}Vec::new(){% endif %},
+            authorized_parties: {% if context.auth_clerk %}vec![{% for port in context.web_origin_ports %}"http://localhost:{{ port }}".into(){{ ", " if not loop.last }}{% endfor %}]{% else %}Vec::new(){% endif %},
             allow_missing_azp: {{ "true" if context.mobile else "false" }},
             jwks_uri: None,
             issuer: {% if context.auth_oidc %}format!("http://localhost:{{ context.keycloak_host_port }}/realms/{PRODUCT}"),{% elif context.auth_workos %}"https://api.workos.com/".into(),{% else %}String::new(),{% endif %}

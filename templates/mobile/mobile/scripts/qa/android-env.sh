@@ -13,6 +13,11 @@ if [[ -z "$avd_home" && -f "$state_dir/android-avd-home" ]]; then
   avd_home="$(<"$state_dir/android-avd-home")"
 fi
 avd_name="${BAUKIT_QA_ANDROID_AVD:-{{ context.app_name }}-qa}"
+qa_emulator_args=()
+qa_reverse_ports=()
+local_hooks="$root/mobile/scripts/qa/local.sh"
+# shellcheck source=/dev/null
+[[ ! -f "$local_hooks" ]] || source "$local_hooks"
 manifest_quality() {
   python3 - "$root/baukit.toml" "$1" "$2" <<'QUALITY'
 import sys, tomllib
@@ -169,6 +174,7 @@ launch_emulator() {
   if [[ "${BAUKIT_QA_HEADLESS:-0}" == 1 ]]; then
     emulator_args+=(-no-window)
   fi
+  emulator_args+=("${qa_emulator_args[@]}")
   (
     exec 9>&-
     cd "$state_dir/renderer"
@@ -245,6 +251,9 @@ for serial in "${serials[@]}"; do
   adb_bounded -s "$serial" shell settings put global transition_animation_scale 0
   adb_bounded -s "$serial" shell settings put global animator_duration_scale 0
   adb_bounded -s "$serial" reverse "tcp:${BAUKIT_QA_API_PORT:-18080}" "tcp:${BAUKIT_QA_API_PORT:-18080}"
+  for port in "${qa_reverse_ports[@]}"; do
+    adb_bounded -s "$serial" reverse "tcp:$port" "tcp:$port"
+  done
 {% if context.auth_enabled %}  adb_bounded -s "$serial" reverse "tcp:${BAUKIT_QA_KEYCLOAK_PORT:-18081}" "tcp:${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
   adb_bounded -s "$serial" shell am force-stop com.android.chrome
   adb_bounded -s "$serial" shell 'echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'

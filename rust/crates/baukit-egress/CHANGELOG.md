@@ -4,6 +4,16 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-10
+
+### Added
+
+- `EgressOptions::with_error_headers` keeps the named response headers on `EgressError::Status` in the new `headers` field, so a registry client can read the `WWW-Authenticate` challenge of a `401` and fetch a Bearer token through the guard. Nothing is kept unless listed, and values over `MAX_ERROR_HEADER_VALUE_BYTES` (4096) are dropped. Invalid names fail with `EgressOptionsError::InvalidErrorHeaderName`.
+
+### Changed
+
+- `EgressError::Status` has a new `headers` field. Code that builds or fully destructures the variant adds it or uses `..`.
+
 ## [0.19.2] - 2026-11-08
 
 ### Added

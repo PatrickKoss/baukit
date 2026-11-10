@@ -153,10 +153,11 @@ impl OidcTokenClient {
     ) -> Result<Arc<Self>, IdpDiscoveryError> {
         let client =
             GuardedClient::new(config.egress_options()?).map_err(IdpDiscoveryError::Client)?;
-        let mut discovery_url = config.issuer.clone();
+        let idp_base = config.idp_base();
+        let mut discovery_url = idp_base.clone();
         discovery_url.set_path(&format!(
             "{}/.well-known/openid-configuration",
-            config.issuer.path().trim_end_matches('/')
+            idp_base.path().trim_end_matches('/')
         ));
         let response = client
             .execute(EgressRequest::get(discovery_url).with_headers(json_accept()))
@@ -170,7 +171,7 @@ impl OidcTokenClient {
         let parse =
             |value: String| Url::parse(&value).map_err(|_| IdpDiscoveryError::InvalidDocument);
         let jwks_uri = parse(document.jwks_uri)?;
-        if jwks_uri.origin() != config.issuer.origin() {
+        if jwks_uri.origin() != idp_base.origin() {
             return Err(IdpDiscoveryError::InvalidDocument);
         }
         let id_tokens = IdTokenVerifier::new(

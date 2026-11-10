@@ -167,6 +167,7 @@ fn template_context(
         redis_host_port: ports.redis,
         web_port: ports.web.unwrap_or(ports::WEB_PORT),
         web_preview_port: ports.web_preview.unwrap_or(ports::WEB_PREVIEW_PORT),
+        web_origin_ports: ports.web_origin_ports(),
         metro_port: ports.metro,
         local_callback_port: ports.local_callback_port(),
         declared_ports: DeclaredPorts {

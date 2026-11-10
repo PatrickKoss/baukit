@@ -25,10 +25,14 @@ impl Rule for Lints {
 
     fn run(&self, context: &CheckContext<'_>) -> Result<Vec<Finding>> {
         let baseline = Baseline::embedded()?;
-        let manifests = walk::files(context.root, |path| walk::file_name(path) == "Cargo.toml")?
-            .into_iter()
-            .map(|path| Ok((read_toml(&path)?, path)))
-            .collect::<Result<Vec<_>>>()?;
+        let mut findings = Vec::new();
+        let mut manifests = Vec::new();
+        for path in walk::files(context.root, |path| walk::file_name(path) == "Cargo.toml")? {
+            match read_toml(&path) {
+                Ok(manifest) => manifests.push((manifest, path)),
+                Err(error) => findings.push(skipped_manifest(context.root, &path, &error)),
+            }
+        }
         let workspace_roots = manifests
             .iter()
             .filter(|(manifest, _)| {
@@ -37,7 +41,6 @@ impl Rule for Lints {
             })
             .filter_map(|(_, path)| path.parent())
             .collect::<Vec<_>>();
-        let mut findings = Vec::new();
         for (manifest, path) in &manifests {
             let is_member = path.parent().is_some_and(|directory| {
                 workspace_roots
@@ -79,6 +82,14 @@ impl Baseline {
 
 fn table<'a>(parent: &'a Table, key: &str) -> Option<&'a Table> {
     parent.get(key).and_then(Value::as_table)
+}
+
+fn skipped_manifest(root: &Path, path: &Path, error: &anyhow::Error) -> Finding {
+    Finding::note(
+        NAME,
+        relative(root, path),
+        format!("skipped, not a valid Cargo manifest: {error:#}"),
+    )
 }
 
 fn read_toml(path: &Path) -> Result<Table> {
@@ -235,7 +246,10 @@ fn member_findings(root: &Path, directory: &Path, workspace: &Table) -> Result<V
         if !matcher.is_match(member) || excluded.is_match(member) {
             continue;
         }
-        let inherits = table(&read_toml(&manifest)?, "lints")
+        let Ok(parsed) = read_toml(&manifest) else {
+            continue;
+        };
+        let inherits = table(&parsed, "lints")
             .and_then(|lints| lints.get("workspace"))
             .and_then(Value::as_bool)
             == Some(true);

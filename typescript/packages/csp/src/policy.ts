@@ -14,6 +14,10 @@ export interface PolicyOrigins {
   readonly suiteHub?: string | undefined;
   readonly vendorConnect?: readonly string[];
   readonly vendorImages?: readonly string[];
+  /** Origins added to `script-src`, for vendor scripts such as the Clerk frontend API. */
+  readonly vendorScripts?: readonly string[];
+  /** Origins added to `frame-src` next to the issuer. */
+  readonly vendorFrames?: readonly string[];
 }
 
 export interface PolicyOptions {
@@ -21,6 +25,8 @@ export interface PolicyOptions {
   readonly origins: PolicyOrigins;
   /** `'sha256-...'` sources for every inline `<script>` the build emits. */
   readonly scriptHashes: readonly string[];
+  /** Adds `blob:` to `frame-src`, for in-app previews that render a blob URL in an iframe. */
+  readonly blobFrames?: boolean;
 }
 
 const SELF = "'self'";
@@ -65,6 +71,8 @@ function originList(origins: PolicyOrigins): (string | undefined)[] {
     origins.suiteHub,
     ...(origins.vendorConnect ?? []),
     ...(origins.vendorImages ?? []),
+    ...(origins.vendorScripts ?? []),
+    ...(origins.vendorFrames ?? []),
   ];
 }
 
@@ -72,12 +80,22 @@ function usesPlainHttp(origins: PolicyOrigins): boolean {
   return originList(origins).some((origin) => origin?.startsWith('http:') === true);
 }
 
+function frameSources(options: PolicyOptions): string[] {
+  const { origins } = options;
+  const list = sources(
+    origins.issuer,
+    ...(origins.vendorFrames ?? []),
+    options.blobFrames === true ? 'blob:' : undefined,
+  );
+  return list.length === 0 ? [NONE] : list;
+}
+
 function directives(options: PolicyOptions): [string, string[]][] {
   const { origins } = options;
   const issuer = origins.issuer;
   return [
     ['default-src', [SELF]],
-    ['script-src', sources(SELF, ...options.scriptHashes)],
+    ['script-src', sources(SELF, ...(origins.vendorScripts ?? []), ...options.scriptHashes)],
     ['style-src', options.styles === 'files' ? [SELF] : [SELF, INLINE]],
     ['img-src', sources(SELF, 'data:', 'blob:', origins.media, ...(origins.vendorImages ?? []))],
     ['media-src', sources(SELF, 'blob:', origins.media)],
@@ -92,7 +110,7 @@ function directives(options: PolicyOptions): [string, string[]][] {
         ...(origins.vendorConnect ?? []),
       ),
     ],
-    ['frame-src', issuer === undefined ? [NONE] : [issuer]],
+    ['frame-src', frameSources(options)],
     ['worker-src', [SELF]],
     ['manifest-src', [SELF]],
     ['object-src', [NONE]],
@@ -159,4 +177,39 @@ export function clerkFrontendApiOrigin(publishableKey: string | undefined): stri
   }
   const host = atob(encoded).replace(/\$$/u, '');
   return originOf(`https://${host}`);
+}
+
+const IPV4_MAPPED_LOOPBACK = /^\[::ffff:7f[0-9a-f]{2}:/u;
+
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/u, '');
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === '[::1]' ||
+    host === '[::]' ||
+    host === '0.0.0.0' ||
+    host.startsWith('127.') ||
+    IPV4_MAPPED_LOOPBACK.test(host)
+  );
+}
+
+/**
+ * Throws when a configured origin is not a plain HTTPS origin on a public host.
+ * A production export calls it so a leaked local `.env` cannot ship `http:` or
+ * loopback origins in the policy.
+ */
+export function assertProductionOrigins(origins: PolicyOrigins): void {
+  for (const origin of originList(origins)) {
+    if (origin === undefined) {
+      continue;
+    }
+    const url = new URL(origin);
+    if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') {
+      throw new Error(`not an HTTPS origin without credentials: ${origin}`);
+    }
+    if (isLoopbackHost(url.hostname)) {
+      throw new Error(`loopback origin in a production policy: ${origin}`);
+    }
+  }
 }

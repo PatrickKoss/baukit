@@ -1,3 +1,4 @@
+import { type LoginOptions } from './login-options.js';
 import {
   browserSessionEnvironment,
   isIssuedSession,
@@ -95,8 +96,9 @@ export class BrowserSessionClient {
     return readAccountHint(this.environment.localStorage.getItem(this.accountStorageKey));
   }
 
-  public login(): Promise<void> {
-    return this.oidc.login();
+  /** `options` carries UI state and the registration entry, see {@link LoginOptions}. */
+  public login(options: LoginOptions = {}): Promise<void> {
+    return this.oidc.login(options);
   }
 
   /** Returns one shared promise so repeated effects cannot redeem a code twice. */
