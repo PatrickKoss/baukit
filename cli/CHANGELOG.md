@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `baukit doctor` expects `scripts/osv-resolved-lock.py` and its test in every product. They come with the template.
+
 - `baukit check` notes and skips a `Cargo.toml` that does not parse, such as a test fixture, instead of aborting the whole run. `--update` help now lists the `template-files` hash rewrite.
 
 - `baukit check patterns` has three new rules and a wider one. `rust-sql-format` also flags `format!` strings that hold SQL fragments (predicates, `ORDER BY`, text with `$1`) and not just statements that start with a keyword. `rust-sql-splice` flags `replacen`, `split_once`, `rsplit_once` and `find` on a `" WHERE "` text. `ts-lying-type-predicate` flags `(v): v is T => isRecord(v)`. `ts-response-cast` flags `response.json() as T` and `responseBody as T`.

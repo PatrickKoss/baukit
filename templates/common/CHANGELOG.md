@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `scripts/osv-resolved-lock.py` writes a `Cargo.lock` with only the packages `cargo tree --all-features --target all` can reach, and `scripts/repo-lint.sh osv` scans that file. Lockfile-only optional dependencies such as `libsqlite3-sys` no longer raise advisories.{% if context.backend %} Delete the RUSTSEC-2026-0459 entry from `osv-scanner.toml`.{% endif %}{% if context.quality_strict %} `quality-gate.sh` runs `scripts/osv-resolved-lock.test.py`.{% endif %}
+
 ## [0.19.2] - 2026-11-08
 
 {% if context.auth_enabled and (context.web or context.pwa) %}- `[auth.browser_session]` takes `ip_rate_per_minute`, `ip_rate_burst`, `session_rate_per_minute` and `session_rate_burst` (env `..__AUTH__BROWSER_SESSION__IP_RATE_PER_MINUTE` and so on). Defaults are the ADR 0006 limits; `config/local.toml` raises them so Playwright suites do not hit HTTP 429 on `/auth/session/exchange`. Copy the four keys from the new `local.toml` and the `rate_limits` wiring from `browser_session.rs`.

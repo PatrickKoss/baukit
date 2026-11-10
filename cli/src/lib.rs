@@ -79,6 +79,8 @@ const EXPECTED_COMMON_FILES: &[&str] = &[
     "limits.json",
     "scripts/lockfiles.sh",
     "scripts/preflight.sh",
+    "scripts/osv-resolved-lock.py",
+    "scripts/osv-resolved-lock.test.py",
 ];
 
 const EXPECTED_STRICT_FILES: &[&str] = &[

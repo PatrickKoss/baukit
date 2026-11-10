@@ -145,6 +145,7 @@ android-e2e mobile android-build selected -
 
 step_scripts_tests() {
   python3 scripts/reconcile-env.test.py
+  python3 scripts/osv-resolved-lock.test.py
   python3 scripts/check-markdown-links.test.py
   python3 scripts/gate.test.py
 }

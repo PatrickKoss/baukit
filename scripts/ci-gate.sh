@@ -77,8 +77,15 @@ step_workflow_lint() {
 }
 step_secret_scan() { gitleaks git --no-banner --redact --config .gitleaks.toml .; }
 step_osv() {
-  set -- -L rust/Cargo.lock -L cli/Cargo.lock -L typescript/pnpm-lock.yaml -L pnpm-lock.yaml
-  for lockfile in examples/*/Cargo.lock examples/*/pnpm-lock.yaml; do
+  resolved=$(mktemp -d)
+  trap 'rm -rf "$resolved"' EXIT
+  set -- -L typescript/pnpm-lock.yaml -L pnpm-lock.yaml
+  for manifest in rust/Cargo.toml cli/Cargo.toml examples/*/Cargo.toml; do
+    directory="$resolved/$(dirname "$manifest")"
+    python3 scripts/osv-resolved-lock.py "$manifest" "$directory"
+    set -- "$@" -L "$directory/Cargo.lock"
+  done
+  for lockfile in examples/*/pnpm-lock.yaml; do
     set -- "$@" -L "$lockfile"
   done
   osv-scanner scan source --config osv-scanner.toml "$@"
