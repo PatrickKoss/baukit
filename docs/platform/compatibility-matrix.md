@@ -82,7 +82,7 @@ Native requests carry no `Origin`, so Clerk omits `azp`. Set `allow_missing_azp`
 
 #### Web headers and CSP (web products)
 
-Delete the local `csp/policy.ts` (and `src/csp/policy.ts` in mobile) and import the builder from `@baukit/csp`; keep only `origins.ts`. `vite preview` and the chart's `web` component send COOP and CORP `same-origin`. COEP stays unset. A product that opens a cross-origin popup and reads `window.opener` needs `same-origin-allow-popups` on its app pages and no COOP on the callback page (ADR 0006 section 7).
+Delete the local `csp/policy.ts` (and `src/csp/policy.ts` in mobile) and import the builder from `@baukit/csp`; keep only `origins.ts`. `vite preview` and the chart's `web` component send COOP and CORP `same-origin`. COEP stays unset. A product that opens a cross-origin popup and reads `window.opener` needs `same-origin-allow-popups` on its app pages and no COOP on the callback page. WebKit severs `window.opener` under any COOP, so the callback page also posts the result and its `state` on a `BroadcastChannel` (ADR 0006 section 7). Web app and API must use the same host name locally: `localhost` and `127.0.0.1` are different sites for cookies and CORS (ADR 0006 section 8).
 
 #### Lint baseline, gate steps and agent docs
 

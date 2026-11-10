@@ -293,6 +293,14 @@ No template wires it. Under `same-origin` the popup inherits the opener's COOP,
 so the hop to the issuer switches browsing context groups and `opener` is gone
 before the callback loads. A product that adds that popup sends
 `same-origin-allow-popups` on its app pages and no COOP on the callback page.
+That is not enough on WebKit. Safari severs `window.opener` after a
+cross-origin navigation under any COOP value, including an absent header on the
+callback page, so `window.opener.postMessage` cannot carry the result there.
+The callback page posts the authorization result, with the `state` it received,
+on a `BroadcastChannel` named per product. The opener listens on the same
+channel, accepts only a message whose `state` matches its pending transaction,
+and closes the channel after the first match. This works on all engines and
+needs no opener relationship.
 COEP stays unset: `require-corp` blocks third-party images and analytics
 unless every subresource opts in.
 
@@ -303,6 +311,13 @@ Every product serves web and API on one registrable domain, for example
 the BFF router checks that each allowed origin shares the registrable domain of
 `BrowserSessionConfig.public_api_origin` (public suffix list) and fails
 otherwise. Local dev on `localhost` with two ports passes.
+
+Same-site is decided on the host string, not on the machine. `localhost` and
+`127.0.0.1` reach the same server but are different sites, so a web app opened
+on `http://127.0.0.1:5173` sending credentialed requests to
+`http://localhost:8080` gets no `SameSite=Strict` cookie and fails the CORS
+origin check. Open the web app and the API with the same host name in local dev
+and list that exact origin in the backend's allowed origins.
 
 ### 9. Mobile web build
 
