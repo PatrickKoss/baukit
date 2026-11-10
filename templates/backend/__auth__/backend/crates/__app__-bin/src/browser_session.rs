@@ -19,6 +19,7 @@ const PRODUCT: &str = "{{ context.app_name }}";
 const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
 const DEFAULT_IDLE_TIMEOUT_DAYS: u64 = 30;
 const DEFAULT_ABSOLUTE_TIMEOUT_DAYS: u64 = 90;
+const LOCAL_WEB_PORTS: &[u16] = &[{{ context.web_origin_ports | join(", ") }}];
 const LOCAL_CREDENTIAL_KEYS: &str = "1:bG9jYWwtYnJvd3Nlci1zZXNzaW9uLWtleS1ub3Qtb2s=";
 
 /// Backend-for-frontend that keeps web refresh tokens server side (ADR 0006).
@@ -51,7 +52,10 @@ impl Default for BrowserSessionSettings {
             enabled: {{ "true" if (context.web or context.pwa) and context.auth_oidc else "false" }},
             client_id: format!("{PRODUCT}-web"),
             client_secret: None,
-            redirect_uris: vec!["http://localhost:{{ context.web_port }}/".to_owned()],
+            redirect_uris: LOCAL_WEB_PORTS
+                .iter()
+                .map(|port| format!("http://localhost:{port}/"))
+                .collect(),
             post_logout_redirect_uri: Some("http://localhost:{{ context.web_port }}/".to_owned()),
             cookie_name: format!("{PRODUCT}-session"),
             public_api_origin: "http://localhost:{{ context.api_host_port }}".to_owned(),

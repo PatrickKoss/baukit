@@ -31,5 +31,5 @@ jwks_uri = "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.
 {% if context.auth_clerk %}required_scopes = ["items:read"]
 {% endif %}{% endif %}{% endif %}{% if context.web or context.pwa %}
 [http]
-cors_allowed_origins = ["http://localhost:{{ context.web_port }}"]
+cors_allowed_origins = [{% for port in context.web_origin_ports %}"http://localhost:{{ port }}"{{ ", " if not loop.last }}{% endfor %}]
 {% endif %}

@@ -347,7 +347,7 @@ fn exact_web_defaults_reject_other_accepted_browser_ports() -> anyhow::Result<()
 }
 
 #[test]
-fn web_extra_parses_without_changing_rendered_files() -> anyhow::Result<()> {
+fn web_extra_parses_and_every_declared_web_port_is_an_allowed_origin() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let baseline = parent.path().join("baseline");
     let root = parent.path().join("extra");
@@ -363,12 +363,20 @@ fn web_extra_parses_without_changing_rendered_files() -> anyhow::Result<()> {
         round_trip.ports.get("web_extra"),
         Some(PortDeclaration::HostList(hosts)) if hosts == &[8082, 19006]
     ));
-    for relative in RENDERED_FILES {
-        assert_eq!(
-            fs::read(baseline.join(relative))?,
-            fs::read(root.join(relative))?,
-            "{relative}"
-        );
+    let origin_files = [
+        "keycloak/realm.json",
+        "keycloak/reconcile.json",
+        "config/local.toml",
+        "backend/crates/dev-ports-product-bin/src/browser_session.rs",
+    ];
+    for relative in origin_files {
+        let baseline_source = fs::read_to_string(baseline.join(relative))?;
+        let source = fs::read_to_string(root.join(relative))?;
+        assert!(baseline_source.contains("5673"), "{relative}");
+        for port in ["8082", "19006"] {
+            assert!(!baseline_source.contains(port), "{relative}: {port}");
+            assert!(source.contains(port), "{relative}: {port}");
+        }
     }
     doctor(&root)?;
     Ok(())

@@ -94,6 +94,7 @@ pub(crate) struct TemplateContext {
     pub(crate) redis_host_port: u16,
     pub(crate) web_port: u16,
     pub(crate) web_preview_port: u16,
+    pub(crate) web_origin_ports: Vec<u16>,
     pub(crate) metro_port: Option<u16>,
     pub(crate) local_callback_port: u16,
     #[serde(flatten)]
@@ -470,6 +471,7 @@ mod generator_tests {
             redis_host_port: 6379,
             web_port: 5173,
             web_preview_port: 4173,
+            web_origin_ports: vec![5173],
             metro_port: None,
             local_callback_port: crate::ports::LOCAL_CALLBACK_PORT,
             declared_ports: DeclaredPorts {
