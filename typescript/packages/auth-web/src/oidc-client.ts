@@ -145,11 +145,11 @@ export class OidcClient {
 
   /**
    * Strips the callback parameters from the URL and checks state and issuer.
-   * Returns `undefined` when the current URL is not a callback.
+   * Returns `undefined` when the current URL is not a callback on the configured redirect URI.
    */
   public completeCallback(): AuthorizationCallback | undefined {
     const callback = new URL(this.environment.currentUrl());
-    if (!hasCallbackParameters(callback)) {
+    if (!isRedirectTarget(callback, this.config.redirectUri) || !hasCallbackParameters(callback)) {
       return undefined;
     }
     const code = callback.searchParams.get('code');
@@ -216,6 +216,11 @@ function normalizeConfig(config: OidcClientConfig): NormalizedConfig {
     scopes: normalizeScopes(config.scopes, config.offlineAccess),
     storageKeyPrefix,
   };
+}
+
+function isRedirectTarget(url: URL, redirectUri: string): boolean {
+  const redirect = new URL(redirectUri);
+  return url.origin === redirect.origin && url.pathname === redirect.pathname;
 }
 
 function hasCallbackParameters(url: URL): boolean {
