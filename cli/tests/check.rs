@@ -266,3 +266,21 @@ fn non_git_root_still_skips_build_and_dependency_directories() -> Result<()> {
     ensure!(code == 0, "{output}");
     Ok(())
 }
+
+#[test]
+fn unparsable_cargo_manifest_is_noted_and_skipped() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    write(
+        root.path(),
+        "tests/fixtures/broken/Cargo.toml",
+        "[package\nname = ",
+    )?;
+    let (code, output) = baukit_check(root.path(), &["lints"])?;
+    ensure!(code == 0, "{output}");
+    assert!(
+        output.contains("tests/fixtures/broken/Cargo.toml")
+            && output.contains("skipped, not a valid Cargo manifest"),
+        "{output}"
+    );
+    Ok(())
+}
