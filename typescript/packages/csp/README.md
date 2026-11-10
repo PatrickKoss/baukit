@@ -15,6 +15,10 @@ const policy = contentSecurityPolicy({
 
 `contentSecurityPolicy` throws on any script source that is not a `'sha256-...'` hash, and leaves
 out `upgrade-insecure-requests` only when an origin is plain `http:`.
+`vendorScripts` adds origins to `script-src`, `vendorFrames` adds them to `frame-src`, and
+`blobFrames: true` adds `blob:` to `frame-src`. `assertProductionOrigins(origins)` throws for `http:`
+origins, embedded credentials and loopback hosts, so a production export fails when a local `.env`
+leaks into the build.
 `developmentContentSecurityPolicy` adds inline styles and the HMR socket for the dev server.
 `unhashedInlineScripts` lists inline scripts a built page carries that the policy does not hash.
 
