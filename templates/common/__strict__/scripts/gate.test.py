@@ -419,6 +419,18 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("gate:   fast/a (full gate)", result.stdout)
 
 
+class SummaryTests(unittest.TestCase):
+    def test_unrun_steps_are_listed_as_not_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            step = gate.Step("a", "fast", (), "always", frozenset({"a", "fast"}))
+            context = gate.RunContext(["missing-gate-binary"], Path(directory), {})
+            runner = gate.Runner([gate.PlannedStep(step, "full gate")], context)
+            runner.status.clear()
+            runner.run_lane = lambda lane, steps: None
+            failures = runner.run()
+        self.assertEqual(failures, ["fast (a not run)"])
+
+
 class SpecPurposeTests(unittest.TestCase):
     def test_protected_specs_cannot_be_logic_only(self):
         with tempfile.TemporaryDirectory() as directory:

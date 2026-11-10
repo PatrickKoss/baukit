@@ -36,6 +36,7 @@ CORES_PER_EMULATOR = 2
 LIGHT_LANES = frozenset({"fast"})
 EMULATOR_STEPS = frozenset({"android-e2e"})
 FAILURE_TAIL_LINES = 40
+NOT_RUN = "not run"
 STEP_FIELD_COUNT = 5
 GENERIC_SHARED = (
     "**/Cargo.lock",
@@ -450,7 +451,7 @@ class Runner:
         failed = False
         for step in steps:
             if failed:
-                self.status[step.name] = "not run"
+                self.status[step.name] = NOT_RUN
                 self.done[step.name].set()
                 continue
             dependency = self.blocked_by(step)
@@ -542,7 +543,7 @@ class Runner:
         failures = []
         for lane, steps in self.lanes().items():
             broken = [
-                f"{step.name} {self.status[step.name]}"
+                f"{step.name} {self.status.get(step.name, NOT_RUN)}"
                 for step in steps
                 if self.status.get(step.name) != "passed"
             ]
