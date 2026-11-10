@@ -271,7 +271,7 @@ step_rust_doctests() {
 step_fuzz() {
   fuzz_seconds=${BAUKIT_FUZZ_SECONDS:-60}
   cargo fmt --manifest-path backend/fuzz/Cargo.toml --all --check
-  fuzz_scratch="$(pwd)/${BAUKIT_GATE_LOG_DIR:-.quality-gate}/fuzz-corpus"
+  fuzz_scratch="${BAUKIT_GATE_LOG_DIR:-$(pwd)/.quality-gate}/fuzz-corpus"
   rm -rf "$fuzz_scratch"
   (
     cd backend/fuzz

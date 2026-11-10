@@ -49,6 +49,33 @@ class FuzzScriptTests(unittest.TestCase):
         script = (ROOT / "templates/common/__strict__/scripts/quality-gate.sh").read_text()
         self.assertIn('"$fuzz_scratch/$target" "corpus/$target"', script)
 
+    def resolve_template_fuzz_scratch(self, log_dir):
+        script = (ROOT / "templates/common/__strict__/scripts/quality-gate.sh").read_text()
+        assignment = next(
+            line.strip() for line in script.splitlines() if line.strip().startswith("fuzz_scratch=")
+        )
+        env = {"PATH": "/usr/bin:/bin"}
+        if log_dir is not None:
+            env["BAUKIT_GATE_LOG_DIR"] = log_dir
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                ["sh", "-c", f'{assignment}; printf %s "$fuzz_scratch"'],
+                capture_output=True,
+                text=True,
+                check=True,
+                cwd=directory,
+                env=env,
+            )
+            return Path(directory).resolve(), result.stdout
+
+    def test_template_fuzz_scratch_keeps_an_absolute_gate_log_dir(self):
+        _, scratch = self.resolve_template_fuzz_scratch("/var/gate-logs")
+        self.assertEqual(scratch, "/var/gate-logs/fuzz-corpus")
+
+    def test_template_fuzz_scratch_defaults_under_the_working_directory(self):
+        cwd, scratch = self.resolve_template_fuzz_scratch(None)
+        self.assertEqual(Path(scratch).resolve(), cwd / ".quality-gate/fuzz-corpus")
+
 
 if __name__ == "__main__":
     unittest.main()
