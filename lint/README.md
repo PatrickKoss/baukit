@@ -12,6 +12,8 @@ injection. baukit ships the same rules to every product.
 | `rust-sql-format` | error | `format!` that builds SQL (statements and fragments such as predicates, `ORDER BY`, text with `$1`) and interpolates anything but a SCREAMING_CASE constant |
 | `rust-sql-splice` | error | `replacen`, `split_once`, `rsplit_once`, `find` on a `" WHERE "` text |
 | `rust-sql-include-replace` | error | `replace` or `replacen` with a slot or placeholder literal (`{x}`, `$1`, `__X__`) on SQL from `include_str!("*.sql")`, direct or let-bound |
+| `rust-sql-assert-safe` | error | `AssertSqlSafe(...)` outside tests |
+| `rust-sql-format-const` | error | `format!` with a captured `{IDENT}` and an uppercase `SELECT`, `FROM` or `WHERE` |
 | `rust-sql-unscoped-by-id` | hint | SQL literal whose only predicate is `WHERE id = $1` |
 | `ts-double-cast` | error | `as unknown as T` outside tests |
 | `ts-token-web-storage` | error | token-like keys or values in `localStorage`/`sessionStorage`, token puts into IndexedDB |
