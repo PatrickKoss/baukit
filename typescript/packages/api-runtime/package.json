@@ -1,6 +1,6 @@
 {
   "name": "@baukit/api-runtime",
-  "version": "0.19.2",
+  "version": "0.20.0",
   "description": "Shared client-side behavior for product APIs: environment selection, auth and request-ID headers, trace propagation, normalized errors, and safe retries.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -60,7 +60,7 @@
     "typescript": "6.0.3"
   },
   "dependencies": {
-    "@baukit/type-guards": "^0.19.2",
+    "@baukit/type-guards": "^0.20.0",
     "openapi-fetch": "^0.17.0"
   }
 }

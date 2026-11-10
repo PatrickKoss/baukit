@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.0
+
 ### Minor Changes
 
 - `BrowserSessionClient.login(options)` and `OidcClient.login(options)` accept `stateDecoration` (segments of ASCII letters and digits placed before the random state nonce, built with `appearanceStateDecoration`) and `entry: 'register'` (sends `prompt=create`). Invalid segments or colors throw before any navigation.
@@ -9,6 +11,15 @@
 ### Patch Changes
 
 - `OidcClient.completeCallback` (and `BrowserSessionClient.handleCallback`) only treat the configured redirect URI (origin and path) as an OIDC callback. App URLs that carry their own `code` or `state` parameters, such as a suite-link return URL, no longer fail with `callback_state_mismatch`.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.20.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/type-guards@0.20.0
 
 ## 0.19.2
 

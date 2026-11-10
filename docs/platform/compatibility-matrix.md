@@ -5,6 +5,24 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.20.0
+
+Last verified release train: `v0.20.0` (minor train on top of `v0.19.2`, breaking for `baukit-suite` link stores and `baukit-egress` status errors).
+- `baukit-suite` selects suite links by owner in SQL. `SuiteLinkStore::link_for_update`, `revoke_in_transaction`, `record_delivery`, `complete_delivery`, `record_received_in_transaction` and `replay_retry_after` take the owner.
+- `baukit-egress` keeps allowlisted response headers on `EgressError::Status` in a new `headers` field.
+- `baukit-telemetry` caps `rmcp` at `info` in the default log filter.
+- `baukit-auth` `BrowserSessionConfig::with_internal_issuer` lets a containerized backend reach Keycloak without moving the public issuer.
+- `@baukit/auth-web` treats only the configured redirect URI as an OIDC callback and takes login options for appearance state and a registration entry. `@baukit/csp` adds vendor script and frame sources, `blob:` frames and a production origin guard. `@baukit/a11y-core` attempts route focus before checking the retry deadline.
+- `baukit check` flags SQL fragments, SQL splicing, lying type predicates and response casts, skips Cargo manifests that do not parse, and `template-files --update` rewrites the hashes. osv scans only the packages cargo can build.
+- Templates: no global ruff ignores, subprocesses through `scripts/process_runner.py`, QA extension hooks, a product token source, a secret-free Keycloak `smtpServer`, erase and purge of browser sessions, `localhost` for every local web origin, read-only fuzz seed corpora, and two parallel fixture lanes in the baukit gate.
+
+### Upgrade steps
+
+1. Set every `baukit-*` crate and `@baukit/*` package to `0.20.0`, and set `baukit.toml`'s `template_version` and `[dependencies.baukit].version` to `0.20.0`. Strict products move the Baukit clone in `scripts/quality-gate.sh` to `--branch v0.20.0`. For the first day, list the exact `@baukit/<name>@0.20.0` entries in `minimumReleaseAgeExclude`.
+2. Apply the `[0.20.0]` sections of the template changelogs. Copy `scripts/process_runner.py`, drop the global ruff ignores (`E501`, `S603`, `S607`, `PLR2004`, `PLR0913`) and fix the findings, and move product divergences in `.baukit/template-files.toml` into the new hooks.
+3. Pass the owner to the changed `SuiteLinkStore` methods, and add `headers` (or `..`) where code builds or fully destructures `EgressError::Status`.
+4. Run `baukit check --root .` and fix what the new patterns find with guards and bound parameters, not suppressions. Drop product copies of the `rmcp` log cap and the CSP origins that `@baukit/csp` now provides.
+
 ## v0.19.2
 
 Last verified release train: `v0.19.2` (patch train on top of `v0.19.1`).

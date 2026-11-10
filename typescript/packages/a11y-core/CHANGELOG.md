@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.0
+
 ### Fixed
 
 - `createRouteFocusController` checks the retry deadline after each focus attempt, not before the first one. A renderer stall longer than `focusRetryTimeoutMs` between the route effect and the first animation frame used to end the retry with no attempt, which left focus on the menu trigger instead of the new page heading.
@@ -9,6 +11,10 @@
 ### Changed
 
 - `RouteFocusRuntime` no longer has `setTimeout` and `clearTimeout`. Drop them from custom runtimes.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.20.0 train.
 
 ## 0.19.2
 

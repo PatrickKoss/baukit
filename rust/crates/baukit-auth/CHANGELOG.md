@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-10
+
 ### Added
 
 - `BrowserSessionConfig::with_internal_issuer(url)` sets the realm URL the backend uses for discovery and IdP calls when the public issuer is only reachable from browsers, as with a backend in a container next to Keycloak. The egress policy allows only that origin, and the discovery document must still name the public issuer.
