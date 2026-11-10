@@ -271,14 +271,16 @@ step_rust_doctests() {
 step_fuzz() {
   fuzz_seconds=${BAUKIT_FUZZ_SECONDS:-60}
   cargo fmt --manifest-path backend/fuzz/Cargo.toml --all --check
+  fuzz_scratch="$(pwd)/${BAUKIT_GATE_LOG_DIR:-.quality-gate}/fuzz-corpus"
+  rm -rf "$fuzz_scratch"
   (
     cd backend/fuzz
     # cargo-fuzz defaults --target to the triple it was built for; prebuilt binaries are musl.
     host=$(rustc +nightly -vV | sed -n 's/^host: //p')
     cargo +nightly fuzz build --target "$host"
     for target in $(cargo +nightly fuzz list); do
-      mkdir -p "corpus/$target" "artifacts/$target"
-      cargo +nightly fuzz run --target "$host" "$target" "corpus/$target" -- \
+      mkdir -p "corpus/$target" "artifacts/$target" "$fuzz_scratch/$target"
+      cargo +nightly fuzz run --target "$host" "$target" "$fuzz_scratch/$target" "corpus/$target" -- \
         -max_total_time="$fuzz_seconds" \
         -artifact_prefix="artifacts/$target/"
     done
