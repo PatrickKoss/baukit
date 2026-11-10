@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
+import { isRecord, isString, isStringArray } from '@baukit/type-guards';
+
 /** Where a disposable development Keycloak runs and how to administer it. */
 export interface KeycloakStack {
   readonly url: string;
@@ -134,6 +136,35 @@ interface KeycloakClient {
   readonly attributes?: Readonly<Record<string, string>>;
 }
 
+function isKeycloakClient(value: unknown): value is KeycloakClient {
+  return (
+    isRecord(value) &&
+    isString(value['id']) &&
+    (value['redirectUris'] === undefined || isStringArray(value['redirectUris'])) &&
+    (value['webOrigins'] === undefined || isStringArray(value['webOrigins'])) &&
+    (value['attributes'] === undefined ||
+      (isRecord(value['attributes']) && Object.values(value['attributes']).every(isString)))
+  );
+}
+
+function hasAccessToken(value: unknown): value is { readonly access_token: string } {
+  return isRecord(value) && typeof value['access_token'] === 'string';
+}
+
+function parseFirstClient(body: unknown): KeycloakClient | undefined {
+  if (!Array.isArray(body)) {
+    throw new Error('Keycloak client lookup returned a non-array body.');
+  }
+  const first: unknown = body[0];
+  if (first === undefined) {
+    return undefined;
+  }
+  if (!isKeycloakClient(first)) {
+    throw new Error('Keycloak client lookup returned a malformed client.');
+  }
+  return first;
+}
+
 const POST_LOGOUT_REDIRECT_URIS = 'post.logout.redirect.uris';
 const POST_LOGOUT_SEPARATOR = '##';
 const SAME_AS_REDIRECT_URIS = '+';
@@ -152,7 +183,7 @@ export async function allowKeycloakWebOrigin(
   if (!lookup.ok) {
     throw new Error(`Keycloak client lookup failed with HTTP ${String(lookup.status)}.`);
   }
-  const [client] = (await lookup.json()) as readonly (KeycloakClient & Record<string, unknown>)[];
+  const client = parseFirstClient(await lookup.json());
   if (client === undefined) {
     throw new Error(`Keycloak realm ${stack.realm} has no ${stack.webClientId} client.`);
   }
@@ -259,8 +290,8 @@ async function adminAccessToken(
   if (!response.ok) {
     throw new Error(`Keycloak admin sign-in failed with HTTP ${String(response.status)}.`);
   }
-  const body = (await response.json()) as { readonly access_token?: unknown };
-  if (typeof body.access_token !== 'string') {
+  const body: unknown = await response.json();
+  if (!hasAccessToken(body)) {
     throw new Error('Keycloak admin sign-in returned no access token.');
   }
   return body.access_token;

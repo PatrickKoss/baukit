@@ -214,6 +214,17 @@ describe('allowKeycloakWebOrigin', () => {
     });
   });
 
+  it('rejects a client lookup that is not a client list', async () => {
+    const keycloak = fakeKeycloak({
+      [`POST ${TOKEN_URL}`]: adminToken,
+      [lookup]: () => Response.json([{ id: 7 }]),
+    });
+
+    await expect(
+      allowKeycloakWebOrigin(STACK, 'http://localhost:5183', { fetch: keycloak.fetch }),
+    ).rejects.toThrow('malformed client');
+  });
+
   it('appends the post-logout redirect and keeps the other attributes', async () => {
     const keycloak = fakeKeycloak({
       [`POST ${TOKEN_URL}`]: adminToken,
