@@ -1,9 +1,19 @@
-use std::{error::Error, ffi::OsStr, process::Command};
+use std::{
+    error::Error,
+    ffi::OsStr,
+    fs::File,
+    io::{Read, Seek, SeekFrom},
+    process::{Command, ExitStatus, Stdio},
+    sync::mpsc,
+    thread,
+    time::Duration,
+};
 
 use baukit_config::Environment;
 
 use {{ context.app_crate }}_bin::{ProductConfig, config_loader};
 
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 const CHILD_MODE: &str = "BAUKIT_CONFIG_LOADER_TEST_MODE";
 const ENV_PREFIX: &str = "{{ context.app_env }}";
 const ORIGINS: &str = r#"["https://app.example.com", "http://127.0.0.1:5173"]"#;
@@ -59,7 +69,7 @@ fn parses_json_array_environment_values() -> Result<(), Box<dyn Error>> {
                 "parses_json_array_environment_values",
                 "--nocapture",
             ])
-            .output()?;
+            .run_bounded()?;
         assert!(
             output.status.success(),
             "configuration subprocess failed: {}",
@@ -85,7 +95,7 @@ fn shared_mcp_environment_reaches_database_setup_in_every_command() -> Result<()
                 format!("{ENV_PREFIX}__DATABASE__URL"),
                 "postgres://127.0.0.1:invalid/config-test",
             )
-            .output()?;
+            .run_bounded()?;
         assert!(!output.status.success());
         assert!(
             String::from_utf8_lossy(&output.stderr).contains("Configuration(InvalidPort)"),
@@ -96,7 +106,66 @@ fn shared_mcp_environment_reaches_database_setup_in_every_command() -> Result<()
     Ok(())
 }
 
-{% endif %}fn configured_command(executable: impl AsRef<OsStr>, mode: &str) -> Command {
+{% endif %}struct CommandOutput {
+    status: ExitStatus,
+    stderr: Vec<u8>,
+}
+
+trait RunBounded {
+    fn run_bounded(&mut self) -> Result<CommandOutput, Box<dyn Error>>;
+}
+
+impl RunBounded for Command {
+    fn run_bounded(&mut self) -> Result<CommandOutput, Box<dyn Error>> {
+        let mut stderr = tempfile::tempfile()?;
+        let mut child = self
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(stderr.try_clone()?)
+            .spawn()?;
+        let pid = child.id();
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || sender.send(child.wait()));
+        let status = match receiver.recv_timeout(COMMAND_TIMEOUT) {
+            Ok(status) => status?,
+            Err(_) => {
+                let state = process_state(pid);
+                Command::new("kill")
+                    .args(["-KILL", &pid.to_string()])
+                    .status()?;
+                receiver.recv()??;
+                return Err(format!(
+                    "{self:?} ran longer than {COMMAND_TIMEOUT:?}; child state: {state}"
+                )
+                .into());
+            }
+        };
+        Ok(CommandOutput {
+            status,
+            stderr: read_all(&mut stderr)?,
+        })
+    }
+}
+
+fn process_state(pid: u32) -> String {
+    let read = |name: &str| std::fs::read_to_string(format!("/proc/{pid}/{name}")).ok();
+    let status = read("status").unwrap_or_default();
+    let state = status.lines().find(|line| line.starts_with("State:"));
+    format!(
+        "{} wchan={}",
+        state.unwrap_or("unknown"),
+        read("wchan").unwrap_or_default()
+    )
+}
+
+fn read_all(file: &mut File) -> Result<Vec<u8>, Box<dyn Error>> {
+    file.seek(SeekFrom::Start(0))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn configured_command(executable: impl AsRef<OsStr>, mode: &str) -> Command {
     let mut command = Command::new(executable);
     let origins = if mode == "empty" { "[]" } else { ORIGINS };
     command

@@ -9,7 +9,8 @@
 {% endif %}- `scripts/quality-gate.sh` `use_baukit_root` adds the baukit checkout to `MISE_TRUSTED_CONFIG_PATHS`, so rustc or kache children started inside the clone do not stop at an untrusted `mise.toml`.
 {% if context.pwa and not context.web %}- `scripts/quality-gate.sh` sets `PLAYWRIGHT_BROWSERS_PATH` for `pwa` products without `web`, so worktrees share one browser cache.
 {% endif %}- `ruff.toml` no longer ignores `E501`, `S603`, `S607`, `PLR2004` or `PLR0913` globally. Test files (`test_*.py`, `*.test.py`) ignore `E501`, `S603`, `S607` and `PLR2004`. Other scripts resolve executables with `shutil.which`, route every subprocess call through `scripts/process_runner.py` (one reasoned `noqa: S603`), and bundle long argument lists into dataclasses (`BudgetLimit`, `RunContext`, `LoginRequest`, `RecoveryHooks`). Copy the new `ruff.toml` and fix the findings.
-
+{% if context.backend and context.mcp %}- `backend/tests/config_loader.rs` runs the `api`, `migrate` and `worker` subprocesses with a 60 s limit. A command that exceeds it is killed and the test fails with the child's process state instead of waiting forever.
+{% endif %}
 ## [0.19.2] - 2026-11-08
 
 {% if context.auth_enabled and (context.web or context.pwa) %}- `[auth.browser_session]` takes `ip_rate_per_minute`, `ip_rate_burst`, `session_rate_per_minute` and `session_rate_burst` (env `..__AUTH__BROWSER_SESSION__IP_RATE_PER_MINUTE` and so on). Defaults are the ADR 0006 limits; `config/local.toml` raises them so Playwright suites do not hit HTTP 429 on `/auth/session/exchange`. Copy the four keys from the new `local.toml` and the `rate_limits` wiring from `browser_session.rs`.
