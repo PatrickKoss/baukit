@@ -18,6 +18,15 @@ compose=(
   -f "$root/compose.yaml"
   -f "$root/mobile/scripts/qa/docker-compose.qa.yml"
 )
+qa_compose_services=()
+qa_cargo_bins=()
+qa_services_env() { :; }
+qa_before_api() { :; }
+qa_after_api() { :; }
+qa_stop_services() { :; }
+local_hooks="$root/mobile/scripts/qa/local.sh"
+# shellcheck source=/dev/null
+[[ ! -f "$local_hooks" ]] || source "$local_hooks"
 {% endif %}
 api_running() {
   kill -0 "$1" 2>/dev/null && [[ "$(ps -o stat= -p "$1")" != Z* ]]
@@ -48,7 +57,8 @@ stop_api() {
 stop_services() {
   local status=0
   stop_api || status=$?
-{% if context.backend %}  "${compose[@]}" down --volumes || status=$?
+{% if context.backend %}  qa_stop_services || status=$?
+  "${compose[@]}" down --volumes || status=$?
 {% endif %}  if [[ "$status" != 0 ]]; then
     echo "qa: service cleanup failed; ownership state was kept" >&2
     return "$status"
@@ -73,7 +83,7 @@ command -v cargo >/dev/null || { echo "qa: cargo is required" >&2; exit 1; }
 command -v curl >/dev/null || { echo "qa: curl is required" >&2; exit 1; }
 
 echo "qa: starting disposable PostgreSQL, Redis{% if context.auth_enabled %}, and Keycloak{% endif %}"
-"${compose[@]}" up -d --wait
+"${compose[@]}" up -d --wait "${qa_compose_services[@]}"
 
 export {{ context.app_env }}__DATABASE__URL="postgres://postgres:postgres@127.0.0.1:${postgres_port}/{{ context.app_crate }}"
 export {{ context.app_env }}__RATE_LIMIT__REDIS_URL="redis://127.0.0.1:${redis_port}/"
@@ -87,10 +97,16 @@ export {{ context.app_env }}__AUTH__AUDIENCE="{{ context.app_name }}-backend"
 export {{ context.app_env }}__AUTH__JWKS_URI="http://localhost:${keycloak_port}/realms/{{ context.app_name }}/protocol/openid-connect/certs"
 export {{ context.app_env }}__AUTH__IDENTITY_ADMIN_CLIENT_SECRET="${ {{- context.app_env }}__AUTH__IDENTITY_ADMIN_CLIENT_SECRET:-qa-placeholder-not-a-provider-key}"
 {% endif %}
+qa_services_env
 
+cargo_bins=(--bin migrate --bin api)
+for bin in "${qa_cargo_bins[@]}"; do
+  cargo_bins+=(--bin "$bin")
+done
 cargo build --locked --manifest-path "$root/backend/Cargo.toml" \
-  -p {{ context.app_name }}-bin --bin migrate --bin api
+  -p {{ context.app_name }}-bin "${cargo_bins[@]}"
 "$root/backend/target/debug/migrate"
+qa_before_api
 
 nohup "$root/backend/target/debug/api" \
   >"$state_dir/backend.log" 2>&1 &
@@ -100,6 +116,7 @@ printf '%s\n' "$backend_pid" > "$state_dir/backend.pid"
 for _ in $(seq 1 120); do
   if curl --fail --silent "http://127.0.0.1:${ops_port}/readyz" >/dev/null; then
     echo "qa: API ready at http://localhost:${api_port}"
+    qa_after_api
     exit 0
   fi
   if ! kill -0 "$backend_pid" 2>/dev/null; then

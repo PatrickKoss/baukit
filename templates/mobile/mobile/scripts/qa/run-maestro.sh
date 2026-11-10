@@ -12,6 +12,10 @@ fi
   exit 1
 }
 [[ -d "$mobile_dir/.maestro" ]] || { echo "qa: mobile/.maestro is missing" >&2; exit 1; }
+qa_maestro_args=()
+local_hooks="$mobile_dir/scripts/qa/local.sh"
+# shellcheck source=/dev/null
+[[ ! -f "$local_hooks" ]] || source "$local_hooks"
 
 case "$platform" in
   android)
@@ -125,6 +129,7 @@ if ((shards < 2)); then
       --device "${devices[0]}" \
       --env "APP_ID=$app_id" \
       --debug-output "$debug_dir" \
+      "${qa_maestro_args[@]}" \
       "$flow"
   done
   exit 0
@@ -139,4 +144,5 @@ run_maestro "the sharded run" "during the sharded run" test \
   --debug-output "$debug_dir" \
   --device "$device_list" \
   --shard-split "$shards" \
+  "${qa_maestro_args[@]}" \
   "${flows[@]}"
