@@ -1,0 +1,148 @@
+id: rust-sql-include-replace
+snapshots:
+  "fn f(filter: &str) -> String { include_str!(\"q.sql\").replace(\"{ownership_filter}\", filter) }\n":
+    labels:
+    - source: include_str!("q.sql").replace("{ownership_filter}", filter)
+      style: primary
+      start: 31
+      end: 90
+    - source: replace
+      style: secondary
+      start: 53
+      end: 60
+    - source: include_str!("q.sql").replace
+      style: secondary
+      start: 31
+      end: 60
+    - source: ("{ownership_filter}", filter)
+      style: secondary
+      start: 60
+      end: 90
+    - source: include_str!("q.sql")
+      style: secondary
+      start: 31
+      end: 52
+  "fn f(filter: &str) -> String { include_str!(\"q.sql\").replacen(\"{slot}\", filter, 1) }\n":
+    labels:
+    - source: include_str!("q.sql").replacen("{slot}", filter, 1)
+      style: primary
+      start: 31
+      end: 82
+    - source: replacen
+      style: secondary
+      start: 53
+      end: 61
+    - source: include_str!("q.sql").replacen
+      style: secondary
+      start: 31
+      end: 61
+    - source: ("{slot}", filter, 1)
+      style: secondary
+      start: 61
+      end: 82
+    - source: include_str!("q.sql")
+      style: secondary
+      start: 31
+      end: 52
+  "fn f(org: &str) -> String {\n    let mut sql = include_str!(\"x.sql\");\n    sql.replace(\"__ORG__\", org)\n}\n":
+    labels:
+    - source: sql.replace("__ORG__", org)
+      style: primary
+      start: 73
+      end: 100
+    - source: replace
+      style: secondary
+      start: 77
+      end: 84
+    - source: sql.replace
+      style: secondary
+      start: 73
+      end: 84
+    - source: ("__ORG__", org)
+      style: secondary
+      start: 84
+      end: 100
+    - source: sql
+      style: secondary
+      start: 73
+      end: 76
+    - source: let mut sql = include_str!("x.sql");
+      style: secondary
+      start: 32
+      end: 68
+    - source: |-
+        fn f(org: &str) -> String {
+            let mut sql = include_str!("x.sql");
+            sql.replace("__ORG__", org)
+        }
+      style: secondary
+      start: 0
+      end: 102
+  "fn f(org: &str) -> String {\n    let sql = include_str!(\"x.sql\");\n    sql.replace(\"$1\", \"__ORG__\").replace(\"__ORG__\", org)\n}\n":
+    labels:
+    - source: sql.replace("$1", "__ORG__").replace("__ORG__", org)
+      style: primary
+      start: 69
+      end: 121
+    - source: replace
+      style: secondary
+      start: 98
+      end: 105
+    - source: sql.replace("$1", "__ORG__").replace
+      style: secondary
+      start: 69
+      end: 105
+    - source: ("__ORG__", org)
+      style: secondary
+      start: 105
+      end: 121
+    - source: sql
+      style: secondary
+      start: 69
+      end: 72
+    - source: let sql = include_str!("x.sql");
+      style: secondary
+      start: 32
+      end: 64
+    - source: |-
+        fn f(org: &str) -> String {
+            let sql = include_str!("x.sql");
+            sql.replace("$1", "__ORG__").replace("__ORG__", org)
+        }
+      style: secondary
+      start: 0
+      end: 123
+  "fn f(org: &str) -> String {\n    let sql: &str = include_str!(\"x.sql\");\n    sql.replace(\"{org}\", org)\n}\n":
+    labels:
+    - source: sql.replace("{org}", org)
+      style: primary
+      start: 75
+      end: 100
+    - source: replace
+      style: secondary
+      start: 79
+      end: 86
+    - source: sql.replace
+      style: secondary
+      start: 75
+      end: 86
+    - source: ("{org}", org)
+      style: secondary
+      start: 86
+      end: 100
+    - source: sql
+      style: secondary
+      start: 75
+      end: 78
+    - source: "let sql: &str = include_str!(\"x.sql\");"
+      style: secondary
+      start: 32
+      end: 70
+    - source: |-
+        fn f(org: &str) -> String {
+            let sql: &str = include_str!("x.sql");
+            sql.replace("{org}", org)
+        }
+      style: secondary
+      start: 0
+      end: 102
