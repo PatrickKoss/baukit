@@ -23,6 +23,7 @@ class RuntimeStorageCredentialsTest(unittest.TestCase):
             check=True,
             capture_output=True,
             text=True,
+            stdin=subprocess.DEVNULL,
         )
         return result.stdout
 
