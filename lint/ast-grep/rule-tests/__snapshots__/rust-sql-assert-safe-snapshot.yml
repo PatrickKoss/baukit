@@ -1,0 +1,32 @@
+id: rust-sql-assert-safe
+snapshots:
+  "fn f() { let _ = sqlx::AssertSqlSafe(format!(\"{DEPENDENCIES} WHERE organization_id=$1\")); }\n":
+    labels:
+    - source: sqlx::AssertSqlSafe(format!("{DEPENDENCIES} WHERE organization_id=$1"))
+      style: primary
+      start: 17
+      end: 88
+    - source: sqlx::AssertSqlSafe
+      style: secondary
+      start: 17
+      end: 36
+  "fn f(q: String) { let _ = AssertSqlSafe(q); }\n":
+    labels:
+    - source: AssertSqlSafe(q)
+      style: primary
+      start: 26
+      end: 42
+    - source: AssertSqlSafe
+      style: secondary
+      start: 26
+      end: 39
+  "fn f(q: String) { let _ = sqlx::AssertSqlSafe(q); }\n":
+    labels:
+    - source: sqlx::AssertSqlSafe(q)
+      style: primary
+      start: 26
+      end: 48
+    - source: sqlx::AssertSqlSafe
+      style: secondary
+      start: 26
+      end: 45
