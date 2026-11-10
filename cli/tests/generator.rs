@@ -4096,7 +4096,7 @@ fn doctor_requires_redis_only_for_redis_backed_features() -> anyhow::Result<()> 
 }
 
 #[test]
-fn generated_preview_binds_the_ipv4_readiness_address() -> anyhow::Result<()> {
+fn generated_preview_binds_the_declared_local_origin() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let root = generate_new(&frontend_options(
         parent.path(),
@@ -4105,8 +4105,8 @@ fn generated_preview_binds_the_ipv4_readiness_address() -> anyhow::Result<()> {
         true,
     ))?;
     let config = fs::read_to_string(root.join("web/e2e/playwright.config.ts"))?;
-    assert!(config.contains("http://127.0.0.1:"));
-    assert!(config.contains("vite preview --host 127.0.0.1 --port"));
+    assert!(config.contains("http://localhost:"));
+    assert!(config.contains("vite preview --host localhost --port"));
     Ok(())
 }
 

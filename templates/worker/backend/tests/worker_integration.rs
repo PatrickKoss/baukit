@@ -145,8 +145,7 @@ async fn insert_browser_session(
     .await?;
     Ok(())
 }
-{% endif %}
-{% if context.auth_enabled %}
+{% endif %}{% if context.auth_enabled %}
 async fn pending_erasure(
     pool: &sqlx::PgPool,
 ) -> Result<

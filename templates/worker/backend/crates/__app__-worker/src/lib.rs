@@ -103,11 +103,10 @@ pub mod retention {
                 if cancellation.is_cancelled() {
                     return Err(JobError::retryable("retention purge was cancelled"));
                 }
-                let removed = baukit_auth::browser_session::purge_browser_sessions(
-                    &self.pool, cutoff, batch,
-                )
-                .await
-                .map_err(|_| JobError::retryable("could not purge browser sessions"))?;
+                let removed =
+                    baukit_auth::browser_session::purge_browser_sessions(&self.pool, cutoff, batch)
+                        .await
+                        .map_err(|_| JobError::retryable("could not purge browser sessions"))?;
                 if removed == 0 {
                     return Ok(());
                 }
@@ -137,11 +136,10 @@ pub mod retention {
                 .interval
                 .next_slot(slot, Utc::now())
                 .map_err(|_| JobError::permanent("invalid next retention purge slot"))?;
-            let mut transaction = self
-                .pool
-                .begin()
-                .await
-                .map_err(|_| JobError::retryable("could not begin retention purge completion"))?;
+            let mut transaction =
+                self.pool.begin().await.map_err(|_| {
+                    JobError::retryable("could not begin retention purge completion")
+                })?;
             self.store
                 .enqueue_in_transaction(&mut transaction, purge_job(next))
                 .await
