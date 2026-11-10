@@ -3659,6 +3659,10 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
             root.join("tools").join(script),
         )?;
     }
+    fs::copy(
+        root.join("scripts/process_runner.py"),
+        root.join("tools/process_runner.py"),
+    )?;
     fs::create_dir(root.join("database"))?;
     fs::rename(
         root.join("backend/migrations"),
