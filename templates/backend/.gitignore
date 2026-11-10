@@ -1,3 +1,4 @@
 /backend/target/
 /.env
 /.quality-gate/
+__pycache__/

@@ -3,6 +3,8 @@ set -eu
 
 repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repository_root"
+PYTHONDONTWRITEBYTECODE=1
+export PYTHONDONTWRITEBYTECODE
 
 usage() {
   echo "usage: sh scripts/quality-gate.sh [--affected BASE] [--plan]" >&2
