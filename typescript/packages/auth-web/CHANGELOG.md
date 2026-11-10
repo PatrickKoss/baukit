@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Minor Changes
+
+- `BrowserSessionClient.login(options)` and `OidcClient.login(options)` accept `stateDecoration` (segments of ASCII letters and digits placed before the random state nonce, built with `appearanceStateDecoration`) and `entry: 'register'` (sends `prompt=create`). Invalid segments or colors throw before any navigation.
+
 ## 0.19.2
 
 ### Patch Changes

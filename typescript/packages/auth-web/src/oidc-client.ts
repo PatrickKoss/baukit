@@ -1,3 +1,8 @@
+import {
+  authorizationPrompt,
+  decoratedAuthorizationState,
+  type LoginOptions,
+} from './login-options.js';
 import { OidcError } from './oidc-errors.js';
 import {
   base64UrlEncode,
@@ -103,9 +108,9 @@ export class OidcClient {
   }
 
   /** Stores the PKCE transaction in sessionStorage and navigates to the provider. */
-  public async login(): Promise<void> {
+  public async login(options: LoginOptions = {}): Promise<void> {
     const metadata = await this.discover();
-    const state = randomUrlSafe(this.environment.crypto, 32);
+    const state = this.authorizationState(options);
     const verifier = randomUrlSafe(this.environment.crypto, 64);
     const challenge = base64UrlEncode(
       new Uint8Array(
@@ -120,11 +125,22 @@ export class OidcClient {
       this.config,
       metadata.authorizationEndpoint,
       { state, challenge },
-      this.environment.localStorage.getItem(this.forceLoginStorageKey) === null
-        ? undefined
-        : 'login',
+      authorizationPrompt(
+        options.entry,
+        this.environment.localStorage.getItem(this.forceLoginStorageKey) !== null,
+      ),
     );
     this.environment.navigate(authorizationUrl.toString());
+  }
+
+  private authorizationState(options: LoginOptions): string {
+    if (options.stateDecoration === undefined) {
+      return randomUrlSafe(this.environment.crypto, 32);
+    }
+    return decoratedAuthorizationState(
+      options.stateDecoration,
+      this.environment.crypto.getRandomValues(new Uint8Array(32)),
+    );
   }
 
   /**

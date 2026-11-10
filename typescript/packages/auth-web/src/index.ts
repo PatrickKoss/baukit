@@ -12,6 +12,13 @@ export type {
   SessionLocks,
 } from './browser-session-support.js';
 export {
+  appearanceStateDecoration,
+  type AppearanceMode,
+  type AppearanceState,
+  type LoginEntry,
+  type LoginOptions,
+} from './login-options.js';
+export {
   OidcClient,
   type AuthorizationCallback,
   type OidcClientConfig,
