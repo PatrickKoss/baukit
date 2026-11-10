@@ -45,7 +45,7 @@ SYSTEM_TIMING = Timing()
 
 
 def run_command(command: list[str], **options) -> subprocess.CompletedProcess:
-    return subprocess.run(  # noqa: S603 -- adb invocations or the caller's own argv
+    return subprocess.run(  # noqa: S603 -- fixed adb program or the caller's argv list, no shell
         command, check=False, **options
     )
 

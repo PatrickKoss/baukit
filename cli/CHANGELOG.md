@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The `noqa` budget in baukit's own `baukit-check.toml` is 5: two `N802` overrides in `deploy/platform/local-git-http.py` and three `S603` sites in the `process_runner.py` helpers and `android-adb.py`. Generated products get `noqa = 1` (`2` with a mobile app).
+
 - `baukit doctor` expects `scripts/osv-resolved-lock.py` and its test in every product. They come with the template.
 
 - `baukit check` notes and skips a `Cargo.toml` that does not parse, such as a test fixture, instead of aborting the whole run. `--update` help now lists the `template-files` hash rewrite.
