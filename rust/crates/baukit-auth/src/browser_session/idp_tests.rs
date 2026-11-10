@@ -11,9 +11,16 @@ type TestError = Box<dyn std::error::Error + Send + Sync>;
 const PUBLIC_ISSUER: &str = "http://localhost:18081/realms/test";
 
 fn config(internal_origin: Option<&str>) -> Result<BrowserSessionConfig, TestError> {
+    config_for_issuer(PUBLIC_ISSUER, internal_origin)
+}
+
+fn config_for_issuer(
+    issuer: &str,
+    internal_origin: Option<&str>,
+) -> Result<BrowserSessionConfig, TestError> {
     let cipher = CredentialCipher::parse(&format!("1:{}", STANDARD.encode([9_u8; 32])))?;
     let config = BrowserSessionConfig::new(
-        PUBLIC_ISSUER,
+        issuer,
         "web",
         "acme-session",
         "http://localhost:8080",
@@ -66,5 +73,55 @@ async fn public_issuer_that_is_unreachable_fails_without_an_internal_issuer()
 -> Result<(), TestError> {
     let outcome = OidcTokenClient::discover(&config(None)?).await;
     assert!(matches!(outcome, Err(IdpDiscoveryError::Request(_))));
+    Ok(())
+}
+
+async fn serve_root_discovery(issuer: &str) -> Result<String, TestError> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let origin = format!("http://{}", listener.local_addr()?);
+    let document = json!({
+        "issuer": issuer.replace("{origin}", &origin),
+        "jwks_uri": format!("{origin}/jwks"),
+        "token_endpoint": format!("{origin}/token"),
+    });
+    let router = Router::new()
+        .route(
+            "/.well-known/openid-configuration",
+            get(|State(document): State<Value>| async move { Json(document) }),
+        )
+        .with_state(document);
+    tokio::spawn(async move { axum::serve(listener, router).await });
+    Ok(origin)
+}
+
+async fn discover_root_issuer(
+    configured_slash: &str,
+    document_issuer: &str,
+) -> Result<Result<(), IdpDiscoveryError>, TestError> {
+    let origin = serve_root_discovery(document_issuer).await?;
+    let issuer = format!("{origin}{configured_slash}");
+    let outcome = OidcTokenClient::discover(&config_for_issuer(&issuer, None)?).await;
+    Ok(outcome.map(|_| ()))
+}
+
+#[tokio::test]
+async fn pathless_issuer_without_trailing_slash_matches_as_configured() -> Result<(), TestError> {
+    assert!(discover_root_issuer("", "{origin}").await?.is_ok());
+    Ok(())
+}
+
+#[tokio::test]
+async fn pathless_issuer_with_trailing_slash_matches_as_configured() -> Result<(), TestError> {
+    assert!(discover_root_issuer("/", "{origin}/").await?.is_ok());
+    Ok(())
+}
+
+#[tokio::test]
+async fn pathless_issuer_rejects_a_document_that_differs_by_the_trailing_slash()
+-> Result<(), TestError> {
+    let without = discover_root_issuer("", "{origin}/").await?;
+    assert!(matches!(without, Err(IdpDiscoveryError::IssuerMismatch)));
+    let with = discover_root_issuer("/", "{origin}").await?;
+    assert!(matches!(with, Err(IdpDiscoveryError::IssuerMismatch)));
     Ok(())
 }

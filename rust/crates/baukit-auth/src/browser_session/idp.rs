@@ -165,7 +165,7 @@ impl OidcTokenClient {
             .map_err(IdpDiscoveryError::Request)?;
         let document: DiscoveryDocument = serde_json::from_slice(response.body())
             .map_err(|_| IdpDiscoveryError::InvalidDocument)?;
-        if document.issuer != config.issuer.as_str() {
+        if document.issuer != config.issuer_text {
             return Err(IdpDiscoveryError::IssuerMismatch);
         }
         let parse =

@@ -25,6 +25,7 @@ const HOST_PREFIX: &str = "__Host-";
 #[derive(Clone)]
 pub struct BrowserSessionConfig {
     pub(crate) issuer: Url,
+    pub(crate) issuer_text: String,
     pub(crate) internal_issuer: Option<Url>,
     pub(crate) client_id: String,
     pub(crate) client_secret: Option<Zeroizing<String>>,
@@ -61,6 +62,7 @@ impl BrowserSessionConfig {
         public_api_origin: &str,
         cipher: CredentialCipher,
     ) -> Result<Self, BrowserSessionConfigError> {
+        let issuer_text = issuer.to_owned();
         let issuer = Url::parse(issuer).map_err(|_| BrowserSessionConfigError::InvalidIssuer)?;
         if issuer.cannot_be_a_base() {
             return Err(BrowserSessionConfigError::InvalidIssuer);
@@ -77,6 +79,7 @@ impl BrowserSessionConfig {
             .ok_or(BrowserSessionConfigError::InvalidPublicApiOrigin)?;
         Ok(Self {
             issuer,
+            issuer_text,
             internal_issuer: None,
             client_id,
             client_secret: None,
