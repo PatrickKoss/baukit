@@ -521,7 +521,7 @@ fn doctor_checks_expo_web_commands_against_the_web_port() -> anyhow::Result<()> 
     declared_product(root, "web = { host = 5673 }\nmetro = { host = 8093 }\n")?;
     let path = root.join("mobile/package.json");
     let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
-    for suffix in ["", " --port 8093", " --port 5673 --port 8081"] {
+    for suffix in ["", " --port 9999", " --port 5673 --port 8081"] {
         package["scripts"]["port-test"] = format!("expo start --web{suffix}").into();
         fs::write(&path, serde_json::to_string_pretty(&package)?)?;
         let error = doctor(root)
@@ -535,6 +535,30 @@ fn doctor_checks_expo_web_commands_against_the_web_port() -> anyhow::Result<()> 
     package["scripts"]["port-test"] = "expo start --web --port 5673".into();
     fs::write(&path, serde_json::to_string_pretty(&package)?)?;
     doctor(root)?;
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_expo_web_commands_on_declared_browser_ports() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = parent.path();
+    declared_product(root, BROWSER_PORTS)?;
+    let path = root.join("mobile/package.json");
+    let mut package: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+    for port in [8093, 19006, 4773] {
+        package["scripts"]["port-test"] = format!("expo start --web --port {port}").into();
+        fs::write(&path, serde_json::to_string_pretty(&package)?)?;
+        doctor(root)?;
+    }
+    package["scripts"]["port-test"] = "expo start --web --port 9999".into();
+    fs::write(&path, serde_json::to_string_pretty(&package)?)?;
+    let error = doctor(root)
+        .expect_err("an undeclared Expo web port is rejected")
+        .to_string();
+    assert!(
+        error.contains("scripts.port-test") && error.contains("[4773, 5673, 8082, 8093, 19006]"),
+        "{error}"
+    );
     Ok(())
 }
 

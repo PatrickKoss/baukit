@@ -31,7 +31,7 @@ pub(crate) fn validate(
         }
         check_authorized_parties(root, manifest, &browser_ports, failures)?;
         check_redirect_default(root, port, failures)?;
-        check_expo_scripts(root, ExpoServer::Browser, port, failures)?;
+        check_expo_scripts(root, ExpoServer::Browser, port, &browser_ports, failures)?;
         record_success("web", port, before, successes, failures);
     }
     if let Some(port) = ports.web_preview {
@@ -47,7 +47,7 @@ pub(crate) fn validate(
     }
     if let Some(port) = ports.metro {
         let before = failures.len();
-        check_expo_scripts(root, ExpoServer::Metro, port, failures)?;
+        check_expo_scripts(root, ExpoServer::Metro, port, &[port], failures)?;
         for directory in ["scripts", "mobile/scripts"] {
             check_metro_directory(root, &root.join(directory), port, failures)?;
         }
@@ -269,6 +269,7 @@ fn check_expo_scripts(
     root: &Path,
     server: ExpoServer,
     port: u16,
+    accepted: &[u16],
     failures: &mut Vec<String>,
 ) -> Result<()> {
     let relative = "mobile/package.json";
@@ -309,7 +310,13 @@ fn check_expo_scripts(
                     check_port(&relative, name, port, None, failures);
                 }
                 for found in found {
-                    check_port(&relative, name, port, found, failures);
+                    match found {
+                        Some(found) if accepted.contains(&found) => {}
+                        Some(found) if accepted.len() > 1 => failures.push(format!(
+                            "generated file `{relative}` does not match declared ports.{name} (expected one of the declared browser ports {accepted:?}, found port {found})"
+                        )),
+                        _ => check_port(&relative, name, port, found, failures),
+                    }
                 }
             }
         }
