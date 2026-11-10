@@ -47,7 +47,7 @@ struct CheckCommand {
     /// agent-docs: write the managed CLAUDE.md block and the AGENTS.md symlink.
     #[arg(long)]
     fix: bool,
-    /// suppressions: lower the maxima in baukit-check.toml to the current counts.
+    /// suppressions: lower the maxima in baukit-check.toml to the current counts. template-files: rewrite the hashes.
     #[arg(long)]
     update: bool,
 }
