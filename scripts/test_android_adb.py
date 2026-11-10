@@ -307,7 +307,11 @@ class AndroidSettleTests(unittest.TestCase):
             contextlib.redirect_stderr(error),
         ):
             status = android_adb.settle(
-                "adb", "emulator-5556", 10, timeout, clock=clock, sleep=clock.sleep
+                "adb",
+                "emulator-5556",
+                10,
+                timeout,
+                timing=android_adb.Timing(clock=clock, sleep=clock.sleep),
             )
         return status, output.getvalue(), error.getvalue(), commands, clock.now
 

@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_PROBE_TIMEOUT = 10
@@ -31,6 +33,15 @@ CRITICAL_PACKAGES = {
     "com.android.inputmethod.latin",
     "com.google.android.inputmethod.latin",
 }
+
+
+@dataclass(frozen=True)
+class Timing:
+    clock: Callable[[], float] = time.monotonic
+    sleep: Callable[[float], None] = time.sleep
+
+
+SYSTEM_TIMING = Timing()
 
 
 def run_command(command: list[str], **options) -> subprocess.CompletedProcess:
@@ -153,20 +164,23 @@ def settle(
     serial: str,
     probe_timeout: float,
     settle_timeout: float,
+    *,
+    timing: Timing = SYSTEM_TIMING,
 ) -> int:
-    start = time.monotonic()
+    clock = timing.clock
+    start = clock()
     deadline = start + settle_timeout
     shell(
         adb,
         serial,
-        max(probe_timeout, deadline - time.monotonic()),
+        max(probe_timeout, deadline - clock()),
         "cmd",
         "package",
         "bg-dexopt-job",
     )
     window = SETTLE_WINDOW_POLLS * poll_interval()
     before = None
-    while time.monotonic() < deadline:
+    while clock() < deadline:
         stat = shell(adb, serial, probe_timeout, "cat", "/proc/stat")
         after = cpu_counters(stat) if stat else None
         if after is None:
@@ -174,10 +188,10 @@ def settle(
                 print(f"qa: lost {serial} while it settled", file=sys.stderr)
                 return 1
         elif before is not None and busy_cores(before, after) < QUIET_CORES:
-            print(f"qa: {serial} settled in {time.monotonic() - start:.0f} s")
+            print(f"qa: {serial} settled in {clock() - start:.0f} s")
             return 0
         before = after
-        time.sleep(min(window, max(0, deadline - time.monotonic())))
+        timing.sleep(min(window, max(0, deadline - clock())))
     print(f"qa: {serial} did not settle within {settle_timeout:.0f} s; saving the snapshot anyway")
     return 0
 
