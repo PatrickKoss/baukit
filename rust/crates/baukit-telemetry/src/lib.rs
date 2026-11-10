@@ -98,6 +98,8 @@ pub use tracing;
 pub use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 const DEFAULT_FILTER: &str = "info";
+const RMCP_TARGET: &str = "rmcp";
+const RMCP_CAP: &str = "rmcp=info";
 const OTLP_ENDPOINT_ENV: &str = "OTEL_EXPORTER_OTLP_ENDPOINT";
 const OTEL_SDK_DISABLED_ENV: &str = "OTEL_SDK_DISABLED";
 
@@ -335,9 +337,7 @@ impl TelemetryBuilder {
             return Err(TelemetryError::MetricsAlreadyInitialized(error.to_string()));
         }
 
-        let filter = self.filter.map(EnvFilter::new).unwrap_or_else(|| {
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILTER))
-        });
+        let filter = resolve_filter(self.filter, std::env::var(EnvFilter::DEFAULT_ENV).ok());
         let format = resolve_log_format(self.log_format, self.identity.environment());
         let subscriber = Registry::default()
             .with(filter)
@@ -714,6 +714,34 @@ where
     fields
 }
 
+/// Picks the explicit filter, then `RUST_LOG`, then `info`, and caps `rmcp` at
+/// `info` unless the directives name `rmcp` themselves. Stock `rmcp` logs tool
+/// arguments at `trace`.
+fn resolve_filter(explicit: Option<String>, env: Option<String>) -> EnvFilter {
+    let (directives, strict) = match (explicit, env) {
+        (Some(directives), _) => (directives, false),
+        (None, Some(directives)) => (directives, true),
+        (None, None) => (DEFAULT_FILTER.to_owned(), false),
+    };
+    let capped = cap_rmcp(&directives);
+    if strict {
+        return EnvFilter::try_new(&capped)
+            .unwrap_or_else(|_| EnvFilter::new(cap_rmcp(DEFAULT_FILTER)));
+    }
+    EnvFilter::new(capped)
+}
+
+fn cap_rmcp(directives: &str) -> String {
+    let names_rmcp = directives
+        .split(',')
+        .any(|directive| directive.trim_start().starts_with(RMCP_TARGET));
+    if names_rmcp {
+        directives.to_owned()
+    } else {
+        format!("{directives},{RMCP_CAP}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -744,6 +772,43 @@ mod tests {
             "a1b2c3d",
             environment,
         )
+    }
+
+    #[test]
+    fn rmcp_stays_below_debug_even_under_a_global_trace_filter() {
+        use tracing_subscriber::fmt;
+
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = fmt()
+            .with_writer({
+                let output = output.clone();
+                move || BufferWriter(output.clone())
+            })
+            .with_env_filter(resolve_filter(None, Some("trace".to_owned())))
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::trace!(target: "rmcp::handler", "tool arguments secret-argument");
+            tracing::debug!(target: "rmcp::handler", "debug secret-argument");
+            tracing::info!(target: "rmcp::handler", "info kept");
+            tracing::trace!(target: "app", "app trace kept");
+        });
+        let text = String::from_utf8_lossy(
+            &output
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+        )
+        .into_owned();
+        assert!(!text.contains("secret-argument"), "{text}");
+        assert!(
+            text.contains("info kept") && text.contains("app trace kept"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn an_explicit_rmcp_directive_is_kept() {
+        assert_eq!(cap_rmcp("info,rmcp=debug"), "info,rmcp=debug");
+        assert_eq!(cap_rmcp("debug"), "debug,rmcp=info");
     }
 
     #[test]

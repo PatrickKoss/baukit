@@ -4,6 +4,10 @@ All notable changes to `baukit-telemetry` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- The log filter caps `rmcp` at `info`, whatever `RUST_LOG` or `TelemetryBuilder::filter` say, because stock `rmcp` logs tool arguments at `trace`. A directive that names `rmcp` itself, such as `rmcp=debug`, wins. Products can drop their own capped filter.
+
 ## [0.19.2] - 2026-11-08
 
 ## [0.19.1] - 2026-11-08
