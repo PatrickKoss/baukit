@@ -1,0 +1,19 @@
+id: rust-sql-splice
+valid:
+  - |
+    fn f(statement: &str) { let _ = statement.split_once(" from "); }
+  - |
+    fn f(sql: &str) { let (head, tail) = sql.split_once(","); }
+  - |
+    fn f(line: &str) { let i = line.find("key="); }
+  - |
+    fn f(text: &str) { let t = text.replace("where", "there"); }
+invalid:
+  - |
+    fn f(sql: &str) { let (head, tail) = sql.split_once(" WHERE ").unwrap(); }
+  - |
+    fn f(sql: &str) { let q = sql.replacen(" WHERE ", " WHERE tenant = $1 AND ", 1); }
+  - |
+    fn f(sql: &str) { let i = sql.rsplit_once(" WHERE "); }
+  - |
+    fn f(sql: &str) { let i = sql.find(" where "); }

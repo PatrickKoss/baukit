@@ -1,0 +1,28 @@
+id: ts-lying-type-predicate
+language: tsx
+severity: error
+message: Type predicate whose body only checks for a record. Check every field the type promises, or return a parsed value from a guard in @baukit/type-guards.
+note: "`(v): v is T => isRecord(v)` tells the compiler the value is a T after one object check; a wrong shape then fails far from the guard."
+ignores:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/__tests__/**"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/e2e/**"
+  - "**/test-utils/**"
+  - "**/testing/**"
+rule:
+  any:
+    - pattern: "($V): $W is $T => $F($X)"
+    - pattern: "($V: $VT): $W is $T => $F($X)"
+    - pattern: "function $N($V): $W is $T { return $F($X); }"
+    - pattern: "function $N($V: $VT): $W is $T { return $F($X); }"
+constraints:
+  F:
+    regex: '^(isRecord|isObject|isPlainObject|isObjectRecord)$'
+  T:
+    not:
+      regex: '^(Record<|\{)'

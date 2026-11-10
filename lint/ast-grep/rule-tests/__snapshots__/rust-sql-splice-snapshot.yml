@@ -1,0 +1,92 @@
+id: rust-sql-splice
+snapshots:
+  "fn f(sql: &str) { let (head, tail) = sql.split_once(\" WHERE \").unwrap(); }\n":
+    labels:
+    - source: sql.split_once(" WHERE ")
+      style: primary
+      start: 37
+      end: 62
+    - source: (" WHERE ")
+      style: secondary
+      start: 51
+      end: 62
+    - source: split_once
+      style: secondary
+      start: 41
+      end: 51
+    - source: sql.split_once
+      style: secondary
+      start: 37
+      end: 51
+  "fn f(sql: &str) { let i = sql.find(\" where \"); }\n":
+    labels:
+    - source: sql.find(" where ")
+      style: primary
+      start: 26
+      end: 45
+    - source: (" where ")
+      style: secondary
+      start: 34
+      end: 45
+    - source: find
+      style: secondary
+      start: 30
+      end: 34
+    - source: sql.find
+      style: secondary
+      start: 26
+      end: 34
+  "fn f(sql: &str) { let i = sql.rsplit_once(\" ORDER BY \"); }\n":
+    labels:
+    - source: sql.rsplit_once(" ORDER BY ")
+      style: primary
+      start: 26
+      end: 55
+    - source: (" ORDER BY ")
+      style: secondary
+      start: 41
+      end: 55
+    - source: rsplit_once
+      style: secondary
+      start: 30
+      end: 41
+    - source: sql.rsplit_once
+      style: secondary
+      start: 26
+      end: 41
+  "fn f(sql: &str) { let i = sql.rsplit_once(\" WHERE \"); }\n":
+    labels:
+    - source: sql.rsplit_once(" WHERE ")
+      style: primary
+      start: 26
+      end: 52
+    - source: (" WHERE ")
+      style: secondary
+      start: 41
+      end: 52
+    - source: rsplit_once
+      style: secondary
+      start: 30
+      end: 41
+    - source: sql.rsplit_once
+      style: secondary
+      start: 26
+      end: 41
+  "fn f(sql: &str) { let q = sql.replacen(\" WHERE \", \" WHERE tenant = $1 AND \", 1); }\n":
+    labels:
+    - source: sql.replacen(" WHERE ", " WHERE tenant = $1 AND ", 1)
+      style: primary
+      start: 26
+      end: 79
+    - source: (" WHERE ", " WHERE tenant = $1 AND ", 1)
+      style: secondary
+      start: 38
+      end: 79
+    - source: replacen
+      style: secondary
+      start: 30
+      end: 38
+    - source: sql.replacen
+      style: secondary
+      start: 26
+      end: 38

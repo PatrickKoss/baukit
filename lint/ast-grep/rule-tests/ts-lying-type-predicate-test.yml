@@ -1,0 +1,19 @@
+id: ts-lying-type-predicate
+valid:
+  - |
+    const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+  - |
+    const isUser = (v: unknown): v is User => isRecord(v) && typeof v.id === "string";
+  - |
+    function isUser(v: unknown): v is User { return isRecord(v) && typeof v.name === "string"; }
+  - |
+    const ok = (v: unknown): boolean => isRecord(v);
+  - |
+    const isMap = (v: unknown): v is Record<string, unknown> => isObject(v);
+invalid:
+  - |
+    const isUser = (v: unknown): v is User => isRecord(v);
+  - |
+    const isUser = (v: unknown): v is User => isObject(v);
+  - |
+    function isUser(v: unknown): v is User { return isRecord(v); }

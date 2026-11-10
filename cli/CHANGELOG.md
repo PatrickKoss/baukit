@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `baukit check patterns` has three new rules and a wider one. `rust-sql-format` also flags `format!` strings that hold SQL fragments (predicates, `ORDER BY`, text with `$1`) and not just statements that start with a keyword. `rust-sql-splice` flags `replacen`, `split_once`, `rsplit_once` and `find` on a `" WHERE "` text. `ts-lying-type-predicate` flags `(v): v is T => isRecord(v)`. `ts-response-cast` flags `response.json() as T` and `responseBody as T`.
+
 ## [0.19.2] - 2026-11-08
 
 - `baukit check suppressions` rejects bulk suppression: an `eslint-suppressions.json` file, `eslint --suppress-all`, `--suppress-rule`, `--prune-suppressions` or `--suppressions-location` in a `package.json`, clippy `-A`/`--allow`/`--cap-lints` in gate scripts (`*.sh`, `*.yml`, `Makefile`, `justfile`), a lint set to `allow` in a Cargo `[lints]` or `[workspace.lints]` table, and `-A`/`--cap-lints` in `.cargo/config.toml` rustflags.

@@ -1,0 +1,21 @@
+id: ts-response-cast
+valid:
+  - |
+    const body: unknown = await response.json();
+  - |
+    const body = (await response.json()) as unknown;
+  - |
+    const parsed = parseUser(responseBody);
+  - |
+    const x = other as User;
+  - |
+    const status = response.status as const;
+invalid:
+  - |
+    const user = (await response.json()) as User;
+  - |
+    const user = response.json() as Promise<User>;
+  - |
+    return responseBody as T;
+  - |
+    const rows = responseBody as Row[];

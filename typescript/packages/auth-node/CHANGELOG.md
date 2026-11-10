@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Patch Changes
+
+- `allowKeycloakWebOrigin` validates the Keycloak client list and token responses with type guards and throws on a malformed client.
+
 ## 0.19.2
 
 ### Patch Changes

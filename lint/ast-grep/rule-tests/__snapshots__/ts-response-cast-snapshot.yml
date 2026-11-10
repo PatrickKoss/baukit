@@ -1,0 +1,26 @@
+id: ts-response-cast
+snapshots:
+  "const rows = responseBody as Row[];\n":
+    labels:
+    - source: responseBody as Row[]
+      style: primary
+      start: 13
+      end: 34
+  "const user = (await response.json()) as User;\n":
+    labels:
+    - source: (await response.json()) as User
+      style: primary
+      start: 13
+      end: 44
+  "const user = response.json() as Promise<User>;\n":
+    labels:
+    - source: response.json() as Promise<User>
+      style: primary
+      start: 13
+      end: 45
+  "return responseBody as T;\n":
+    labels:
+    - source: responseBody as T
+      style: primary
+      start: 7
+      end: 24
