@@ -278,9 +278,7 @@ def console_port_open(serial: str) -> bool:
     if match is None:
         return False
     try:
-        with socket.create_connection(
-            (LOOPBACK, int(match[1])), timeout=CONSOLE_CONNECT_TIMEOUT
-        ):
+        with socket.create_connection((LOOPBACK, int(match[1])), timeout=CONSOLE_CONNECT_TIMEOUT):
             return True
     except OSError:
         return False
@@ -302,8 +300,8 @@ def wait_for_stop(
     serial: str,
     probe_timeout: float,
     stop_timeout: float,
+    *,
     timing: Timing = SYSTEM_TIMING,
-    console_open: Callable[[str], bool] = console_port_open,
 ) -> int:
     """Waits until adb forgot `serial` and the qemu process released its console port.
 
@@ -317,7 +315,7 @@ def wait_for_stop(
             listed = adb_lists(adb, serial, min(probe_timeout, remaining))
         except ChildProcessError as failure:
             return int(failure.args[0])
-        if listed is False and not console_open(serial):
+        if listed is False and not console_port_open(serial):
             print(f"qa: {serial} stopped after {timing.clock() - started:.1f} s", file=sys.stderr)
             return 0
         timing.sleep(min(POLL_INTERVAL, max(0, deadline - timing.clock())))

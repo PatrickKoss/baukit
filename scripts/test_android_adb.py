@@ -265,8 +265,13 @@ class AndroidHealthTests(unittest.TestCase):
             return subprocess.CompletedProcess(command, 0, stdout=outcome)
 
         stderr = io.StringIO()
+
+        def console_open(_serial):
+            return console.pop(0) if len(console) > 1 else console[0]
+
         with (
             patch.object(android_adb, "run_command", side_effect=run),
+            patch.object(android_adb, "console_port_open", side_effect=console_open),
             contextlib.redirect_stderr(stderr),
         ):
             status = android_adb.wait_for_stop(
@@ -275,7 +280,6 @@ class AndroidHealthTests(unittest.TestCase):
                 probe_timeout,
                 stop_timeout,
                 timing=android_adb.Timing(clock=clock, sleep=clock.sleep),
-                console_open=lambda _serial: console.pop(0) if len(console) > 1 else console[0],
             )
         return status, stderr.getvalue(), clock.now
 
