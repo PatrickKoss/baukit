@@ -6097,7 +6097,7 @@ fn platform_flavors_keep_domain_free_of_transport_and_wire_the_receiver() -> any
         assert_eq!(purge_binary.exists(), !worker);
         let docs = fs::read_to_string(root.join("docs/platform.md"))?;
         assert!(docs.contains("never lower it below 30 days"));
-        assert_eq!(docs.contains("PlatformJobHandler"), worker);
+        assert_eq!(docs.contains("RetentionJobHandler"), worker);
         let api =
             fs::read_to_string(root.join(format!("backend/crates/{name}-bin/src/bin/api.rs")))?;
         assert!(api.contains(".merge(platform.router)"));

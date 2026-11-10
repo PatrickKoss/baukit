@@ -167,8 +167,11 @@ The authenticated API requires PostgreSQL. `DELETE /me` requires a stable
 `Idempotency-Key` with 16 to 128 visible ASCII characters. It removes the
 `user_identities` row, fences the subject, and queues identity deletion in one
 transaction. The example items are shared resources without user ownership.
-Add every product-owned table, API token and job to `PostgresProfileErasure`
-when adopting this template. Track external data in the deletion inventory.
+`PostgresProfileErasure` already deletes the subject's `baukit_auth_browser_sessions`
+rows. Add every product-owned table, API token and job to it when adopting this template.{% if context.worker %}
+The durable worker purges expired browser sessions daily.{% else %}
+Without the durable worker, nothing purges expired browser sessions. Call
+`baukit_auth::browser_session::purge_browser_sessions` from a daily scheduled command.{% endif %} Track external data in the deletion inventory.
 
 A completed inline provider deletion returns 200. An unavailable provider
 returns 202 with an operation ID and Location for

@@ -95,16 +95,16 @@ read-through calls. The product owns its suite-subject mapping and this filter.
 
 ## Receipt retention
 
-{% if context.worker %}The durable worker registers `PlatformJobHandler` alongside the demo job handler.
+{% if context.worker %}The durable worker registers `RetentionJobHandler` alongside the demo job handler.
 At startup, every replica calls `enqueue_initial(now)`. A daily `FixedUtcInterval`
 slot supplies the idempotency key, so replicas and restarts share one job per
 UTC day. After purging bounded batches, the handler commits the next slot and
 current job completion in one transaction. Delayed jobs skip missed days.
-Monitor failed `platform.receipts.purge` jobs and retry them through the job
+Monitor failed `retention.purge` jobs and retry them through the job
 operations API after fixing the failure. The worker must be running for retention
 to advance.
 
-`RECEIPT_RETENTION_DAYS` lives in the worker crate's `platform` module. Increase
+`RECEIPT_RETENTION_DAYS` lives in the worker crate's `retention` module. Increase
 it for a longer replay window; never lower it below 30 days.
 {% else %}This flavor has no durable worker. Schedule this command daily with the
 deployment's scheduler, using the same runtime database settings:

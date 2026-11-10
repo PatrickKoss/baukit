@@ -253,6 +253,8 @@ impl baukit_erasure::ProductErasure for PostgresProfileErasure {
                 .bind(subject)
                 .execute(&mut *connection)
                 .await?;
+            baukit_auth::browser_session::erase_subject_browser_sessions(&mut *connection, subject)
+                .await?;
             sqlx::query("DELETE FROM user_identities WHERE subject = $1")
                 .bind(subject)
                 .execute(connection)

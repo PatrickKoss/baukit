@@ -91,6 +91,10 @@ path = "../../tests/auth_conformance.rs"
 {% endif -%}
 {% if context.auth_enabled %}
 [[test]]
+name = "browser_session_erasure"
+path = "../../tests/browser_session_erasure.rs"
+
+[[test]]
 name = "identity_erasure_conformance"
 path = "../../tests/identity_erasure_conformance.rs"
 {% endif %}{% if context.auth_enabled %}

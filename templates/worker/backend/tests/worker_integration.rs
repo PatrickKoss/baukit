@@ -88,6 +88,65 @@ async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn 
     Ok(())
 }
 {% if context.auth_enabled %}
+#[tokio::test]
+#[ignore = "requires a reachable Docker daemon; run explicitly for durable worker verification"]
+async fn retention_job_purges_expired_browser_sessions() -> Result<(), Box<dyn Error>> {
+    use {{ context.app_crate }}_worker::retention::RetentionJobHandler;
+
+    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
+    let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
+    let now = chrono::Utc::now();
+    insert_browser_session(&pool, "expired", now - chrono::TimeDelta::days(3)).await?;
+    insert_browser_session(&pool, "active", now + chrono::TimeDelta::days(3)).await?;
+
+    let handler = Arc::new(RetentionJobHandler::new(pool.clone())?);
+    let job_id = handler.enqueue_initial(now).await?.job.id;
+    let runner = WorkerRunner::new(
+        Arc::new(PostgresJobStore::new(pool.clone())),
+        handler,
+        WorkerConfig {
+            worker_id: "retention-worker-test".to_owned(),
+            concurrency: 1,
+            poll_interval: Duration::from_millis(10),
+            ..WorkerConfig::default()
+        },
+    )?;
+    run_until_succeeded(runner, &pool, job_id).await?;
+
+    let subjects: Vec<String> =
+        sqlx::query_scalar("SELECT subject FROM baukit_auth_browser_sessions ORDER BY subject")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(subjects, ["active"]);
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
+async fn insert_browser_session(
+    pool: &sqlx::PgPool,
+    subject: &str,
+    expires_at: chrono::DateTime<chrono::Utc>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO baukit_auth_browser_sessions (
+             id, secret_hash, family_id, subject, key_version, refresh_token,
+             created_at, last_used_at, idle_expires_at, absolute_expires_at
+         ) VALUES ($1, $2, $3, $4, 1, $5, now(), now(), $6, $6)",
+    )
+    .bind(uuid::Uuid::new_v4())
+    .bind(vec![0_u8; 32])
+    .bind(uuid::Uuid::new_v4())
+    .bind(subject)
+    .bind(vec![0_u8; 16])
+    .bind(expires_at)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+{% endif %}
+{% if context.auth_enabled %}
 async fn pending_erasure(
     pool: &sqlx::PgPool,
 ) -> Result<

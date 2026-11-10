@@ -217,17 +217,17 @@ async fn assert_verified_entitlements(
 async fn run_receipt_purge(pool: sqlx::PgPool) -> Result<(), Box<dyn Error>> {
     use baukit_jobs::{FixedUtcInterval, PostgresJobStore, WorkerConfig, WorkerRunner};
     use baukit_runtime::ShutdownToken;
-    use {{ context.app_crate }}_worker::platform::{PURGE_JOB_TYPE, PlatformJobHandler};
+    use {{ context.app_crate }}_worker::retention::{PURGE_JOB_TYPE, RetentionJobHandler};
     use std::time::Duration;
 
     let now = chrono::Utc::now();
     let interval = FixedUtcInterval::new(Duration::from_secs(24 * 60 * 60))?;
     let slot = interval.slot_at(now)?;
-    let handler = Arc::new(PlatformJobHandler::new(pool.clone())?);
+    let handler = Arc::new(RetentionJobHandler::new(pool.clone())?);
     let initial = handler.enqueue_initial(now).await?;
     assert!(initial.created);
     assert_eq!(initial.job.idempotency_key, Some(slot.identifier()));
-    let replica = PlatformJobHandler::new(pool.clone())?;
+    let replica = RetentionJobHandler::new(pool.clone())?;
     let duplicate = replica.enqueue_initial(now).await?;
     assert!(!duplicate.created);
     assert_eq!(duplicate.job.id, initial.job.id);
