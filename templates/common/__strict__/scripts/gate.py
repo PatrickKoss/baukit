@@ -26,6 +26,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from process_runner import run_process
+
 MODES = ("always", "selected", "affected")
 DEFAULT_BUDGET_MINUTES = {"full": 10, "affected": 5}
 DEFAULT_WORKER_MEMORY_MB = 1024
@@ -66,16 +68,6 @@ class RunContext:
     command: list[str]
     log_directory: Path
     environment: dict[str, str]
-
-
-def run_process(
-    command: list[str], *, check: bool = False, **options
-) -> subprocess.CompletedProcess:
-    executable = shutil.which(command[0])
-    if executable is None:
-        raise SystemExit(f"gate: {command[0]} is not on PATH")
-    argv = [executable, *command[1:]]
-    return subprocess.run(argv, check=check, **options)  # noqa: S603 -- gate-built arguments
 
 
 @dataclass(frozen=True)

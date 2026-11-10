@@ -2,11 +2,12 @@
 
 import argparse
 import re
-import shutil
 import subprocess
 import sys
 from pathlib import Path
 from urllib.parse import unquote
+
+from process_runner import run_process
 
 INLINE_LINK_START = re.compile(r"!?\[[^\]]*\]\(\s*")
 INLINE_LINK_END = re.compile(r"""(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\s*\)""")
@@ -17,13 +18,8 @@ DEFAULT_ROOTS = ("README.md", "CLAUDE.md", "AGENTS.md", "docs")
 
 
 def git(repository_root: Path, *arguments: str, check: bool) -> subprocess.CompletedProcess:
-    executable = shutil.which("git")
-    if executable is None:
-        raise SystemExit("check-markdown-links: git is not on PATH")
-    return subprocess.run(  # noqa: S603 -- fixed git subcommands over repository paths
-        [executable, "-C", str(repository_root), *arguments],
-        check=check,
-        capture_output=True,
+    return run_process(
+        ["git", "-C", str(repository_root), *arguments], check=check, capture_output=True
     )
 
 

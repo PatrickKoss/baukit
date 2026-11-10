@@ -11,11 +11,11 @@ usage: osv-resolved-lock.py MANIFEST_PATH OUTPUT_DIRECTORY
 from __future__ import annotations
 
 import re
-import shutil
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
+
+from process_runner import run_process
 
 TREE_LINE = re.compile(r"^(?P<name>[A-Za-z0-9_\-]+) v(?P<version>\S+)")
 LOCK_VERSION = 4
@@ -32,13 +32,9 @@ def parse_tree_packages(tree: str) -> set[tuple[str, str]]:
 
 
 def resolved_packages(manifest: Path) -> set[tuple[str, str]]:
-    cargo = shutil.which("cargo")
-    if cargo is None:
-        message = "cargo is not on PATH"
-        raise FileNotFoundError(message)
-    tree = subprocess.run(  # noqa: S603 -- fixed cargo tree arguments over one manifest path
+    tree = run_process(
         [
-            cargo,
+            "cargo",
             "tree",
             "--manifest-path",
             str(manifest),

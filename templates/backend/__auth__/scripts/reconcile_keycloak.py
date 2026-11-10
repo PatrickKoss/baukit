@@ -8,7 +8,6 @@ import json
 import os
 import secrets
 import shutil
-import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -19,6 +18,7 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 import keycloak_policy
+from process_runner import run_process
 
 SCOPE_REALM_FIELDS = {
     "clientScopes",
@@ -729,17 +729,10 @@ class ComposeRecovery:
         self.service = service
 
     def command(self, arguments: list[str], environment: dict[str, str] | None = None) -> None:
-        docker = shutil.which("docker")
-        if docker is None:
+        if shutil.which("docker") is None:
             fail("docker is required for administrator recovery")
-        command = [docker, "compose", "-f", str(self.compose_file), *arguments]
-        result = subprocess.run(  # noqa: S603 -- fixed docker compose subcommands, no user input
-            command,
-            env=environment,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        command = ["docker", "compose", "-f", str(self.compose_file), *arguments]
+        result = run_process(command, env=environment, capture_output=True, text=True)
         if result.returncode != 0:
             fail(f"docker compose command failed with exit code {result.returncode}")
 
