@@ -4,6 +4,10 @@
 
 - `scripts/osv-resolved-lock.py` writes a `Cargo.lock` with only the packages `cargo tree --all-features --target all` can reach, and `scripts/repo-lint.sh osv` scans that file. Lockfile-only optional dependencies such as `libsqlite3-sys` no longer raise advisories.{% if context.backend %} Delete the RUSTSEC-2026-0459 entry from `osv-scanner.toml`.{% endif %}{% if context.quality_strict %} `quality-gate.sh` runs `scripts/osv-resolved-lock.test.py`.{% endif %}
 - `ruff.toml` no longer ignores `E501`, `S603`, `S607`, `PLR2004` or `PLR0913` globally. Test files (`test_*.py`, `*.test.py`) ignore `E501`, `S603`, `S607` and `PLR2004`. Other scripts resolve executables with `shutil.which`, mark the one `subprocess.run` call with a reasoned `noqa: S603`, and bundle long argument lists into dataclasses (`BudgetLimit`, `RunContext`, `LoginRequest`, `RecoveryHooks`). Copy the new `ruff.toml` and fix the findings.
+{% if context.web or context.mobile %}- `scripts/quality-gate.sh` reads the pnpm version from `packageManager` in `{{ "web" if context.web else "mobile" }}/package.json` instead of hardcoding `pnpm@12.9.1`, and `scripts/preflight.sh` runs `corepack pnpm` from the package directory. A pnpm bump now needs one edit.
+{% endif %}- `scripts/quality-gate.sh` `use_baukit_root` adds the baukit checkout to `MISE_TRUSTED_CONFIG_PATHS`, so rustc or kache children started inside the clone do not stop at an untrusted `mise.toml`.
+{% if context.pwa and not context.web %}- `scripts/quality-gate.sh` sets `PLAYWRIGHT_BROWSERS_PATH` for `pwa` products without `web`, so worktrees share one browser cache.
+{% endif %}- `ruff.toml` no longer ignores `E501`, `S603`, `S607`, `PLR2004` or `PLR0913` globally. Test files (`test_*.py`, `*.test.py`) ignore `E501`, `S603`, `S607` and `PLR2004`. Other scripts resolve executables with `shutil.which`, mark the one `subprocess.run` call with a reasoned `noqa: S603`, and bundle long argument lists into dataclasses (`BudgetLimit`, `RunContext`, `LoginRequest`, `RecoveryHooks`). Copy the new `ruff.toml` and fix the findings.
 
 ## [0.19.2] - 2026-11-08
 

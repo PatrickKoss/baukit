@@ -53,12 +53,14 @@ use_baukit_root() {
   fi
   if [ "$(manifest_value dependencies.baukit.source)" = "path" ]; then
     baukit_root=$(CDPATH='' cd -- "$(manifest_value dependencies.baukit.path)/.." && pwd)
-    return
+  else
+    baukit_root=$(mktemp -d)
+    temporary_paths="$temporary_paths $baukit_root"
+    git clone --branch v{{ context.template_version }} --depth 1 \
+      https://github.com/PatrickKoss/baukit.git "$baukit_root"
   fi
-  baukit_root=$(mktemp -d)
-  temporary_paths="$temporary_paths $baukit_root"
-  git clone --branch v{{ context.template_version }} --depth 1 \
-    https://github.com/PatrickKoss/baukit.git "$baukit_root"
+  MISE_TRUSTED_CONFIG_PATHS="$baukit_root${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}"
+  export MISE_TRUSTED_CONFIG_PATHS
 }
 
 if git rev-parse --verify HEAD >/dev/null 2>&1; then
@@ -81,8 +83,9 @@ use_base_revision() {
 
 gate_mode=${BAUKIT_GATE_MODE:-full}
 workers=${BAUKIT_GATE_WORKERS:-2}
-{% if context.web %}PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright}
+{% if context.web or context.pwa %}PLAYWRIGHT_BROWSERS_PATH=${PLAYWRIGHT_BROWSERS_PATH:-${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright}
 export PLAYWRIGHT_BROWSERS_PATH
+{% endif %}{% if context.web or context.mobile %}pnpm_package=$(python3 -c 'import json; print(json.load(open("{{ "web" if context.web else "mobile" }}/package.json"))["packageManager"].split("+")[0])')
 {% endif %}
 has_token() {
   case " ${BAUKIT_GATE_TOKENS:-} " in
@@ -381,23 +384,23 @@ step_spec_purposes() {
 }
 
 step_web_install() {
-  corepack pnpm@12.9.1 --dir web install --frozen-lockfile
+  corepack "$pnpm_package" --dir web install --frozen-lockfile
 }
 
 step_web_build() {
-  corepack pnpm@12.9.1 --dir web build
+  corepack "$pnpm_package" --dir web build
 }
 
 step_web_lint() {
-  corepack pnpm@12.9.1 --dir web lint
+  corepack "$pnpm_package" --dir web lint
 }
 
 step_web_unit() {
   if [ "$gate_mode" = affected ]; then
-    corepack pnpm@12.9.1 --dir web exec vitest run --changed "$BAUKIT_GATE_BASE" --passWithNoTests
+    corepack "$pnpm_package" --dir web exec vitest run --changed "$BAUKIT_GATE_BASE" --passWithNoTests
     return
   fi
-  corepack pnpm@12.9.1 --dir web run test:coverage
+  corepack "$pnpm_package" --dir web run test:coverage
 }
 
 step_web_service_worker() {
@@ -405,12 +408,12 @@ step_web_service_worker() {
     echo "quality gate: capabilities.pwa is false"
     return
   fi
-  corepack pnpm@12.9.1 --dir web run build:sw:check
+  corepack "$pnpm_package" --dir web run build:sw:check
 }
 
 {% if context.web and context.auth_enabled and not context.auth_oidc %}step_web_bundle() {
   (cd web && node --test scripts/check-production-bundle.test.mjs)
-  corepack pnpm@12.9.1 --dir web run check:bundle
+  corepack "$pnpm_package" --dir web run check:bundle
 }
 
 {% endif %}critical_paths() {
@@ -440,7 +443,7 @@ step_playwright() {
     E2E_WEBKIT_SKIP=$(critical_paths | paste -sd ',' -)
     export E2E_WEBKIT_SKIP
   fi
-  corepack pnpm@12.9.1 --dir web exec playwright test "$@"
+  corepack "$pnpm_package" --dir web exec playwright test "$@"
 }
 
 step_webkit_repeats() {
@@ -453,34 +456,34 @@ step_webkit_repeats() {
   for critical_path in $critical; do
     set -- "$@" "$critical_path"
   done
-  E2E_ALL_PURPOSES=1 corepack pnpm@12.9.1 --dir web exec playwright test "$@" \
+  E2E_ALL_PURPOSES=1 corepack "$pnpm_package" --dir web exec playwright test "$@" \
     --config e2e/playwright.config.ts --project=webkit-desktop \
     --project=mobile-safari --repeat-each "$(manifest_value quality.webkit_repeats)"
 }
 {% endif %}{% if context.mobile %}
 step_mobile_install() {
-  corepack pnpm@12.9.1 --dir mobile install --frozen-lockfile
+  corepack "$pnpm_package" --dir mobile install --frozen-lockfile
 }
 
 step_mobile_typecheck() {
-  corepack pnpm@12.9.1 --dir mobile typecheck
+  corepack "$pnpm_package" --dir mobile typecheck
 }
 
 step_mobile_lint() {
-  corepack pnpm@12.9.1 --dir mobile lint
+  corepack "$pnpm_package" --dir mobile lint
 }
 
 step_expo_doctor() {
-  (cd mobile && corepack pnpm@12.9.1 dlx expo-doctor)
+  (cd mobile && corepack "$pnpm_package" dlx expo-doctor)
 }
 
 step_mobile_unit() {
   if [ "$gate_mode" = affected ]; then
-    corepack pnpm@12.9.1 --dir mobile exec jest --changedSince="$BAUKIT_GATE_BASE" \
+    corepack "$pnpm_package" --dir mobile exec jest --changedSince="$BAUKIT_GATE_BASE" \
       --maxWorkers="$workers" --passWithNoTests
     return
   fi
-  corepack pnpm@12.9.1 --dir mobile run test:coverage --maxWorkers="$workers"
+  corepack "$pnpm_package" --dir mobile run test:coverage --maxWorkers="$workers"
 }
 {% if not context.web %}
 step_mobile_service_worker() {
@@ -488,19 +491,19 @@ step_mobile_service_worker() {
     echo "quality gate: capabilities.pwa is false"
     return
   fi
-{% if context.pwa %}  corepack pnpm@12.9.1 --dir mobile exec expo export --platform web --max-workers "$workers"
-  corepack pnpm@12.9.1 --dir mobile run build:sw
-{% endif %}  corepack pnpm@12.9.1 --dir mobile run build:sw:check
+{% if context.pwa %}  corepack "$pnpm_package" --dir mobile exec expo export --platform web --max-workers "$workers"
+  corepack "$pnpm_package" --dir mobile run build:sw
+{% endif %}  corepack "$pnpm_package" --dir mobile run build:sw:check
 }
 {% endif %}
 {% if context.mobile and context.auth_enabled and not context.auth_oidc %}step_mobile_bundle() {
   (cd mobile && node --test scripts/check-production-bundle.test.mjs)
-  corepack pnpm@12.9.1 --dir mobile run check:bundle
+  corepack "$pnpm_package" --dir mobile run check:bundle
 }
 
 {% endif %}step_ios_check() {
-  CI=1 corepack pnpm@12.9.1 --dir mobile exec expo prebuild --clean --platform ios
-  CI=1 corepack pnpm@12.9.1 --dir mobile exec expo export --platform ios --output-dir dist/ios-check --max-workers "$workers"
+  CI=1 corepack "$pnpm_package" --dir mobile exec expo prebuild --clean --platform ios
+  CI=1 corepack "$pnpm_package" --dir mobile exec expo export --platform ios --output-dir dist/ios-check --max-workers "$workers"
 }
 
 step_android_build() {
