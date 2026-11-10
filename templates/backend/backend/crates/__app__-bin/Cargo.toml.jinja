@@ -41,10 +41,10 @@ uuid.workspace = true
 [dev-dependencies]
 {% if context.platform or context.auth_clerk or context.auth_workos %}base64 = "0.22.1"
 {% endif %}{% if context.platform %}ed25519-dalek = "2.2.0"
-{% endif %}{% if context.auth_enabled %}tempfile = "3.27.0"
 {% endif %}{% if not context.auth_enabled %}baukit-http.workspace = true
 {% endif %}baukit-test = { workspace = true, features = ["sqlx-postgres"] }
 serde_json.workspace = true
+tempfile = "3.27.0"
 tower.workspace = true
 
 [[bin]]

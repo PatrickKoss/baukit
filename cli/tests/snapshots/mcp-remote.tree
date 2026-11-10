@@ -19,7 +19,7 @@ d988257944c62057e452c7198d18ff118cb8ae1de35668a0318ee09d46bad6ae  .gitleaks.toml
 52615a4c92581a4287845889f18138c40e9f05da8753d3bedf8b40c1c37870d5  backend/clippy.toml
 5eff47648470ef46c43d291809badc2a9143dd620b08ff9078379fe2393d4b77  backend/crates/snapshot-app-api/Cargo.toml
 4966d0284333e4c9b23faffd7a91359083592b383f2b8159b6858fa735f2e2dc  backend/crates/snapshot-app-api/src/lib.rs
-a35c66c717827c596ea200f875f3625e42ae84a9c3c38a3e5df96567da109ce8  backend/crates/snapshot-app-bin/Cargo.toml
+c5ad60cf35d2dfabb3040e262d50e88ea8c0c5dd43d2c332803a4a9bb69e1368  backend/crates/snapshot-app-bin/Cargo.toml
 eb3e594baeb012e04b9d068dca70d7f5a14ab383ff8e1a8c22969929d9e5f57b  backend/crates/snapshot-app-bin/src/bin/api.rs
 749cfc6eddf5da6fc03098fd2e5f3f849d18c901f73c772939b0785587b508fb  backend/crates/snapshot-app-bin/src/bin/migrate.rs
 5c76cff169307e504f0eae77e32463a45fe8278b1af010034476bd859c0d0587  backend/crates/snapshot-app-bin/src/bin/openapi.rs

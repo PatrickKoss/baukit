@@ -19,7 +19,7 @@ c9089bde56e9533447b897d707570eb1524623fb500b150b10b1b23fe8d68a38  README.md
 52615a4c92581a4287845889f18138c40e9f05da8753d3bedf8b40c1c37870d5  backend/clippy.toml
 5eff47648470ef46c43d291809badc2a9143dd620b08ff9078379fe2393d4b77  backend/crates/snapshot-app-api/Cargo.toml
 4966d0284333e4c9b23faffd7a91359083592b383f2b8159b6858fa735f2e2dc  backend/crates/snapshot-app-api/src/lib.rs
-fa887cae36aaea7eeb6422a54533d095f8024ad2e6404d0250b86be226e7ab9c  backend/crates/snapshot-app-bin/Cargo.toml
+9f3e885816303b1acbf1701243bf9c0d0becd98c408a648634abc74ac3fe734a  backend/crates/snapshot-app-bin/Cargo.toml
 eb3e594baeb012e04b9d068dca70d7f5a14ab383ff8e1a8c22969929d9e5f57b  backend/crates/snapshot-app-bin/src/bin/api.rs
 749cfc6eddf5da6fc03098fd2e5f3f849d18c901f73c772939b0785587b508fb  backend/crates/snapshot-app-bin/src/bin/migrate.rs
 5c76cff169307e504f0eae77e32463a45fe8278b1af010034476bd859c0d0587  backend/crates/snapshot-app-bin/src/bin/openapi.rs
