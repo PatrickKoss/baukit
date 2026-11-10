@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `reconcile_keycloak.py` can reconcile the realm `smtpServer` field when `realmFields` selects it. Only `host`, `port`, `from`, `fromDisplayName`, `replyTo`, `ssl` and `starttls` are accepted. `password`, `user`, `auth` and any other key fail validation.
+
 ## [0.19.2] - 2026-11-08
 
 ## [0.19.1] - 2026-11-08

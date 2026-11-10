@@ -34,7 +34,11 @@ CLIENT_SCOPE_BINDINGS = (
     ("optionalClientScopes", "optional-client-scopes"),
 )
 
+SMTP_ALLOWED_KEYS = {"host", "port", "from", "fromDisplayName", "replyTo", "ssl", "starttls"}
+SMTP_FLAG_VALUES = {"true", "false"}
+
 RECONCILABLE_REALM_FIELDS = SCOPE_REALM_FIELDS | {
+    "smtpServer",
     "displayName",
     "enabled",
     "sslRequired",
@@ -165,7 +169,26 @@ def apply_client_overrides(
         selected[client_id][field] = merge_unique(selected[client_id][field], [value])
 
 
+def validate_smtp_server(smtp: Any) -> None:
+    if not isinstance(smtp, dict):
+        fail("selected realm field 'smtpServer' must be an object")
+    unsupported = sorted(set(smtp) - SMTP_ALLOWED_KEYS)
+    if unsupported:
+        fail(
+            "smtpServer may only hold secret-free settings, "
+            f"rejected keys: {', '.join(unsupported)}"
+        )
+    for key in ("host", "port", "from"):
+        if not isinstance(smtp.get(key), str) or not smtp[key]:
+            fail(f"smtpServer {key} must be a non-empty string")
+    for key in ("ssl", "starttls"):
+        if key in smtp and smtp[key] not in SMTP_FLAG_VALUES:
+            fail(f"smtpServer {key} must be 'true' or 'false'")
+
+
 def validate_realm_fields(realm: dict[str, Any], realm_fields: list[str]) -> None:
+    if "smtpServer" in realm_fields:
+        validate_smtp_server(realm.get("smtpServer"))
     for field in realm_fields:
         if field in SCOPE_REALM_FIELDS and field not in realm:
             fail(f"selected realm field {field!r} is absent from the realm file")

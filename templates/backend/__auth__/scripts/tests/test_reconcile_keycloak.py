@@ -16,6 +16,7 @@ SCRIPT_PATH = SCRIPT_DIRECTORY / "reconcile_keycloak.py"
 SPEC = importlib.util.spec_from_file_location("reconcile_keycloak", SCRIPT_PATH)
 assert SPEC is not None and SPEC.loader is not None
 reconcile_keycloak = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = reconcile_keycloak
 SPEC.loader.exec_module(reconcile_keycloak)
 
 
@@ -493,9 +494,43 @@ class RealmReconcilerTests(unittest.TestCase):
     def test_unknown_realm_field_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "reconcile.json"
-            path.write_text(json.dumps({**self.config, "realmFields": ["smtpServer"]}))
-            with self.assertRaisesRegex(reconcile_keycloak.ReconcileError, "smtpServer"):
+            path.write_text(json.dumps({**self.config, "realmFields": ["smtpPassword"]}))
+            with self.assertRaisesRegex(reconcile_keycloak.ReconcileError, "smtpPassword"):
                 reconcile_keycloak.load_reconcile_config(path)
+
+    def test_secret_free_smtp_server_is_reconciled(self):
+        smtp = {"host": "mailpit", "port": "1025", "from": "noreply@example.test"}
+        self.desired["smtpServer"] = smtp
+        config = {**self.config, "realmFields": ["smtpServer"]}
+        reconcile_keycloak.validate_realm_fields(self.desired, config["realmFields"])
+        api = FakeApi({"realm": "fixture", "smtpServer": {"host": "old", "port": "25"}})
+        reconcile_keycloak.RealmReconciler(api).reconcile(self.desired, config, set())
+        self.assertEqual(api.realm_value["smtpServer"], smtp)
+
+    def test_smtp_server_with_credentials_is_rejected(self):
+        base = {"host": "mailpit", "port": "1025", "from": "noreply@example.test"}
+        rejected = (
+            {**base, "password": "hunter2"},
+            {**base, "user": "mailer"},
+            {**base, "auth": "true"},
+            {**base, "envelopeFrom": "bounce@example.test"},
+        )
+        for smtp in rejected:
+            with self.subTest(smtp=smtp):
+                self.desired["smtpServer"] = smtp
+                with self.assertRaisesRegex(reconcile_keycloak.ReconcileError, "secret-free"):
+                    reconcile_keycloak.validate_realm_fields(self.desired, ["smtpServer"])
+
+    def test_smtp_server_requires_host_port_from_and_boolean_flags(self):
+        for smtp in (
+            {"host": "m", "port": "1"},
+            {"host": "m", "port": "1", "from": "a@b", "ssl": "yes"},
+            "mailpit",
+        ):
+            with self.subTest(smtp=smtp):
+                self.desired["smtpServer"] = smtp
+                with self.assertRaises(reconcile_keycloak.ReconcileError):
+                    reconcile_keycloak.validate_realm_fields(self.desired, ["smtpServer"])
 
     def test_fresh_realm_creates_selected_client_and_user(self):
         api = FakeApi({"realm": "fixture"})
