@@ -11,6 +11,7 @@ usage: osv-resolved-lock.py MANIFEST_PATH OUTPUT_DIRECTORY
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -18,6 +19,7 @@ from pathlib import Path
 
 TREE_LINE = re.compile(r"^(?P<name>[A-Za-z0-9_\-]+) v(?P<version>\S+)")
 LOCK_VERSION = 4
+ARGUMENT_COUNT = 3
 
 
 def parse_tree_packages(tree: str) -> set[tuple[str, str]]:
@@ -30,9 +32,13 @@ def parse_tree_packages(tree: str) -> set[tuple[str, str]]:
 
 
 def resolved_packages(manifest: Path) -> set[tuple[str, str]]:
-    tree = subprocess.run(
+    cargo = shutil.which("cargo")
+    if cargo is None:
+        message = "cargo is not on PATH"
+        raise FileNotFoundError(message)
+    tree = subprocess.run(  # noqa: S603 -- fixed cargo tree arguments over one manifest path
         [
-            "cargo",
+            cargo,
             "tree",
             "--manifest-path",
             str(manifest),
@@ -71,7 +77,7 @@ def pruned_lock(lock_text: str, keep: set[tuple[str, str]]) -> str:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
+    if len(argv) != ARGUMENT_COUNT:
         print(__doc__, file=sys.stderr)
         return 2
     manifest, output = Path(argv[1]), Path(argv[2])
