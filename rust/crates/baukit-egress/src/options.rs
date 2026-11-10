@@ -9,6 +9,8 @@ const DEFAULT_RESOLVE_TIMEOUT: Duration = Duration::from_secs(3);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+/// The longest header value kept by [`EgressOptions::with_error_headers`].
+pub const MAX_ERROR_HEADER_VALUE_BYTES: usize = 4096;
 const DEFAULT_MAX_RETRY_AFTER: Duration = Duration::from_secs(300);
 
 /// Limits and address policy for a [`GuardedClient`](crate::GuardedClient).
@@ -31,6 +33,7 @@ pub struct EgressOptions {
     redirect_responses: bool,
     retry_after_headers: Vec<HeaderName>,
     retry_after_first_field: bool,
+    error_headers: Vec<HeaderName>,
     extra_roots: ExtraRoots,
 }
 
@@ -55,6 +58,9 @@ pub enum EgressOptionsError {
     /// A retry-after header name was not a valid HTTP header name.
     #[error("egress retry-after header name is not a valid HTTP header name")]
     InvalidRetryHeaderName,
+    /// An error header name was not a valid HTTP header name.
+    #[error("egress error header name is not a valid HTTP header name")]
+    InvalidErrorHeaderName,
     /// The root certificate PEM held no certificate or a malformed one.
     #[error("egress root certificate PEM holds no valid certificate")]
     InvalidRootCertificate,
@@ -98,6 +104,7 @@ impl Default for EgressOptions {
             redirect_responses: false,
             retry_after_headers: Vec::new(),
             retry_after_first_field: false,
+            error_headers: Vec::new(),
             extra_roots: ExtraRoots::default(),
         }
     }
@@ -252,6 +259,30 @@ impl EgressOptions {
         Ok(self)
     }
 
+    /// Keeps the named response headers on [`EgressError::Status`](crate::EgressError::Status).
+    ///
+    /// Disabled by default, so no header reaches the error unless listed. Only
+    /// listed headers are copied, and a value longer than
+    /// [`MAX_ERROR_HEADER_VALUE_BYTES`] is dropped. Use it for challenge
+    /// headers such as `WWW-Authenticate` on a `401` from a registry.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressOptionsError::InvalidErrorHeaderName`] when a name is not
+    /// a valid HTTP header name.
+    pub fn with_error_headers<I, S>(mut self, names: I) -> Result<Self, EgressOptionsError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        for name in names {
+            let name = HeaderName::from_str(name.as_ref())
+                .map_err(|_| EgressOptionsError::InvalidErrorHeaderName)?;
+            self.error_headers.push(name);
+        }
+        Ok(self)
+    }
+
     /// Parses only the first comma-separated field of vendor retry header values.
     ///
     /// For APIs such as Polar that send one delay per quota window, for example
@@ -291,6 +322,12 @@ impl EgressOptions {
     #[must_use]
     pub fn retry_after_headers(&self) -> &[HeaderName] {
         &self.retry_after_headers
+    }
+
+    /// Returns the header names kept on status errors.
+    #[must_use]
+    pub fn error_headers(&self) -> &[HeaderName] {
+        &self.error_headers
     }
 
     /// Returns whether only the first field of vendor retry headers is parsed.

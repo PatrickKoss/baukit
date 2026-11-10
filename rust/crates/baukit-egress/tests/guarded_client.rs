@@ -959,6 +959,7 @@ async fn a_failed_error_body_read_preserves_the_status_and_capped_retry_after() 
                 status: StatusCode::SERVICE_UNAVAILABLE,
                 class: RetryClass::RetryAfter(delay),
                 body: None,
+                ..
             } if delay == Duration::from_secs(1)),
             "{error:?}"
         );
@@ -1003,6 +1004,7 @@ async fn a_timed_out_error_body_read_preserves_the_status_and_capped_retry_after
                 status: StatusCode::SERVICE_UNAVAILABLE,
                 class: RetryClass::RetryAfter(delay),
                 body: None,
+                ..
             } if delay == Duration::from_secs(1)),
             "{error:?}"
         );
