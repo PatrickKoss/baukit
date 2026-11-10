@@ -6,7 +6,6 @@ ts-max-lines = 500
 
 # Files over the limit when the rule landed. Entries only shrink: split a file and drop its entry.
 [file_size.allowlist]
-"cli/src/doctor_layout.rs" = 1106
 "examples/expo-sqlite-conformance/src/conformance.ts" = 1174
 "rust/crates/baukit-auth/src/api_token.rs" = 1823
 "rust/crates/baukit-auth/src/verifier.rs" = 1404

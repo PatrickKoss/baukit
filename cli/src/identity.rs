@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use crate::{AuthProvider, Manifest};
+use crate::{AuthProvider, Manifest, ts_aliases::TsPathAliases};
 
 fn sources(directory: &Path, extension: &str, output: &mut Vec<PathBuf>) -> Result<()> {
     if !directory.is_dir() {
@@ -206,10 +206,8 @@ fn resolve_binding(path: &Path, source: &str, binding: &str) -> Result<Option<St
     let Some((module, exported)) = imported_binding(source, binding) else {
         return Ok(None);
     };
-    if !module.starts_with('.') {
-        return Ok(None);
-    }
-    let Some(module) = module_path(path.parent().unwrap_or(Path::new("")), &module) else {
+    let directory = path.parent().unwrap_or(Path::new(""));
+    let Some(module) = TsPathAliases::nearest(path)?.resolve(directory, &module) else {
         return Ok(None);
     };
     let source = uncommented(&fs::read_to_string(module)?, false);

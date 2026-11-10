@@ -13,6 +13,7 @@ mod doctor_layout;
 mod doctor_mcp;
 mod doctor_platform;
 mod doctor_ports;
+mod doctor_screens;
 #[cfg(test)]
 mod doctor_tests;
 mod gate_settings;
@@ -21,6 +22,7 @@ mod identity;
 mod manifest;
 mod openapi_client;
 mod ports;
+mod ts_aliases;
 
 pub use ports::{PortDeclaration, PortMapping};
 

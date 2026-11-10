@@ -11,6 +11,7 @@
 - `baukit check patterns` has three new rules and a wider one. `rust-sql-format` also flags `format!` strings that hold SQL fragments (predicates, `ORDER BY`, text with `$1`) and not just statements that start with a keyword. `rust-sql-splice` flags `replacen`, `split_once`, `rsplit_once` and `find` on a `" WHERE "` text. `ts-lying-type-predicate` flags `(v): v is T => isRecord(v)`. `ts-response-cast` flags `response.json() as T` and `responseBody as T`.
 
 - Doctor accepts an `expo start --web` script on any declared browser port (`ports.web`, `ports.web_preview`, `ports.metro` or `ports.web_extra`). A script with no `--port` flag still needs `ports.web`, and an undeclared port fails with the accepted ports listed.
+- Doctor follows `compilerOptions.paths` from the nearest `tsconfig.json` (comments and trailing commas allowed) when it traces the mobile sign-in screen and product identity constants, so `@/...` imports count as wired. Bare package imports stay unfollowed.
 
 ## [0.19.2] - 2026-11-08
 
