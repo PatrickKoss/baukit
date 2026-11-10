@@ -252,19 +252,73 @@ class AndroidHealthTests(unittest.TestCase):
             self.probe(timeout=True), (124, "qa: Android system health probe timed out\n")
         )
 
-    def test_shutdown_timeout_is_bounded(self):
-        attached = subprocess.CompletedProcess(
-            ["adb", "devices"], 0, stdout="emulator-5556 device\n"
-        )
+    def stop(self, listings, console, stop_timeout=120, probe_timeout=10):
+        clock = FakeClock()
+        listings = list(listings)
+        console = list(console)
+
+        def run(command, **options):
+            outcome = listings.pop(0) if len(listings) > 1 else listings[0]
+            if outcome == "timeout":
+                clock.now += options["timeout"]
+                raise subprocess.TimeoutExpired(command, options["timeout"])
+            return subprocess.CompletedProcess(command, 0, stdout=outcome)
+
         stderr = io.StringIO()
         with (
-            patch.object(android_adb.subprocess, "run", return_value=attached),
-            patch.object(android_adb.time, "monotonic", side_effect=[0, 0, 0, 11]),
-            patch.object(android_adb.time, "sleep"),
+            patch.object(android_adb, "run_command", side_effect=run),
             contextlib.redirect_stderr(stderr),
         ):
-            self.assertEqual(android_adb.wait_for_stop("adb", "emulator-5556", 10), 124)
-        self.assertIn("did not stop before the ADB deadline", stderr.getvalue())
+            status = android_adb.wait_for_stop(
+                "adb",
+                "emulator-5556",
+                probe_timeout,
+                stop_timeout,
+                timing=android_adb.Timing(clock=clock, sleep=clock.sleep),
+                console_open=lambda _serial: console.pop(0) if len(console) > 1 else console[0],
+            )
+        return status, stderr.getvalue(), clock.now
+
+    def test_stop_waits_past_the_probe_timeout_for_adb_to_forget_the_serial(self):
+        attached = "List of devices attached\nemulator-5556\toffline\n"
+        gone = "List of devices attached\n"
+        status, stderr, elapsed = self.stop([attached] * 8 + [gone], [False])
+        self.assertEqual(status, 0)
+        self.assertGreater(elapsed, 10)
+        self.assertIn("emulator-5556 stopped after", stderr)
+
+    def test_stop_waits_for_the_qemu_console_port_after_adb_forgot_the_serial(self):
+        status, _, elapsed = self.stop(["List of devices attached\n"], [True, True, True, False])
+        self.assertEqual(status, 0)
+        self.assertGreaterEqual(elapsed, 4)
+
+    def test_stop_retries_a_probe_that_timed_out_under_load(self):
+        status, _, _ = self.stop(["timeout", "timeout", "List of devices attached\n"], [False])
+        self.assertEqual(status, 0)
+
+    def test_stop_deadline_reports_what_still_holds_the_emulator(self):
+        attached = "emulator-5556\tdevice\n"
+        status, stderr, elapsed = self.stop([attached], [True], stop_timeout=30)
+        self.assertEqual(status, 124)
+        self.assertIn("did not stop within 30 s (still listed by adb)", stderr)
+        self.assertLessEqual(elapsed, 30)
+        status, stderr, _ = self.stop(["List of devices attached\n"], [True], stop_timeout=30)
+        self.assertEqual(status, 124)
+        self.assertIn("still holding its console port", stderr)
+
+    def test_stop_probe_failure_is_returned(self):
+        failed = subprocess.CompletedProcess(["adb", "devices"], 7, stdout="")
+        stderr = io.StringIO()
+        with (
+            patch.object(android_adb, "run_command", return_value=failed),
+            contextlib.redirect_stderr(stderr),
+        ):
+            status = android_adb.wait_for_stop("adb", "emulator-5556", 10, 120)
+        self.assertEqual(status, 7)
+        self.assertIn("shutdown probe failed", stderr.getvalue())
+
+    def test_console_port_is_closed_for_a_non_emulator_serial(self):
+        self.assertFalse(android_adb.console_port_open("R5CT1234"))
 
 
 def stat(busy: int, idle: int, cores: int = 4) -> str:
