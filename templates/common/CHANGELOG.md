@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - `scripts/osv-resolved-lock.py` writes a `Cargo.lock` with only the packages `cargo tree --all-features --target all` can reach, and `scripts/repo-lint.sh osv` scans that file. Lockfile-only optional dependencies such as `libsqlite3-sys` no longer raise advisories.{% if context.backend %} Delete the RUSTSEC-2026-0459 entry from `osv-scanner.toml`.{% endif %}{% if context.quality_strict %} `quality-gate.sh` runs `scripts/osv-resolved-lock.test.py`.{% endif %}
+- `ruff.toml` no longer ignores `E501`, `S603`, `S607`, `PLR2004` or `PLR0913` globally. Test files (`test_*.py`, `*.test.py`) ignore `E501`, `S603`, `S607` and `PLR2004`. Other scripts resolve executables with `shutil.which`, mark the one `subprocess.run` call with a reasoned `noqa: S603`, and bundle long argument lists into dataclasses (`BudgetLimit`, `RunContext`, `LoginRequest`, `RecoveryHooks`). Copy the new `ruff.toml` and fix the findings.
 
 ## [0.19.2] - 2026-11-08
 

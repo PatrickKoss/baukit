@@ -621,9 +621,11 @@ class RecoveryTests(unittest.TestCase):
             authenticate,
             ("admin", "private"),
             lambda token: events.append("reconciled"),
-            start_recovery=lambda username, password: events.append("recovery-started"),
-            repair=lambda token, username, password: events.append("admin-repaired"),
-            cleanup=lambda token, username: events.append("temporary-removed"),
+            reconcile_keycloak.RecoveryHooks(
+                start=lambda username, password: events.append("recovery-started"),
+                repair=lambda token, username, password: events.append("admin-repaired"),
+                cleanup=lambda token, username: events.append("temporary-removed"),
+            ),
         )
         self.assertTrue(recovered)
         self.assertEqual(
@@ -650,9 +652,11 @@ class RecoveryTests(unittest.TestCase):
                 authenticate,
                 ("admin", "private"),
                 lambda token: (_ for _ in ()).throw(KeyboardInterrupt()),
-                start_recovery=lambda username, password: events.append("recovery-started"),
-                repair=lambda token, username, password: events.append("admin-repaired"),
-                cleanup=lambda token, username: events.append("temporary-removed"),
+                reconcile_keycloak.RecoveryHooks(
+                    start=lambda username, password: events.append("recovery-started"),
+                    repair=lambda token, username, password: events.append("admin-repaired"),
+                    cleanup=lambda token, username: events.append("temporary-removed"),
+                ),
             )
         self.assertEqual(events, ["recovery-started", "admin-repaired", "temporary-removed"])
 
@@ -670,10 +674,12 @@ class RecoveryTests(unittest.TestCase):
                 authenticate,
                 ("admin", "private-secret"),
                 lambda token: None,
-                start_recovery=lambda username, password: None,
-                repair=lambda token, username, password: None,
-                cleanup=lambda token, username: (_ for _ in ()).throw(
-                    RuntimeError("private-secret")
+                reconcile_keycloak.RecoveryHooks(
+                    start=lambda username, password: None,
+                    repair=lambda token, username, password: None,
+                    cleanup=lambda token, username: (_ for _ in ()).throw(
+                        RuntimeError("private-secret")
+                    ),
                 ),
             )
         self.assertNotIn("private-secret", str(raised.exception))

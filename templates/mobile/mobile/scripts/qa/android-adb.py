@@ -22,6 +22,8 @@ QUIET_CORES = 1.0
 SNAPSHOT_PREFIX = "baukit-clean"
 SNAPSHOT_HASH_LENGTH = 12
 IDLE_STABLE_PROBES = 3
+MIN_EVENT_FIELDS = 3
+HEALTH_BASE_ARGUMENTS = 4
 POLL_INTERVAL = 2
 SYSTEMUI = "com.android.systemui"
 CRITICAL_PACKAGES = {
@@ -29,6 +31,12 @@ CRITICAL_PACKAGES = {
     "com.android.inputmethod.latin",
     "com.google.android.inputmethod.latin",
 }
+
+
+def run_command(command: list[str], **options) -> subprocess.CompletedProcess:
+    return subprocess.run(  # noqa: S603 -- adb invocations or the caller's own argv
+        command, check=False, **options
+    )
 
 
 def timeout_setting(name: str, default: int) -> float:
@@ -42,11 +50,10 @@ def wait_for_boot(adb: str, serial: str, probe_timeout: float, boot_timeout: flo
     deadline = time.monotonic() + boot_timeout
     while (remaining := deadline - time.monotonic()) > 0:
         try:
-            result = subprocess.run(
+            result = run_command(
                 [adb, "-s", serial, "shell", "getprop", "sys.boot_completed"],
                 capture_output=True,
                 text=True,
-                check=False,
                 timeout=min(probe_timeout, remaining),
             )
             if result.returncode == 0 and result.stdout.strip() == "1":
@@ -59,11 +66,10 @@ def wait_for_boot(adb: str, serial: str, probe_timeout: float, boot_timeout: flo
 
 def shell(adb: str, serial: str, timeout: float, *command: str) -> str | None:
     try:
-        result = subprocess.run(
+        result = run_command(
             [adb, "-s", serial, "shell", *command],
             capture_output=True,
             text=True,
-            check=False,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -105,7 +111,7 @@ def wait_for_wifi_route(adb: str, serial: str, probe_timeout: float, wifi_timeou
     )
     print(f"qa: last route: {route.strip() or 'none'}", file=sys.stderr)
     print(
-        f"qa: Wi-Fi status: {' | '.join(status.strip().splitlines()[:WIFI_STATUS_LINES]) or 'none'}",
+        f"qa: Wi-Fi status: {wifi_summary(status)}",
         file=sys.stderr,
     )
     return 124
@@ -147,16 +153,20 @@ def settle(
     serial: str,
     probe_timeout: float,
     settle_timeout: float,
-    *,
-    clock=time.monotonic,
-    sleep=time.sleep,
 ) -> int:
-    start = clock()
+    start = time.monotonic()
     deadline = start + settle_timeout
-    shell(adb, serial, max(probe_timeout, deadline - clock()), "cmd", "package", "bg-dexopt-job")
+    shell(
+        adb,
+        serial,
+        max(probe_timeout, deadline - time.monotonic()),
+        "cmd",
+        "package",
+        "bg-dexopt-job",
+    )
     window = SETTLE_WINDOW_POLLS * poll_interval()
     before = None
-    while clock() < deadline:
+    while time.monotonic() < deadline:
         stat = shell(adb, serial, probe_timeout, "cat", "/proc/stat")
         after = cpu_counters(stat) if stat else None
         if after is None:
@@ -164,10 +174,10 @@ def settle(
                 print(f"qa: lost {serial} while it settled", file=sys.stderr)
                 return 1
         elif before is not None and busy_cores(before, after) < QUIET_CORES:
-            print(f"qa: {serial} settled in {clock() - start:.0f} s")
+            print(f"qa: {serial} settled in {time.monotonic() - start:.0f} s")
             return 0
         before = after
-        sleep(min(window, max(0, deadline - clock())))
+        time.sleep(min(window, max(0, deadline - time.monotonic())))
     print(f"qa: {serial} did not settle within {settle_timeout:.0f} s; saving the snapshot anyway")
     return 0
 
@@ -232,11 +242,10 @@ def prune_snapshots(avd_dir: Path, keep: str, loaded: set[str]) -> int:
 
 def attached(adb: str, serial: str, timeout: float) -> int:
     try:
-        result = subprocess.run(
+        result = run_command(
             [adb, "-s", serial, "get-state"],
             capture_output=True,
             text=True,
-            check=False,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -247,11 +256,10 @@ def attached(adb: str, serial: str, timeout: float) -> int:
 def wait_for_stop(adb: str, serial: str, timeout: float) -> int:
     deadline = time.monotonic() + timeout
     while (remaining := deadline - time.monotonic()) > 0:
-        result = subprocess.run(
+        result = run_command(
             [adb, "devices"],
             capture_output=True,
             text=True,
-            check=False,
             timeout=remaining,
         )
         if result.returncode != 0:
@@ -279,11 +287,10 @@ def health_result(status: int, serial: str, lines: list[str], report: Path | Non
 
 def anr_details(adb: str, serial: str, timeout: float) -> tuple[list[str], set[str]]:
     try:
-        result = subprocess.run(
+        result = run_command(
             [adb, "-s", serial, "shell", "dumpsys", "activity", "lastanr"],
             capture_output=True,
             text=True,
-            check=False,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -303,11 +310,10 @@ def anr_details(adb: str, serial: str, timeout: float) -> tuple[list[str], set[s
 
 def check_health(adb: str, serial: str, timeout: float, report: Path | None = None) -> int:
     try:
-        result = subprocess.run(
+        result = run_command(
             [adb, "-s", serial, "logcat", "-d", "-b", "events", "-s", "am_anr", "am_crash"],
             capture_output=True,
             text=True,
-            check=False,
             timeout=timeout,
         )
     except subprocess.TimeoutExpired:
@@ -320,7 +326,7 @@ def check_health(adb: str, serial: str, timeout: float, report: Path | None = No
     anr_packages = set()
     for line in result.stdout.splitlines():
         fields = line.partition("[")[2].split(",")
-        if len(fields) >= 3 and fields[2].strip() in CRITICAL_PACKAGES:
+        if len(fields) >= MIN_EVENT_FIELDS and fields[2].strip() in CRITICAL_PACKAGES:
             package = fields[2].strip()
             evidence.extend((f"qa: Android system process is unhealthy: {package}", line))
             if "am_anr" in line:
@@ -344,8 +350,12 @@ def timed_mode(name: str, setting: str, default: float, action):
     return name, run
 
 
+def wifi_summary(status: str) -> str:
+    return " | ".join(status.strip().splitlines()[:WIFI_STATUS_LINES]) or "none"
+
+
 def check_health_mode(probe_timeout: float) -> int:
-    report = Path(sys.argv[4]) if len(sys.argv) > 4 else None
+    report = Path(sys.argv[4]) if len(sys.argv) > HEALTH_BASE_ARGUMENTS else None
     return check_health(sys.argv[2], sys.argv[3], probe_timeout, report)
 
 
@@ -392,7 +402,7 @@ def run_adb_command(probe_timeout: float) -> int:
         if sys.argv[1] == "--wait-for-stop":
             return wait_for_stop(sys.argv[2], sys.argv[3], probe_timeout)
         command_timeout = timeout_setting(ADB_TIMEOUT_SETTING, DEFAULT_COMMAND_TIMEOUT)
-        return subprocess.run(sys.argv[1:], timeout=command_timeout, check=False).returncode
+        return run_command(sys.argv[1:], timeout=command_timeout).returncode
     except subprocess.TimeoutExpired:
         print(f"qa: ADB command timed out: {' '.join(sys.argv[1:])}", file=sys.stderr)
         return 124

@@ -34,6 +34,7 @@ CORES_PER_EMULATOR = 2
 LIGHT_LANES = frozenset({"fast"})
 EMULATOR_STEPS = frozenset({"android-e2e"})
 FAILURE_TAIL_LINES = 40
+STEP_FIELD_COUNT = 5
 GENERIC_SHARED = (
     "**/Cargo.lock",
     "**/pnpm-lock.yaml",
@@ -52,6 +53,29 @@ GENERIC_SHARED = (
     ".github/**",
     "compose.yaml",
 )
+
+
+@dataclass(frozen=True)
+class BudgetLimit:
+    minutes: int
+    mode: str
+
+
+@dataclass(frozen=True)
+class RunContext:
+    command: list[str]
+    log_directory: Path
+    environment: dict[str, str]
+
+
+def run_process(
+    command: list[str], *, check: bool = False, **options
+) -> subprocess.CompletedProcess:
+    executable = shutil.which(command[0])
+    if executable is None:
+        raise SystemExit(f"gate: {command[0]} is not on PATH")
+    argv = [executable, *command[1:]]
+    return subprocess.run(argv, check=check, **options)  # noqa: S603 -- gate-built arguments
 
 
 @dataclass(frozen=True)
@@ -86,7 +110,7 @@ def parse_steps(text: str) -> list[Step]:
         if not line.strip():
             continue
         fields = line.split()
-        if len(fields) != 5:
+        if len(fields) != STEP_FIELD_COUNT:
             raise ValueError(
                 f"step line {number} needs name, lane, after, mode and tokens: {line!r}"
             )
@@ -296,9 +320,7 @@ def budget_report(
     lanes: dict[str, list[str]],
     lane_seconds: dict[str, int],
     wall: int,
-    *,
-    budget_minutes: int,
-    mode: str,
+    limit: BudgetLimit,
 ) -> list[str]:
     lines = ["gate: step timings, slowest first"]
     width = max((len(name) for name in timings), default=4)
@@ -306,12 +328,13 @@ def budget_report(
         lines.append(f"  {name.ljust(width)}  {seconds:>6} s")
     for lane, seconds in sorted(lane_seconds.items(), key=lambda item: (-item[1], item[0])):
         lines.append(f"gate: lane {lane} took {seconds} s")
-    budget = budget_minutes * 60
+    budget = limit.minutes * 60
     if wall <= budget:
-        lines.append(f"gate: {wall} s is within the {budget_minutes} minute {mode} budget")
+        lines.append(f"gate: {wall} s is within the {limit.minutes} minute {limit.mode} budget")
         return lines
     lines.append(
-        f"gate: warning: {wall} s is over the {budget_minutes} minute {mode} budget by {wall - budget} s"
+        f"gate: warning: {wall} s is over the {limit.minutes} minute {limit.mode} budget "
+        f"by {wall - budget} s"
     )
     slowest = max(lane_seconds, key=lambda lane: lane_seconds[lane], default=None)
     if slowest is not None:
@@ -337,7 +360,7 @@ def changed_files(base: str) -> list[str]:
 
 
 def git(*arguments: str) -> str:
-    result = subprocess.run(["git", *arguments], capture_output=True, text=True, check=False)
+    result = run_process(["git", *arguments], capture_output=True, text=True, check=False)
     if result.returncode != 0:
         raise SystemExit(f"gate: git {' '.join(arguments)} failed: {result.stderr.strip()}")
     return result.stdout.strip()
@@ -383,29 +406,27 @@ class Runner:
     def __init__(
         self,
         planned: list[PlannedStep],
-        command: list[str],
-        log_directory: Path,
-        environment: dict[str, str],
+        context: RunContext,
         *,
         budget: CoreBudget | None = None,
         light: frozenset[str] = frozenset(),
     ):
         self.planned = planned
         self.budget = budget or CoreBudget(
-            int(environment.get("BAUKIT_GATE_WORKERS", "1")), None, 0, 1
+            int(context.environment.get("BAUKIT_GATE_WORKERS", "1")), None, 0, 1
         )
         self.light = light
         self.open_lanes = set(heavy_lanes(planned, light))
-        self.command = command
-        self.log_directory = log_directory
-        self.environment = environment
+        self.command = context.command
+        self.log_directory = context.log_directory
+        self.environment = context.environment
         self.names = {item.step.name for item in planned}
         self.done = {item.step.name: threading.Event() for item in planned}
         self.status: dict[str, str] = {}
         self.timings: dict[str, int] = {}
         self.lane_seconds: dict[str, int] = {}
         self.lock = threading.Lock()
-        self.timings_file = log_directory / "timings.txt"
+        self.timings_file = context.log_directory / "timings.txt"
         self.started = time.monotonic()
 
     def lanes(self) -> dict[str, list[Step]]:
@@ -479,7 +500,8 @@ class Runner:
         environment = dict(self.environment)
         worker_environment(environment, cores)
         print(
-            f"gate: [{lane}] {step.name} started with {cores} {'cores' if drawn else 'cores, light'}, "
+            f"gate: [{lane}] {step.name} started with {cores} "
+            f"{'cores' if drawn else 'cores, light'}, "
             f"{self.grant_detail(asked)}",
             flush=True,
         )
@@ -488,7 +510,7 @@ class Runner:
             with log.open("a") as output:
                 output.write(f"\n==> {step.name} ({cores} cores)\n")
                 output.flush()
-                result = subprocess.run(
+                result = run_process(
                     [*self.command, step.name],
                     stdout=output,
                     stderr=subprocess.STDOUT,
@@ -507,7 +529,8 @@ class Runner:
             print(f"gate: [{lane}] {step.name} passed in {seconds} s", flush=True)
             return True
         print(
-            f"gate: [{lane}] {step.name} failed with exit {result.returncode} in {seconds} s; log {log}",
+            f"gate: [{lane}] {step.name} failed with exit {result.returncode} "
+            f"in {seconds} s; log {log}",
             flush=True,
         )
         tail = log.read_text(errors="replace").splitlines()[-FAILURE_TAIL_LINES:]
@@ -597,7 +620,7 @@ def rust_packages(
         return None
     manifest = Path(cargo_workspace)
     metadata = json.loads(
-        subprocess.run(
+        run_process(
             [
                 "cargo",
                 "metadata",
@@ -634,7 +657,8 @@ def worker_budget(
     workers = budget.share(len(lanes))
     worker_environment(environment, workers)
     extras.append(
-        f"workers: {cores} cores across {len(lanes)} lanes ({', '.join(lanes) or 'none'}): {workers} per lane"
+        f"workers: {cores} cores across {len(lanes)} lanes "
+        f"({', '.join(lanes) or 'none'}): {workers} per lane"
     )
     extras.append(
         f"workers: lanes share {budget.cores} cores; a finished lane frees its share; "
@@ -646,7 +670,7 @@ def worker_budget(
 
 def run_command(arguments: argparse.Namespace) -> int:
     script = shlex.split(arguments.script)
-    listing = subprocess.run(
+    listing = run_process(
         [*script, "--list-steps"], capture_output=True, text=True, check=True
     ).stdout
     steps = parse_steps(listing)
@@ -696,7 +720,10 @@ def run_command(arguments: argparse.Namespace) -> int:
     environment["BAUKIT_GATE_LOG_DIR"] = str(log_directory)
     started = time.monotonic()
     runner = Runner(
-        planned, [*script, "--step"], log_directory, environment, budget=budget, light=light
+        planned,
+        RunContext([*script, "--step"], log_directory, environment),
+        budget=budget,
+        light=light,
     )
     failures = runner.run()
     wall = round(time.monotonic() - started)
@@ -708,8 +735,7 @@ def run_command(arguments: argparse.Namespace) -> int:
         lane_steps,
         runner.lane_seconds,
         wall,
-        budget_minutes=budget_minutes(settings, mode),
-        mode=mode,
+        BudgetLimit(budget_minutes(settings, mode), mode),
     )
     print("\n".join(report))
     print(f"gate: timings in {runner.timings_file}; lane logs in {log_directory}")

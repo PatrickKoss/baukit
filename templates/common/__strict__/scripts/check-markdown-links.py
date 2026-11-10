@@ -2,6 +2,7 @@
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -15,18 +16,21 @@ EXTERNAL_SCHEME = re.compile(r"^[a-z][a-z\d+.-]*:", re.IGNORECASE)
 DEFAULT_ROOTS = ("README.md", "CLAUDE.md", "AGENTS.md", "docs")
 
 
-def markdown_files(repository_root: Path, roots: list[str]) -> list[Path]:
-    history = subprocess.run(
-        ["git", "-C", str(repository_root), "rev-parse", "--verify", "HEAD"],
-        check=False,
+def git(repository_root: Path, *arguments: str, check: bool) -> subprocess.CompletedProcess:
+    executable = shutil.which("git")
+    if executable is None:
+        raise SystemExit("check-markdown-links: git is not on PATH")
+    return subprocess.run(  # noqa: S603 -- fixed git subcommands over repository paths
+        [executable, "-C", str(repository_root), *arguments],
+        check=check,
         capture_output=True,
     )
+
+
+def markdown_files(repository_root: Path, roots: list[str]) -> list[Path]:
+    history = git(repository_root, "rev-parse", "--verify", "HEAD", check=False)
     if history.returncode == 0:
-        completed = subprocess.run(
-            ["git", "-C", str(repository_root), "ls-files", "-z", "--", *roots],
-            check=True,
-            capture_output=True,
-        )
+        completed = git(repository_root, "ls-files", "-z", "--", *roots, check=True)
         return sorted(
             repository_root / Path(raw.decode("utf-8"))
             for raw in completed.stdout.split(b"\0")
