@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-10
+
 ## [0.20.0] - 2026-11-10
 
 - The `noqa` budget in baukit's own `baukit-check.toml` is 5: two `N802` overrides in `deploy/platform/local-git-http.py` and three `S603` sites in the `process_runner.py` helpers and `android-adb.py`. Generated products get `noqa = 1` (`2` with a mobile app).

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-10
+
 ## [0.20.0] - 2026-11-10
 
 - Security: the link queries select by owner in SQL (`WHERE id=$1 AND user_id=$2`). `SuiteLinkStore::link_for_update`, `revoke_in_transaction`, `record_delivery`, `complete_delivery`, `record_received_in_transaction` and `replay_retry_after` now take the owner id before the link id, and `PostgresSuiteEventOutbox` scopes the replay cooldown read and write by owner. A foreign link id returns `NotFound`. Before, these loaded or updated by id alone and the services compared the owner in Rust. Implementors of the port must add the parameter. `find_link` stays unscoped for peer-authenticated ingest and background delivery.

@@ -1,6 +1,6 @@
 {
   "name": "@baukit/type-guards",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "description": "Zero-dependency runtime type guards for validating unknown JSON in Baukit packages.",
   "license": "MIT",
   "author": "Patrick Koss",
