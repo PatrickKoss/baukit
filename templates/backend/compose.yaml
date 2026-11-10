@@ -22,6 +22,8 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: http://localhost:{{ context.keycloak_host_port }}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HOSTNAME_STRICT: "false"
     ports:
       - "{{ context.keycloak_host_port }}:8080"
@@ -73,9 +75,7 @@ services:
       {{ context.app_env }}__OPS__BIND_ADDRESS: 0.0.0.0
 {% if context.auth_enabled %}      {{ context.app_env }}__AUTH__JWKS_URI: ${ {{- context.app_env -}} __AUTH__JWKS_URI:-http://keycloak:8080/realms/{{ context.app_name }}/protocol/openid-connect/certs}
 {% if context.auth_oidc %}      {{ context.app_env }}__AUTH__IDENTITY_ADMIN_BASE_URL: ${ {{- context.app_env -}} __AUTH__IDENTITY_ADMIN_BASE_URL:-http://keycloak:8080}
-{% endif %}{% if context.web or context.pwa %}      # Discovery must see the browser-facing issuer, which this container cannot
-      # reach. Run `make run` on the host to sign in through /auth/session.
-      {{ context.app_env }}__AUTH__BROWSER_SESSION__ENABLED: ${ {{- context.app_env -}} __AUTH__BROWSER_SESSION__ENABLED:-false}
+{% endif %}{% if context.web or context.pwa %}      {{ context.app_env }}__AUTH__BROWSER_SESSION__INTERNAL_ISSUER: ${ {{- context.app_env -}} __AUTH__BROWSER_SESSION__INTERNAL_ISSUER:-http://keycloak:8080/realms/{{ context.app_name }}}
 {% endif %}      {{ context.app_env }}__MCP__ISSUER: ${ {{- context.app_env -}} __MCP__ISSUER:-http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}}
       {{ context.app_env }}__MCP__JWKS_URI: ${ {{- context.app_env -}} __MCP__JWKS_URI:-http://keycloak:8080/realms/{{ context.app_name }}/protocol/openid-connect/certs}
 {% endif %}      {{ context.app_env }}__MCP__ENABLED: ${ {{- context.app_env -}} __MCP__ENABLED:-false}

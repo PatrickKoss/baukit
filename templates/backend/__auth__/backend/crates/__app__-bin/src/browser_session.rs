@@ -29,6 +29,8 @@ pub struct BrowserSessionSettings {
     pub enabled: bool,
     pub client_id: String,
     pub client_secret: Option<Secret<String>>,
+    /// Realm URL the backend calls when the public issuer is only reachable from browsers.
+    pub internal_issuer: Option<String>,
     pub redirect_uris: Vec<String>,
     pub post_logout_redirect_uri: Option<String>,
     pub cookie_name: String,
@@ -52,6 +54,7 @@ impl Default for BrowserSessionSettings {
             enabled: {{ "true" if (context.web or context.pwa) and context.auth_oidc else "false" }},
             client_id: format!("{PRODUCT}-web"),
             client_secret: None,
+            internal_issuer: None,
             redirect_uris: LOCAL_WEB_PORTS
                 .iter()
                 .map(|port| format!("http://localhost:{port}/"))
@@ -173,6 +176,9 @@ pub async fn browser_session_router(
     .with_absolute_timeout(Duration::from_secs(settings.absolute_timeout_seconds))?
     .with_insecure_local_cookie(settings.insecure_local_cookie)
     .with_rate_limits(settings.rate_limits())?;
+    if let Some(internal_issuer) = &settings.internal_issuer {
+        config = config.with_internal_issuer(internal_issuer)?;
+    }
     if let Some(secret) = &settings.client_secret {
         config = config.with_client_secret(secret.expose().clone());
     }

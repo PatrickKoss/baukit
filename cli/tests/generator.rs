@@ -970,6 +970,41 @@ fn mcp_flag_generates_the_rust_server_and_records_the_capability() -> anyhow::Re
 }
 
 #[test]
+fn containerized_backend_reaches_keycloak_without_changing_the_issuer() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let output = Command::new(env!("CARGO_BIN_EXE_baukit"))
+        .args([
+            "new",
+            "kc-host",
+            "--backend",
+            "--web",
+            "--mcp",
+            "--auth",
+            "oidc",
+            "--skip-lockfiles",
+            "--dir",
+        ])
+        .arg(parent.path())
+        .output()?;
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let root = parent.path().join("kc-host");
+    let compose = fs::read_to_string(root.join("compose.yaml"))?;
+    assert!(compose.contains("KC_HOSTNAME: http://localhost:"));
+    assert!(compose.contains("KC_HOSTNAME_BACKCHANNEL_DYNAMIC: \"true\"\n"));
+    assert!(compose.contains(
+        "KC_HOST__AUTH__BROWSER_SESSION__INTERNAL_ISSUER:-http://keycloak:8080/realms/kc-host}"
+    ));
+    assert!(!compose.contains("BROWSER_SESSION__ENABLED"));
+    Ok(())
+}
+
+#[test]
 fn generated_migration_guard_ports_failure_cases() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut strict = options(parent.path(), "strict-migrations");

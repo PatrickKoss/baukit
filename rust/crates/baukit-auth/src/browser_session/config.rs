@@ -25,6 +25,7 @@ const HOST_PREFIX: &str = "__Host-";
 #[derive(Clone)]
 pub struct BrowserSessionConfig {
     pub(crate) issuer: Url,
+    pub(crate) internal_issuer: Option<Url>,
     pub(crate) client_id: String,
     pub(crate) client_secret: Option<Zeroizing<String>>,
     pub(crate) redirect_uris: BTreeSet<String>,
@@ -76,6 +77,7 @@ impl BrowserSessionConfig {
             .ok_or(BrowserSessionConfigError::InvalidPublicApiOrigin)?;
         Ok(Self {
             issuer,
+            internal_issuer: None,
             client_id,
             client_secret: None,
             redirect_uris: BTreeSet::new(),
@@ -109,6 +111,27 @@ impl BrowserSessionConfig {
             .map(|uri| normalize_or_keep(uri.into()))
             .collect();
         self
+    }
+
+    /// Sets the URL this backend uses to reach the IdP's realm when the public
+    /// issuer is only reachable from browsers, for example `http://keycloak:8080/realms/app`
+    /// next to the public `http://localhost:8081/realms/app` in a container.
+    ///
+    /// Discovery and every IdP call go to this URL's origin, and the egress policy
+    /// allows only that origin. The discovery document must still name the public
+    /// issuer, so the IdP needs a fixed hostname and dynamic backchannel URLs.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BrowserSessionConfigError::InvalidIssuer`] when `url` is not an
+    /// absolute URL.
+    pub fn with_internal_issuer(mut self, url: &str) -> Result<Self, BrowserSessionConfigError> {
+        let url = Url::parse(url).map_err(|_| BrowserSessionConfigError::InvalidIssuer)?;
+        if url.cannot_be_a_base() {
+            return Err(BrowserSessionConfigError::InvalidIssuer);
+        }
+        self.internal_issuer = Some(url);
+        Ok(self)
     }
 
     /// Sets a client secret for IdPs that require a confidential client.
@@ -237,6 +260,11 @@ impl BrowserSessionConfig {
         self.issuer.as_str()
     }
 
+    /// Returns the URL discovery and IdP calls go to: the internal issuer when set.
+    pub(crate) fn idp_base(&self) -> &Url {
+        self.internal_issuer.as_ref().unwrap_or(&self.issuer)
+    }
+
     /// Returns the cookie name the browser sees, with `__Host-` in production mode.
     #[must_use]
     pub fn cookie_name(&self) -> String {
@@ -250,7 +278,7 @@ impl BrowserSessionConfig {
     pub(crate) fn egress_options(&self) -> Result<EgressOptions, BrowserSessionConfigError> {
         let policy = match &self.egress_policy {
             Some(policy) => policy.clone(),
-            None => issuer_only_policy(&self.issuer)?,
+            None => issuer_only_policy(self.idp_base())?,
         };
         let options = EgressOptions::default()
             .with_policy(policy)
