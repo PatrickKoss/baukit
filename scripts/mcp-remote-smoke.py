@@ -45,6 +45,7 @@ def reconcile_scopes(fixture: Path, issuer: str) -> None:
         if spec is None or spec.loader is None:
             raise RuntimeError("cannot load generated realm reconciler")
         reconcile = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = reconcile
         spec.loader.exec_module(reconcile)
     finally:
         sys.path.pop(0)
@@ -175,6 +176,7 @@ def load_pkce(fixture: Path):
     if spec is None or spec.loader is None:
         raise RuntimeError("cannot load generated PKCE helper")
     pkce = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = pkce
     spec.loader.exec_module(pkce)
     return pkce
 
@@ -186,14 +188,13 @@ def pkce_login(pkce, issuer: str, redirect_uri: str, **login: str) -> str:
         ),
         pkce.CallbackRedirectHandler(redirect_uri),
     )
-    return pkce.login(
-        opener,
-        pkce.discover(opener, issuer),
+    request = pkce.LoginRequest(
         username="test",
         password="development-password",
         redirect_uri=redirect_uri,
         **login,
     )
+    return pkce.login(opener, pkce.discover(opener, issuer), request)
 
 
 def check_mcp_claims(token: str, issuer: str, resource: str) -> None:
