@@ -225,6 +225,10 @@ pub enum PostgresTestError {
     #[cfg(feature = "sqlx-postgres")]
     #[error("could not prepare PostgreSQL test database: {0}")]
     Setup(#[source] sqlx::Error),
+    /// A database name does not match `[a-z_][a-z0-9_]*` or exceeds the byte limit shown.
+    #[cfg(feature = "sqlx-postgres")]
+    #[error("invalid PostgreSQL database name: must match [a-z_][a-z0-9_]* and fit {0} bytes")]
+    InvalidDatabaseName(usize),
 }
 
 /// Direct foreign key whose delete action conflicts with the resource registry.

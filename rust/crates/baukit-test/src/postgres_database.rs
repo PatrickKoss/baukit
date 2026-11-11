@@ -7,6 +7,10 @@ use sqlx::{AssertSqlSafe, Connection as _, PgConnection, Row as _};
 
 use crate::postgres::PostgresTestError;
 
+mod template;
+
+pub use template::PostgresDatabaseName;
+
 const MAX_IDENTIFIER_BYTES: usize = 63;
 const DATABASE_NAME_PREFIX: &str = "baukit_test_";
 const READINESS_TIMEOUT: Duration = Duration::from_secs(60);
@@ -41,7 +45,7 @@ impl PostgresAppRole {
     ) -> Result<Self, PostgresTestError> {
         let name = name.into();
         let password = password.into();
-        if !is_valid_role_name(&name) {
+        if !is_plain_identifier(&name) {
             return Err(PostgresTestError::InvalidAppRole(
                 "name must match [a-z_][a-z0-9_]* and fit 63 bytes",
             ));
@@ -71,7 +75,7 @@ impl fmt::Debug for PostgresAppRole {
     }
 }
 
-fn is_valid_role_name(name: &str) -> bool {
+fn is_plain_identifier(name: &str) -> bool {
     let mut characters = name.chars();
     let Some(first) = characters.next() else {
         return false;
@@ -136,22 +140,31 @@ impl PostgresTestDatabases {
     /// name the new database, `Connect` when the server is unreachable, `Setup` when
     /// creating the role, database or grants fails, and `Migrate` for a bad migration.
     pub async fn create(&self) -> Result<PostgresTestDatabase, PostgresTestError> {
+        let database = self
+            .create_with(|name| format!("CREATE DATABASE \"{name}\""))
+            .await?;
+        self.prepare(&database.connection_url).await?;
+        Ok(database)
+    }
+
+    async fn create_with(
+        &self,
+        statement: impl FnOnce(&str) -> String,
+    ) -> Result<PostgresTestDatabase, PostgresTestError> {
         let name = format!("{DATABASE_NAME_PREFIX}{}", uuid::Uuid::new_v4().simple());
         let connection_url = with_database(&self.admin_url, &name)?;
         let app_connection_url = self.app_url(&name)?;
         let mut admin = connect_when_ready(&self.admin_url).await?;
         self.ensure_app_role(&mut admin).await?;
-        execute(&mut admin, format!("CREATE DATABASE \"{name}\"")).await?;
+        execute(&mut admin, statement(&name)).await?;
         close(admin).await;
-        let database = PostgresTestDatabase {
+        Ok(PostgresTestDatabase {
             name,
             connection_url,
             app_connection_url,
             admin_url: self.admin_url.clone(),
             dropped: false,
-        };
-        self.prepare(&database.connection_url).await?;
-        Ok(database)
+        })
     }
 
     pub(crate) async fn prepare_server_database(

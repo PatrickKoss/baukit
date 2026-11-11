@@ -301,6 +301,22 @@ let pool = sqlx::PgPool::connect(database.connection_url()).await?;
 # }
 ```
 
+To migrate once and copy per test, make the migrated database the template and clone it. PostgreSQL
+refuses to copy a template that has open connections, so close its pools first.
+
+```rust,no_run
+# async fn example(databases: baukit_test::PostgresTestDatabases) -> Result<(), Box<dyn std::error::Error>> {
+let template = databases.clone().with_migrations("migrations").create().await?;
+let database = databases.create_from_template(&template.as_template()).await?;
+let pool = sqlx::PgPool::connect(database.connection_url()).await?;
+# let _ = pool;
+# Ok(())
+# }
+```
+
+`PostgresDatabaseName::new` accepts only `[a-z_][a-z0-9_]*` up to 63 bytes, so the template and the
+clone are never built from free text. `drop_named` drops a database by such a name with `WITH (FORCE)`.
+
 These need a running Docker daemon. Mark tests that use them `#[ignore]` and run them explicitly:
 
 ```bash

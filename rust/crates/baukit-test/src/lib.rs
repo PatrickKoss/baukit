@@ -166,7 +166,9 @@ pub use postgres::{
 };
 pub use postgres::{PostgresTestContainer, PostgresTestError, PostgresTestOptions, start_postgres};
 #[cfg(feature = "sqlx-postgres")]
-pub use postgres_database::{PostgresAppRole, PostgresTestDatabase, PostgresTestDatabases};
+pub use postgres_database::{
+    PostgresAppRole, PostgresDatabaseName, PostgresTestDatabase, PostgresTestDatabases,
+};
 pub use purge_horizon::{
     PullPause, PurgeHorizonAdapter, PurgeHorizonConformanceError, PurgeHorizonPull,
     assert_purge_horizon_conformance, check_purge_horizon_conformance,
