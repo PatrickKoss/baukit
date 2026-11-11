@@ -17,6 +17,13 @@ api_port="${BAUKIT_QA_API_PORT:-18080}"
 # shellcheck source=/dev/null
 [[ ! -f "$local_hooks" ]] || source "$local_hooks"
 [[ "$qa_apk_variant" =~ ^(release|debug)$ ]] || { echo "qa: qa_apk_variant must be release or debug" >&2; exit 2; }
+isolate_metro_cache() {
+  local key
+  key="$({ env | grep '^EXPO_PUBLIC_' || true; } | LC_ALL=C sort | cksum | cut -d' ' -f1)"
+  export TMPDIR="$state_dir/metro-cache/$key"
+  mkdir -p "$TMPDIR"
+}
+
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 if [[ -z "$sdk_root" && -f "$state_dir/android-home" ]]; then
   sdk_root="$(<"$state_dir/android-home")"
@@ -51,6 +58,7 @@ if [[ -f "$root/mobile/.env" ]]; then
 fi
 export BAUKIT_QA_BUILD=1
 qa_build_env
+isolate_metro_cache
 
 qa_install_dependencies
 corepack pnpm --dir "$root/mobile" run tokens

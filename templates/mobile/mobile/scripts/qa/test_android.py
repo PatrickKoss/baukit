@@ -316,6 +316,60 @@ touch "$apk"
             ],
         )
 
+    def test_builds_isolate_the_metro_cache_per_public_environment(self) -> None:
+        self.fake_build_tools()
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
+printf 'tmpdir %s\n' "$TMPDIR" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+""",
+        )
+        for port in ("18080", "18080", "18090"):
+            self.environment["BAUKIT_QA_API_PORT"] = port
+            self.run_script("build-android.sh")
+        tmpdirs = [
+            event.removeprefix("tmpdir ")
+            for event in self.events.read_text().splitlines()
+            if event.startswith("tmpdir ")
+        ]
+        self.assertEqual(tmpdirs[0], tmpdirs[1])
+        self.assertNotEqual(tmpdirs[0], tmpdirs[2])
+        for tmpdir in tmpdirs:
+            self.assertTrue(tmpdir.startswith(f"{self.scripts.parent.parent}/.qa/metro-cache/"))
+
+    def ios_build(self, workspace: str, **environment: str) -> str:
+        bin_dir = self.root / "bin"
+        self.executable(bin_dir / "uname", "echo Darwin\n")
+        self.executable(bin_dir / "pod", "exit 0\n")
+        self.executable(
+            bin_dir / "xcodebuild",
+            'printf "%s\\n" "$*" >> "$EVENTS"\n'
+            + 'mkdir -p "$PWD/ios-build/Build/Products/Release-iphonesimulator/App.app"\n',
+        )
+        self.executable(bin_dir / "corepack", "exit 0\n")
+        self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
+        self.environment.update(environment)
+        self.executable(
+            self.root / "mobile/node_modules/.bin/expo",
+            f'mkdir -p "$PWD/ios/{workspace}.xcworkspace"\n',
+        )
+        self.run_script("build-ios.sh")
+        return next(event for event in self.events.read_text().splitlines() if "-scheme" in event)
+
+    def test_ios_scheme_defaults_to_the_app_json_name_then_the_workspace(self) -> None:
+        self.assertIn("-scheme FromWorkspace ", self.ios_build("FromWorkspace"))
+        self.events.unlink()
+        (self.root / "mobile/app.json").write_text('{"expo": {"name": "FromAppJson"}}')
+        self.assertIn("-scheme FromAppJson ", self.ios_build("FromWorkspace"))
+        self.events.unlink()
+        self.assertIn(
+            "-scheme Explicit ",
+            self.ios_build("FromWorkspace", BAUKIT_QA_IOS_SCHEME="Explicit"),
+        )
+
     def test_gate_build_compiles_debug_and_release_from_one_prebuild(self) -> None:
         bin_dir = self.root / "bin"
         self.executable(bin_dir / "corepack", 'printf "corepack %s\\n" "$*" >> "$EVENTS"\n')
@@ -836,6 +890,25 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
         self.events.unlink()
         self.run_script("services.sh", "stop")
         self.assertIn(f"-f {override} down --volumes", self.events.read_text())
+
+    @unittest.skipUnless(HAS_BACKEND, "services.sh hooks need a generated backend")
+    def test_backend_binaries_come_from_the_configured_directory(self) -> None:
+        fake_bin = self.root / "bin"
+        custom = self.root / "custom-bins"
+        self.executable(fake_bin / "docker", 'echo "docker $*" >> "$EVENTS"\n')
+        self.executable(fake_bin / "curl", "exit 0\n")
+        self.executable(
+            fake_bin / "cargo",
+            f'mkdir -p "{custom}"\n'
+            f'printf "#!/bin/sh\\necho migrate-ran >> \\"$EVENTS\\"\\n" > "{custom}/migrate"\n'
+            f'printf "#!/bin/sh\\nexec sleep 30\\n" > "{custom}/api"\n'
+            f'chmod +x "{custom}/migrate" "{custom}/api"\n',
+        )
+        self.environment["PATH"] = f"{fake_bin}:{self.environment['PATH']}"
+        (self.scripts / "local.sh").write_text(f'qa_backend_bin_dir="{custom}"\n')
+        self.run_script("services.sh")
+        self.run_script("services.sh", "stop")
+        self.assertIn("migrate-ran", self.events.read_text())
 
     @unittest.skipUnless(HAS_BACKEND, "services.sh hooks need a generated backend")
     def test_services_local_hooks_run_around_the_api(self) -> None:

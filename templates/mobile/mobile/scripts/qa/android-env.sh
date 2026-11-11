@@ -14,6 +14,7 @@ if [[ -z "$avd_home" && -f "$state_dir/android-avd-home" ]]; then
 fi
 avd_name="${BAUKIT_QA_ANDROID_AVD:-{{ context.app_name }}-qa}"
 qa_emulator_args=()
+emulator_accel="${BAUKIT_QA_ANDROID_ACCEL:-}"
 qa_reverse_ports=()
 qa_app_id="${BAUKIT_QA_APP_ID:-dev.baukit.{{ context.app_crate }}}"
 qa_apk_variant="${BAUKIT_QA_APK_VARIANT:-release}"
@@ -42,6 +43,7 @@ emulator_count="${BAUKIT_QA_ANDROID_EMULATORS:-$(manifest_quality android_emulat
 [[ "$emulator_count" =~ ^[1-9][0-9]*$ ]] || { echo "qa: Android emulator count must be a positive integer" >&2; exit 2; }
 gpu_mode="${BAUKIT_QA_ANDROID_GPU:-swiftshader_indirect}"
 [[ "$gpu_mode" =~ ^[a-z_]+$ ]] || { echo "qa: BAUKIT_QA_ANDROID_GPU must be an emulator gpu mode" >&2; exit 2; }
+[[ -z "$emulator_accel" || "$emulator_accel" =~ ^[a-z]+$ ]] || { echo "qa: BAUKIT_QA_ANDROID_ACCEL must be an emulator accel mode" >&2; exit 2; }
 android_wifi="${BAUKIT_QA_ANDROID_WIFI:-$(manifest_quality android_wifi false)}"
 case "$android_wifi" in
   true | True | 1) android_wifi=1 ;;
@@ -260,6 +262,9 @@ launch_emulator() {
   fi
   if [[ "${BAUKIT_QA_HEADLESS:-0}" == 1 ]]; then
     emulator_args+=(-no-window)
+  fi
+  if [[ -n "$emulator_accel" ]]; then
+    emulator_args+=(-accel "$emulator_accel")
   fi
   emulator_args+=("${qa_emulator_args[@]}")
   (

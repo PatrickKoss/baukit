@@ -14,7 +14,10 @@
 # platform, devices and debug_dir.
 #
 # Variables: qa_app_id, qa_ios_bundle_id, qa_apk_path, qa_apk_variant (release or debug),
-# qa_emulator_args, qa_reverse_ports, qa_maestro_args, qa_maestro_shards, qa_gradle_args.
+# qa_emulator_args, qa_backend_bin_dir (default backend/target/debug, holds the migrate and api binaries),
+# qa_reverse_ports, qa_maestro_args, qa_maestro_shards, qa_gradle_args.
+# Environment: BAUKIT_QA_ANDROID_ACCEL (emulator -accel mode), BAUKIT_QA_IOS_SCHEME (default: app.json expo.name,
+# else the Xcode workspace name). Builds keep a Metro cache per EXPO_PUBLIC_* value set under state_dir.
 # Functions: qa_build_apk, qa_prepare_device, qa_build_env, qa_install_dependencies,
 # qa_maestro_env INDEX, qa_maestro_flows INDEX (prints the flow files for one device, one per line)
 # and qa_services_start, qa_services_stop.

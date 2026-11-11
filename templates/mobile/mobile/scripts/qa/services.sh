@@ -23,6 +23,7 @@ if [[ -n "${BAUKIT_QA_COMPOSE_OVERRIDE:-}" ]]; then
 fi
 qa_compose_services=()
 qa_cargo_bins=()
+qa_backend_bin_dir="$root/backend/target/debug"
 qa_services_env() { :; }
 qa_before_api() { :; }
 qa_after_api() { :; }
@@ -105,10 +106,10 @@ start_default_services() {
   done
   cargo build --locked --manifest-path "$root/backend/Cargo.toml" \
     -p {{ context.app_name }}-bin "${cargo_bins[@]}"
-  "$root/backend/target/debug/migrate"
+  "$qa_backend_bin_dir/migrate"
   qa_before_api
 
-  nohup "$root/backend/target/debug/api" \
+  nohup "$qa_backend_bin_dir/api" \
     >"$state_dir/backend.log" 2>&1 &
   backend_pid=$!
   printf '%s\n' "$backend_pid" > "$state_dir/backend.pid"
