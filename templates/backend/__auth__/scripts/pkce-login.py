@@ -50,15 +50,25 @@ class CallbackRedirectHandler(urllib.request.HTTPRedirectHandler):
         super().__init__()
         self.redirect = urllib.parse.urlsplit(redirect_uri)
 
-    def redirect_request(self, request, *response):
-        *_, new_url = response
-        target = urllib.parse.urlsplit(new_url)
+    def capture_callback(self, location: str) -> None:
+        target = urllib.parse.urlsplit(location)
         if (target.scheme, target.netloc, target.path) == (
             self.redirect.scheme,
             self.redirect.netloc,
             self.redirect.path,
         ):
-            raise CallbackCaptured(new_url)
+            raise CallbackCaptured(location)
+
+    def http_error_302(self, request, file_pointer, code, message, headers):
+        # urllib rejects non-http schemes such as `app://oauth` before redirect_request runs.
+        self.capture_callback(headers.get("location") or headers.get("uri") or "")
+        return super().http_error_302(request, file_pointer, code, message, headers)
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+
+    def redirect_request(self, request, *response):
+        *_, new_url = response
+        self.capture_callback(new_url)
         return super().redirect_request(request, *response)
 
 

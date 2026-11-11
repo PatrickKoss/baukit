@@ -47,6 +47,42 @@ const fn default_affected_budget() -> u16 {
     5
 }
 
+pub const DEFAULT_CI_TIMEOUT_MINUTES: u16 = 90;
+const MAX_CI_TIMEOUT_MINUTES: u16 = 360;
+
+/// Settings the generated `ci.yml` quality job takes from `[quality.ci]`.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct CiSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_minutes: Option<u16>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+}
+
+fn valid_env_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    characters
+        .next()
+        .is_some_and(|first| first.is_ascii_uppercase() || first == '_')
+        && characters.all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+}
+
+fn validate_ci(ci: &CiSettings, failures: &mut Vec<String>) {
+    if let Some(minutes) = ci.timeout_minutes
+        && !(1..=MAX_CI_TIMEOUT_MINUTES).contains(&minutes)
+    {
+        failures.push(format!(
+            "quality.ci.timeout_minutes must be from 1 to {MAX_CI_TIMEOUT_MINUTES}"
+        ));
+    }
+    for name in ci.env.keys().filter(|name| !valid_env_name(name)) {
+        failures.push(format!(
+            "quality.ci.env key `{name}` must be upper case letters, digits and underscores"
+        ));
+    }
+}
+
 /// First console port of one of the 16 product blocks from 5556 to 5683, picked by name.
 /// A block holds 8 ports: the console and ADB ports of up to 4 emulators.
 pub fn default_emulator_port(product: &str) -> u16 {
@@ -402,6 +438,7 @@ pub fn validate(
     failures: &mut Vec<String>,
 ) {
     validate_android(quality, capabilities, failures);
+    validate_ci(&quality.ci, failures);
     let budget = &quality.gate_budget_minutes;
     if budget.full == 0 || budget.affected == 0 {
         failures.push("quality.gate_budget_minutes values must be greater than zero".to_owned());

@@ -62,7 +62,7 @@ jobs:
           corepack enable
       - name: Find pnpm store
         id: pnpm-store
-        run: echo "path=$(corepack pnpm@12.9.1 store path --silent)" >> "$GITHUB_OUTPUT"
+        run: echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: {% raw %}${{ steps.pnpm-store.outputs.path }}{% endraw %}
@@ -74,7 +74,7 @@ jobs:
           cache-provider: basic
           cache-read-only: {% raw %}${{ github.ref != 'refs/heads/main' }}{% endraw %}
       - name: Install dependencies
-        run: corepack pnpm@12.9.1 install --frozen-lockfile
+        run: corepack pnpm install --frozen-lockfile
       - name: Clean Expo prebuild
         run: |
           set -o pipefail
@@ -117,7 +117,7 @@ jobs:
         run: |
           npm install --global corepack@0.36.0
           corepack enable
-          corepack pnpm@12.9.1 install --frozen-lockfile
+          corepack pnpm install --frozen-lockfile
           CI=1 ./node_modules/.bin/expo prebuild --clean --platform ios --no-install
           cd ios && pod install
       - name: Compile for iOS Simulator

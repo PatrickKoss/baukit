@@ -17,6 +17,7 @@ jobs:
         with:
           persist-credentials: false
       - run: python3 scripts/reconcile-env.test.py
+      - run: python3 scripts/lockfiles.test.py
 {% if context.quality_strict %}      - run: python3 scripts/check-markdown-links.test.py
       - run: python3 scripts/check-markdown-links.py README.md CLAUDE.md AGENTS.md docs
 {% else %}      - name: Product steps from scripts/quality-gate.local.sh
@@ -76,8 +77,10 @@ jobs:
 {% endif %}{% if context.quality_strict %}  strict-quality:
     name: Strict quality profile
     runs-on: ubuntu-latest
-    timeout-minutes: 90
-    steps:
+    timeout-minutes: {{ context.ci_timeout_minutes }}
+{% if context.ci_env %}    env:
+{% for entry in context.ci_env %}      {{ entry.name }}: {{ entry.value }}
+{% endfor %}{% endif %}    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -109,11 +112,12 @@ jobs:
       - name: Install Corepack
         run: npm install --global corepack@0.36.0
 {% endif %}{% if context.web %}      - name: Install Playwright browsers
-        env:
+{% if "PLAYWRIGHT_BROWSERS_PATH" not in context.ci_env_names %}        env:
           PLAYWRIGHT_BROWSERS_PATH: web/node_modules/.cache/playwright-browsers
+{% endif %}        working-directory: web
         run: |
-          corepack pnpm@12.9.1 --dir web install --frozen-lockfile
-          corepack pnpm@12.9.1 --dir web exec playwright install --with-deps chromium webkit
+          corepack pnpm install --frozen-lockfile
+          corepack pnpm exec playwright install --with-deps chromium webkit
 {% endif %}{% if context.mobile %}      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -274,10 +278,10 @@ jobs:
           node-version: 26.10.0
       - name: Install Corepack
         run: npm install --global corepack@0.36.0
-      - run: corepack pnpm@12.9.1 install --frozen-lockfile
-      - run: corepack pnpm@12.9.1 build
-      - run: corepack pnpm@12.9.1 lint
-      - run: corepack pnpm@12.9.1 test
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm build
+      - run: corepack pnpm lint
+      - run: corepack pnpm test
 
   web-coverage:
     name: Web coverage thresholds
@@ -294,9 +298,9 @@ jobs:
           node-version: 26.10.0
       - name: Install Corepack
         run: npm install --global corepack@0.36.0
-      - run: corepack pnpm@12.9.1 install --frozen-lockfile
+      - run: corepack pnpm install --frozen-lockfile
       # Thresholds live in web/vitest.config.ts, so a local run fails the same way.
-      - run: corepack pnpm@12.9.1 run test:coverage
+      - run: corepack pnpm run test:coverage
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: {% raw %}${{ always() }}{% endraw %}
         with:
@@ -332,15 +336,15 @@ jobs:
           node-version: 26.10.0
       - name: Install Corepack
         run: npm install --global corepack@0.36.0
-      - run: corepack pnpm@12.9.1 install --frozen-lockfile
+      - run: corepack pnpm install --frozen-lockfile
       - name: Install Playwright browsers and system dependencies
-        run: corepack pnpm@12.9.1 exec playwright install --with-deps {% raw %}${{ matrix.browser }}{% endraw %}
+        run: corepack pnpm exec playwright install --with-deps {% raw %}${{ matrix.browser }}{% endraw %}
       - name: Build the app the browser gate serves
-        run: corepack pnpm@12.9.1 build
+        run: corepack pnpm build
       # The specs stub every API path from e2e/qa.config.ts, so this gate needs
       # no backend, database, or identity provider.
       - name: Run the qa specs
-        run: corepack pnpm@12.9.1 exec playwright test --config e2e/playwright.config.ts {% raw %}${{ matrix.projects }}{% endraw %}
+        run: corepack pnpm exec playwright test --config e2e/playwright.config.ts {% raw %}${{ matrix.projects }}{% endraw %}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: {% raw %}${{ failure() }}{% endraw %}
         with:
@@ -365,18 +369,18 @@ jobs:
           node-version: 26.10.0
       - name: Install Corepack
         run: npm install --global corepack@0.36.0
-      - run: corepack pnpm@12.9.1 install --frozen-lockfile
-      - run: corepack pnpm@12.9.1 exec tsc --noEmit
-      - run: corepack pnpm@12.9.1 lint
-      - run: corepack pnpm@12.9.1 test
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm exec tsc --noEmit
+      - run: corepack pnpm lint
+      - run: corepack pnpm test
 {% if context.auth_enabled and not context.auth_oidc and not context.quality_strict %}      - name: Check that production bundles carry no local sign-in
-        run: corepack pnpm@12.9.1 run check:bundle
+        run: corepack pnpm run check:bundle
 {% endif %}{% if context.pwa and not context.web %}      - name: Export and verify the mobile PWA
         run: |
-          corepack pnpm@12.9.1 exec expo install --check
-          corepack pnpm@12.9.1 exec expo export --platform web --max-workers 4
-          corepack pnpm@12.9.1 run build:sw
-          corepack pnpm@12.9.1 run build:sw:check
+          corepack pnpm exec expo install --check
+          corepack pnpm exec expo export --platform web --max-workers 4
+          corepack pnpm run build:sw
+          corepack pnpm run build:sw:check
 {% endif %}
   mobile-coverage:
     name: Mobile coverage thresholds
@@ -393,10 +397,10 @@ jobs:
           node-version: 26.10.0
       - name: Install Corepack
         run: npm install --global corepack@0.36.0
-      - run: corepack pnpm@12.9.1 install --frozen-lockfile
-      - run: corepack pnpm@12.9.1 exec expo install --check
+      - run: corepack pnpm install --frozen-lockfile
+      - run: corepack pnpm exec expo install --check
       # Thresholds live in mobile/jest.config.cjs, so a local run fails the same way.
-      - run: corepack pnpm@12.9.1 run test:coverage
+      - run: corepack pnpm run test:coverage
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: {% raw %}${{ always() }}{% endraw %}
         with:

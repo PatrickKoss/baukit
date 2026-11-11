@@ -5,6 +5,22 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.23.0 (unreleased)
+
+Template hooks that replace product divergences. No version bump yet.
+- `web/scripts/check-production-bundle.mjs` builds through Vite's JS API with a `generateBundle` plugin and reports `chunk: module: marker`. The loopback URL marker skips `node_modules` modules (`@tanstack/router-core` falls back to `this.origin = "http://localhost"`). The Keycloak, `/realms/` and env canary markers apply to every module. The mobile check already attributes findings per source through source maps and skips third-party code for loopback URLs.
+- `baukit.toml` `[quality.ci]` takes `timeout_minutes` (1 to 360, default 90) and an `env` table (upper case names) for the `strict-quality` job in `ci.yml`. A product that set `PLAYWRIGHT_BROWSERS_PATH`, `BAUKIT_QA_HEADLESS` and a 180 minute timeout there no longer edits the workflow.
+- `ci.yml`, `native.yml`, the `Makefile`, `lockfiles.sh`, `CLAUDE.md` and the READMEs call `corepack pnpm` from the package directory. `packageManager` decides the pnpm version.
+- `scripts/lockfiles.sh` sources `scripts/lockfiles.local.sh`. It can redefine `lockfile_run` to wrap each command (`mise exec -- "$@"`) and define `extra_lockfiles` (`mise lock`, `uv lock`).
+- `baukit.toml` `[auth] login_theme` names the Keycloak login theme (default `baukit-accessible`). It feeds `keycloak/realm.json` and the `KEYCLOAK_LOGIN_THEME` variable of the theme browser suite.
+- `scripts/pkce-login.py` captures non-http callback schemes such as `app://oauth` in `http_error_301`, `_302`, `_303`, `_307` and `_308`. `scripts/pkce_session.py` `sign_in(issuer, client_id=..., redirect_uri=...)` loads the helper, registers it in `sys.modules` and builds the `LoginRequest`. Seed scripts call it instead of importing `pkce-login.py` themselves.
+
+### Upgrade steps
+
+1. Move the product's `ci.yml` env and timeout into `[quality.ci]`, the login theme into `[auth] login_theme`, and extra lockfile commands into `scripts/lockfiles.local.sh`. Re-render, then drop the matching entries from `.baukit/template-files.toml` divergences.
+2. Replace a product `load_login()` and `LoginRequest(...)` block in seed or smoke scripts with `pkce_session.sign_in(...)`.
+3. Run `baukit check template-files --update`.
+
 ## v0.22.0
 
 Last verified release train: `v0.22.0` (minor train on top of `v0.21.0`, template scripts only).

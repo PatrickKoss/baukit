@@ -128,6 +128,9 @@ fn validate_quality_settings(root: &Path, manifest: &Manifest, failures: &mut Ve
     if !(1..=100).contains(&manifest.quality.backend_coverage_lines) {
         failures.push("quality.backend_coverage_lines must be between 1 and 100".to_owned());
     }
+    if let Err(error) = manifest.auth.resolved_login_theme() {
+        failures.push(error.to_string());
+    }
 }
 
 fn validate_gate_steps(root: &Path, manifest: &Manifest, failures: &mut Vec<String>) -> Result<()> {
