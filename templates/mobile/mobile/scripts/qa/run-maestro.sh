@@ -3,6 +3,7 @@ set -euo pipefail
 
 mobile_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 platform="${1:-}"
+state_dir="${BAUKIT_QA_STATE_DIR:-$mobile_dir/.qa}"
 maestro_bin="$(command -v maestro || true)"
 if [[ -z "$maestro_bin" && -x "$HOME/.maestro/bin/maestro" ]]; then
   maestro_bin="$HOME/.maestro/bin/maestro"
@@ -13,18 +14,21 @@ fi
 }
 [[ -d "$mobile_dir/.maestro" ]] || { echo "qa: mobile/.maestro is missing" >&2; exit 1; }
 qa_maestro_args=()
+qa_maestro_shards=()
+qa_maestro_env() { :; }
+qa_app_id="${BAUKIT_QA_APP_ID:-dev.baukit.{{ context.app_crate }}}"
 local_hooks="$mobile_dir/scripts/qa/local.sh"
 # shellcheck source=/dev/null
 [[ ! -f "$local_hooks" ]] || source "$local_hooks"
 
 case "$platform" in
   android)
-    state_file="$mobile_dir/.qa/android-serial"
-    app_id="dev.baukit.{{ context.app_crate }}"
+    state_file="$state_dir/android-serial"
+    app_id="$qa_app_id"
     debug_dir="$mobile_dir/maestro-debug"
     ;;
   ios)
-    state_file="$mobile_dir/.qa/ios-udid"
+    state_file="$state_dir/ios-udid"
     app_id="dev.baukit.{{ context.app_name }}"
     debug_dir="$mobile_dir/maestro-debug-ios"
     ;;
@@ -39,20 +43,18 @@ mapfile -t devices < <(grep -v '^$' "$state_file")
 [[ -n "${devices[*]:-}" ]] || { echo "qa: $state_file names no device" >&2; exit 1; }
 if [[ "$platform" == android ]]; then
   sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
-  if [[ -z "$sdk_root" && -f "$mobile_dir/.qa/android-home" ]]; then
-    sdk_root="$(<"$mobile_dir/.qa/android-home")"
+  if [[ -z "$sdk_root" && -f "$state_dir/android-home" ]]; then
+    sdk_root="$(<"$state_dir/android-home")"
   fi
   [[ -n "$sdk_root" ]] || { echo "qa: Android SDK location is missing" >&2; exit 1; }
   adb="$sdk_root/platform-tools/adb"
   for device in "${devices[@]}"; do
-    python3 "$mobile_dir/scripts/qa/android-adb.py" --check-health "$adb" "$device" "$mobile_dir/.qa/android-health.log"
+    python3 "$mobile_dir/scripts/qa/android-adb.py" --check-health "$adb" "$device" "$state_dir/android-health.log"
   done
 else
   devices=("${devices[0]}")
 fi
 cd "$mobile_dir"
-mapfile -t flows < <(find .maestro -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) ! -name 'config.y*ml' | sort)
-[[ -n "${flows[*]:-}" ]] || { echo "qa: mobile/.maestro has no flows" >&2; exit 1; }
 
 all_attached() {
   local device
@@ -69,8 +71,11 @@ stall_seconds="${BAUKIT_QA_MAESTRO_STALL_SECONDS:-300}"
   echo "qa: BAUKIT_QA_MAESTRO_STALL_SECONDS must be a positive integer" >&2
   exit 2
 }
-mkdir -p "$debug_dir"
-maestro_log="$debug_dir/maestro-output.log"
+deadline_seconds="${BAUKIT_QA_MAESTRO_DEADLINE_SECONDS:-}"
+[[ -z "$deadline_seconds" || "$deadline_seconds" =~ ^[1-9][0-9]*$ ]] || {
+  echo "qa: BAUKIT_QA_MAESTRO_DEADLINE_SECONDS must be a positive integer" >&2
+  exit 2
+}
 
 progress() {
   { wc -c < "$maestro_log"; find "$debug_dir" -type f ! -name maestro-output.log -exec ls -ln {} + 2>/dev/null; } | cksum
@@ -87,7 +92,7 @@ stop_maestro() {
 }
 
 run_maestro() {
-  local label="$1" check="$2" last="" now since=$SECONDS pid
+  local label="$1" check="$2" last="" now since=$SECONDS started=$SECONDS pid
   shift 2
   : > "$maestro_log"
   set -m
@@ -98,6 +103,11 @@ run_maestro() {
     if [[ -n "$check" ]] && ! all_attached "$check"; then
       stop_maestro "$pid"
       return 1
+    fi
+    if [[ -n "$deadline_seconds" ]] && ((SECONDS - started > deadline_seconds)); then
+      echo "qa: $label exceeded $deadline_seconds s; stopped it and kept $debug_dir" >&2
+      stop_maestro "$pid"
+      return 124
     fi
     now="$(progress)"
     if [[ "$now" != "$last" ]]; then
@@ -114,6 +124,50 @@ run_maestro() {
 }
 
 count() { echo "$#"; }
+
+run_declared_shard() {
+  local index="$1" debug_dir="$2/shard-$1" maestro_log
+  qa_maestro_env "$index"
+  mkdir -p "$debug_dir"
+  maestro_log="$debug_dir/maestro-output.log"
+  run_maestro "${qa_maestro_shards[index]}" "" test \
+    --platform "$platform" \
+    --device "${devices[index]}" \
+    --env "APP_ID=$app_id" \
+    --debug-output "$debug_dir" \
+    "${qa_maestro_args[@]}" \
+    "${qa_maestro_shards[index]}"
+}
+
+run_declared_shards() {
+  local index pid status=0 pids=() shard_count device_count
+  shard_count="$(count "${qa_maestro_shards[@]}")"
+  device_count="$(count "${devices[@]}")"
+  if ((shard_count > device_count)); then
+    echo "qa: $shard_count Maestro shards but only $device_count devices" >&2
+    return 1
+  fi
+  for index in "${!qa_maestro_shards[@]}"; do
+    run_declared_shard "$index" "$debug_dir" &
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid" || status=$?
+  done
+  return "$status"
+}
+
+if [[ -n "${qa_maestro_shards[*]:-}" ]]; then
+  run_declared_shards
+  exit $?
+fi
+qa_maestro_env 0
+mkdir -p "$debug_dir"
+maestro_log="$debug_dir/maestro-output.log"
+cd "$mobile_dir"
+mapfile -t flows < <(find .maestro -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' \) ! -name 'config.y*ml' | sort)
+[[ -n "${flows[*]:-}" ]] || { echo "qa: mobile/.maestro has no flows" >&2; exit 1; }
+
 flow_count="$(count "${flows[@]}")"
 shards="$(count "${devices[@]}")"
 if ((shards > flow_count)); then

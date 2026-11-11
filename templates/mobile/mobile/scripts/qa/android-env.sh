@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-state_dir="$root/mobile/.qa"
+state_dir="${BAUKIT_QA_STATE_DIR:-$root/mobile/.qa}"
 action="${1:-start}"
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 if [[ -z "$sdk_root" && -f "$state_dir/android-home" ]]; then
@@ -15,6 +15,12 @@ fi
 avd_name="${BAUKIT_QA_ANDROID_AVD:-{{ context.app_name }}-qa}"
 qa_emulator_args=()
 qa_reverse_ports=()
+qa_app_id="${BAUKIT_QA_APP_ID:-dev.baukit.{{ context.app_crate }}}"
+qa_apk_path="$root/mobile/android/app/build/outputs/apk/release/app-release.apk"
+api_port="${BAUKIT_QA_API_PORT:-18080}"
+{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
+{% endif %}qa_build_apk() { bash "$root/mobile/scripts/qa/build-android.sh"; }
+qa_prepare_device() { prepare_device "$@"; }
 local_hooks="$root/mobile/scripts/qa/local.sh"
 # shellcheck source=/dev/null
 [[ ! -f "$local_hooks" ]] || source "$local_hooks"
@@ -31,7 +37,8 @@ emulator_port="${BAUKIT_QA_ANDROID_PORT:-$(manifest_quality android_emulator_por
 [[ "$emulator_port" =~ ^[0-9]+$ ]] || { echo "qa: Android emulator port must be a number" >&2; exit 2; }
 emulator_count="${BAUKIT_QA_ANDROID_EMULATORS:-$(manifest_quality android_emulators 2)}"
 [[ "$emulator_count" =~ ^[1-9][0-9]*$ ]] || { echo "qa: Android emulator count must be a positive integer" >&2; exit 2; }
-gpu_mode=swiftshader_indirect
+gpu_mode="${BAUKIT_QA_ANDROID_GPU:-swiftshader_indirect}"
+[[ "$gpu_mode" =~ ^[a-z_]+$ ]] || { echo "qa: BAUKIT_QA_ANDROID_GPU must be an emulator gpu mode" >&2; exit 2; }
 android_wifi="${BAUKIT_QA_ANDROID_WIFI:-$(manifest_quality android_wifi false)}"
 case "$android_wifi" in
   true | True | 1) android_wifi=1 ;;
@@ -84,6 +91,11 @@ stop_emulator() {
   python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-stop "$adb" "$owned_serial"
 }
 
+clear_ownership() {
+  rm -f "$state_dir/android-owned" "$state_dir/android-serial" "$state_dir/android-avd-name"
+  rm -rf "$state_dir/renderer"
+}
+
 stop_all() {
   local status=0
   stop_android || status=$?
@@ -92,8 +104,15 @@ stop_all() {
     echo "qa: Android cleanup failed; ownership state was kept" >&2
     return "$status"
   fi
-  rm -f "$state_dir/android-owned" "$state_dir/android-serial" "$state_dir/android-avd-name"
-  rm -rf "$state_dir/renderer"
+  clear_ownership
+}
+
+stop_emulators() {
+  stop_android || {
+    echo "qa: Android cleanup failed; ownership state was kept" >&2
+    return 1
+  }
+  clear_ownership
 }
 
 if [[ "$action" == stop ]]; then
@@ -101,7 +120,7 @@ if [[ "$action" == stop ]]; then
   echo "qa: Android environment stopped"
   exit 0
 fi
-[[ "$action" == start ]] || { echo "usage: $0 [start|stop]" >&2; exit 2; }
+[[ "$action" =~ ^(start|boot|prepare)$ ]] || { echo "usage: $0 [start|boot|prepare|stop]" >&2; exit 2; }
 [[ -n "$sdk_root" && -n "$avd_home" ]] || {
   echo "qa: run 'make qa-android-setup' first" >&2
   exit 1
@@ -121,31 +140,80 @@ renderer_threads="${BAUKIT_QA_RENDERER_THREADS:-4}"
   echo "qa: BAUKIT_QA_RENDERER_THREADS must be a positive integer" >&2
   exit 2
 }
-stop_all
-devices="$(adb_bounded devices)"
-for candidate in "${serials[@]}"; do
-  if printf '%s\n' "$devices" | awk '{print $1}' | grep -Fxq "$candidate" && [[ ! -f "$state_dir/android-owned" ]]; then
-    echo "qa: $candidate is already in use by an emulator this target did not start" >&2
-    exit 1
+
+adb_checked() {
+  local output status=0
+  output="$(adb_bounded "$@" 2>&1)" || status=$?
+  if ((status)); then
+    printf '%s\n' "$output" >&2
+    return "$status"
   fi
-done
+  CHECKED_OUTPUT="$output"
+}
 
-mkdir -p "$state_dir"
-bash "$root/mobile/scripts/qa/services.sh" start
+launch_app() {
+  local device="$1" status=0
+  adb_checked -s "$device" shell am start -n "$qa_app_id/.MainActivity" -W || status=$?
+  if ((status)); then
+    echo "qa: could not start $qa_app_id on $device" >&2
+    return "$status"
+  fi
+  if grep -q '^Error' <<<"$CHECKED_OUTPUT"; then
+    printf '%s\n' "$CHECKED_OUTPUT" >&2
+    echo "qa: could not start $qa_app_id on $device" >&2
+    return 1
+  fi
+}
 
-avd_dir="$avd_home/$avd_name.avd"
-emulator_features=""
-if ((android_wifi)); then
-  emulator_features="-WiFiPacketStream"
-fi
-snapshot_name="$(python3 "$root/mobile/scripts/qa/android-adb.py" --snapshot-name "$avd_dir/config.ini" "$sdk_root" "$gpu_mode" "$emulator_features" "{{ context.template_version }}")"
-snapshot_dir="$avd_dir/snapshots/$snapshot_name"
-snapshot_ready="$avd_dir/$snapshot_name.ready"
-mkdir -p "$state_dir/renderer"
-printf '[Processor]\nThreadCount=%s\n[Testing]\nDisableServer=1\n' "$renderer_threads" > "$state_dir/renderer/SwiftShader.ini"
-: > "$state_dir/android-serial"
-printf '%s\n' "$avd_name" > "$state_dir/android-avd-name"
-touch "$state_dir/android-owned"
+prepare_device() {
+  local device="$1" apk="$2" port
+  adb_bounded -s "$device" shell settings put global window_animation_scale 0
+  adb_bounded -s "$device" shell settings put global transition_animation_scale 0
+  adb_bounded -s "$device" shell settings put global animator_duration_scale 0
+  adb_bounded -s "$device" reverse "tcp:$api_port" "tcp:$api_port"
+  for port in "${qa_reverse_ports[@]}"; do
+    adb_bounded -s "$device" reverse "tcp:$port" "tcp:$port"
+  done
+{% if context.auth_enabled %}  adb_bounded -s "$device" reverse "tcp:$keycloak_port" "tcp:$keycloak_port"
+  adb_bounded -s "$device" shell am force-stop com.android.chrome
+  adb_bounded -s "$device" shell 'echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
+  adb_bounded -s "$device" shell settings put global debug_app com.android.chrome
+{% endif %}  adb_checked -s "$device" install -r "$apk"
+  launch_app "$device"
+}
+
+prepare_devices() {
+  local device pid status=0 pids=()
+  for device in "${serials[@]}"; do
+    qa_prepare_device "$device" "$qa_apk_path" &
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid" || status=$?
+  done
+  return "$status"
+}
+
+prepare_android() {
+  if [[ "${BAUKIT_QA_SKIP_BUILD:-0}" != 1 ]]; then
+    qa_build_apk
+  fi
+  [[ -f "$qa_apk_path" ]] || { echo "qa: missing $qa_apk_path; run 'make qa-android-build'" >&2; exit 1; }
+  prepare_devices
+  echo "qa: Android app ready on ${serials[*]}"
+  echo "qa: run 'make e2e-android-live' or inspect the emulator, then 'make qa-android-down'"
+}
+
+reject_foreign_emulators() {
+  local devices candidate
+  devices="$(adb_bounded devices)"
+  for candidate in "${serials[@]}"; do
+    if printf '%s\n' "$devices" | awk '{print $1}' | grep -Fxq "$candidate" && [[ ! -f "$state_dir/android-owned" ]]; then
+      echo "qa: $candidate is already in use by an emulator this target did not start" >&2
+      exit 1
+    fi
+  done
+}
 
 launch_emulator() {
   local index="$1" port=$((emulator_port + 2 * $1)) log="$state_dir/android-emulator.log"
@@ -225,43 +293,55 @@ save_snapshot() {
   fi
 }
 
-if [[ ! -f "$snapshot_ready" ]]; then
-  lock_snapshot
+boot_emulators() {
+  local index device
+  mkdir -p "$state_dir"
+  avd_dir="$avd_home/$avd_name.avd"
+  emulator_features=""
+  if ((android_wifi)); then
+    emulator_features="-WiFiPacketStream"
+  fi
+  snapshot_name="$(python3 "$root/mobile/scripts/qa/android-adb.py" --snapshot-name "$avd_dir/config.ini" "$sdk_root" "$gpu_mode" "$emulator_features" "{{ context.template_version }}")"
+  snapshot_dir="$avd_dir/snapshots/$snapshot_name"
+  snapshot_ready="$avd_dir/$snapshot_name.ready"
+  mkdir -p "$state_dir/renderer"
+  printf '[Processor]\nThreadCount=%s\n[Testing]\nDisableServer=1\n' "$renderer_threads" > "$state_dir/renderer/SwiftShader.ini"
+  : > "$state_dir/android-serial"
+  printf '%s\n' "$avd_name" > "$state_dir/android-avd-name"
+  touch "$state_dir/android-owned"
   if [[ ! -f "$snapshot_ready" ]]; then
-    save_snapshot
+    lock_snapshot
+    if [[ ! -f "$snapshot_ready" ]]; then
+      save_snapshot
+    fi
+    exec 9>&-
   fi
-  exec 9>&-
-fi
-for ((index = 0; index < emulator_count; index++)); do
-  if ((index > 0)) || [[ ! -s "$state_dir/android-serial" ]]; then
-    launch_emulator "$index"
-  fi
-done
-for device in "${serials[@]}"; do
-  await_emulator "$device"
-done
-
-if [[ "${BAUKIT_QA_SKIP_BUILD:-0}" != 1 ]]; then
-  bash "$root/mobile/scripts/qa/build-android.sh"
-fi
-apk="$root/mobile/android/app/build/outputs/apk/release/app-release.apk"
-[[ -f "$apk" ]] || { echo "qa: missing $apk; run 'make qa-android-build'" >&2; exit 1; }
-for serial in "${serials[@]}"; do
-  adb_bounded -s "$serial" shell settings put global window_animation_scale 0
-  adb_bounded -s "$serial" shell settings put global transition_animation_scale 0
-  adb_bounded -s "$serial" shell settings put global animator_duration_scale 0
-  adb_bounded -s "$serial" reverse "tcp:${BAUKIT_QA_API_PORT:-18080}" "tcp:${BAUKIT_QA_API_PORT:-18080}"
-  for port in "${qa_reverse_ports[@]}"; do
-    adb_bounded -s "$serial" reverse "tcp:$port" "tcp:$port"
+  for ((index = 0; index < emulator_count; index++)); do
+    if ((index > 0)) || [[ ! -s "$state_dir/android-serial" ]]; then
+      launch_emulator "$index"
+    fi
   done
-{% if context.auth_enabled %}  adb_bounded -s "$serial" reverse "tcp:${BAUKIT_QA_KEYCLOAK_PORT:-18081}" "tcp:${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
-  adb_bounded -s "$serial" shell am force-stop com.android.chrome
-  adb_bounded -s "$serial" shell 'echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
-  adb_bounded -s "$serial" shell settings put global debug_app com.android.chrome
-{% endif %}
-  adb_bounded -s "$serial" install -r "$apk" >/dev/null
-  adb_bounded -s "$serial" shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W >/dev/null
-done
+  for device in "${serials[@]}"; do
+    await_emulator "$device"
+  done
+}
 
-echo "qa: Android app ready on ${serials[*]}"
-echo "qa: run 'make e2e-android-live' or inspect the emulator, then 'make qa-android-down'"
+case "$action" in
+  start)
+    stop_all
+    reject_foreign_emulators
+    mkdir -p "$state_dir"
+    bash "$root/mobile/scripts/qa/services.sh" start
+    boot_emulators
+    prepare_android
+    ;;
+  boot)
+    stop_emulators
+    reject_foreign_emulators
+    boot_emulators
+    echo "qa: Android emulators booted on ${serials[*]}"
+    ;;
+  prepare)
+    prepare_android
+    ;;
+esac

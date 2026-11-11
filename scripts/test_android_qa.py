@@ -80,7 +80,10 @@ case "$*" in
   *'emu kill')
     [[ "$FAILURE" != kill ]] || exit 9
     if [[ "$FAILURE" != disconnect ]]; then rm -f "$ATTACHED"; fi ;;
-  *'shell am start '*) [[ "$FAILURE" != launch ]] || exit 17 ;;
+  *'shell am start '*)
+    [[ "$FAILURE" != launch ]] || { echo 'Error: Activity class does not exist.'; exit 17; }
+    [[ "$FAILURE" != launch-soft ]] || echo 'Error: Activity class does not exist.' ;;
+  *' install -r '*) [[ "$FAILURE" != install ]] || { echo 'Failure [INSTALL_FAILED_OLDER_SDK]'; exit 18; } ;;
   *'getprop sys.boot_completed') if grep -q '^{' "$EVENTS"; then echo 1; fi ;;
   *logcat*)
     if [[ "$FAILURE" == health ]]; then echo 'am_anr: [0,123,com.android.systemui,1,reason]'; fi ;;
@@ -241,6 +244,7 @@ RENDERER
         self.prepare_start()
         result = self.run_script("android-env.sh", "start", FAILURE="launch")
         self.assertEqual(result.returncode, 17, result.stderr)
+        self.assertIn("Error: Activity class does not exist.", result.stderr)
         self.assertNotIn("Android app ready", result.stdout)
 
     def test_invalid_renderer_limits_fail_before_starting_services(self):

@@ -76,7 +76,10 @@ printf 'hw.cpu.ncore = 1\nhw.cpu.ncore=2\nhw.gpu.mode=auto\n' > "$ANDROID_AVD_HO
         definition = script[script.index("gradle=(") : script.index(")", script.index("gradle=("))]
         self.assertIn("gradlew", definition)
         self.assertIn("-PreactNativeDevServerIp=127.0.0.1", definition)
-        self.assertIn('"${gradle[@]}" --stacktrace assembleDebug', script)
+        self.assertIn(
+            '"${gradle[@]}" --stacktrace -PreactNativeArchitectures="$architecture" assembleDebug',
+            script,
+        )
 
 
 if __name__ == "__main__":

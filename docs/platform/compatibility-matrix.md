@@ -5,6 +5,27 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.22.0
+
+Last verified release train: `v0.22.0` (minor train on top of `v0.21.0`, template scripts only).
+- Mobile QA scripts (`mobile/scripts/qa/`) take product needs through `local.sh` hooks, so a product with its own QA lane keeps the template copies of `android-env.sh`, `run-maestro.sh`, `services.sh`, `build-android.sh`, `build-ios.sh` and `android-sdk.sh` unchanged.
+- The Android application id has one source. `android-env.sh` and `run-maestro.sh` both read `qa_app_id`, which defaults to `BAUKIT_QA_APP_ID` or `dev.baukit.<app_crate>`. A product whose `android.package` differs sets `qa_app_id` in `local.sh`.
+- `adb install` and `am start` print the adb output when they fail, and `am start` output that begins with `Error` fails the start.
+- `android-env.sh` accepts `start`, `boot`, `prepare` and `stop`. `boot` starts the emulators and leaves services and the APK alone. `prepare` builds, installs and launches. `start` stops everything, starts services, boots, then prepares. A gate that builds the APK while the emulators boot runs `boot`, builds, then runs `prepare` with `BAUKIT_QA_SKIP_BUILD=1`, and starts the stack with `services.sh start` whenever it wants.
+- `android-env.sh` hooks: `qa_apk_path` (variable), `qa_build_apk` (function, defaults to `build-android.sh`; override it to build several APK variants), `qa_prepare_device serial apk` (runs per device in parallel; call `prepare_device "$@"` to extend the default). `BAUKIT_QA_ANDROID_GPU` picks the emulator GPU mode (default `swiftshader_indirect`).
+- `services.sh` hooks: `qa_services_start` and `qa_services_stop` replace the compose and API flow as a whole (the defaults are `start_default_services` and `stop_default_services`). `compose` can be reassigned for another compose file set. `api_port`, `keycloak_port`, `postgres_port`, `redis_port`, `ops_port` and `compose_project` can be reassigned in `local.sh`, and the script exports them as `BAUKIT_QA_*_PORT`. `BAUKIT_QA_STATE_DIR` moves the state directory in every QA script and `BAUKIT_QA_COMPOSE_OVERRIDE` adds a compose file. The QA Keycloak sets `KC_HOSTNAME` to `http://localhost:<QA port>`, so the issuer matches the backend's.
+- `run-maestro.sh` hooks: `qa_maestro_shards` (one flow file per device, run in parallel into `maestro-debug/shard-<n>`), `qa_maestro_env index` (exports per-device credentials, may reassign `debug_dir`; index 0 on the unsharded paths). `BAUKIT_QA_MAESTRO_DEADLINE_SECONDS` stops a Maestro run after that long and exits 124.
+- Build scripts: `qa_build_env` runs after the template exports, `qa_install_dependencies` replaces the `pnpm install` step (workspace products), `qa_gradle_args` adds Gradle arguments, and `BAUKIT_QA_IOS_SCHEME` names the Xcode scheme. The debug assemble builds only the QA ABI.
+- `android-sdk.sh` reads `BAUKIT_QA_ANDROID_PLATFORM` and `BAUKIT_QA_ANDROID_BUILD_TOOLS` next to `BAUKIT_QA_ANDROID_API_LEVEL`.
+
+### Upgrade steps
+
+1. Set every `baukit-*` crate and `@baukit/*` package to `0.22.0`, and set `baukit.toml`'s `template_version` and `[dependencies.baukit].version` to `0.22.0`. Strict products move the Baukit clone in `scripts/quality-gate.sh` to `--branch v0.22.0`.
+2. Copy the QA scripts from a fresh fixture and run `baukit check template-files --update`. Drop your divergent copies of `android-env.sh`, `run-maestro.sh`, `services.sh`, `build-android.sh`, `build-ios.sh`, `android-sdk.sh` and `docker-compose.qa.yml`.
+3. Move what the divergence held into `mobile/scripts/qa/local.sh`. Set `qa_app_id` to the `android.package` from `app.config.ts`, the QA ports and `compose_project` as plain assignments, and a `qa_prepare_device` for device setup the default lacks. Products with their own compose stack define `qa_services_start` and `qa_services_stop`. Products with one Maestro shard file per device set `qa_maestro_shards` and `qa_maestro_env`.
+4. Replace `ORG_GRADLE_PROJECT_reactNativeArchitectures` and a `timeout` around Maestro with the built-in behavior and `BAUKIT_QA_MAESTRO_DEADLINE_SECONDS`. Drop a product `KC_HOSTNAME` override in `docker-compose.local.yml`.
+5. Run `make native-android-gate` (or your product's `android-e2e` step) once. Check that `am start` now names your application id.
+
 ## v0.21.0
 
 Last verified release train: `v0.21.0` (minor train on top of `v0.20.0`, breaking for products that build SQL at runtime).
