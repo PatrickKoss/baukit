@@ -1,7 +1,4 @@
-#![expect(
-    clippy::too_many_lines,
-    reason = "each test generates one product scenario and asserts every file of that scenario in sequence"
-)]
+#![cfg(test)]
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -18,6 +15,8 @@ mod snapshot_flavors;
 mod snapshot_tree;
 
 use snapshot_flavors::snapshot_flavors;
+
+type Tree = std::collections::BTreeMap<PathBuf, Vec<u8>>;
 use snapshot_tree::{read_tree, render_hash_snapshot, sha256_hex, symlink_target};
 
 #[cfg(unix)]
@@ -620,11 +619,8 @@ done
 }
 
 #[cfg(unix)]
-#[test]
-fn docker_callers_isolate_checkouts_and_preserve_overrides() -> anyhow::Result<()> {
-    let parent = tempfile::tempdir()?;
-    let tools = parent.path().join("tools");
-    fs::create_dir(&tools)?;
+fn install_fake_docker(tools: &Path) -> anyhow::Result<()> {
+    fs::create_dir(tools)?;
     let docker = tools.join("docker");
     fs::write(
         &docker,
@@ -638,6 +634,148 @@ fn docker_callers_isolate_checkouts_and_preserve_overrides() -> anyhow::Result<(
         assert!(output.status.success(), "missing {tool}");
         std::os::unix::fs::symlink(String::from_utf8(output.stdout)?.trim(), tools.join(tool))?;
     }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn assert_docker_wrapper_matrix(
+    root: &Path,
+    tools: &Path,
+    cwd: &Path,
+    expected: &str,
+) -> anyhow::Result<()> {
+    for portable_path in [false, true] {
+        let path = if portable_path {
+            tools.display().to_string()
+        } else {
+            format!("{}:{}", tools.display(), std::env::var("PATH")?)
+        };
+        for (arguments, expected_args) in [
+            (vec!["compose", "build"], vec!["compose", "build"]),
+            (
+                vec!["build", "."],
+                vec!["build", "--build-arg", "PREFIX", "."],
+            ),
+            (
+                vec!["buildx", "build", "."],
+                vec!["buildx", "build", "--build-arg", "PREFIX", "."],
+            ),
+        ] {
+            for prefix in [None, Some("custom-cache")] {
+                let mut command = Command::new("/bin/sh");
+                command
+                    .arg(root.join("scripts/docker.sh"))
+                    .args(&arguments)
+                    .current_dir(cwd)
+                    .env("PATH", &path)
+                    .env_remove("CARGO_TARGET_CACHE_PREFIX");
+                if let Some(prefix) = prefix {
+                    command.env("CARGO_TARGET_CACHE_PREFIX", prefix);
+                }
+                let output = command.output()?;
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                let prefix = prefix.unwrap_or(expected);
+                let mut lines = vec![prefix.to_owned()];
+                lines.extend(expected_args.iter().map(|arg| {
+                    if *arg == "PREFIX" {
+                        format!("CARGO_TARGET_CACHE_PREFIX={prefix}")
+                    } else {
+                        (*arg).to_owned()
+                    }
+                }));
+                assert_eq!(
+                    String::from_utf8(output.stdout)?,
+                    format!("{}\n", lines.join("\n"))
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn assert_docker_passthrough(root: &Path, tools: &Path) -> anyhow::Result<()> {
+    for args in [vec!["ps"], vec!["buildx", "inspect"]] {
+        let output = Command::new("sh")
+            .arg(root.join("scripts/docker.sh"))
+            .args(&args)
+            .env(
+                "PATH",
+                format!("{}:{}", tools.display(), std::env::var("PATH")?),
+            )
+            .env_remove("CARGO_TARGET_CACHE_PREFIX")
+            .output()?;
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8(output.stdout)?,
+            format!("unset\n{}\n", args.join("\n"))
+        );
+    }
+    let help = Command::new("sh")
+        .arg(root.join("scripts/docker.sh"))
+        .arg("--help")
+        .output()?;
+    assert!(help.status.success());
+    assert!(String::from_utf8(help.stdout)?.contains("Only compose, build and buildx build"));
+    Ok(())
+}
+
+#[cfg(unix)]
+fn assert_image_gate_prefix(
+    root: &Path,
+    tools: &Path,
+    parent: &Path,
+    expected: &str,
+) -> anyhow::Result<()> {
+    let runner = fs::read_to_string(root.join("scripts/quality-gate.sh"))?;
+    let start = runner.find("step_images() {").expect("image build gate");
+    let end = runner[start..].find("\n}\n").expect("next gate") + start + 3;
+    let baukit = parent.join("baukit");
+    fs::create_dir_all(&baukit)?;
+    fs::write(baukit.join("Cargo.toml"), "fixture")?;
+    for source in ["registry", "path"] {
+        let commands = format!(
+            "set -eu\ntemporary_paths=\nmanifest_value() {{ case $1 in dependencies.baukit.source) echo {source};; dependencies.baukit.path) printf %s \"$TEST_BAUKIT_PATH\";; esac; }}\n{}step_images\n",
+            &runner[start..end]
+        );
+        let output = Command::new("sh")
+            .args(["-c", &commands])
+            .current_dir(root)
+            .env(
+                "PATH",
+                format!("{}:{}", tools.display(), std::env::var("PATH")?),
+            )
+            .env("TEST_BAUKIT_PATH", &baukit)
+            .env_remove("CARGO_TARGET_CACHE_PREFIX")
+            .output()?;
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let output = String::from_utf8(output.stdout)?;
+        assert!(
+            output.starts_with(&format!(
+                "{expected}\nbuild\n--build-arg\nCARGO_TARGET_CACHE_PREFIX={expected}\n"
+            )),
+            "{output}"
+        );
+        assert!(output.contains("BACKEND_CONTEXT=backend\n"));
+        assert_eq!(output.contains("BAUKIT_CONTEXT=baukit\n"), source == "path");
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn docker_callers_isolate_checkouts_and_preserve_overrides() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let tools = parent.path().join("tools");
+    install_fake_docker(&tools)?;
     let mut prefixes = Vec::new();
     for checkout in ["first checkout", "second checkout"] {
         let mut opts = options(&parent.path().join(checkout), "cache-product");
@@ -646,116 +784,11 @@ fn docker_callers_isolate_checkouts_and_preserve_overrides() -> anyhow::Result<(
         let digest = sha256_hex(fs::canonicalize(&root)?.to_string_lossy().as_bytes());
         let expected = format!("cache-product-{:.12}", digest);
         prefixes.push(expected.clone());
-        for portable_path in [false, true] {
-            let path = if portable_path {
-                tools.display().to_string()
-            } else {
-                format!("{}:{}", tools.display(), std::env::var("PATH")?)
-            };
-            for (arguments, expected_args) in [
-                (vec!["compose", "build"], vec!["compose", "build"]),
-                (
-                    vec!["build", "."],
-                    vec!["build", "--build-arg", "PREFIX", "."],
-                ),
-                (
-                    vec!["buildx", "build", "."],
-                    vec!["buildx", "build", "--build-arg", "PREFIX", "."],
-                ),
-            ] {
-                for prefix in [None, Some("custom-cache")] {
-                    let mut command = Command::new("/bin/sh");
-                    command
-                        .arg(root.join("scripts/docker.sh"))
-                        .args(&arguments)
-                        .current_dir(parent.path())
-                        .env("PATH", &path)
-                        .env_remove("CARGO_TARGET_CACHE_PREFIX");
-                    if let Some(prefix) = prefix {
-                        command.env("CARGO_TARGET_CACHE_PREFIX", prefix);
-                    }
-                    let output = command.output()?;
-                    assert!(
-                        output.status.success(),
-                        "{}",
-                        String::from_utf8_lossy(&output.stderr)
-                    );
-                    let prefix = prefix.unwrap_or(&expected);
-                    let mut lines = vec![prefix.to_owned()];
-                    lines.extend(expected_args.iter().map(|arg| {
-                        if *arg == "PREFIX" {
-                            format!("CARGO_TARGET_CACHE_PREFIX={prefix}")
-                        } else {
-                            (*arg).to_owned()
-                        }
-                    }));
-                    assert_eq!(
-                        String::from_utf8(output.stdout)?,
-                        format!("{}\n", lines.join("\n"))
-                    );
-                }
-            }
-        }
+        assert_docker_wrapper_matrix(&root, &tools, parent.path(), &expected)?;
         let makefile = fs::read_to_string(root.join("Makefile"))?;
         assert!(makefile.contains("\tdocker compose up -d postgres"));
-        for args in [vec!["ps"], vec!["buildx", "inspect"]] {
-            let output = Command::new("sh")
-                .arg(root.join("scripts/docker.sh"))
-                .args(&args)
-                .env(
-                    "PATH",
-                    format!("{}:{}", tools.display(), std::env::var("PATH")?),
-                )
-                .env_remove("CARGO_TARGET_CACHE_PREFIX")
-                .output()?;
-            assert!(output.status.success());
-            assert_eq!(
-                String::from_utf8(output.stdout)?,
-                format!("unset\n{}\n", args.join("\n"))
-            );
-        }
-        let help = Command::new("sh")
-            .arg(root.join("scripts/docker.sh"))
-            .arg("--help")
-            .output()?;
-        assert!(help.status.success());
-        assert!(String::from_utf8(help.stdout)?.contains("Only compose, build and buildx build"));
-        let runner = fs::read_to_string(root.join("scripts/quality-gate.sh"))?;
-        let start = runner.find("step_images() {").expect("image build gate");
-        let end = runner[start..].find("\n}\n").expect("next gate") + start + 3;
-        let baukit = parent.path().join("baukit");
-        fs::create_dir_all(&baukit)?;
-        fs::write(baukit.join("Cargo.toml"), "fixture")?;
-        for source in ["registry", "path"] {
-            let commands = format!(
-                "set -eu\ntemporary_paths=\nmanifest_value() {{ case $1 in dependencies.baukit.source) echo {source};; dependencies.baukit.path) printf %s \"$TEST_BAUKIT_PATH\";; esac; }}\n{}step_images\n",
-                &runner[start..end]
-            );
-            let output = Command::new("sh")
-                .args(["-c", &commands])
-                .current_dir(&root)
-                .env(
-                    "PATH",
-                    format!("{}:{}", tools.display(), std::env::var("PATH")?),
-                )
-                .env("TEST_BAUKIT_PATH", &baukit)
-                .env_remove("CARGO_TARGET_CACHE_PREFIX")
-                .output()?;
-            assert!(
-                output.status.success(),
-                "{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            let output = String::from_utf8(output.stdout)?;
-            assert!(
-                output.starts_with(&format!(
-                    "{expected}\nbuild\n--build-arg\nCARGO_TARGET_CACHE_PREFIX={expected}\n"
-                )),
-                "{output}"
-            );
-            assert!(output.contains("BACKEND_CONTEXT=backend\n"));
-            assert_eq!(output.contains("BAUKIT_CONTEXT=baukit\n"), source == "path");
-        }
+        assert_docker_passthrough(&root, &tools)?;
+        assert_image_gate_prefix(&root, &tools, parent.path(), &expected)?;
     }
     assert_ne!(prefixes[0], prefixes[1]);
     Ok(())
@@ -1241,9 +1274,19 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
         include_str!("snapshots/auth.tree")
     );
 
+    assert_oidc_manifest_and_packages(&first)?;
+
+    assert_oidc_api_and_realm(&first)?;
+
+    assert_keycloak_theme_files(&first, &first_tree)?;
+
+    assert_oidc_compose_and_theme_runner(&first)
+}
+
+fn assert_oidc_manifest_and_packages(first: &Path) -> anyhow::Result<()> {
     let manifest_source = fs::read_to_string(first.join("baukit.toml"))?;
     assert!(manifest_source.contains("auth = \"oidc\""));
-    let manifest = baukit_cli::read_manifest(&first)?;
+    let manifest = baukit_cli::read_manifest(first)?;
     assert_eq!(manifest.capabilities.auth, Some(AuthProvider::Oidc));
     assert!(first.join("keycloak/realm.json").is_file());
     assert!(first.join("backend/tests/auth_conformance.rs").is_file());
@@ -1263,7 +1306,10 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     let web_package = fs::read_to_string(first.join("web/package.json"))?;
     assert!(web_package.contains("@baukit/auth-web"));
     assert!(web_package.contains("@baukit/data-contracts"));
+    Ok(())
+}
 
+fn assert_oidc_api_and_realm(first: &Path) -> anyhow::Result<()> {
     let api = fs::read_to_string(first.join("backend/crates/snapshot-app-api/src/lib.rs"))?;
     assert_eq!(api.matches("security((\"bearerAuth\" = []))").count(), 8);
     assert_eq!(api.matches("principal: Principal").count(), 9);
@@ -1274,6 +1320,10 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     assert!(realm.contains("\"realmRoles\": [\"offline_access\"]"));
     assert!(realm.contains("snapshot-app-mobile"));
     assert!(realm.contains("\"loginTheme\": \"baukit-accessible\""));
+    Ok(())
+}
+
+fn assert_keycloak_theme_files(first: &Path, first_tree: &Tree) -> anyhow::Result<()> {
     assert!(first.join("keycloak/realm-policy.json").is_file());
     assert!(first.join("keycloak/reconcile.json").is_file());
     assert!(
@@ -1328,6 +1378,10 @@ fn oidc_generation_is_deterministic_and_records_the_optional_capability() -> any
     }));
     assert!(first.join("scripts/keycloak_policy.py").is_file());
     assert!(first.join("scripts/reconcile_keycloak.py").is_file());
+    Ok(())
+}
+
+fn assert_oidc_compose_and_theme_runner(first: &Path) -> anyhow::Result<()> {
     let compose = fs::read_to_string(first.join("compose.yaml"))?;
     assert!(compose.contains("keycloak-data:"));
     assert!(compose.contains("./keycloak/themes:/opt/keycloak/themes:ro"));
@@ -1574,6 +1628,10 @@ fn release_emission_uses_registry_versions_and_reproducibility_files() -> anyhow
     assert!(client.contains("openapi.get(\"consumers\")"));
     assert!(client.contains("tomllib.load(source)[\"openapi\"][\"schema\"]"));
     assert!(!client.contains("cargo run"));
+    assert_release_workflow(&root)
+}
+
+fn assert_release_workflow(root: &Path) -> anyhow::Result<()> {
     let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml"))?;
     // Every job that builds product code needs the private Baukit dependency.
     assert_eq!(
@@ -1752,53 +1810,59 @@ esac
                 "dependency reinstalls must preserve the browser cache"
             );
         }
-        let result = Command::new("sh")
-            .args(["scripts/preflight.sh", "--", "record-playwright-cache"])
-            .current_dir(&root)
-            .env("PATH", &path)
-            .env("BAUKIT_PREBUILT_IMAGES", "true")
-            .env_remove("PLAYWRIGHT_BROWSERS_PATH")
-            .env(
-                "BAUKIT_TEST_PLAYWRIGHT_MODULE",
-                root.join("web/node_modules/@playwright/test"),
-            )
-            .env("BAUKIT_TEST_PLAYWRIGHT_MARKER", &marker)
-            .env("BAUKIT_TEST_INSTALL_LOG", &install_log)
-            .env("BAUKIT_TEST_RUN_LOG", &run_log)
-            .output()?;
-        assert!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
+        run_playwright_preflight(&root, &path, None, &marker, &install_log, &run_log)?;
     }
     let expected_cache = format!("{}\n", root.join("web/.playwright-browsers").display());
     assert_eq!(fs::read_to_string(&install_log)?, expected_cache);
     assert_eq!(fs::read_to_string(&run_log)?, expected_cache);
     let shared = parent.path().join("shared-browsers");
     let shared_marker = shared.join("browser-installed");
-    let result = Command::new("sh")
+    run_playwright_preflight(
+        &root,
+        &path,
+        Some(&shared),
+        &shared_marker,
+        &install_log,
+        &run_log,
+    )?;
+    let shared_cache = format!("{}\n", shared.display());
+    assert_eq!(fs::read_to_string(&run_log)?, shared_cache);
+    assert!(fs::read_to_string(&install_log)?.ends_with(&shared_cache));
+    Ok(())
+}
+
+#[cfg(unix)]
+fn run_playwright_preflight(
+    root: &Path,
+    path: &str,
+    browsers: Option<&Path>,
+    marker: &Path,
+    install_log: &Path,
+    run_log: &Path,
+) -> anyhow::Result<()> {
+    let mut command = Command::new("sh");
+    command
         .args(["scripts/preflight.sh", "--", "record-playwright-cache"])
-        .current_dir(&root)
-        .env("PATH", &path)
+        .current_dir(root)
+        .env("PATH", path)
         .env("BAUKIT_PREBUILT_IMAGES", "true")
-        .env("PLAYWRIGHT_BROWSERS_PATH", &shared)
         .env(
             "BAUKIT_TEST_PLAYWRIGHT_MODULE",
             root.join("web/node_modules/@playwright/test"),
         )
-        .env("BAUKIT_TEST_PLAYWRIGHT_MARKER", &shared_marker)
-        .env("BAUKIT_TEST_INSTALL_LOG", &install_log)
-        .env("BAUKIT_TEST_RUN_LOG", &run_log)
-        .output()?;
+        .env("BAUKIT_TEST_PLAYWRIGHT_MARKER", marker)
+        .env("BAUKIT_TEST_INSTALL_LOG", install_log)
+        .env("BAUKIT_TEST_RUN_LOG", run_log);
+    match browsers {
+        Some(browsers) => command.env("PLAYWRIGHT_BROWSERS_PATH", browsers),
+        None => command.env_remove("PLAYWRIGHT_BROWSERS_PATH"),
+    };
+    let result = command.output()?;
     assert!(
         result.status.success(),
         "{}",
         String::from_utf8_lossy(&result.stderr)
     );
-    let shared_cache = format!("{}\n", shared.display());
-    assert_eq!(fs::read_to_string(&run_log)?, shared_cache);
-    assert!(fs::read_to_string(&install_log)?.ends_with(&shared_cache));
     Ok(())
 }
 
@@ -1975,6 +2039,81 @@ fn doctor_validates_long_name_products_of_every_flavor() -> anyhow::Result<()> {
     Ok(())
 }
 
+const PRODUCT_DRIFTS: [(&str, &str, &str, &str); 12] = [
+    (
+        "web/src/product.ts",
+        "long-product-name-fixture",
+        "other-product",
+        "PRODUCT_NAME",
+    ),
+    (
+        "mobile/src/product.ts",
+        "long-product-name-fixture",
+        "other-product",
+        "PRODUCT_NAME",
+    ),
+    (
+        "web/src/auth.ts",
+        "localhost:8181",
+        "localhost:9999",
+        "port offset 100",
+    ),
+    (
+        "mobile/src/auth.ts",
+        "localhost:8181",
+        "localhost:9999",
+        "port offset 100",
+    ),
+    (
+        "mobile/app.config.ts",
+        "localhost:8181",
+        "localhost:9999",
+        "port offset 100",
+    ),
+    (
+        "mobile/src/api.ts",
+        "localhost:8180",
+        "localhost:9999",
+        "port offset 100",
+    ),
+    (
+        "web/e2e/stack/keycloak.ts",
+        "localhost:8181",
+        "localhost:9999",
+        "port offset 100",
+    ),
+    (
+        "web/src/delete-profile.ts",
+        "localhost:8180",
+        "localhost:9999",
+        "port offset 100",
+    ),
+    (
+        "mobile/src/delete-profile.ts",
+        "localhost:8180",
+        "localhost:9999",
+        "port offset 100",
+    ),
+    (
+        "backend/crates/long-product-name-fixture-bin/src/lib.rs",
+        "long-product-name-fixture",
+        "other-product",
+        "PRODUCT",
+    ),
+    (
+        "backend/crates/long-product-name-fixture-bin/src/lib.rs",
+        "8181\".to_owned()",
+        "9999\".to_owned()",
+        "port offset 100",
+    ),
+    (
+        "backend/crates/long-product-name-fixture-bin/src/lib.rs",
+        "8181/realms",
+        "9999/realms",
+        "port offset 100",
+    ),
+];
+
 #[test]
 fn doctor_rejects_drift_in_product_constants_and_url_defaults() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
@@ -1988,80 +2127,7 @@ fn doctor_rejects_drift_in_product_constants_and_url_defaults() -> anyhow::Resul
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
     doctor(&root)?;
-    for (relative, original, drifted, diagnostic) in [
-        (
-            "web/src/product.ts",
-            "long-product-name-fixture",
-            "other-product",
-            "PRODUCT_NAME",
-        ),
-        (
-            "mobile/src/product.ts",
-            "long-product-name-fixture",
-            "other-product",
-            "PRODUCT_NAME",
-        ),
-        (
-            "web/src/auth.ts",
-            "localhost:8181",
-            "localhost:9999",
-            "port offset 100",
-        ),
-        (
-            "mobile/src/auth.ts",
-            "localhost:8181",
-            "localhost:9999",
-            "port offset 100",
-        ),
-        (
-            "mobile/app.config.ts",
-            "localhost:8181",
-            "localhost:9999",
-            "port offset 100",
-        ),
-        (
-            "mobile/src/api.ts",
-            "localhost:8180",
-            "localhost:9999",
-            "port offset 100",
-        ),
-        (
-            "web/e2e/stack/keycloak.ts",
-            "localhost:8181",
-            "localhost:9999",
-            "port offset 100",
-        ),
-        (
-            "web/src/delete-profile.ts",
-            "localhost:8180",
-            "localhost:9999",
-            "port offset 100",
-        ),
-        (
-            "mobile/src/delete-profile.ts",
-            "localhost:8180",
-            "localhost:9999",
-            "port offset 100",
-        ),
-        (
-            "backend/crates/long-product-name-fixture-bin/src/lib.rs",
-            "long-product-name-fixture",
-            "other-product",
-            "PRODUCT",
-        ),
-        (
-            "backend/crates/long-product-name-fixture-bin/src/lib.rs",
-            "8181\".to_owned()",
-            "9999\".to_owned()",
-            "port offset 100",
-        ),
-        (
-            "backend/crates/long-product-name-fixture-bin/src/lib.rs",
-            "8181/realms",
-            "9999/realms",
-            "port offset 100",
-        ),
-    ] {
+    for (relative, original, drifted, diagnostic) in PRODUCT_DRIFTS {
         let path = root.join(relative);
         let source = fs::read_to_string(&path)?;
         assert!(
@@ -2352,6 +2418,18 @@ postgres = { host = 17003, container = 5432 }
 keycloak = { host = 17004, container = 8080 }
 "#;
     fs::write(&manifest_path, &manifest)?;
+    rewrite_declared_ports(&root)?;
+
+    let compose_path = root.join("compose.yaml");
+    let compose = fs::read_to_string(&compose_path)?.replace("5532:5432", "17003:5432").replace("8181:8080", "17004:8080").replace("volumes:\n  postgres-data:", "  backend:\n    ports:\n      - \"17001:8080\"\n      - \"17002:9090\"\n\nvolumes:\n  postgres-data:");
+    fs::write(&compose_path, &compose)?;
+    doctor(&root)?;
+    assert_declared_mappings_must_agree(&root, &compose_path, &compose)?;
+
+    assert_wrong_loopback_and_database_ports(&root, &manifest_path, &manifest)
+}
+
+fn rewrite_declared_ports(root: &Path) -> anyhow::Result<()> {
     for relative in [
         "Makefile",
         "mobile/.env.example",
@@ -2382,10 +2460,14 @@ keycloak = { host = 17004, container = 8080 }
             .replace("8180", "8080")
             .replace("9190", "9090"),
     )?;
-    let compose_path = root.join("compose.yaml");
-    let compose = fs::read_to_string(&compose_path)?.replace("5532:5432", "17003:5432").replace("8181:8080", "17004:8080").replace("volumes:\n  postgres-data:", "  backend:\n    ports:\n      - \"17001:8080\"\n      - \"17002:9090\"\n\nvolumes:\n  postgres-data:");
-    fs::write(&compose_path, &compose)?;
-    doctor(&root)?;
+    Ok(())
+}
+
+fn assert_declared_mappings_must_agree(
+    root: &Path,
+    compose_path: &Path,
+    compose: &str,
+) -> anyhow::Result<()> {
     for (source, diagnostic) in [
         (
             compose.replace("17003:5432", "17006:5432"),
@@ -2408,15 +2490,23 @@ keycloak = { host = 17004, container = 8080 }
             "host 17003 to container 5432",
         ),
     ] {
-        fs::write(&compose_path, source)?;
+        fs::write(compose_path, source)?;
         assert!(
-            doctor(&root)
+            doctor(root)
                 .expect_err("declared mappings must agree")
                 .to_string()
                 .contains(diagnostic)
         );
     }
-    fs::write(&compose_path, &compose)?;
+    fs::write(compose_path, compose)?;
+    Ok(())
+}
+
+fn assert_wrong_loopback_and_database_ports(
+    root: &Path,
+    manifest_path: &Path,
+    manifest: &str,
+) -> anyhow::Result<()> {
     let api_path = root.join("mobile/src/api.ts");
     let api = fs::read_to_string(&api_path)?;
     fs::write(
@@ -2424,18 +2514,18 @@ keycloak = { host = 17004, container = 8080 }
         format!("{api}\nconst wrong = 'http://127.0.0.1:17008';\n"),
     )?;
     assert!(
-        doctor(&root)
+        doctor(root)
             .expect_err("a wrong loopback port must be reported even alongside the correct one")
             .to_string()
             .contains("mobile/src/api.ts` does not match declared ports")
     );
     fs::write(&api_path, api)?;
     fs::write(
-        &manifest_path,
+        manifest_path,
         manifest.replace("container = 5432", "container = 5433"),
     )?;
     assert!(
-        doctor(&root)
+        doctor(root)
             .expect_err("the database image listens on 5432")
             .to_string()
             .contains("ports.postgres.container must be 5432")
@@ -3255,87 +3345,100 @@ fn doctor_accepts_product_review_identity_layouts() -> anyhow::Result<()> {
         ("sl", "solo-leveling"),
         ("finops", "finops"),
     ] {
-        let parent = tempfile::tempdir()?;
-        let mut local = options(parent.path(), name);
-        local.components.insert(Component::Mobile);
-        local.components.insert(Component::Web);
-        local.components.set(Component::Mcp, name != "sl");
-        local.auth = (name != "sl").then_some(AuthProvider::Oidc);
-        local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
-        let root = generate_new(&local)?;
-        if name == "sl" {
-            for path in ["src/bin/api.rs", "src/bin/migrate.rs", "src/config.rs"] {
-                let path = root.join("backend/crates/sl-bin").join(path);
-                fs::write(
-                    &path,
-                    fs::read_to_string(&path)?.replace("\"sl\"", "\"solo-leveling-system\""),
-                )?;
-            }
-        }
-        let mobile = root.join("mobile/app.config.ts");
-        let source = fs::read_to_string(&mobile)?;
-        fs::write(
-            &mobile,
-            source
-                .replace("import { PRODUCT_NAME } from './src/product.ts';", "")
-                .replace("PRODUCT_NAME", &format!("'{slug}'")),
-        )?;
-        let analytics = root.join("mobile/src/analytics-client.ts");
-        fs::write(
-            &analytics,
-            fs::read_to_string(&analytics)?
-                .replace(
-                    "import { PRODUCT_NAME } from './product';",
-                    &format!(
-                        "const ANALYTICS_APP = '{}';",
-                        if name == "sl" {
-                            "solo-leveling-system"
-                        } else {
-                            name
-                        }
-                    ),
-                )
-                .replace("PRODUCT_NAME", "ANALYTICS_APP"),
-        )?;
-        fs::remove_file(root.join("mobile/src/product.ts"))?;
-        let library = root.join(format!("backend/crates/{name}-bin/src/lib.rs"));
-        if local.auth.is_some() {
-            let source = fs::read_to_string(&library)?;
+        assert_review_identity_layout(name, slug)?;
+    }
+    Ok(())
+}
+
+fn assert_review_identity_layout(name: &str, slug: &str) -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut local = options(parent.path(), name);
+    local.components.insert(Component::Mobile);
+    local.components.insert(Component::Web);
+    local.components.set(Component::Mcp, name != "sl");
+    local.auth = (name != "sl").then_some(AuthProvider::Oidc);
+    local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&local)?;
+    if name == "sl" {
+        for path in ["src/bin/api.rs", "src/bin/migrate.rs", "src/config.rs"] {
+            let path = root.join("backend/crates/sl-bin").join(path);
             fs::write(
-                &library,
-                source
-                    .replace(&format!("const PRODUCT: &str = \"{name}\";"), "")
-                    .replace("{PRODUCT}", name)
-                    .replace("PRODUCT.to_owned()", &format!("\"{name}\".to_owned()")),
+                &path,
+                fs::read_to_string(&path)?.replace("\"sl\"", "\"solo-leveling-system\""),
             )?;
         }
-        let api = root.join(format!("backend/crates/{name}-bin/src/bin/api.rs"));
-        fs::write(
-            &api,
-            fs::read_to_string(&api)?.replace("PRODUCT", "APP_NAME"),
-        )?;
-        doctor(&root)?;
-        let source = fs::read_to_string(&api)?;
-        fs::write(
-            &api,
-            source.replace(
+    }
+    let mobile = root.join("mobile/app.config.ts");
+    let source = fs::read_to_string(&mobile)?;
+    fs::write(
+        &mobile,
+        source
+            .replace("import { PRODUCT_NAME } from './src/product.ts';", "")
+            .replace("PRODUCT_NAME", &format!("'{slug}'")),
+    )?;
+    let analytics = root.join("mobile/src/analytics-client.ts");
+    fs::write(
+        &analytics,
+        fs::read_to_string(&analytics)?
+            .replace(
+                "import { PRODUCT_NAME } from './product';",
                 &format!(
-                    "const APP_NAME: &str = \"{}\";",
+                    "const ANALYTICS_APP = '{}';",
                     if name == "sl" {
                         "solo-leveling-system"
                     } else {
                         name
                     }
                 ),
-                "",
-            ),
+            )
+            .replace("PRODUCT_NAME", "ANALYTICS_APP"),
+    )?;
+    fs::remove_file(root.join("mobile/src/product.ts"))?;
+    assert_backend_identity_is_consumed(&root, name, local.auth.is_some())
+}
+
+fn assert_backend_identity_is_consumed(
+    root: &Path,
+    name: &str,
+    has_auth: bool,
+) -> anyhow::Result<()> {
+    let library = root.join(format!("backend/crates/{name}-bin/src/lib.rs"));
+    if has_auth {
+        let source = fs::read_to_string(&library)?;
+        fs::write(
+            &library,
+            source
+                .replace(&format!("const PRODUCT: &str = \"{name}\";"), "")
+                .replace("{PRODUCT}", name)
+                .replace("PRODUCT.to_owned()", &format!("\"{name}\".to_owned()")),
         )?;
-        let error = doctor(&root)
-            .expect_err("removing the consumed backend identity must fail")
-            .to_string();
-        assert!(error.contains("APP_NAME"), "{error}");
-        assert!(error.contains("has no literal source"), "{error}");
     }
+    let api = root.join(format!("backend/crates/{name}-bin/src/bin/api.rs"));
+    fs::write(
+        &api,
+        fs::read_to_string(&api)?.replace("PRODUCT", "APP_NAME"),
+    )?;
+    doctor(root)?;
+    let source = fs::read_to_string(&api)?;
+    fs::write(
+        &api,
+        source.replace(
+            &format!(
+                "const APP_NAME: &str = \"{}\";",
+                if name == "sl" {
+                    "solo-leveling-system"
+                } else {
+                    name
+                }
+            ),
+            "",
+        ),
+    )?;
+    let error = doctor(root)
+        .expect_err("removing the consumed backend identity must fail")
+        .to_string();
+    assert!(error.contains("APP_NAME"), "{error}");
+    assert!(error.contains("has no literal source"), "{error}");
     Ok(())
 }
 
@@ -3551,7 +3654,23 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
     local.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&local)?;
     doctor(&root)?;
-    for (relative, _) in read_tree(&root)? {
+    rename_layout_crates(&root, &roles)?;
+
+    relocate_bin_and_domain_crates(&root)?;
+
+    rename_mobile_modules(&root)?;
+
+    rewrite_mobile_login_and_session(&root)?;
+
+    move_keycloak_tools_and_migrations(&root)?;
+
+    rewrite_moved_paths(&root, &roles)?;
+
+    assert_relocated_identity_and_policy_findings(&root)
+}
+
+fn rename_layout_crates(root: &Path, roles: &[&str]) -> anyhow::Result<()> {
+    for (relative, _) in read_tree(root)? {
         let relative = relative.to_str().expect("generated paths use UTF-8");
         let path = root.join(relative);
         if matches!(
@@ -3571,6 +3690,10 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
             root.join(format!("backend/crates/sl-{role}")),
         )?;
     }
+    Ok(())
+}
+
+fn relocate_bin_and_domain_crates(root: &Path) -> anyhow::Result<()> {
     let bin = root.join("backend/crates/sl-bin");
     fs::rename(root.join("backend/tests"), bin.join("verification"))?;
     let cargo = bin.join("Cargo.toml");
@@ -3590,6 +3713,10 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
             .replace("mod limits;", "mod policy;")
             .replace("limits::", "policy::"),
     )?;
+    Ok(())
+}
+
+fn rename_mobile_modules(root: &Path) -> anyhow::Result<()> {
     for (old, new) in [
         ("auth", "session"),
         ("local-data", "partition"),
@@ -3603,7 +3730,7 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
         if test.is_file() {
             fs::rename(test, root.join(format!("mobile/src/{new}.test.ts")))?;
         }
-        for (relative, _) in read_tree(&root)? {
+        for (relative, _) in read_tree(root)? {
             let relative = relative.to_str().expect("generated paths use UTF-8");
             if !relative.starts_with("mobile/")
                 || !matches!(
@@ -3629,6 +3756,10 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
         root.join("mobile/app/(auth)/sign-in.tsx"),
         root.join("mobile/app/(auth)/login.tsx"),
     )?;
+    Ok(())
+}
+
+fn rewrite_mobile_login_and_session(root: &Path) -> anyhow::Result<()> {
     let login = root.join("mobile/app/(auth)/login.tsx");
     fs::write(
         &login,
@@ -3673,6 +3804,10 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
                 "jest.mocked(NativeOidcClient)",
             ),
     )?;
+    Ok(())
+}
+
+fn move_keycloak_tools_and_migrations(root: &Path) -> anyhow::Result<()> {
     fs::create_dir(root.join("docker"))?;
     fs::rename(root.join("keycloak"), root.join("docker/keycloak"))?;
     fs::rename(
@@ -3703,7 +3838,11 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
         root.join("backend/migrations"),
         root.join("database/schema"),
     )?;
-    for (relative, contents) in read_tree(&root)? {
+    Ok(())
+}
+
+fn rewrite_moved_paths(root: &Path, roles: &[&str]) -> anyhow::Result<()> {
+    for (relative, contents) in read_tree(root)? {
         let Ok(source) = String::from_utf8(contents) else {
             continue;
         };
@@ -3755,6 +3894,10 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
         }
         fs::write(path, source)?;
     }
+    Ok(())
+}
+
+fn assert_relocated_identity_and_policy_findings(root: &Path) -> anyhow::Result<()> {
     let manifest = root.join("baukit.toml");
     fs::write(
         &manifest,
@@ -3763,16 +3906,17 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
             fs::read_to_string(&manifest)?
         ),
     )?;
-    baukit_cli::generate_dockerfile(&root, false)?;
-    doctor(&root)?;
+    baukit_cli::generate_dockerfile(root, false)?;
+    doctor(root)?;
 
+    let bin = root.join("backend/crates/sl-bin");
     let api = bin.join("src/bin/api.rs");
     let source = fs::read_to_string(&api)?;
     fs::write(
         &api,
         source.replace("\"layout-product\"", "\"wrong-product\""),
     )?;
-    let error = doctor(&root)
+    let error = doctor(root)
         .expect_err("short crate names must not hide identity drift")
         .to_string();
     assert!(
@@ -3784,7 +3928,7 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
     let policy = root.join("docker/keycloak/realm-policy.json");
     fs::copy(&policy, root.join("docker/other-policy.json"))?;
     assert!(
-        doctor(&root)
+        doctor(root)
             .expect_err("ambiguous policy needs a declaration")
             .to_string()
             .contains("multiple Keycloak policy files")
@@ -3796,14 +3940,14 @@ fn doctor_accepts_renamed_crates_and_relocated_wiring() -> anyhow::Result<()> {
             "[doctor]\nkeycloak_policy = \"docker/keycloak/realm-policy.json\"\n",
         ),
     )?;
-    doctor(&root)?;
+    doctor(root)?;
     fs::write(
         &manifest,
         fs::read_to_string(&manifest)?
             .replace("docker/keycloak/realm-policy.json", "docker/missing.json"),
     )?;
     assert!(
-        doctor(&root)
+        doctor(root)
             .expect_err("declared missing files must stay findings")
             .to_string()
             .contains("missing Keycloak policy file `docker/missing.json`")
@@ -3895,6 +4039,14 @@ fn doctor_reports_missing_wiring_instead_of_template_filenames() -> anyhow::Resu
         "scripts/tests/test_reconcile_keycloak.py".to_owned(),
     );
     fs::write(root.join("baukit.toml"), toml::to_string(&manifest)?)?;
+    assert_each_removed_file_is_reported(&root)?;
+
+    assert_each_removed_test_group_is_reported(&root)?;
+
+    assert_missing_jobs_migration_is_reported(&root)
+}
+
+fn assert_each_removed_file_is_reported(root: &Path) -> anyhow::Result<()> {
     for (relative, finding) in [
         (
             "backend/Dockerfile",
@@ -3948,10 +4100,14 @@ fn doctor_reports_missing_wiring_instead_of_template_filenames() -> anyhow::Resu
         let path = root.join(relative);
         let source = fs::read_to_string(&path)?;
         fs::remove_file(&path)?;
-        let error = doctor(&root).expect_err(finding).to_string();
+        let error = doctor(root).expect_err(finding).to_string();
         assert!(error.contains(finding), "{relative}: {error}");
         fs::write(path, source)?;
     }
+    Ok(())
+}
+
+fn assert_each_removed_test_group_is_reported(root: &Path) -> anyhow::Result<()> {
     for (directory, extension, markers, finding) in [
         (
             "backend/tests",
@@ -3979,7 +4135,7 @@ fn doctor_reports_missing_wiring_instead_of_template_filenames() -> anyhow::Resu
         ),
     ] {
         let mut removed = Vec::new();
-        for (relative, _) in read_tree(&root)? {
+        for (relative, _) in read_tree(root)? {
             let relative = relative.to_str().expect("generated paths use UTF-8");
             let path = root.join(relative);
             if !relative.starts_with(directory)
@@ -3998,16 +4154,20 @@ fn doctor_reports_missing_wiring_instead_of_template_filenames() -> anyhow::Resu
             }
         }
         assert!(!removed.is_empty());
-        let error = doctor(&root).expect_err(finding).to_string();
+        let error = doctor(root).expect_err(finding).to_string();
         assert!(error.contains(finding), "{error}");
         for (path, source) in removed {
             fs::write(path, source)?;
         }
     }
+    Ok(())
+}
+
+fn assert_missing_jobs_migration_is_reported(root: &Path) -> anyhow::Result<()> {
     let migration = root.join("backend/migrations/0003_baukit_jobs.sql");
     fs::remove_file(&migration)?;
     assert!(
-        doctor(&root)
+        doctor(root)
             .expect_err("missing durable jobs schema")
             .to_string()
             .contains("no backend migration creates the baukit-jobs `job_outbox` table")
@@ -4285,6 +4445,15 @@ fn doctor_checks_each_registry_pin_and_names_its_file() -> anyhow::Result<()> {
             .iter()
             .any(|finding| finding.contains("Baukit registry pins match"))
     );
+    assert_each_stale_pin_names_its_file(&root, &version)?;
+
+    assert_stale_cargo_lock_resolutions(&root, &version, &lock)?;
+
+    fs::write(root.join("backend/Cargo.lock"), lock)?;
+    assert_stale_pnpm_resolutions(&root, &version, &pnpm)
+}
+
+fn assert_each_stale_pin_names_its_file(root: &Path, version: &str) -> anyhow::Result<()> {
     let cases = [
         ("package.json", "@baukit/events"),
         ("backend/Cargo.toml", "baukit-core"),
@@ -4303,11 +4472,11 @@ fn doctor_checks_each_registry_pin_and_names_its_file() -> anyhow::Result<()> {
                 1,
             )
         } else {
-            original.replacen(&version, "0.9.0", 1)
+            original.replacen(version, "0.9.0", 1)
         };
         assert_ne!(changed, original, "fixture must change a pin in {relative}");
         fs::write(&path, changed)?;
-        let error = doctor(&root)
+        let error = doctor(root)
             .expect_err("each stale pin must fail doctor")
             .to_string();
         assert!(error.contains(relative), "{error}");
@@ -4315,12 +4484,20 @@ fn doctor_checks_each_registry_pin_and_names_its_file() -> anyhow::Result<()> {
         assert!(error.contains("0.9.0"), "{error}");
         fs::write(&path, original)?;
     }
+    Ok(())
+}
+
+fn assert_stale_cargo_lock_resolutions(
+    root: &Path,
+    version: &str,
+    lock: &str,
+) -> anyhow::Result<()> {
     let (first, last) = lock
         .rsplit_once(&version)
         .expect("lock contains two Baukit pins");
     for source in [
-        lock.replacen(&version, "0.9.0", 2),
-        lock.replacen(&version, "0.9.0", 1),
+        lock.replacen(version, "0.9.0", 2),
+        lock.replacen(version, "0.9.0", 1),
         format!("{first}0.9.0{last}"),
         format!(
             "{lock}\n[[package]]\nname = \"baukit-core\"\nversion = \"0.9.0\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\n"
@@ -4328,13 +4505,16 @@ fn doctor_checks_each_registry_pin_and_names_its_file() -> anyhow::Result<()> {
     ] {
         fs::write(root.join("backend/Cargo.lock"), source)?;
         assert!(
-            doctor(&root)
+            doctor(root)
                 .expect_err("multiple resolutions must all be checked")
                 .to_string()
                 .contains("backend/Cargo.lock")
         );
     }
-    fs::write(root.join("backend/Cargo.lock"), lock)?;
+    Ok(())
+}
+
+fn assert_stale_pnpm_resolutions(root: &Path, version: &str, pnpm: &str) -> anyhow::Result<()> {
     for source in [
         pnpm.replace(&format!("version: {version}"), "version: 0.9.0"),
         pnpm.replace(&format!("@{version}"), "@0.9.0"),
@@ -4351,14 +4531,14 @@ fn doctor_checks_each_registry_pin_and_names_its_file() -> anyhow::Result<()> {
     ] {
         fs::write(root.join("pnpm-lock.yaml"), source)?;
         assert!(
-            doctor(&root)
+            doctor(root)
                 .expect_err("resolved pnpm versions must be checked")
                 .to_string()
                 .contains("pnpm-lock.yaml")
         );
     }
     fs::write(root.join("pnpm-lock.yaml"), pnpm)?;
-    doctor(&root)?;
+    doctor(root)?;
     Ok(())
 }
 
@@ -5080,6 +5260,10 @@ fn remote_realm_preserves_oidc_scopes_and_binds_the_resource_audience() -> anyho
             assert!(client.get("exactRedirectUris").is_none());
         }
     }
+    assert_realm_scopes_and_mcp_client(&root)
+}
+
+fn assert_realm_scopes_and_mcp_client(root: &Path) -> anyhow::Result<()> {
     let realm: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(root.join("keycloak/realm.json"))?)?;
     let scopes = realm["clientScopes"].as_array().expect("client scopes");
@@ -5254,6 +5438,137 @@ fn doctor_accepts_non_typescript_files_in_a_root_mcp_directory() -> anyhow::Resu
     Ok(())
 }
 
+type ManagedAuthFlavor = (bool, bool, bool, bool, bool, bool, QualityProfile);
+
+const MANAGED_AUTH_FLAVORS: [ManagedAuthFlavor; 7] = [
+    (
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        QualityProfile::Standard,
+    ),
+    (
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        QualityProfile::Standard,
+    ),
+    (
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        QualityProfile::Standard,
+    ),
+    (
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        QualityProfile::Standard,
+    ),
+    (
+        false,
+        false,
+        true,
+        false,
+        false,
+        true,
+        QualityProfile::Standard,
+    ),
+    (
+        true,
+        false,
+        false,
+        true,
+        true,
+        false,
+        QualityProfile::Standard,
+    ),
+    (true, true, true, true, true, true, QualityProfile::Strict),
+];
+
+fn assert_managed_flavor(
+    provider: AuthProvider,
+    sdk: &str,
+    snapshot: &str,
+    shape_mapper: &str,
+    flavor: ManagedAuthFlavor,
+) -> anyhow::Result<()> {
+    let (backend, web, mobile, mcp, worker, pwa, quality) = flavor;
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "snapshot-app");
+    generated.components.set(Component::Backend, backend);
+    generated.components.set(Component::Web, web);
+    generated.components.set(Component::Mobile, mobile);
+    generated.components.set(Component::Mcp, mcp);
+    generated.components.set(Component::Worker, worker);
+    generated.components.set(Component::Pwa, pwa);
+    generated.quality = quality;
+    generated.auth = Some(provider);
+    let root = generate_new(&generated)?;
+    let tree = read_tree(&root)?;
+    assert_eq!(
+        tree.keys()
+            .any(|path| path.to_string_lossy().contains("web/e2e/stack")),
+        web && backend
+    );
+    assert_eq!(root.join("keycloak").exists(), backend);
+    assert_eq!(
+        baukit_cli::read_manifest(&root)?.capabilities.auth,
+        Some(provider)
+    );
+    if backend {
+        let compose = fs::read_to_string(root.join("compose.yaml"))?;
+        assert!(compose.contains("redis:"));
+        assert!(compose.contains("keycloak:"));
+        let realm: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(root.join("keycloak/realm.json"))?)?;
+        let clients = realm["clients"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("realm has no clients"))?;
+        let shaped = clients
+            .iter()
+            .filter(|client| client["clientId"] != "snapshot-app-backend")
+            .filter(|client| client["clientId"] != "snapshot-app-mcp")
+            .collect::<Vec<_>>();
+        assert_eq!(shaped.len(), 1 + usize::from(web) + usize::from(mobile));
+        for client in shaped {
+            let mappers = client["protocolMappers"]
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("client has no mappers"))?;
+            assert!(mappers.iter().any(|mapper| mapper["name"] == shape_mapper));
+            assert!(
+                mappers
+                    .iter()
+                    .all(|mapper| mapper["protocolMapper"] != "oidc-audience-mapper")
+            );
+            assert_eq!(client["defaultClientScopes"], serde_json::json!(["basic"]));
+        }
+        assert!(root.join("backend/tests/local_realm.rs").is_file());
+        let local = fs::read_to_string(root.join("config/local.toml"))?;
+        assert!(local.contains("/realms/snapshot-app/protocol/openid-connect/certs"));
+    }
+    if web {
+        assert!(fs::read_to_string(root.join("web/package.json"))?.contains(sdk));
+    }
+    if mcp && web && mobile && !worker {
+        assert_eq!(render_hash_snapshot(&tree), snapshot);
+    }
+    doctor(&root)?;
+    Ok(())
+}
+
 #[test]
 fn managed_auth_providers_generate_every_flavor_with_a_provider_shaped_local_realm()
 -> anyhow::Result<()> {
@@ -5271,123 +5586,8 @@ fn managed_auth_providers_generate_every_flavor_with_a_provider_shaped_local_rea
             "workos organization",
         ),
     ] {
-        for (backend, web, mobile, mcp, worker, pwa, quality) in [
-            (
-                true,
-                false,
-                false,
-                false,
-                false,
-                false,
-                QualityProfile::Standard,
-            ),
-            (
-                false,
-                true,
-                false,
-                false,
-                false,
-                false,
-                QualityProfile::Standard,
-            ),
-            (
-                false,
-                false,
-                true,
-                false,
-                false,
-                false,
-                QualityProfile::Standard,
-            ),
-            (
-                true,
-                true,
-                true,
-                true,
-                false,
-                false,
-                QualityProfile::Standard,
-            ),
-            (
-                false,
-                false,
-                true,
-                false,
-                false,
-                true,
-                QualityProfile::Standard,
-            ),
-            (
-                true,
-                false,
-                false,
-                true,
-                true,
-                false,
-                QualityProfile::Standard,
-            ),
-            (true, true, true, true, true, true, QualityProfile::Strict),
-        ] {
-            let parent = tempfile::tempdir()?;
-            let mut generated = options(parent.path(), "snapshot-app");
-            generated.components.set(Component::Backend, backend);
-            generated.components.set(Component::Web, web);
-            generated.components.set(Component::Mobile, mobile);
-            generated.components.set(Component::Mcp, mcp);
-            generated.components.set(Component::Worker, worker);
-            generated.components.set(Component::Pwa, pwa);
-            generated.quality = quality;
-            generated.auth = Some(provider);
-            let root = generate_new(&generated)?;
-            let tree = read_tree(&root)?;
-            assert_eq!(
-                tree.keys()
-                    .any(|path| path.to_string_lossy().contains("web/e2e/stack")),
-                web && backend
-            );
-            assert_eq!(root.join("keycloak").exists(), backend);
-            assert_eq!(
-                baukit_cli::read_manifest(&root)?.capabilities.auth,
-                Some(provider)
-            );
-            if backend {
-                let compose = fs::read_to_string(root.join("compose.yaml"))?;
-                assert!(compose.contains("redis:"));
-                assert!(compose.contains("keycloak:"));
-                let realm: serde_json::Value =
-                    serde_json::from_str(&fs::read_to_string(root.join("keycloak/realm.json"))?)?;
-                let clients = realm["clients"]
-                    .as_array()
-                    .ok_or_else(|| anyhow::anyhow!("realm has no clients"))?;
-                let shaped = clients
-                    .iter()
-                    .filter(|client| client["clientId"] != "snapshot-app-backend")
-                    .filter(|client| client["clientId"] != "snapshot-app-mcp")
-                    .collect::<Vec<_>>();
-                assert_eq!(shaped.len(), 1 + usize::from(web) + usize::from(mobile));
-                for client in shaped {
-                    let mappers = client["protocolMappers"]
-                        .as_array()
-                        .ok_or_else(|| anyhow::anyhow!("client has no mappers"))?;
-                    assert!(mappers.iter().any(|mapper| mapper["name"] == shape_mapper));
-                    assert!(
-                        mappers
-                            .iter()
-                            .all(|mapper| mapper["protocolMapper"] != "oidc-audience-mapper")
-                    );
-                    assert_eq!(client["defaultClientScopes"], serde_json::json!(["basic"]));
-                }
-                assert!(root.join("backend/tests/local_realm.rs").is_file());
-                let local = fs::read_to_string(root.join("config/local.toml"))?;
-                assert!(local.contains("/realms/snapshot-app/protocol/openid-connect/certs"));
-            }
-            if web {
-                assert!(fs::read_to_string(root.join("web/package.json"))?.contains(sdk));
-            }
-            if mcp && web && mobile && !worker {
-                assert_eq!(render_hash_snapshot(&tree), snapshot);
-            }
-            doctor(&root)?;
+        for flavor in MANAGED_AUTH_FLAVORS {
+            assert_managed_flavor(provider, sdk, snapshot, shape_mapper, flavor)?;
         }
     }
     Ok(())
@@ -5465,6 +5665,16 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
     local.components.insert(Component::Mcp);
     let root = generate_new(&local)?;
     doctor(&root)?;
+    move_config_and_application_into_modules(&root)?;
+
+    move_tool_definitions_into_module(&root)?;
+
+    declare_mcp_sources(&root)?;
+
+    assert_each_missing_mcp_wiring_is_reported(&root)
+}
+
+fn move_config_and_application_into_modules(root: &Path) -> anyhow::Result<()> {
     let bin = root.join("backend/crates/redemut-shaped-bin/src");
     fs::rename(bin.join("bin/api.rs"), bin.join("application.rs"))?;
     let library_path = bin.join("lib.rs");
@@ -5491,6 +5701,10 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
             &library[end..]
         ),
     )?;
+    Ok(())
+}
+
+fn move_tool_definitions_into_module(root: &Path) -> anyhow::Result<()> {
     let mcp = root.join("backend/crates/redemut-shaped-mcp/src");
     let source = format!(
         "#[cfg(test)] mod tests {{ fn unrelated() {{}} }}\n{}",
@@ -5508,7 +5722,11 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
         mcp.join("lib.rs"),
         format!("{}mod definitions;\n{}", &source[..start], &source[end..]),
     )?;
-    doctor(&root)?;
+    doctor(root)?;
+    Ok(())
+}
+
+fn declare_mcp_sources(root: &Path) -> anyhow::Result<()> {
     let mcp_manifest = root.join("backend/crates/redemut-shaped-mcp/Cargo.toml");
     let cargo = fs::read_to_string(&mcp_manifest)?;
     fs::write(
@@ -5518,7 +5736,7 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
             "name = \"custom-tool-adapter\"",
         ),
     )?;
-    doctor(&root)?;
+    doctor(root)?;
     let manifest_path = root.join("baukit.toml");
     let manifest = fs::read_to_string(&manifest_path)?;
     fs::write(
@@ -5527,7 +5745,7 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
             "{manifest}\n[doctor.sources]\nmcp_router = \"backend/crates/redemut-shaped-bin/src/application.rs\"\nmcp_config = \"backend/crates/redemut-shaped-bin/src/config.rs\"\nmcp_drift = \"backend/tests/tool_drift.rs\"\n"
         ),
     )?;
-    doctor(&root)?;
+    doctor(root)?;
     let manifest = fs::read_to_string(&manifest_path)?;
     fs::write(
         &manifest_path,
@@ -5536,7 +5754,11 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
             "mcp_config = \"backend/crates/redemut-shaped-bin/src/lib.rs\"",
         ) + "mcp_tools = \"backend/crates/redemut-shaped-mcp/src/lib.rs\"\n",
     )?;
-    doctor(&root)?;
+    doctor(root)?;
+    Ok(())
+}
+
+fn assert_each_missing_mcp_wiring_is_reported(root: &Path) -> anyhow::Result<()> {
     for (relative, symbol, finding) in [
         (
             "backend/crates/redemut-shaped-bin/src/application.rs",
@@ -5579,7 +5801,7 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
         assert!(source.contains(symbol), "{relative}: {symbol}");
         let missing = source.replace(symbol, "missing_wiring");
         fs::write(&path, format!("{missing}\n// {symbol}\n"))?;
-        let error = match doctor(&root) {
+        let error = match doctor(root) {
             Err(error) => error,
             Ok(findings) => panic!("missing {symbol} accepted: {findings:?}"),
         };
@@ -6045,105 +6267,121 @@ fn platform_flavors_keep_domain_free_of_transport_and_wire_the_receiver() -> any
         ("platform-clerk", Some(AuthProvider::Clerk), true),
         ("platform-workos", Some(AuthProvider::Workos), false),
     ] {
-        let mut generated = options(parent.path(), name);
-        generated.components.insert(Component::Platform);
-        generated.auth = auth;
-        generated.components.set(Component::Worker, worker);
-        generated.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
-        let root = generate_new(&generated)?;
-        let manifest = baukit_cli::read_manifest(&root)?;
-        assert!(manifest.capabilities.components.platform());
-        let migration = manifest.platform.as_ref().expect("platform metadata");
-        assert_eq!(
-            fs::read_to_string(root.join(&migration.migration))?,
-            include_str!("../../rust/crates/baukit-suite/migrations/004_platform.sql")
-        );
-        let domain =
-            fs::read_to_string(root.join(format!("backend/crates/{name}-domain/Cargo.toml")))?;
-        assert!(!domain.contains("baukit-suite"));
-        assert!(!domain.contains("sqlx"));
-        assert!(!domain.contains("axum"));
-        let schema: serde_json::Value =
-            serde_json::from_str(&fs::read_to_string(root.join("backend/openapi.json"))?)?;
-        assert!(schema.pointer("/paths/~1platform~1inbound/post").is_some());
-        let declarations = fs::read_to_string(root.join("generated/openapi.d.ts"))?;
-        assert_eq!(
-            declarations,
-            if auth.is_some() {
-                include_str!("../../templates/platform/__auth__/generated/openapi.d.ts")
-            } else {
-                include_str!("../../templates/platform/generated/openapi.d.ts")
-            }
-        );
-        assert_eq!(declarations.matches("export interface paths {").count(), 1);
-        assert_eq!(
-            declarations
-                .matches("export interface operations {")
-                .count(),
-            1
-        );
-        let values_source = fs::read_to_string(root.join("deploy/values.yaml"))?;
-        let values: serde_yaml_ng::Value = serde_yaml_ng::from_str(&values_source)?;
-        let secret = &values["platform"]["receiverSecretRef"];
-        assert_eq!(secret["name"].as_str(), Some(""));
-        assert_eq!(secret["key"].as_str(), Some("current"));
-        assert_eq!(secret["previousKey"].as_str(), Some(""));
-        let example = values_source
-            .lines()
-            .skip_while(|line| *line != "# config:")
-            .take_while(|line| !line.starts_with("# Worker and migration"))
-            .map(|line| line.strip_prefix("# ").unwrap_or(line))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let hub_values: serde_yaml_ng::Value = serde_yaml_ng::from_str(&example)?;
-        for key in [
-            "PLATFORM__HUB_ISSUER",
-            "PLATFORM__JWKS_URL",
-            "PLATFORM__PRODUCT_ID",
-            "PLATFORM__SOURCE_APP",
-            "PLATFORM_HUB__TICKET_URL",
-        ] {
-            assert!(hub_values["config"]["overrides"][key].is_string());
-        }
-        for process in if worker {
-            &["migration", "worker"][..]
-        } else {
-            &["migration"][..]
-        } {
-            let reference = &hub_values[process]["env"][0]["valueFrom"]["secretKeyRef"];
-            assert_eq!(
-                reference["name"].as_str(),
-                Some(format!("{name}-platform-receiver").as_str())
-            );
-            assert_eq!(reference["key"].as_str(), Some("current"));
-        }
-        for layer in ["ports", "services"] {
-            let cargo: toml::Value = toml::from_str(&fs::read_to_string(
-                root.join(format!("backend/crates/{name}-{layer}/Cargo.toml")),
-            )?)?;
-            assert_eq!(
-                cargo["dependencies"]["baukit-suite"]["features"].as_array(),
-                Some(&vec![toml::Value::String("platform".into())])
-            );
-        }
-        let purge_binary = root.join(format!(
-            "backend/crates/{name}-bin/src/bin/platform-purge.rs"
-        ));
-        assert_eq!(purge_binary.exists(), !worker);
-        let docs = fs::read_to_string(root.join("docs/platform.md"))?;
-        assert!(docs.contains("never lower it below 30 days"));
-        assert_eq!(docs.contains("RetentionJobHandler"), worker);
-        let api =
-            fs::read_to_string(root.join(format!("backend/crates/{name}-bin/src/bin/api.rs")))?;
-        assert!(api.contains(".merge(platform.router)"));
-        if auth.is_some() {
-            let erasure = fs::read_to_string(
-                root.join(format!("backend/crates/{name}-postgres/src/lib.rs")),
-            )?;
-            assert!(erasure.contains("forget_in_transaction"));
-        }
-        doctor(&root)?;
+        assert_platform_flavor(parent.path(), name, auth, worker)?;
     }
+    Ok(())
+}
+
+fn assert_platform_flavor(
+    parent: &Path,
+    name: &str,
+    auth: Option<AuthProvider>,
+    worker: bool,
+) -> anyhow::Result<()> {
+    let mut generated = options(parent, name);
+    generated.components.insert(Component::Platform);
+    generated.auth = auth;
+    generated.components.set(Component::Worker, worker);
+    generated.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
+    let root = generate_new(&generated)?;
+    let manifest = baukit_cli::read_manifest(&root)?;
+    assert!(manifest.capabilities.components.platform());
+    let migration = manifest.platform.as_ref().expect("platform metadata");
+    assert_eq!(
+        fs::read_to_string(root.join(&migration.migration))?,
+        include_str!("../../rust/crates/baukit-suite/migrations/004_platform.sql")
+    );
+    let domain = fs::read_to_string(root.join(format!("backend/crates/{name}-domain/Cargo.toml")))?;
+    assert!(!domain.contains("baukit-suite"));
+    assert!(!domain.contains("sqlx"));
+    assert!(!domain.contains("axum"));
+    let schema: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(root.join("backend/openapi.json"))?)?;
+    assert!(schema.pointer("/paths/~1platform~1inbound/post").is_some());
+    let declarations = fs::read_to_string(root.join("generated/openapi.d.ts"))?;
+    assert_eq!(
+        declarations,
+        if auth.is_some() {
+            include_str!("../../templates/platform/__auth__/generated/openapi.d.ts")
+        } else {
+            include_str!("../../templates/platform/generated/openapi.d.ts")
+        }
+    );
+    assert_eq!(declarations.matches("export interface paths {").count(), 1);
+    assert_eq!(
+        declarations
+            .matches("export interface operations {")
+            .count(),
+        1
+    );
+    assert_platform_receiver_wiring(&root, name, auth, worker)
+}
+
+fn assert_platform_receiver_wiring(
+    root: &Path,
+    name: &str,
+    auth: Option<AuthProvider>,
+    worker: bool,
+) -> anyhow::Result<()> {
+    let values_source = fs::read_to_string(root.join("deploy/values.yaml"))?;
+    let values: serde_yaml_ng::Value = serde_yaml_ng::from_str(&values_source)?;
+    let secret = &values["platform"]["receiverSecretRef"];
+    assert_eq!(secret["name"].as_str(), Some(""));
+    assert_eq!(secret["key"].as_str(), Some("current"));
+    assert_eq!(secret["previousKey"].as_str(), Some(""));
+    let example = values_source
+        .lines()
+        .skip_while(|line| *line != "# config:")
+        .take_while(|line| !line.starts_with("# Worker and migration"))
+        .map(|line| line.strip_prefix("# ").unwrap_or(line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let hub_values: serde_yaml_ng::Value = serde_yaml_ng::from_str(&example)?;
+    for key in [
+        "PLATFORM__HUB_ISSUER",
+        "PLATFORM__JWKS_URL",
+        "PLATFORM__PRODUCT_ID",
+        "PLATFORM__SOURCE_APP",
+        "PLATFORM_HUB__TICKET_URL",
+    ] {
+        assert!(hub_values["config"]["overrides"][key].is_string());
+    }
+    for process in if worker {
+        &["migration", "worker"][..]
+    } else {
+        &["migration"][..]
+    } {
+        let reference = &hub_values[process]["env"][0]["valueFrom"]["secretKeyRef"];
+        assert_eq!(
+            reference["name"].as_str(),
+            Some(format!("{name}-platform-receiver").as_str())
+        );
+        assert_eq!(reference["key"].as_str(), Some("current"));
+    }
+    for layer in ["ports", "services"] {
+        let cargo: toml::Value = toml::from_str(&fs::read_to_string(
+            root.join(format!("backend/crates/{name}-{layer}/Cargo.toml")),
+        )?)?;
+        assert_eq!(
+            cargo["dependencies"]["baukit-suite"]["features"].as_array(),
+            Some(&vec![toml::Value::String("platform".into())])
+        );
+    }
+    let purge_binary = root.join(format!(
+        "backend/crates/{name}-bin/src/bin/platform-purge.rs"
+    ));
+    assert_eq!(purge_binary.exists(), !worker);
+    let docs = fs::read_to_string(root.join("docs/platform.md"))?;
+    assert!(docs.contains("never lower it below 30 days"));
+    assert_eq!(docs.contains("RetentionJobHandler"), worker);
+    let api = fs::read_to_string(root.join(format!("backend/crates/{name}-bin/src/bin/api.rs")))?;
+    assert!(api.contains(".merge(platform.router)"));
+    if auth.is_some() {
+        let erasure =
+            fs::read_to_string(root.join(format!("backend/crates/{name}-postgres/src/lib.rs")))?;
+        assert!(erasure.contains("forget_in_transaction"));
+    }
+    doctor(root)?;
     Ok(())
 }
 
