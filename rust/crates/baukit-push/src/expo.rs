@@ -444,10 +444,15 @@ mod guarded_transport_tests {
         Ok(())
     }
 
-    #[tokio::test]
-    #[expect(clippy::too_many_lines, reason = "scenario test reads top to bottom")]
-    async fn guarded_batches_keep_accepted_tickets_when_receipts_fail()
-    -> Result<(), Box<dyn std::error::Error>> {
+    struct ReceiptFixture {
+        endpoint: String,
+        sends: Arc<AtomicUsize>,
+        receipt_requests: Arc<AtomicUsize>,
+        ready: Arc<AtomicBool>,
+        task: tokio::task::JoinHandle<()>,
+    }
+
+    async fn start_receipt_fixture() -> Result<ReceiptFixture, Box<dyn std::error::Error>> {
         let sends = Arc::new(AtomicUsize::new(0));
         let receipt_requests = Arc::new(AtomicUsize::new(0));
         let ready = Arc::new(AtomicBool::new(false));
@@ -498,6 +503,26 @@ mod guarded_transport_tests {
         let task = tokio::spawn(async move {
             axum::serve(listener, app).await.expect("Expo fixture");
         });
+        Ok(ReceiptFixture {
+            endpoint,
+            sends,
+            receipt_requests,
+            ready,
+            task,
+        })
+    }
+
+    #[tokio::test]
+    async fn guarded_batches_keep_accepted_tickets_when_receipts_fail()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let fixture = start_receipt_fixture().await?;
+        let ReceiptFixture {
+            endpoint,
+            sends,
+            receipt_requests,
+            ready,
+            task,
+        } = fixture;
         let options = PushOptions::new(&endpoint)?.with_batch_size(1)?;
         let sender = ExpoPushSender::with_options(options.clone())?.with_guarded_client(
             baukit_egress::GuardedClient::new(
