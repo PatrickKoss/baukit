@@ -339,7 +339,7 @@ touch "$apk"
         self.assertEqual(
             [event for event in events if event.startswith("gradle")],
             [
-                f"{common} --stacktrace assembleDebug",
+                f"{common} --stacktrace -PreactNativeArchitectures=x86_64 assembleDebug",
                 f"{common} -PreactNativeArchitectures=x86_64 assembleRelease",
             ],
         )
@@ -364,6 +364,57 @@ touch "$apk"
         self.assertIn(f"--init-script {init_script} ", self.events.read_text())
         self.assertIn("jobs=2", self.events.read_text())
         self.assertIn("-DCMAKE_JOB_POOLS=native=${nativeJobs}", init_script.read_text())
+
+    def fake_build_tools(self) -> None:
+        bin_dir = self.root / "bin"
+        self.executable(bin_dir / "corepack", 'printf "corepack %s\\n" "$*" >> "$EVENTS"\n')
+        self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
+        self.executable(
+            self.root / "mobile/node_modules/.bin/expo", 'printf "expo %s\\n" "$*" >> "$EVENTS"\n'
+        )
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
+printf 'gradle %s api=%s\n' "$*" "$EXPO_PUBLIC_API_URL" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+""",
+        )
+
+    def test_build_hooks_extend_environment_dependencies_and_gradle(self) -> None:
+        self.fake_build_tools()
+        (self.scripts / "local.sh").write_text(
+            "api_port=8280\n"
+            "qa_gradle_args=(-PreactNativeDevServerPort=8099)\n"
+            'qa_build_env() { echo "hook env $EXPO_PUBLIC_API_URL" >> "$EVENTS"; }\n'
+            'qa_install_dependencies() { echo "hook install" >> "$EVENTS"; }\n'
+        )
+        self.run_script("build-android.sh")
+        events = self.events.read_text().splitlines()
+        self.assertEqual(events[:2], ["hook env http://localhost:8280", "hook install"])
+        self.assertFalse(any("install --frozen-lockfile" in event for event in events))
+        gradle = next(event for event in events if event.startswith("gradle"))
+        self.assertIn("-PreactNativeDevServerPort=8099", gradle)
+        self.assertTrue(gradle.endswith("api=http://localhost:8280"))
+
+    def test_build_uses_the_environment_port_without_hooks(self) -> None:
+        self.fake_build_tools()
+        self.environment["BAUKIT_QA_API_PORT"] = "8281"
+        self.run_script("build-android.sh")
+        self.assertIn("api=http://localhost:8281", self.events.read_text())
+
+    def test_sdk_platform_and_build_tools_are_set_independently(self) -> None:
+        tools = self.sdk / "cmdline-tools/16111833/bin"
+        self.executable(tools / "sdkmanager", 'printf "sdk %s\\n" "$*" >> "$EVENTS"\n')
+        self.executable(tools / "avdmanager", 'echo "Name: test-qa"\n')
+        self.environment["BAUKIT_QA_ANDROID_PLATFORM"] = "37.2"
+        self.environment["BAUKIT_QA_ANDROID_BUILD_TOOLS"] = "37.0.0"
+        self.run_script("android-sdk.sh")
+        self.assertIn(
+            "platforms;android-37.2 build-tools;37.0.0 system-images;android-36;google_apis;x86_64",
+            self.events.read_text(),
+        )
 
     def test_android_java_reports_usage_and_preserves_command_failure(self) -> None:
         for arguments, expected_status in (([], 2), (["bash", "-c", "exit 17"], 17)):
@@ -679,6 +730,34 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("--exclude-tags kompass .maestro/one.yaml", self.events.read_text())
+
+    @unittest.skipUnless(HAS_BACKEND, "services.sh hooks need a generated backend")
+    def test_services_hooks_can_replace_the_stack_and_move_ports_and_state(self) -> None:
+        fake_bin = self.root / "bin"
+        self.executable(fake_bin / "docker", 'echo "docker $*" >> "$EVENTS"\n')
+        self.environment["PATH"] = f"{fake_bin}:{self.environment['PATH']}"
+        override = self.root / "override.yml"
+        override.touch()
+        moved = self.root / "moved-state"
+        self.environment["BAUKIT_QA_STATE_DIR"] = str(moved)
+        self.environment["BAUKIT_QA_COMPOSE_OVERRIDE"] = str(override)
+        (self.scripts / "local.sh").write_text(
+            "api_port=8280\n"
+            'qa_services_start() { echo "hook start $BAUKIT_QA_API_PORT" >> "$EVENTS"; }\n'
+            'qa_services_stop() { echo "hook stop" >> "$EVENTS"; }\n'
+        )
+        self.run_script("services.sh")
+        self.run_script("services.sh", "stop")
+        self.assertEqual(
+            self.events.read_text().splitlines(),
+            ["hook stop", "hook start 8280", "hook stop"],
+        )
+        self.assertTrue(moved.is_dir())
+        self.assertFalse((self.root / "mobile/.qa").exists())
+        (self.scripts / "local.sh").unlink()
+        self.events.unlink()
+        self.run_script("services.sh", "stop")
+        self.assertIn(f"-f {override} down --volumes", self.events.read_text())
 
     @unittest.skipUnless(HAS_BACKEND, "services.sh hooks need a generated backend")
     def test_services_local_hooks_run_around_the_api(self) -> None:

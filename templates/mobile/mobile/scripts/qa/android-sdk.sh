@@ -2,11 +2,13 @@
 set -euo pipefail
 
 mobile_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-state_dir="$mobile_dir/.qa"
+state_dir="${BAUKIT_QA_STATE_DIR:-$mobile_dir/.qa}"
 sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
 avd_home="${ANDROID_AVD_HOME:-$HOME/.android/avd}"
 avd_name="${BAUKIT_QA_ANDROID_AVD:-{{ context.app_name }}-qa}"
 api_level="${BAUKIT_QA_ANDROID_API_LEVEL:-36}"
+platform_level="${BAUKIT_QA_ANDROID_PLATFORM:-$api_level}"
+build_tools_version="${BAUKIT_QA_ANDROID_BUILD_TOOLS:-${api_level}.0.0}"
 image_tag="${BAUKIT_QA_ANDROID_IMAGE_TAG:-google_apis}"
 command_tools_version="16111833"
 avd_overrides="${BAUKIT_QA_AVD_CONFIG:-}"
@@ -67,8 +69,8 @@ system_image="system-images;android-${api_level};${image_tag};${architecture}"
 sdk_packages=(
   platform-tools
   emulator
-  "platforms;android-${api_level}"
-  "build-tools;${api_level}.0.0"
+  "platforms;android-${platform_level}"
+  "build-tools;${build_tools_version}"
   "$system_image"
 )
 missing_packages=()

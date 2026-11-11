@@ -2,7 +2,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-state_dir="$root/mobile/.qa"
+state_dir="${BAUKIT_QA_STATE_DIR:-$root/mobile/.qa}"
 action="${1:-start}"
 
 stop_all() {

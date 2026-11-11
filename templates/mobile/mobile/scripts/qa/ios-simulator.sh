@@ -2,7 +2,7 @@
 set -euo pipefail
 
 mobile_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-state_dir="$mobile_dir/.qa"
+state_dir="${BAUKIT_QA_STATE_DIR:-$mobile_dir/.qa}"
 action="${1:-prepare}"
 device_name="${BAUKIT_QA_IOS_DEVICE:-{{ context.app_name }}-qa}"
 
