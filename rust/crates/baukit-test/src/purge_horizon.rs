@@ -421,6 +421,70 @@ where
     }
 }
 
+struct OwnerIsolationSeed<Owner> {
+    busy: Owner,
+    quiet: Owner,
+    untouched: Owner,
+    busy_tombstone: i64,
+    quiet_tombstone: i64,
+    untouched_live: i64,
+    untouched_tombstone: i64,
+}
+
+async fn seed_owner_isolation<Adapter>(
+    adapter: &Adapter,
+    clock: Clock,
+    case: &str,
+) -> Result<OwnerIsolationSeed<Adapter::Owner>, String>
+where
+    Adapter: PurgeHorizonAdapter,
+{
+    let busy = step(adapter.create_owner().await, case, "creating an owner")?;
+    let quiet = step(adapter.create_owner().await, case, "creating an owner")?;
+    let untouched = step(adapter.create_owner().await, case, "creating an owner")?;
+    for _ in 0..BUSY_OWNER_LIVE_ROWS {
+        step(
+            adapter.write_live_row(&busy).await,
+            case,
+            "writing a live row",
+        )?;
+    }
+    let busy_tombstone = step(
+        adapter.write_tombstone(&busy, clock.expired()).await,
+        case,
+        "writing an expired tombstone",
+    )?;
+    step(
+        adapter.write_live_row(&quiet).await,
+        case,
+        "writing a live row",
+    )?;
+    let quiet_tombstone = step(
+        adapter.write_tombstone(&quiet, clock.expired()).await,
+        case,
+        "writing an expired tombstone",
+    )?;
+    let untouched_live = step(
+        adapter.write_live_row(&untouched).await,
+        case,
+        "writing a live row",
+    )?;
+    let untouched_tombstone = step(
+        adapter.write_tombstone(&untouched, clock.now).await,
+        case,
+        "writing a recent tombstone",
+    )?;
+    Ok(OwnerIsolationSeed {
+        busy,
+        quiet,
+        untouched,
+        busy_tombstone,
+        quiet_tombstone,
+        untouched_live,
+        untouched_tombstone,
+    })
+}
+
 async fn owner_isolation<Adapter>(
     adapter: &Adapter,
     clock: Clock,
@@ -431,47 +495,12 @@ where
 {
     const CASE: &str = "owner isolation";
     drain(adapter, clock.everything(), CASE).await?;
-    let busy = step(adapter.create_owner().await, CASE, "creating an owner")?;
-    let quiet = step(adapter.create_owner().await, CASE, "creating an owner")?;
-    let untouched = step(adapter.create_owner().await, CASE, "creating an owner")?;
-    for _ in 0..BUSY_OWNER_LIVE_ROWS {
-        step(
-            adapter.write_live_row(&busy).await,
-            CASE,
-            "writing a live row",
-        )?;
-    }
-    let busy_tombstone = step(
-        adapter.write_tombstone(&busy, clock.expired()).await,
-        CASE,
-        "writing an expired tombstone",
-    )?;
-    step(
-        adapter.write_live_row(&quiet).await,
-        CASE,
-        "writing a live row",
-    )?;
-    let quiet_tombstone = step(
-        adapter.write_tombstone(&quiet, clock.expired()).await,
-        CASE,
-        "writing an expired tombstone",
-    )?;
-    let untouched_live = step(
-        adapter.write_live_row(&untouched).await,
-        CASE,
-        "writing a live row",
-    )?;
-    let untouched_tombstone = step(
-        adapter.write_tombstone(&untouched, clock.now).await,
-        CASE,
-        "writing a recent tombstone",
-    )?;
-
+    let seed = seed_owner_isolation(adapter, clock, CASE).await?;
     drain(adapter, clock.cutoff(), CASE).await?;
     expect_horizon(
         adapter,
-        &busy,
-        busy_tombstone,
+        &seed.busy,
+        seed.busy_tombstone,
         CASE,
         "for the first owner",
         violations,
@@ -479,28 +508,28 @@ where
     .await?;
     expect_horizon(
         adapter,
-        &quiet,
-        quiet_tombstone,
+        &seed.quiet,
+        seed.quiet_tombstone,
         CASE,
         "for the second owner",
         violations,
     )
     .await?;
-    if horizon(adapter, &untouched, CASE).await?.is_some() {
+    if horizon(adapter, &seed.untouched, CASE).await?.is_some() {
         violations.push(format!(
             "{CASE}: an owner with no expired tombstone received a horizon"
         ));
     }
     if !matches!(
-        pull(adapter, &quiet, quiet_tombstone, CASE).await?,
+        pull(adapter, &seed.quiet, seed.quiet_tombstone, CASE).await?,
         PurgeHorizonPull::Page { .. }
     ) {
         violations.push(format!(
             "{CASE}: a cursor at the owner's own horizon was rejected by another owner's horizon"
         ));
     }
-    match pull(adapter, &untouched, untouched_live, CASE).await? {
-        PurgeHorizonPull::Page { revisions } if revisions.contains(&untouched_tombstone) => {}
+    match pull(adapter, &seed.untouched, seed.untouched_live, CASE).await? {
+        PurgeHorizonPull::Page { revisions } if revisions.contains(&seed.untouched_tombstone) => {}
         PurgeHorizonPull::Page { .. } => violations.push(format!(
             "{CASE}: another owner's purge removed a tombstone that had not expired"
         )),

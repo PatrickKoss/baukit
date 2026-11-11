@@ -12,7 +12,7 @@ ts-max-lines = 500
 "rust/crates/baukit-jobs/src/runner.rs" = 1057
 "rust/crates/baukit-suite/src/adapters/http.rs" = 1039
 "rust/crates/baukit-suite/src/adapters/postgres/mod.rs" = 1052
-"rust/crates/baukit-test/src/data_subject_conformance.rs" = 1057
+"rust/crates/baukit-test/src/data_subject_conformance.rs" = 1026
 "rust/crates/baukit-test/src/jwt.rs" = 1031
 "typescript/packages/auth-native/src/index.ts" = 542
 "typescript/packages/auth-node/src/device-flow.ts" = 524
@@ -22,7 +22,7 @@ ts-max-lines = 500
 # Suppression budget. Counts may only go down; `baukit check suppressions --update` lowers them.
 [suppressions.max]
 rust-allow = 0
-rust-expect = 33
+rust-expect = 30
 eslint-disable = 1
 ast-grep-ignore = 0
 ts-expect-error = 7

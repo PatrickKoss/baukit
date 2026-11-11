@@ -1,12 +1,13 @@
 use aws_lc_rs::digest::{SHA256, digest};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use baukit_data_subject::{
-    CONTRACT_VERSION, ExportPart, OperationError, OperationStatus, RECEIPT_TYPE, ReceiptPayload,
+    CONTRACT_VERSION, DsseEnvelope, ExportPart, OperationError, OperationResource, OperationStatus,
+    RECEIPT_TYPE, ReceiptPayload,
 };
 
 use super::{DataSubjectFault, DataSubjectOutcome, Operation, TargetState, lock};
 
-pub(super) fn complete(state: &TargetState, operation: &mut Operation) {
+fn apply_outcome(state: &TargetState, operation: &mut Operation) {
     let resource = &mut operation.resource;
     resource.completed_at = Some(state.now());
     match &operation.outcome {
@@ -48,10 +49,32 @@ pub(super) fn complete(state: &TargetState, operation: &mut Operation) {
             unreachable!("pending wrappers consumed before completion")
         }
     }
-    if !resource.status.has_receipt() {
+}
+
+pub(super) fn complete(state: &TargetState, operation: &mut Operation) {
+    apply_outcome(state, operation);
+    if !operation.resource.status.has_receipt() {
         return;
     }
     let faults = lock(&operation.script).faults.clone();
+    let receipt = signed_receipt(state, &operation.resource, &faults);
+    if has_fault(&faults, |fault| {
+        matches!(fault, DataSubjectFault::PartDigestMismatch)
+    }) {
+        corrupt_parts(&mut operation.parts);
+    }
+    operation.resource.receipt = Some(receipt);
+}
+
+fn has_fault(faults: &[DataSubjectFault], is_fault: fn(&DataSubjectFault) -> bool) -> bool {
+    faults.iter().any(is_fault)
+}
+
+fn signed_receipt(
+    state: &TargetState,
+    resource: &OperationResource,
+    faults: &[DataSubjectFault],
+) -> DsseEnvelope {
     let mut payload = ReceiptPayload {
         receipt_type: RECEIPT_TYPE.into(),
         contract_version: CONTRACT_VERSION.into(),
@@ -66,52 +89,45 @@ pub(super) fn complete(state: &TargetState, operation: &mut Operation) {
         restrictions: resource.restrictions.clone(),
         parts: resource.parts.clone(),
     };
-    if faults
-        .iter()
-        .any(|fault| matches!(fault, DataSubjectFault::WrongSubjectReference))
-    {
-        let last = payload
-            .subject_reference
-            .pop()
-            .expect("validated reference");
-        payload
-            .subject_reference
-            .push(if last == 'x' { 'y' } else { 'x' });
+    if has_fault(faults, |fault| {
+        matches!(fault, DataSubjectFault::WrongSubjectReference)
+    }) {
+        flip_last_reference_char(&mut payload.subject_reference);
     }
-    let signer = if faults
-        .iter()
-        .any(|fault| matches!(fault, DataSubjectFault::BadSignature))
-    {
+    let signer = if has_fault(faults, |fault| {
+        matches!(fault, DataSubjectFault::BadSignature)
+    }) {
         &state.unadvertised_signer
     } else {
         &state.signer
     };
     let mut receipt = signer.sign(&payload).expect("controlled receipt is valid");
-    if faults
-        .iter()
-        .any(|fault| matches!(fault, DataSubjectFault::WrongKeyId))
-    {
+    if has_fault(faults, |fault| {
+        matches!(fault, DataSubjectFault::WrongKeyId)
+    }) {
         receipt.signatures[0].keyid = "0".repeat(64);
     }
-    if faults
-        .iter()
-        .any(|fault| matches!(fault, DataSubjectFault::TamperedPayload))
-    {
+    if has_fault(faults, |fault| {
+        matches!(fault, DataSubjectFault::TamperedPayload)
+    }) {
         let mut bytes = STANDARD.decode(&receipt.payload).expect("signer base64");
         bytes.push(b' ');
         receipt.payload = STANDARD.encode(bytes);
     }
-    if faults
-        .iter()
-        .any(|fault| matches!(fault, DataSubjectFault::PartDigestMismatch))
-    {
-        for bytes in &mut operation.parts {
-            let mut changed = vec![b' '; bytes.len()];
-            changed[0] = if bytes == b"0" { b'1' } else { b'0' };
-            *bytes = changed;
-        }
+    receipt
+}
+
+fn flip_last_reference_char(reference: &mut String) {
+    let last = reference.pop().expect("validated reference");
+    reference.push(if last == 'x' { 'y' } else { 'x' });
+}
+
+fn corrupt_parts(parts: &mut [Vec<u8>]) {
+    for bytes in parts {
+        let mut changed = vec![b' '; bytes.len()];
+        changed[0] = if bytes == b"0" { b'1' } else { b'0' };
+        *bytes = changed;
     }
-    resource.receipt = Some(receipt);
 }
 
 fn hex_digest(bytes: &[u8]) -> String {

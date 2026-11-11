@@ -699,6 +699,61 @@ fn route(
     (not_found(), None)
 }
 
+fn parse_create(
+    state: &TargetState,
+    headers: &HeaderMap,
+    body: Option<Value>,
+) -> Result<(String, DataSubjectRequest), Box<Reply>> {
+    let mut keys = headers.get_all("idempotency-key").iter();
+    let key = keys.next().and_then(|value| value.to_str().ok());
+    if keys.next().is_some() || validate_idempotency_key(key).is_err() {
+        return Err(Box::new((
+            error(StatusCode::BAD_REQUEST, codes::IDEMPOTENCY_KEY_INVALID),
+            None,
+        )));
+    }
+    let Some(request) =
+        body.and_then(|body| serde_json::from_value::<DataSubjectRequest>(body).ok())
+    else {
+        return Err(Box::new((
+            error(StatusCode::UNPROCESSABLE_ENTITY, codes::REQUEST_INVALID),
+            None,
+        )));
+    };
+    if let Err(error_value) = normalize_request(
+        &request,
+        &state.discovery.limits,
+        &state.discovery.identifier_types,
+    ) {
+        return Err(Box::new((
+            error(StatusCode::UNPROCESSABLE_ENTITY, error_value.code()),
+            None,
+        )));
+    }
+    Ok((key.expect("validated key").to_owned(), request))
+}
+
+fn replay_existing(
+    state: &TargetState,
+    kind: OperationKind,
+    client: &str,
+    key: &str,
+    request_hmac: &[u8],
+) -> Option<Reply> {
+    let existing = state.operations.values().find(|operation| {
+        operation.client == client && operation.key == key && operation.resource.kind == kind
+    })?;
+    if existing.request_hmac != request_hmac {
+        return Some((
+            error(StatusCode::CONFLICT, codes::IDEMPOTENCY_CONFLICT),
+            None,
+        ));
+    }
+    let (fault, delay) = transient(&existing.script);
+    let response = fault.unwrap_or_else(|| operation_response(&existing.resource));
+    Some((response, delay))
+}
+
 fn create(
     state: &mut TargetState,
     kind: OperationKind,
@@ -706,50 +761,20 @@ fn create(
     headers: &HeaderMap,
     body: Option<Value>,
 ) -> Reply {
-    let mut keys = headers.get_all("idempotency-key").iter();
-    let key = keys.next().and_then(|value| value.to_str().ok());
-    if keys.next().is_some() || validate_idempotency_key(key).is_err() {
-        return (
-            error(StatusCode::BAD_REQUEST, codes::IDEMPOTENCY_KEY_INVALID),
-            None,
-        );
-    }
-    let Some(request) =
-        body.and_then(|body| serde_json::from_value::<DataSubjectRequest>(body).ok())
-    else {
-        return (
-            error(StatusCode::UNPROCESSABLE_ENTITY, codes::REQUEST_INVALID),
-            None,
-        );
+    let (key, request) = match parse_create(state, headers, body) {
+        Ok(parsed) => parsed,
+        Err(reply) => return *reply,
     };
-    let normalized = match normalize_request(
+    let normalized = normalize_request(
         &request,
         &state.discovery.limits,
         &state.discovery.identifier_types,
-    ) {
-        Ok(normalized) => normalized,
-        Err(error_value) => {
-            return (
-                error(StatusCode::UNPROCESSABLE_ENTITY, error_value.code()),
-                None,
-            );
-        }
-    };
+    )
+    .expect("request validated by parse_create");
     let bytes = serde_json::to_vec(&normalized).expect("normalized request serializes");
     let request_hmac = hmac::sign(&state.hmac_key, &bytes).as_ref().to_vec();
-    let key = key.expect("validated key");
-    if let Some(existing) = state.operations.values().find(|operation| {
-        operation.client == client && operation.key == key && operation.resource.kind == kind
-    }) {
-        if existing.request_hmac != request_hmac {
-            return (
-                error(StatusCode::CONFLICT, codes::IDEMPOTENCY_CONFLICT),
-                None,
-            );
-        }
-        let (fault, delay) = transient(&existing.script);
-        let response = fault.unwrap_or_else(|| operation_response(&existing.resource));
-        return (response, delay);
+    if let Some(reply) = replay_existing(state, kind, &client, &key, &request_hmac) {
+        return reply;
     }
     let script = state
         .scripts
@@ -796,7 +821,7 @@ fn create(
         resource.operation_id,
         Operation {
             client,
-            key: key.into(),
+            key,
             request_hmac,
             resource,
             outcome,

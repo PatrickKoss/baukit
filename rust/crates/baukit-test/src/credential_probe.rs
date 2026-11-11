@@ -383,95 +383,7 @@ where
     let probe = make_probe(server.origin());
     let mut violations = Vec::new();
 
-    server.push_response(cases.healthy);
-    match invoke(&probe).await {
-        Some(Ok(success)) => {
-            if success.external_account_id.as_str() != cases.expected_external_account_id {
-                violations.push("healthy response returned a different external account ID".into());
-            }
-            if success.health() != baukit_integrations::ConnectionHealth::Healthy {
-                violations.push("healthy response did not return healthy connection state".into());
-            }
-        }
-        Some(Err(error)) => violations.push(format!(
-            "healthy response returned failure class {}",
-            error.code()
-        )),
-        None => violations.push("healthy response exceeded the conformance deadline".into()),
-    }
-
-    check_failure(
-        &server,
-        &probe,
-        "revoked",
-        cases.revoked,
-        CredentialProbeError::Revoked,
-        &mut violations,
-    )
-    .await;
-    check_failure(
-        &server,
-        &probe,
-        "missing scope",
-        cases.missing_scope,
-        CredentialProbeError::MissingScope,
-        &mut violations,
-    )
-    .await;
-    check_failure(
-        &server,
-        &probe,
-        "rate limited with Retry-After",
-        cases.rate_limited,
-        CredentialProbeError::rate_limited(Some(cases.expected_retry_after)),
-        &mut violations,
-    )
-    .await;
-    check_failure(
-        &server,
-        &probe,
-        "rate limited without Retry-After",
-        cases.rate_limited_without_hint,
-        CredentialProbeError::rate_limited(None),
-        &mut violations,
-    )
-    .await;
-    check_failure(
-        &server,
-        &probe,
-        "unavailable",
-        cases.unavailable,
-        CredentialProbeError::Unavailable,
-        &mut violations,
-    )
-    .await;
-    check_failure(
-        &server,
-        &probe,
-        "invalid data",
-        cases.invalid_data,
-        CredentialProbeError::InvalidData,
-        &mut violations,
-    )
-    .await;
-    check_failure(
-        &server,
-        &probe,
-        "oversized response",
-        cases.oversized,
-        CredentialProbeError::InvalidData,
-        &mut violations,
-    )
-    .await;
-    check_failure(
-        &server,
-        &probe,
-        "timeout",
-        cases.timeout,
-        CredentialProbeError::Timeout,
-        &mut violations,
-    )
-    .await;
+    check_cases(&server, &probe, cases, &mut violations).await;
 
     if server.calls() != 9 {
         violations.push(format!(
@@ -496,6 +408,84 @@ pub async fn assert_credential_probe_conformance<MakeProbe, Probe>(
 {
     if let Err(error) = check_credential_probe_conformance(cases, make_probe).await {
         panic!("{error}");
+    }
+}
+
+async fn check_healthy<Probe: CredentialProbe>(
+    server: &ScriptedCredentialProbeHttp,
+    probe: &Probe,
+    response: ScriptedCredentialProbeResponse,
+    expected_external_account_id: &str,
+    violations: &mut Vec<String>,
+) {
+    server.push_response(response);
+    match invoke(probe).await {
+        Some(Ok(success)) => {
+            if success.external_account_id.as_str() != expected_external_account_id {
+                violations.push("healthy response returned a different external account ID".into());
+            }
+            if success.health() != baukit_integrations::ConnectionHealth::Healthy {
+                violations.push("healthy response did not return healthy connection state".into());
+            }
+        }
+        Some(Err(error)) => violations.push(format!(
+            "healthy response returned failure class {}",
+            error.code()
+        )),
+        None => violations.push("healthy response exceeded the conformance deadline".into()),
+    }
+}
+
+async fn check_cases<Probe: CredentialProbe>(
+    server: &ScriptedCredentialProbeHttp,
+    probe: &Probe,
+    cases: CredentialProbeConformanceCases,
+    violations: &mut Vec<String>,
+) {
+    check_healthy(
+        server,
+        probe,
+        cases.healthy,
+        &cases.expected_external_account_id,
+        violations,
+    )
+    .await;
+    let failures = [
+        ("revoked", cases.revoked, CredentialProbeError::Revoked),
+        (
+            "missing scope",
+            cases.missing_scope,
+            CredentialProbeError::MissingScope,
+        ),
+        (
+            "rate limited with Retry-After",
+            cases.rate_limited,
+            CredentialProbeError::rate_limited(Some(cases.expected_retry_after)),
+        ),
+        (
+            "rate limited without Retry-After",
+            cases.rate_limited_without_hint,
+            CredentialProbeError::rate_limited(None),
+        ),
+        (
+            "unavailable",
+            cases.unavailable,
+            CredentialProbeError::Unavailable,
+        ),
+        (
+            "invalid data",
+            cases.invalid_data,
+            CredentialProbeError::InvalidData,
+        ),
+        (
+            "oversized response",
+            cases.oversized,
+            CredentialProbeError::InvalidData,
+        ),
+        ("timeout", cases.timeout, CredentialProbeError::Timeout),
+    ];
+    for (case, response, expected) in failures {
+        check_failure(server, probe, case, response, expected, violations).await;
     }
 }
 

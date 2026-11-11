@@ -179,12 +179,22 @@ pub async fn check_identity_erasure_conformance<A: IdentityErasureAdapter>(
         seeded.product_rows > 0 && !seeded.fenced,
         "fixture must seed unfenced product rows",
     )?;
-    let client = Client {
-        adapter: &*adapter,
-        routes,
-    };
     let key = Uuid::now_v7().to_string();
-    let pending = client.erase(subject, &key).await?;
+    let operation =
+        check_pending_phase(adapter, routes, subject, foreign_subject, &fake, &key).await?;
+    check_completion_phase(adapter, routes, subject, &fake, &key, operation).await
+}
+
+async fn check_pending_phase<A: IdentityErasureAdapter>(
+    adapter: &A,
+    routes: &IdentityErasureRoutes,
+    subject: &str,
+    foreign_subject: &str,
+    fake: &FakeIdentityAccountDeleter,
+    key: &str,
+) -> Result<Uuid, IdentityErasureConformanceError> {
+    let client = Client { adapter, routes };
+    let pending = client.erase(subject, key).await?;
     require(
         pending.status == 202 && pending.body["status"] == "pending",
         "IdP failure must return durable pending acceptance",
@@ -207,10 +217,10 @@ pub async fn check_identity_erasure_conformance<A: IdentityErasureAdapter>(
         "status must report the pending receipt",
     )?;
     require(
-        client.erase(subject, &key).await? == pending,
+        client.erase(subject, key).await? == pending,
         "pending replay must return the same response",
     )?;
-    let conflict = client.erase(foreign_subject, &key).await?;
+    let conflict = client.erase(foreign_subject, key).await?;
     require(
         conflict.status == 409 && conflict.body["error"]["code"] == "erasure_idempotency_conflict",
         "cross-identity key reuse must conflict",
@@ -224,6 +234,21 @@ pub async fn check_identity_erasure_conformance<A: IdentityErasureAdapter>(
         fenced.status == 401 && fenced.body["error"]["code"] == "profile_erased",
         "fenced subject resolution must reject profile recreation",
     )?;
+    Ok(operation)
+}
+
+async fn check_completion_phase<A: IdentityErasureAdapter>(
+    adapter: &mut A,
+    routes: &IdentityErasureRoutes,
+    subject: &str,
+    fake: &FakeIdentityAccountDeleter,
+    key: &str,
+    operation: Uuid,
+) -> Result<(), IdentityErasureConformanceError> {
+    let client = Client {
+        adapter: &*adapter,
+        routes,
+    };
     adapter.run_worker().await.map_err(failed)?;
     let completed = client.status(subject, operation).await?;
     require(
@@ -236,13 +261,13 @@ pub async fn check_identity_erasure_conformance<A: IdentityErasureAdapter>(
         fake.calls() == [subject, subject],
         "worker must call the registered identity deleter",
     )?;
-    let replay = client.erase(subject, &key).await?;
+    let replay = client.erase(subject, key).await?;
     require(
         replay.status == 200 && replay.body == completed.body,
         "completed replay must return the stored receipt",
     )?;
     require(
-        client.erase(subject, &key).await? == replay,
+        client.erase(subject, key).await? == replay,
         "completion timestamp must remain stable",
     )?;
     let snapshot = adapter.snapshot(subject).await.map_err(failed)?;

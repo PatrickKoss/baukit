@@ -126,19 +126,7 @@ impl KeycloakTestContainer {
             URL_SAFE_NO_PAD.encode(digest::digest(&digest::SHA256, verifier.as_bytes()));
         let state = uuid::Uuid::new_v4().simple().to_string();
         let endpoint = format!("{}/protocol/openid-connect", self.issuer());
-        let authorization = reqwest::Url::parse_with_params(
-            &format!("{endpoint}/auth"),
-            [
-                ("client_id", login.client_id),
-                ("redirect_uri", login.redirect_uri),
-                ("response_type", "code"),
-                ("scope", login.scope),
-                ("state", state.as_str()),
-                ("code_challenge", challenge.as_str()),
-                ("code_challenge_method", "S256"),
-            ],
-        )
-        .map_err(|_| KeycloakTestError::Login("authorization URL is invalid"))?;
+        let authorization = authorization_url(&endpoint, login, &state, &challenge)?;
         let page = client.get(authorization).send().await?;
         let cookies = page
             .headers()
@@ -162,23 +150,7 @@ impl KeycloakTestContainer {
         if callback.status() != StatusCode::FOUND {
             return Err(KeycloakTestError::Login("login did not redirect"));
         }
-        let location = callback
-            .headers()
-            .get(LOCATION)
-            .and_then(|value| value.to_str().ok())
-            .ok_or(KeycloakTestError::Login("login redirect has no location"))?;
-        let location = reqwest::Url::parse(location)
-            .map_err(|_| KeycloakTestError::Login("login redirect is not a URL"))?;
-        let parameter = |name: &str| {
-            location
-                .query_pairs()
-                .find(|(key, _)| key == name)
-                .map(|(_, value)| value.into_owned())
-        };
-        if parameter("state").as_deref() != Some(state.as_str()) {
-            return Err(KeycloakTestError::Login("state did not match"));
-        }
-        let code = parameter("code").ok_or(KeycloakTestError::Login("callback has no code"))?;
+        let code = callback_code(&callback, &state)?;
         let tokens: serde_json::Value = client
             .post(format!("{endpoint}/token"))
             .form(&[
@@ -200,6 +172,47 @@ impl KeycloakTestContainer {
                 "token response has no access token",
             ))
     }
+}
+
+fn authorization_url(
+    endpoint: &str,
+    login: &KeycloakLogin<'_>,
+    state: &str,
+    challenge: &str,
+) -> Result<reqwest::Url, KeycloakTestError> {
+    reqwest::Url::parse_with_params(
+        &format!("{endpoint}/auth"),
+        [
+            ("client_id", login.client_id),
+            ("redirect_uri", login.redirect_uri),
+            ("response_type", "code"),
+            ("scope", login.scope),
+            ("state", state),
+            ("code_challenge", challenge),
+            ("code_challenge_method", "S256"),
+        ],
+    )
+    .map_err(|_| KeycloakTestError::Login("authorization URL is invalid"))
+}
+
+fn callback_code(callback: &reqwest::Response, state: &str) -> Result<String, KeycloakTestError> {
+    let location = callback
+        .headers()
+        .get(LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or(KeycloakTestError::Login("login redirect has no location"))?;
+    let location = reqwest::Url::parse(location)
+        .map_err(|_| KeycloakTestError::Login("login redirect is not a URL"))?;
+    let parameter = |name: &str| {
+        location
+            .query_pairs()
+            .find(|(key, _)| key == name)
+            .map(|(_, value)| value.into_owned())
+    };
+    if parameter("state").as_deref() != Some(state) {
+        return Err(KeycloakTestError::Login("state did not match"));
+    }
+    parameter("code").ok_or(KeycloakTestError::Login("callback has no code"))
 }
 
 fn login_form_action(page: &str) -> Result<String, KeycloakTestError> {
