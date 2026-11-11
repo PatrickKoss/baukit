@@ -31,6 +31,7 @@ SNAPSHOT_HASH_LENGTH = 12
 IDLE_STABLE_PROBES = 3
 MIN_EVENT_FIELDS = 3
 HEALTH_BASE_ARGUMENTS = 4
+BOOT_BASE_ARGUMENTS = 4
 POLL_INTERVAL = 2
 SYSTEMUI = "com.android.systemui"
 CRITICAL_PACKAGES = {
@@ -62,7 +63,15 @@ def timeout_setting(name: str, default: int) -> float:
     return value
 
 
-def wait_for_boot(adb: str, serial: str, probe_timeout: float, boot_timeout: float) -> int:
+def process_running(pid: int) -> bool:
+    result = run_command(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True)
+    state = result.stdout.strip()
+    return result.returncode == 0 and bool(state) and not state.startswith("Z")
+
+
+def wait_for_boot(
+    adb: str, serial: str, probe_timeout: float, boot_timeout: float, pid: int | None = None
+) -> int:
     deadline = time.monotonic() + boot_timeout
     while (remaining := deadline - time.monotonic()) > 0:
         try:
@@ -76,6 +85,9 @@ def wait_for_boot(adb: str, serial: str, probe_timeout: float, boot_timeout: flo
                 return 0
         except subprocess.TimeoutExpired:
             print("qa: Android boot probe timed out", file=sys.stderr)
+        if pid is not None and not process_running(pid):
+            print(f"qa: emulator process {pid} exited before {serial} booted", file=sys.stderr)
+            return 1
         time.sleep(min(POLL_INTERVAL, max(0, deadline - time.monotonic())))
     return 124
 
@@ -415,6 +427,13 @@ def check_health_mode(probe_timeout: float) -> int:
     return check_health(sys.argv[2], sys.argv[3], probe_timeout, report)
 
 
+def wait_for_boot_mode(probe_timeout: float) -> int:
+    pid_argument = sys.argv[4] if len(sys.argv) > BOOT_BASE_ARGUMENTS else ""
+    boot_timeout = timeout_setting("BAUKIT_QA_BOOT_TIMEOUT_SECONDS", DEFAULT_BOOT_TIMEOUT)
+    pid = int(pid_argument) if pid_argument else None
+    return wait_for_boot(sys.argv[2], sys.argv[3], probe_timeout, boot_timeout, pid)
+
+
 def snapshot_name_mode(_probe_timeout: float) -> int:
     print(
         snapshot_name(Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4], sys.argv[5], sys.argv[6])
@@ -449,9 +468,7 @@ MODES = dict(
         timed_mode(
             "--wait-for-stop", "BAUKIT_QA_STOP_TIMEOUT_SECONDS", DEFAULT_STOP_TIMEOUT, wait_for_stop
         ),
-        timed_mode(
-            "--wait-for-boot", "BAUKIT_QA_BOOT_TIMEOUT_SECONDS", DEFAULT_BOOT_TIMEOUT, wait_for_boot
-        ),
+        ("--wait-for-boot", wait_for_boot_mode),
     ]
 )
 

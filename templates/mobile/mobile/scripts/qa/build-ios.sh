@@ -2,16 +2,24 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+state_dir="${BAUKIT_QA_STATE_DIR:-$root/mobile/.qa}"
+cd "$root/mobile"
 qa_build_env() { :; }
 qa_install_dependencies() {
-  corepack pnpm@12.9.1 --dir "$root/mobile" install --frozen-lockfile
+  corepack pnpm --dir "$root/mobile" install --frozen-lockfile
 }
 api_port="${BAUKIT_QA_API_PORT:-18080}"
 {% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
 {% endif %}local_hooks="$root/mobile/scripts/qa/local.sh"
 # shellcheck source=/dev/null
 [[ ! -f "$local_hooks" ]] || source "$local_hooks"
-state_dir="${BAUKIT_QA_STATE_DIR:-$root/mobile/.qa}"
+isolate_metro_cache() {
+  local key
+  key="$({ env | grep '^EXPO_PUBLIC_' || true; } | LC_ALL=C sort | cksum | cut -d' ' -f1)"
+  export TMPDIR="$state_dir/metro-cache/$key"
+  mkdir -p "$TMPDIR"
+}
+
 [[ "$(uname -s)" == Darwin ]] || { echo "qa: iOS builds require macOS and Xcode" >&2; exit 1; }
 
 export BAUKIT_QA_BUILD=1
@@ -36,15 +44,19 @@ export EXPO_PUBLIC_OIDC_CLIENT_ID="{{ context.app_name }}-mobile"
 {% endif %}
 
 qa_build_env
+isolate_metro_cache
 qa_install_dependencies
-corepack pnpm@12.9.1 --dir "$root/mobile" run tokens
-(cd "$root/mobile" && CI=1 ./node_modules/.bin/expo prebuild \
-  --clean --platform ios --no-install)
+corepack pnpm --dir "$root/mobile" run tokens
+CI=1 ./node_modules/.bin/expo prebuild --clean --platform ios --no-install
 (cd "$root/mobile/ios" && pod install)
 
 workspace="$(find "$root/mobile/ios" -maxdepth 1 -name '*.xcworkspace' -print -quit)"
 [[ -n "$workspace" ]] || { echo "qa: Expo did not produce an Xcode workspace" >&2; exit 1; }
 scheme="${BAUKIT_QA_IOS_SCHEME:-}"
+if [[ -z "$scheme" && -f "$root/mobile/app.json" ]]; then
+  scheme="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("expo", {}).get("name", ""))' "$root/mobile/app.json")"
+fi
+[[ -n "$scheme" ]] || scheme="$(basename "$workspace" .xcworkspace)"
 [[ -n "$scheme" ]] || scheme="$(xcodebuild -workspace "$workspace" -list -json | python3 -c 'import json,sys; print(json.load(sys.stdin)["workspace"]["schemes"][0])')"
 [[ -n "$scheme" ]] || { echo "qa: Xcode workspace has no build scheme" >&2; exit 1; }
 

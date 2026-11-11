@@ -8,6 +8,7 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
 AUTH_ENABLED: bool = "{{ context.auth_enabled }}".lower() == "true"
+AUTH_OIDC: bool = "{{ context.auth_oidc }}".lower() == "true"
 HAS_BACKEND: bool = "{{ context.backend }}".lower() == "true"
 
 
@@ -17,7 +18,8 @@ class AndroidScriptsTest(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
         self.scripts = self.root / "mobile/scripts/qa"
-        shutil.copytree(SCRIPTS, self.scripts)
+        shutil.copytree(SCRIPTS, self.scripts, ignore=shutil.ignore_patterns("local.sh"))
+        (self.scripts / "local.sh").write_text("# shellcheck shell=bash\n")
         shutil.copyfile(SCRIPTS.parent / "android-java.sh", self.scripts.parent / "android-java.sh")
         self.sdk = self.root / "sdk"
         self.avds = self.root / "avds"
@@ -305,13 +307,67 @@ touch "$apk"
         self.assertEqual(
             self.events.read_text().splitlines(),
             [
-                f"corepack pnpm@12.9.1 --dir {self.root}/mobile install --frozen-lockfile",
-                f"corepack pnpm@12.9.1 --dir {self.root}/mobile run tokens",
+                f"corepack pnpm --dir {self.root}/mobile install --frozen-lockfile",
+                f"corepack pnpm --dir {self.root}/mobile run tokens",
                 "expo prebuild --clean --platform android --no-install",
                 f"gradle -p {self.root}/mobile/android --no-daemon --build-cache "
                 "-PreactNativeDevServerIp=127.0.0.1 -PreactNativeArchitectures=x86_64 assembleRelease",
                 "java-options -Dqa.test=1 --enable-native-access=ALL-UNNAMED",
             ],
+        )
+
+    def test_builds_isolate_the_metro_cache_per_public_environment(self) -> None:
+        self.fake_build_tools()
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
+printf 'tmpdir %s\n' "$TMPDIR" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+""",
+        )
+        for port in ("18080", "18080", "18090"):
+            self.environment["BAUKIT_QA_API_PORT"] = port
+            self.run_script("build-android.sh")
+        tmpdirs = [
+            event.removeprefix("tmpdir ")
+            for event in self.events.read_text().splitlines()
+            if event.startswith("tmpdir ")
+        ]
+        self.assertEqual(tmpdirs[0], tmpdirs[1])
+        self.assertNotEqual(tmpdirs[0], tmpdirs[2])
+        for tmpdir in tmpdirs:
+            self.assertTrue(tmpdir.startswith(f"{self.scripts.parent.parent}/.qa/metro-cache/"))
+
+    def ios_build(self, workspace: str, **environment: str) -> str:
+        bin_dir = self.root / "bin"
+        self.executable(bin_dir / "uname", "echo Darwin\n")
+        self.executable(bin_dir / "pod", "exit 0\n")
+        self.executable(
+            bin_dir / "xcodebuild",
+            'printf "%s\\n" "$*" >> "$EVENTS"\n'
+            + 'mkdir -p "$PWD/ios-build/Build/Products/Release-iphonesimulator/App.app"\n',
+        )
+        self.executable(bin_dir / "corepack", "exit 0\n")
+        self.environment["PATH"] = str(bin_dir) + os.pathsep + self.environment["PATH"]
+        self.environment.update(environment)
+        self.executable(
+            self.root / "mobile/node_modules/.bin/expo",
+            f'mkdir -p "$PWD/ios/{workspace}.xcworkspace"\n',
+        )
+        self.run_script("build-ios.sh")
+        return next(event for event in self.events.read_text().splitlines() if "-scheme" in event)
+
+    def test_ios_scheme_defaults_to_the_app_json_name_then_the_workspace(self) -> None:
+        self.assertIn("-scheme FromWorkspace ", self.ios_build("FromWorkspace"))
+        self.events.unlink()
+        (self.root / "mobile/app.json").write_text('{"expo": {"name": "FromAppJson"}}')
+        self.assertIn("-scheme FromAppJson ", self.ios_build("FromWorkspace"))
+        self.events.unlink()
+        self.assertIn(
+            "-scheme Explicit ",
+            self.ios_build("FromWorkspace", BAUKIT_QA_IOS_SCHEME="Explicit"),
         )
 
     def test_gate_build_compiles_debug_and_release_from_one_prebuild(self) -> None:
@@ -397,6 +453,81 @@ touch "$apk"
         gradle = next(event for event in events if event.startswith("gradle"))
         self.assertIn("-PreactNativeDevServerPort=8099", gradle)
         self.assertTrue(gradle.endswith("api=http://localhost:8280"))
+
+    def test_build_runs_from_the_mobile_directory_and_exports_the_local_issuer(self) -> None:
+        self.fake_build_tools()
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
+printf 'cwd %s\n' "$PWD" >> "$EVENTS"
+printf 'issuer %s\n' "${EXPO_PUBLIC_OIDC_ISSUER:-}${EXPO_PUBLIC_LOCAL_OIDC_ISSUER:-}" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+""",
+        )
+        self.environment["BAUKIT_QA_KEYCLOAK_PORT"] = "18099"
+        subprocess.run(
+            ["bash", str(self.scripts / "build-android.sh")],
+            cwd=self.root,
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        )
+        events = self.events.read_text().splitlines()
+        self.assertIn(f"cwd {(self.root / 'mobile').resolve()}", events)
+        issuer = "http://localhost:18099/realms/{{ context.app_name }}" if AUTH_ENABLED else ""
+        self.assertIn(f"issuer {issuer}", events)
+        if AUTH_ENABLED and not AUTH_OIDC:
+            self.assertEqual(
+                (self.scripts / "build-android.sh")
+                .read_text()
+                .count("EXPO_PUBLIC_LOCAL_OIDC_ISSUER"),
+                2,
+            )
+
+    def test_gradle_output_is_teed_to_the_opt_in_log(self) -> None:
+        self.fake_build_tools()
+        log = self.root / "logs/android-build.log"
+        self.environment["BAUKIT_QA_GRADLE_LOG"] = str(log)
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
+echo "gradle output"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+""",
+        )
+        self.run_script("build-android.sh")
+        self.assertEqual(log.read_text(), "gradle output\n")
+
+    def test_debug_variant_embeds_the_js_bundle_and_builds_only_debug(self) -> None:
+        self.fake_build_tools()
+        self.environment["BAUKIT_QA_APK_VARIANT"] = "debug"
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
+printf 'gradle %s\n' "$*" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/debug/app-debug.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+""",
+        )
+        self.run_script("build-android.sh")
+        events = self.events.read_text().splitlines()
+        bundle = next(event for event in events if event.startswith("expo export:embed"))
+        self.assertIn("--entry-file node_modules/expo-router/entry.js", bundle)
+        self.assertIn(
+            f"--bundle-output {self.root}/mobile/android/app/src/main/assets/index.android.bundle",
+            bundle,
+        )
+        gradle = [event for event in events if event.startswith("gradle")]
+        self.assertEqual(len(gradle), 1)
+        self.assertTrue(gradle[0].endswith("assembleDebug"))
+        self.assertLess(events.index(bundle), events.index(gradle[0]))
 
     def test_build_uses_the_environment_port_without_hooks(self) -> None:
         self.fake_build_tools()
@@ -643,7 +774,7 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
         apk.touch()
-        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
+        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check --force-renderer-accessibility=complete" > /data/local/tmp/chrome-command-line'
         debug = "-s emulator-5556 shell settings put global debug_app com.android.chrome"
         stop = "-s emulator-5556 shell am force-stop com.android.chrome"
         for headless, wifi in (("0", "1"), ("1", "1"), ("1", "0")):
@@ -682,7 +813,8 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
                 quick[load : load + 1] = ["-snapshot", snapshot, "-read-only"]
                 self.assertEqual(launch.splitlines(), quick)
             events = self.events.read_text().splitlines()
-            command = "-s emulator-5556 shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W"
+            activity = "dev.baukit.{{ context.app_crate }}/.MainActivity"
+            command = f"-s emulator-5556 shell am start -n {activity} -W"
             self.assertEqual(events.count(command), 1)
             launch = events.index(command)
             self.assertEqual(events.count("-s emulator-5556 reverse tcp:18015 tcp:18015"), 1)
@@ -758,6 +890,25 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
         self.events.unlink()
         self.run_script("services.sh", "stop")
         self.assertIn(f"-f {override} down --volumes", self.events.read_text())
+
+    @unittest.skipUnless(HAS_BACKEND, "services.sh hooks need a generated backend")
+    def test_backend_binaries_come_from_the_configured_directory(self) -> None:
+        fake_bin = self.root / "bin"
+        custom = self.root / "custom-bins"
+        self.executable(fake_bin / "docker", 'echo "docker $*" >> "$EVENTS"\n')
+        self.executable(fake_bin / "curl", "exit 0\n")
+        self.executable(
+            fake_bin / "cargo",
+            f'mkdir -p "{custom}"\n'
+            f'printf "#!/bin/sh\\necho migrate-ran >> \\"$EVENTS\\"\\n" > "{custom}/migrate"\n'
+            f'printf "#!/bin/sh\\nexec sleep 30\\n" > "{custom}/api"\n'
+            f'chmod +x "{custom}/migrate" "{custom}/api"\n',
+        )
+        self.environment["PATH"] = f"{fake_bin}:{self.environment['PATH']}"
+        (self.scripts / "local.sh").write_text(f'qa_backend_bin_dir="{custom}"\n')
+        self.run_script("services.sh")
+        self.run_script("services.sh", "stop")
+        self.assertIn("migrate-ran", self.events.read_text())
 
     @unittest.skipUnless(HAS_BACKEND, "services.sh hooks need a generated backend")
     def test_services_local_hooks_run_around_the_api(self) -> None:

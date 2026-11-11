@@ -33,7 +33,7 @@ for flavor in "${flavors[@]}"; do
     case "$flavor" in
         backend) flags=(--backend); backend=true ;;
         web) flags=(--web); web=true ;;
-        mobile) flags=(--mobile); mobile=true ;;
+        mobile) flags=(--mobile); name="mobile-fixture"; mobile=true ;;
         mobile-pwa) flags=(--mobile --pwa); mobile=true ;;
         mobile-pwa-auth) flags=(--backend --mobile --pwa --auth oidc); name="mobile-pwa-auth-fixture"; backend=true mobile=true ;;
         combined) flags=(--backend --mobile --web); backend=true mobile=true web=true ;;

@@ -149,7 +149,7 @@ class AndroidQaHookTests(unittest.TestCase):
     def test_usage_lists_every_action(self):
         result = self.run_script("android-env.sh", "restart")
         self.assertEqual(result.returncode, 2)
-        self.assertIn("[start|boot|prepare|stop]", result.stderr)
+        self.assertIn("[start|boot|prepare|reverse DEVICE|stop]", result.stderr)
 
     def test_gpu_mode_is_selectable_and_validated(self):
         self.prepare_start()
@@ -163,6 +163,34 @@ class AndroidQaHookTests(unittest.TestCase):
         self.assertTrue(any("-gpu auto" in event for event in self.events_list()))
         invalid = self.run_script("android-env.sh", "boot", BAUKIT_QA_ANDROID_GPU="a b")
         self.assertEqual(invalid.returncode, 2)
+
+    def test_accel_mode_is_passed_to_the_emulator_and_validated(self):
+        self.prepare_start()
+        self.executable(
+            self.sdk / "emulator/emulator",
+            '{ flock 9; printf \'{"args": "%s"}\\n\' "$*" >> "$EVENTS"; } 9>"$EVENTS.lock"\n',
+        )
+        self.assertEqual(self.run_script("android-env.sh", "boot").returncode, 0)
+        self.assertFalse(any("-accel" in event for event in self.events_list()))
+        self.events.unlink()
+        self.assertEqual(
+            self.run_script("android-env.sh", "boot", BAUKIT_QA_ANDROID_ACCEL="off").returncode, 0
+        )
+        self.assertTrue(any("-accel off" in event for event in self.events_list()))
+        invalid = self.run_script("android-env.sh", "boot", BAUKIT_QA_ANDROID_ACCEL="a b")
+        self.assertEqual(invalid.returncode, 2)
+
+    def test_device_preparation_disables_every_animation_scale(self):
+        self.prepare_start()
+        self.owned()
+        self.assertEqual(self.run_script("android-env.sh", "prepare").returncode, 0)
+        events = self.events_list()
+        for scale in (
+            "window_animation_scale",
+            "transition_animation_scale",
+            "animator_duration_scale",
+        ):
+            self.assertIn(f"adb -s emulator-5556 shell settings put global {scale} 0", events)
 
     def sharded_maestro(self, hooks, script='echo "maestro $*" >> "$EVENTS"\n', **environment):
         self.flows("a.yaml", "b.yaml")

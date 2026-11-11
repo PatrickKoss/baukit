@@ -7,19 +7,31 @@ This table records the tested baseline. The committed lockfiles record exact res
 
 ## v0.23.0 (unreleased)
 
-Template hooks that replace product divergences. No version bump yet.
+Next train on top of `v0.22.0`. Template hooks replace product divergences, and the mobile QA scripts get hardened.
 - `web/scripts/check-production-bundle.mjs` builds through Vite's JS API with a `generateBundle` plugin and reports `chunk: module: marker`. The loopback URL marker skips `node_modules` modules (`@tanstack/router-core` falls back to `this.origin = "http://localhost"`). The Keycloak, `/realms/` and env canary markers apply to every module. The mobile check already attributes findings per source through source maps and skips third-party code for loopback URLs.
 - `baukit.toml` `[quality.ci]` takes `timeout_minutes` (1 to 360, default 90) and an `env` table (upper case names) for the `strict-quality` job in `ci.yml`. A product that set `PLAYWRIGHT_BROWSERS_PATH`, `BAUKIT_QA_HEADLESS` and a 180 minute timeout there no longer edits the workflow.
 - `ci.yml`, `native.yml`, the `Makefile`, `lockfiles.sh`, `CLAUDE.md` and the READMEs call `corepack pnpm` from the package directory. `packageManager` decides the pnpm version.
 - `scripts/lockfiles.sh` sources `scripts/lockfiles.local.sh`. It can redefine `lockfile_run` to wrap each command (`mise exec -- "$@"`) and define `extra_lockfiles` (`mise lock`, `uv lock`).
 - `baukit.toml` `[auth] login_theme` names the Keycloak login theme (default `baukit-accessible`). It feeds `keycloak/realm.json` and the `KEYCLOAK_LOGIN_THEME` variable of the theme browser suite.
 - `scripts/pkce-login.py` captures non-http callback schemes such as `app://oauth` in `http_error_301`, `_302`, `_303`, `_307` and `_308`. `scripts/pkce_session.py` `sign_in(SignIn(issuer, client_id, redirect_uri, credentials))` loads the helper, registers it in `sys.modules` and builds the `LoginRequest`. Seed scripts call it instead of importing `pkce-login.py` themselves.
+- `android-env.sh` starts Chrome with `--force-renderer-accessibility=complete` (products with auth). Chrome built the Custom Tab accessibility tree lazily, and under three parallel emulators Maestro could not see Keycloak's username field. A product `qa_prepare_device` that wrote this flag itself can drop it.
+- The emulators close every inherited file descriptor above 2 before they start, so a gate's `flock` descriptors no longer outlive the run. The script also records each emulator PID, and when `start` or `boot` fails it stops the emulators it started, even ones adb never listed. A failed start no longer keeps ownership state, because nothing is left running.
+- The boot wait stops as soon as the emulator process is gone and prints `emulator process <pid> exited before <serial> booted`, instead of waiting out `BAUKIT_QA_BOOT_TIMEOUT_SECONDS`.
+- `run-maestro.sh` checks the device and re-applies `adb reverse` (through `android-env.sh reverse <serial>`) before every flow, so an adbd drop in one flow no longer leaves the next ones without the API and Keycloak ports. It no longer falls back to `$HOME/.maestro/bin/maestro`; put `maestro` on `PATH`.
+- New hooks. `qa_maestro_flows index` prints the flow files for one device, and `run-maestro.sh` runs each list sequentially, one fresh Maestro process per flow, with the devices in parallel. Setting it together with `qa_maestro_shards` is an error. `qa_ios_bundle_id` (or `BAUKIT_QA_IOS_BUNDLE_ID`) replaces the hardcoded iOS bundle id in `ios-env.sh` and `run-maestro.sh`, like `qa_app_id` does for Android. `qa_apk_variant` (or `BAUKIT_QA_APK_VARIANT`) set to `debug` makes `build-android.sh` embed the JS bundle with `expo export:embed` (entry file `qa_bundle_entry`, default `node_modules/expo-router/entry.js`) and build only `assembleDebug`, and `android-env.sh` installs `app-debug.apk`.
+- `services.sh` has `stop_pid_file PID_FILE NAME`, the helper that stops the backend. A `qa_stop_services` hook calls it for each extra supervised process it started.
+- `build-android.sh` and `build-ios.sh` run `corepack pnpm` without a version, so `packageManager` in `mobile/package.json` decides, and change into `mobile/` first (Gradle resolves `@sentry/react-native` from the working directory). `BAUKIT_QA_GRADLE_LOG` tees the Gradle output to that file. Clerk and WorkOS flavors already export `EXPO_PUBLIC_LOCAL_OIDC_ISSUER` from `BAUKIT_QA_KEYCLOAK_PORT`, and the scripts test now checks it.
+- `BAUKIT_QA_ANDROID_ACCEL` sets the emulator `-accel` mode (letters only). `build-ios.sh` defaults the scheme to `expo.name` in `mobile/app.json` when that file exists, else to the Xcode workspace name, and `BAUKIT_QA_IOS_SCHEME` still wins. `build-android.sh` and `build-ios.sh` export `TMPDIR=<state_dir>/metro-cache/<checksum of EXPO_PUBLIC_*>` after `qa_build_env`, so builds with different public environments keep separate Metro caches. `services.sh` runs `migrate` and `api` from `qa_backend_bin_dir`, default `$root/backend/target/debug`. Device preparation already set `animator_duration_scale` to 0 next to the window and transition scales.
+- Every QA script defines `root`, `state_dir`, `api_port` and, with auth, `keycloak_port` before it sources `local.sh`. `mobile/scripts/qa/local.sh.example` lists the variables and hooks, and starts with `# shellcheck shell=bash`.
+- `test_android.py` runs against a stub `local.sh` instead of the product's, and builds the launch command from an `activity` variable, so an `app_crate` of any length keeps ruff format stable.
 
 ### Upgrade steps
 
 1. Move the product's `ci.yml` env and timeout into `[quality.ci]`, the login theme into `[auth] login_theme`, and extra lockfile commands into `scripts/lockfiles.local.sh`. Re-render, then drop the matching entries from `.baukit/template-files.toml` divergences.
 2. Replace a product `load_login()` and `LoginRequest(...)` block in seed or smoke scripts with `pkce_session.sign_in(SignIn(..., Credentials.from_env()))`, or `Credentials(username, password)` for a specific user.
-3. Run `baukit check template-files --update`.
+3. Drop a `qa_prepare_device` override that only added `--force-renderer-accessibility=complete`, a `qa_build_apk` that only embedded the bundle for a debug APK (set `qa_apk_variant=debug`), and a `qa_stop_services` that reimplements pid file handling.
+4. Put `maestro` on `PATH` wherever the gate or your Makefile relied on `$HOME/.maestro/bin/maestro`.
+5. Copy the QA scripts from a fresh fixture, then run `baukit check template-files --update`.
 
 ## v0.22.0
 
@@ -41,6 +53,7 @@ Last verified release train: `v0.22.0` (minor train on top of `v0.21.0`, templat
 3. Move what the divergence held into `mobile/scripts/qa/local.sh`. Set `qa_app_id` to the `android.package` from `app.config.ts`, the QA ports and `compose_project` as plain assignments, and a `qa_prepare_device` for device setup the default lacks. Products with their own compose stack define `qa_services_start` and `qa_services_stop`. Products with one Maestro shard file per device set `qa_maestro_shards` and `qa_maestro_env`.
 4. Replace `ORG_GRADLE_PROJECT_reactNativeArchitectures` and a `timeout` around Maestro with the built-in behavior and `BAUKIT_QA_MAESTRO_DEADLINE_SECONDS`. Drop a product `KC_HOSTNAME` override in `docker-compose.local.yml`.
 5. Run `make native-android-gate` (or your product's `android-e2e` step) once. Check that `am start` now names your application id.
+6. `android-env.sh prepare` no longer starts the services, because `start` is the action that does. A product whose e2e step called `prepare` and relied on the stack coming up must run `bash mobile/scripts/qa/services.sh start` before it (and `services.sh stop` after).
 
 ## v0.21.0
 

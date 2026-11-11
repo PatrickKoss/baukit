@@ -268,13 +268,14 @@ RENDERER
                 self.assertIn("must be a positive integer", result.stderr)
                 self.assertFalse(self.events.exists())
 
-    def test_unhealthy_boot_keeps_ownership_and_does_not_install(self):
+    def test_unhealthy_boot_stops_the_emulator_it_started_and_does_not_install(self):
         self.prepare_start()
         result = self.run_script("android-env.sh", "start", FAILURE="health")
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("system process is unhealthy: com.android.systemui", result.stderr)
         self.assert_health_evidence(result)
-        self.assertTrue((self.state / "android-owned").exists())
+        self.assertEqual(self.events.read_text().splitlines()[-1], "adb devices")
+        self.assertFalse((self.state / "android-owned").exists())
         self.assertNotIn("install -r", self.events.read_text())
 
     def test_live_flows_recheck_health_before_maestro(self):

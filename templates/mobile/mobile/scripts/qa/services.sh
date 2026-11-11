@@ -23,6 +23,7 @@ if [[ -n "${BAUKIT_QA_COMPOSE_OVERRIDE:-}" ]]; then
 fi
 qa_compose_services=()
 qa_cargo_bins=()
+qa_backend_bin_dir="$root/backend/target/debug"
 qa_services_env() { :; }
 qa_before_api() { :; }
 qa_after_api() { :; }
@@ -40,12 +41,12 @@ api_running() {
   kill -0 "$1" 2>/dev/null && [[ "$(ps -o stat= -p "$1")" != Z* ]]
 }
 
-stop_api() {
-  [[ -f "$state_dir/backend.pid" ]] || return 0
-  local pid
-  pid="$(<"$state_dir/backend.pid")"
+stop_pid_file() {
+  local pid_file="$1" name="$2" pid
+  [[ -f "$pid_file" ]] || return 0
+  pid="$(<"$pid_file")"
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || {
-    echo "qa: invalid backend PID; ownership state was kept" >&2
+    echo "qa: invalid $name PID; ownership state was kept" >&2
     return 1
   }
   if api_running "$pid"; then
@@ -55,11 +56,15 @@ stop_api() {
       sleep 1
     done
     if api_running "$pid"; then
-      echo "qa: backend $pid did not stop; ownership state was kept" >&2
+      echo "qa: $name $pid did not stop; ownership state was kept" >&2
       return 1
     fi
   fi
-  rm -f "$state_dir/backend.pid"
+  rm -f "$pid_file"
+}
+
+stop_api() {
+  stop_pid_file "$state_dir/backend.pid" backend
 }
 
 stop_default_services() {
@@ -101,10 +106,10 @@ start_default_services() {
   done
   cargo build --locked --manifest-path "$root/backend/Cargo.toml" \
     -p {{ context.app_name }}-bin "${cargo_bins[@]}"
-  "$root/backend/target/debug/migrate"
+  "$qa_backend_bin_dir/migrate"
   qa_before_api
 
-  nohup "$root/backend/target/debug/api" \
+  nohup "$qa_backend_bin_dir/api" \
     >"$state_dir/backend.log" 2>&1 &
   backend_pid=$!
   printf '%s\n' "$backend_pid" > "$state_dir/backend.pid"

@@ -1,0 +1,25 @@
+# shellcheck shell=bash
+# Copy to local.sh. android-env.sh, ios-env.sh, services.sh, build-android.sh, build-ios.sh and
+# run-maestro.sh source it after their own defaults, so assignments here win.
+#
+# Set in every script before the hooks run:
+#   root        repository root
+#   state_dir   BAUKIT_QA_STATE_DIR or mobile/.qa
+#   api_port    BAUKIT_QA_API_PORT, default 18080
+{% if context.auth_enabled %}#   keycloak_port  BAUKIT_QA_KEYCLOAK_PORT, default 18081
+{% endif %}#
+# android-env.sh also sets adb, serials, qa_apk_variant and the functions adb_bounded, adb_checked,
+# apply_reverse and prepare_device. services.sh also sets compose, the stop_pid_file helper
+# (stop_pid_file PID_FILE NAME) and the other service ports. run-maestro.sh also sets mobile_dir,
+# platform, devices and debug_dir.
+#
+# Variables: qa_app_id, qa_ios_bundle_id, qa_apk_path, qa_apk_variant (release or debug),
+# qa_emulator_args, qa_backend_bin_dir (default backend/target/debug, holds the migrate and api binaries),
+# qa_reverse_ports, qa_maestro_args, qa_maestro_shards, qa_gradle_args.
+# Environment: BAUKIT_QA_ANDROID_ACCEL (emulator -accel mode), BAUKIT_QA_IOS_SCHEME (default: app.json expo.name,
+# else the Xcode workspace name). Builds keep a Metro cache per EXPO_PUBLIC_* value set under state_dir.
+# Functions: qa_build_apk, qa_prepare_device, qa_build_env, qa_install_dependencies,
+# qa_maestro_env INDEX, qa_maestro_flows INDEX (prints the flow files for one device, one per line)
+# and qa_services_start, qa_services_stop.
+
+qa_app_id=com.example.app
