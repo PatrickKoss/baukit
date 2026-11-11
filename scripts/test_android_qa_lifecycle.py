@@ -1,10 +1,10 @@
 import os
-import subprocess
 import sys
 import time
 import unittest
 
 import test_android_qa
+from process_runner import run_process, start_process
 
 EMULATOR_DESCRIPTORS = """
 echo '{}' >> "$EVENTS"
@@ -48,7 +48,7 @@ class AndroidQaLifecycleTests(unittest.TestCase):
         self.executable(self.sdk / "emulator/emulator", EMULATOR_DESCRIPTORS)
         lock = os.open(self.root / "gate.lock", os.O_CREAT | os.O_WRONLY)
         self.addCleanup(os.close, lock)
-        result = subprocess.run(
+        result = run_process(
             ["bash", str(self.scripts / "android-env.sh"), "boot"],
             env=self.environment,
             pass_fds=(lock,),
@@ -88,8 +88,8 @@ class AndroidQaLifecycleTests(unittest.TestCase):
 
     @staticmethod
     def process_running(pid):
-        state = subprocess.run(
-            ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False
+        state = run_process(
+            ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True
         ).stdout.strip()
         return bool(state) and not state.startswith("Z")
 
@@ -197,7 +197,7 @@ class AndroidQaLifecycleTests(unittest.TestCase):
                 self.assertIn(f"--env APP_ID={bundle}", self.events.read_text())
 
     def test_hooks_stop_extra_supervised_processes_through_the_pid_file_helper(self):
-        worker = subprocess.Popen(["sleep", "60"])
+        worker = start_process(["sleep", "60"])
         self.addCleanup(worker.wait)
         self.addCleanup(lambda: worker.kill() if worker.poll() is None else None)
         pid_file = self.state / "worker.pid"
