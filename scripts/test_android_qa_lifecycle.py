@@ -97,9 +97,7 @@ class AndroidQaLifecycleTests(unittest.TestCase):
         self.prepare_start()
         self.executable(self.sdk / "emulator/emulator", "exit 3\n")
         started = time.monotonic()
-        result = self.run_script(
-            "android-env.sh", "boot", BAUKIT_QA_BOOT_TIMEOUT_SECONDS="60"
-        )
+        result = self.run_script("android-env.sh", "boot", BAUKIT_QA_BOOT_TIMEOUT_SECONDS="60")
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("exited before emulator-5556 booted", result.stderr)
         self.assertLess(time.monotonic() - started, 30)
@@ -133,7 +131,7 @@ class AndroidQaLifecycleTests(unittest.TestCase):
         self.flows("a.yaml", "b.yaml", "c.yaml")
         (self.state / "android-serial").write_text("emulator-5556\nemulator-5558\n")
         (self.scripts / "local.sh").write_text(
-            'qa_maestro_flows() { if (($1 == 0)); then echo .maestro/a.yaml; echo .maestro/b.yaml;'
+            "qa_maestro_flows() { if (($1 == 0)); then echo .maestro/a.yaml; echo .maestro/b.yaml;"
             " else echo .maestro/c.yaml; fi; }\n"
             'qa_maestro_env() { export QA_INDEX="$1"; }\n'
         )
@@ -143,7 +141,9 @@ class AndroidQaLifecycleTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         runs = sorted(event for event in self.events_list() if event.startswith("maestro"))
         self.assertEqual(len(runs), 3)
-        self.assertTrue(runs[0].startswith("maestro 0 test --platform android --device emulator-5556"))
+        self.assertTrue(
+            runs[0].startswith("maestro 0 test --platform android --device emulator-5556")
+        )
         self.assertTrue(runs[0].endswith(".maestro/a.yaml"))
         self.assertTrue(runs[1].endswith(".maestro/b.yaml"))
         self.assertIn("--device emulator-5558", runs[2])
@@ -180,7 +180,11 @@ class AndroidQaLifecycleTests(unittest.TestCase):
         (self.mobile / ".maestro").mkdir()
         (self.mobile / ".maestro/a.yaml").write_text("appId: test\n")
         self.executable(self.tools / "maestro", 'echo "maestro $*" >> "$EVENTS"\n')
-        for bundle, hook in (("dev.baukit.test", ""), ("com.example.env", ""), ("com.example.hook", "x")):
+        for bundle, hook in (
+            ("dev.baukit.test", ""),
+            ("com.example.env", ""),
+            ("com.example.hook", "x"),
+        ):
             with self.subTest(bundle=bundle):
                 self.events.unlink(missing_ok=True)
                 extra = {}
