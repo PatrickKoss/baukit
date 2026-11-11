@@ -13,12 +13,12 @@ Template hooks that replace product divergences. No version bump yet.
 - `ci.yml`, `native.yml`, the `Makefile`, `lockfiles.sh`, `CLAUDE.md` and the READMEs call `corepack pnpm` from the package directory. `packageManager` decides the pnpm version.
 - `scripts/lockfiles.sh` sources `scripts/lockfiles.local.sh`. It can redefine `lockfile_run` to wrap each command (`mise exec -- "$@"`) and define `extra_lockfiles` (`mise lock`, `uv lock`).
 - `baukit.toml` `[auth] login_theme` names the Keycloak login theme (default `baukit-accessible`). It feeds `keycloak/realm.json` and the `KEYCLOAK_LOGIN_THEME` variable of the theme browser suite.
-- `scripts/pkce-login.py` captures non-http callback schemes such as `app://oauth` in `http_error_301`, `_302`, `_303`, `_307` and `_308`. `scripts/pkce_session.py` `sign_in(issuer, client_id=..., redirect_uri=...)` loads the helper, registers it in `sys.modules` and builds the `LoginRequest`. Seed scripts call it instead of importing `pkce-login.py` themselves.
+- `scripts/pkce-login.py` captures non-http callback schemes such as `app://oauth` in `http_error_301`, `_302`, `_303`, `_307` and `_308`. `scripts/pkce_session.py` `sign_in(SignIn(issuer, client_id, redirect_uri, credentials))` loads the helper, registers it in `sys.modules` and builds the `LoginRequest`. Seed scripts call it instead of importing `pkce-login.py` themselves.
 
 ### Upgrade steps
 
 1. Move the product's `ci.yml` env and timeout into `[quality.ci]`, the login theme into `[auth] login_theme`, and extra lockfile commands into `scripts/lockfiles.local.sh`. Re-render, then drop the matching entries from `.baukit/template-files.toml` divergences.
-2. Replace a product `load_login()` and `LoginRequest(...)` block in seed or smoke scripts with `pkce_session.sign_in(...)`.
+2. Replace a product `load_login()` and `LoginRequest(...)` block in seed or smoke scripts with `pkce_session.sign_in(SignIn(..., Credentials.from_env()))`, or `Credentials(username, password)` for a specific user.
 3. Run `baukit check template-files --update`.
 
 ## v0.22.0
