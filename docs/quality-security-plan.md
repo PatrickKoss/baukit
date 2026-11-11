@@ -96,6 +96,13 @@ library APIs, no mutable globals, TS `strictTypeChecked` + `noUncheckedIndexedAc
   integration test crate stays, because the rule exempts tests. The only open items allowed are external
   blockers with exact sites. A full gate run takes 30 minutes or less; agents iterate with `--step`.
   `baukit check suppressions` enforces this (task/qs-suppressions, ships in 0.19.2).
+- D8 Ownership and dispatch (user, 2026-11-09): Rust code avoids clones, `Arc` and `dyn` that only exist
+  to satisfy the borrow checker, and the compiler and linter verify this, not an instruction. Strict with
+  no false positives: a rule enters the gate only if it shows zero false positives on baukit, the
+  generated fixture and all 12 product backends in P5.0. A lint that misfires on correct code is dropped
+  and logged, never kept with per-site suppressions. Legitimate uses (error trait objects, closures,
+  heterogeneous registries) are excluded by the rule pattern and pinned by negative rule tests, so they
+  need no ignore comment. Breaking API changes, no compat shims.
 - D5 Rollout: all baukit work ships as one minor release (0.19.0). Products upgrade one repo per agent,
   in a worktree from origin/main, gate green before push. Never touch a product's main checkout.
 
@@ -184,13 +191,13 @@ tenancy and rate-limit audit of the products (S-08).
 
 - [x] P4.1 (0.19.0 npm by hand, 0.19.1 through the pipeline) Full baukit gate (`sh scripts/ci-gate.sh`, `--include-ignored`, `make generated-fixture-gate`
   all flavors, MSRV, cargo deny, version coherence), release 0.19.0.
-- [ ] P4.2 Product upgrades, one agent per repo, four at a time. Per repo: bump to 0.19.0, adopt the lint
+- [x] P4.2 (all 12 pushed 2026-11-10 to 2026-11-11 on baukit 0.20.0 to 0.22.0) Product upgrades, one agent per repo, four at a time. Per repo: bump to 0.19.0, adopt the lint
   baseline and clippy.toml, `@baukit/eslint-config`, deny.toml, gitleaks/zizmor/osv steps, managed
   instruction block, fix every violation (shrinking allowlists only for size limits), migrate raw reqwest to
   egress, SHA-pin actions, write `docs/threat-model.md`, add fuzz targets for its own parsers, gate green.
-  - [ ] eigenruhe  - [ ] hebkit  - [ ] leitbild  - [ ] redemut
-  - [ ] schlauzug  - [ ] tiefgang  - [ ] solo-leveling-system  - [ ] lesezeichen
-  - [ ] schluesselbund  - [ ] kassensturz  - [ ] runtime-analyzer  - [ ] architecture-health-platform
+  - [x] eigenruhe  - [x] hebkit  - [x] leitbild  - [x] redemut
+  - [x] schlauzug  - [x] tiefgang  - [x] solo-leveling-system  - [x] lesezeichen
+  - [x] schluesselbund  - [x] kassensturz  - [x] runtime-analyzer  - [x] architecture-health-platform
   - Product-specific items gathered from baukit work packages:
     - `TombstoneTable.delete` binds owners as `$2` and deletes `(owner_id, id)` pairs (F5): eigenruhe,
       hebkit, tiefgang, kassensturz. Each product also gets its own push/pull owner-isolation test and a fuzz
@@ -226,7 +233,110 @@ tenancy and rate-limit audit of the products (S-08).
     kassensturz has no limiter on `/platform/inbound`; schluesselbund never limits invalid `/platform/v1`
     tokens (the last three unverified).
   - Every product: a two-principal test per id route (current coverage ranges from 2 of 18 to 42 of 64).
-- [ ] P4.3 Cross-repo conformance sweep: `baukit check` green in all 12, counts table recorded below.
+- [x] P4.3 Cross-repo conformance sweep: `baukit check` green in all 12, counts table recorded below.
+
+  Suppression budgets in `baukit-check.toml` on each `main` after the rollout (2026-11-11). Every key not
+  listed is 0 in every repo, including rust-allow. Each budget equals the real count, so it can only go down.
+
+  | Repo | baukit | rust-expect | eslint-disable | ts-expect-error | noqa | other | oversized files |
+  |---|---|---|---|---|---|---|---|
+  | baukit | 0.22.0 | 30 | 1 | 7 | 5 | type-ignore 2, shellcheck-disable 4 | 12 |
+  | eigenruhe | 0.22.0 | 1 | 0 | 0 | 19 | shellcheck-disable 1 | 0 |
+  | hebkit | 0.22.0 | 1 | 3 | 0 | 2 | | 17 |
+  | leitbild | 0.22.0 | 0 | 0 | 0 | 3 | | 0 |
+  | redemut | 0.20.0 | 7 | 0 | 0 | 2 | | 0 |
+  | schlauzug | 0.20.0 | 0 | 0 | 0 | 2 | | 0 |
+  | tiefgang | 0.22.0 | 0 | 0 | 0 | 2 | | 0 |
+  | solo-leveling-system | 0.22.0 | 1 | 0 | 0 | 2 | | 0 |
+  | lesezeichen | 0.22.0 | 4 | 0 | 0 | 5 | | 0 |
+  | schluesselbund | 0.22.0 | 3 | 0 | 0 | 2 | | 0 |
+  | kassensturz | 0.22.0 | 7 | 0 | 0 | 6 | | 0 |
+  | runtime-analyzer | 0.22.0 | 1 | 0 | 0 | 1 | | 0 |
+  | architecture-health-platform | 0.21.0 | 1 | 0 | 0 | 1 | | 0 |
+
+  "Oversized files" counts allowlisted files over the 1000-line (Rust) or 500-line (TS) limit. They may not
+  grow. Before the rollout, bulk entries alone ran to hebkit 8213, kassensturz 3644 and redemut 486, and
+  production `AssertSqlSafe` sites were SLS 78, eigenruhe 65, tiefgang 61 and RA 20. Now every repo has 0.
+
+  Follow-ups after P4.3, in this order:
+  - Template wave (next baukit minor): the QA hook and script gaps the rollout found. Emulators inherit the
+    gate's lock fds and keep the locks after the run. android-env.sh has no early-exit check during boot.
+    build-android.sh hardcodes pnpm 12.9.1, runs Gradle from the caller's cwd and has no log tee. QA builds
+    for Clerk/WorkOS export no local issuer. services.sh exports the OIDC-only admin secret to Clerk/WorkOS
+    products. test_android.py copies the product local.sh. Supervised extra processes have no stop helper.
+    local.sh has no shellcheck header. seed.py and pkce-login loading breaks when the product's signature
+    changes. Products need `qa_maestro_flows`, `qa_ios_bundle_id` and a debug APK with an embedded bundle.
+    run-maestro.sh does not reapply `adb reverse` after adbd drops. Chrome on QA emulators needs
+    `--force-renderer-accessibility=complete`, or Custom Tab content stays invisible to Maestro under
+    parallel load (eigenruhe overrides `qa_prepare_device` until then). The bundle check should attribute findings
+    per module, leitbild's divergence. The test_android.py app-id line breaks ruff format for long names.
+    leitbild's 20 and schluesselbund's 5 documented divergences become hooks. baukit-test gets a
+    template-database clone helper. The full list is in the orchestrator's FOLLOWUP-QUEUE.md.
+  - `baukit check`: detect a nested ruff config that narrows `select` (eigenruhe `animations/ruff.toml`
+    selects only F and E9), and flag unused `noqa` (RUF100). The 83 dead E402 comments in eigenruhe
+    counted against its budget. Also reject a gitleaks allowlist with a pattern regex and no `paths` or
+    `commits` (eigenruhe allowed every lowercase slug repo-wide until f21e5292).
+  - Bump redemut and schlauzug from 0.20.0, and architecture-health-platform from 0.21.0, to 0.22.0.
+  - Open product intermittents without a root cause: tiefgang webkit focus-session (1/36), the hebkit
+    trainer flow ending on sign-in, redemut's Maestro username paste, and eigenruhe's root layout remounting
+    under API 429 pressure. At 20 WebKit workers, 43 plan tests still land on Mixer instead of Today; the gate
+    runs 2 workers. Each one captures evidence on the next
+    recurrence.
+  - kassensturz: the askama_derive `[patch]` for RUSTSEC-2026-0374 goes away once UniFFI ships a fixed
+    askama. runtime-analyzer: the six typst osv ignores expire 2027-02-08; check typst releases then.
+
+## Phase 5. Ownership and static dispatch (D8)
+
+Starts after P4.3 closes. Baseline in baukit production code (`rust/crates/*/src`, 2026-11-09): 593
+`.clone()`, 553 `.to_owned()`/`.to_string()`, 172 `Arc<dyn _>`, 108 `Box<dyn _>`, 23 `&dyn _`, 51
+`#[async_trait]`. Of the `dyn` uses, 56 are boxed futures and 60 are error types; the rest are ports
+(`RateLimitStore`, `JobStore`, `EntitlementCache`, `IdentityVerifier` and about 40 more). Cost ranking:
+the 51 `#[async_trait]` traits heap-allocate a future on every port call, and deep clones of `String`,
+`Vec` and request structs come next. An `Arc` clone (one atomic increment) and a vtable call cost
+nanoseconds; those two are about readable ownership, not speed.
+
+- [ ] P5.0 Measure, read-only. In a scratch worktree, run clippy with every candidate lint at warn level
+  and `--message-format=json` over `rust/`, `cli/`, a fresh `combined` fixture backend and the 12 product
+  backends. Per lint: count per repo, then classify every finding (or a 30-finding sample when a lint has
+  more than 100) as true or false positive. Any false positive rejects the lint (D8). Report in
+  `docs/quality-security/E5-ownership-dispatch.md` with the accepted set.
+  Candidates, with their clippy group:
+  - Clones: `redundant_clone` (nursery), `implicit_clone`, `assigning_clones`, `cloned_instead_of_copied`
+    (pedantic), `str_to_string`, `clone_on_ref_ptr` (restriction; makes every refcount bump an explicit
+    `Arc::clone(&x)`), `unnecessary_to_owned`, `iter_overeager_cloned` (already on via `all`).
+  - Ownership in signatures: `needless_pass_by_value` (already on), `needless_pass_by_ref_mut` (nursery),
+    `large_types_passed_by_value`, `trivially_copy_pass_by_ref`, `ref_option`, `unnecessary_box_returns`
+    (pedantic).
+  - Allocation layering: `rc_buffer`, `rc_mutex` (restriction), `redundant_allocation`, `box_collection`,
+    `vec_box` (already on via `all`).
+  The two nursery lints are nursery because of known false positives; expect P5.0 to settle them.
+- [ ] P5.1 Accepted lints go into the `rust/` and `cli/` workspace `[lints]` and the template baseline, so
+  `baukit check lints` makes them mandatory in products. Fix every finding in baukit. Acceptance:
+  `make ci` green, no new `#[expect]` for these lints.
+- [ ] P5.2 ast-grep rules in `lint/ast-grep/rules/` with positive and negative rule tests:
+  - `rust-async-trait`: no `#[async_trait]`. Traits declare `fn op(&self, ..) -> impl Future<Output = T> + Send`.
+  - `rust-dyn-port`: no `Arc<dyn T>`, `Box<dyn T>` or `&dyn T` in fields, parameters or return types of
+    production code. Excluded by pattern: `Error`/`StdError`, `Any`, `Fn`/`FnMut`/`FnOnce`, and trait
+    objects as elements of `Vec`, slices, `HashMap`/`BTreeMap` values (heterogeneous registries such as
+    `JobHandler`, `PlatformEventHandler`, `ToolService`). An adapter chosen at runtime from config is an
+    enum that implements the port, not a trait object.
+  - `rust-boxed-future`: no `Pin<Box<dyn Future ..>>` outside the object-safe wrapper trait that a
+    registry needs (one blanket `impl<T: Port> DynPort for T` per registry, in the registry's module).
+  - Borrow-checker dodges: `Rc<RefCell<_>>` and `Box::leak` in production code, `Clone::clone(&x)` calls.
+  These rule ids get an `ast-grep-ignore` budget of 0 in `baukit-check.toml`.
+- [ ] P5.3 Port refactor in baukit, one crate per agent in dependency order: ratelimit, jobs, auth,
+  erasure and data-subject, push, mcp, integrations, suite. Services are generic over their ports; the
+  composition root (`SuiteComposition`, template `compose_api`) picks the concrete types, and a type alias
+  names each assembled service so handlers never spell out `Service<A, B, C, D>`. axum `State` holds one
+  `Arc<AppState>`; that `Arc` is correct and stays.
+- [ ] P5.4 `lint/agent-rules.md` section on ownership and dispatch: borrow in signatures, `impl Trait` in
+  argument position, `Cow` for conditional ownership, enums for runtime choice, and the dodges the rules
+  in P5.2 reject. Same entry in the `baukit-code-conformance` skill.
+- [ ] P5.5 Template wave and the next minor release (breaking): fixture gate green in all flavors.
+- [ ] P5.6 Product rollout as in P4.2, one agent per repo.
+- [-] P5.7 Custom dylint lints (type-aware, e.g. "clone of a type over N bytes inside a loop"). Not
+  planned: dylint pins a nightly toolchain and breaks on rustc upgrades. Reopen only if P5.0 or review
+  shows a recurring class that P5.1 and P5.2 miss.
 
 ## Log
 
@@ -519,3 +629,25 @@ baukit 0.19.2 is staged on `task/qs-suppressions` (6880f1e0), and its full gate
 was still running at the pause. No product has merged its P4.2 work yet.
 lesezeichen-integrations is the only partition finished end to end. Correction
 from tiefgang: the suite 429 limit is 70 requests, not 10.
+
+### 2026-11-09 to 2026-11-11: releases and rollout
+
+- 2026-11-09: 0.19.2 released with the suppression scanner (rust-allow 76 to 0 in baukit, comment-form keys,
+  bulk detection). The user approved Phase 5 (D8) the same day.
+- 2026-11-10: D7 rulings while the products converted. Crate-root `#![expect]` in test crates becomes
+  `#![cfg(test)]`. S603 gets one subprocess helper per shipped scripts tree, and the budget is the real
+  count. Gitleaks allowlists use paths, or commit plus path for docs and history, never fingerprints.
+  runtime-analyzer keeps typst behind a vendored citationberg on quick-xml 0.41, plus six time-boxed osv
+  ignores. The user accepted that risk instead of a rewrite to krilla.
+- 2026-11-10: 0.20.0 (F1: rule and template fixes from the follow-up queue) and 0.21.0 (F3: issuer
+  comparison, `process_runner.start_process`, the SQL splicing rule) released. The new rule for production
+  `AssertSqlSafe` and captured SQL in `format!` drove F4 in every product.
+- 2026-11-11: 0.22.0 released with the QA hooks (app id, services, Maestro shards and env, APK path, build
+  env). RUSTSEC-2026-0486 (rustix below 1.1.6) hit every lockfile and was fixed by a precise update in each
+  repo, with no ignores. New node-forge advisories were fixed by moving to 1.4.3 everywhere it resolved.
+  The unused RUSTSEC-2026-0459 ignore was removed from hebkit, lesezeichen and leitbild.
+- 2026-11-11: all 12 products are pushed to main. Each had one final full gate. Failed or skipped steps were
+  rerun as targeted steps on the final tree before the push. Gate stalls came from emulators that outlived
+  their step and held the lock fds; the fix is in the template follow-ups. eigenruhe also fixed a WebKit
+  `history.replaceState` loop: a remounted root layout replayed the document's first path, and WebKit throws
+  after 100 calls in 10 s. Safari users would have hit it too.
