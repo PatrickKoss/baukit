@@ -284,3 +284,120 @@ fn unparsable_cargo_manifest_is_noted_and_skipped() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn unused_noqa_is_a_finding_and_is_not_counted() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    write(
+        root.path(),
+        "ruff.toml",
+        "[lint]\nselect = [\"E\", \"F\"]\n",
+    )?;
+    write(
+        root.path(),
+        "baukit-check.toml",
+        "[suppressions.max]\nnoqa = 1\n",
+    )?;
+    write(
+        root.path(),
+        "tool.py",
+        "import os  # noqa: F401 -- re-exported\nimport json  # noqa: E402 -- dead, nothing precedes this import\njson.dumps({})\n",
+    )?;
+    let (code, output) = baukit_check(root.path(), &["suppressions"])?;
+    ensure!(code == FINDINGS_EXIT, "{output}");
+    assert_eq!(
+        output,
+        "suppressions: tool.py:2: unused `# noqa`, remove it (`ruff check --extend-select RUF100 --fix`)\nsuppressions: 1 finding\n"
+    );
+
+    write(
+        root.path(),
+        "tool.py",
+        "import os  # noqa: F401 -- re-exported\nimport json\njson.dumps({})\n",
+    )?;
+    let (code, output) = baukit_check(root.path(), &["suppressions"])?;
+    ensure!(code == 0, "{output}");
+    assert_eq!(output, "suppressions: ok\n");
+    Ok(())
+}
+
+#[test]
+fn templates_are_not_judged_against_the_checkout_ruff_config() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    write(root.path(), "ruff.toml", "[lint]\nselect = [\"F\"]\n")?;
+    write(
+        root.path(),
+        "templates/common/ruff.toml",
+        "[lint]\nselect = [\"F\", \"S\"]\n",
+    )?;
+    write(
+        root.path(),
+        "baukit-check.toml",
+        "[suppressions.max]\nnoqa = 1\n",
+    )?;
+    write(
+        root.path(),
+        "templates/mobile/qa.py",
+        "import subprocess\nsubprocess.run([\"adb\"])  # noqa: S603 -- fixed argv\n",
+    )?;
+    let (code, output) = baukit_check(root.path(), &["suppressions"])?;
+    ensure!(code == 0, "{output}");
+    assert_eq!(output, "suppressions: ok\n");
+    Ok(())
+}
+
+#[test]
+fn per_file_ignore_of_unused_noqa_is_a_finding() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    write(
+        root.path(),
+        "ruff.toml",
+        "[lint]\nselect = [\"F\"]\n[lint.per-file-ignores]\n\"*.py\" = [\"RUF100\"]\n",
+    )?;
+    let (code, output) = baukit_check(root.path(), &["suppressions"])?;
+    ensure!(code == FINDINGS_EXIT, "{output}");
+    assert!(
+        output.contains("suppressions: ruff.toml:4: `per-file-ignores` ignores RUF100"),
+        "{output}"
+    );
+    Ok(())
+}
+
+#[test]
+fn nested_ruff_config_and_broad_gitleaks_allowlist_are_findings() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    write(
+        root.path(),
+        "ruff.toml",
+        "[lint]\nselect = [\"E\", \"F\", \"S\"]\n",
+    )?;
+    write(
+        root.path(),
+        "animations/ruff.toml",
+        "[lint]\nselect = [\"F\", \"E9\"]\n",
+    )?;
+    write(
+        root.path(),
+        "tools/ruff.toml",
+        "extend = \"../ruff.toml\"\n",
+    )?;
+    write(
+        root.path(),
+        ".gitleaks.toml",
+        "[[allowlists]]\nregexes = ['''^[a-z_]+$''']\n[[allowlists]]\nregexes = ['''^exact-value$''']\n[[allowlists]]\nregexes = ['''^[a-z_]+$''']\npaths = ['''^fixtures/''']\n",
+    )?;
+    let (code, output) = baukit_check(root.path(), &["suppressions"])?;
+    ensure!(code == FINDINGS_EXIT, "{output}");
+    assert!(
+        output.contains("suppressions: animations/ruff.toml:2: nested ruff config drops rules the root config selects (`E`, `S`)"),
+        "{output}"
+    );
+    assert!(
+        output.contains(
+            "suppressions: .gitleaks.toml:2: allowlist regex `^[a-z_]+$` matches anywhere"
+        ),
+        "{output}"
+    );
+    assert!(output.ends_with("suppressions: 2 findings\n"), "{output}");
+    Ok(())
+}

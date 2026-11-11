@@ -287,7 +287,7 @@ fn build_image(
 #[test]
 #[ignore = "requires Docker"]
 fn buildkit_checks_and_builds_every_binary_with_stage_specific_files() -> Result<()> {
-    let parent = tempfile::tempdir_in(Path::new(env!("CARGO_MANIFEST_DIR")).join(".."))?;
+    let parent = tempfile::tempdir()?;
     let generated = cli(
         parent.path(),
         &[

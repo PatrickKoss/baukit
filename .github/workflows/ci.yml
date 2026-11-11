@@ -326,7 +326,7 @@ jobs:
         with:
           version: 2026.8.11
           cache: false
-          install_args: aqua:ast-grep/ast-grep
+          install_args: aqua:ast-grep/ast-grep aqua:astral-sh/ruff
       - run: scripts/ci-gate.sh --step cli-fmt
       - run: scripts/ci-gate.sh --step cli-clippy
       - run: scripts/ci-gate.sh --step cli-tests

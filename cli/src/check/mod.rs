@@ -1,7 +1,9 @@
 mod agent_docs;
 mod bulk;
 mod bulk_eslint;
+mod bulk_gitleaks;
 mod bulk_golangci;
+mod bulk_ruff;
 mod comments;
 mod config;
 mod file_size;
@@ -12,6 +14,7 @@ mod observability;
 mod patterns;
 mod suppressions;
 mod template_files;
+mod unused_noqa;
 mod walk;
 
 use std::{

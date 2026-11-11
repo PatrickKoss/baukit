@@ -48,7 +48,10 @@ Go `//nolint` exceeds its `[suppressions.max]` key, or a suppression lacks its r
 `lint/README.md`). `@ts-ignore` and bulk suppression are always findings: `eslint-suppressions.json`,
 `eslint --suppress-all`, clippy `-A` or `--cap-lints` in a gate, a lint at `allow` in `[lints]` or
 rustflags, an eslint rule at `off`/`warn` or an ignore of source outside `@baukit/eslint-config`, and
-golangci `disable`/`exclude` settings. Remove the suppression by fixing the code. If the
+golangci `disable`/`exclude` settings, a nested ruff config whose `select` drops rules the root selects
+(`extend` the root and use `per-file-ignores`), and a `.gitleaks.toml` allowlist whose pattern `regexes`
+have no `paths` or `commits` (scope the entry, or anchor the exact value as `^value$`). An unused `# noqa` is a finding with file:line;
+remove it with `ruff check --extend-select RUF100 --fix`, and do not ignore `RUF100` in `per-file-ignores`. Remove the suppression by fixing the code. If the
 count drops, lower the max (see "Lowering the budget").
 
 **patterns.** An ast-grep rule from `lint/ast-grep/rules/` matched. Each rule and its fix:

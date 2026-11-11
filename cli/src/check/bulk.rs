@@ -2,7 +2,9 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use super::{Finding, bulk_eslint, bulk_golangci, comments, relative, walk};
+use super::{
+    Finding, bulk_eslint, bulk_gitleaks, bulk_golangci, bulk_ruff, comments, relative, walk,
+};
 
 const NAME: &str = "suppressions";
 const ESLINT_SUPPRESSIONS_FILE: &str = "eslint-suppressions.json";
@@ -13,6 +15,7 @@ const GATE_SCRIPT_EXTENSIONS: &[&str] = &["sh", "bash", "mk", "yml", "yaml"];
 const GATE_SCRIPT_NAMES: &[&str] = &["Makefile", "justfile", "Justfile"];
 const LINT_TABLE_PREFIXES: &[&str] = &["[lints", "[workspace.lints"];
 const BULK_FILE_MESSAGE: &str = "bulk suppression file; fix the findings instead";
+const GITLEAKS_CONFIG: &str = ".gitleaks.toml";
 const ESLINT_CONFIG_PACKAGE_DIR: &str = "eslint-config";
 const GENERATED_OUTPUT: &[&str] = &[
     "dist",
@@ -42,6 +45,7 @@ enum Candidate {
     /// A file without an extension, checked as a gate script when its `#!` names a shell.
     ExtensionlessScript,
     Golangci,
+    Gitleaks,
     Eslint(bulk_eslint::File),
 }
 
@@ -63,6 +67,7 @@ pub fn scan(root: &Path) -> Result<Vec<Finding>> {
         let name = base_name(&path);
         let located = match kind {
             Candidate::Golangci => bulk_golangci::findings(name, &source),
+            Candidate::Gitleaks => bulk_gitleaks::findings(&source),
             Candidate::Eslint(file) if !in_eslint_config_package(&path) => {
                 bulk_eslint::findings(file, &source)
             }
@@ -79,6 +84,7 @@ pub fn scan(root: &Path) -> Result<Vec<Finding>> {
             }),
         );
     }
+    findings.extend(bulk_ruff::scan(root)?);
     Ok(findings)
 }
 
@@ -118,6 +124,7 @@ fn candidate(path: &Path) -> Option<Candidate> {
         "config" | "config.toml" if in_cargo_dir => Some(Candidate::CargoConfig),
         _ if GATE_SCRIPT_NAMES.contains(&name) => Some(Candidate::GateScript),
         _ if bulk_golangci::is_config(name) => Some(Candidate::Golangci),
+        GITLEAKS_CONFIG => Some(Candidate::Gitleaks),
         _ if let Some(file) = bulk_eslint::file(name) => Some(Candidate::Eslint(file)),
         _ if comments::has_no_extension(path) => Some(Candidate::ExtensionlessScript),
         _ if extension.is_some_and(|extension| GATE_SCRIPT_EXTENSIONS.contains(&extension)) => {
@@ -143,7 +150,10 @@ fn scan_source(kind: Candidate, display: &str, source: &str, path: &Path) -> Vec
             Candidate::CargoManifest => lint_table_allow(&table, trimmed),
             Candidate::CargoConfig => rustflags_allow(trimmed),
             Candidate::GateScript | Candidate::ExtensionlessScript => clippy_allow(trimmed),
-            Candidate::EslintSuppressions | Candidate::Golangci | Candidate::Eslint(_) => None,
+            Candidate::EslintSuppressions
+            | Candidate::Golangci
+            | Candidate::Gitleaks
+            | Candidate::Eslint(_) => None,
         };
         if let Some(message) = message {
             findings.push(Finding::error(NAME, display, message).at_line(index + 1));

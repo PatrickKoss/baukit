@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use super::{
     CONFIG_FILE, CheckContext, Finding, Rule, bulk,
     comments::{self, Suppression, SuppressionKind},
-    relative, walk,
+    relative, unused_noqa, walk,
 };
 
 const NAME: &str = "suppressions";
@@ -21,7 +21,9 @@ impl Rule for Suppressions {
     fn run(&self, context: &CheckContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = bulk::scan(context.root)?;
         let mut counts: BTreeMap<SuppressionKind, usize> = BTreeMap::new();
-        for (path, suppression) in scan_tree(context.root)? {
+        let (used, unused) = used_suppressions(context.root)?;
+        findings.extend(unused);
+        for (path, suppression) in used {
             *counts.entry(suppression.kind).or_default() += 1;
             if suppression.missing_reason {
                 findings.push(missing_reason(&path, &suppression));
@@ -60,6 +62,35 @@ impl Rule for Suppressions {
         }
         Ok(findings)
     }
+}
+
+type PathSuppressions = Vec<(String, Suppression)>;
+
+/// Every suppression under `root` that counts, plus a finding for each `# noqa` that ruff
+/// reports as unused.
+fn used_suppressions(root: &Path) -> Result<(PathSuppressions, Vec<Finding>)> {
+    let mut found = scan_tree(root)?;
+    if !found
+        .iter()
+        .any(|(path, suppression)| is_python_noqa(path, suppression))
+    {
+        return Ok((found, Vec::new()));
+    }
+    let unused = unused_noqa::locations(root)?;
+    let mut findings = Vec::new();
+    found.retain(|(path, suppression)| {
+        let dead =
+            is_python_noqa(path, suppression) && unused.contains(&(path.clone(), suppression.line));
+        if dead {
+            findings.push(unused_noqa::finding(NAME, path, suppression.line));
+        }
+        !dead
+    });
+    Ok((found, findings))
+}
+
+fn is_python_noqa(path: &str, suppression: &Suppression) -> bool {
+    suppression.kind == SuppressionKind::Noqa && (path.ends_with(".py") || path.ends_with(".pyi"))
 }
 
 /// Every suppression under `root`, with its file path relative to `root`.

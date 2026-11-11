@@ -9,4 +9,4 @@ def run_process(
     if executable is None:
         raise SystemExit(f"{command[0]} is not on PATH")
     argv = [executable, *command[1:]]
-    return subprocess.run(argv, check=check, **options)  # noqa: S603 -- fixed program resolved by shutil.which, argv list, no shell
+    return subprocess.run(argv, check=check, **options)

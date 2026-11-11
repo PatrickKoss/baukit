@@ -79,7 +79,7 @@ Lines marked `note:` never fail the run.
 |---|---|
 | `lints` | Every Cargo workspace root (or standalone package) has the baseline from `lint/rust/lints.toml` at the same or a stricter level, a `clippy.toml` next to it that covers `lint/rust/clippy.toml`, and members that set `[lints] workspace = true`. Every `eslint.config.{js,mjs,ts}` imports `@baukit/eslint-config` (baukit's own `typescript/` may import it by relative path). `cargo fuzz` crates are skipped. |
 | `file-size` | Rust files stay at or under 1000 lines, TS/TSX files at or under 500. Tests, `*.test.*`, `*.spec.*`, `tests.rs`, `*_tests.rs`, `.d.ts` and generated files are exempt. |
-| `suppressions` | Counts each suppression form against its `[suppressions.max]` key (see below). Flags a suppression without its reason, `@ts-ignore`, and every bulk suppression mechanism. |
+| `suppressions` | Counts each suppression form against its `[suppressions.max]` key (see below). Flags a suppression without its reason, `@ts-ignore`, and every bulk suppression mechanism, including a nested ruff config that selects fewer rules than the root and a gitleaks allowlist with an unscoped pattern regex. Needs `ruff` for `# noqa` in `.py` files. |
 | `patterns` | Runs the ast-grep rules above with ast-grep 0.51.1, embedded in the CLI. `error` rules fail; `hint` rules print with `--verbose`. |
 | `agent-docs` | `CLAUDE.md` holds exactly one managed block equal to `lint/agent-rules.md`, and `AGENTS.md` is a symlink to `CLAUDE.md`. |
 | `observability` | Dashboards, alerts and recording rules from `[observability]` in `baukit-check.toml`. See below. Without that table it prints a note and passes. |
@@ -150,7 +150,27 @@ may name only generated, build or dependency output: `dist`, `build`, `coverage`
 `vendor`, `target`, `generated`, `.expo`, `.turbo`, `.next`, `.nuxt`, `.output`, `.svelte-kit` and
 `storybook-static`.
 
+Nested ruff configs (`ruff.toml`, `.ruff.toml`, or a `pyproject.toml` with `[tool.ruff]`, whichever ruff reads
+for that directory) may not select fewer rules than the config at the root. A nested config replaces the root
+unless it sets `extend`, so `select = ["F", "E9"]` below a root that selects `E`, `F` and `S` is a finding that
+lists the dropped selectors. A nested `ignore` or `extend-ignore` entry that overlaps a root-selected rule the
+root does not ignore is a finding too. `extend` the root and use `per-file-ignores` for exceptions. Without a
+root ruff config there is nothing to compare and the check passes.
+
+`.gitleaks.toml` allowlists (`[[allowlists]]`, the legacy `[allowlist]`, and the ones under `[[rules]]`) may not
+carry a `regexes` entry that is anything but an exact value, `^value$` with every metacharacter escaped, unless
+the same entry has a non-empty `paths` or `commits`. A pattern such as `^[a-z_]+$` or `EXPO_PUBLIC_KEY` without
+a scope hides matches everywhere in the repository.
+
 Fix the findings instead.
+
+An unused `# noqa` is a `suppressions` finding with its file and line, and it does not count against the
+budget. `baukit check suppressions` runs `ruff check --extend-select RUF100` with the project's own config
+when a `.py` or `.pyi` file has a `# noqa`. `--extend-select` overrides `select`, `ignore` and `extend-ignore`
+but not `per-file-ignores`, so an entry there that ignores `RUF100` is a finding too. Remove dead comments with
+`ruff check --extend-select RUF100 --fix`. The run needs `ruff` on `PATH` and fails when it is missing. In the
+baukit checkout `templates/` is skipped for this check, because the generated fixture lints it with the
+template's own ruff config; its `# noqa` comments still count against the budget.
 
 The allowlist and the maxima only shrink. A listed file that grows, drops under the limit, or no longer
 exists is a finding, and so is a suppression count above its max. A missing max counts as 0. When a count

@@ -14,10 +14,10 @@ from urllib.parse import urlsplit
 class GitHandler(BaseHTTPRequestHandler):
     server_version = "baukit-local-git/1"
 
-    def do_GET(self) -> None:  # noqa: N802 -- BaseHTTPRequestHandler API
+    def do_GET(self) -> None:
         self._serve()
 
-    def do_POST(self) -> None:  # noqa: N802 -- BaseHTTPRequestHandler API
+    def do_POST(self) -> None:
         self._serve()
 
     def _serve(self) -> None:
