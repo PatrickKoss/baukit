@@ -329,14 +329,24 @@ mod tests {
         Ok(verifier.verify(&token).await?)
     }
 
+    fn active_with(field: &str, value: Value) -> Value {
+        let mut response = active();
+        response[field] = value;
+        response
+    }
+
     fn active() -> Value {
         json!({"active":true,"sub":"alice","client_id":"client","scope":"read injected", "exp":SystemTime::now().duration_since(UNIX_EPOCH).expect("clock").as_secs()+300})
     }
 
-    #[tokio::test]
-    #[expect(clippy::too_many_lines, reason = "scenario test reads top to bottom")]
-    async fn introspection_restricts_grants_and_rejects_invalid_responses()
-    -> Result<(), Box<dyn Error>> {
+    struct Harness {
+        state: Endpoint,
+        policy: KeycloakIntrospectionPolicy,
+        principal: VerifiedPrincipal,
+        server: tokio::task::JoinHandle<std::io::Result<()>>,
+    }
+
+    async fn start_harness() -> Result<Harness, Box<dyn Error>> {
         let state = Endpoint {
             response: Arc::new(Mutex::new((StatusCode::OK, active().to_string()))),
             calls: Arc::new(AtomicUsize::new(0)),
@@ -359,52 +369,74 @@ mod tests {
             .into_future(),
         );
         let principal = principal().await?;
+        Ok(Harness {
+            state,
+            policy,
+            principal,
+            server,
+        })
+    }
+
+    impl Harness {
+        async fn expect_denial(&self, response: (StatusCode, String), denial: PolicyDenial) {
+            *self.state.response.lock().await = response;
+            assert_eq!(
+                self.policy
+                    .authenticate(&self.principal, "verified-token")
+                    .await,
+                Err(denial)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn introspection_restricts_grants_and_rejects_invalid_responses()
+    -> Result<(), Box<dyn Error>> {
+        let Harness {
+            state,
+            policy,
+            principal,
+            server,
+        } = start_harness().await?;
         let result = policy.authenticate(&principal, "verified-token").await?;
         assert_eq!(
             result.scopes(),
             &std::collections::BTreeSet::from(["read".to_owned()])
         );
         assert_eq!(result.verified_identity(), &principal);
-        for response in [
+        let inactive = [
             json!({"active":false}),
-            {
-                let mut r = active();
-                r["sub"] = json!("other");
-                r
-            },
-            {
-                let mut r = active();
-                r["iss"] = json!("https://wrong.example");
-                r
-            },
-            {
-                let mut r = active();
-                r["client_id"] = json!("other");
-                r
-            },
-            {
-                let mut r = active();
-                r["exp"] = json!(1);
-                r
-            },
-        ] {
-            *state.response.lock().await = (StatusCode::OK, response.to_string());
-            assert_eq!(
-                policy.authenticate(&principal, "verified-token").await,
-                Err(PolicyDenial::Inactive)
-            );
+            active_with("sub", json!("other")),
+            active_with("iss", json!("https://wrong.example")),
+            active_with("client_id", json!("other")),
+            active_with("exp", json!(1)),
+        ];
+        let harness = Harness {
+            state: state.clone(),
+            policy,
+            principal,
+            server,
+        };
+        for response in inactive {
+            harness
+                .expect_denial(
+                    (StatusCode::OK, response.to_string()),
+                    PolicyDenial::Inactive,
+                )
+                .await;
         }
         let mut no_scope = active();
         no_scope.as_object_mut().ok_or("object")?.remove("scope");
         *state.response.lock().await = (StatusCode::OK, no_scope.to_string());
         assert!(
-            policy
-                .authenticate(&principal, "verified-token")
+            harness
+                .policy
+                .authenticate(&harness.principal, "verified-token")
                 .await?
                 .scopes()
                 .is_empty()
         );
-        for response in [
+        let unavailable = [
             (StatusCode::UNAUTHORIZED, active().to_string()),
             (StatusCode::FOUND, active().to_string()),
             (StatusCode::OK, "invalid json".into()),
@@ -413,16 +445,21 @@ mod tests {
                 StatusCode::OK,
                 json!({"active":true,"sub":"alice"}).to_string(),
             ),
-        ] {
-            *state.response.lock().await = response;
-            assert_eq!(
-                policy.authenticate(&principal, "verified-token").await,
-                Err(PolicyDenial::Unavailable)
-            );
+        ];
+        for response in unavailable {
+            harness
+                .expect_denial(response, PolicyDenial::Unavailable)
+                .await;
         }
         assert_eq!(state.calls.load(Ordering::SeqCst), 12);
-        server.abort();
-        assert!(server.await.expect_err("cancelled server").is_cancelled());
+        harness.server.abort();
+        assert!(
+            harness
+                .server
+                .await
+                .expect_err("cancelled server")
+                .is_cancelled()
+        );
         Ok(())
     }
 

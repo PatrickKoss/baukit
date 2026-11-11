@@ -142,9 +142,9 @@ For `u64 -> f64` metrics, keep the value in an integer type until the exporter, 
 
 ### `too_many_lines` (80 lines)
 
-Extract named steps. A handler that parses, authorizes, loads and maps becomes four functions. Scenario
-tests that read top to bottom may carry
-`#[expect(clippy::too_many_lines, reason = "scenario test reads top to bottom")]`. Production code may not.
+Extract named steps. A handler that parses, authorizes, loads and maps becomes four functions. Long tests
+follow the same rule: split them into named scenario helpers that each keep their assertions. Neither
+production code nor tests may suppress the lint.
 
 ### `needless_pass_by_value`
 

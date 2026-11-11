@@ -179,6 +179,9 @@ pub enum DataSubjectConformanceError {
 
 use DataSubjectConformanceError as Failure;
 
+mod validation;
+use validation::check_validation;
+
 /// Checks each advertised v1 operation through HTTP, failing at the first violation.
 ///
 /// The adapter supplies isolated fixtures and runs workers. Unadvertised kinds
@@ -221,77 +224,81 @@ pub async fn check_data_subject_conformance<A: DataSubjectConformanceAdapter>(
         .await
         .map_err(|_| Failure::Adapter)?;
     for &kind in &discovery.operations {
+        check_kind(
+            &mut http, adapter, &discovery, &verifier, &token, &other, kind,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn check_kind<A: DataSubjectConformanceAdapter>(
+    http: &mut Http<'_>,
+    adapter: &mut A,
+    discovery: &DiscoveryDocument,
+    verifier: &ReceiptVerifier,
+    token: &str,
+    other: &str,
+    kind: OperationKind,
+) -> Result<(), Failure> {
+    let reference = Uuid::new_v4().to_string();
+    let identifiers = adapter
+        .seed_subject(kind, DataSubjectTestSubject::Matched, &reference)
+        .await
+        .map_err(|_| Failure::Adapter)?
+        .ok_or(Failure::Adapter)?;
+    let request = DataSubjectRequest {
+        subject_reference: reference,
+        identifiers,
+    };
+    normalize_request(&request, &discovery.limits, &discovery.identifier_types)
+        .map_err(|_| Failure::Adapter)?;
+    http.remember(&serde_json::to_value(&request).map_err(|_| Failure::Adapter)?);
+    check_auth(http, adapter, kind, &request).await?;
+    check_validation(http, discovery, kind, token, &request).await?;
+    let case = Exercise {
+        discovery,
+        verifier,
+        token,
+        other,
+        kind,
+        request: &request,
+        expected: OperationStatus::Completed,
+    };
+    exercise(http, adapter, case).await?;
+    for (subject, expected) in [
+        (DataSubjectTestSubject::Unmatched, OperationStatus::NotFound),
+        (
+            DataSubjectTestSubject::Restricted,
+            OperationStatus::Restricted,
+        ),
+    ] {
+        if subject == DataSubjectTestSubject::Restricted && kind != OperationKind::Erasure {
+            continue;
+        }
         let reference = Uuid::new_v4().to_string();
         let identifiers = adapter
-            .seed_subject(kind, DataSubjectTestSubject::Matched, &reference)
+            .seed_subject(kind, subject, &reference)
             .await
-            .map_err(|_| Failure::Adapter)?
-            .ok_or(Failure::Adapter)?;
+            .map_err(|_| Failure::Adapter)?;
+        let Some(identifiers) = identifiers else {
+            if subject == DataSubjectTestSubject::Restricted {
+                continue;
+            }
+            return Err(Failure::Adapter);
+        };
         let request = DataSubjectRequest {
             subject_reference: reference,
             identifiers,
         };
         normalize_request(&request, &discovery.limits, &discovery.identifier_types)
             .map_err(|_| Failure::Adapter)?;
-        http.remember(&serde_json::to_value(&request).map_err(|_| Failure::Adapter)?);
-        check_auth(&mut http, adapter, kind, &request).await?;
-        check_validation(&mut http, &discovery, kind, &token, &request).await?;
-        exercise(
-            &mut http,
-            adapter,
-            Exercise {
-                discovery: &discovery,
-                verifier: &verifier,
-                token: &token,
-                other: &other,
-                kind,
-                request: &request,
-                expected: OperationStatus::Completed,
-            },
-        )
-        .await?;
-        for (case, expected) in [
-            (DataSubjectTestSubject::Unmatched, OperationStatus::NotFound),
-            (
-                DataSubjectTestSubject::Restricted,
-                OperationStatus::Restricted,
-            ),
-        ] {
-            if case == DataSubjectTestSubject::Restricted && kind != OperationKind::Erasure {
-                continue;
-            }
-            let reference = Uuid::new_v4().to_string();
-            let identifiers = adapter
-                .seed_subject(kind, case, &reference)
-                .await
-                .map_err(|_| Failure::Adapter)?;
-            let Some(identifiers) = identifiers else {
-                if case == DataSubjectTestSubject::Restricted {
-                    continue;
-                }
-                return Err(Failure::Adapter);
-            };
-            let request = DataSubjectRequest {
-                subject_reference: reference,
-                identifiers,
-            };
-            normalize_request(&request, &discovery.limits, &discovery.identifier_types)
-                .map_err(|_| Failure::Adapter)?;
-            exercise(
-                &mut http,
-                adapter,
-                Exercise {
-                    discovery: &discovery,
-                    verifier: &verifier,
-                    token: &token,
-                    other: &other,
-                    kind,
-                    request: &request,
-                    expected,
-                },
-            )
-            .await?;
-        }
+        let case = Exercise {
+            request: &request,
+            expected,
+            ..case
+        };
+        exercise(http, adapter, case).await?;
     }
     Ok(())
 }
@@ -624,138 +631,7 @@ async fn check_auth<A: DataSubjectConformanceAdapter>(
     Ok(())
 }
 
-async fn check_validation(
-    http: &mut Http<'_>,
-    discovery: &DiscoveryDocument,
-    kind: OperationKind,
-    token: &str,
-    request: &DataSubjectRequest,
-) -> Result<(), Failure> {
-    let path = route(kind);
-    let body = serde_json::to_value(request).map_err(|_| Failure::Adapter)?;
-    let long = "k".repeat(129);
-    for keys in [
-        vec![],
-        vec!["k"; 1],
-        vec![long.as_str()],
-        vec!["conformance-key-01", "conformance-key-01"],
-        vec!["invalid key with spaces"],
-    ] {
-        http.send("POST", path, Some(token), &keys, Some(body.clone()))
-            .await?
-            .error(400, codes::IDEMPOTENCY_KEY_INVALID, Failure::IdempotencyKey)?;
-    }
-    let mut invalid = vec![
-        Value::Null,
-        json!({}),
-        json!({"subjectReference": request.subject_reference, "identifiers": []}),
-    ];
-    for reference in [
-        "r".repeat(15),
-        "r".repeat(129),
-        "reference with spaces".into(),
-        "référence-non-ascii".into(),
-    ] {
-        let mut changed = body.clone();
-        changed["subjectReference"] = json!(reference);
-        invalid.push(changed);
-    }
-    for (kind, value) in [
-        ("x-Bad", "invalid-type-value"),
-        (request.identifiers[0].identifier_type.as_str(), "   "),
-    ] {
-        let mut changed = body.clone();
-        changed["identifiers"] = json!([{"type":kind,"value":value}]);
-        invalid.push(changed);
-    }
-    if discovery.identifier_types.contains(&IdentifierType::Phone) {
-        let mut changed = body.clone();
-        changed["identifiers"] = json!([{"type":"phone","value":"+1234invalid5678"}]);
-        invalid.push(changed);
-    }
-    http.send_bytes(
-        "POST",
-        path,
-        Some(token),
-        &["conformance-key-01"],
-        b"{broken".to_vec(),
-    )
-    .await?
-    .error(422, codes::REQUEST_INVALID, Failure::InvalidBody)?;
-    for body in invalid {
-        http.send(
-            "POST",
-            path,
-            Some(token),
-            &["conformance-key-01"],
-            Some(body),
-        )
-        .await?
-        .error(422, codes::REQUEST_INVALID, Failure::InvalidBody)?;
-    }
-    let mut unsupported = "x-conformance-unsupported".to_owned();
-    while discovery
-        .identifier_types
-        .iter()
-        .any(|kind| kind.as_str() == unsupported)
-    {
-        unsupported.push_str("-other");
-    }
-    let mut changed = body.clone();
-    changed["identifiers"][0]["type"] = json!(unsupported);
-    http.send(
-        "POST",
-        path,
-        Some(token),
-        &["conformance-key-01"],
-        Some(changed),
-    )
-    .await?
-    .error(
-        422,
-        codes::IDENTIFIER_TYPE_UNSUPPORTED,
-        Failure::UnsupportedIdentifierType,
-    )?;
-    let mut changed = body.clone();
-    changed["identifiers"] = json!(vec![
-        body["identifiers"][0].clone();
-        discovery
-            .limits
-            .max_identifiers
-            .checked_add(1)
-            .ok_or(Failure::DiscoveryShape)?
-    ]);
-    http.send(
-        "POST",
-        path,
-        Some(token),
-        &["conformance-key-01"],
-        Some(changed),
-    )
-    .await?
-    .error(422, codes::REQUEST_INVALID, Failure::Limits)?;
-    let mut changed = body;
-    changed["identifiers"][0]["value"] = json!(
-        "z".repeat(
-            discovery
-                .limits
-                .max_identifier_length
-                .checked_add(1)
-                .ok_or(Failure::DiscoveryShape)?
-        )
-    );
-    http.send(
-        "POST",
-        path,
-        Some(token),
-        &["conformance-key-01"],
-        Some(changed),
-    )
-    .await?
-    .error(422, codes::REQUEST_INVALID, Failure::Limits)?;
-    Ok(())
-}
-
+#[derive(Clone, Copy)]
 struct Exercise<'a> {
     discovery: &'a DiscoveryDocument,
     verifier: &'a ReceiptVerifier,
@@ -766,20 +642,62 @@ struct Exercise<'a> {
     expected: OperationStatus,
 }
 
+struct Accepted {
+    key: String,
+    body: Value,
+    status_path: String,
+    pending: OperationResource,
+    first_replay: OperationResource,
+    normalized_replay: OperationResource,
+}
+
 async fn exercise<A: DataSubjectConformanceAdapter>(
     http: &mut Http<'_>,
     adapter: &mut A,
     case: Exercise<'_>,
 ) -> Result<(), Failure> {
+    let accepted = submit_operation(http, &case).await?;
+    check_isolation(
+        http,
+        case.discovery,
+        case.kind,
+        accepted.pending.operation_id,
+        case.token,
+        case.other,
+    )
+    .await?;
+    tokio::time::timeout(DEADLINE, adapter.run_pending_work())
+        .await
+        .map_err(|_| Failure::Adapter)?
+        .map_err(|_| Failure::Adapter)?;
+    let done = fetch_terminal(http, &case, &accepted).await?;
+    check_terminal_shape(http, &case, &accepted, &done).await?;
+    check_export_parts(http, &case, &accepted, &done).await?;
+    let replay = http
+        .send(
+            "POST",
+            route(case.kind),
+            Some(case.token),
+            &[&accepted.key],
+            Some(accepted.body),
+        )
+        .await?;
+    require(
+        replay.status == StatusCode::OK && replay.operation(Failure::Replay)? == done,
+        Failure::Replay,
+    )?;
+    Ok(())
+}
+
+async fn submit_operation(http: &mut Http<'_>, case: &Exercise<'_>) -> Result<Accepted, Failure> {
     let Exercise {
         discovery,
         verifier,
         token,
-        other,
         kind,
         request,
-        expected,
-    } = case;
+        ..
+    } = *case;
     let path = route(kind);
     let key = Uuid::new_v4().to_string();
     let body = serde_json::to_value(request).map_err(|_| Failure::Adapter)?;
@@ -824,18 +742,7 @@ async fn exercise<A: DataSubjectConformanceAdapter>(
         .send("POST", path, Some(token), &[&key], Some(body.clone()))
         .await?;
     let first_replay = check_replay(&replay, &pending, discovery, verifier)?;
-    let mut normalized_replay = body.clone();
-    for identifier in normalized_replay["identifiers"]
-        .as_array_mut()
-        .ok_or(Failure::Adapter)?
-    {
-        if identifier["type"] != "phone" {
-            let value = identifier["value"].as_str().ok_or(Failure::Adapter)?;
-            if value.len() + 2 <= discovery.limits.max_identifier_length {
-                identifier["value"] = json!(format!(" {value} "));
-            }
-        }
-    }
+    let normalized_replay = padded_identifiers(&body, discovery.limits.max_identifier_length)?;
     let replay = http
         .send("POST", path, Some(token), &[&key], Some(normalized_replay))
         .await?;
@@ -845,13 +752,49 @@ async fn exercise<A: DataSubjectConformanceAdapter>(
     http.send("POST", path, Some(token), &[&key], Some(conflict))
         .await?
         .error(409, codes::IDEMPOTENCY_CONFLICT, Failure::Conflict)?;
-    check_isolation(http, discovery, kind, pending.operation_id, token, other).await?;
-    tokio::time::timeout(DEADLINE, adapter.run_pending_work())
-        .await
-        .map_err(|_| Failure::Adapter)?
-        .map_err(|_| Failure::Adapter)?;
+    Ok(Accepted {
+        key,
+        body,
+        status_path,
+        pending,
+        first_replay,
+        normalized_replay,
+    })
+}
+
+fn padded_identifiers(body: &Value, max_length: usize) -> Result<Value, Failure> {
+    let mut padded = body.clone();
+    for identifier in padded["identifiers"]
+        .as_array_mut()
+        .ok_or(Failure::Adapter)?
+    {
+        if identifier["type"] != "phone" {
+            let value = identifier["value"].as_str().ok_or(Failure::Adapter)?;
+            if value.len() + 2 <= max_length {
+                identifier["value"] = json!(format!(" {value} "));
+            }
+        }
+    }
+    Ok(padded)
+}
+
+async fn fetch_terminal(
+    http: &mut Http<'_>,
+    case: &Exercise<'_>,
+    accepted: &Accepted,
+) -> Result<OperationResource, Failure> {
+    let Exercise {
+        discovery,
+        verifier,
+        token,
+        other,
+        kind,
+        request,
+        expected,
+    } = *case;
+    let pending = &accepted.pending;
     let reply = http
-        .send("GET", &status_path, Some(token), &[], None)
+        .send("GET", &accepted.status_path, Some(token), &[], None)
         .await?;
     require(
         !matches!(
@@ -882,10 +825,25 @@ async fn exercise<A: DataSubjectConformanceAdapter>(
     )?;
     verify_terminal(&done, discovery, verifier)?;
     check_isolation(http, discovery, kind, done.operation_id, token, other).await?;
+    Ok(done)
+}
+
+async fn check_terminal_shape(
+    http: &mut Http<'_>,
+    case: &Exercise<'_>,
+    accepted: &Accepted,
+    done: &OperationResource,
+) -> Result<(), Failure> {
+    let Exercise {
+        token,
+        kind,
+        expected,
+        ..
+    } = *case;
     if kind == OperationKind::Export && expected == OperationStatus::NotFound {
         http.send(
             "GET",
-            &format!("{status_path}/parts/1"),
+            &format!("{}/parts/1", accepted.status_path),
             Some(token),
             &[],
             None,
@@ -893,7 +851,7 @@ async fn exercise<A: DataSubjectConformanceAdapter>(
         .await?
         .error(404, codes::OPERATION_NOT_FOUND, Failure::NotFound)?;
     }
-    for replay in [first_replay, normalized_replay] {
+    for replay in [&accepted.first_replay, &accepted.normalized_replay] {
         if replay.status.is_terminal() {
             require(replay == done, Failure::Replay)?;
         }
@@ -924,41 +882,52 @@ async fn exercise<A: DataSubjectConformanceAdapter>(
     if kind == OperationKind::Erasure {
         require(done.parts.is_empty(), Failure::ExportPart)?;
     }
-    if kind == OperationKind::Export && expected == OperationStatus::Completed {
-        require(!done.parts.is_empty(), Failure::ExportPart)?;
-        for (index, part) in done.parts.iter().enumerate() {
-            require(
-                part.part_number as usize == index + 1
-                    && part.bytes <= discovery.limits.max_export_part_bytes,
-                Failure::ExportPart,
-            )?;
-            let part_path = format!("{status_path}/parts/{}", part.part_number);
-            let reply = http.send("GET", &part_path, Some(token), &[], None).await?;
-            let hash: String = digest(&SHA256, &reply.bytes)
-                .as_ref()
-                .iter()
-                .map(|b| format!("{b:02x}"))
-                .collect();
-            require(
-                reply.status == StatusCode::OK
-                    && is_json(&reply.headers)
-                    && reply.bytes.len() as u64 == part.bytes
-                    && hash == part.sha256,
-                Failure::ExportPart,
-            )?;
-            reply.json(Failure::ExportPart)?;
-            http.send("GET", &part_path, Some(other), &[], None)
-                .await?
-                .error(404, codes::OPERATION_NOT_FOUND, Failure::Isolation)?;
-        }
+    Ok(())
+}
+
+async fn check_export_parts(
+    http: &mut Http<'_>,
+    case: &Exercise<'_>,
+    accepted: &Accepted,
+    done: &OperationResource,
+) -> Result<(), Failure> {
+    let Exercise {
+        discovery,
+        token,
+        other,
+        kind,
+        expected,
+        ..
+    } = *case;
+    if kind != OperationKind::Export || expected != OperationStatus::Completed {
+        return Ok(());
     }
-    let replay = http
-        .send("POST", path, Some(token), &[&key], Some(body))
-        .await?;
-    require(
-        replay.status == StatusCode::OK && replay.operation(Failure::Replay)? == done,
-        Failure::Replay,
-    )?;
+    require(!done.parts.is_empty(), Failure::ExportPart)?;
+    for (index, part) in done.parts.iter().enumerate() {
+        require(
+            part.part_number as usize == index + 1
+                && part.bytes <= discovery.limits.max_export_part_bytes,
+            Failure::ExportPart,
+        )?;
+        let part_path = format!("{}/parts/{}", accepted.status_path, part.part_number);
+        let reply = http.send("GET", &part_path, Some(token), &[], None).await?;
+        let hash: String = digest(&SHA256, &reply.bytes)
+            .as_ref()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        require(
+            reply.status == StatusCode::OK
+                && is_json(&reply.headers)
+                && reply.bytes.len() as u64 == part.bytes
+                && hash == part.sha256,
+            Failure::ExportPart,
+        )?;
+        reply.json(Failure::ExportPart)?;
+        http.send("GET", &part_path, Some(other), &[], None)
+            .await?
+            .error(404, codes::OPERATION_NOT_FOUND, Failure::Isolation)?;
+    }
     Ok(())
 }
 

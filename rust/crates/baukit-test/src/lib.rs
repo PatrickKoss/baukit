@@ -35,7 +35,6 @@
     clippy::panic,
     clippy::indexing_slicing,
     clippy::missing_panics_doc,
-    clippy::too_many_lines,
     clippy::print_stdout,
     reason = "test-support library: its assertion helpers and conformance scenarios fail the calling test by panicking, and print their reports through libtest's captured stdout"
 )]

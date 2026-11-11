@@ -442,6 +442,72 @@ mod tests {
         Injected,
     }
 
+    impl SqlInboxPort {
+        async fn existing_outcome(
+            transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+            scope: &InboxScope,
+        ) -> Result<Value, SqlInboxError> {
+            Ok(sqlx::query_scalar::<_, Value>(
+                "SELECT outcome FROM conformance_inbox \
+             WHERE owner_key = $1 AND source = $2 AND event_id = $3",
+            )
+            .bind(&scope.owner_key)
+            .bind(&scope.source)
+            .bind(&scope.event_id)
+            .fetch_one(&mut **transaction)
+            .await?)
+        }
+
+        async fn write_effects(
+            transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+            delivery: &InboxDelivery,
+            fault: Option<InboxFault>,
+        ) -> Result<Value, SqlInboxError> {
+            if matches!(
+                fault,
+                Some(InboxFault::AfterInboxInsert | InboxFault::DomainWrite)
+            ) {
+                return Err(SqlInboxError::Injected);
+            }
+            sqlx::query(
+                "INSERT INTO conformance_domain_effects (owner_key, source, event_id) \
+             VALUES ($1, $2, $3)",
+            )
+            .bind(&delivery.scope.owner_key)
+            .bind(&delivery.scope.source)
+            .bind(&delivery.scope.event_id)
+            .execute(&mut **transaction)
+            .await?;
+            if fault == Some(InboxFault::OutboxWrite) {
+                return Err(SqlInboxError::Injected);
+            }
+            sqlx::query(
+                "INSERT INTO conformance_outbox (owner_key, source, event_id) \
+             VALUES ($1, $2, $3)",
+            )
+            .bind(&delivery.scope.owner_key)
+            .bind(&delivery.scope.source)
+            .bind(&delivery.scope.event_id)
+            .execute(&mut **transaction)
+            .await?;
+            let outcome = serde_json::json!({
+                "status": "applied",
+                "reference": delivery.scope.event_id.clone(),
+            });
+            sqlx::query(
+                "UPDATE conformance_inbox SET outcome = $4 \
+             WHERE owner_key = $1 AND source = $2 AND event_id = $3",
+            )
+            .bind(&delivery.scope.owner_key)
+            .bind(&delivery.scope.source)
+            .bind(&delivery.scope.event_id)
+            .bind(&outcome)
+            .execute(&mut **transaction)
+            .await?;
+            Ok(outcome)
+        }
+    }
+
     impl PostgresInboxPort for SqlInboxPort {
         type Error = SqlInboxError;
 
@@ -466,65 +532,14 @@ mod tests {
                 .await?
                 .is_some();
                 if !inserted {
-                    let outcome = sqlx::query_scalar::<_, Value>(
-                        "SELECT outcome FROM conformance_inbox \
-                         WHERE owner_key = $1 AND source = $2 AND event_id = $3",
-                    )
-                    .bind(&delivery.scope.owner_key)
-                    .bind(&delivery.scope.source)
-                    .bind(&delivery.scope.event_id)
-                    .fetch_one(&mut *transaction)
-                    .await?;
+                    let outcome = Self::existing_outcome(&mut transaction, &delivery.scope).await?;
                     transaction.commit().await?;
                     return Ok(InboxReceipt {
                         disposition: InboxDisposition::Replay,
                         outcome,
                     });
                 }
-                if fault == Some(InboxFault::AfterInboxInsert) {
-                    transaction.rollback().await?;
-                    return Err(SqlInboxError::Injected);
-                }
-                if fault == Some(InboxFault::DomainWrite) {
-                    transaction.rollback().await?;
-                    return Err(SqlInboxError::Injected);
-                }
-                sqlx::query(
-                    "INSERT INTO conformance_domain_effects (owner_key, source, event_id) \
-                     VALUES ($1, $2, $3)",
-                )
-                .bind(&delivery.scope.owner_key)
-                .bind(&delivery.scope.source)
-                .bind(&delivery.scope.event_id)
-                .execute(&mut *transaction)
-                .await?;
-                if fault == Some(InboxFault::OutboxWrite) {
-                    transaction.rollback().await?;
-                    return Err(SqlInboxError::Injected);
-                }
-                sqlx::query(
-                    "INSERT INTO conformance_outbox (owner_key, source, event_id) \
-                     VALUES ($1, $2, $3)",
-                )
-                .bind(&delivery.scope.owner_key)
-                .bind(&delivery.scope.source)
-                .bind(&delivery.scope.event_id)
-                .execute(&mut *transaction)
-                .await?;
-                let outcome = serde_json::json!({
-                    "status": "applied",
-                    "reference": delivery.scope.event_id.clone(),
-                });
-                sqlx::query(
-                    "UPDATE conformance_inbox SET outcome = $4 \
-                     WHERE owner_key = $1 AND source = $2 AND event_id = $3",
-                )
-                .bind(&delivery.scope.owner_key)
-                .bind(&delivery.scope.source)
-                .bind(&delivery.scope.event_id)
-                .bind(&outcome)
-                .execute(&mut *transaction)
-                .await?;
+                let outcome = Self::write_effects(&mut transaction, &delivery, fault).await?;
                 transaction.commit().await?;
                 Ok(InboxReceipt {
                     disposition: InboxDisposition::FirstDelivery,
