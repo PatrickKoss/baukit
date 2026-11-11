@@ -227,6 +227,7 @@ class AndroidQaHookTests(unittest.TestCase):
 
     def test_deadline_must_be_a_positive_integer(self):
         self.flows("a.yaml")
+        self.executable(self.tools / "maestro", "exit 0\n")
         result = self.run_script(
             "run-maestro.sh", "android", BAUKIT_QA_MAESTRO_DEADLINE_SECONDS="0"
         )
