@@ -149,7 +149,7 @@ class AndroidQaHookTests(unittest.TestCase):
     def test_usage_lists_every_action(self):
         result = self.run_script("android-env.sh", "restart")
         self.assertEqual(result.returncode, 2)
-        self.assertIn("[start|boot|prepare|stop]", result.stderr)
+        self.assertIn("[start|boot|prepare|reverse DEVICE|stop]", result.stderr)
 
     def test_gpu_mode_is_selectable_and_validated(self):
         self.prepare_start()

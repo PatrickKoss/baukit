@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-mobile_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+mobile_dir="$root/mobile"
 platform="${1:-}"
 state_dir="${BAUKIT_QA_STATE_DIR:-$mobile_dir/.qa}"
-maestro_bin="$(command -v maestro || true)"
-if [[ -z "$maestro_bin" && -x "$HOME/.maestro/bin/maestro" ]]; then
-  maestro_bin="$HOME/.maestro/bin/maestro"
-fi
+api_port="${BAUKIT_QA_API_PORT:-18080}"
+{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
+{% endif %}maestro_bin="$(command -v maestro || true)"
 [[ -n "$maestro_bin" ]] || {
   echo "qa: Maestro is required; install it from https://docs.maestro.dev/getting-started/installing-maestro" >&2
   exit 1
@@ -16,11 +16,15 @@ fi
 qa_maestro_args=()
 qa_maestro_shards=()
 qa_maestro_env() { :; }
+qa_maestro_flows() { :; }
+qa_ios_bundle_id="${BAUKIT_QA_IOS_BUNDLE_ID:-dev.baukit.{{ context.app_name }}}"
 qa_app_id="${BAUKIT_QA_APP_ID:-dev.baukit.{{ context.app_crate }}}"
 local_hooks="$mobile_dir/scripts/qa/local.sh"
 # shellcheck source=/dev/null
 [[ ! -f "$local_hooks" ]] || source "$local_hooks"
-
+export BAUKIT_QA_API_PORT="$api_port"
+{% if context.auth_enabled %}export BAUKIT_QA_KEYCLOAK_PORT="$keycloak_port"
+{% endif %}
 case "$platform" in
   android)
     state_file="$state_dir/android-serial"
@@ -29,7 +33,7 @@ case "$platform" in
     ;;
   ios)
     state_file="$state_dir/ios-udid"
-    app_id="dev.baukit.{{ context.app_name }}"
+    app_id="$qa_ios_bundle_id"
     debug_dir="$mobile_dir/maestro-debug-ios"
     ;;
   *)
@@ -64,6 +68,16 @@ all_attached() {
       return 1
     fi
   done
+}
+
+prepare_flow_device() {
+  local device="$1" flow="$2"
+  [[ "$platform" == android ]] || return 0
+  if ! python3 "$mobile_dir/scripts/qa/android-adb.py" --attached "$adb" "$device"; then
+    echo "qa: emulator $device died before $flow" >&2
+    return 1
+  fi
+  bash "$mobile_dir/scripts/qa/android-env.sh" reverse "$device"
 }
 
 stall_seconds="${BAUKIT_QA_MAESTRO_STALL_SECONDS:-300}"
@@ -130,6 +144,7 @@ run_declared_shard() {
   qa_maestro_env "$index"
   mkdir -p "$debug_dir"
   maestro_log="$debug_dir/maestro-output.log"
+  prepare_flow_device "${devices[index]}" "${qa_maestro_shards[index]}" || return
   run_maestro "${qa_maestro_shards[index]}" "" test \
     --platform "$platform" \
     --device "${devices[index]}" \
@@ -157,6 +172,52 @@ run_declared_shards() {
   return "$status"
 }
 
+run_device_flows() {
+  local index="$1" flow device_flows debug_dir="$2/shard-$1" maestro_log
+  mapfile -t device_flows < <(qa_maestro_flows "$index")
+  qa_maestro_env "$index"
+  mkdir -p "$debug_dir"
+  maestro_log="$debug_dir/maestro-output.log"
+  for flow in "${device_flows[@]}"; do
+    prepare_flow_device "${devices[index]}" "$flow" || return
+    run_maestro "$flow" "" test \
+      --platform "$platform" \
+      --device "${devices[index]}" \
+      --env "APP_ID=$app_id" \
+      --debug-output "$debug_dir" \
+      "${qa_maestro_args[@]}" \
+      "$flow" || return
+  done
+}
+
+run_hooked_flows() {
+  local index pid status=0 pids=()
+  for index in "${!devices[@]}"; do
+    run_device_flows "$index" "$debug_dir" &
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid" || status=$?
+  done
+  return "$status"
+}
+
+hooked_flows_declared() {
+  local index
+  for index in "${!devices[@]}"; do
+    [[ -z "$(qa_maestro_flows "$index")" ]] || return 0
+  done
+  return 1
+}
+
+if hooked_flows_declared; then
+  [[ -z "${qa_maestro_shards[*]:-}" ]] || {
+    echo "qa: set qa_maestro_flows or qa_maestro_shards, not both" >&2
+    exit 1
+  }
+  run_hooked_flows
+  exit $?
+fi
 if [[ -n "${qa_maestro_shards[*]:-}" ]]; then
   run_declared_shards
   exit $?
@@ -175,9 +236,7 @@ if ((shards > flow_count)); then
 fi
 if ((shards < 2)); then
   for flow in "${flows[@]}"; do
-    if [[ "$platform" == android ]]; then
-      all_attached "before ${flow#.maestro/}" || exit 1
-    fi
+    prepare_flow_device "${devices[0]}" "${flow#.maestro/}" || exit 1
     run_maestro "${flow#.maestro/}" "" test \
       --platform "$platform" \
       --device "${devices[0]}" \

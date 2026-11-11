@@ -40,12 +40,12 @@ api_running() {
   kill -0 "$1" 2>/dev/null && [[ "$(ps -o stat= -p "$1")" != Z* ]]
 }
 
-stop_api() {
-  [[ -f "$state_dir/backend.pid" ]] || return 0
-  local pid
-  pid="$(<"$state_dir/backend.pid")"
+stop_pid_file() {
+  local pid_file="$1" name="$2" pid
+  [[ -f "$pid_file" ]] || return 0
+  pid="$(<"$pid_file")"
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || {
-    echo "qa: invalid backend PID; ownership state was kept" >&2
+    echo "qa: invalid $name PID; ownership state was kept" >&2
     return 1
   }
   if api_running "$pid"; then
@@ -55,11 +55,15 @@ stop_api() {
       sleep 1
     done
     if api_running "$pid"; then
-      echo "qa: backend $pid did not stop; ownership state was kept" >&2
+      echo "qa: $name $pid did not stop; ownership state was kept" >&2
       return 1
     fi
   fi
-  rm -f "$state_dir/backend.pid"
+  rm -f "$pid_file"
+}
+
+stop_api() {
+  stop_pid_file "$state_dir/backend.pid" backend
 }
 
 stop_default_services() {

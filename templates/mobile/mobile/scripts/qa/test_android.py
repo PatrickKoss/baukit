@@ -8,6 +8,7 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
 AUTH_ENABLED: bool = "{{ context.auth_enabled }}".lower() == "true"
+AUTH_OIDC: bool = "{{ context.auth_oidc }}".lower() == "true"
 HAS_BACKEND: bool = "{{ context.backend }}".lower() == "true"
 
 
@@ -17,7 +18,8 @@ class AndroidScriptsTest(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name)
         self.scripts = self.root / "mobile/scripts/qa"
-        shutil.copytree(SCRIPTS, self.scripts)
+        shutil.copytree(SCRIPTS, self.scripts, ignore=shutil.ignore_patterns("local.sh"))
+        (self.scripts / "local.sh").write_text("# shellcheck shell=bash\n")
         shutil.copyfile(SCRIPTS.parent / "android-java.sh", self.scripts.parent / "android-java.sh")
         self.sdk = self.root / "sdk"
         self.avds = self.root / "avds"
@@ -305,8 +307,8 @@ touch "$apk"
         self.assertEqual(
             self.events.read_text().splitlines(),
             [
-                f"corepack pnpm@12.9.1 --dir {self.root}/mobile install --frozen-lockfile",
-                f"corepack pnpm@12.9.1 --dir {self.root}/mobile run tokens",
+                f"corepack pnpm --dir {self.root}/mobile install --frozen-lockfile",
+                f"corepack pnpm --dir {self.root}/mobile run tokens",
                 "expo prebuild --clean --platform android --no-install",
                 f"gradle -p {self.root}/mobile/android --no-daemon --build-cache "
                 "-PreactNativeDevServerIp=127.0.0.1 -PreactNativeArchitectures=x86_64 assembleRelease",
@@ -397,6 +399,81 @@ touch "$apk"
         gradle = next(event for event in events if event.startswith("gradle"))
         self.assertIn("-PreactNativeDevServerPort=8099", gradle)
         self.assertTrue(gradle.endswith("api=http://localhost:8280"))
+
+    def test_build_runs_from_the_mobile_directory_and_exports_the_local_issuer(self) -> None:
+        self.fake_build_tools()
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
+printf 'cwd %s\n' "$PWD" >> "$EVENTS"
+printf 'issuer %s\n' "${EXPO_PUBLIC_OIDC_ISSUER:-}${EXPO_PUBLIC_LOCAL_OIDC_ISSUER:-}" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+""",
+        )
+        self.environment["BAUKIT_QA_KEYCLOAK_PORT"] = "18099"
+        subprocess.run(
+            ["bash", str(self.scripts / "build-android.sh")],
+            cwd=self.root,
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        )
+        events = self.events.read_text().splitlines()
+        self.assertIn(f"cwd {(self.root / 'mobile').resolve()}", events)
+        issuer = "http://localhost:18099/realms/{{ context.app_name }}" if AUTH_ENABLED else ""
+        self.assertIn(f"issuer {issuer}", events)
+        if AUTH_ENABLED and not AUTH_OIDC:
+            self.assertEqual(
+                (self.scripts / "build-android.sh")
+                .read_text()
+                .count("EXPO_PUBLIC_LOCAL_OIDC_ISSUER"),
+                2,
+            )
+
+    def test_gradle_output_is_teed_to_the_opt_in_log(self) -> None:
+        self.fake_build_tools()
+        log = self.root / "logs/android-build.log"
+        self.environment["BAUKIT_QA_GRADLE_LOG"] = str(log)
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
+echo "gradle output"
+apk="$(dirname "$0")/app/build/outputs/apk/release/app-release.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+""",
+        )
+        self.run_script("build-android.sh")
+        self.assertEqual(log.read_text(), "gradle output\n")
+
+    def test_debug_variant_embeds_the_js_bundle_and_builds_only_debug(self) -> None:
+        self.fake_build_tools()
+        self.environment["BAUKIT_QA_APK_VARIANT"] = "debug"
+        self.executable(
+            self.root / "mobile/android/gradlew",
+            r"""
+printf 'gradle %s\n' "$*" >> "$EVENTS"
+apk="$(dirname "$0")/app/build/outputs/apk/debug/app-debug.apk"
+mkdir -p "$(dirname "$apk")"
+touch "$apk"
+""",
+        )
+        self.run_script("build-android.sh")
+        events = self.events.read_text().splitlines()
+        bundle = next(event for event in events if event.startswith("expo export:embed"))
+        self.assertIn("--entry-file node_modules/expo-router/entry.js", bundle)
+        self.assertIn(
+            f"--bundle-output {self.root}/mobile/android/app/src/main/assets/index.android.bundle",
+            bundle,
+        )
+        gradle = [event for event in events if event.startswith("gradle")]
+        self.assertEqual(len(gradle), 1)
+        self.assertTrue(gradle[0].endswith("assembleDebug"))
+        self.assertLess(events.index(bundle), events.index(gradle[0]))
 
     def test_build_uses_the_environment_port_without_hooks(self) -> None:
         self.fake_build_tools()
@@ -643,7 +720,7 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
         apk.touch()
-        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check" > /data/local/tmp/chrome-command-line'
+        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check --force-renderer-accessibility=complete" > /data/local/tmp/chrome-command-line'
         debug = "-s emulator-5556 shell settings put global debug_app com.android.chrome"
         stop = "-s emulator-5556 shell am force-stop com.android.chrome"
         for headless, wifi in (("0", "1"), ("1", "1"), ("1", "0")):
@@ -682,7 +759,8 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
                 quick[load : load + 1] = ["-snapshot", snapshot, "-read-only"]
                 self.assertEqual(launch.splitlines(), quick)
             events = self.events.read_text().splitlines()
-            command = "-s emulator-5556 shell am start -n dev.baukit.{{ context.app_crate }}/.MainActivity -W"
+            activity = "dev.baukit.{{ context.app_crate }}/.MainActivity"
+            command = f"-s emulator-5556 shell am start -n {activity} -W"
             self.assertEqual(events.count(command), 1)
             launch = events.index(command)
             self.assertEqual(events.count("-s emulator-5556 reverse tcp:18015 tcp:18015"), 1)
