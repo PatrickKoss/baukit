@@ -51,6 +51,7 @@ if theme is None or theme["RW"]:
   KEYCLOAK_REALM="{{ context.app_name }}" \
   KEYCLOAK_CLIENT_ID="{{ context.app_name }}-web" \
   KEYCLOAK_REDIRECT_URI="http://localhost:{{ context.web_port }}/" \
+  KEYCLOAK_LOGIN_THEME="{{ context.login_theme }}" \
   node scripts/keycloak-theme.browser.mjs
   printf 'PASS Keycloak %s browser suite\n' "$keycloak_version"
   cleanup

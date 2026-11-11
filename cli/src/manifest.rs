@@ -48,6 +48,8 @@ pub struct Manifest {
     pub app: AppManifest,
     #[serde(default)]
     pub quality: QualityManifest,
+    #[serde(default)]
+    pub auth: AuthManifest,
     pub capabilities: Capabilities,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<PlatformManifest>,
@@ -69,6 +71,38 @@ pub struct PlatformManifest {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AppManifest {
     pub name: String,
+}
+
+/// Auth generation settings that are not part of the provider choice.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AuthManifest {
+    /// Keycloak login theme name the realm and the theme browser suite use.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login_theme: Option<String>,
+}
+
+pub const DEFAULT_LOGIN_THEME: &str = "baukit-accessible";
+
+impl AuthManifest {
+    /// # Errors
+    ///
+    /// Fails when the theme name has characters outside letters, digits, `.`, `_` and `-`.
+    pub fn resolved_login_theme(&self) -> Result<&str> {
+        let theme = self.login_theme.as_deref().unwrap_or(DEFAULT_LOGIN_THEME);
+        let valid = theme
+            .chars()
+            .next()
+            .is_some_and(|first| first.is_ascii_alphanumeric())
+            && theme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+        anyhow::ensure!(
+            valid,
+            "auth.login_theme `{theme}` must start with a letter or digit and hold only letters, digits, `.`, `_` and `-`"
+        );
+        Ok(theme)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -99,6 +133,8 @@ pub struct QualityManifest {
     pub shared: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub light: Vec<String>,
+    #[serde(default)]
+    pub ci: gate_settings::CiSettings,
 }
 
 impl Default for QualityManifest {
@@ -117,6 +153,7 @@ impl Default for QualityManifest {
             affected: BTreeMap::new(),
             shared: Vec::new(),
             light: Vec::new(),
+            ci: gate_settings::CiSettings::default(),
         }
     }
 }

@@ -13,14 +13,14 @@ sh scripts/preflight.sh
 cargo clippy --manifest-path backend/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path backend/Cargo.toml -- --include-ignored
 cargo test --manifest-path backend/Cargo.toml -p {{ context.app_name }}-bin --test openapi_drift
-{% endif %}{% if context.web %}corepack pnpm@12.9.1 --dir web install --frozen-lockfile
-corepack pnpm@12.9.1 --dir web build
-corepack pnpm@12.9.1 --dir web lint
-corepack pnpm@12.9.1 --dir web test
-{% endif %}{% if context.mobile %}corepack pnpm@12.9.1 --dir mobile install --frozen-lockfile
-corepack pnpm@12.9.1 --dir mobile typecheck
-corepack pnpm@12.9.1 --dir mobile lint
-corepack pnpm@12.9.1 --dir mobile test
+{% endif %}{% if context.web %}(cd web && corepack pnpm install --frozen-lockfile)
+(cd web && corepack pnpm build)
+(cd web && corepack pnpm lint)
+(cd web && corepack pnpm test)
+{% endif %}{% if context.mobile %}(cd mobile && corepack pnpm install --frozen-lockfile)
+(cd mobile && corepack pnpm typecheck)
+(cd mobile && corepack pnpm lint)
+(cd mobile && corepack pnpm test)
 {% endif %}{% if context.mcp %}cargo test --manifest-path backend/Cargo.toml -p {{ context.app_name }}-mcp --test tool_drift
 {% endif %}baukit doctor
 ```

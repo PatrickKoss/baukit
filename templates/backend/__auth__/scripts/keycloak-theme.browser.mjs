@@ -10,6 +10,7 @@ const baseUrl = requiredEnvironment("KEYCLOAK_BASE_URL").replace(/\/$/u, "");
 const realmName = requiredEnvironment("KEYCLOAK_REALM");
 const clientId = requiredEnvironment("KEYCLOAK_CLIENT_ID");
 const redirectUri = requiredEnvironment("KEYCLOAK_REDIRECT_URI");
+const loginTheme = process.env.KEYCLOAK_LOGIN_THEME ?? "baukit-accessible";
 const adminUsername = requiredEnvironment("KEYCLOAK_ADMIN_USERNAME");
 const adminPassword = requiredEnvironment("KEYCLOAK_ADMIN_PASSWORD");
 const testUsername = requiredEnvironment("KEYCLOAK_TEST_USERNAME");
@@ -428,7 +429,7 @@ async function testAppearanceState(page) {
 
 await authenticateAdministrator();
 const originalRealm = await realm();
-assert.equal(originalRealm.loginTheme, "baukit-accessible");
+assert.equal(originalRealm.loginTheme, loginTheme);
 const browser = await chromium.launch();
 try {
   for (const browserTest of [

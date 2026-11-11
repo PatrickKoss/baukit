@@ -21,6 +21,7 @@ test: preflight
 
 test-scripts:
 	python3 scripts/reconcile-env.test.py
+	python3 scripts/lockfiles.test.py
 {% if context.auth_enabled %}	python3 -m unittest discover -s scripts/tests
 	node --test scripts/tests/keycloak_accessibility.test.mjs scripts/tests/keycloak_theme_preferences.test.mjs
 {% endif %}
@@ -32,16 +33,16 @@ test-scripts:
 {% endif %}check: preflight fmt lint test test-scripts{% if context.web %} check-web{% endif %}{% if context.mobile %} check-mobile{% endif %}
 
 {% if context.web %}check-web: preflight
-	cd web && corepack pnpm@12.9.1 install --frozen-lockfile
-	cd web && corepack pnpm@12.9.1 build
-	cd web && corepack pnpm@12.9.1 lint
-	cd web && corepack pnpm@12.9.1 test
+	cd web && corepack pnpm install --frozen-lockfile
+	cd web && corepack pnpm build
+	cd web && corepack pnpm lint
+	cd web && corepack pnpm test
 
 {% endif %}{% if context.mobile %}check-mobile: preflight
-	cd mobile && corepack pnpm@12.9.1 install --frozen-lockfile
-	cd mobile && corepack pnpm@12.9.1 exec tsc --noEmit
-	cd mobile && corepack pnpm@12.9.1 lint
-	cd mobile && corepack pnpm@12.9.1 test
+	cd mobile && corepack pnpm install --frozen-lockfile
+	cd mobile && corepack pnpm exec tsc --noEmit
+	cd mobile && corepack pnpm lint
+	cd mobile && corepack pnpm test
 
 qa-setup: qa-android-setup
 
@@ -128,8 +129,8 @@ keycloak-theme-test:
 	node --test scripts/tests/keycloak_accessibility.test.mjs scripts/tests/keycloak_theme_preferences.test.mjs
 
 {% if context.web %}keycloak-theme-browser-test: keycloak-theme-test
-	cd web && corepack pnpm@12.9.1 install --frozen-lockfile
-	cd web && corepack pnpm@12.9.1 exec playwright install chromium
+	cd web && corepack pnpm install --frozen-lockfile
+	cd web && corepack pnpm exec playwright install chromium
 	sh scripts/test-keycloak-theme-patches.sh
 
 {% endif %}

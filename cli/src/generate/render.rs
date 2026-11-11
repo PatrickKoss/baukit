@@ -62,6 +62,13 @@ pub(crate) struct DeclaredPorts {
     pub(crate) service: bool,
 }
 
+/// One `[quality.ci.env]` entry, with the value as a YAML double-quoted scalar.
+#[derive(Debug, Serialize)]
+pub(crate) struct CiEnvEntry {
+    pub(crate) name: String,
+    pub(crate) value: String,
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct TemplateContext {
     pub(crate) app_name: String,
@@ -85,6 +92,10 @@ pub(crate) struct TemplateContext {
     #[serde(flatten)]
     pub(crate) auth: AuthContext,
     pub(crate) quality_strict: bool,
+    pub(crate) ci_timeout_minutes: u16,
+    pub(crate) ci_env: Vec<CiEnvEntry>,
+    pub(crate) ci_env_names: Vec<String>,
+    pub(crate) login_theme: String,
     pub(crate) port_offset: u32,
     pub(crate) postgres_host_port: u16,
     pub(crate) api_host_port: u16,
@@ -462,6 +473,10 @@ mod generator_tests {
             remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
             auth: AuthContext(None),
             quality_strict: false,
+            ci_timeout_minutes: 90,
+            ci_env: Vec::new(),
+            ci_env_names: Vec::new(),
+            login_theme: "baukit-accessible".to_owned(),
             port_offset: 0,
             postgres_host_port: 5432,
             api_host_port: 8080,

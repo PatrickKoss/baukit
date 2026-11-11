@@ -17,11 +17,11 @@ use crate::{
     REMOTE_MCP_CLIENT_SCOPES, TEMPLATE_VERSION,
     check::TEMPLATE_FILES_MANIFEST,
     components::Components,
-    doctor_layout,
+    doctor_layout, gate_settings,
     generate::dependencies::dependency_context,
     generate::render::{
-        AuthContext, DeclaredPorts, RENDERED_SYMLINKS, TemplateContext, product_description,
-        render_product,
+        AuthContext, CiEnvEntry, DeclaredPorts, RENDERED_SYMLINKS, TemplateContext,
+        product_description, render_product,
     },
     manifest::{AuthProvider, Manifest, QualityProfile},
     openapi_client::{command_exists, run_checked},
@@ -65,7 +65,7 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     let platform_migration = resolve_platform_migration(&destination, manifest.as_ref(), options)?;
     ensure_destination_accepts_output(&destination, options)?;
 
-    let context = template_context(options, &ports, platform_migration)?;
+    let context = template_context(options, &ports, manifest.as_ref(), platform_migration)?;
     let mut rendered = render_product(&context, options)?;
     if let Some(source) = existing_manifest {
         rendered.insert(PathBuf::from("baukit.toml"), source.into_bytes());
@@ -132,12 +132,31 @@ fn ensure_destination_accepts_output(destination: &Path, options: &NewOptions) -
     Ok(())
 }
 
+fn ci_env_entries(ci: &gate_settings::CiSettings) -> Result<Vec<CiEnvEntry>> {
+    ci.env
+        .iter()
+        .map(|(name, value)| {
+            Ok(CiEnvEntry {
+                name: name.clone(),
+                value: serde_json::to_string(value)?,
+            })
+        })
+        .collect()
+}
+
 fn template_context(
     options: &NewOptions,
     ports: &PortConfiguration,
+    manifest: Option<&Manifest>,
     platform_migration: String,
 ) -> Result<TemplateContext> {
     let dependency = dependency_context(options)?;
+    let auth_manifest = manifest
+        .map(|manifest| manifest.auth.clone())
+        .unwrap_or_default();
+    let ci = manifest
+        .map(|manifest| manifest.quality.ci.clone())
+        .unwrap_or_default();
     Ok(TemplateContext {
         app_name: options.name.clone(),
         app_crate: options.name.replace('-', "_"),
@@ -158,6 +177,12 @@ fn template_context(
         remote_mcp_client_scopes: REMOTE_MCP_CLIENT_SCOPES,
         auth: AuthContext(options.auth),
         quality_strict: options.quality == QualityProfile::Strict,
+        ci_timeout_minutes: ci
+            .timeout_minutes
+            .unwrap_or(gate_settings::DEFAULT_CI_TIMEOUT_MINUTES),
+        ci_env: ci_env_entries(&ci)?,
+        ci_env_names: ci.env.keys().cloned().collect(),
+        login_theme: auth_manifest.resolved_login_theme()?.to_owned(),
         port_offset: ports.offset,
         postgres_host_port: ports.postgres,
         api_host_port: ports.api,
@@ -289,12 +314,7 @@ pub(crate) fn resolve_lockfiles(destination: &Path, options: &NewOptions) -> Res
         run_checked(
             Command::new("corepack")
                 .current_dir(destination.join(capability))
-                .args([
-                    "pnpm@12.9.1",
-                    "install",
-                    "--lockfile-only",
-                    "--ignore-scripts",
-                ]),
+                .args(["pnpm", "install", "--lockfile-only", "--ignore-scripts"]),
             &format!("{capability} pnpm lockfile generation"),
         )?;
     }
