@@ -5,6 +5,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import call, patch
 
@@ -43,6 +44,13 @@ class AndroidAdbTimeoutTest(unittest.TestCase):
         run.assert_called_once_with(command, timeout=10, check=False)
 
 
+@dataclass(frozen=True)
+class Diagnostics:
+    stdout: str = ""
+    code: int = 0
+    timed_out: bool = False
+
+
 class AndroidHealthTests(unittest.TestCase):
     def probe(
         self,
@@ -51,8 +59,6 @@ class AndroidHealthTests(unittest.TestCase):
         code=0,
         timeout=False,
         diagnostics=None,
-        diagnostics_code=0,
-        diagnostics_timeout=False,
         report=None,
     ):
         stderr = io.StringIO()
@@ -73,11 +79,13 @@ class AndroidHealthTests(unittest.TestCase):
         results = [subprocess.TimeoutExpired(command, 10) if timeout else result]
         calls = [call(command, capture_output=True, text=True, check=False, timeout=10)]
         if not timeout and code == 0:
+            if not isinstance(diagnostics, Diagnostics):
+                diagnostics = Diagnostics(stdout=diagnostics or "")
             details = subprocess.CompletedProcess(
-                dumpsys, diagnostics_code, stdout=diagnostics or ""
+                dumpsys, diagnostics.code, stdout=diagnostics.stdout
             )
             results.append(
-                subprocess.TimeoutExpired(dumpsys, 10) if diagnostics_timeout else details
+                subprocess.TimeoutExpired(dumpsys, 10) if diagnostics.timed_out else details
             )
             calls.append(call(dumpsys, capture_output=True, text=True, check=False, timeout=10))
         with (
@@ -147,7 +155,10 @@ class AndroidHealthTests(unittest.TestCase):
     def test_unrelated_anr_summary_is_not_retained(self):
         for package in ("dev.baukit.example", "com.android.systemui.extra"):
             with self.subTest(package=package):
-                diagnostics = f"ANR in {package}\nPID: 456\nReason: unrelated reason\nstack: com.android.systemui\n"
+                diagnostics = (
+                    f"ANR in {package}\nPID: 456\n"
+                    "Reason: unrelated reason\nstack: com.android.systemui\n"
+                )
                 with tempfile.TemporaryDirectory() as directory:
                     report = Path(directory) / "state/android-health.log"
                     status, stderr = self.probe(
@@ -172,8 +183,8 @@ class AndroidHealthTests(unittest.TestCase):
     def test_diagnostics_failure_and_timeout_keep_the_unhealthy_status(self):
         event = "am_anr: [0,123,com.android.systemui,1,reason]"
         for settings, message in (
-            ({"diagnostics_code": 7}, "qa: Android ANR diagnostics failed: exit 7"),
-            ({"diagnostics_timeout": True}, "qa: Android ANR diagnostics timed out"),
+            ({"diagnostics": Diagnostics(code=7)}, "qa: Android ANR diagnostics failed: exit 7"),
+            ({"diagnostics": Diagnostics(timed_out=True)}, "qa: Android ANR diagnostics timed out"),
         ):
             with self.subTest(settings=settings), tempfile.TemporaryDirectory() as directory:
                 report = Path(directory) / "android-health.log"
@@ -198,7 +209,10 @@ class AndroidHealthTests(unittest.TestCase):
         self.assertIn(summary, stderr)
 
     def test_logcat_anr_without_dumpsys_record_still_fails(self):
-        event = "11-02 10:18:44.491 698 2117 I am_anr  : [0,984,com.android.systemui,550026765,executing service com.android.systemui/.SystemUIService, waited 20092ms]"
+        event = (
+            "11-02 10:18:44.491 698 2117 I am_anr  : [0,984,com.android.systemui,550026765,"
+            "executing service com.android.systemui/.SystemUIService, waited 20092ms]"
+        )
         status, stderr = self.probe(event, diagnostics="")
         self.assertEqual(status, 1)
         self.assertIn(

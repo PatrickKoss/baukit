@@ -167,7 +167,7 @@ def rule_expressions(content: str) -> list[tuple[int, str]]:
         remainder = match.group(2).strip()
         line_number = index + 1
         if remainder not in {"", "|", ">", "|-", ">-", "|+", ">+"}:
-            if len(remainder) >= 2 and remainder[0] == remainder[-1] and remainder[0] in "\"'":
+            if len(remainder) > 1 and remainder[0] == remainder[-1] and remainder[0] in "\"'":
                 remainder = remainder[1:-1]
             expressions.append((line_number, remainder))
             index += 1

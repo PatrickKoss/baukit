@@ -97,6 +97,7 @@ class MobileReactVersionsTest(unittest.TestCase):
                 self.assertEqual(override[1], published["bundledNativeModules"]["react-dom"])
         matrix = (ROOT / "docs/platform/compatibility-matrix.md").read_text()
         self.assertIn(
-            f"{published['expo']} (RN {published['bundledNativeModules']['react-native']}, React {published['bundledNativeModules']['react']})",
+            f"{published['expo']} (RN {published['bundledNativeModules']['react-native']}, "
+            f"React {published['bundledNativeModules']['react']})",
             matrix,
         )

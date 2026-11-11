@@ -4,6 +4,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from process_runner import run_process
+
 CHART = Path(__file__).resolve().parents[1] / "deploy/chart/baukit-app"
 
 
@@ -12,7 +14,7 @@ class McpChartTest(unittest.TestCase):
         command = ["helm", "template", "mcp-test", str(CHART)]
         for setting in settings:
             command.extend(["--set", setting])
-        return subprocess.run(command, capture_output=True, text=True, check=False)
+        return run_process(command, capture_output=True, text=True, check=False)
 
     def test_mcp_routes_and_configuration_are_opt_in(self) -> None:
         disabled = self.render("ingress.enabled=true")

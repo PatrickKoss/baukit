@@ -1,9 +1,10 @@
 import shutil
-import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from process_runner import run_process
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates/common"
 SCRIPTS = (
@@ -18,7 +19,7 @@ class GateTemplateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             for source in SCRIPTS:
                 shutil.copy(source, directory)
-            result = subprocess.run(
+            result = run_process(
                 [sys.executable, str(Path(directory) / "gate.test.py")],
                 capture_output=True,
                 text=True,

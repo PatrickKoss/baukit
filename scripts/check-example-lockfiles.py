@@ -4,8 +4,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 from pathlib import Path
+
+from process_runner import run_process
 
 
 def linked_examples(root: Path) -> list[Path]:
@@ -57,7 +58,7 @@ def main() -> None:
     for directory in linked_examples(root):
         action = "Refreshing" if arguments.refresh else "Checking"
         print(f"{action} {directory.relative_to(root)}/pnpm-lock.yaml", flush=True)
-        subprocess.run(
+        run_process(
             [
                 "corepack",
                 "pnpm",

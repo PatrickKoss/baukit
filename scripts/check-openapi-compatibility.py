@@ -18,6 +18,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from process_runner import run_process
+
 METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
 PATH_PARAMETER = re.compile(r"\{[^}/]+\}")
 SUCCESS_STATUS = re.compile(r"^2(\d\d|XX)$")
@@ -625,7 +627,7 @@ def read_revision(revision: str, path: Path) -> dict | None:
 
 def git(*arguments: str) -> subprocess.CompletedProcess:
     try:
-        return subprocess.run(["git", *arguments], capture_output=True, text=True, check=False)
+        return run_process(["git", *arguments], capture_output=True, text=True, check=False)
     except OSError as error:
         raise ConfigurationError(f"cannot run git: {error}") from error
 

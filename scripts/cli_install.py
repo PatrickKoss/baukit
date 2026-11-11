@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 from pathlib import Path
+
+from process_runner import run_process
 
 ROOT = Path(__file__).resolve().parents[1]
 PREFIX = "cargo install --git https://github.com/PatrickKoss/baukit --tag v"
@@ -17,7 +18,7 @@ INSTALL = re.compile(r"cargo\s+install[^\n`]*")
 
 
 def instruction_files(root: Path) -> list[Path]:
-    result = subprocess.run(
+    result = run_process(
         ["git", "ls-files", "-z"], cwd=root, capture_output=True, text=True, check=True
     )
     return [

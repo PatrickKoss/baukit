@@ -4,6 +4,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from process_runner import run_process
+
 CHART = Path(__file__).resolve().parents[1] / "deploy/chart/baukit-app"
 
 
@@ -12,7 +14,7 @@ class PlatformChartTest(unittest.TestCase):
         command = ["helm", "template", "platform-test", str(CHART)]
         for setting in settings:
             command.extend(["--set", setting])
-        return subprocess.run(command, capture_output=True, text=True, check=False)
+        return run_process(command, capture_output=True, text=True, check=False)
 
     def test_receiver_secret_is_opt_in_and_api_only(self) -> None:
         disabled = self.render()

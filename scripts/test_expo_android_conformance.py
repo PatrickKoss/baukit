@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from process_runner import run_process
+
 SCRIPT = Path(__file__).resolve().parent / "expo-android-conformance.sh"
 
 DRIVER = r"""
@@ -48,7 +50,7 @@ class ExpoAndroidPhaseTest(unittest.TestCase):
         environment.update(EVENTS=str(self.events), FAIL_COMMAND=fail_command)
         if phase is not None:
             environment["BAUKIT_ANDROID_PHASE"] = phase
-        return subprocess.run(
+        return run_process(
             ["bash", "-c", DRIVER, "test", str(SCRIPT), str(self.example)],
             env=environment,
             text=True,
@@ -113,7 +115,7 @@ expo_android_init "$2" dev.baukit.conformance
 adb() { printf 'adb %s\n' "$*" >> "$EVENTS"; }
 expo_android_install
 """
-        result = subprocess.run(
+        result = run_process(
             ["bash", "-c", driver, "test", str(SCRIPT), str(self.example)],
             env={**os.environ, "EVENTS": str(self.events)},
             text=True,
@@ -156,7 +158,7 @@ printf 'caller-options %s\n' "${JAVA_TOOL_OPTIONS:-}" >> "$EVENTS"
         for options in ("", "-Dqa.test=1"):
             with self.subTest(options=options):
                 self.events.unlink(missing_ok=True)
-                result = subprocess.run(
+                result = run_process(
                     ["bash", "-c", driver, "test", str(SCRIPT), str(self.example)],
                     env={**os.environ, "EVENTS": str(self.events), "JAVA_TOOL_OPTIONS": options},
                     text=True,
@@ -179,14 +181,14 @@ class ExpoAndroidSerialTest(unittest.TestCase):
         example = Path(directory.name) / "examples/conformance"
         example.mkdir(parents=True)
         driver = (
-            'set -euo pipefail\nsource "$1"\nexpo_android_init "$2" dev.baukit.conformance\ntrap - EXIT\n'
-            + body
+            'set -euo pipefail\nsource "$1"\nexpo_android_init "$2" '
+            "dev.baukit.conformance\ntrap - EXIT\n" + body
         )
         environment = os.environ.copy()
         environment.pop("ANDROID_SERIAL", None)
         if serial:
             environment["ANDROID_SERIAL"] = serial
-        return subprocess.run(
+        return run_process(
             ["bash", "-c", driver, "test", str(SCRIPT), str(example)],
             env=environment,
             text=True,
@@ -196,7 +198,8 @@ class ExpoAndroidSerialTest(unittest.TestCase):
 
     def test_picks_the_first_port_no_attached_device_uses(self) -> None:
         result = self.run_driver(
-            "adb() { printf 'List of devices attached\\nemulator-5554\\tdevice\\nemulator-5556\\tdevice\\n'; }\n"
+            "adb() { printf 'List of devices "
+            "attached\\nemulator-5554\\tdevice\\nemulator-5556\\tdevice\\n'; }\n"
             'expo_android_pick_serial\necho "$android_serial"\n'
         )
 

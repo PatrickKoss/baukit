@@ -1,9 +1,10 @@
 import importlib.util
 import re
-import subprocess
 import sys
 import unittest
 from pathlib import Path
+
+from process_runner import run_process
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE_SCRIPT = ROOT / "scripts/ci-gate.sh"
@@ -22,7 +23,7 @@ def load_gate():
 
 
 def listed_steps():
-    output = subprocess.run(
+    output = run_process(
         ["sh", str(GATE_SCRIPT), "--list-steps"],
         capture_output=True,
         text=True,

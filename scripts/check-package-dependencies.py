@@ -10,6 +10,7 @@ import tarfile
 import tempfile
 from pathlib import Path
 
+from process_runner import run_process
 from release_packages import typescript_manifests
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,7 +29,7 @@ def packed_filename(output: str, directory: Path) -> str:
 
 def check_package(directory: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="baukit-npm-pack-") as temporary:
-        result = subprocess.run(
+        result = run_process(
             ["npm", "pack", "--json", "--ignore-scripts", "--pack-destination", temporary],
             cwd=directory,
             check=True,

@@ -11,6 +11,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
 REQUEST_TIMEOUT_SECONDS = 20
@@ -59,7 +60,17 @@ def authorization_callback(client, helpers, authorization_url, require_login):
     raise RuntimeError("Keycloak did not redirect to the PKCE callback")
 
 
-def authorize(client, helpers, metadata, redirect_uri, *, require_login, prompt=None):
+@dataclass(frozen=True)
+class Login:
+    client: object
+    helpers: dict
+    metadata: dict
+    redirect_uri: str
+
+
+def authorize(login, *, require_login, prompt=None):
+    client, helpers = login.client, login.helpers
+    metadata, redirect_uri = login.metadata, login.redirect_uri
     verifier = secrets.token_urlsafe(64)
     challenge = (
         base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
@@ -119,7 +130,8 @@ def main():
         helpers["CallbackRedirectHandler"](redirect_uri),
     )
     metadata = helpers["discover"](client, sys.argv[2])
-    initial = authorize(client, helpers, metadata, redirect_uri, require_login=True)
+    login = Login(client, helpers, metadata, redirect_uri)
+    initial = authorize(login, require_login=True)
     wait_for_later_second(int(time.time()))
     refreshed = helpers["open_json"](
         client,
@@ -135,10 +147,8 @@ def main():
     tokens = {
         "initial": initial,
         "refreshed": refreshed,
-        "silent": authorize(client, helpers, metadata, redirect_uri, require_login=False),
-        "forced": authorize(
-            client, helpers, metadata, redirect_uri, require_login=True, prompt="login"
-        ),
+        "silent": authorize(login, require_login=False),
+        "forced": authorize(login, require_login=True, prompt="login"),
     }
     Path(sys.argv[3]).write_text(json.dumps(tokens))
 

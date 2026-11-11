@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from process_runner import run_process, start_process
+
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates/mobile/mobile"
 
 
@@ -83,13 +85,15 @@ case "$*" in
   *'shell am start '*)
     [[ "$FAILURE" != launch ]] || { echo 'Error: Activity class does not exist.'; exit 17; }
     [[ "$FAILURE" != launch-soft ]] || echo 'Error: Activity class does not exist.' ;;
-  *' install -r '*) [[ "$FAILURE" != install ]] || { echo 'Failure [INSTALL_FAILED_OLDER_SDK]'; exit 18; } ;;
+  *' install -r '*) [[ "$FAILURE" != install ]] ||
+    { echo 'Failure [INSTALL_FAILED_OLDER_SDK]'; exit 18; } ;;
   *'getprop sys.boot_completed') if grep -q '^{' "$EVENTS"; then echo 1; fi ;;
   *logcat*)
     if [[ "$FAILURE" == health ]]; then echo 'am_anr: [0,123,com.android.systemui,1,reason]'; fi ;;
   *'dumpsys activity lastanr')
     if [[ "$FAILURE" == health ]]; then
-      printf 'ANR in com.android.systemui\nPID: 123\nReason: Input dispatching timed out\nprivate stack frame\n'
+      printf 'ANR in com.android.systemui\nPID: 123\n'
+      printf 'Reason: Input dispatching timed out\nprivate stack frame\n'
     fi ;;
   *'get-state')
     if [[ -f "$ATTACHED" ]]; then echo device; else exit 1; fi ;;
@@ -97,7 +101,11 @@ case "$*" in
   *'dumpsys window displays') echo '  mCurrentFocus=Window{1 u0 com.android.launcher3/.Launcher}' ;;
   *'cat /proc/stat') printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n' ;;
   *'ip -4 route get 10.0.2.2')
-    if [[ "$FAILURE" != wifi ]]; then echo '10.0.2.2 dev wlan0 src 10.0.2.16 uid 0'; else echo '10.0.2.2 dev eth0 src 10.0.2.15 uid 0'; fi ;;
+    if [[ "$FAILURE" != wifi ]]; then
+      echo '10.0.2.2 dev wlan0 src 10.0.2.16 uid 0'
+    else
+      echo '10.0.2.2 dev eth0 src 10.0.2.15 uid 0'
+    fi ;;
   *'cmd wifi status') echo 'Wifi is enabled'; echo 'Wifi is not connected' ;;
   *'emu avd snapshot save '*) mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}" ;;
 esac
@@ -118,7 +126,9 @@ python3 - <<'RENDERER'
 import json, os
 from pathlib import Path
 with Path(os.environ['EVENTS']).open('a') as output:
-    output.write(json.dumps({'configuration': Path('SwiftShader.ini').read_text(), 'threads': os.environ['LP_NUM_THREADS']}) + '\\n')
+    configuration = Path('SwiftShader.ini').read_text()
+    threads = os.environ['LP_NUM_THREADS']
+    output.write(json.dumps({'configuration': configuration, 'threads': threads}) + '\\n')
 RENDERER
 """,
         )
@@ -134,7 +144,7 @@ RENDERER
         self.attached.touch()
 
     def run_script(self, name, action, **environment):
-        return subprocess.run(
+        return run_process(
             ["bash", str(self.scripts / name), action],
             env={**self.environment, **environment},
             capture_output=True,
@@ -283,7 +293,8 @@ RENDERER
                 self.events.unlink(missing_ok=True)
                 self.executable(
                     self.sdk / "emulator/emulator",
-                    '{ flock 9; printf \'{"args": "%s"}\\n\' "$*" >> "$EVENTS"; } 9>"$EVENTS.lock"\n',
+                    '{ flock 9; printf \'{"args": "%s"}\\n\' "$*" >> "$EVENTS"; } '
+                    '9>"$EVENTS.lock"\n',
                 )
                 result = self.run_script("android-env.sh", "start")
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -309,7 +320,7 @@ RENDERER
         avd = self.root / "avd/test-qa.avd"
         (avd / "snapshots/baukit-clean").mkdir(parents=True)
         (avd / "baukit-clean-000000000000.ready").touch()
-        name = subprocess.run(
+        name = run_process(
             [
                 sys.executable,
                 str(self.scripts / "android-adb.py"),
@@ -542,7 +553,7 @@ RENDERER
 
     def run_watched(self, maestro):
         self.executable(self.tools / "maestro", maestro)
-        return subprocess.run(
+        return run_process(
             ["bash", str(self.scripts / "run-maestro.sh"), "android"],
             env={
                 **self.environment,
@@ -579,7 +590,7 @@ wait
             event for event in self.events.read_text().splitlines() if event.startswith("maestro")
         ]
         self.assertEqual(runs, ["maestro .maestro/a-first.yaml"])
-        alive = subprocess.run(
+        alive = run_process(
             ["kill", "-0", child.read_text().strip()], capture_output=True, check=False
         )
         self.assertNotEqual(alive.returncode, 0)
@@ -644,11 +655,12 @@ echo finished >> "$EVENTS"
         self.assertNotIn("disposable services stopped", result.stdout)
 
     def test_backend_that_ignores_termination_keeps_its_pid(self):
-        process = subprocess.Popen(
+        process = start_process(
             [
                 sys.executable,
                 "-c",
-                "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('ready', flush=True); time.sleep(60)",
+                "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+                "print('ready', flush=True); time.sleep(60)",
             ],
             stdout=subprocess.PIPE,
             text=True,
@@ -686,7 +698,7 @@ esac
         ):
             with self.subTest(recipe=recipe, flow=flow, down=down):
                 (self.mobile / "Makefile").write_text(recipe)
-                result = subprocess.run(
+                result = run_process(
                     [
                         "/usr/bin/make",
                         "--no-print-directory",

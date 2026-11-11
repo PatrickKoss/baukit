@@ -4,11 +4,13 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from process_runner import run_process
+
 SCRIPT = Path(__file__).resolve().parent / "with-loopback-network.sh"
 
 
 def run(*command: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run([str(SCRIPT), *command], capture_output=True, text=True, check=False)
+    return run_process([str(SCRIPT), *command], capture_output=True, text=True, check=False)
 
 
 class WithLoopbackNetworkTest(unittest.TestCase):

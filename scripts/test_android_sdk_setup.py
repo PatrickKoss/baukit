@@ -1,8 +1,9 @@
 import os
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+from process_runner import run_process
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -19,7 +20,8 @@ class AndroidSdkSetupTest(unittest.TestCase):
             (tools / "avdmanager").write_text("""#!/bin/sh
 mkdir -p "$ANDROID_AVD_HOME/test.avd"
 touch "$ANDROID_AVD_HOME/test.ini"
-printf 'hw.cpu.ncore = 1\nhw.cpu.ncore=2\nhw.gpu.mode=auto\n' > "$ANDROID_AVD_HOME/test.avd/config.ini"
+printf 'hw.cpu.ncore = 1\nhw.cpu.ncore=2\n' > "$ANDROID_AVD_HOME/test.avd/config.ini"
+printf 'hw.gpu.mode=auto\n' >> "$ANDROID_AVD_HOME/test.avd/config.ini"
 """)
             for tool in tools.iterdir():
                 tool.chmod(0o755)
@@ -31,7 +33,7 @@ printf 'hw.cpu.ncore = 1\nhw.cpu.ncore=2\nhw.gpu.mode=auto\n' > "$ANDROID_AVD_HO
                 "BAUKIT_ANDROID_AVD": "test",
             }
             for _ in range(2):
-                result = subprocess.run(
+                result = run_process(
                     ["bash", str(ROOT / "scripts/android-sdk-setup.sh")],
                     env=environment,
                     text=True,
@@ -45,7 +47,7 @@ printf 'hw.cpu.ncore = 1\nhw.cpu.ncore=2\nhw.gpu.mode=auto\n' > "$ANDROID_AVD_HO
                 )
 
     def test_native_gate_and_ci_builds_set_the_loopback_gradle_property(self) -> None:
-        result = subprocess.run(
+        result = run_process(
             ["make", "-n", "native-android-gate"],
             cwd=ROOT,
             text=True,

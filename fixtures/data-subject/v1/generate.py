@@ -4,8 +4,12 @@
 import base64
 import hashlib
 import json
-import subprocess
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+
+from process_runner import run_process
 
 ROOT = Path(__file__).resolve().parent
 PAYLOAD_TYPE = "application/vnd.baukit.data-subject.receipt.v1+json"
@@ -20,7 +24,7 @@ def write_json(name, value):
 
 
 def openssl(*args):
-    subprocess.run(["openssl", *args], cwd=ROOT, check=True, capture_output=True)
+    run_process(["openssl", *args], cwd=ROOT, check=True, capture_output=True)
 
 
 def envelope(name, body):

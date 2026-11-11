@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+from process_runner import run_process
 
 SPEC = importlib.util.spec_from_file_location(
     "check_package_dependencies", Path(__file__).with_name("check-package-dependencies.py")
@@ -64,7 +65,7 @@ class PackedDependenciesTest(unittest.TestCase):
                     }
                 )
             )
-            result = subprocess.run(
+            result = run_process(
                 [sys.executable, str(Path(check.__file__)), str(directory)],
                 capture_output=True,
                 text=True,
@@ -76,7 +77,7 @@ class PackedDependenciesTest(unittest.TestCase):
     def test_current_packages_pack_with_installable_dependencies(self) -> None:
         manifests = check.typescript_manifests(check.ROOT)
         self.assertIn("@baukit/suite-client", manifests)
-        result = subprocess.run(
+        result = run_process(
             [sys.executable, str(Path(check.__file__))], capture_output=True, text=True, check=False
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -94,7 +95,7 @@ class PackedDependenciesTest(unittest.TestCase):
                     }
                 )
             )
-            result = subprocess.run(
+            result = run_process(
                 [sys.executable, str(Path(check.__file__)), str(directory)],
                 capture_output=True,
                 text=True,
@@ -126,7 +127,7 @@ class PackedDependenciesTest(unittest.TestCase):
             archives = []
             # Include installed runtime dependencies without relying on npm's registry cache.
             for manifest in packed_manifests.values():
-                packed = subprocess.run(
+                packed = run_process(
                     ["npm", "pack", "--json", "--ignore-scripts", "--pack-destination", temporary],
                     cwd=manifest.parent,
                     capture_output=True,
@@ -144,7 +145,7 @@ class PackedDependenciesTest(unittest.TestCase):
                     }
                 )
             )
-            installed = subprocess.run(
+            installed = run_process(
                 [
                     "npm",
                     "install",
@@ -166,7 +167,7 @@ class PackedDependenciesTest(unittest.TestCase):
                 )
                 self.assertEqual(package["name"], name)
                 self.assertEqual(package["version"], json.loads(manifest.read_text())["version"])
-            verified = subprocess.run(
+            verified = run_process(
                 [
                     "node",
                     "--input-type=module",

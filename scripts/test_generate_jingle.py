@@ -20,9 +20,14 @@ from fractions import Fraction
 from pathlib import Path
 from unittest import mock
 
+from process_runner import run_process
+
 sys.dont_write_bytecode = True
 
 SCRIPT = Path(__file__).with_name("generate-jingle.py").resolve()
+SHORT_SECTION_SECONDS = 8
+MIN_SPEED = 0.7
+MAX_SPEED = 1.2
 SPEC = importlib.util.spec_from_file_location("generate_jingle", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 jingle = importlib.util.module_from_spec(SPEC)
@@ -134,7 +139,7 @@ class JingleTests(unittest.TestCase):
                             chunk["duration_ms"] * jingle.MUSIC_BPM, jingle.BEATS_PER_BAR * 60000
                         )
                         self.assertLessEqual(len(sung), bars / 2)
-                        if seconds < 8:
+                        if seconds < SHORT_SECTION_SECONDS:
                             self.assertLessEqual(len(sung), 1)
 
     def test_storyboard_timings_effect_ids_and_renamed_effects(self) -> None:
@@ -243,7 +248,7 @@ class JingleTests(unittest.TestCase):
             for key in ("stability", "similarity_boost", "style"):
                 self.assertTrue(0 <= settings[key] <= 1)
             self.assertIsInstance(settings["use_speaker_boost"], bool)
-            self.assertTrue(0.7 <= settings["speed"] <= 1.2)
+            self.assertTrue(MIN_SPEED <= settings["speed"] <= MAX_SPEED)
             for model in ("eleven_v4", "eleven_v3"):
                 payload = jingle.voice_payload(self.blocks, language, "intro", model)
                 self.assertEqual(
@@ -656,20 +661,24 @@ class JingleTests(unittest.TestCase):
         copied = self.directory / "repo/scripts/generate-jingle.py"
         copied.parent.mkdir(parents=True)
         copied.write_bytes(SCRIPT.read_bytes())
+        (copied.parent / "process_runner.py").write_bytes(
+            (SCRIPT.parent / "process_runner.py").read_bytes()
+        )
         document = copied.parents[1] / "docs/JINGLE.md"
         document.parent.mkdir()
         document.write_bytes(jingle.DOC.read_bytes())
         wrapper = (
-            "import runpy, sys, urllib.request; "
+            "import os, runpy, sys, urllib.request; "
             "urllib.request.urlopen = lambda *a, **k: sys.exit('network forbidden'); "
-            "sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')"
+            "sys.argv = sys.argv[1:]; sys.path.insert(0, os.path.dirname(sys.argv[0])); "
+            "runpy.run_path(sys.argv[0], run_name='__main__')"
         )
         for arguments, expected in (
             ((), copied.parents[1] / "out/jingle"),
             (("--out-dir", "rendered"), self.directory / "rendered"),
             (("--out-dir", "out/jingle"), self.directory / "out/jingle"),
         ):
-            result = subprocess.run(
+            result = run_process(
                 [sys.executable, "-c", wrapper, str(copied), "--dry-run", *arguments],
                 cwd=self.directory,
                 capture_output=True,
@@ -858,7 +867,8 @@ class JingleTests(unittest.TestCase):
                 self.assertEqual(
                     stdout.splitlines(),
                     [
-                        f"Plan {self.out_dir / plan['filename']} (mix of {', '.join(jingle.mix_inputs(plan))})"
+                        f"Plan {self.out_dir / plan['filename']} (mix of "
+                        f"{', '.join(jingle.mix_inputs(plan))})"
                         for plan in plans
                     ],
                 )
@@ -945,7 +955,7 @@ class JingleTests(unittest.TestCase):
 
             with (
                 mock.patch.object(jingle.shutil, "which", return_value="/test/ffmpeg"),
-                mock.patch.object(jingle.subprocess, "run", side_effect=runner),
+                mock.patch.object(jingle, "run_process", side_effect=runner),
             ):
                 status, _, stderr = self.run_main(
                     "--parts",
@@ -979,7 +989,7 @@ class JingleTests(unittest.TestCase):
                 lengths = {plan["intro"]: 1.0, plan["music"]: music_seconds, plan["outro"]: 2.0}
                 lengths.update({name: 0.5 for name, _ in plan["effects"]})
                 for name, seconds in lengths.items():
-                    subprocess.run(
+                    run_process(
                         [
                             "ffmpeg",
                             "-hide_banner",
@@ -1006,7 +1016,7 @@ class JingleTests(unittest.TestCase):
                     mixer=jingle.run_ffmpeg,
                 )
                 self.assertEqual(status, 0, stderr)
-                probe = subprocess.run(
+                probe = run_process(
                     [
                         "ffprobe",
                         "-v",

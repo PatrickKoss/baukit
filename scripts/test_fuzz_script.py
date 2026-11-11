@@ -1,7 +1,8 @@
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+from process_runner import run_process
 
 ROOT = Path(__file__).resolve().parents[1]
 FAKE_CARGO = """#!/bin/sh
@@ -27,7 +28,7 @@ class FuzzScriptTests(unittest.TestCase):
                 (bin_dir / name).chmod(0o755)
             args_file = root / "args"
             env = {"PATH": f"{bin_dir}:/usr/bin:/bin", "FUZZ_ARGS": str(args_file)}
-            result = subprocess.run(
+            result = run_process(
                 ["sh", str(root / "scripts/fuzz.sh"), "parser", "1"],
                 capture_output=True,
                 text=True,
@@ -58,7 +59,7 @@ class FuzzScriptTests(unittest.TestCase):
         if log_dir is not None:
             env["BAUKIT_GATE_LOG_DIR"] = log_dir
         with tempfile.TemporaryDirectory() as directory:
-            result = subprocess.run(
+            result = run_process(
                 ["sh", "-c", f'{assignment}; printf %s "$fuzz_scratch"'],
                 capture_output=True,
                 text=True,

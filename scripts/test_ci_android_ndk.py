@@ -4,6 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from process_runner import run_process
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts/ci-android-ndk.sh"
 PINNED = "27.1.12297006"
@@ -11,7 +13,7 @@ PINNED = "27.1.12297006"
 
 class CiAndroidNdkTest(unittest.TestCase):
     def run_script(self, *arguments: str, **environment: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
+        return run_process(
             ["bash", str(SCRIPT), *arguments],
             env={**os.environ, **environment},
             text=True,

@@ -11,7 +11,10 @@ import signal
 import subprocess
 import tempfile
 import time
+from http import HTTPStatus
 from pathlib import Path
+
+from process_runner import run_process, start_process
 
 PLAYWRIGHT_IMAGE = "mcr.microsoft.com/playwright:v1.63.0-noble"
 READY_TIMEOUT_SECONDS = 120
@@ -36,7 +39,7 @@ def wait_ready(port: int, path: str, process: subprocess.Popen) -> None:
         if process.poll() is not None:
             raise RuntimeError(f"{process.args[0]} exited with {process.returncode}")
         try:
-            if get_status(port, path) == 200:
+            if get_status(port, path) == HTTPStatus.OK:
                 return
         except (OSError, http.client.HTTPException) as error:
             last_error = str(error)
@@ -80,13 +83,13 @@ def run_inside(fixture: Path, binaries: Path) -> None:
     with tempfile.TemporaryFile(mode="w+") as output:
         started: list[subprocess.Popen] = []
         try:
-            subprocess.run(
+            run_process(
                 [str(binaries / "migrate")],
                 cwd=fixture,
                 env=environment,
                 check=True,
             )
-            api = subprocess.Popen(
+            api = start_process(
                 [str(binaries / "api")],
                 cwd=fixture,
                 env=environment,
@@ -95,7 +98,7 @@ def run_inside(fixture: Path, binaries: Path) -> None:
             )
             started.append(api)
             wait_ready(OPS_PORT, "/readyz", api)
-            vite = subprocess.Popen(
+            vite = start_process(
                 ["node", "node_modules/vite/bin/vite.js", "--port", str(WEB_PORT), "--strictPort"],
                 cwd=web,
                 stdout=output,
@@ -103,7 +106,7 @@ def run_inside(fixture: Path, binaries: Path) -> None:
             )
             started.append(vite)
             wait_ready(WEB_PORT, "/", vite)
-            subprocess.run(
+            run_process(
                 [
                     "node",
                     "node_modules/@playwright/test/cli.js",
@@ -179,10 +182,10 @@ def run(fixture: Path, repository: Path) -> None:
             str(override),
         ]
         try:
-            subprocess.run(
+            run_process(
                 [*compose, "up", "--detach", "--wait", "postgres", "keycloak", "redis"], check=True
             )
-            subprocess.run(
+            run_process(
                 [
                     *compose,
                     "exec",
@@ -197,7 +200,7 @@ def run(fixture: Path, repository: Path) -> None:
                 check=True,
             )
         finally:
-            subprocess.run([*compose, "down", "--volumes"], check=True)
+            run_process([*compose, "down", "--volumes"], check=True)
 
 
 def stop_on_signal(signum: int, _frame) -> None:

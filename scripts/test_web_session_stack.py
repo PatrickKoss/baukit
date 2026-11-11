@@ -41,7 +41,7 @@ class WebSessionStackTest(unittest.TestCase):
                     if fail and "up" in command:
                         raise subprocess.CalledProcessError(1, command)
 
-                with patch.object(STACK.subprocess, "run", side_effect=run) as mocked:
+                with patch.object(STACK, "run_process", side_effect=run) as mocked:
                     if fail_startup:
                         with self.assertRaises(subprocess.CalledProcessError):
                             STACK.run(Path("/repo/fixture"), Path("/repo"))

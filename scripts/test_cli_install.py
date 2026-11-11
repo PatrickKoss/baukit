@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 from cli_install import PREFIX, ROOT, SUFFIX, instruction_files, problems, update_tags
+from process_runner import run_process
 
 
 class CliInstallTest(unittest.TestCase):
@@ -30,12 +30,12 @@ class CliInstallTest(unittest.TestCase):
     def test_release_update_changes_concrete_tags_and_preserves_template_tags(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+            run_process(["git", "init", "--quiet", str(root)], check=True)
             readme = root / "README.md"
             readme.write_text(PREFIX + "0.7.0" + SUFFIX + "\n")
             template = root / "README.md.jinja"
             template.write_text(PREFIX + "{{ context.template_version }}" + SUFFIX + "\n")
-            subprocess.run(["git", "add", "README.md", "README.md.jinja"], cwd=root, check=True)
+            run_process(["git", "add", "README.md", "README.md.jinja"], cwd=root, check=True)
             update_tags(root, "0.7.1")
             self.assertEqual(readme.read_text(), PREFIX + "0.7.1" + SUFFIX + "\n")
             self.assertIn("{{ context.template_version }}", template.read_text())
@@ -43,12 +43,12 @@ class CliInstallTest(unittest.TestCase):
     def test_release_update_skips_tracked_files_deleted_by_version_packages(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            subprocess.run(["git", "init", "--quiet", str(root)], check=True)
+            run_process(["git", "init", "--quiet", str(root)], check=True)
             readme = root / "README.md"
             readme.write_text(PREFIX + "0.7.0" + SUFFIX + "\n")
             changeset = root / "changeset.md"
             changeset.write_text("consumed\n")
-            subprocess.run(["git", "add", "README.md", "changeset.md"], cwd=root, check=True)
+            run_process(["git", "add", "README.md", "changeset.md"], cwd=root, check=True)
             changeset.unlink()
             update_tags(root, "0.7.1")
             self.assertEqual(readme.read_text(), PREFIX + "0.7.1" + SUFFIX + "\n")

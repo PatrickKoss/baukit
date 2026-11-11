@@ -14,14 +14,20 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+
+from process_runner import run_process
 
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs/JINGLE.md"
 APP_SLUG = "baukit"
 API_BASE = "https://api.elevenlabs.io"
+BLOCK_HEADER_WORDS = 3
+STORYBOARD_COLUMNS = ("Section", "Start (s)", "End (s)", "On screen", "Sound effect")
+STORYBOARD_HEADER_ROWS = 2
 LANGUAGES = ("en", "de")
 VERSIONS = ("short", "long")
 PARTS = ("music", "voice", "sfx", "mix")
@@ -191,7 +197,11 @@ def parse_document(text: str) -> dict:
             continue
         if line.startswith("```"):
             active = tuple(line[3:].split())
-            if active and active[0] in ("lyrics", "voiceover") and len(active) != 3:
+            if (
+                active
+                and active[0] in ("lyrics", "voiceover")
+                and len(active) != BLOCK_HEADER_WORDS
+            ):
                 raise ValueError(f"invalid block header: {line}")
     if active is not None:
         raise ValueError("unterminated code block")
@@ -240,9 +250,9 @@ def storyboard_rows(text: str, version: str) -> list[list[str]]:
         for line in section.splitlines()
         if line.startswith("|")
     ]
-    if len(rows) < 3 or rows[0] != ["Section", "Start (s)", "End (s)", "On screen", "Sound effect"]:
+    if len(rows) <= STORYBOARD_HEADER_ROWS or rows[0] != list(STORYBOARD_COLUMNS):
         raise ValueError(f"invalid {version} storyboard table")
-    return rows[2:]
+    return rows[STORYBOARD_HEADER_ROWS:]
 
 
 def validate_storyboard(text: str, version: str) -> list[list[str]]:
@@ -255,7 +265,7 @@ def validate_storyboard(text: str, version: str) -> list[list[str]]:
         end_ms = start_ms + chunk["duration_ms"]
         try:
             matches = (
-                len(row) == 5
+                len(row) == len(STORYBOARD_COLUMNS)
                 and row[0] == chunk["section"]
                 and Decimal(row[1]) * 1000 == start_ms
                 and Decimal(row[2]) * 1000 == end_ms
@@ -453,16 +463,18 @@ def load_manifest(path: Path) -> dict:
     return manifest
 
 
-def generate(
-    jobs: list[Job],
-    out_dir: Path,
-    doc_hash: str,
-    api_key: str,
-    *,
-    dry_run: bool,
-    force: bool,
-    transport,
-) -> None:
+@dataclass(frozen=True)
+class GenerateRequest:
+    doc_hash: str
+    api_key: str
+    dry_run: bool
+    force: bool
+    transport: Callable
+
+
+def generate(jobs: list[Job], out_dir: Path, request: GenerateRequest) -> None:
+    doc_hash, api_key, transport = request.doc_hash, request.api_key, request.transport
+    dry_run, force = request.dry_run, request.force
     manifest_path = out_dir / "manifest.json"
     manifest = load_manifest(manifest_path)
     if dry_run:
@@ -565,7 +577,7 @@ def run_ffmpeg(command: list[str]) -> None:
     if shutil.which(command[0]) is None:
         raise RuntimeError(FFMPEG_MISSING)
     try:
-        result = subprocess.run(
+        result = run_process(
             command, capture_output=True, text=True, timeout=FFMPEG_TIMEOUT_S, check=False
         )
     except subprocess.TimeoutExpired as error:
@@ -649,15 +661,14 @@ def main(argv: list[str] | None = None, transport=None, mixer=None) -> int:
         ):
             raise RuntimeError(FFMPEG_MISSING)
         if paid:
-            generate(
-                build_jobs(blocks, args),
-                out_dir,
-                hashlib.sha256(source).hexdigest(),
-                api_key,
+            request = GenerateRequest(
+                doc_hash=hashlib.sha256(source).hexdigest(),
+                api_key=api_key,
                 dry_run=args.dry_run,
                 force=args.force,
                 transport=transport or http_request,
             )
+            generate(build_jobs(blocks, args), out_dir, request)
         if "mix" in args.parts:
             mix(blocks, args, out_dir, mixer)
         return 0

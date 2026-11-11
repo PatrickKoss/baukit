@@ -4,11 +4,12 @@ import json
 import os
 import shlex
 import shutil
-import subprocess
 import tempfile
 import time
 import unittest
 from pathlib import Path
+
+from process_runner import run_process, start_process
 
 SCRIPT = Path(__file__).resolve().parent / "reap-test-containers.sh"
 FAKE_DOCKER = r"""#!/usr/bin/env python3
@@ -32,7 +33,8 @@ if args[0] == "ps":
             continue
         print(container["id"])
 elif args[0] == "inspect":
-    if os.environ.get("FAKE_DOCKER_INSPECT_FAILURE") or os.environ.get("FAKE_DOCKER_DISAPPEAR_INSPECT"):
+    failure = os.environ.get("FAKE_DOCKER_INSPECT_FAILURE")
+    if failure or os.environ.get("FAKE_DOCKER_DISAPPEAR_INSPECT"):
         sys.exit(1)
     container = next(item for item in state if item["id"] == args[-1])
     print("\x1f".join(container[key] for key in
@@ -66,7 +68,7 @@ class ReapTestContainersTest(unittest.TestCase):
         self.pid_namespace = os.readlink("/proc/self/ns/pid")
         self.hostname = Path("/proc/sys/kernel/hostname").read_text().rstrip("\n")
         self.binary = Path(f"/proc/{os.getpid()}/exe").resolve().name
-        child = subprocess.Popen(["true"])
+        child = start_process(["true"])
         self.dead_pid = str(child.pid)
         child.wait()
 
@@ -86,7 +88,7 @@ class ReapTestContainersTest(unittest.TestCase):
 
     def run_script(self, containers, *arguments):
         self.state.write_text(json.dumps(containers))
-        result = subprocess.run(
+        result = run_process(
             ["bash", str(SCRIPT), *arguments],
             env=self.environment,
             capture_output=True,

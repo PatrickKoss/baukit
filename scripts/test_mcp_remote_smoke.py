@@ -28,7 +28,7 @@ class McpSmokeProjectTest(unittest.TestCase):
 
                 with (
                     patch.dict(os.environ, {"COMPOSE_PROJECT_NAME": "unrelated-live-stack"}),
-                    patch.object(SMOKE.subprocess, "run", side_effect=run) as mocked,
+                    patch.object(SMOKE, "run_process", side_effect=run) as mocked,
                 ):
                     if fail_startup:
                         with self.assertRaises(subprocess.CalledProcessError):

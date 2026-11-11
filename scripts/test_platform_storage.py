@@ -8,12 +8,14 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from process_runner import run_process
+
 PLATFORM = Path(__file__).resolve().parent.parent / "deploy/platform"
 
 
 class RuntimeStorageCredentialsTest(unittest.TestCase):
     def run_shell(self, state: Path, script: str) -> str:
-        result = subprocess.run(
+        result = run_process(
             ["bash", "-ec", 'source "$PLATFORM_SCRIPT"\n' + script],
             env={
                 **os.environ,
@@ -94,10 +96,15 @@ class RuntimeStorageCredentialsTest(unittest.TestCase):
             """,
             ).splitlines()
             expected = [
-                "postgres postgres-backup-credentials --from-literal=ACCESS_KEY_ID=storage-access --from-literal=ACCESS_SECRET_KEY=storage-secret",
-                "postgres rustfs-root --from-literal=username=storage-access --from-literal=password=storage-secret",
-                "observability rustfs-root --from-literal=username=storage-access --from-literal=password=storage-secret",
-                "posthog posthog-object-storage --from-literal=root-user=storage-access --from-literal=root-password=storage-secret",
+                "postgres postgres-backup-credentials "
+                "--from-literal=ACCESS_KEY_ID=storage-access "
+                "--from-literal=ACCESS_SECRET_KEY=storage-secret",
+                "postgres rustfs-root --from-literal=username=storage-access "
+                "--from-literal=password=storage-secret",
+                "observability rustfs-root --from-literal=username=storage-access "
+                "--from-literal=password=storage-secret",
+                "posthog posthog-object-storage --from-literal=root-user=storage-access "
+                "--from-literal=root-password=storage-secret",
             ]
             for secret in expected:
                 self.assertIn(secret, result)
@@ -121,7 +128,7 @@ esac
         directory.joinpath("curl").write_text("#!/bin/sh\nexit 0\n")
         for tool in ("aws", "curl"):
             directory.joinpath(tool).chmod(0o755)
-        return subprocess.run(
+        return run_process(
             ["sh", "-ec", commands],
             env={
                 **os.environ,

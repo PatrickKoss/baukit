@@ -6,13 +6,14 @@ import unittest
 from pathlib import Path
 
 import yaml
+from process_runner import run_process
 
 CHART = Path(__file__).resolve().parent.parent / "deploy/chart/baukit-app"
 POLICY = "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'"
 
 
 def render(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return run_process(
         ["helm", "template", "web-test", str(CHART), "--set", "web.enabled=true", *args],
         capture_output=True,
         text=True,

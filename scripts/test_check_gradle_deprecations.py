@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from process_runner import run_process
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts/check-gradle-deprecations.py"
 TEMPLATE_GRADLE = (
@@ -13,7 +15,8 @@ TEMPLATE_GRADLE = (
 )
 PROPERTY = (
     "Properties should be assigned using the 'propName = value' syntax. Setting a property via the "
-    "Gradle-generated 'propName value' or 'propName(value)' syntax in Groovy DSL has been deprecated. "
+    "Gradle-generated 'propName value' or 'propName(value)' syntax in Groovy DSL has been "
+    "deprecated. "
     "Use assignment ('{name} = <value>') instead."
 )
 
@@ -36,7 +39,7 @@ class CheckGradleDeprecationsTest(unittest.TestCase):
     def run_check(self, project: Path, log: str) -> subprocess.CompletedProcess[str]:
         log_path = project / "assemble.log"
         log_path.write_text(log)
-        return subprocess.run(
+        return run_process(
             [sys.executable, str(SCRIPT), "--project", str(project), str(log_path)],
             text=True,
             capture_output=True,
@@ -49,7 +52,8 @@ class CheckGradleDeprecationsTest(unittest.TestCase):
         gradle = project / "android/app/build.gradle"
         gradle.parent.mkdir(parents=True)
         gradle.write_text(
-            'apply plugin: "com.android.application"\nandroid {\n    namespace "dev.baukit.fixture"\n'
+            'apply plugin: "com.android.application"\nandroid {\n    namespace '
+            '"dev.baukit.fixture"\n'
             "    compileSdk 36\n}\n"
         )
         library = project / "node_modules/.pnpm/lib/node_modules/lib/android/build.gradle"
@@ -64,7 +68,8 @@ class CheckGradleDeprecationsTest(unittest.TestCase):
                 [
                     deprecation(
                         PROPERTY.format(name="namespace"),
-                        "com.android.build.gradle.internal.dsl.BaseAppModuleExtension_Decorated.namespace(Unknown Source)",
+                        "com.android.build.gradle.internal.dsl."
+                        "BaseAppModuleExtension_Decorated.namespace(Unknown Source)",
                         f"build_x.doCall({project}/android/app/build.gradle:3)",
                     ),
                     deprecation(
@@ -72,12 +77,14 @@ class CheckGradleDeprecationsTest(unittest.TestCase):
                         f"build_y.doCall({project}/node_modules/.pnpm/lib/node_modules/lib/android/build.gradle:2)",
                     ),
                     deprecation(
-                        "Declaring dependencies using multi-string notation has been deprecated. Use single-string.",
+                        "Declaring dependencies using multi-string notation has been "
+                        "deprecated. Use single-string.",
                         "org.gradle.api.Dependencies.create(Dependencies.java:1)",
                         "com.android.build.gradle.internal.res.Aapt2FromMaven$Companion.create(Aapt2FromMaven.kt:139)",
                         f"build_z.doCall({project}/android/app/build.gradle:1)",
                     ),
-                    f"{project}/node_modules/lib/Module.java:70: warning: [removal] x() has been deprecated",
+                    f"{project}/node_modules/lib/Module.java:70: warning: [removal] x() has "
+                    f"been deprecated",
                 ]
             )
             result = self.run_check(project, log)

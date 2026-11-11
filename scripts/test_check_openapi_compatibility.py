@@ -6,12 +6,13 @@ import importlib.util
 import io
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import unittest
 from collections.abc import Callable
 from pathlib import Path
+
+from process_runner import run_process
 
 CHECK_PATH = Path(__file__).resolve().parent / "check-openapi-compatibility.py"
 SPEC = importlib.util.spec_from_file_location("check_openapi_compatibility", CHECK_PATH)
@@ -653,7 +654,7 @@ class BaseRevisionTests(unittest.TestCase):
         self.addCleanup(os.chdir, previous)
 
     def git(self, *arguments: str) -> None:
-        subprocess.run(
+        run_process(
             [
                 "git",
                 "-c",

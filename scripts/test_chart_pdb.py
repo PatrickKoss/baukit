@@ -4,6 +4,8 @@ import subprocess
 import unittest
 from pathlib import Path
 
+from process_runner import run_process
+
 CHART = Path(__file__).resolve().parents[1] / "deploy/chart/baukit-app"
 RELEASE = "pdb-test"
 
@@ -13,7 +15,7 @@ class PodDisruptionBudgetChartTest(unittest.TestCase):
         command = ["helm", "template", RELEASE, str(CHART)]
         for setting in settings:
             command.extend(["--set", setting])
-        return subprocess.run(command, capture_output=True, text=True, check=False)
+        return run_process(command, capture_output=True, text=True, check=False)
 
     def budgets(self, *settings: str) -> dict[str, str]:
         result = self.render(*settings)

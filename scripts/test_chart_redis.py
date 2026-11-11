@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
-import subprocess
 import unittest
 from pathlib import Path
+
+from process_runner import run_process
 
 CHART = Path(__file__).resolve().parent.parent / "deploy/chart/baukit-app"
 REDIS_IMAGE = "redis:8.10.2-alpine"
@@ -13,7 +14,7 @@ class RedisChartImageTest(unittest.TestCase):
     def test_direct_and_sentinel_modes_use_the_documented_patch(self) -> None:
         for replicas, expected_count in [(1, 1), (3, 2)]:
             with self.subTest(replicas=replicas):
-                result = subprocess.run(
+                result = run_process(
                     [
                         "helm",
                         "template",

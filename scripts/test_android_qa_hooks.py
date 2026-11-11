@@ -1,7 +1,7 @@
-import subprocess
 import unittest
 
 import test_android_qa
+from process_runner import run_process
 
 APP_ID = "dev.baukit.test"
 OTHER_APP_ID = "dev.example.product"
@@ -210,7 +210,7 @@ class AndroidQaHookTests(unittest.TestCase):
     def test_a_run_past_the_deadline_is_stopped_with_exit_124(self):
         self.flows("a.yaml")
         self.executable(self.tools / "maestro", "while true; do echo tick; sleep 0.1; done\n")
-        result = subprocess.run(
+        result = run_process(
             ["bash", str(self.scripts / "run-maestro.sh"), "android"],
             env={
                 **self.environment,

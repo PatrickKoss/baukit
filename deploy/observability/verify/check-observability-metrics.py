@@ -13,6 +13,9 @@ from types import ModuleType
 SAMPLE_NAME = re.compile(r"^([A-Za-z_:][A-Za-z0-9_:]*)")
 
 
+METRIC_NAME_INDEX = 2
+
+
 def arguments() -> argparse.Namespace:
     default_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser()
@@ -66,8 +69,8 @@ def exported_names(path: Path) -> set[str]:
             continue
         if stripped.startswith("# HELP ") or stripped.startswith("# TYPE "):
             parts = stripped.split()
-            if len(parts) >= 3:
-                names.add(parts[2])
+            if len(parts) > METRIC_NAME_INDEX:
+                names.add(parts[METRIC_NAME_INDEX])
             continue
         if stripped.startswith("#"):
             continue

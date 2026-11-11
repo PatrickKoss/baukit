@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -37,8 +38,12 @@ class GitHandler(BaseHTTPRequestHandler):
                 "REMOTE_ADDR": self.client_address[0],
             }
         )
-        result = subprocess.run(
-            ["git", "http-backend"],
+        git = shutil.which("git")
+        if git is None:
+            self.send_error(500, "git is not on PATH")
+            return
+        result = subprocess.run(  # noqa: S603 -- argv is the git found by shutil.which plus the fixed "http-backend", no shell
+            [git, "http-backend"],
             input=body,
             capture_output=True,
             env=environment,

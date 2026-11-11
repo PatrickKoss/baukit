@@ -16,7 +16,10 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from http import HTTPStatus
 from pathlib import Path
+
+from process_runner import run_process, start_process
 
 
 def wait_ready(url: str, process: subprocess.Popen) -> None:
@@ -27,7 +30,7 @@ def wait_ready(url: str, process: subprocess.Popen) -> None:
             raise RuntimeError(f"backend exited with {process.returncode}")
         try:
             with urllib.request.urlopen(url, timeout=2) as response:
-                if response.status == 200:
+                if response.status == HTTPStatus.OK:
                     return
         except (urllib.error.URLError, TimeoutError) as error:
             last_error = str(error)
@@ -144,13 +147,14 @@ def reconcile_scopes(fixture: Path, issuer: str) -> None:
         writes = ", ".join(f"{method} {path}" for method, path in api.mutations)
         raise RuntimeError("a second realm reconciliation changed Keycloak: " + writes)
     print(
-        "Keycloak: repaired scopes, bindings and audience mappers; second reconciliation made no writes",
+        "Keycloak: repaired scopes, bindings and audience mappers; second reconciliation made "
+        "no writes",
         flush=True,
     )
 
 
 def start_backend(fixture: Path, environment: dict[str, str], output) -> subprocess.Popen:
-    backend = subprocess.Popen(
+    backend = start_process(
         [str(fixture / "backend/target/debug/api")],
         cwd=fixture,
         env=environment,
@@ -221,7 +225,7 @@ def create_item(web_token: str, item_name: str) -> None:
     )
     with urllib.request.urlopen(request, timeout=5) as response:
         item = json.load(response)
-        if response.status != 201 or item["name"] != item_name:
+        if response.status != HTTPStatus.CREATED or item["name"] != item_name:
             raise RuntimeError("REST did not create the smoke item")
 
 
@@ -232,7 +236,7 @@ def check_rest_rejects(web_token: str) -> None:
     try:
         urllib.request.urlopen(denied, timeout=5).close()
     except urllib.error.HTTPError as error:
-        if error.code != 401:
+        if error.code != HTTPStatus.UNAUTHORIZED:
             raise
     else:
         raise RuntimeError("REST accepted a token from a client outside authorized_parties")
@@ -257,7 +261,7 @@ def run_connect_example(repository: Path, resource: str, token: str, item_name: 
             "MCP_EXPECT_ITEM_NAME": item_name,
         }
     )
-    subprocess.run(
+    run_process(
         [str(repository / "rust/target/debug/examples/connect")],
         env=client_environment,
         check=True,
@@ -297,7 +301,7 @@ def run_backend(fixture: Path, repository: Path) -> None:
     backend = None
     with tempfile.TemporaryFile(mode="w+") as output:
         try:
-            subprocess.run(
+            run_process(
                 [str(fixture / "backend/target/debug/migrate")], env=environment, check=True
             )
             environment.update(mcp_environment(prefix, name, internal_jwks, resource))
@@ -348,7 +352,7 @@ def run_backend(fixture: Path, repository: Path) -> None:
 
 
 def run(fixture: Path, repository: Path) -> None:
-    subprocess.run(
+    run_process(
         [
             "cargo",
             "build",
@@ -404,10 +408,10 @@ def run(fixture: Path, repository: Path) -> None:
             str(override),
         ]
         try:
-            subprocess.run(
+            run_process(
                 [*compose, "up", "--detach", "--wait", "postgres", "keycloak", "redis"], check=True
             )
-            subprocess.run(
+            run_process(
                 [
                     *compose,
                     "exec",
@@ -421,7 +425,7 @@ def run(fixture: Path, repository: Path) -> None:
                 check=True,
             )
         finally:
-            subprocess.run([*compose, "down", "--volumes"], check=True)
+            run_process([*compose, "down", "--volumes"], check=True)
 
 
 def stop_on_signal(signum: int, _frame) -> None:
