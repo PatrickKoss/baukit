@@ -60,7 +60,11 @@ class CallbackTests(unittest.TestCase):
 class SignInTests(unittest.TestCase):
     def test_sign_in_builds_the_login_request_from_keywords(self):
         with (
-            mock.patch.dict("os.environ", clear=True),
+            mock.patch.dict(
+                "os.environ",
+                {"BAUKIT_QA_USERNAME": "qa-user", "BAUKIT_QA_PASSWORD": "qa-secret"},
+                clear=True,
+            ),
             mock.patch.object(pkce, "discover", return_value={"token_endpoint": "t"}),
             mock.patch.object(pkce, "login", return_value="token") as login,
         ):
@@ -72,17 +76,12 @@ class SignInTests(unittest.TestCase):
             )
         self.assertEqual(token, "token")
         request = login.call_args.args[2]
+        self.assertEqual(request.password, "qa-secret")
         self.assertEqual(
-            request,
-            pkce.LoginRequest(
-                username="test",
-                password="development-password",
-                client_id="app-mobile",
-                redirect_uri="app://oauth",
-                scope="openid profile email",
-                resource="http://api.test",
-            ),
+            (request.username, request.client_id, request.redirect_uri, request.scope),
+            ("qa-user", "app-mobile", "app://oauth", "openid profile email"),
         )
+        self.assertEqual(request.resource, "http://api.test")
 
     def test_the_loader_registers_the_module_once(self):
         self.assertIs(sys.modules["pkce_login"], pkce)

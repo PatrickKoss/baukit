@@ -35,8 +35,6 @@ def sign_in(
     client_id: str,
     redirect_uri: str,
     scope: str = DEFAULT_SCOPE,
-    username: str | None = None,
-    password: str | None = None,
     resource: str | None = None,
 ) -> str:
     """Run the headless authorization-code + PKCE login and return the access token.
@@ -53,8 +51,8 @@ def sign_in(
     )
     extra = {} if resource is None else {"resource": resource}
     request = module.LoginRequest(
-        username=username or os.environ.get("BAUKIT_QA_USERNAME", "test"),
-        password=password or os.environ.get("BAUKIT_QA_PASSWORD", "development-password"),
+        username=os.environ.get("BAUKIT_QA_USERNAME", "test"),
+        password=os.environ.get("BAUKIT_QA_PASSWORD", "development-password"),
         client_id=client_id,
         redirect_uri=redirect_uri,
         scope=scope,
