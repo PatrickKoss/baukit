@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-11
+
 ## [0.21.0] - 2026-11-10
 
 ## [0.20.0] - 2026-11-10

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-11
+
 {% if context.mobile %}- Mobile QA scripts take product needs through `mobile/scripts/qa/local.sh`. `android-env.sh` has `boot` and `prepare` next to `start`, a `qa_app_id` (or `BAUKIT_QA_APP_ID`) shared with `run-maestro.sh`, `qa_apk_path`, `qa_build_apk`, `qa_prepare_device`, the `api_port` and `keycloak_port` variables, and `BAUKIT_QA_ANDROID_GPU`. `services.sh` has `qa_services_start` and `qa_services_stop`, `BAUKIT_QA_STATE_DIR` and `BAUKIT_QA_COMPOSE_OVERRIDE`, and its Keycloak pins `KC_HOSTNAME` to the QA port. `run-maestro.sh` has `qa_maestro_shards`, `qa_maestro_env` and `BAUKIT_QA_MAESTRO_DEADLINE_SECONDS`. `build-android.sh` and `build-ios.sh` have `qa_build_env`, `qa_install_dependencies` and, for Android, `qa_gradle_args`; the debug assemble builds one ABI. `android-sdk.sh` reads `BAUKIT_QA_ANDROID_PLATFORM` and `BAUKIT_QA_ANDROID_BUILD_TOOLS`, and iOS builds read `BAUKIT_QA_IOS_SCHEME`. A failing `adb install` or `am start` prints the adb output.
 {% endif %}
 ## [0.21.0] - 2026-11-10

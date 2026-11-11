@@ -7,7 +7,7 @@ This table records the tested baseline. The committed lockfiles record exact res
 
 ## v0.22.0
 
-Last verified release train: `v0.22.0` (minor train on top of `v0.21.0`, template scripts only). Not tagged yet; the release train sets the date.
+Last verified release train: `v0.22.0` (minor train on top of `v0.21.0`, template scripts only).
 - Mobile QA scripts (`mobile/scripts/qa/`) take product needs through `local.sh` hooks, so a product with its own QA lane keeps the template copies of `android-env.sh`, `run-maestro.sh`, `services.sh`, `build-android.sh`, `build-ios.sh` and `android-sdk.sh` unchanged.
 - The Android application id has one source. `android-env.sh` and `run-maestro.sh` both read `qa_app_id`, which defaults to `BAUKIT_QA_APP_ID` or `dev.baukit.<app_crate>`. A product whose `android.package` differs sets `qa_app_id` in `local.sh`.
 - `adb install` and `am start` print the adb output when they fail, and `am start` output that begins with `Error` fails the start.
