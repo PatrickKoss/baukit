@@ -5,6 +5,14 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.24.0
+
+Last verified release train: `v0.24.0` (minor train on top of `v0.23.0`, template scripts only). It makes the generated e2e gates more reliable.
+- `android-env.sh` starts emulators with `-feature -Vulkan`. Guest Chrome then gets no Vulkan instance from the host, which removes the Custom Tab crash path seen with emulator 37.2.13. Quick-boot snapshots rebuild once because their name includes the feature string.
+- `run-maestro.sh` keeps `logcat` and the Chrome version of a failed Android device in `maestro-debug/`. `services.sh` `stop_pid_file` takes the expected binary as a third argument and refuses a PID that runs something else, so product `qa_stop_services` hooks that call it need the new argument.
+- The strict gate's `playwright` and `webkit-repeats` steps run in a loopback-only network namespace through `scripts/with-loopback-network.sh`. CI jobs that run them set `kernel.apparmor_restrict_unprivileged_userns=0`. `BAUKIT_E2E_NETWORK_ISOLATION=0` opts out on hosts without unprivileged user namespaces.
+- `expo install --check` and `expo-doctor` run with `EXPO_OFFLINE=1` against the installed SDK's `bundledNativeModules.json`, and `expo-doctor` is pinned to 1.20.5.
+
 ## v0.23.0
 
 Last verified release train: `v0.23.0` (minor train on top of `v0.22.0`). Template hooks replace product divergences, and the mobile QA scripts get hardened.

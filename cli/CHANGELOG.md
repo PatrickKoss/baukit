@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-12
+
 ## [0.23.0] - 2026-11-12
 
 - `baukit check suppressions` flags a nested ruff config (`ruff.toml`, `.ruff.toml`, `pyproject.toml` with `[tool.ruff]`) that selects fewer rules than the root config, or ignores rules the root enforces. Configs that `extend` the root pass.

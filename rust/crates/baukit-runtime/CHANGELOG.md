@@ -4,6 +4,8 @@ All notable changes to `baukit-runtime` are documented here.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-12
+
 ## [0.23.0] - 2026-11-12
 
 ## [0.22.0] - 2026-11-11
