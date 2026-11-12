@@ -20,6 +20,24 @@ echo "$$" > "$EMULATOR_PID"
 exec sleep 60
 """
 
+EXIT_AFTER_FIRST_PROBE = """
+case "$*" in
+  *'getprop sys.boot_completed')
+    if [[ -f "$PROBED" ]]; then echo 1; exit 0; fi
+    [[ -s "$EMULATOR_PID" ]] || exit 0
+    touch "$PROBED"
+    pid="$(<"$EMULATOR_PID")"
+    kill -9 "$pid"
+    for _ in $(seq 50); do
+      state="$(ps -o stat= -p "$pid" || true)"
+      [[ -n "$state" && "$state" != Z* ]] || exit 0
+      sleep 0.1
+    done
+    exit 0 ;;
+esac
+exec "$0-base" "$@"
+"""
+
 
 class AndroidQaLifecycleTests(unittest.TestCase):
     def setUp(self):
@@ -101,6 +119,18 @@ class AndroidQaLifecycleTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("exited before emulator-5556 booted", result.stderr)
         self.assertLess(time.monotonic() - started, 30)
+
+    def test_boot_wait_counts_a_boot_the_emulator_finished_before_it_exited(self):
+        self.prepare_start()
+        pid_file = self.root / "emulator.pid"
+        self.environment["EMULATOR_PID"] = str(pid_file)
+        self.environment["PROBED"] = str(self.root / "probed")
+        self.executable(self.sdk / "emulator/emulator", SLEEPING_EMULATOR)
+        adb = self.sdk / "platform-tools/adb"
+        adb.rename(adb.with_name("adb-base"))
+        self.executable(adb, EXIT_AFTER_FIRST_PROBE)
+        result = self.run_script("android-env.sh", "boot")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_reverse_is_reapplied_before_every_flow(self):
         self.flows("a.yaml", "b.yaml")

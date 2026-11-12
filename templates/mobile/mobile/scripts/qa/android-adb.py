@@ -74,6 +74,7 @@ def wait_for_boot(
 ) -> int:
     deadline = time.monotonic() + boot_timeout
     while (remaining := deadline - time.monotonic()) > 0:
+        exited = pid is not None and not process_running(pid)
         try:
             result = run_command(
                 [adb, "-s", serial, "shell", "getprop", "sys.boot_completed"],
@@ -85,7 +86,7 @@ def wait_for_boot(
                 return 0
         except subprocess.TimeoutExpired:
             print("qa: Android boot probe timed out", file=sys.stderr)
-        if pid is not None and not process_running(pid):
+        if exited:
             print(f"qa: emulator process {pid} exited before {serial} booted", file=sys.stderr)
             return 1
         time.sleep(min(POLL_INTERVAL, max(0, deadline - time.monotonic())))
