@@ -431,6 +431,35 @@ fn validate_android(
     }
 }
 
+fn valid_resource_name(name: &str) -> bool {
+    let mut characters = name.chars();
+    characters
+        .next()
+        .is_some_and(|first| first.is_ascii_lowercase())
+        && characters.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+fn validate_resources(
+    resources: &BTreeMap<String, Vec<String>>,
+    lanes_and_steps: &BTreeSet<String>,
+    failures: &mut Vec<String>,
+) {
+    for (name, members) in resources {
+        if !valid_resource_name(name) {
+            failures.push(format!(
+                "quality.resources `{name}` must start with a lowercase letter and hold only lowercase letters, digits and `-`"
+            ));
+        }
+        for member in members {
+            if !lanes_and_steps.contains(member) {
+                failures.push(format!(
+                    "quality.resources `{name}` names unknown lane or step `{member}`"
+                ));
+            }
+        }
+    }
+}
+
 pub fn validate(
     quality: &QualityManifest,
     capabilities: &Capabilities,
@@ -482,6 +511,7 @@ pub fn validate(
             failures.push(format!("quality.light names unknown lane or step `{name}`"));
         }
     }
+    validate_resources(&quality.resources, &lanes_and_steps, failures);
     for glob in &quality.shared {
         if invalid_glob(glob) {
             failures.push(format!(
@@ -778,6 +808,30 @@ mod tests {
         assert_eq!(
             failures,
             ["quality.light names unknown lane or step `nope`"]
+        );
+    }
+
+    #[test]
+    fn resources_need_valid_names_and_known_members() {
+        let gate = parse_gate_steps("doctor fast - always -\nplaywright web - selected web-e2e\n")
+            .expect("listing parses");
+        let quality: QualityManifest = toml::from_str(
+            "[resources]\nandroid = [\"web\", \"nope\"]\ndocker-network = [\"playwright\"]\n\"Bad_Name\" = []\n",
+        )
+        .expect("quality parses");
+        let mut failures = Vec::new();
+        validate(
+            &quality,
+            &capabilities(false, true, false),
+            Some(&gate),
+            &mut failures,
+        );
+        assert_eq!(
+            failures,
+            [
+                "quality.resources `Bad_Name` must start with a lowercase letter and hold only lowercase letters, digits and `-`",
+                "quality.resources `android` names unknown lane or step `nope`",
+            ]
         );
     }
 

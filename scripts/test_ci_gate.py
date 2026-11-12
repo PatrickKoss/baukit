@@ -15,6 +15,7 @@ CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
 
 def load_gate():
     sys.path.insert(0, str(ROOT / "templates/common/scripts"))
+    sys.path.insert(0, str(GATE_PY.parent))
     spec = importlib.util.spec_from_file_location("template_gate", GATE_PY)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module

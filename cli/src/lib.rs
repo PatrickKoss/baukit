@@ -89,6 +89,8 @@ const EXPECTED_STRICT_FILES: &[&str] = &[
     "scripts/quality-gate.sh",
     "scripts/gate.py",
     "scripts/gate.test.py",
+    "scripts/gate_locks.py",
+    "scripts/gate_locks.test.py",
 ];
 
 const ENV_RECONCILIATION_FILES: &[&str] = &[

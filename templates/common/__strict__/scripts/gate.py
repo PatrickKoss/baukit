@@ -26,6 +26,14 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from gate_locks import (
+    CorePool,
+    ResourceLocks,
+    describe_waits,
+    resource_map,
+    resources_for,
+    unknown_resource_members,
+)
 from process_runner import run_process
 
 MODES = ("always", "selected", "affected")
@@ -33,10 +41,12 @@ DEFAULT_BUDGET_MINUTES = {"full": 10, "affected": 5}
 DEFAULT_WORKER_MEMORY_MB = 1024
 DEFAULT_ANDROID_EMULATORS = 2
 CORES_PER_EMULATOR = 2
-LIGHT_LANES = frozenset({"fast"})
 EMULATOR_STEPS = frozenset({"android-e2e"})
 FAILURE_TAIL_LINES = 40
 NOT_RUN = "not run"
+FAST_LANE = "fast"
+FAST_LANE_FAILED = f"{NOT_RUN} (fast lane failed)"
+LIGHT_LANES = frozenset({FAST_LANE})
 STEP_FIELD_COUNT = 5
 GENERIC_SHARED = (
     "**/Cargo.lock",
@@ -78,6 +88,12 @@ class Step:
     after: tuple[str, ...]
     mode: str
     tokens: frozenset[str]
+
+
+@dataclass(frozen=True)
+class HostSharing:
+    locks: ResourceLocks | None = None
+    resources: dict[str, frozenset[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -277,9 +293,15 @@ class CoreBudget:
     """One pool of cores that every heavy step draws its workers from while it runs."""
 
     def __init__(
-        self, cores: int, memory_mb: int | None, worker_memory_mb: int, emulator_cores: int
+        self,
+        cores: int,
+        memory_mb: int | None,
+        worker_memory_mb: int,
+        emulator_cores: int,
+        pool: CorePool | None = None,
     ):
         self.cores = max(1, cores)
+        self.pool = pool
         self.free = self.cores
         self.memory_mb = memory_mb
         self.worker_memory_mb = worker_memory_mb
@@ -287,11 +309,16 @@ class CoreBudget:
         self.condition = threading.Condition()
 
     def share(self, lanes: int) -> int:
-        return split_workers(self.cores, lanes, self.memory_mb, self.worker_memory_mb)
+        cores = self.cores
+        if self.pool is not None:
+            cores = max(1, cores // self.pool.live_gates())
+        return split_workers(cores, lanes, self.memory_mb, self.worker_memory_mb)
 
     def acquire(self, want: int, minimum: int = 1) -> int:
         want = min(self.cores, max(1, want))
         minimum = min(want, max(1, minimum))
+        if self.pool is not None:
+            return self.pool.acquire(want, minimum)
         with self.condition:
             self.condition.wait_for(lambda: self.free >= minimum)
             granted = min(want, self.free)
@@ -299,10 +326,15 @@ class CoreBudget:
             return granted
 
     def available(self) -> int:
+        if self.pool is not None:
+            return self.pool.available()
         with self.condition:
             return self.free
 
     def release(self, cores: int) -> None:
+        if self.pool is not None:
+            self.pool.release(cores)
+            return
         with self.condition:
             self.free += cores
             self.condition.notify_all()
@@ -403,8 +435,16 @@ class Runner:
         *,
         budget: CoreBudget | None = None,
         light: frozenset[str] = frozenset(),
+        sharing: HostSharing | None = None,
     ):
         self.planned = planned
+        sharing = sharing or HostSharing()
+        self.locks = sharing.locks
+        self.resources = sharing.resources
+        self.fast_done = threading.Event()
+        self.fast_passed = True
+        if FAST_LANE not in {item.step.lane for item in planned}:
+            self.fast_done.set()
         self.budget = budget or CoreBudget(
             int(context.environment.get("BAUKIT_GATE_WORKERS", "1")), None, 0, 1
         )
@@ -445,14 +485,45 @@ class Runner:
                 return dependency
         return None
 
+    def step_resources(self, step: Step) -> list[str]:
+        if self.locks is None:
+            return []
+        return resources_for({step.name, step.lane}, self.resources)
+
+    def skip_after_fast_failure(self, lane: str, step: Step) -> bool:
+        if lane == FAST_LANE or not self.step_resources(step):
+            return False
+        self.fast_done.wait()
+        if self.fast_passed:
+            return False
+        print(f"gate: [{lane}] {step.name} {FAST_LANE_FAILED}", flush=True)
+        self.status[step.name] = FAST_LANE_FAILED
+        self.done[step.name].set()
+        return True
+
     def run_lane(self, lane: str, steps: list[Step]) -> None:
         log = self.log_directory / f"{lane}.log"
         started = time.monotonic()
+        failed = False
+        try:
+            failed = self.run_steps(lane, steps, log)
+        finally:
+            if lane == FAST_LANE:
+                self.fast_passed = not failed
+                self.fast_done.set()
+        with self.lock:
+            self.open_lanes.discard(lane)
+        self.lane_seconds[lane] = round(time.monotonic() - started)
+
+    def run_steps(self, lane: str, steps: list[Step], log: Path) -> bool:
         failed = False
         for step in steps:
             if failed:
                 self.status[step.name] = NOT_RUN
                 self.done[step.name].set()
+                continue
+            if self.skip_after_fast_failure(lane, step):
+                failed = True
                 continue
             dependency = self.blocked_by(step)
             if dependency is not None:
@@ -465,9 +536,7 @@ class Runner:
                 failed = True
                 continue
             failed = not self.run_step(lane, step, log)
-        with self.lock:
-            self.open_lanes.discard(lane)
-        self.lane_seconds[lane] = round(time.monotonic() - started)
+        return failed
 
     def cores_for(self, step: Step) -> tuple[int, bool]:
         """Return the step's workers and whether they came out of the shared budget."""
@@ -482,12 +551,20 @@ class Runner:
 
     def grant_detail(self, asked: float) -> str:
         now = time.monotonic()
+        kind = "pool cores" if self.budget.pool is not None else "cores"
         return (
             f"at +{round(now - self.started)} s after waiting {round(now - asked)} s, "
-            f"{self.budget.available()} of {self.budget.cores} cores free"
+            f"{self.budget.available()} of {self.budget.cores} {kind} free"
         )
 
     def run_step(self, lane: str, step: Step, log: Path) -> bool:
+        resources = self.step_resources(step)
+        if self.locks is None or not resources:
+            return self.run_held_step(lane, step, log, [])
+        with self.locks.hold(resources) as waits:
+            return self.run_held_step(lane, step, log, waits)
+
+    def run_held_step(self, lane: str, step: Step, log: Path, waits: list) -> bool:
         asked = time.monotonic()
         cores, drawn = self.cores_for(step)
         environment = dict(self.environment)
@@ -495,6 +572,7 @@ class Runner:
         print(
             f"gate: [{lane}] {step.name} started with {cores} "
             f"{'cores' if drawn else 'cores, light'}, "
+            f"{describe_waits(waits) + ', ' if waits else ''}"
             f"{self.grant_detail(asked)}",
             flush=True,
         )
@@ -642,11 +720,14 @@ def worker_budget(
     extras: list[str],
 ) -> CoreBudget:
     cores = int(os.environ.get("BAUKIT_GATE_CORES") or os.cpu_count() or 1)
+    pool = CorePool.from_environment(os.environ, max(1, cores))
     lanes = heavy_lanes(planned, light)
     worker_memory = int(os.environ.get("BAUKIT_GATE_WORKER_MEMORY_MB", DEFAULT_WORKER_MEMORY_MB))
     budget = CoreBudget(
-        cores, total_memory_mb(), worker_memory, emulator_cores(settings, environment)
+        cores, total_memory_mb(), worker_memory, emulator_cores(settings, environment), pool
     )
+    if pool is not None:
+        extras.append(f"cores: {budget.cores} slots shared through {pool.directory}")
     workers = budget.share(len(lanes))
     worker_environment(environment, workers)
     extras.append(
@@ -661,6 +742,36 @@ def worker_budget(
     return budget
 
 
+def unknown_names_error(settings: dict, light: frozenset[str], steps: list[Step]) -> str | None:
+    unknown = unknown_light(light, steps)
+    if unknown:
+        return f"gate: quality.light names unknown lanes or steps: {', '.join(unknown)}"
+    names = {*(step.name for step in steps), *(step.lane for step in steps)}
+    unknown = unknown_resource_members(settings, names)
+    if unknown:
+        return f"gate: quality.resources names unknown lanes or steps: {', '.join(unknown)}"
+    return None
+
+
+def prepare_log_directory(path: Path) -> Path:
+    directory = path.resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    for stale in directory.glob("*.log"):
+        stale.unlink()
+    return directory
+
+
+def lock_lines(planned: list[PlannedStep], sharing: HostSharing) -> list[str]:
+    if sharing.locks is None:
+        return []
+    lines = [f"locks: {sharing.locks.directory}; heavy steps wait for the fast lane"]
+    for item in planned:
+        held = resources_for({item.step.name, item.step.lane}, sharing.resources)
+        if held:
+            lines.append(f"locks: {item.step.name} takes {', '.join(held)}")
+    return lines
+
+
 def run_command(arguments: argparse.Namespace) -> int:
     script = shlex.split(arguments.script)
     listing = run_process(
@@ -670,12 +781,9 @@ def run_command(arguments: argparse.Namespace) -> int:
     settings = load_settings(Path(arguments.settings))
     mode = "affected" if arguments.affected else "full"
     light = light_settings(settings)
-    unknown = unknown_light(light, steps)
-    if unknown:
-        print(
-            f"gate: quality.light names unknown lanes or steps: {', '.join(unknown)}",
-            file=sys.stderr,
-        )
+    name_error = unknown_names_error(settings, light, steps)
+    if name_error:
+        print(name_error, file=sys.stderr)
         return 2
     if arguments.affected:
         changed = changed_files(arguments.affected)
@@ -703,13 +811,12 @@ def run_command(arguments: argparse.Namespace) -> int:
     extras = [packages] if packages else []
     budget = worker_budget(planned, light, settings, environment, extras)
     extras.extend(cache_environment(environment))
+    sharing = HostSharing(ResourceLocks.from_environment(environment), resource_map(settings))
+    extras.extend(lock_lines(planned, sharing))
     print_plan(mode, arguments.affected, selection, planned, extras)
     if arguments.plan:
         return 0
-    log_directory = Path(arguments.log_dir).resolve()
-    log_directory.mkdir(parents=True, exist_ok=True)
-    for stale in log_directory.glob("*.log"):
-        stale.unlink()
+    log_directory = prepare_log_directory(Path(arguments.log_dir))
     environment["BAUKIT_GATE_LOG_DIR"] = str(log_directory)
     started = time.monotonic()
     runner = Runner(
@@ -717,6 +824,7 @@ def run_command(arguments: argparse.Namespace) -> int:
         RunContext([*script, "--step"], log_directory, environment),
         budget=budget,
         light=light,
+        sharing=sharing,
     )
     failures = runner.run()
     wall = round(time.monotonic() - started)

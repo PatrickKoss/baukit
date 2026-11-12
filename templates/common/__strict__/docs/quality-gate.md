@@ -54,6 +54,24 @@ After a Baukit upgrade re-renders the template, review the changes to the owned 
 
 `quality.light` in `baukit.toml` lists lanes or steps that take no share, for steps that mostly wait or run one process. Its default is `[]`. The `fast` lane is always light. A light step still gets the current share in its environment. The gate and `baukit doctor` reject names that are no lane or step of the gate. Each step prints the cores it started with, the seconds since the gate started, how long it waited for cores, and how many cores stayed free, for example `gate: [android] android-e2e started with 6 cores, at +222 s after waiting 0 s, 0 of 12 cores free`. The lane log records the cores after the step name.
 
+## Sharing the host with other gates
+
+Two environment variables let several gates run on one machine at the same time. Both are unset by default, which keeps the behavior above, and CI leaves them unset.
+
+`BAUKIT_GATE_LOCK_DIR` names a directory with one `<resource>.lock` file per host-exclusive resource. A step that needs a resource queues a ticket in `$BAUKIT_GATE_LOCK_DIR/queue` that names every resource it needs, then takes all its `flock` files in one non-blocking pass, `android` before `browser` and any other resource after those by name, and releases them when the step ends. It never holds one lock while it waits for another, and it starts that pass only when no earlier live ticket names one of its resources. A step that needs `android` and `browser` therefore cannot starve behind browser-only steps that arrive later, because `flock` alone grants in no particular order. The kernel drops a dead gate's ticket and locks. Waiters poll every 50 ms. `android-boot`, `android-e2e` and `android-debug` take `android`, and an `android` step also takes `browser`. `playwright` and `webkit-repeats` take `browser`. A product adds steps or lanes under `[quality.resources]` in `baukit.toml`, where the key is the resource name and the value lists lanes or steps. Names must be lanes or steps of the gate, and `baukit doctor` rejects the rest. New resource names, such as `docker-network`, need no runner change.
+
+```toml
+[quality.resources]
+android = ["emulator-smoke"]
+docker-network = ["compose-e2e"]
+```
+
+With a lock directory set, steps that hold a resource start only after the `fast` lane has passed. When it failed they print `not run (fast lane failed)` and never queue for a lock. A step waits for its locks before it draws cores, so a queued step holds none.
+
+`BAUKIT_GATE_CORE_POOL` names a directory of `slot-<n>.lock` files, one per core up to `BAUKIT_GATE_CORES`. Every step draws its cores by taking slots with a non-blocking `flock`, so gates on one host never run more cores than the pool has. Each gate registers in `$BAUKIT_GATE_CORE_POOL/gates`, and the share of a step is computed from the pool size divided by the number of live gates, so two gates at once start with half the pool each instead of the first one taking all of it. A step that finds too few slots polls every 200 ms. The kernel frees the slots when a step ends or the gate dies. Step lines report `waited N s for android.lock` and `N of M pool cores free`.
+
+The gate opens lock and slot files with close-on-exec and starts steps with `close_fds`, so emulators, backends and previews that outlive a step hold none of them.
+
 Tests that must not run in parallel belong in a nextest test group in `backend/.config/nextest.toml` or in a separate Jest project. Don't add `--runInBand` or a one-thread setting for the whole suite.
 
 ## Single runs
