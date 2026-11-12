@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+{% if context.mobile %}- `expo install --check` in `ci.yml` and the `expo-doctor` step of `scripts/quality-gate.sh` run with `EXPO_OFFLINE=1`, so they compare against `bundledNativeModules.json` of the installed `expo` package instead of the Expo API. The API's expected versions change when Expo ships a patch, and `minimumReleaseAge` blocks a product from following it for a day. Expo prints "Dependency validation is unreliable in offline-mode", yet a native module outside the installed SDK's range still fails both checks. The step runs `expo-doctor@1.20.5` instead of the newest release. Copy both changes.
+{% endif %}
+
 ## [0.23.0] - 2026-11-12
 
 {% if context.web %}- `web/scripts/check-production-bundle.mjs` builds through Vite's JS API and a `generateBundle` plugin, and names each finding as `chunk: module: marker`. The loopback URL marker applies only to modules outside `node_modules`, because third-party code such as `@tanstack/router-core` carries a `http://localhost` fallback. The Keycloak adapter, `/realms/` and env canary markers still apply to every module, and source maps are scanned for them only. Copy the new script and its test.

@@ -377,7 +377,8 @@ jobs:
         run: corepack pnpm run check:bundle
 {% endif %}{% if context.pwa and not context.web %}      - name: Export and verify the mobile PWA
         run: |
-          corepack pnpm exec expo install --check
+          # Expo API "expected" versions move with upstream releases and the release-age cooldown blocks following them.
+          EXPO_OFFLINE=1 corepack pnpm exec expo install --check
           corepack pnpm exec expo export --platform web --max-workers 4
           corepack pnpm run build:sw
           corepack pnpm run build:sw:check
@@ -398,7 +399,8 @@ jobs:
       - name: Install Corepack
         run: npm install --global corepack@0.36.0
       - run: corepack pnpm install --frozen-lockfile
-      - run: corepack pnpm exec expo install --check
+      # Expo API "expected" versions move with upstream releases and the release-age cooldown blocks following them.
+      - run: EXPO_OFFLINE=1 corepack pnpm exec expo install --check
       # Thresholds live in mobile/jest.config.cjs, so a local run fails the same way.
       - run: corepack pnpm run test:coverage
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

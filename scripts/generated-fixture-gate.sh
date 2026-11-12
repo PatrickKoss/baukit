@@ -79,7 +79,8 @@ for flavor in "${flavors[@]}"; do
     fi
     if "$mobile"; then
         corepack pnpm --dir "$fixture/mobile" install --frozen-lockfile
-        corepack pnpm --dir "$fixture/mobile" exec expo install --check
+        # Expo API "expected" versions move with upstream releases and the release-age cooldown blocks following them.
+        EXPO_OFFLINE=1 corepack pnpm --dir "$fixture/mobile" exec expo install --check
         corepack pnpm --dir "$fixture/mobile" exec tsc --noEmit
         corepack pnpm --dir "$fixture/mobile" lint
         corepack pnpm --dir "$fixture/mobile" run test:coverage

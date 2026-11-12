@@ -96,6 +96,7 @@ android-sdk-setup:
 NATIVE_EMULATOR_PORT ?= $(shell python3 -c 'import tomllib; print(tomllib.load(open("scripts/ci-gate.toml", "rb"))["quality"]["android_emulator_port"])')
 NATIVE_EMULATORS ?= $(shell python3 -c 'import tomllib; print(tomllib.load(open("scripts/ci-gate.toml", "rb"))["quality"]["android_emulators"])')
 
+# EXPO_OFFLINE: Expo API "expected" versions move with upstream releases; the release-age cooldown blocks following them.
 native-android-gate: android-sdk-setup
 	@set -e; \
 	fixture_parent="$${NATIVE_FIXTURE_PARENT:-$$(mktemp -d)}"; \
@@ -108,7 +109,7 @@ native-android-gate: android-sdk-setup
 	cargo build --manifest-path $(CLI_MANIFEST) --bin baukit; \
 	cli/target/debug/baukit new fixture --mobile $(NATIVE_FLAGS) --dir "$$fixture_parent" --baukit-path rust; \
 	corepack pnpm@12.9.1 --dir "$$fixture_parent/fixture/mobile" install --frozen-lockfile; \
-	corepack pnpm@12.9.1 --dir "$$fixture_parent/fixture/mobile" exec expo install --check; \
+	EXPO_OFFLINE=1 corepack pnpm@12.9.1 --dir "$$fixture_parent/fixture/mobile" exec expo install --check; \
 	(cd "$$fixture_parent/fixture/mobile" && BAUKIT_QA_BUILD=1 CI=1 ./node_modules/.bin/expo prebuild --clean --platform android --no-install); \
 	ANDROID_HOME="$${ANDROID_HOME:-$$HOME/Android/Sdk}" ANDROID_SDK_ROOT="$${ANDROID_SDK_ROOT:-$${ANDROID_HOME:-$$HOME/Android/Sdk}}" \
 		bash "$$fixture_parent/fixture/mobile/scripts/android-java.sh" "$$fixture_parent/fixture/mobile/android/gradlew" -p "$$fixture_parent/fixture/mobile/android" --no-daemon --stacktrace --warning-mode all $${BAUKIT_QA_GRADLE_WORKERS:+--max-workers $$BAUKIT_QA_GRADLE_WORKERS} $${BAUKIT_QA_NATIVE_JOBS:+--init-script "$$fixture_parent/fixture/mobile/scripts/qa/native-jobs.init.gradle"} -PreactNativeDevServerIp=127.0.0.1 assembleDebug \

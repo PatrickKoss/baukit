@@ -23,7 +23,8 @@ corepack pnpm --dir "$fixture/web" build
 corepack pnpm --dir "$fixture/web" lint
 corepack pnpm --dir "$fixture/web" test
 corepack pnpm --dir "$fixture/web" run test:coverage
-corepack pnpm --dir "$fixture/mobile" exec expo install --check
+# Expo API "expected" versions move with upstream releases and the release-age cooldown blocks following them.
+EXPO_OFFLINE=1 corepack pnpm --dir "$fixture/mobile" exec expo install --check
 corepack pnpm --dir "$fixture/mobile" exec tsc --noEmit
 corepack pnpm --dir "$fixture/mobile" lint
 corepack pnpm --dir "$fixture/mobile" run test:coverage

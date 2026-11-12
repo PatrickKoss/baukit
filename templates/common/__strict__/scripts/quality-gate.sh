@@ -480,7 +480,8 @@ step_mobile_lint() {
 }
 
 step_expo_doctor() {
-  (cd mobile && corepack "$pnpm_package" dlx expo-doctor)
+  # Expo API "expected" versions move with upstream releases and the release-age cooldown blocks following them.
+  (cd mobile && EXPO_OFFLINE=1 corepack "$pnpm_package" dlx expo-doctor@1.20.5)
 }
 
 step_mobile_unit() {

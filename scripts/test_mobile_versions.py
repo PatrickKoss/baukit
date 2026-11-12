@@ -101,3 +101,27 @@ class MobileReactVersionsTest(unittest.TestCase):
             f"React {published['bundledNativeModules']['react']})",
             matrix,
         )
+
+
+class ExpoOfflineChecksTest(unittest.TestCase):
+    COMMANDS = (
+        ("templates/common/__strict__/scripts/quality-gate.sh", "dlx expo-doctor@"),
+        ("templates/common/.github/workflows/ci.yml", "expo install --check"),
+        ("Makefile", "expo install --check"),
+        ("scripts/generated-fixture-gate.sh", "expo install --check"),
+        ("scripts/mcp-remote-fixture.sh", "expo install --check"),
+    )
+
+    def test_expo_validation_runs_offline(self):
+        for path, command in self.COMMANDS:
+            with self.subTest(path=path):
+                lines = [
+                    line for line in (ROOT / path).read_text().splitlines() if command in line
+                ]
+                self.assertTrue(lines, command)
+                for line in lines:
+                    self.assertIn("EXPO_OFFLINE=1 ", line)
+
+    def test_expo_doctor_is_pinned_to_an_exact_version(self):
+        source = (ROOT / "templates/common/__strict__/scripts/quality-gate.sh").read_text()
+        self.assertRegex(source, r"dlx expo-doctor@\d+\.\d+\.\d+\)")
