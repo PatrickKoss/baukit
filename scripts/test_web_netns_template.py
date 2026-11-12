@@ -22,7 +22,9 @@ def function_body(source: str, name: str) -> str:
 
 class WebNetnsTemplateTest(unittest.TestCase):
     def test_helper_matches_the_baukit_copy(self):
-        self.assertEqual(HELPER.read_text(), (ROOT / "scripts/with-loopback-network.sh").read_text())
+        self.assertEqual(
+            HELPER.read_text(), (ROOT / "scripts/with-loopback-network.sh").read_text()
+        )
 
     def test_playwright_steps_run_through_the_helper(self):
         gate = GATE.read_text()
@@ -37,7 +39,9 @@ class WebNetnsTemplateTest(unittest.TestCase):
         self.assertIn("sh scripts/with-loopback-network.sh", body)
 
     def test_gate_runs_the_helper_test_for_web_products(self):
-        self.assertIn("with-loopback-network.test.py", function_body(GATE.read_text(), "step_scripts_tests"))
+        self.assertIn(
+            "with-loopback-network.test.py", function_body(GATE.read_text(), "step_scripts_tests")
+        )
 
     def test_every_job_running_the_helper_enables_user_namespaces(self):
         ci = CI.read_text()
@@ -48,17 +52,28 @@ class WebNetnsTemplateTest(unittest.TestCase):
                 checked += 1
                 self.assertIn(SYSCTL, job, job.splitlines()[0])
                 before = job.index(SYSCTL)
-                after = min(i for i in (job.find("quality-gate.sh"), job.find("with-loopback-network.sh")) if i >= 0)
+                after = min(
+                    i
+                    for i in (job.find("quality-gate.sh"), job.find("with-loopback-network.sh"))
+                    if i >= 0
+                )
                 self.assertLess(before, after)
         self.assertGreaterEqual(checked, 2)
 
     def test_helper_suite_passes(self):
         with tempfile.TemporaryDirectory() as directory:
-            for source in (HELPER, HELPER_TEST, ROOT / "templates/common/scripts/process_runner.py"):
+            for source in (
+                HELPER,
+                HELPER_TEST,
+                ROOT / "templates/common/scripts/process_runner.py",
+            ):
                 shutil.copy(source, directory)
             result = run_process(
                 ["python3", str(Path(directory) / HELPER_TEST.name)],
-                capture_output=True, text=True, check=False, timeout=120,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
             )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
