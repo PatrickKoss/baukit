@@ -944,7 +944,7 @@ done
     def test_maestro_keeps_evidence_only_for_the_failing_device(self) -> None:
         self.prepare_maestro_run(
             ["emulator-5556", "emulator-5558"],
-            'qa_maestro_flows() { echo .maestro/one.yaml; }\n',
+            "qa_maestro_flows() { echo .maestro/one.yaml; }\n",
         )
         result = self.run_maestro_script(FAIL_DEVICE="emulator-5558")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
@@ -955,7 +955,7 @@ done
         self.assert_logcat_processes_stopped()
 
     def start_foreign_process(self) -> subprocess.Popen:
-        process = subprocess.Popen(["sleep", "30"])  # noqa: S607 -- fixed test helper
+        process = subprocess.Popen([str(shutil.which("sleep")), "30"])
         self.addCleanup(process.kill)
         self.addCleanup(process.wait)
         return process
