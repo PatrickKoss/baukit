@@ -89,7 +89,7 @@ $ curl localhost:9090/readyz
  "diagnostics":[]}
 
 $ curl localhost:9090/buildinfo
-{"service_name":"minimal-api-api","version":"0.1.0","commit":"unknown","rust_version":"1.99.0"}
+{"service_name":"minimal-api-api","version":"0.1.0","commit":"unknown","rust_version":"1.100.0"}
 ```
 
 `/healthz` says the process is alive, `/readyz` says it should receive traffic, and they are genuinely different during a deploy. When shutdown starts, the traffic gate flips `/readyz` to failing while in-flight requests finish draining, which is the difference between a rolling deploy and a handful of dropped connections.
@@ -182,7 +182,7 @@ examples/    minimal-api, expo-sqlite-conformance
 ```
 
 ```bash
-make toolchain          # mise: Node 26, Temurin 25.0.4.1+1, Rust 1.99.0
+make toolchain          # mise: Node 26, Temurin 25.0.4.1+1, Rust 1.100.0
 mise exec -- make ci    # fmt, clippy, tests, and the TypeScript gates
 mise exec -- sh scripts/ci-gate.sh    # every CI job in parallel lanes
 ```

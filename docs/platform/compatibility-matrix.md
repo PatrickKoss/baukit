@@ -383,7 +383,7 @@ Before that, `v0.14.1` (patch train on top of `v0.14.0`). `v0.14.0` was tagged b
 
 | Tool | Tested baseline | Notes |
 |---|---|---|
-| Rust | 1.95.0 MSRV | CI-enforced with Rust 1.95; refresh uses stable 1.99.0 |
+| Rust | 1.95.0 MSRV | CI-enforced with Rust 1.95; CI and the local gate pin 1.100.0 from `mise.toml` |
 | Node | 26.10.0 | pinned via `mise.toml` and `typescript/.nvmrc`; Node types use major 26. Package engines still accept Node 24 and later. |
 | Corepack | 0.36.0 | installed through mise locally and npm in CI; Node 26 does not bundle it |
 | Java | Temurin 25.0.4.1+1 | `mise.toml` and every Android CI job pin the same build as `25.0.4+101.0.LTS`, the Adoptium API version. Generated builds and Expo conformance builds grant native access to Android's Prefab tool. |
