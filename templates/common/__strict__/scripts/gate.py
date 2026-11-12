@@ -28,7 +28,9 @@ from pathlib import Path
 
 from gate_locks import (
     CorePool,
+    Need,
     ResourceLocks,
+    ResourceRule,
     describe_waits,
     resource_map,
     resources_for,
@@ -93,7 +95,7 @@ class Step:
 @dataclass(frozen=True)
 class HostSharing:
     locks: ResourceLocks | None = None
-    resources: dict[str, frozenset[str]] = field(default_factory=dict)
+    resources: list[ResourceRule] = field(default_factory=list)
 
 
 @dataclass
@@ -485,7 +487,7 @@ class Runner:
                 return dependency
         return None
 
-    def step_resources(self, step: Step) -> list[str]:
+    def step_resources(self, step: Step) -> list[Need]:
         if self.locks is None:
             return []
         return resources_for({step.name, step.lane}, self.resources)
@@ -749,7 +751,10 @@ def unknown_names_error(settings: dict, light: frozenset[str], steps: list[Step]
     names = {*(step.name for step in steps), *(step.lane for step in steps)}
     unknown = unknown_resource_members(settings, names)
     if unknown:
-        return f"gate: quality.resources names unknown lanes or steps: {', '.join(unknown)}"
+        return (
+            "gate: quality.resources and quality.shared_resources name unknown "
+            f"lanes or steps: {', '.join(unknown)}"
+        )
     return None
 
 
@@ -768,7 +773,10 @@ def lock_lines(planned: list[PlannedStep], sharing: HostSharing) -> list[str]:
     for item in planned:
         held = resources_for({item.step.name, item.step.lane}, sharing.resources)
         if held:
-            lines.append(f"locks: {item.step.name} takes {', '.join(held)}")
+            lines.append(
+                f"locks: {item.step.name} takes "
+                f"{', '.join(need.token.replace('~', ' ') for need in held)}"
+            )
     return lines
 
 

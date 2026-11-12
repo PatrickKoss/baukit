@@ -58,12 +58,18 @@ After a Baukit upgrade re-renders the template, review the changes to the owned 
 
 Two environment variables let several gates run on one machine at the same time. Both are unset by default, which keeps the behavior above, and CI leaves them unset.
 
-`BAUKIT_GATE_LOCK_DIR` names a directory with one `<resource>.lock` file per host-exclusive resource. A step that needs a resource queues a ticket in `$BAUKIT_GATE_LOCK_DIR/queue` that names every resource it needs, then takes all its `flock` files in one non-blocking pass, `android` before `browser` and any other resource after those by name, and releases them when the step ends. It never holds one lock while it waits for another, and it starts that pass only when no earlier live ticket names one of its resources. A step that needs `android` and `browser` therefore cannot starve behind browser-only steps that arrive later, because `flock` alone grants in no particular order. The kernel drops a dead gate's ticket and locks. Waiters poll every 50 ms. `android-boot`, `android-e2e` and `android-debug` take `android`, and an `android` step also takes `browser`. `playwright` and `webkit-repeats` take `browser`. A product adds steps or lanes under `[quality.resources]` in `baukit.toml`, where the key is the resource name and the value lists lanes or steps. Names must be lanes or steps of the gate, and `baukit doctor` rejects the rest. New resource names, such as `docker-network`, need no runner change.
+`BAUKIT_GATE_LOCK_DIR` names a directory with one `<resource>.lock` file per host resource. A step that needs resources queues a ticket in `$BAUKIT_GATE_LOCK_DIR/queue` that names each one and whether it wants it exclusively or shared. It then takes all its `flock` files in one non-blocking pass, `android` first, `docker-network` next and any other resource after those by name, and releases them when the step ends. It never holds one lock while it waits for another. It starts the pass only when no earlier live ticket conflicts with it, and two tickets conflict when they name one resource and at least one wants it exclusively. A later step therefore cannot overtake an earlier one, which bounds every wait by the holders ahead. A step that needs two locks cannot starve behind single-lock steps that keep arriving, and an exclusive step cannot starve behind a stream of shared ones, because `flock` alone grants in no particular order. The kernel drops a dead gate's ticket and locks. Waiters poll every 50 ms.
+
+Chromium reports `ERR_NETWORK_CHANGED` when `docker network create` or `docker network rm` runs on the host. Starting and stopping containers does not trigger it. The `docker-network` resource covers this. `android-e2e` takes it exclusively because `services.sh` starts the QA backend with `docker compose up`, and compose creates a project network. `android-boot`, `android-e2e` and `android-debug` take `android`, which covers boot, install and Maestro on every emulator of the host. Steps that run through `scripts/with-loopback-network.sh`, which wraps `playwright` and `webkit-repeats`, take no lock because the namespace isolates them from host network changes. A product step that drives a browser on the host network and does not use that wrapper declares `docker-network` under `[quality.shared_resources]`, so such steps run together and wait only for an exclusive holder. A step that creates or removes Docker networks, such as compose with its own network or Testcontainers `with_network`, declares it under `[quality.resources]`.
+
 
 ```toml
 [quality.resources]
 android = ["emulator-smoke"]
 docker-network = ["compose-e2e"]
+
+[quality.shared_resources]
+docker-network = ["host-browser-e2e"]
 ```
 
 With a lock directory set, steps that hold a resource start only after the `fast` lane has passed. When it failed they print `not run (fast lane failed)` and never queue for a lock. A step waits for its locks before it draws cores, so a queued step holds none.

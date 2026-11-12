@@ -1,6 +1,7 @@
 """Host-wide resource locks and a shared core pool for concurrent gates.
 
-`BAUKIT_GATE_LOCK_DIR` holds one `<resource>.lock` file per host-exclusive resource.
+`BAUKIT_GATE_LOCK_DIR` holds one `<resource>.lock` file per host resource. A step locks it
+exclusively, or shared with other shared holders.
 `BAUKIT_GATE_CORE_POOL` holds `slot-<n>.lock` files, one per core. Both rely on flock, so
 the kernel frees them when a gate dies. File descriptors stay non-inheritable, so no child
 of a step keeps a lock alive.
@@ -20,16 +21,36 @@ from pathlib import Path
 
 LOCK_DIR_ENV = "BAUKIT_GATE_LOCK_DIR"
 CORE_POOL_ENV = "BAUKIT_GATE_CORE_POOL"
-RESOURCE_ORDER = ("android", "browser")
-IMPLIED_RESOURCES = {"android": ("browser",)}
+RESOURCE_ORDER = ("android", "docker-network")
 DEFAULT_RESOURCES = {
     "android": ("android-boot", "android-e2e", "android-debug"),
-    "browser": ("playwright", "webkit-repeats"),
+    "docker-network": ("android-e2e",),
 }
+SHARED_SUFFIX = "~shared"
 POOL_POLL_SECONDS = 0.2
 LOCK_POLL_SECONDS = 0.05
 TICKET_READ_BYTES = 4096
 LOCK_MODE = 0o600
+
+
+@dataclass(frozen=True)
+class Need:
+    """A resource a step locks, exclusively or shared with other shared holders."""
+
+    resource: str
+    shared: bool = False
+
+    @property
+    def token(self) -> str:
+        return self.resource + (SHARED_SUFFIX if self.shared else "")
+
+    @classmethod
+    def parse(cls, token: str) -> Need:
+        shared = token.endswith(SHARED_SUFFIX)
+        return cls(token.removesuffix(SHARED_SUFFIX), shared)
+
+    def conflicts_with(self, other: Need) -> bool:
+        return self.resource == other.resource and not (self.shared and other.shared)
 
 
 @dataclass(frozen=True)
@@ -38,33 +59,55 @@ class LockWait:
     seconds: int
 
 
-def resource_map(settings: Mapping) -> dict[str, frozenset[str]]:
-    """Merge the template defaults with `[quality.resources]` from baukit.toml."""
-    merged = {name: set(members) for name, members in DEFAULT_RESOURCES.items()}
-    configured = settings.get("quality", {}).get("resources", {})
-    for name, members in configured.items():
-        merged.setdefault(name, set()).update(members)
-    return {name: frozenset(members) for name, members in merged.items()}
+@dataclass(frozen=True)
+class ResourceRule:
+    name: str
+    members: frozenset[str]
+    shared: bool = False
 
 
-def resource_rank(name: str) -> tuple[int, str]:
-    known = RESOURCE_ORDER.index(name) if name in RESOURCE_ORDER else len(RESOURCE_ORDER)
-    return known, name
+def resource_map(settings: Mapping) -> list[ResourceRule]:
+    """Merge the template defaults with `[quality.resources]` and `[quality.shared_resources]`."""
+    quality = settings.get("quality", {})
+    exclusive = {name: set(members) for name, members in DEFAULT_RESOURCES.items()}
+    for name, members in quality.get("resources", {}).items():
+        exclusive.setdefault(name, set()).update(members)
+    rules = [ResourceRule(name, frozenset(members)) for name, members in exclusive.items()]
+    for name, members in quality.get("shared_resources", {}).items():
+        rules.append(ResourceRule(name, frozenset(members), shared=True))
+    return rules
 
 
-def resources_for(names: set[str], resources: Mapping[str, frozenset[str]]) -> list[str]:
-    """Return the resources a step with these names (step name and lane) needs, in lock order."""
-    needed = {name for name, members in resources.items() if members & names}
-    for name in list(needed):
-        needed.update(IMPLIED_RESOURCES.get(name, ()))
-    return sorted(needed, key=resource_rank)
+def resource_rank(need: Need) -> tuple[int, str]:
+    known = (
+        RESOURCE_ORDER.index(need.resource)
+        if need.resource in RESOURCE_ORDER
+        else len(RESOURCE_ORDER)
+    )
+    return known, need.resource
+
+
+def resources_for(names: set[str], rules: list[ResourceRule]) -> list[Need]:
+    """Return what a step with these names (step name and lane) locks, in lock order.
+
+    A step that matches a resource both ways locks it exclusively.
+    """
+    needed: dict[str, Need] = {}
+    for rule in rules:
+        if rule.members & names and rule.name not in needed:
+            needed[rule.name] = Need(rule.name, rule.shared)
+        elif rule.members & names and not rule.shared:
+            needed[rule.name] = Need(rule.name)
+    return sorted(needed.values(), key=resource_rank)
 
 
 def unknown_resource_members(settings: Mapping, lanes_and_steps: set[str]) -> list[str]:
-    configured = settings.get("quality", {}).get("resources", {})
-    return sorted(
-        {member for members in configured.values() for member in members} - lanes_and_steps
-    )
+    quality = settings.get("quality", {})
+    configured = [
+        *quality.get("resources", {}).values(),
+        *quality.get("shared_resources", {}).values(),
+    ]
+    return sorted({member for members in configured for member in members} - lanes_and_steps)
 
 
 def open_locked(path: Path) -> int:
@@ -75,10 +118,12 @@ def open_locked(path: Path) -> int:
 class ResourceLocks:
     """Fair, all-or-nothing resource locks.
 
-    A step queues a ticket naming every resource it needs. It tries the resource locks, all
-    in one pass without blocking, only when no earlier live ticket names one of them. It
-    never holds one lock while it waits for another, and a later step cannot overtake an
-    earlier step that wants the same resource, so the wait is bounded by the holders ahead.
+    A step queues a ticket naming every resource it needs and how. It tries the resource
+    locks, all in one pass without blocking, only when no earlier live ticket conflicts with
+    it. Two tickets conflict when they name one resource and at least one wants it
+    exclusively. It never holds one lock while it waits for another, and a later step cannot
+    overtake an earlier conflicting step, so shared arrivals cannot starve an exclusive
+    waiter and the wait is bounded by the holders ahead.
     """
 
     def __init__(self, directory: Path):
@@ -90,33 +135,34 @@ class ResourceLocks:
         directory = environment.get(LOCK_DIR_ENV)
         return cls(Path(directory)) if directory else None
 
-    def enqueue(self, resources: list[str]) -> tuple[int, Path]:
+    def enqueue(self, resources: list[Need]) -> tuple[int, Path]:
         self.queue.mkdir(parents=True, exist_ok=True)
         unique = uuid.uuid4().hex
         pending = self.queue / f"{unique}.pending"
         descriptor = os.open(pending, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, LOCK_MODE)
         fcntl.flock(descriptor, fcntl.LOCK_EX)
-        os.write(descriptor, "\n".join(resources).encode())
+        os.write(descriptor, "\n".join(need.token for need in resources).encode())
         with ordering_lock(self.directory):
             ticket = self.queue / f"{time.time_ns():020d}-{unique}.ticket"
             os.rename(pending, ticket)
         return descriptor, ticket
 
-    def blocked_by_earlier(self, ticket: Path, resources: list[str]) -> bool:
+    def blocked_by_earlier(self, ticket: Path, resources: list[Need]) -> bool:
         for other in sorted(self.queue.glob("*.ticket")):
             if other.name >= ticket.name:
                 break
             wanted = live_ticket_resources(other)
-            if wanted and wanted & set(resources):
+            if any(mine.conflicts_with(theirs) for mine in resources for theirs in wanted):
                 return True
         return False
 
-    def try_take(self, resources: list[str], stack: ExitStack) -> bool:
+    def try_take(self, resources: list[Need], stack: ExitStack) -> bool:
         taken: list[int] = []
-        for resource in resources:
-            descriptor = open_locked(self.directory / f"{resource}.lock")
+        for need in resources:
+            descriptor = open_locked(self.directory / f"{need.resource}.lock")
+            mode = fcntl.LOCK_SH if need.shared else fcntl.LOCK_EX
             try:
-                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(descriptor, mode | fcntl.LOCK_NB)
             except BlockingIOError:
                 os.close(descriptor)
                 for held in taken:
@@ -128,7 +174,7 @@ class ResourceLocks:
         return True
 
     @contextmanager
-    def hold(self, resources: list[str]) -> Iterator[list[LockWait]]:
+    def hold(self, resources: list[Need]) -> Iterator[list[LockWait]]:
         started = time.monotonic()
         descriptor, ticket = self.enqueue(resources)
         with ExitStack() as stack:
@@ -141,7 +187,7 @@ class ResourceLocks:
                 ticket.unlink(missing_ok=True)
                 os.close(descriptor)
             waited = round(time.monotonic() - started)
-            yield [LockWait(resource, waited) for resource in resources]
+            yield [LockWait(need.resource, waited) for need in resources]
 
 
 @contextmanager
@@ -154,7 +200,7 @@ def ordering_lock(directory: Path) -> Iterator[None]:
         os.close(descriptor)
 
 
-def live_ticket_resources(ticket: Path) -> set[str]:
+def live_ticket_resources(ticket: Path) -> set[Need]:
     """Return the resources of a ticket whose owner is alive, and drop dead tickets."""
     try:
         descriptor = os.open(ticket, os.O_RDWR | os.O_CLOEXEC)
@@ -164,7 +210,8 @@ def live_ticket_resources(ticket: Path) -> set[str]:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            return set(os.read(descriptor, TICKET_READ_BYTES).decode().split())
+            text = os.read(descriptor, TICKET_READ_BYTES).decode()
+            return {Need.parse(token) for token in text.split()}
         ticket.unlink(missing_ok=True)
         return set()
     finally:

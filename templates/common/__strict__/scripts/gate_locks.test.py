@@ -44,6 +44,14 @@ POOL_WORKER = textwrap.dedent("""
 """)
 
 
+def excl(*names):
+    return [locks.Need(name) for name in names]
+
+
+def shared(name):
+    return locks.Need(name, shared=True)
+
+
 def is_locked(path):
     descriptor = os.open(path, os.O_RDWR | os.O_CREAT)
     try:
@@ -56,36 +64,49 @@ def is_locked(path):
 
 
 class ResourceTests(unittest.TestCase):
-    def test_defaults_name_emulator_and_browser_steps(self):
+    def test_defaults_name_the_emulator_and_the_compose_network(self):
         resources = locks.resource_map({})
         self.assertEqual(
-            locks.resources_for({"android-e2e", "mobile"}, resources), ["android", "browser"]
+            locks.resources_for({"android-e2e", "mobile"}, resources),
+            excl("android", "docker-network"),
         )
-        self.assertEqual(locks.resources_for({"playwright", "web"}, resources), ["browser"])
+        self.assertEqual(locks.resources_for({"playwright", "web"}, resources), [])
         self.assertEqual(locks.resources_for({"web-unit", "web"}, resources), [])
 
     def test_settings_extend_the_resources(self):
         settings = {
-            "quality": {"resources": {"android": ["my-emulator"], "docker-network": ["compose"]}}
+            "quality": {
+                "resources": {"android": ["my-emulator"], "docker-network": ["compose"]},
+                "shared_resources": {"docker-network": ["host-browser"], "gpu": ["host-browser"]},
+            }
         }
         resources = locks.resource_map(settings)
-        self.assertEqual(locks.resources_for({"my-emulator"}, resources), ["android", "browser"])
-        self.assertEqual(locks.resources_for({"x", "compose"}, resources), ["docker-network"])
+        self.assertEqual(locks.resources_for({"my-emulator"}, resources), excl("android"))
+        self.assertEqual(locks.resources_for({"x", "compose"}, resources), excl("docker-network"))
         self.assertEqual(
-            locks.resources_for({"android-e2e", "compose"}, resources),
-            ["android", "browser", "docker-network"],
+            locks.resources_for({"host-browser"}, resources),
+            [shared("docker-network"), shared("gpu")],
+        )
+        self.assertEqual(
+            locks.resources_for({"host-browser", "compose"}, resources),
+            [locks.Need("docker-network"), shared("gpu")],
         )
 
     def test_unknown_members_are_reported(self):
-        settings = {"quality": {"resources": {"android": ["nope", "web"]}}}
-        self.assertEqual(locks.unknown_resource_members(settings, {"web"}), ["nope"])
+        settings = {
+            "quality": {
+                "resources": {"android": ["nope", "web"]},
+                "shared_resources": {"gpu": ["gone"]},
+            }
+        }
+        self.assertEqual(locks.unknown_resource_members(settings, {"web"}), ["gone", "nope"])
 
     def test_locks_are_held_only_while_the_step_runs_in_order(self):
         with tempfile.TemporaryDirectory() as directory:
             holder = locks.ResourceLocks(Path(directory))
             android, browser = Path(directory) / "android.lock", Path(directory) / "browser.lock"
             holder.directory.mkdir(exist_ok=True)
-            with holder.hold(["android", "browser"]) as waits:
+            with holder.hold(excl("android", "browser")) as waits:
                 self.assertEqual([wait.resource for wait in waits], ["android", "browser"])
                 self.assertTrue(is_locked(android))
                 self.assertTrue(is_locked(browser))
@@ -96,10 +117,10 @@ class ResourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             holder = locks.ResourceLocks(Path(directory))
             order = []
-            with holder.hold(["android"]):
+            with holder.hold(excl("android")):
 
                 def contend():
-                    with holder.hold(["android"]):
+                    with holder.hold(excl("android")):
                         order.append("got")
 
                 waiter = threading.Thread(target=contend)
@@ -119,13 +140,15 @@ class ResourceTests(unittest.TestCase):
                     order.append(label)
                     time.sleep(seconds)
 
-            with holder.hold(["browser"]):
-                both = threading.Thread(target=take, args=(["android", "browser"], "both", 0.05))
+            with holder.hold(excl("browser")):
+                both = threading.Thread(
+                    target=take, args=(excl("android", "browser"), "both", 0.05)
+                )
                 both.start()
                 while len(list(holder.queue.glob("*.ticket"))) < 1:
                     time.sleep(0.01)
                 singles = [
-                    threading.Thread(target=take, args=(["browser"], f"single{n}", 0.05))
+                    threading.Thread(target=take, args=(excl("browser"), f"single{n}", 0.05))
                     for n in range(6)
                 ]
                 for single in singles:
@@ -144,7 +167,7 @@ class ResourceTests(unittest.TestCase):
 
             def stream():
                 while not stop.is_set():
-                    with holder.hold(["browser"]):
+                    with holder.hold(excl("browser")):
                         time.sleep(0.03)
 
             for _ in range(3):
@@ -153,7 +176,7 @@ class ResourceTests(unittest.TestCase):
                 workers.append(worker)
             time.sleep(0.2)
             started = time.monotonic()
-            with holder.hold(["android", "browser"]):
+            with holder.hold(excl("android", "browser")):
                 waited = time.monotonic() - started
             stop.set()
             for worker in workers:
@@ -166,22 +189,93 @@ class ResourceTests(unittest.TestCase):
             code = (
                 "import sys; sys.path.insert(0, sys.argv[1]); import gate_locks;"
                 "from pathlib import Path;"
-                "gate_locks.ResourceLocks(Path(sys.argv[2])).enqueue(['android', 'browser'])"
+                "gate_locks.ResourceLocks(Path(sys.argv[2])).enqueue("
+                "[gate_locks.Need('android'), gate_locks.Need('browser')])"
             )
             subprocess.run([sys.executable, "-c", code, str(SCRIPTS), directory], check=True)
             self.assertEqual(len(list(holder.queue.glob("*.ticket"))), 1)
-            with holder.hold(["browser"]):
+            with holder.hold(excl("browser")):
                 pass
             self.assertEqual(list(holder.queue.glob("*.ticket")), [])
 
     def test_disjoint_resources_do_not_wait_for_each_other(self):
         with tempfile.TemporaryDirectory() as directory:
             holder = locks.ResourceLocks(Path(directory))
-            with holder.hold(["android"]):
+            with holder.hold(excl("android")):
                 started = time.monotonic()
-                with holder.hold(["docker-network"]):
+                with holder.hold(excl("docker-network")):
                     pass
                 self.assertLess(time.monotonic() - started, 1)
+
+    def test_shared_holders_run_together_and_exclude_an_exclusive_holder(self):
+        with tempfile.TemporaryDirectory() as directory:
+            holder = locks.ResourceLocks(Path(directory))
+            with holder.hold([shared("docker-network")]):
+                started = time.monotonic()
+                with holder.hold([shared("docker-network")]):
+                    self.assertLess(time.monotonic() - started, 1)
+                got = []
+
+                def exclusive():
+                    with holder.hold(excl("docker-network")):
+                        got.append(1)
+
+                waiter = threading.Thread(target=exclusive)
+                waiter.start()
+                waiter.join(0.3)
+                self.assertEqual(got, [])
+            waiter.join(10)
+            self.assertEqual(got, [1])
+
+    def test_an_exclusive_waiter_gets_through_continuous_shared_arrivals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            holder = locks.ResourceLocks(Path(directory))
+            stop = threading.Event()
+            workers = []
+
+            def stream():
+                while not stop.is_set():
+                    with holder.hold([shared("docker-network")]):
+                        time.sleep(0.03)
+
+            for _ in range(4):
+                worker = threading.Thread(target=stream)
+                worker.start()
+                workers.append(worker)
+            time.sleep(0.2)
+            started = time.monotonic()
+            with holder.hold(excl("docker-network")):
+                waited = time.monotonic() - started
+                self.assertTrue(is_locked(Path(directory) / "docker-network.lock"))
+            stop.set()
+            for worker in workers:
+                worker.join(10)
+            self.assertLess(waited, 2)
+
+    def test_shared_steps_queued_behind_an_exclusive_waiter_wait_for_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            holder = locks.ResourceLocks(Path(directory))
+            order = []
+
+            def take(need, label):
+                with holder.hold([need]):
+                    order.append(label)
+                    time.sleep(0.05)
+
+            with holder.hold([shared("docker-network")]):
+                exclusive = threading.Thread(
+                    target=take, args=(locks.Need("docker-network"), "exclusive")
+                )
+                exclusive.start()
+                while not list(holder.queue.glob("*.ticket")):
+                    time.sleep(0.01)
+                later = threading.Thread(target=take, args=(shared("docker-network"), "later"))
+                later.start()
+                later.join(0.3)
+                self.assertEqual(order, [])
+            exclusive.join(10)
+            later.join(10)
+            self.assertEqual(order, ["exclusive", "later"])
 
     def test_wait_text_names_each_lock(self):
         text = locks.describe_waits([locks.LockWait("android", 3), locks.LockWait("browser", 0)])
@@ -288,7 +382,7 @@ class CorePoolTests(unittest.TestCase):
             holder = locks.ResourceLocks(Path(directory) / "locks")
             pool = locks.CorePool(Path(directory) / "pool", 2)
             pool.acquire(2, 2)
-            with holder.hold(["android", "browser"]):
+            with holder.hold(excl("android", "browser")):
                 child = subprocess.run(
                     [sys.executable, "-c", listing], capture_output=True, text=True, check=True
                 )
@@ -314,7 +408,7 @@ class RunnerLockTests(unittest.TestCase):
             if [ "$1" = --list-steps ]; then
               printf '%s\\n' {" ".join(repr(line) for line in steps)}; exit 0
             fi
-            printf '%s start android=%s browser=%s\\n' "$2" \\
+            printf '%s start android=%s network=%s\\n' "$2" \\
               "$(python3 -c 'import fcntl,os,sys
 d=os.open(sys.argv[1],os.O_RDWR|os.O_CREAT)
 try: fcntl.flock(d,fcntl.LOCK_EX|fcntl.LOCK_NB); print(0)
@@ -322,7 +416,7 @@ except BlockingIOError: print(1)' "{root}/locks/android.lock")" \\
               "$(python3 -c 'import fcntl,os,sys
 d=os.open(sys.argv[1],os.O_RDWR|os.O_CREAT)
 try: fcntl.flock(d,fcntl.LOCK_EX|fcntl.LOCK_NB); print(0)
-except BlockingIOError: print(1)' "{root}/locks/browser.lock")" >> "{trace}"
+except BlockingIOError: print(1)' "{root}/locks/docker-network.lock")" >> "{trace}"
             case " {" ".join(failing)} " in *" $2 "*) exit 3 ;; esac
         """)
         )
@@ -363,15 +457,18 @@ except BlockingIOError: print(1)' "{root}/locks/browser.lock")" >> "{trace}"
         return trace[0].split()[2:], result
 
     def test_locks_are_held_only_around_resource_steps(self):
-        self.assertEqual(self.held_by("lint fast - always -")[0], ["android=0", "browser=0"])
-        self.assertEqual(self.held_by("unit web - selected -")[0], ["android=0", "browser=0"])
-        self.assertEqual(self.held_by("playwright web - selected -")[0], ["android=0", "browser=1"])
+        self.assertEqual(self.held_by("lint fast - always -")[0], ["android=0", "network=0"])
+        self.assertEqual(self.held_by("unit web - selected -")[0], ["android=0", "network=0"])
+        self.assertEqual(self.held_by("playwright web - selected -")[0], ["android=0", "network=0"])
         held, result = self.held_by("android-e2e mobile - selected -")
-        self.assertEqual(held, ["android=1", "browser=1"])
-        self.assertIn("waited 0 s for android.lock, waited 0 s for browser.lock", result.stdout)
+        self.assertEqual(held, ["android=1", "network=1"])
+        self.assertIn(
+            "waited 0 s for android.lock, waited 0 s for docker-network.lock", result.stdout
+        )
 
     def test_heavy_steps_do_not_start_after_a_fast_lane_failure(self):
-        result, trace = self.run_gate(["lint"])
+        text = '[quality.shared_resources]\ndocker-network = ["playwright"]\n'
+        result, trace = self.run_gate(["lint"], settings_text=text)
         self.assertEqual(result.returncode, 1)
         started = {line.split()[0] for line in trace}
         self.assertNotIn("android-e2e", started)
@@ -390,12 +487,23 @@ except BlockingIOError: print(1)' "{root}/locks/browser.lock")" >> "{trace}"
         result, trace = self.run_gate([], settings_text='[quality.resources]\nandroid = ["unit"]\n')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         held = {line.split()[0]: line.split()[2:] for line in trace}
-        self.assertEqual(held["unit"], ["android=1", "browser=1"])
+        self.assertEqual(held["unit"], ["android=1", "network=0"])
+
+    def test_a_product_shared_resource_takes_a_shared_lock(self):
+        text = '[quality.shared_resources]\ndocker-network = ["playwright"]\n'
+        result, trace = self.run_gate([], settings_text=text)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        held = {line.split()[0]: line.split()[2:] for line in trace}
+        self.assertEqual(held["playwright"], ["android=0", "network=1"])
+        self.assertIn("playwright takes docker-network shared", result.stdout)
 
     def test_unknown_resource_members_fail(self):
         result, _ = self.run_gate([], settings_text='[quality.resources]\nandroid = ["nope"]\n')
         self.assertEqual(result.returncode, 2)
-        self.assertIn("quality.resources names unknown lanes or steps: nope", result.stderr)
+        self.assertIn(
+            "quality.resources and quality.shared_resources name unknown lanes or steps: nope",
+            result.stderr,
+        )
 
     def test_pool_reports_free_cores(self):
         with tempfile.TemporaryDirectory() as pool:
@@ -410,7 +518,7 @@ except BlockingIOError: print(1)' "{root}/locks/browser.lock")" >> "{trace}"
             lock_dir = Path(pool) / "locks"
             lock_dir.mkdir()
             holder = locks.ResourceLocks(lock_dir)
-            with holder.hold(["browser"]):
+            with holder.hold(excl("docker-network")):
                 started = time.monotonic()
                 timer = threading.Timer(1.5, lambda: None)
                 timer.start()
@@ -423,7 +531,7 @@ except BlockingIOError: print(1)' "{root}/locks/browser.lock")" >> "{trace}"
                                 "BAUKIT_GATE_LOCK_DIR": str(lock_dir),
                                 "BAUKIT_GATE_CORE_POOL": str(Path(pool) / "cores"),
                             },
-                            steps=["playwright web - selected -"],
+                            steps=["android-e2e mobile - selected -"],
                         )
                     )
                 )
@@ -435,7 +543,7 @@ except BlockingIOError: print(1)' "{root}/locks/browser.lock")" >> "{trace}"
             result, _ = outcome[0]
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertGreaterEqual(time.monotonic() - started, 1.5)
-            self.assertRegex(result.stdout, r"waited [1-9]\d* s for browser.lock")
+            self.assertRegex(result.stdout, r"waited [1-9]\d* s for docker-network.lock")
 
 
 if __name__ == "__main__":

@@ -440,6 +440,7 @@ fn valid_resource_name(name: &str) -> bool {
 }
 
 fn validate_resources(
+    table: &str,
     resources: &BTreeMap<String, Vec<String>>,
     lanes_and_steps: &BTreeSet<String>,
     failures: &mut Vec<String>,
@@ -447,13 +448,13 @@ fn validate_resources(
     for (name, members) in resources {
         if !valid_resource_name(name) {
             failures.push(format!(
-                "quality.resources `{name}` must start with a lowercase letter and hold only lowercase letters, digits and `-`"
+                "quality.{table} `{name}` must start with a lowercase letter and hold only lowercase letters, digits and `-`"
             ));
         }
         for member in members {
             if !lanes_and_steps.contains(member) {
                 failures.push(format!(
-                    "quality.resources `{name}` names unknown lane or step `{member}`"
+                    "quality.{table} `{name}` names unknown lane or step `{member}`"
                 ));
             }
         }
@@ -511,7 +512,13 @@ pub fn validate(
             failures.push(format!("quality.light names unknown lane or step `{name}`"));
         }
     }
-    validate_resources(&quality.resources, &lanes_and_steps, failures);
+    validate_resources("resources", &quality.resources, &lanes_and_steps, failures);
+    validate_resources(
+        "shared_resources",
+        &quality.shared_resources,
+        &lanes_and_steps,
+        failures,
+    );
     for glob in &quality.shared {
         if invalid_glob(glob) {
             failures.push(format!(
@@ -816,7 +823,7 @@ mod tests {
         let gate = parse_gate_steps("doctor fast - always -\nplaywright web - selected web-e2e\n")
             .expect("listing parses");
         let quality: QualityManifest = toml::from_str(
-            "[resources]\nandroid = [\"web\", \"nope\"]\ndocker-network = [\"playwright\"]\n\"Bad_Name\" = []\n",
+            "[resources]\nandroid = [\"web\", \"nope\"]\ndocker-network = [\"playwright\"]\n\"Bad_Name\" = []\n[shared_resources]\ngpu = [\"gone\"]\n",
         )
         .expect("quality parses");
         let mut failures = Vec::new();
@@ -831,6 +838,7 @@ mod tests {
             [
                 "quality.resources `Bad_Name` must start with a lowercase letter and hold only lowercase letters, digits and `-`",
                 "quality.resources `android` names unknown lane or step `nope`",
+                "quality.shared_resources `gpu` names unknown lane or step `gone`",
             ]
         );
     }
