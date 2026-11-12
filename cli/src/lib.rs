@@ -137,6 +137,8 @@ const EXPECTED_MOBILE_FILES: &[&str] = &[
 ];
 
 const EXPECTED_WEB_FILES: &[&str] = &[
+    "scripts/with-loopback-network.sh",
+    "scripts/with-loopback-network.test.py",
     "web/package.json",
     "web/index.html",
     "web/vite.config.ts",

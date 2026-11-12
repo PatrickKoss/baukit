@@ -155,7 +155,8 @@ step_scripts_tests() {
   python3 scripts/process_runner.test.py
   python3 scripts/check-markdown-links.test.py
   python3 scripts/gate.test.py
-}
+{% if context.web %}  python3 scripts/with-loopback-network.test.py
+{% endif %}}
 
 step_markdown_links() {
   python3 scripts/check-markdown-links.py README.md CLAUDE.md AGENTS.md docs
@@ -434,6 +435,17 @@ step_web_service_worker() {
   done
 }
 
+# Chromium aborts module requests when the host adds or removes a network, so the hermetic
+# suites run in a loopback-only namespace. BAUKIT_E2E_NETWORK_ISOLATION=0 opts out on hosts
+# without unprivileged user namespaces; without it the helper exits 69 there.
+run_on_loopback() {
+  if [ "${BAUKIT_E2E_NETWORK_ISOLATION:-1}" = "0" ]; then
+    "$@"
+    return
+  fi
+  sh scripts/with-loopback-network.sh "$@"
+}
+
 step_playwright() {
   set -- --config e2e/playwright.config.ts \
     --project=desktop-chromium --project=mobile-chrome \
@@ -449,7 +461,7 @@ step_playwright() {
     E2E_WEBKIT_SKIP=$(critical_paths | paste -sd ',' -)
     export E2E_WEBKIT_SKIP
   fi
-  corepack "$pnpm_package" --dir web exec playwright test "$@"
+  run_on_loopback corepack "$pnpm_package" --dir web exec playwright test "$@"
 }
 
 step_webkit_repeats() {
@@ -462,7 +474,7 @@ step_webkit_repeats() {
   for critical_path in $critical; do
     set -- "$@" "$critical_path"
   done
-  E2E_ALL_PURPOSES=1 corepack "$pnpm_package" --dir web exec playwright test "$@" \
+  run_on_loopback env E2E_ALL_PURPOSES=1 corepack "$pnpm_package" --dir web exec playwright test "$@" \
     --config e2e/playwright.config.ts --project=webkit-desktop \
     --project=mobile-safari --repeat-each "$(manifest_value quality.webkit_repeats)"
 }

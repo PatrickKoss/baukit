@@ -122,6 +122,11 @@ jobs:
         with:
           distribution: temurin
           java-version: "25.0.4+101.0.LTS"
+{% endif %}{% if context.web %}      - name: Allow unprivileged user namespaces for loopback-only Playwright runs
+        run: |
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
 {% endif %}      - name: Select migration comparison base
         if: {% raw %}${{ hashFiles('backend/migrations/*.sql') != '' }}{% endraw %}
         env:
@@ -343,8 +348,13 @@ jobs:
         run: corepack pnpm build
       # The specs stub every API path from e2e/qa.config.ts, so this gate needs
       # no backend, database, or identity provider.
+      - name: Allow unprivileged user namespaces for loopback-only Playwright runs
+        run: |
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
       - name: Run the qa specs
-        run: corepack pnpm exec playwright test --config e2e/playwright.config.ts {% raw %}${{ matrix.projects }}{% endraw %}
+        run: sh ../scripts/with-loopback-network.sh corepack pnpm exec playwright test --config e2e/playwright.config.ts {% raw %}${{ matrix.projects }}{% endraw %}
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: {% raw %}${{ failure() }}{% endraw %}
         with:

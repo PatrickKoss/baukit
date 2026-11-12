@@ -62,7 +62,9 @@ Each suite runs once. nextest runs every Rust test, including ignored ones, unde
 
 ## Caches
 
-The gate prints its cache settings before it starts. It sets `RUSTC_WRAPPER=sccache` when `sccache` is on `PATH` and prints `sccache on` or `sccache off`. `CARGO_HOME` defaults to `~/.cargo`, `GRADLE_USER_HOME` to `~/.gradle` and `PLAYWRIGHT_BROWSERS_PATH` to `~/.cache/ms-playwright`, so worktrees share downloads. Cargo, Gradle, pnpm and Playwright lock their caches, so two worktrees can gate at once. `backend/Dockerfile` mounts the cargo registry and git directories with `sharing=locked`, and keeps the target directory per checkout through `CARGO_TARGET_CACHE_PREFIX`.
+{% if context.web %}The `playwright` and `webkit-repeats` steps run inside a loopback-only network namespace through `scripts/with-loopback-network.sh`. Chromium aborts module requests with `net::ERR_NETWORK_CHANGED` when another process on the host creates or removes a Docker network, and the namespace hides those changes. The helper needs unprivileged user namespaces and exits 69 when they are unavailable. On Ubuntu 24.04 and later, `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` enables them; `ci.yml` does this before the gate. On a host that cannot enable them, `BAUKIT_E2E_NETWORK_ISOLATION=0` runs the suites on the host network and the flake returns. Only suites that talk to the preview server and stubbed APIs belong behind the helper. Suites that start Docker containers or reach the outside network must not use it.
+
+{% endif %}The gate prints its cache settings before it starts. It sets `RUSTC_WRAPPER=sccache` when `sccache` is on `PATH` and prints `sccache on` or `sccache off`. `CARGO_HOME` defaults to `~/.cargo`, `GRADLE_USER_HOME` to `~/.gradle` and `PLAYWRIGHT_BROWSERS_PATH` to `~/.cache/ms-playwright`, so worktrees share downloads. Cargo, Gradle, pnpm and Playwright lock their caches, so two worktrees can gate at once. `backend/Dockerfile` mounts the cargo registry and git directories with `sharing=locked`, and keeps the target directory per checkout through `CARGO_TARGET_CACHE_PREFIX`.
 
 ## Android emulator
 
