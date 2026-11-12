@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 import time
 import unittest
@@ -227,13 +228,21 @@ class AndroidQaLifecycleTests(unittest.TestCase):
                 self.assertIn(f"--env APP_ID={bundle}", self.events.read_text())
 
     def test_hooks_stop_extra_supervised_processes_through_the_pid_file_helper(self):
-        worker = start_process(["sleep", "60"])
+        binary = self.root / "backend/target/debug/worker"
+        self.executable(
+            binary,
+            'exec -a "$0" python3 -c "print(\'ready\', flush=True); import time; time.sleep(60)"\n',
+        )
+        worker = start_process([str(binary)], stdout=subprocess.PIPE, text=True)
+        self.addCleanup(worker.stdout.close)
+        self.assertEqual(worker.stdout.readline().strip(), "ready")
         self.addCleanup(worker.wait)
         self.addCleanup(lambda: worker.kill() if worker.poll() is None else None)
         pid_file = self.state / "worker.pid"
         pid_file.write_text(f"{worker.pid}\n")
         (self.scripts / "local.sh").write_text(
-            'qa_stop_services() { stop_pid_file "$state_dir/worker.pid" worker; }\n'
+            'qa_stop_services() { stop_pid_file "$state_dir/worker.pid" worker'
+            ' "$qa_backend_bin_dir/worker"; }\n'
         )
         result = self.run_script("services.sh", "stop")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -244,7 +253,8 @@ class AndroidQaLifecycleTests(unittest.TestCase):
         pid_file = self.state / "worker.pid"
         pid_file.write_text("invalid\n")
         (self.scripts / "local.sh").write_text(
-            'qa_stop_services() { stop_pid_file "$state_dir/worker.pid" worker; }\n'
+            'qa_stop_services() { stop_pid_file "$state_dir/worker.pid" worker'
+            ' "$qa_backend_bin_dir/worker"; }\n'
         )
         result = self.run_script("services.sh", "stop")
         self.assertEqual(result.returncode, 1)

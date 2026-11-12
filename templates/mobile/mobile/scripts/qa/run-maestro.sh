@@ -60,6 +60,63 @@ else
 fi
 cd "$mobile_dir"
 
+evidence_dir=""
+logcat_pids=()
+
+fail_device() {
+  mark_device_failed "$1"
+  return "$2"
+}
+
+mark_device_failed() { [[ -z "$evidence_dir" ]] || : > "$evidence_dir/$1.failed"; }
+
+start_device_evidence() {
+  local device
+  [[ "$platform" == android ]] || return 0
+  evidence_dir="$(mktemp -d "$state_dir/logcat.XXXXXX")"
+  for device in "${devices[@]}"; do
+    python3 "$mobile_dir/scripts/qa/android-adb.py" "$adb" -s "$device" shell dumpsys package com.android.chrome \
+      2>&1 | awk -v device="$device" '/versionName=/ {print "chrome " $0; found=1; exit} END {if (!found) print "chrome versionName not found on " device}' \
+      > "$evidence_dir/$device.chrome" || true
+    python3 "$mobile_dir/scripts/qa/android-adb.py" "$adb" -s "$device" logcat -c || true
+    "$adb" -s "$device" logcat -v threadtime > "$evidence_dir/$device.logcat" 2>&1 &
+    logcat_pids+=("$!")
+  done
+}
+
+finish_device_evidence() {
+  local status="$1" pid device
+  [[ -n "$evidence_dir" ]] || return 0
+  for pid in "${logcat_pids[@]}"; do
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  done
+  if ((status != 0)) && [[ -z "$(find "$evidence_dir" -name '*.failed' -print -quit)" ]]; then
+    for device in "${devices[@]}"; do mark_device_failed "$device"; done
+  fi
+  for device in "${devices[@]}"; do
+    [[ ! -f "$evidence_dir/$device.failed" ]] || {
+      mkdir -p "$debug_dir"
+      mv "$evidence_dir/$device.logcat" "$debug_dir/logcat-$device.txt"
+      mv "$evidence_dir/$device.chrome" "$debug_dir/chrome-version-$device.txt"
+      echo "qa: kept $debug_dir/logcat-$device.txt" >&2
+    }
+  done
+  rm -rf "$evidence_dir"
+}
+
+finish_run() {
+  local status=$?
+  trap - EXIT
+  finish_device_evidence "$status"
+  exit "$status"
+}
+
+trap finish_run EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+start_device_evidence
+
 all_attached() {
   local device
   for device in "${devices[@]}"; do
@@ -144,14 +201,14 @@ run_declared_shard() {
   qa_maestro_env "$index"
   mkdir -p "$debug_dir"
   maestro_log="$debug_dir/maestro-output.log"
-  prepare_flow_device "${devices[index]}" "${qa_maestro_shards[index]}" || return
+  prepare_flow_device "${devices[index]}" "${qa_maestro_shards[index]}" || fail_device "${devices[index]}" "$?"
   run_maestro "${qa_maestro_shards[index]}" "" test \
     --platform "$platform" \
     --device "${devices[index]}" \
     --env "APP_ID=$app_id" \
     --debug-output "$debug_dir" \
     "${qa_maestro_args[@]}" \
-    "${qa_maestro_shards[index]}"
+    "${qa_maestro_shards[index]}" || fail_device "${devices[index]}" "$?"
 }
 
 run_declared_shards() {
@@ -179,14 +236,14 @@ run_device_flows() {
   mkdir -p "$debug_dir"
   maestro_log="$debug_dir/maestro-output.log"
   for flow in "${device_flows[@]}"; do
-    prepare_flow_device "${devices[index]}" "$flow" || return
+    prepare_flow_device "${devices[index]}" "$flow" || fail_device "${devices[index]}" "$?"
     run_maestro "$flow" "" test \
       --platform "$platform" \
       --device "${devices[index]}" \
       --env "APP_ID=$app_id" \
       --debug-output "$debug_dir" \
       "${qa_maestro_args[@]}" \
-      "$flow" || return
+      "$flow" || fail_device "${devices[index]}" "$?"
   done
 }
 

@@ -329,7 +329,7 @@ RENDERER
                 str(avd / "config.ini"),
                 str(self.sdk),
                 "swiftshader_indirect",
-                "",
+                "-Vulkan",
                 "test",
             ],
             capture_output=True,
@@ -370,7 +370,8 @@ RENDERER
         self.assertEqual(result.returncode, 0, result.stderr)
         events = self.events.read_text()
         self.assertIn('"args": "-avd', events)
-        self.assertNotIn("-feature", events)
+        self.assertIn("-feature -Vulkan ", events)
+        self.assertNotIn("WiFiPacketStream", events)
         self.assertNotIn("svc wifi", events)
         self.assertNotIn("route get", events)
         self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
@@ -388,7 +389,7 @@ RENDERER
         launches = [json.loads(event)["args"] for event in events if event.startswith("{")]
         self.assertTrue(launches)
         for launch in launches:
-            self.assertIn("-feature -WiFiPacketStream", launch)
+            self.assertIn("-feature -Vulkan,-WiFiPacketStream", launch)
         route = next(i for i, event in enumerate(events) if "route get 10.0.2.2" in event)
         self.assertLess(
             next(i for i, event in enumerate(events) if "svc wifi enable" in event), route
@@ -656,16 +657,14 @@ echo finished >> "$EVENTS"
         self.assertNotIn("disposable services stopped", result.stdout)
 
     def test_backend_that_ignores_termination_keeps_its_pid(self):
-        process = start_process(
-            [
-                sys.executable,
-                "-c",
-                "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
-                "print('ready', flush=True); time.sleep(60)",
-            ],
-            stdout=subprocess.PIPE,
-            text=True,
+        api = self.root / "backend/target/debug/api"
+        self.executable(
+            api,
+            f'exec -a "$0" {sys.executable} -c "import signal,time; '
+            "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+            "print('ready', flush=True); time.sleep(60)\"\n",
         )
+        process = start_process([str(api)], stdout=subprocess.PIPE, text=True)
         self.addCleanup(process.stdout.close)
         self.addCleanup(process.wait)
         self.addCleanup(lambda: process.kill() if process.poll() is None else None)

@@ -145,7 +145,8 @@ jobs:
           test -n "$app"
           xcrun simctl install "$simulator" "$app"
           curl -Ls https://get.maestro.mobile.dev | bash
-          "$HOME/.maestro/bin/maestro" --device "$simulator" test .maestro
+          export PATH="$HOME/.maestro/bin:$PATH"
+          maestro --device "$simulator" test .maestro
       - name: Upload iOS failure diagnostics
         if: {% raw %}${{ failure() }}{% endraw %}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

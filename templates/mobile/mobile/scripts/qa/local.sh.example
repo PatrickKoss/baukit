@@ -10,7 +10,10 @@
 {% endif %}#
 # android-env.sh also sets adb, serials, qa_apk_variant and the functions adb_bounded, adb_checked,
 # apply_reverse and prepare_device. services.sh also sets compose, the stop_pid_file helper
-# (stop_pid_file PID_FILE NAME) and the other service ports. run-maestro.sh also sets mobile_dir,
+# and the other service ports. stop_pid_file PID_FILE NAME EXPECTED_BINARY stops the process in PID_FILE
+# only when its command line starts with EXPECTED_BINARY (absolute path, as the process was started),
+# and otherwise refuses and keeps PID_FILE. Call it from qa_stop_services, for example
+# stop_pid_file "$state_dir/worker.pid" worker "$qa_backend_bin_dir/worker". run-maestro.sh also sets mobile_dir,
 # platform, devices and debug_dir.
 #
 # Variables: qa_app_id, qa_ios_bundle_id, qa_apk_path, qa_apk_variant (release or debug),

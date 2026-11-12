@@ -786,7 +786,7 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             for marker in self.avds.glob("test-qa.avd/baukit-clean-*.ready"):
                 marker.unlink()
             self.run_script("android-env.sh")
-            features = "-WiFiPacketStream" if wifi == "1" else ""
+            features = "-Vulkan,-WiFiPacketStream" if wifi == "1" else "-Vulkan"
             snapshot = self.snapshot_name(features=features)
             expected_args = [
                 "-avd",
@@ -798,7 +798,8 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
                 "-no-boot-anim",
                 "-gpu",
                 "swiftshader_indirect",
-                *(["-feature", features] if features else []),
+                "-feature",
+                features,
                 "-no-snapshot-load",
             ]
             expected_args.extend([*(["-no-window"] if headless == "1" else []), "-accel", "off"])
@@ -863,6 +864,152 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("--exclude-tags kompass .maestro/one.yaml", self.events.read_text())
 
+    def prepare_maestro_run(self, devices: list[str], local_hooks: str = "") -> None:
+        self.executable(
+            self.sdk / "platform-tools/adb",
+            r"""
+case "$*" in
+  *get-state*) echo device ;;
+  *"logcat -v threadtime"*)
+    echo "$$" >> "$LOGCAT_PIDS"
+    echo "logcat line for $2"
+    exec sleep 60
+    ;;
+  *"dumpsys package com.android.chrome"*) echo "    versionName=130.0.6723.102" ;;
+esac
+""",
+        )
+        self.executable(
+            self.root / "bin/maestro",
+            r"""
+previous=""
+for argument in "$@"; do
+  if [[ "$previous" == --device && "$argument" == "${FAIL_DEVICE:-}" ]]; then exit 1; fi
+  previous="$argument"
+done
+""",
+        )
+        self.executable(self.scripts / "android-env.sh", "exit 0\n")
+        self.environment["PATH"] = f"{self.root / 'bin'}:{self.environment['PATH']}"
+        self.environment["BAUKIT_QA_POLL_SECONDS"] = "0"
+        self.environment["LOGCAT_PIDS"] = str(self.root / "logcat-pids")
+        mobile = self.root / "mobile"
+        (mobile / ".maestro").mkdir(parents=True)
+        (mobile / ".maestro/one.yaml").write_text("appId: x\n")
+        (mobile / ".qa").mkdir()
+        (mobile / ".qa/android-serial").write_text("".join(f"{device}\n" for device in devices))
+        (self.scripts / "local.sh").write_text(local_hooks)
+
+    def run_maestro_script(self, **environment: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["bash", str(self.scripts / "run-maestro.sh"), "android"],
+            env={**self.environment, **environment},
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+        )
+
+    def assert_logcat_processes_stopped(self) -> None:
+        for pid in (self.root / "logcat-pids").read_text().split():
+            with self.assertRaises(ProcessLookupError):
+                os.kill(int(pid), 0)
+
+    def test_maestro_drops_device_evidence_when_the_run_passes(self) -> None:
+        self.prepare_maestro_run(["emulator-5556"])
+        result = self.run_maestro_script()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        debug = self.root / "mobile/maestro-debug"
+        self.assertEqual(list(debug.glob("logcat-*")), [])
+        self.assertEqual(list(debug.glob("chrome-version-*")), [])
+        self.assertEqual(list((self.root / "mobile/.qa").glob("logcat.*")), [])
+        self.assert_logcat_processes_stopped()
+
+    def test_maestro_keeps_logcat_and_chrome_version_when_a_flow_fails(self) -> None:
+        self.prepare_maestro_run(["emulator-5556"])
+        result = self.run_maestro_script(FAIL_DEVICE="emulator-5556")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        debug = self.root / "mobile/maestro-debug"
+        self.assertIn(
+            "logcat line for emulator-5556",
+            (debug / "logcat-emulator-5556.txt").read_text(),
+        )
+        self.assertIn(
+            "versionName=130.0.6723.102",
+            (debug / "chrome-version-emulator-5556.txt").read_text(),
+        )
+        self.assertEqual(list((self.root / "mobile/.qa").glob("logcat.*")), [])
+        self.assert_logcat_processes_stopped()
+
+    def test_maestro_keeps_evidence_only_for_the_failing_device(self) -> None:
+        self.prepare_maestro_run(
+            ["emulator-5556", "emulator-5558"],
+            'qa_maestro_flows() { echo .maestro/one.yaml; }\n',
+        )
+        result = self.run_maestro_script(FAIL_DEVICE="emulator-5558")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        debug = self.root / "mobile/maestro-debug"
+        self.assertEqual(
+            sorted(path.name for path in debug.glob("logcat-*")), ["logcat-emulator-5558.txt"]
+        )
+        self.assert_logcat_processes_stopped()
+
+    def start_foreign_process(self) -> subprocess.Popen:
+        process = subprocess.Popen(["sleep", "30"])  # noqa: S607 -- fixed test helper
+        self.addCleanup(process.kill)
+        self.addCleanup(process.wait)
+        return process
+
+    @unittest.skipUnless(HAS_BACKEND, "services.sh hooks need a generated backend")
+    def test_stop_refuses_a_pid_file_that_names_a_foreign_process(self) -> None:
+        fake_bin = self.root / "bin"
+        self.executable(fake_bin / "docker", "exit 0\n")
+        self.environment["PATH"] = f"{fake_bin}:{self.environment['PATH']}"
+        state = self.root / "mobile/.qa"
+        state.mkdir(parents=True)
+        foreign = self.start_foreign_process()
+        pid_file = state / "backend.pid"
+        pid_file.write_text(f"{foreign.pid}\n")
+        result = subprocess.run(
+            ["bash", str(self.scripts / "services.sh"), "stop"],
+            env=self.environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("refusing to stop it", result.stderr)
+        self.assertIsNone(foreign.poll())
+        self.assertTrue(pid_file.exists())
+
+    @unittest.skipUnless(HAS_BACKEND, "services.sh hooks need a generated backend")
+    def test_stop_pid_file_stops_the_expected_binary_for_workers(self) -> None:
+        fake_bin = self.root / "bin"
+        self.executable(fake_bin / "docker", "exit 0\n")
+        self.environment["PATH"] = f"{fake_bin}:{self.environment['PATH']}"
+        state = self.root / "mobile/.qa"
+        state.mkdir(parents=True)
+        worker = self.root / "backend/target/debug/worker"
+        self.executable(
+            worker,
+            'exec -a "$0" python3 -c "print(\'ready\', flush=True); import time; time.sleep(30)"\n',
+        )
+        process = subprocess.Popen([str(worker)], stdout=subprocess.PIPE, text=True)
+        self.addCleanup(process.stdout.close)
+        self.addCleanup(process.kill)
+        self.addCleanup(process.wait)
+        self.assertEqual(process.stdout.readline().strip(), "ready")
+        pid_file = state / "worker.pid"
+        pid_file.write_text(f"{process.pid}\n")
+        (self.scripts / "local.sh").write_text(
+            'qa_stop_services() { stop_pid_file "$state_dir/worker.pid" worker'
+            ' "$qa_backend_bin_dir/worker"; }\n'
+        )
+        self.run_script("services.sh", "stop")
+        self.assertIsNotNone(process.wait(timeout=10))
+        self.assertFalse(pid_file.exists())
+
     @unittest.skipUnless(HAS_BACKEND, "services.sh hooks need a generated backend")
     def test_services_hooks_can_replace_the_stack_and_move_ports_and_state(self) -> None:
         fake_bin = self.root / "bin"
@@ -901,7 +1048,7 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             fake_bin / "cargo",
             f'mkdir -p "{custom}"\n'
             f'printf "#!/bin/sh\\necho migrate-ran >> \\"$EVENTS\\"\\n" > "{custom}/migrate"\n'
-            f'printf "#!/bin/sh\\nexec sleep 30\\n" > "{custom}/api"\n'
+            f'printf "#!/bin/bash\\nexec -a \\"\\$0\\" sleep 30\\n" > "{custom}/api"\n'
             f'chmod +x "{custom}/migrate" "{custom}/api"\n',
         )
         self.environment["PATH"] = f"{fake_bin}:{self.environment['PATH']}"
@@ -921,7 +1068,7 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             f'target="{self.root}/backend/target/debug"\n'
             'mkdir -p "$target"\n'
             'printf "#!/bin/sh\\nexit 0\\n" > "$target/migrate"\n'
-            'printf "#!/bin/sh\\nexec sleep 30\\n" > "$target/api"\n'
+            'printf "#!/bin/bash\\nexec -a \\"\\$0\\" sleep 30\\n" > "$target/api"\n'
             'chmod +x "$target/migrate" "$target/api"\n',
         )
         self.environment["PATH"] = f"{fake_bin}:{self.environment['PATH']}"

@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 state_dir="${BAUKIT_QA_STATE_DIR:-$root/mobile/.qa}"
 action="${1:-start}"
+qa_backend_bin_dir="$root/backend/target/debug"
 {% if context.backend %}compose_project="${BAUKIT_QA_COMPOSE_PROJECT:-{{ context.app_name }}-mobile-qa}"
 postgres_port="${BAUKIT_QA_POSTGRES_PORT:-15432}"
 redis_port="${BAUKIT_QA_REDIS_PORT:-16379}"
@@ -23,7 +24,6 @@ if [[ -n "${BAUKIT_QA_COMPOSE_OVERRIDE:-}" ]]; then
 fi
 qa_compose_services=()
 qa_cargo_bins=()
-qa_backend_bin_dir="$root/backend/target/debug"
 qa_services_env() { :; }
 qa_before_api() { :; }
 qa_after_api() { :; }
@@ -41,8 +41,18 @@ api_running() {
   kill -0 "$1" 2>/dev/null && [[ "$(ps -o stat= -p "$1")" != Z* ]]
 }
 
+pid_runs_binary() {
+  local args
+  args="$(ps -o args= -p "$1")" || return 1
+  [[ "$args" == "$2" || "$args" == "$2 "* ]]
+}
+
 stop_pid_file() {
-  local pid_file="$1" name="$2" pid
+  local pid_file="$1" name="$2" expected_bin="${3:-}" pid
+  [[ -n "$expected_bin" ]] || {
+    echo "qa: usage: stop_pid_file PID_FILE NAME EXPECTED_BINARY" >&2
+    return 2
+  }
   [[ -f "$pid_file" ]] || return 0
   pid="$(<"$pid_file")"
   [[ "$pid" =~ ^[1-9][0-9]*$ ]] || {
@@ -50,6 +60,10 @@ stop_pid_file() {
     return 1
   }
   if api_running "$pid"; then
+    pid_runs_binary "$pid" "$expected_bin" || {
+      echo "qa: PID $pid in $pid_file is not $expected_bin; refusing to stop it, ownership state was kept" >&2
+      return 1
+    }
     kill "$pid" || return
     for _ in $(seq 1 30); do
       api_running "$pid" || break
@@ -64,7 +78,7 @@ stop_pid_file() {
 }
 
 stop_api() {
-  stop_pid_file "$state_dir/backend.pid" backend
+  stop_pid_file "$state_dir/backend.pid" backend "$qa_backend_bin_dir/api"
 }
 
 stop_default_services() {

@@ -352,9 +352,9 @@ boot_emulators() {
   mkdir -p "$state_dir"
   trap stop_started_emulators_on_failure EXIT
   avd_dir="$avd_home/$avd_name.avd"
-  emulator_features=""
+  emulator_features="-Vulkan"
   if ((android_wifi)); then
-    emulator_features="-WiFiPacketStream"
+    emulator_features="$emulator_features,-WiFiPacketStream"
   fi
   snapshot_name="$(python3 "$root/mobile/scripts/qa/android-adb.py" --snapshot-name "$avd_dir/config.ini" "$sdk_root" "$gpu_mode" "$emulator_features" "{{ context.template_version }}")"
   snapshot_dir="$avd_dir/snapshots/$snapshot_name"
