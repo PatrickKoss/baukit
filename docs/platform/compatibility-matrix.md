@@ -5,9 +5,9 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
-## v0.23.0 (unreleased)
+## v0.23.0
 
-Next train on top of `v0.22.0`. Template hooks replace product divergences, and the mobile QA scripts get hardened.
+Last verified release train: `v0.23.0` (minor train on top of `v0.22.0`). Template hooks replace product divergences, and the mobile QA scripts get hardened.
 - `web/scripts/check-production-bundle.mjs` builds through Vite's JS API with a `generateBundle` plugin and reports `chunk: module: marker`. The loopback URL marker skips `node_modules` modules (`@tanstack/router-core` falls back to `this.origin = "http://localhost"`). The Keycloak, `/realms/` and env canary markers apply to every module. The mobile check already attributes findings per source through source maps and skips third-party code for loopback URLs.
 - `baukit.toml` `[quality.ci]` takes `timeout_minutes` (1 to 360, default 90) and an `env` table (upper case names) for the `strict-quality` job in `ci.yml`. A product that set `PLAYWRIGHT_BROWSERS_PATH`, `BAUKIT_QA_HEADLESS` and a 180 minute timeout there no longer edits the workflow.
 - `ci.yml`, `native.yml`, the `Makefile`, `lockfiles.sh`, `CLAUDE.md` and the READMEs call `corepack pnpm` from the package directory. `packageManager` decides the pnpm version.

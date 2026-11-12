@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-12
+
 - `baukit check suppressions` flags a nested ruff config (`ruff.toml`, `.ruff.toml`, `pyproject.toml` with `[tool.ruff]`) that selects fewer rules than the root config, or ignores rules the root enforces. Configs that `extend` the root pass.
 - An unused `# noqa` (ruff RUF100) is a `suppressions` finding with file and line, and is not counted. Fix with `ruff check --extend-select RUF100 --fix`. A `per-file-ignores` entry that ignores `RUF100` is a finding, since it hides dead comments from the check. `ruff` must be on `PATH` when a `.py` file has a `# noqa`. `templates/` is skipped in the baukit checkout. baukit's own `noqa` max drops from 5 to 4: the dead `N802` and `S603` comments are removed, and the two template `S603` sites, `scripts/process_runner.py` and `deploy/platform/local-git-http.py` remain. baukit's root `ruff.toml` no longer ignores `E501`, `S603`, `S607`, `PLR2004` or `PLR0913`.
 - `baukit check suppressions` flags a `.gitleaks.toml` allowlist (`[[allowlists]]`, `[allowlist]`, rule allowlists) with a pattern or unanchored `regexes` entry and no `paths` or `commits`. Exact-value regexes (`^value$`) pass.

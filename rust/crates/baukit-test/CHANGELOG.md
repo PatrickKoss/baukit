@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-12
+
 - `PostgresTestDatabases::create_from_template` clones a database with `CREATE DATABASE ... TEMPLATE`, and `drop_named` runs `DROP DATABASE IF EXISTS ... WITH (FORCE)`. Both take a `PostgresDatabaseName`, which accepts only `[a-z_][a-z0-9_]*` up to 63 bytes, so test-support crates no longer need `AssertSqlSafe` for generated database names. `PostgresTestDatabase::as_template` names a database created by `create`. A bad name fails with the new `PostgresTestError::InvalidDatabaseName`.
 
 ## [0.22.0] - 2026-11-11

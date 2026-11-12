@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-12
+
 {% if context.web %}- `web/scripts/check-production-bundle.mjs` builds through Vite's JS API and a `generateBundle` plugin, and names each finding as `chunk: module: marker`. The loopback URL marker applies only to modules outside `node_modules`, because third-party code such as `@tanstack/router-core` carries a `http://localhost` fallback. The Keycloak adapter, `/realms/` and env canary markers still apply to every module, and source maps are scanned for them only. Copy the new script and its test.
 {% endif %}{% if context.auth_enabled and context.backend %}- `scripts/pkce-login.py` captures a callback with a non-http scheme such as `app://oauth` in `http_error_301`, `_302`, `_303`, `_307` and `_308`, because urllib rejects the scheme before `redirect_request` runs. `scripts/pkce_session.py` is new. Its `sign_in(SignIn(issuer, client_id, redirect_uri, credentials))` loads `pkce-login.py`, registers it in `sys.modules` and builds the `LoginRequest`, so seed and smoke scripts stop depending on the dataclass fields. `Credentials(username, password)` is per call, so one process can sign in as several users, and `Credentials.from_env()` reads `BAUKIT_QA_USERNAME` and `BAUKIT_QA_PASSWORD`, and `Credentials.development()` fills a missing one from the `test` user in `keycloak/realm.json`, so the script holds no password.
 - `[auth] login_theme` in `baukit.toml` names the Keycloak login theme. It defaults to `baukit-accessible` and feeds `keycloak/realm.json` and `KEYCLOAK_LOGIN_THEME` for `scripts/test-keycloak-theme-patches.sh`, which `scripts/keycloak-theme.browser.mjs` asserts against the realm.
