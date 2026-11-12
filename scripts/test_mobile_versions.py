@@ -115,9 +115,7 @@ class ExpoOfflineChecksTest(unittest.TestCase):
     def test_expo_validation_runs_offline(self):
         for path, command in self.COMMANDS:
             with self.subTest(path=path):
-                lines = [
-                    line for line in (ROOT / path).read_text().splitlines() if command in line
-                ]
+                lines = [line for line in (ROOT / path).read_text().splitlines() if command in line]
                 self.assertTrue(lines, command)
                 for line in lines:
                     self.assertIn("EXPO_OFFLINE=1 ", line)
