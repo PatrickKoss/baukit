@@ -218,11 +218,7 @@ async fn send_to_router(router: &Router, probe: ProbeRequest<'_>) -> Result<Prob
         None => Body::empty(),
     };
     let request = builder.body(body).map_err(|error| error.to_string())?;
-    let response = router
-        .clone()
-        .oneshot(request)
-        .await
-        .map_err(|error| error.to_string())?;
+    let Ok(response) = router.clone().oneshot(request).await;
     let status = response.status().as_u16();
     let bytes = to_bytes(response.into_body(), BODY_LIMIT)
         .await
