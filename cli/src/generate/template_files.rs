@@ -1,11 +1,14 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::Path};
 
 use anyhow::Result;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
-use crate::check::{TEMPLATE_FILES_MANIFEST, render_manifest, sha256_hex};
+use crate::{
+    check::{TEMPLATE_FILES_MANIFEST, render_manifest, sha256_hex},
+    manifest::read_manifest,
+};
 
-use super::render::RenderedFiles;
+use super::{NewOptions, render::RenderedFiles, render_for_destination};
 
 /// Rendered files the product extends through hooks instead of editing. The criterion: baukit
 /// tooling whose logic is the same in every product, so a fork stops template fixes from
@@ -33,6 +36,30 @@ fn owned_set() -> Result<GlobSet> {
         builder.add(Glob::new(pattern)?);
     }
     Ok(builder.build()?)
+}
+
+/// Renders the template-owned files `baukit new` would write for the product at `root`, keyed by
+/// product-relative path.
+pub(crate) fn render_template_owned(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+    let manifest = read_manifest(root)?;
+    let options = NewOptions {
+        name: manifest.app.name,
+        directory: root.to_owned(),
+        components: manifest.capabilities.components,
+        auth: manifest.capabilities.auth,
+        force: false,
+        into_existing: true,
+        resolve_lockfiles: false,
+        baukit_path: None,
+        port_offset: manifest.port_offset,
+        quality: manifest.quality.profile,
+    };
+    let owned = owned_set()?;
+    Ok(render_for_destination(&options, root)?
+        .into_iter()
+        .filter(|(path, _)| owned.is_match(path))
+        .map(|(path, contents)| (path.to_string_lossy().replace('\\', "/"), contents))
+        .collect())
 }
 
 /// Adds `.baukit/template-files.toml` with the hash of every template-owned rendered file.

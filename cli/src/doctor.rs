@@ -133,26 +133,32 @@ fn validate_quality_settings(root: &Path, manifest: &Manifest, failures: &mut Ve
     }
 }
 
-fn validate_gate_steps(root: &Path, manifest: &Manifest, failures: &mut Vec<String>) -> Result<()> {
-    let gate_steps = if manifest.quality.profile == QualityProfile::Strict {
-        match gate_settings::list_gate_steps(root) {
-            Some(Ok(steps)) => Some(steps),
-            Some(Err(error)) => {
+fn listed_gate_steps(
+    root: &Path,
+    profile: QualityProfile,
+    failures: &mut Vec<String>,
+) -> Option<gate_settings::GateSteps> {
+    match gate_settings::list_gate_steps(root)? {
+        Ok(steps) => Some(steps),
+        Err(error) => {
+            if profile == QualityProfile::Strict {
                 failures.push(error);
-                None
             }
-            None => None,
+            None
         }
-    } else {
-        None
-    };
+    }
+}
+
+fn validate_gate_steps(root: &Path, manifest: &Manifest, failures: &mut Vec<String>) -> Result<()> {
+    let strict = manifest.quality.profile == QualityProfile::Strict;
+    let gate_steps = listed_gate_steps(root, manifest.quality.profile, failures);
     gate_settings::validate(
         &manifest.quality,
         &manifest.capabilities,
         gate_steps.as_ref(),
         failures,
     );
-    let Some(gate) = &gate_steps else {
+    let Some(gate) = gate_steps.as_ref().filter(|_| strict) else {
         return Ok(());
     };
     let template = COMMON_TEMPLATE
@@ -444,5 +450,68 @@ fn validate_docker(
             "Docker image builds are ready; registry and local path dependencies do not require SSH forwarding"
                 .to_owned(),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn product_with_gate(script: &str) -> tempfile::TempDir {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let scripts = directory.path().join("scripts");
+        std::fs::create_dir_all(&scripts).expect("scripts directory");
+        std::fs::write(scripts.join("quality-gate.sh"), script).expect("script");
+        directory
+    }
+
+    const LISTING_SCRIPT: &str = "echo 'suite-e2e slow - always -'\n";
+
+    #[test]
+    fn standard_profile_uses_the_listed_product_steps() {
+        let directory = product_with_gate(LISTING_SCRIPT);
+        let mut failures = Vec::new();
+        let gate = listed_gate_steps(directory.path(), QualityProfile::Standard, &mut failures)
+            .expect("listing is used");
+        assert!(gate.steps.contains("suite-e2e"));
+        assert!(failures.is_empty(), "{failures:?}");
+    }
+
+    #[test]
+    fn standard_profile_falls_back_when_listing_fails() {
+        let directory = product_with_gate("echo unsupported >&2\nexit 2\n");
+        let mut failures = Vec::new();
+        let gate = listed_gate_steps(directory.path(), QualityProfile::Standard, &mut failures);
+        assert!(gate.is_none());
+        assert!(failures.is_empty(), "{failures:?}");
+    }
+
+    #[test]
+    fn standard_profile_without_a_gate_script_has_no_listing() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let mut failures = Vec::new();
+        assert!(
+            listed_gate_steps(directory.path(), QualityProfile::Standard, &mut failures).is_none()
+        );
+        assert!(failures.is_empty(), "{failures:?}");
+    }
+
+    #[test]
+    fn strict_profile_still_fails_when_listing_fails() {
+        let directory = product_with_gate("echo unsupported >&2\nexit 2\n");
+        let mut failures = Vec::new();
+        let gate = listed_gate_steps(directory.path(), QualityProfile::Strict, &mut failures);
+        assert!(gate.is_none());
+        assert_eq!(failures.len(), 1, "{failures:?}");
+        assert!(failures[0].contains("--list-steps failed"), "{failures:?}");
+    }
+
+    #[test]
+    fn strict_profile_uses_the_listed_steps() {
+        let directory = product_with_gate(LISTING_SCRIPT);
+        let mut failures = Vec::new();
+        let gate = listed_gate_steps(directory.path(), QualityProfile::Strict, &mut failures)
+            .expect("listing is used");
+        assert!(gate.steps.contains("suite-e2e"));
     }
 }

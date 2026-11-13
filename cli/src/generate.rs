@@ -3,6 +3,8 @@ mod manifest_source;
 mod render;
 mod template_files;
 
+pub(crate) use template_files::render_template_owned;
+
 use std::{
     collections::BTreeMap,
     fs,
@@ -57,19 +59,8 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     } else {
         options.directory.join(&options.name)
     };
-    let (ports, existing_manifest) = ports::generation_ports(&destination, options.port_offset)?;
-    let manifest = existing_manifest
-        .as_deref()
-        .map(toml::from_str::<Manifest>)
-        .transpose()?;
-    let platform_migration = resolve_platform_migration(&destination, manifest.as_ref(), options)?;
     ensure_destination_accepts_output(&destination, options)?;
-
-    let context = template_context(options, &ports, manifest.as_ref(), platform_migration)?;
-    let mut rendered = render_product(&context, options)?;
-    if let Some(source) = existing_manifest {
-        rendered.insert(PathBuf::from("baukit.toml"), source.into_bytes());
-    }
+    let rendered = render_for_destination(options, &destination)?;
     write_rendered(&destination, rendered)?;
 
     if options.resolve_lockfiles {
@@ -77,6 +68,25 @@ pub fn generate_new(options: &NewOptions) -> Result<PathBuf> {
     }
 
     Ok(destination)
+}
+
+/// Renders what `baukit new` would write into `destination`, honoring an existing `baukit.toml` there.
+fn render_for_destination(
+    options: &NewOptions,
+    destination: &Path,
+) -> Result<render::RenderedFiles> {
+    let (ports, existing_manifest) = ports::generation_ports(destination, options.port_offset)?;
+    let manifest = existing_manifest
+        .as_deref()
+        .map(toml::from_str::<Manifest>)
+        .transpose()?;
+    let platform_migration = resolve_platform_migration(destination, manifest.as_ref(), options)?;
+    let context = template_context(options, &ports, manifest.as_ref(), platform_migration)?;
+    let mut rendered = render_product(&context, options)?;
+    if let Some(source) = existing_manifest {
+        rendered.insert(PathBuf::from("baukit.toml"), source.into_bytes());
+    }
+    Ok(rendered)
 }
 
 fn validate_component_selection(options: &NewOptions) -> Result<()> {

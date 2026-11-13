@@ -83,7 +83,7 @@ Lines marked `note:` never fail the run.
 | `patterns` | Runs the ast-grep rules above with ast-grep 0.51.1, embedded in the CLI. `error` rules fail; `hint` rules print with `--verbose`. |
 | `agent-docs` | `CLAUDE.md` holds exactly one managed block equal to `lint/agent-rules.md`, and `AGENTS.md` is a symlink to `CLAUDE.md`. |
 | `observability` | Dashboards, alerts and recording rules from `[observability]` in `baukit-check.toml`. See below. Without that table it prints a note and passes. |
-| `template-files` | Every file in `.baukit/template-files.toml` still has the SHA-256 that `baukit new` recorded. `--update` rewrites the hashes after a deliberate upgrade. Without the manifest it prints a note and passes. |
+| `template-files` | Every file in `.baukit/template-files.toml` still has the SHA-256 that `baukit new` recorded. `--update` rewrites the hashes after a deliberate upgrade, drops rows whose file is gone, and adds a row for each file the current template owns for this product (rendered from `baukit.toml`) that the product holds with identical content. A template-owned file with different content is not added and is printed as `template-owned but diverged, not tracked`. Without the manifest it prints a note and passes. |
 
 `target/`, `node_modules/`, `vendor/`, `.generated-fixture/` and `.git/` are never scanned.
 

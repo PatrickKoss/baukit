@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::{CheckContext, Finding, Rule};
+use crate::generate::render_template_owned;
 
 const NAME: &str = "template-files";
 /// Written by `baukit new`, rewritten by `baukit check template-files --update`.
@@ -66,8 +67,8 @@ impl Rule for TemplateFiles {
         let manifest: Manifest = toml::from_str(&source)
             .with_context(|| format!("invalid {}", manifest_path.display()))?;
         if context.options.update {
-            update(context.root, &manifest)?;
-            return Ok(Vec::new());
+            let owned = render_template_owned(context.root)?;
+            return update(context.root, &manifest, &owned);
         }
         check(context.root, &manifest)
     }
@@ -96,17 +97,41 @@ fn check(root: &Path, manifest: &Manifest) -> Result<Vec<Finding>> {
     Ok(findings)
 }
 
-/// Rewrites every hash from the current file and drops entries whose file is gone.
-fn update(root: &Path, manifest: &Manifest) -> Result<()> {
+/// Rewrites every hash from the current file, drops entries whose file is gone, and adds the
+/// `owned` files the manifest lacks when the product holds them unchanged.
+fn update(
+    root: &Path,
+    manifest: &Manifest,
+    owned: &BTreeMap<String, Vec<u8>>,
+) -> Result<Vec<Finding>> {
     let mut files = BTreeMap::new();
     for path in manifest.files.keys() {
         if let Some(hash) = current_hash(root, path)? {
             files.insert(path.clone(), hash);
         }
     }
+    let mut findings = Vec::new();
+    for (path, rendered) in owned
+        .iter()
+        .filter(|(path, _)| !manifest.files.contains_key(*path))
+    {
+        let Some(actual) = current_hash(root, path)? else {
+            continue;
+        };
+        if actual == sha256_hex(rendered) {
+            files.insert(path.clone(), actual);
+        } else {
+            findings.push(Finding::note(
+                NAME,
+                path.as_str(),
+                "template-owned but diverged, not tracked",
+            ));
+        }
+    }
     let target = root.join(MANIFEST_PATH);
     fs::write(&target, render_manifest(files)?)
-        .with_context(|| format!("failed to write {}", target.display()))
+        .with_context(|| format!("failed to write {}", target.display()))?;
+    Ok(findings)
 }
 
 #[cfg(test)]
@@ -166,18 +191,120 @@ mod tests {
         Ok(())
     }
 
+    fn owned(entries: &[(&str, &str)]) -> BTreeMap<String, Vec<u8>> {
+        entries
+            .iter()
+            .map(|(path, contents)| ((*path).to_owned(), contents.as_bytes().to_vec()))
+            .collect()
+    }
+
     #[test]
     fn update_rewrites_hashes_and_drops_removed_files() -> Result<()> {
         let root = tempfile::tempdir()?;
         write_product(root.path())?;
         fs::write(root.path().join("scripts/gate.sh"), "echo upgraded\n")?;
         fs::remove_file(root.path().join("scripts/openapi.sh"))?;
-        update(root.path(), &manifest(root.path())?)?;
+        let findings = update(root.path(), &manifest(root.path())?, &BTreeMap::new())?;
+        assert!(findings.is_empty());
         assert!(messages(root.path())?.is_empty());
         assert_eq!(
             manifest(root.path())?.files.keys().collect::<Vec<_>>(),
             vec!["scripts/gate.sh"]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn update_adds_identical_new_template_files() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        write_product(root.path())?;
+        fs::write(root.path().join("scripts/gate_locks.py"), "locks\n")?;
+        let owned = owned(&[("scripts/gate_locks.py", "locks\n")]);
+        let findings = update(root.path(), &manifest(root.path())?, &owned)?;
+        assert!(findings.is_empty());
+        assert_eq!(
+            manifest(root.path())?.files.get("scripts/gate_locks.py"),
+            Some(&sha256_hex(b"locks\n"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn update_reports_diverged_new_template_files_without_tracking_them() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        write_product(root.path())?;
+        fs::write(root.path().join("scripts/gate_locks.py"), "forked\n")?;
+        let owned = owned(&[("scripts/gate_locks.py", "locks\n")]);
+        let findings = update(root.path(), &manifest(root.path())?, &owned)?;
+        assert_eq!(
+            findings.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            vec![
+                "template-files: scripts/gate_locks.py: note: template-owned but diverged, not tracked"
+            ]
+        );
+        assert!(
+            !manifest(root.path())?
+                .files
+                .contains_key("scripts/gate_locks.py")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn update_ignores_new_template_files_the_product_lacks() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        write_product(root.path())?;
+        let owned = owned(&[("scripts/gate_locks.py", "locks\n")]);
+        let findings = update(root.path(), &manifest(root.path())?, &owned)?;
+        assert!(findings.is_empty());
+        assert!(
+            !manifest(root.path())?
+                .files
+                .contains_key("scripts/gate_locks.py")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn update_keeps_tracked_rows_out_of_the_divergence_report() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        write_product(root.path())?;
+        fs::write(root.path().join("scripts/gate.sh"), "echo upgraded\n")?;
+        let owned = owned(&[("scripts/gate.sh", "echo template\n")]);
+        let findings = update(root.path(), &manifest(root.path())?, &owned)?;
+        assert!(findings.is_empty());
+        assert_eq!(
+            manifest(root.path())?.files.get("scripts/gate.sh"),
+            Some(&sha256_hex(b"echo upgraded\n"))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn update_restores_rows_dropped_from_a_generated_product() -> Result<()> {
+        use crate::{Component, Components, NewOptions, QualityProfile, generate_new};
+
+        let parent = tempfile::tempdir()?;
+        let root = generate_new(&NewOptions {
+            name: "rows-product".to_owned(),
+            directory: parent.path().to_owned(),
+            components: Components::from([Component::Backend]),
+            auth: None,
+            force: false,
+            into_existing: false,
+            resolve_lockfiles: false,
+            baukit_path: None,
+            port_offset: 0,
+            quality: QualityProfile::Strict,
+        })?;
+        let full = manifest(&root)?;
+        let mut trimmed = full.files.clone();
+        assert!(trimmed.remove("scripts/gate_locks.py").is_some());
+        fs::write(root.join(MANIFEST_PATH), render_manifest(trimmed)?)?;
+        let owned = render_template_owned(&root)?;
+        let findings = update(&root, &manifest(&root)?, &owned)?;
+        assert!(findings.is_empty(), "{findings:?}");
+        assert_eq!(manifest(&root)?.files, full.files);
         Ok(())
     }
 }
