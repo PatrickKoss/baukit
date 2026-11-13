@@ -7,9 +7,10 @@ This table records the tested baseline. The committed lockfiles record exact res
 
 ## v0.25.1
 
-Last verified release train: `v0.25.1` (patch train on top of `v0.25.0`, CLI fixes only). Template output changes only in the template changelog.
+Last verified release train: `v0.25.1` (patch train on top of `v0.25.0`: two CLI fixes and one mobile template fix).
 - `baukit check template-files --update` adds rows for template-owned files that a product holds unchanged but the manifest lacks. Upgrades to 0.25.0 left `scripts/gate_locks.py` and its siblings untracked. Owned files that differ are listed and stay untracked.
 - `baukit doctor` accepts a standard-profile product's own step names in `[quality.resources]`, `[quality.shared_resources]`, `[quality.affected]` and `quality.light`.
+- Generated mobile apps build expo-sqlite from source on Android. The prebuilt expo-sqlite 57.0.5 AAR ships arm64-v8a only, and the app could not open its database on x86_64 emulators (`library "libexpo-sqlite.so" not found`).
 - The Expo SDK 57 pins from v0.25.0 stay in `minimumReleaseAgeExclude`. They reach the release age on 2026-11-13, and a later train drops them.
 
 ## v0.25.0
