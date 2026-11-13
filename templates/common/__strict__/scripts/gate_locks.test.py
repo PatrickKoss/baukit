@@ -497,6 +497,19 @@ except BlockingIOError: print(1)' "{root}/locks/docker-network.lock")" >> "{trac
         self.assertEqual(held["playwright"], ["android=0", "network=1"])
         self.assertIn("playwright takes docker-network shared", result.stdout)
 
+    def test_a_fast_step_after_a_locking_step_fails_before_running(self):
+        steps = [
+            "android-debug mobile - selected -",
+            "build web android-debug selected -",
+            "lint fast build always -",
+        ]
+        result, trace = self.run_gate([], steps=steps)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn(
+            "fast-lane step lint runs after android-debug, which takes locks", result.stderr
+        )
+        self.assertEqual(trace, [])
+
     def test_unknown_resource_members_fail(self):
         result, _ = self.run_gate([], settings_text='[quality.resources]\nandroid = ["nope"]\n')
         self.assertEqual(result.returncode, 2)

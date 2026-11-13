@@ -802,6 +802,37 @@ def unknown_names_error(settings: dict, light: frozenset[str], steps: list[Step]
     return None
 
 
+def fast_lane_wait_error(steps: list[Step], resources: list[ResourceRule]) -> str | None:
+    by_name = {step.name: step for step in steps}
+    for step in steps:
+        if step.lane != FAST_LANE:
+            continue
+        waiting = first_locking_dependency(step, by_name, resources)
+        if waiting:
+            return (
+                f"gate: fast-lane step {step.name} runs after {waiting}, which takes locks and so "
+                f"waits for the fast lane; move {step.name} out of the fast lane"
+            )
+    return None
+
+
+def first_locking_dependency(
+    step: Step, by_name: dict[str, Step], resources: list[ResourceRule]
+) -> str | None:
+    seen: set[str] = set()
+    pending = list(step.after)
+    while pending:
+        name = pending.pop()
+        dependency = by_name.get(name)
+        if dependency is None or name in seen:
+            continue
+        seen.add(name)
+        if dependency.lane != FAST_LANE and resources_for({name, dependency.lane}, resources):
+            return name
+        pending.extend(dependency.after)
+    return None
+
+
 def prepare_log_directory(path: Path) -> Path:
     directory = path.resolve()
     directory.mkdir(parents=True, exist_ok=True)
@@ -833,7 +864,9 @@ def run_command(arguments: argparse.Namespace) -> int:
     settings = load_settings(Path(arguments.settings))
     mode = "affected" if arguments.affected else "full"
     light = light_settings(settings)
-    name_error = unknown_names_error(settings, light, steps)
+    name_error = unknown_names_error(settings, light, steps) or fast_lane_wait_error(
+        steps, resource_map(settings)
+    )
     if name_error:
         print(name_error, file=sys.stderr)
         return 2

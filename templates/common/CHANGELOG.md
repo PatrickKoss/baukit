@@ -6,6 +6,8 @@
 
 {% endif %}{% if context.quality_strict %}- `scripts/gate_locks.test.py` waits with `time.sleep` instead of `threading.Timer` in `test_a_resource_step_waits_for_a_held_lock_before_taking_cores`. Python builds without `sem_clockwait`, such as mise's python-build-standalone 3.14, time out `Event.wait` and `Timer` on the wall clock, and WSL steps the wall clock forward by about 1.7 s every 34 s, so the 1.5 s timer could fire after 0.2 s and fail the test. Copy the file from the template.
 
+{% endif %}{% if context.quality_strict %}- `scripts/gate.py` exits with status 2 before it runs anything when a `fast` step runs after a step that takes a lock, directly or through other steps. That step waits for the `fast` lane to pass, and the `fast` lane waited for it, so the gate hung with no step running. Move such a step out of the `fast` lane in `scripts/quality-gate.local.sh`.
+
 {% endif %}## [0.25.1] - 2026-11-13
 
 {% if context.mobile %}- `mobile/package.json` builds expo-sqlite from source on Android (`expo.autolinking.android.buildFromSource`). The prebuilt expo-sqlite 57.0.5 AAR on npm ships `libexpo-sqlite.so` for arm64-v8a only, so on x86_64 emulators and 32-bit devices the app fails with `UnsatisfiedLinkError` when it opens the database and never leaves the loading screen. Copy the `autolinking` block into the product's `mobile/package.json` and rebuild the APK. Products that set an `expo.sqlite.*` Gradle property (SQLCipher, libSQL) already build from source.

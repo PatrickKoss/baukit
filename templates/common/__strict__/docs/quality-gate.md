@@ -72,7 +72,7 @@ docker-network = ["compose-e2e"]
 docker-network = ["host-browser-e2e"]
 ```
 
-With a lock directory set, steps that hold a resource start only after the `fast` lane has passed. When it failed they print `not run (fast lane failed)` and never queue for a lock. A step waits for its locks before it draws cores, so a queued step holds none.
+With a lock directory set, steps that hold a resource start only after the `fast` lane has passed. When it failed they print `not run (fast lane failed)` and never queue for a lock. A `fast` step therefore cannot run after such a step, directly or through other steps. The gate then exits with status 2 before it runs anything and names both steps. A step waits for its locks before it draws cores, so a queued step holds none.
 
 `BAUKIT_GATE_CORE_POOL` names a directory of `slot-<n>.lock` files, one per core up to `BAUKIT_GATE_CORES`. Every step draws its cores by taking slots with a non-blocking `flock`, so gates on one host never run more cores than the pool has. Each gate registers in `$BAUKIT_GATE_CORE_POOL/gates`, and the share of a step is computed from the pool size divided by the number of live gates, so two gates at once start with half the pool each instead of the first one taking all of it. A step that finds too few slots polls every 200 ms. The kernel frees the slots when a step ends or the gate dies. Step lines report `waited N s for android.lock` and `N of M pool cores free`.
 
