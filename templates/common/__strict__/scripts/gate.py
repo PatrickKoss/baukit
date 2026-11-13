@@ -316,6 +316,14 @@ class CoreBudget:
             cores = max(1, cores // self.pool.live_gates())
         return split_workers(cores, lanes, self.memory_mb, self.worker_memory_mb)
 
+    def weighted_share(self, lanes: int, seconds: int, total_seconds: int) -> int:
+        even = self.share(lanes)
+        if seconds <= 0 or total_seconds <= 0:
+            return even
+        ceiling = self.share(1)
+        weighted = -(-ceiling * seconds // total_seconds)
+        return max(even, min(ceiling, weighted, max(1, self.available())))
+
     def acquire(self, want: int, minimum: int = 1) -> int:
         want = min(self.cores, max(1, want))
         minimum = min(want, max(1, minimum))
@@ -340,6 +348,19 @@ class CoreBudget:
         with self.condition:
             self.free += cores
             self.condition.notify_all()
+
+
+def read_expected_seconds(path: Path, names: set[str]) -> dict[str, int]:
+    try:
+        lines = path.read_text().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return {}
+    expected: dict[str, int] = {}
+    for line in lines:
+        name, _, value = line.partition(" ")
+        if name in names and value.isdecimal() and int(value) > 0:
+            expected[name] = int(value)
+    return expected
 
 
 def budget_report(
@@ -462,6 +483,8 @@ class Runner:
         self.lane_seconds: dict[str, int] = {}
         self.lock = threading.Lock()
         self.timings_file = context.log_directory / "timings.txt"
+        self.expected = read_expected_seconds(self.timings_file, self.names)
+        self.pending = {item.step.name for item in planned if not is_light(item.step, light)}
         self.started = time.monotonic()
 
     def lanes(self) -> dict[str, list[Step]]:
@@ -540,10 +563,21 @@ class Runner:
             failed = not self.run_step(lane, step, log)
         return failed
 
+    def step_share(self, step: Step) -> int:
+        lanes = len(self.open_lanes)
+        seconds = self.expected.get(step.name, 0)
+        if seconds == 0 or step.name not in self.pending:
+            self.pending.discard(step.name)
+            return self.budget.share(lanes)
+        mean = sum(self.expected.values()) // len(self.expected)
+        total = sum(self.expected.get(name, mean) for name in self.pending)
+        self.pending.discard(step.name)
+        return self.budget.weighted_share(lanes, seconds, total)
+
     def cores_for(self, step: Step) -> tuple[int, bool]:
         """Return the step's workers and whether they came out of the shared budget."""
         with self.lock:
-            share = self.budget.share(len(self.open_lanes))
+            share = self.step_share(step)
         if is_light(step, self.light):
             return share, False
         if step.name in EMULATOR_STEPS:

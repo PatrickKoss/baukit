@@ -257,6 +257,55 @@ class BudgetTests(unittest.TestCase):
         )
 
 
+class WeightedShareTests(unittest.TestCase):
+    def runner(self, history, cores=24):
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(directory, ignore_errors=True))
+        if history is not None:
+            (directory / "timings.txt").write_text(history)
+        planned = gate.plan(STEPS, gate.Selection(True, []))
+        budget = gate.CoreBudget(cores, None, 1024, 2)
+        context = gate.RunContext([], directory, {})
+        return gate.Runner(planned, context, budget=budget)
+
+    def test_no_timings_keep_the_even_share(self):
+        runner = self.runner(None)
+        lanes = len(runner.open_lanes)
+        self.assertEqual(
+            runner.step_share(next(i.step for i in runner.planned if i.step.name == "playwright")),
+            24 // lanes,
+        )
+
+    def test_long_pole_gets_the_bigger_share(self):
+        runner = self.runner("playwright 1500\nweb-build 100\nrust-tests 200\nmobile-unit 200\n")
+        by_name = {item.step.name: item.step for item in runner.planned}
+        even = 24 // len(runner.open_lanes)
+        self.assertGreater(runner.step_share(by_name["playwright"]), even)
+        self.assertEqual(runner.step_share(by_name["web-build"]), even)
+
+    def test_share_never_exceeds_free_cores(self):
+        runner = self.runner("playwright 1500\nweb-build 1\n")
+        runner.budget.acquire(20)
+        even = 24 // len(runner.open_lanes)
+        by_name = {item.step.name: item.step for item in runner.planned}
+        self.assertEqual(runner.step_share(by_name["playwright"]), even)
+
+    def test_share_never_exceeds_the_budget(self):
+        runner = self.runner("playwright 1500\n", cores=3)
+        by_name = {item.step.name: item.step for item in runner.planned}
+        self.assertLessEqual(runner.step_share(by_name["playwright"]), 3)
+
+    def test_malformed_and_stale_lines_are_ignored(self):
+        text = "playwright abc\nplaywright -5\ngone 900\nlane:web 50\ntotal 99\n\nweb-build\nweb-unit 0\n"
+        runner = self.runner(text)
+        self.assertEqual(runner.expected, {})
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(directory, ignore_errors=True))
+        (directory / "timings.txt").write_bytes(b"\xff\xfe")
+        self.assertEqual(gate.read_expected_seconds(directory / "timings.txt", {"a"}), {})
+        self.assertEqual(gate.read_expected_seconds(directory / "missing.txt", {"a"}), {})
+
+
 class CoreBudgetTests(unittest.TestCase):
     def test_heavy_steps_never_hold_more_than_the_budget(self):
         budget = gate.CoreBudget(4, None, 1024, 2)
