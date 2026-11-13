@@ -276,7 +276,7 @@ mod tests {
     fn ignores_may_only_name_generated_output() {
         let source = [
             "export default [",
-            "  { ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.expo/**'] },",
+            "  { ignores: ['dist/**', 'node_modules/**', 'coverage/**', '.expo/**', '.qa/**'] },",
             "  { ignores: ['**/.turbo/**', 'src/legacy/**'] },",
             "  {",
             "    ignores: [",
@@ -292,7 +292,7 @@ mod tests {
 
     #[test]
     fn eslintignore_entries_follow_the_same_rule() {
-        let source = "# build output\ndist/\ncoverage\nsrc/generated-by-hand.ts\n";
+        let source = "# build output\ndist/\ncoverage\nsrc/generated-by-hand.ts\nmobile/.qa/\n";
         assert_eq!(lines(File::Ignore, source), vec![4]);
     }
 }

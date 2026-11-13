@@ -147,7 +147,7 @@ or dependency output.
 eslint configs (`eslint.config.*`) outside `@baukit/eslint-config` may not set a rule to `off`, `warn`, `0`
 or `1`, or `reportUnusedDisableDirectives` below error. `ignores`, `ignorePatterns` and `.eslintignore`
 may name only generated, build or dependency output: `dist`, `build`, `coverage`, `out`, `node_modules`,
-`vendor`, `target`, `generated`, `.expo`, `.turbo`, `.next`, `.nuxt`, `.output`, `.svelte-kit` and
+`vendor`, `target`, `generated`, `.expo`, `.qa`, `.turbo`, `.next`, `.nuxt`, `.output`, `.svelte-kit` and
 `storybook-static`.
 
 Nested ruff configs (`ruff.toml`, `.ruff.toml`, or a `pyproject.toml` with `[tool.ruff]`, whichever ruff reads

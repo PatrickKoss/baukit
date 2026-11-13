@@ -27,6 +27,7 @@ const GENERATED_OUTPUT: &[&str] = &[
     "target",
     "generated",
     ".expo",
+    ".qa",
     ".turbo",
     ".next",
     ".nuxt",
