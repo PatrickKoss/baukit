@@ -2,13 +2,6 @@ allowBuilds:
   core-js: false
   unrs-resolver: true
 
-minimumReleaseAgeExclude:
-  - expo@57.0.33
-  - expo-constants@57.0.24
-  - expo-linking@57.0.14
-  - expo-router@57.0.31
-  - expo-sqlite@57.0.5
-
 catalog:
   expo-constants: 57.0.24
 

@@ -8,6 +8,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def load_template_package(base: Path) -> dict:
+    source = re.sub(r"\{%.*?%\}", "", (base / "package.json").read_text())
+    return json.loads(
+        source.replace("{{ context.app_name }}", "fixture")
+        .replace(
+            "{{ context.baukit_mobile_typescript_dependencies }}",
+            '"@baukit/fixture": "0.7.0"',
+        )
+        .replace("{{ context.baukit_mobile_typescript_dev_dependencies }}", "")
+    )
+
+
+def catalog_version(base: Path, name: str) -> str:
+    entry = re.search(
+        rf"^  {re.escape(name)}: (.+)$",
+        (base / "pnpm-workspace.yaml").read_text(),
+        re.MULTILINE,
+    )
+    assert entry is not None, name
+    return entry[1]
+
+
 class MobileReactVersionsTest(unittest.TestCase):
     def test_android_java_pins_match_the_mise_build(self):
         mise = (ROOT / "mise.toml").read_text()
@@ -42,16 +64,7 @@ class MobileReactVersionsTest(unittest.TestCase):
         for directory in ("mobile", "__auth__/mobile"):
             with self.subTest(template=directory):
                 base = ROOT / "templates/mobile" / directory
-                source = (base / "package.json").read_text()
-                source = re.sub(r"\{%.*?%\}", "", source)
-                package = json.loads(
-                    source.replace("{{ context.app_name }}", "fixture")
-                    .replace(
-                        "{{ context.baukit_mobile_typescript_dependencies }}",
-                        '"@baukit/fixture": "0.7.0"',
-                    )
-                    .replace("{{ context.baukit_mobile_typescript_dev_dependencies }}", "")
-                )
+                package = load_template_package(base)
                 self.assertEqual(package["dependencies"]["expo"], published["expo"])
                 for name in ("react", "react-native"):
                     self.assertEqual(
@@ -100,6 +113,35 @@ class MobileReactVersionsTest(unittest.TestCase):
             f"{published['expo']} (RN {published['bundledNativeModules']['react-native']}, "
             f"React {published['bundledNativeModules']['react']})",
             matrix,
+        )
+
+
+class ConformanceExamplesMatchTemplateTest(unittest.TestCase):
+    EXAMPLES = ("expo-sqlite-conformance", "expo-notifications-conformance")
+
+    def test_shared_pins_match_the_mobile_template(self):
+        base = ROOT / "templates/mobile/mobile"
+        template = load_template_package(base)
+        pins = {**template["dependencies"], **template["devDependencies"]}
+        for example in self.EXAMPLES:
+            package = json.loads((ROOT / "examples" / example / "package.json").read_text())
+            declared = {**package["dependencies"], **package["devDependencies"]}
+            shared = [name for name in declared if name in pins]
+            self.assertIn("expo", shared)
+            for name in shared:
+                with self.subTest(example=example, package=name):
+                    expected = pins[name]
+                    if expected == "catalog:":
+                        expected = catalog_version(base, name)
+                    self.assertEqual(declared[name], expected)
+
+    def test_expo_sqlite_example_builds_from_source_like_the_template(self):
+        template = load_template_package(ROOT / "templates/mobile/mobile")
+        package = json.loads(
+            (ROOT / "examples/expo-sqlite-conformance/package.json").read_text()
+        )
+        self.assertEqual(
+            package["expo"]["autolinking"], template["expo"]["autolinking"]
         )
 
 

@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+{% if context.mobile %}- `mobile/pnpm-workspace.yaml` no longer lists `minimumReleaseAgeExclude`. The Expo SDK 57 pins from 0.25.0 and 0.25.1 are past pnpm's one-day window, so a product deletes that block from its `mobile/pnpm-workspace.yaml`.
+{% endif %}
+
 ## [0.25.1] - 2026-11-13
 
 {% if context.mobile %}- `mobile/package.json` builds expo-sqlite from source on Android (`expo.autolinking.android.buildFromSource`). The prebuilt expo-sqlite 57.0.5 AAR on npm ships `libexpo-sqlite.so` for arm64-v8a only, so on x86_64 emulators and 32-bit devices the app fails with `UnsatisfiedLinkError` when it opens the database and never leaves the loading screen. Copy the `autolinking` block into the product's `mobile/package.json` and rebuild the APK. Products that set an `expo.sqlite.*` Gradle property (SQLCipher, libSQL) already build from source.
