@@ -438,7 +438,7 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 
 | Responsibility | Dependency | Tested baseline | Notes |
 |---|---|---|---|
-| Mobile runtime | Expo SDK | 57.0.32 (RN 0.86.3, React 19.2.3) | React/RN versions follow the Expo SDK, verified with Expo Doctor |
+| Mobile runtime | Expo SDK | 57.0.33 (RN 0.86.3, React 19.2.3) | React/RN versions follow the Expo SDK, verified with Expo Doctor |
 | Mobile navigation | Expo Router | 57.0.29 | Generated mobile template baseline with Expo Router and `Stack.Protected` in the auth overlay; `react-native-screens` 4.26.2, `react-native-safe-area-context` 5.7.0, `react-native-reanimated` 4.5.1, `react-native-worklets` 0.10.1, and `react-native-gesture-handler` 2.32.0. |
 | Remote state | TanStack Query | 5 | |
 | Web routing | TanStack Router | current v1 | re-verify TanStack Start status separately |

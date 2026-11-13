@@ -1,7 +1,7 @@
 {
-  "expo": "57.0.32",
-  "tarball": "https://registry.npmjs.org/expo/-/expo-57.0.32.tgz",
-  "integrity": "sha512-1SuRh1bCZfj/nRCUlgySyQ40uJ7Z1geeG1uAjqceVT16S0Ou9yE4U1AMTDWBz3hLPRRvjCneAJkf20630rmjAQ==",
+  "expo": "57.0.33",
+  "tarball": "https://registry.npmjs.org/expo/-/expo-57.0.33.tgz",
+  "integrity": "sha512-IbGSGrglkN55O1VhJT7CeCRchaFgPxUotC73jQ8/PB7LEob8r65dbDCV3aZeZUqIbVzslNHKcRjrrXdsNEp3WA==",
   "resolvedWebModules": {
     "react-native-web": "0.21.2"
   },
@@ -11,16 +11,16 @@
     "react-native-web": "~0.21.0",
     "@expo/metro-runtime": "~57.0.18",
     "react-native": "0.86.3",
-    "expo-constants": "~57.0.23",
+    "expo-constants": "~57.0.24",
     "expo-crypto": "~57.0.4",
-    "expo-linking": "~57.0.13",
-    "expo-router": "~57.0.30",
-    "expo-sqlite": "~57.0.4",
+    "expo-linking": "~57.0.14",
+    "expo-router": "~57.0.31",
+    "expo-sqlite": "~57.0.5",
     "jest-expo": "~57.0.6",
     "expo-system-ui": "~57.0.4"
   },
   "authNativeModules": {
-    "expo-auth-session": "~57.0.16",
+    "expo-auth-session": "~57.0.17",
     "expo-localization": "~57.0.2",
     "expo-secure-store": "~57.0.4",
     "expo-web-browser": "~57.0.3"
