@@ -3,8 +3,10 @@
 ## [Unreleased]
 
 {% if context.mobile %}- `mobile/pnpm-workspace.yaml` no longer lists `minimumReleaseAgeExclude`. The Expo SDK 57 pins from 0.25.0 and 0.25.1 are past pnpm's one-day window, so a product deletes that block from its `mobile/pnpm-workspace.yaml`.
+- `mobile/jest.config.cjs` runs `src/test/native-runtime.ts` first, which removes `BroadcastChannel` from the native Jest runtime as React Native has none. `@clerk/clerk-js` opens a `BroadcastChannel` at import and never closes it, and Node's keeps the process alive once it has a listener, so an in-band Jest run (`--maxWorkers=1`, which the gate's core pool hands out under load) finished every suite and then hung until the step was killed. Copy `src/test/native-runtime.ts` and `src/test/native-runtime.test.ts` and add the `setupFiles` entry.
+{% endif %}{% if context.quality_strict %}- `scripts/gate_locks.test.py` waits with `time.sleep` instead of `threading.Timer` in `test_a_resource_step_waits_for_a_held_lock_before_taking_cores`. Python builds without `sem_clockwait`, such as mise's python-build-standalone 3.14, time out `Event.wait` and `Timer` on the wall clock, and WSL steps the wall clock forward by about 1.7 s every 34 s, so the 1.5 s timer could fire after 0.2 s and fail the test. Copy the file from the template.
+- `scripts/gate.py` exits with status 2 before it runs anything when a `fast` step runs after a step that takes a lock, directly or through other steps. That step waits for the `fast` lane to pass, and the `fast` lane waited for it, so the gate hung with no step running. Move such a step out of the `fast` lane in `scripts/quality-gate.local.sh`.
 {% endif %}
-
 ## [0.25.1] - 2026-11-13
 
 {% if context.mobile %}- `mobile/package.json` builds expo-sqlite from source on Android (`expo.autolinking.android.buildFromSource`). The prebuilt expo-sqlite 57.0.5 AAR on npm ships `libexpo-sqlite.so` for arm64-v8a only, so on x86_64 emulators and 32-bit devices the app fails with `UnsatisfiedLinkError` when it opens the database and never leaves the loading screen. Copy the `autolinking` block into the product's `mobile/package.json` and rebuild the APK. Products that set an `expo.sqlite.*` Gradle property (SQLCipher, libSQL) already build from source.

@@ -5,6 +5,15 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.25.2
+
+Last verified release train: `v0.25.2` (patch train on top of `v0.25.1`, template scripts, mobile pins and the Expo conformance examples).
+- Mobile templates no longer list `minimumReleaseAgeExclude`. The Expo SDK 57 pins from v0.25.0 and v0.25.1 are past pnpm's one-day release age.
+- `examples/expo-sqlite-conformance` and `examples/expo-notifications-conformance` pin expo 57.0.33, react 19.2.3 and the template's expo-sqlite 57.0.5 and expo-crypto 57.0.4, and the SQLite example builds expo-sqlite from source like the template. Before, `make expo-sqlite-conformance` tested expo-sqlite 57.0.3, not the version products ship. `scripts/test_mobile_versions.py` fails when an example's shared Expo or React pin differs from the template. `@baukit/notifications-expo` tests against expo-notifications 57.0.25.
+- The strict gate's `scripts/gate.py` exits 2 before it runs anything when a `fast` step runs after a step that takes a host lock. Such a gate used to hang with no step running. `scripts/gate_locks.test.py` measures waits with `time.sleep`, because Python builds without `sem_clockwait` time out `Timer` on the wall clock.
+- Generated mobile apps remove `BroadcastChannel` from the native Jest runtime, so an in-band Jest run no longer hangs after the last suite on `@clerk/clerk-js`'s open channel.
+- Known issue, not fixed: emulator 37.2.13 can crash qemu (SIGSEGV in `libgfxstream_backend.so`, the host GLES translator) when Maestro clears Chrome's state within seconds of Chrome starting. A repro loop crashed about 3 times in 150 iterations with the clear issued mid-launch and not once in 260 iterations with Chrome idle first. `--disable-gpu` in the Chrome command line makes Chrome abort. `am force-stop` before the clear and the `guest`, `lavapipe`, `swangle` and `swangle_indirect` GPU modes still crash.
+
 ## v0.25.1
 
 Last verified release train: `v0.25.1` (patch train on top of `v0.25.0`: two CLI fixes and one mobile template fix).
