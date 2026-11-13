@@ -5,6 +5,15 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.25.0
+
+Last verified release train: `v0.25.0` (minor train on top of `v0.24.0`, template scripts, pins and one `baukit check` rule). Product gates can share a host instead of running one after another.
+- With `BAUKIT_GATE_LOCK_DIR` set, `scripts/gate.py` locks host resources (`android`, `docker-network`) per step instead of the caller locking the whole gate. With `BAUKIT_GATE_CORE_POOL` set, gates on one host take cores from a shared pool. Both are unset by default, so a single gate runs as before.
+- A heavy step's core share follows its last passed run time from `step-seconds.txt` in the gate log directory, so the long pole (usually Playwright) starts with more cores.
+- Generated products pin Rust 1.99.0 in `mise.toml`, and `ci.yml` installs that version instead of `stable`. `scripts/rust-toolchain-pin.test.py` fails on drift.
+- Mobile templates take the Expo SDK 57 patch releases of 2026-11-12: expo 57.0.33, expo-router 57.0.31, expo-linking 57.0.14, expo-sqlite 57.0.5, expo-constants 57.0.24 and expo-auth-session 57.0.17. They stay in `minimumReleaseAgeExclude` until a later train drops them.
+- `baukit check` accepts `.qa` (the mobile QA state directory) as generated output in eslint and golangci ignores.
+
 ## v0.24.0
 
 Last verified release train: `v0.24.0` (minor train on top of `v0.23.0`, template scripts only). It makes the generated e2e gates more reliable.

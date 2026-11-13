@@ -1,6 +1,6 @@
 {
   "name": "@baukit/auth-node",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Node OIDC device authorization with S256 PKCE, refresh rotation, and a locked token cache.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -59,6 +59,6 @@
     "typescript": "6.0.3"
   },
   "dependencies": {
-    "@baukit/type-guards": "^0.24.0"
+    "@baukit/type-guards": "^0.25.0"
   }
 }
