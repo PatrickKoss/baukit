@@ -1,5 +1,6 @@
 # Repository lint tools. CI installs the same versions with jdx/mise-action; run `mise install` locally.
 [tools]
+rust = { version = "1.99.0", components = "clippy,rustfmt" }
 "aqua:rhysd/actionlint" = "1.7.12"
 "aqua:zizmorcore/zizmor" = "1.32.0"
 "aqua:gitleaks/gitleaks" = "8.30.1"

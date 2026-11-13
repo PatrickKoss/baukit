@@ -18,6 +18,7 @@ jobs:
           persist-credentials: false
       - run: python3 scripts/reconcile-env.test.py
       - run: python3 scripts/lockfiles.test.py
+      - run: python3 scripts/rust-toolchain-pin.test.py
 {% if context.quality_strict %}      - run: python3 scripts/check-markdown-links.test.py
       - run: python3 scripts/check-markdown-links.py README.md CLAUDE.md AGENTS.md docs
 {% else %}      - name: Product steps from scripts/quality-gate.local.sh
@@ -61,7 +62,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
         with:
           version: 2026.8.11
@@ -98,7 +99,7 @@ jobs:
           toolchain: nightly
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           components: rustfmt, clippy, llvm-tools-preview
       - uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
@@ -166,7 +167,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
@@ -220,7 +221,7 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          toolchain: stable
+          toolchain: "1.99.0"
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: backend -> target

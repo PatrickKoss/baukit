@@ -83,6 +83,7 @@ const EXPECTED_COMMON_FILES: &[&str] = &[
     "scripts/preflight.sh",
     "scripts/osv-resolved-lock.py",
     "scripts/osv-resolved-lock.test.py",
+    "scripts/rust-toolchain-pin.test.py",
 ];
 
 const EXPECTED_STRICT_FILES: &[&str] = &[
