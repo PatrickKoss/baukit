@@ -350,7 +350,7 @@ class CoreBudget:
             self.condition.notify_all()
 
 
-def read_expected_seconds(path: Path, names: set[str]) -> dict[str, int]:
+def read_expected_seconds(path: Path, names: set[str] | None = None) -> dict[str, int]:
     try:
         lines = path.read_text().splitlines()
     except (OSError, UnicodeDecodeError):
@@ -358,7 +358,7 @@ def read_expected_seconds(path: Path, names: set[str]) -> dict[str, int]:
     expected: dict[str, int] = {}
     for line in lines:
         name, _, value = line.partition(" ")
-        if name in names and value.isdecimal() and int(value) > 0:
+        if name and (names is None or name in names) and value.isdecimal() and int(value) > 0:
             expected[name] = int(value)
     return expected
 
@@ -483,7 +483,9 @@ class Runner:
         self.lane_seconds: dict[str, int] = {}
         self.lock = threading.Lock()
         self.timings_file = context.log_directory / "timings.txt"
-        self.expected = read_expected_seconds(self.timings_file, self.names)
+        self.history_file = context.log_directory / "step-seconds.txt"
+        self.history = read_expected_seconds(self.history_file)
+        self.expected = {n: v for n, v in self.history.items() if n in self.names}
         self.pending = {item.step.name for item in planned if not is_light(item.step, light)}
         self.started = time.monotonic()
 
@@ -499,7 +501,15 @@ class Runner:
             self.status[name] = status
             with self.timings_file.open("a") as output:
                 output.write(f"{name} {seconds}\n")
+            if status == "passed":
+                self.save_history(name, seconds)
         self.done[name].set()
+
+    def save_history(self, name: str, seconds: int) -> None:
+        self.history[name] = max(1, seconds)
+        scratch = self.history_file.with_name(self.history_file.name + ".tmp")
+        scratch.write_text("".join(f"{key} {value}\n" for key, value in self.history.items()))
+        os.replace(scratch, self.history_file)
 
     def blocked_by(self, step: Step) -> str | None:
         for dependency in step.after:

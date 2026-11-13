@@ -262,7 +262,7 @@ class WeightedShareTests(unittest.TestCase):
         directory = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(directory, ignore_errors=True))
         if history is not None:
-            (directory / "timings.txt").write_text(history)
+            (directory / "step-seconds.txt").write_text(history)
         planned = gate.plan(STEPS, gate.Selection(True, []))
         budget = gate.CoreBudget(cores, None, 1024, 2)
         context = gate.RunContext([], directory, {})
@@ -294,6 +294,23 @@ class WeightedShareTests(unittest.TestCase):
         runner = self.runner("playwright 1500\n", cores=3)
         by_name = {item.step.name: item.step for item in runner.planned}
         self.assertLessEqual(runner.step_share(by_name["playwright"]), 3)
+
+    def test_history_survives_partial_and_failed_runs(self):
+        runner = self.runner("playwright 1500\n")
+        runner.history_file.write_text("playwright 1500\nweb-build 100\n")
+        runner = gate.Runner(
+            runner.planned,
+            gate.RunContext([], runner.log_directory, {}),
+            budget=runner.budget,
+        )
+        runner.done["rust-fmt"] = threading.Event()
+        runner.record("rust-fmt", 7, "passed")
+        runner.record("playwright", 9, "failed with exit 1")
+        saved = gate.read_expected_seconds(runner.history_file)
+        self.assertEqual(saved, {"playwright": 1500, "web-build": 100, "rust-fmt": 7})
+        self.assertEqual(
+            sorted(p.name for p in runner.log_directory.iterdir() if p.name.endswith(".tmp")), []
+        )
 
     def test_malformed_and_stale_lines_are_ignored(self):
         text = "playwright abc\nplaywright -5\ngone 900\nlane:web 50\ntotal 99\n\nweb-build\nweb-unit 0\n"
