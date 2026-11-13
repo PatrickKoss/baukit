@@ -8,6 +8,7 @@ import textwrap
 import threading
 import time
 import unittest
+import unittest.mock
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -24,6 +25,14 @@ def load(name):
 
 locks = load("gate_locks")
 gate = load("gate")
+
+
+def finish(thread, seconds):
+    # Thread.join(timeout) uses the wall clock on Pythons without sem_clockwait, and WSL steps it forward.
+    deadline = time.monotonic() + seconds
+    while thread.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
 
 POOL_WORKER = textwrap.dedent("""
     import sys, time
@@ -125,9 +134,9 @@ class ResourceTests(unittest.TestCase):
 
                 waiter = threading.Thread(target=contend)
                 waiter.start()
-                waiter.join(0.2)
+                finish(waiter, 0.2)
                 self.assertEqual(order, [])
-            waiter.join(2)
+            finish(waiter, 2)
             self.assertEqual(order, ["got"])
 
     def test_a_two_lock_step_is_not_overtaken_by_later_single_lock_steps(self):
@@ -155,7 +164,7 @@ class ResourceTests(unittest.TestCase):
                     single.start()
                     time.sleep(0.02)
             for thread in [both, *singles]:
-                thread.join(30)
+                finish(thread, 30)
             self.assertEqual(order[0], "both")
             self.assertEqual(len(order), 7)
 
@@ -180,7 +189,7 @@ class ResourceTests(unittest.TestCase):
                 waited = time.monotonic() - started
             stop.set()
             for worker in workers:
-                worker.join(10)
+                finish(worker, 10)
             self.assertLess(waited, 2)
 
     def test_a_dead_waiter_does_not_block_later_steps(self):
@@ -222,9 +231,9 @@ class ResourceTests(unittest.TestCase):
 
                 waiter = threading.Thread(target=exclusive)
                 waiter.start()
-                waiter.join(0.3)
+                finish(waiter, 0.3)
                 self.assertEqual(got, [])
-            waiter.join(10)
+            finish(waiter, 10)
             self.assertEqual(got, [1])
 
     def test_an_exclusive_waiter_gets_through_continuous_shared_arrivals(self):
@@ -249,7 +258,7 @@ class ResourceTests(unittest.TestCase):
                 self.assertTrue(is_locked(Path(directory) / "docker-network.lock"))
             stop.set()
             for worker in workers:
-                worker.join(10)
+                finish(worker, 10)
             self.assertLess(waited, 2)
 
     def test_shared_steps_queued_behind_an_exclusive_waiter_wait_for_it(self):
@@ -271,10 +280,10 @@ class ResourceTests(unittest.TestCase):
                     time.sleep(0.01)
                 later = threading.Thread(target=take, args=(shared("docker-network"), "later"))
                 later.start()
-                later.join(0.3)
+                finish(later, 0.3)
                 self.assertEqual(order, [])
-            exclusive.join(10)
-            later.join(10)
+            finish(exclusive, 10)
+            finish(later, 10)
             self.assertEqual(order, ["exclusive", "later"])
 
     def test_wait_text_names_each_lock(self):
@@ -302,11 +311,40 @@ class CorePoolTests(unittest.TestCase):
             granted = []
             waiter = threading.Thread(target=lambda: granted.append(pool.acquire(4, 2)))
             waiter.start()
-            waiter.join(0.4)
+            finish(waiter, 0.4)
             self.assertEqual(granted, [])
             pool.release(3)
-            waiter.join(3)
-            self.assertEqual(granted, [4])
+            finish(waiter, 3)
+            self.assertEqual(len(granted), 1)
+            self.assertGreaterEqual(granted[0], 2)
+
+    def test_a_waiter_may_start_with_part_of_a_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pool = locks.CorePool(Path(directory), 4)
+            self.assertEqual(pool.acquire(3, 3), 3)
+            granted = []
+            waiter = threading.Thread(target=lambda: granted.append(pool.acquire(4, 2)))
+            waiter.start()
+            time.sleep(0.2)
+
+            close = locks.CorePool.close
+
+            def release_one_then_the_rest(descriptors):
+                if len(descriptors) != 3:
+                    close(descriptors)
+                    return
+                os.close(descriptors[0])
+                deadline = time.monotonic() + 3
+                while not granted and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                close(descriptors[1:])
+
+            with unittest.mock.patch.object(
+                locks.CorePool, "close", staticmethod(release_one_then_the_rest)
+            ):
+                pool.release(3)
+            finish(waiter, 3)
+            self.assertEqual(granted, [2])
 
     def test_core_budget_draws_from_the_pool(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -551,7 +589,7 @@ except BlockingIOError: print(1)' "{root}/locks/docker-network.lock")" >> "{trac
                 time.sleep(1.5)
                 self.assertTrue(worker.is_alive())
                 self.assertEqual(locks.CorePool(Path(pool) / "cores", 4).available(), 4)
-            worker.join(30)
+            finish(worker, 30)
             result, _ = outcome[0]
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertGreaterEqual(time.monotonic() - started, 1.5)
