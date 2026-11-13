@@ -137,12 +137,8 @@ class ConformanceExamplesMatchTemplateTest(unittest.TestCase):
 
     def test_expo_sqlite_example_builds_from_source_like_the_template(self):
         template = load_template_package(ROOT / "templates/mobile/mobile")
-        package = json.loads(
-            (ROOT / "examples/expo-sqlite-conformance/package.json").read_text()
-        )
-        self.assertEqual(
-            package["expo"]["autolinking"], template["expo"]["autolinking"]
-        )
+        package = json.loads((ROOT / "examples/expo-sqlite-conformance/package.json").read_text())
+        self.assertEqual(package["expo"]["autolinking"], template["expo"]["autolinking"])
 
 
 class ExpoOfflineChecksTest(unittest.TestCase):
