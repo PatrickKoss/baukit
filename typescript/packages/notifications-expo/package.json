@@ -44,7 +44,7 @@
   "devDependencies": {
     "@baukit/localization-core": "workspace:*",
     "@baukit/notifications-core": "workspace:*",
-    "expo-notifications": "57.0.21",
+    "expo-notifications": "57.0.25",
     "typescript": "6.0.3",
     "vitest": "5.0.5"
   },
