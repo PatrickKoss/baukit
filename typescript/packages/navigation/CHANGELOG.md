@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## 0.25.2
+
+### Patch Changes
+
+- Release the coordinated baukit 0.25.2 train.
+- Updated dependencies
+  - @baukit/a11y-core@0.25.2
+  - @baukit/ui-tokens@0.25.2
+
 ## 0.25.1
 
 ### Patch Changes

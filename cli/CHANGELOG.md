@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.25.2] - 2026-11-13
+
 ## [0.25.1] - 2026-11-13
 
 - `baukit check template-files --update` adds rows for template-owned files the manifest lacks when the product holds them byte-identical to the current render, so a template that gains a file (0.25.0's `scripts/gate_locks.py`) is tracked after an upgrade. Owned files that differ get a `template-owned but diverged, not tracked` note and stay untracked.

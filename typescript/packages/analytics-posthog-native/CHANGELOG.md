@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## 0.25.2
+
+### Patch Changes
+
+- Release the coordinated baukit 0.25.2 train.
+- Updated dependencies
+  - @baukit/analytics-core@0.25.2
+
 ## 0.25.1
 
 ### Patch Changes
