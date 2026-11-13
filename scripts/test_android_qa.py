@@ -636,7 +636,9 @@ echo finished >> "$EVENTS"
                 self.assertIn(
                     "BAUKIT_QA_MAESTRO_STALL_SECONDS must be a positive integer", result.stderr
                 )
-        self.assertFalse(self.events.exists() and "maestro" in self.events.read_text())
+        events = self.events.read_text() if self.events.exists() else ""
+        self.assertNotIn("maestro", events)
+        self.assertNotIn("logcat", events)
 
     def assert_health_evidence(self, result):
         event = "am_anr: [0,123,com.android.systemui,1,reason]"

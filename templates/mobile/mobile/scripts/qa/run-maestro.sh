@@ -42,6 +42,17 @@ case "$platform" in
     ;;
 esac
 
+stall_seconds="${BAUKIT_QA_MAESTRO_STALL_SECONDS:-300}"
+[[ "$stall_seconds" =~ ^[1-9][0-9]*$ ]] || {
+  echo "qa: BAUKIT_QA_MAESTRO_STALL_SECONDS must be a positive integer" >&2
+  exit 2
+}
+deadline_seconds="${BAUKIT_QA_MAESTRO_DEADLINE_SECONDS:-}"
+[[ -z "$deadline_seconds" || "$deadline_seconds" =~ ^[1-9][0-9]*$ ]] || {
+  echo "qa: BAUKIT_QA_MAESTRO_DEADLINE_SECONDS must be a positive integer" >&2
+  exit 2
+}
+
 [[ -f "$state_file" ]] || { echo "qa: no live $platform QA environment; start it first" >&2; exit 1; }
 mapfile -t devices < <(grep -v '^$' "$state_file")
 [[ -n "${devices[*]:-}" ]] || { echo "qa: $state_file names no device" >&2; exit 1; }
@@ -79,7 +90,8 @@ start_device_evidence() {
       2>&1 | awk -v device="$device" '/versionName=/ {print "chrome " $0; found=1; exit} END {if (!found) print "chrome versionName not found on " device}' \
       > "$evidence_dir/$device.chrome" || true
     python3 "$mobile_dir/scripts/qa/android-adb.py" "$adb" -s "$device" logcat -c || true
-    "$adb" -s "$device" logcat -v threadtime > "$evidence_dir/$device.logcat" 2>&1 &
+    : > "$evidence_dir/$device.logcat"
+    "$adb" -s "$device" logcat -v threadtime >> "$evidence_dir/$device.logcat" 2>&1 &
     logcat_pids+=("$!")
   done
 }
@@ -135,17 +147,6 @@ prepare_flow_device() {
     return 1
   fi
   bash "$mobile_dir/scripts/qa/android-env.sh" reverse "$device"
-}
-
-stall_seconds="${BAUKIT_QA_MAESTRO_STALL_SECONDS:-300}"
-[[ "$stall_seconds" =~ ^[1-9][0-9]*$ ]] || {
-  echo "qa: BAUKIT_QA_MAESTRO_STALL_SECONDS must be a positive integer" >&2
-  exit 2
-}
-deadline_seconds="${BAUKIT_QA_MAESTRO_DEADLINE_SECONDS:-}"
-[[ -z "$deadline_seconds" || "$deadline_seconds" =~ ^[1-9][0-9]*$ ]] || {
-  echo "qa: BAUKIT_QA_MAESTRO_DEADLINE_SECONDS must be a positive integer" >&2
-  exit 2
 }
 
 progress() {
