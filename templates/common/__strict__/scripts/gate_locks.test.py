@@ -520,8 +520,6 @@ except BlockingIOError: print(1)' "{root}/locks/docker-network.lock")" >> "{trac
             holder = locks.ResourceLocks(lock_dir)
             with holder.hold(excl("docker-network")):
                 started = time.monotonic()
-                timer = threading.Timer(1.5, lambda: None)
-                timer.start()
                 outcome = []
                 worker = threading.Thread(
                     target=lambda: outcome.append(
@@ -536,7 +534,8 @@ except BlockingIOError: print(1)' "{root}/locks/docker-network.lock")" >> "{trac
                     )
                 )
                 worker.start()
-                timer.join()
+                # Timed waits can follow the wall clock on Python builds without sem_clockwait.
+                time.sleep(1.5)
                 self.assertTrue(worker.is_alive())
                 self.assertEqual(locks.CorePool(Path(pool) / "cores", 4).available(), 4)
             worker.join(30)
