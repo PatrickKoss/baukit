@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `baukit check template-files --update` adds rows for template-owned files the manifest lacks when the product holds them byte-identical to the current render, so a template that gains a file (0.25.0's `scripts/gate_locks.py`) is tracked after an upgrade. Owned files that differ get a `template-owned but diverged, not tracked` note and stay untracked.
+- `baukit doctor` checks step names in `[quality.resources]`, `[quality.shared_resources]`, `[quality.affected]` and `quality.light` against `scripts/quality-gate.sh --list-steps` for the standard profile too. Before, a standard-profile product could not map its own steps. A failing step listing stays an error only for the strict profile.
+
 ## [0.25.0] - 2026-11-13
 
 ## [0.24.0] - 2026-11-12
