@@ -5,6 +5,13 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.25.1
+
+Last verified release train: `v0.25.1` (patch train on top of `v0.25.0`, CLI fixes only). Template output changes only in the template changelog.
+- `baukit check template-files --update` adds rows for template-owned files that a product holds unchanged but the manifest lacks. Upgrades to 0.25.0 left `scripts/gate_locks.py` and its siblings untracked. Owned files that differ are listed and stay untracked.
+- `baukit doctor` accepts a standard-profile product's own step names in `[quality.resources]`, `[quality.shared_resources]`, `[quality.affected]` and `quality.light`.
+- The Expo SDK 57 pins from v0.25.0 stay in `minimumReleaseAgeExclude`. They reach the release age on 2026-11-13, and a later train drops them.
+
 ## v0.25.0
 
 Last verified release train: `v0.25.0` (minor train on top of `v0.24.0`, template scripts, pins and one `baukit check` rule). Product gates can share a host instead of running one after another.

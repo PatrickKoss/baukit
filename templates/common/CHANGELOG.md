@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-11-13
+
 - `baukit check template-files --update` adds rows for files a newer template owns (for example `scripts/gate_locks.py`) when the product already holds them unchanged, and lists template-owned files that differ as `template-owned but diverged, not tracked`. `baukit doctor` validates the step names in `[quality.resources]`, `[quality.shared_resources]`, `[quality.affected]` and `quality.light` against `scripts/quality-gate.sh --list-steps` for the standard profile too, so a product's own steps are accepted.
 
 ## [0.25.0] - 2026-11-13

@@ -261,7 +261,7 @@ importers:
   packages/api-runtime:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.25.0
+        specifier: ^0.25.1
         version: link:../type-guards
       openapi-fetch:
         specifier: ^0.17.0
@@ -274,7 +274,7 @@ importers:
   packages/auth-native:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.25.0
+        specifier: ^0.25.1
         version: link:../type-guards
     devDependencies:
       '@clerk/expo':
@@ -302,7 +302,7 @@ importers:
   packages/auth-node:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.25.0
+        specifier: ^0.25.1
         version: link:../type-guards
     devDependencies:
       '@playwright/test':
@@ -318,7 +318,7 @@ importers:
   packages/auth-web:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.25.0
+        specifier: ^0.25.1
         version: link:../type-guards
       jose:
         specifier: 6.2.12
@@ -355,7 +355,7 @@ importers:
   packages/data-contracts:
     devDependencies:
       '@baukit/type-guards':
-        specifier: ^0.25.0
+        specifier: ^0.25.1
         version: link:../type-guards
       typescript:
         specifier: 6.0.3
@@ -585,7 +585,7 @@ importers:
   packages/purchases-core:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.25.0
+        specifier: ^0.25.1
         version: link:../type-guards
     devDependencies:
       '@testing-library/react':
@@ -640,7 +640,7 @@ importers:
   packages/suite-client:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.25.0
+        specifier: ^0.25.1
         version: link:../type-guards
       '@noble/curves':
         specifier: 1.9.7
@@ -695,7 +695,7 @@ importers:
   packages/ui-tokens:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.25.0
+        specifier: ^0.25.1
         version: link:../type-guards
     devDependencies:
       '@types/estree':
