@@ -194,23 +194,23 @@ class PlatformChartTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             chart = Path(directory) / "chart"
             shutil.copytree(PLATFORM_PACK, chart)
-            (chart / "dashboards/flux.json").write_text('{"panels": []}\n', encoding="utf-8")
+            (chart / "dashboards/example.json").write_text('{"panels": []}\n', encoding="utf-8")
             result = helm_template(chart, "--set", "runbookBaseUrl=https://runbooks.test")
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn('component "flux", which is missing', result.stderr)
+            self.assertIn('component "example", which is missing', result.stderr)
             result = helm_template(
                 chart,
                 "--set",
                 "runbookBaseUrl=https://runbooks.test",
                 "--set",
-                "components.flux=true",
+                "components.example=true",
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(
-                'k8s-sidecar-target-directory: "/tmp/dashboards/baukit-platform/flux"',
+                'k8s-sidecar-target-directory: "/tmp/dashboards/baukit-platform/example"',
                 result.stdout,
             )
-            self.assertIn("flux.json: |", result.stdout)
+            self.assertIn("example.json: |", result.stdout)
 
 
 APP_RUNBOOKS = "runbookBaseUrl=https://runbooks.test/app/"

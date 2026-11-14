@@ -1,0 +1,67 @@
+rule_files:
+  - ../alerts/traefik.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: 10% 5xx on a service fires BaukitTraefikServiceHighErrorRatio
+    interval: 1m
+    input_series:
+      - series: 'traefik_service_requests_total{service="echo-echo-80@kubernetes",code="500",method="GET",protocol="http"}'
+        values: '0+6x30'
+      - series: 'traefik_service_requests_total{service="echo-echo-80@kubernetes",code="200",method="GET",protocol="http"}'
+        values: '0+54x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitTraefikServiceHighErrorRatio
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: traefik
+              service: echo-echo-80@kubernetes
+            exp_annotations:
+              summary: Traefik service echo-echo-80@kubernetes answers over 5% of requests with 5xx
+              description: >-
+                10% of the requests Traefik routed to echo-echo-80@kubernetes
+                returned 5xx for 10 minutes.
+              runbook_url: RUNBOOK_BASE_URL/traefik-service-high-error-ratio
+  - name: 1% 5xx and an idle failing service stay quiet
+    interval: 1m
+    input_series:
+      - series: 'traefik_service_requests_total{service="echo-echo-80@kubernetes",code="500",method="GET",protocol="http"}'
+        values: '0+1x30'
+      - series: 'traefik_service_requests_total{service="echo-echo-80@kubernetes",code="200",method="GET",protocol="http"}'
+        values: '0+99x30'
+      - series: 'traefik_service_requests_total{service="idle-idle-80@kubernetes",code="502",method="GET",protocol="http"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitTraefikServiceHighErrorRatio
+        exp_alerts: []
+
+  - name: a served certificate with 3 days left fires BaukitTraefikTlsCertExpiring
+    interval: 1m
+    input_series:
+      - series: 'traefik_tls_certs_not_after{cn="app.example.com",sans="app.example.com",serial="01"}'
+        values: '260400x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitTraefikTlsCertExpiring
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: traefik
+              cn: app.example.com
+            exp_annotations:
+              summary: The TLS certificate Traefik serves for app.example.com expires in under 7 days
+              description: >-
+                Traefik serves a certificate for app.example.com that expires in
+                3d 0h 0m 0s. The renewed Secret has not reached Traefik.
+              runbook_url: RUNBOOK_BASE_URL/traefik-tls-cert-expiring
+  - name: a served certificate with 30 days left stays quiet
+    interval: 1m
+    input_series:
+      - series: 'traefik_tls_certs_not_after{cn="app.example.com",sans="app.example.com",serial="01"}'
+        values: '2592000x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitTraefikTlsCertExpiring
+        exp_alerts: []

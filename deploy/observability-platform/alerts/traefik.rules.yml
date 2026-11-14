@@ -1,0 +1,33 @@
+groups:
+  - name: baukit-traefik
+    rules:
+      - alert: BaukitTraefikServiceHighErrorRatio
+        expr: |
+          (
+            sum by (service) (rate(traefik_service_requests_total{code=~"5.."}[5m]))
+            / sum by (service) (rate(traefik_service_requests_total[5m]))
+          ) > 0.05
+          and sum by (service) (rate(traefik_service_requests_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: traefik
+        annotations:
+          summary: Traefik service {{ $labels.service }} answers over 5% of requests with 5xx
+          description: >-
+            {{ $value | humanizePercentage }} of the requests Traefik routed to {{ $labels.service }}
+            returned 5xx for 10 minutes.
+          runbook_url: RUNBOOK_BASE_URL/traefik-service-high-error-ratio
+      - alert: BaukitTraefikTlsCertExpiring
+        expr: |
+          (max by (cn) (traefik_tls_certs_not_after) - time()) < 7 * 86400
+        for: 10m
+        labels:
+          severity: critical
+          component: traefik
+        annotations:
+          summary: The TLS certificate Traefik serves for {{ $labels.cn }} expires in under 7 days
+          description: >-
+            Traefik serves a certificate for {{ $labels.cn }} that expires in
+            {{ $value | humanizeDuration }}. The renewed Secret has not reached Traefik.
+          runbook_url: RUNBOOK_BASE_URL/traefik-tls-cert-expiring
