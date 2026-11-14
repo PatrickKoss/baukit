@@ -377,7 +377,7 @@ behave. Later phases add test directories here.
   and label every base namespace with it. Grafana's sidecar searches `ALL` with the `grafana_dashboard`
   label and uses `folderAnnotation`, so each component gets its own folder. This fixes F-02. The V4
   convention check fails if a rule lands outside the selector again.
-- [ ] **O2 Platform observability pack.** New chart `deploy/observability-platform/`
+- [~] **O2 Platform observability pack.** New chart `deploy/observability-platform/`
   (`baukit-platform-observability`, version-coherent with the rest). Its templates glob
   `alerts/*.yml`, `recording-rules/*.yml` and `dashboards/*.json` with `.Files.Glob`, one PrometheusRule
   per file and one dashboard ConfigMap per file, each toggled per component in values.
