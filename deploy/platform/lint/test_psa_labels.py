@@ -14,6 +14,8 @@ PSA = "pod-security.kubernetes.io/"
 DOCUMENT_SEPARATOR = re.compile(r"^---[ \t]*$", re.MULTILINE)
 K3S_IMAGE = re.compile(r"rancher/k3s:(v\d+\.\d+)\.\d+")
 LIFECYCLE_PSA_VERSION = re.compile(r"^psa_version=(\S+)$", re.MULTILINE)
+SCRIPT_ENFORCE_VERSION = re.compile(r"pod-security\.kubernetes\.io/enforce-version=(v[\d.]+)")
+PLATFORM_UP = PLATFORM / "platform-up.sh"
 
 
 def namespaces(text: str) -> list[tuple[str, dict[str, str]]]:
@@ -22,7 +24,8 @@ def namespaces(text: str) -> list[tuple[str, dict[str, str]]]:
         lines = document.splitlines()
         if "kind: Namespace" not in lines:
             continue
-        name = next((line.split(":", 1)[1].strip() for line in lines if line.startswith("  name:")), "")
+        names = (line.split(":", 1)[1].strip() for line in lines if line.startswith("  name:"))
+        name = next(names, "")
         labels = {}
         in_labels = False
         for line in lines:
@@ -94,7 +97,8 @@ metadata:
 
 class ViolationsTest(unittest.TestCase):
     def check(self, text: str) -> list[str]:
-        return [problem for name, labels in namespaces(text) for problem in violations(name, labels, "v1.34")]
+        found = namespaces(text)
+        return [problem for name, labels in found for problem in violations(name, labels, "v1.34")]
 
     def test_complete_labels_pass(self) -> None:
         self.assertEqual(self.check(GOOD.format(name="observability", level="restricted")), [])
@@ -105,7 +109,10 @@ class ViolationsTest(unittest.TestCase):
     def test_privileged_outside_allowlist_fails(self) -> None:
         self.assertEqual(
             self.check(GOOD.format(name="traefik", level="privileged")),
-            ["traefik: privileged is reserved for ['falco', 'kube-system', 'kured', 'observability-agents']"],
+            [
+                "traefik: privileged is reserved for "
+                "['falco', 'kube-system', 'kured', 'observability-agents']"
+            ],
         )
 
     def test_missing_labels_fail(self) -> None:
@@ -125,13 +132,18 @@ class PlatformNamespacesTest(unittest.TestCase):
         problems = []
         for path in manifests:
             for name, labels in namespaces(path.read_text(encoding="utf-8")):
-                problems += [f"{path.relative_to(PLATFORM)}: {p}" for p in violations(name, labels, version)]
+                relative = path.relative_to(PLATFORM)
+                problems += [f"{relative}: {p}" for p in violations(name, labels, version)]
         self.assertEqual(problems, [])
 
     def test_lifecycle_labels_flux_system_at_the_cluster_minor(self) -> None:
         match = LIFECYCLE_PSA_VERSION.search(LIFECYCLE.read_text(encoding="utf-8"))
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1) if match else "", cluster_minor())
+
+    def test_platform_up_labels_flux_system_at_the_cluster_minor(self) -> None:
+        versions = SCRIPT_ENFORCE_VERSION.findall(PLATFORM_UP.read_text(encoding="utf-8"))
+        self.assertEqual(versions, [cluster_minor()])
 
 
 if __name__ == "__main__":

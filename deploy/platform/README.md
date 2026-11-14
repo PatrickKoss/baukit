@@ -28,6 +28,7 @@ The conventional namespaces are:
 | shared database cluster | `postgres` |
 | shared Redis (direct or Sentinel HA) | `platform-redis` |
 | metrics, logs, and traces | `observability` |
+| node-level agents (node-exporter, Alloy) | `observability-agents` |
 
 `cluster-baseline` defines `platform-critical` and `platform-standard` as
 non-default PriorityClasses. Overlays may assign `platform-critical` to the
@@ -38,6 +39,26 @@ Every base is secret-free and personal-data-free. Domains, e-mail addresses,
 cloud and DNS credentials, object-storage endpoints/credentials, alert
 receivers, issuer objects, identity configuration, and cluster inventory are
 overlay data. A base README lists its precise overlay contract.
+
+## Pod Security Admission
+
+Every Namespace manifest carries the four Pod Security Admission labels.
+`enforce` is the level below, `enforce-version` is pinned to the k3s minor in
+`platform-lifecycle.sh` (`v1.34`), and `audit` and `warn` are `restricted`
+everywhere, so a gap shows up as a warning even where `enforce` is looser.
+
+| Level | Namespaces |
+|---|---|
+| `restricted` | `cert-manager`, `cnpg-system`, `flagger-system`, `flux-system`, `kyverno`, `observability`, `platform-redis`, `platform-system`, `postgres`, `traefik`, tenants |
+| `baseline` | `posthog` |
+| `privileged` | `kube-system`, `kured`, `observability-agents`, `falco` |
+
+Node-exporter and Alloy need hostPID, hostNetwork or hostPath, so they run in
+`observability-agents` and `observability` stays `restricted`. The Kyverno
+policy `require-psa-labels` rejects a Namespace without an `enforce` label and
+allows `privileged` only for the four namespaces above.
+`lint/test_psa_labels.py` checks the manifests offline. The lifecycle labels
+`flux-system` before `flux bootstrap`.
 
 ## Consuming bases
 

@@ -224,6 +224,11 @@ up() {
     --components=source-controller,kustomize-controller,helm-controller \
     --network-policy=false \
     --timeout=5m >/dev/null
+  kubectl label namespace flux-system --overwrite \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/enforce-version=v1.34 \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted >/dev/null
   kubectl -n flux-system rollout status deployment/source-controller --timeout=5m
   kubectl -n flux-system rollout status deployment/kustomize-controller --timeout=5m
   kubectl -n flux-system rollout status deployment/helm-controller --timeout=5m
