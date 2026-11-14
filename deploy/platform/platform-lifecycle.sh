@@ -47,7 +47,9 @@ age_key_file=${PLATFORM_AGE_KEY_FILE:-}
 baukit_source_mode=${PLATFORM_BAUKIT_SOURCE_MODE:-github-tag}
 baukit_checkout=${PLATFORM_BAUKIT_CHECKOUT:-}
 k3s_image=${PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.8-k3s1}
-flux_version=${PLATFORM_FLUX_VERSION:-v2.9.4}
+# shellcheck source=deploy/lib/tools.sh
+. "$repo_root/deploy/lib/tools.sh"
+flux_version=${PLATFORM_FLUX_VERSION:-v$(baukit_tool_version "$repo_root" flux)}
 git_port=${PLATFORM_SNAPSHOT_PORT:-9418}
 state_root=${XDG_STATE_HOME:-${HOME}/.local/state}
 state_dir=${PLATFORM_STATE_DIR:-$state_root/baukit-platform/$cluster_name}

@@ -119,7 +119,7 @@ owned and contain assignments only.
 | `PLATFORM_BAUKIT_SOURCE_MODE` | `github-tag` | `github-tag` or `local-snapshot`. The GitOps overlay owns the matching `GitRepository/baukit` manifest. |
 | `PLATFORM_BAUKIT_CHECKOUT` | snapshot mode | Baukit working-tree path copied into the disposable snapshot. |
 | `PLATFORM_K3S_IMAGE` | `rancher/k3s:v1.34.8-k3s1` | k3s image used when creating the cluster. |
-| `PLATFORM_FLUX_VERSION` | `v2.9.4` | Flux pin; override only as a reviewed platform upgrade. |
+| `PLATFORM_FLUX_VERSION` | `flux` in `deploy/tools.toml` (`v2.9.4`) | Flux pin; override only as a reviewed platform upgrade. |
 | `PLATFORM_SNAPSHOT_PORT` | `9418` | Host port for local smart HTTP. |
 | `PLATFORM_STATE_DIR` | XDG state path | Disposable snapshot repository state. |
 
