@@ -2876,11 +2876,6 @@ ids = [
   "CVE-2026-93451",
 ]
 
-[dockerfiles."deploy/platform/local-git-http.Dockerfile"]
-expires = 2026-11-28
-reason = "runs as root until S6 replaces the snapshot server"
-ids = ["DS-0002"]
-
 [dockerfiles."templates/web/web/Dockerfile"]
 expires = 2026-11-28
 reason = "relies on uid 101 from nginx-unprivileged; an explicit USER changes the golden snapshots, pending in C2"

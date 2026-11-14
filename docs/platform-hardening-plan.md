@@ -553,11 +553,11 @@ behave. Later phases add test directories here.
 - [ ] **SC2 Digests everywhere** (F-25): use the charts' `image.digest` values, a CNPG `ImageCatalog`
   with digests, and `@sha256` on raw manifests. Add a V5 policy that fails any rendered container image
   without a digest outside an allowlist with reasons.
-- [ ] **SC3 Image scanning:** a `platform-images` gate step extracts every image from the rendered bases
+- [x] **SC3 Image scanning:** a `platform-images` gate step extracts every image from the rendered bases
   (V3 already renders them) and runs `trivy image --severity HIGH,CRITICAL --ignore-unfixed` with a
   checked-in `.trivyignore` whose entries need an expiry date and a reason. Also add
   `trivy config` over `deploy/` Dockerfiles and platform-infra's Terraform.
-- [ ] **SC4 Renovate:** custom managers for `tools.toml`, digests in raw manifests and the k3s image
+- [x] **SC4 Renovate:** custom managers for `tools.toml`, digests in raw manifests and the k3s image
   strings. Set `minimumReleaseAge` for charts and grouping per base. Configure the same in platform-infra
   (its `v*` tag pattern fix lands in PI1).
 - [ ] **S3 Traefik edge** (F-27, F-26): a default `TLSOption` (min TLS 1.2, `sniStrict`, curve
@@ -813,3 +813,16 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   active. Local Grafana limit is 384Mi after an OOMKill at 256Mi. Live proof on k3d by the agent; I re-ran
   platform-validate, python-lint, shell-lint, observability-rules, metric-names and scripts-tests after the
   merge.
+- 2026-11-14 (SC3, SC4 merged). `platform-images` (images lane, selected by path) renders the platform,
+  scans 55 images and every tracked Dockerfile with trivy (HIGH/CRITICAL, fixable only, JSON output,
+  no ignorefile) and compares each (target, ID) pair with `deploy/platform/lint/image-findings.toml`.
+  The step fails on an unlisted finding, a listed ID trivy no longer reports, an entry with no findings
+  left, and an expired or malformed entry. All entries expire 2026-11-28 and name SC2 as the follow-up:
+  10 images where a bump fixes every ID, 25 where it fixes most, 15 already on the newest upstream
+  release, and curl and posthog without a tag to compare. The trivy cache is `~/.cache/baukit/trivy`,
+  a cold run takes about 19 min and a warm one about 2 min. After the merge, the D snapshot image
+  (uid 65532) no longer reports DS-0002, the step failed on that stale entry as designed, and I removed
+  the entry. Renovate gained custom managers for `deploy/tools.toml`, digests in raw manifests and the
+  k3s pins, grouped per platform base, with `scripts/test_renovate_preset.py`. I also raised the android
+  QA test stub deadlines (ADB 0.15 s to 10 s, watchdogs 5 s to 120 s), which had failed scripts-tests at
+  load 70; three runs at load 36 to 77 passed.

@@ -155,7 +155,7 @@ def compare(
     for key, allowance in sorted(allowed.items()):
         problems.extend(allowance_problems(key, allowance, today))
         if key not in reported:
-            problems.append(f"{key}: listed but no longer scanned; remove the entry")
+            problems.append(f"{key}: listed but has no findings or is no longer scanned; remove the entry")
             continue
         for stale in sorted(allowance.ids - reported[key]):
             problems.append(f"{key}: {stale} is no longer reported; remove it from the list")
