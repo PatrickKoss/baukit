@@ -1,0 +1,51 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: wait-only
+  namespace: flux-system
+spec:
+  interval: "10m"
+  path: "./deploy"
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: demo
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: health-checks-only
+  namespace: flux-system
+spec:
+  interval: "10m"
+  path: "./deploy"
+  prune: true
+  wait: false
+  sourceRef:
+    kind: GitRepository
+    name: demo
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: app
+      namespace: app
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dead-health-checks
+  namespace: flux-system
+spec:
+  interval: "10m"
+  path: "./deploy"
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: demo
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: app
+      namespace: app

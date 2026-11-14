@@ -1,0 +1,24 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: kustomization-prune
+policies:
+  - ../../policies/kustomization-prune.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: kustomization-prune
+    kind: Kustomization
+    resources: [pruned]
+    result: pass
+  - isValidatingPolicy: true
+    policy: kustomization-prune
+    kind: Kustomization
+    resources: [not-pruned]
+    result: fail
+  - isValidatingPolicy: true
+    policy: kustomization-prune
+    kind: Kustomization
+    resources: [prune-unset]
+    result: fail
