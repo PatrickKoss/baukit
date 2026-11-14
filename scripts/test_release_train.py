@@ -384,6 +384,7 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 "deploy/chart/baukit-app/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
                 "deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n\n- Pending chart fix.\n",
                 "deploy/observability/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
+                "deploy/observability-platform/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
                 "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.0\n",
             }
             for relative, source in files.items():
@@ -660,6 +661,7 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             "deploy/chart/baukit-app/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
             "deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n\n- Pending chart fix.\n",
             "deploy/observability/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
+            "deploy/observability-platform/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
             "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.1\n",
             "typescript/pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
             "examples/unrelated/package.json": json.dumps(

@@ -1,3 +1,4 @@
+{{- $runbookBaseUrl := include "baukit-observability.runbookBaseUrl" . }}
 {{- if .Values.dashboardConfigMap.enabled }}
 apiVersion: v1
 kind: ConfigMap
@@ -14,8 +15,10 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 data:
-  baukit-service-overview.json: |
-    {{- .Files.Get "dashboards/baukit-service-overview.json" | nindent 4 }}
+  {{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+  {{ base $path }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
 {{- end }}
 {{- if .Values.ruleConfigMaps.enabled }}
 ---
@@ -34,8 +37,10 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 data:
-  baukit-red.rules.yml: |
-    {{- .Files.Get "recording-rules/baukit-red.rules.yml" | nindent 4 }}
+  {{- range $path, $_ := .Files.Glob "recording-rules/*.{yml,yaml}" }}
+  {{ base $path }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -52,6 +57,8 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 data:
-  baukit.rules.yml: |
-    {{- .Files.Get "alerts/baukit.rules.yml" | nindent 4 }}
+  {{- range $path, $_ := .Files.Glob "alerts/*.{yml,yaml}" }}
+  {{ base $path }}: |
+    {{- $.Files.Get $path | replace "RUNBOOK_BASE_URL" $runbookBaseUrl | nindent 4 }}
+  {{- end }}
 {{- end }}

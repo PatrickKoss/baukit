@@ -99,3 +99,8 @@ spec:
         reclaimPolicy: Retain
         annotations: {}
         extraParameters: {}
+      - name: hcloud-volumes-delete
+        defaultStorageClass: false
+        reclaimPolicy: Delete
+        annotations: {}
+        extraParameters: {}

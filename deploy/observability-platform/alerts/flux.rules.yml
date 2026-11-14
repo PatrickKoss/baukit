@@ -1,0 +1,49 @@
+groups:
+  - name: baukit-flux
+    rules:
+      - alert: BaukitFluxReconcileNotReady
+        expr: |
+          max by (customresource_kind, exported_namespace, name) (
+            gotk_resource_info{customresource_kind=~"Kustomization|HelmRelease", ready="False"}
+          ) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: flux
+        annotations:
+          summary: Flux {{ $labels.customresource_kind }} {{ $labels.exported_namespace }}/{{ $labels.name }} is not Ready
+          description: >-
+            The {{ $labels.customresource_kind }} {{ $labels.exported_namespace }}/{{ $labels.name }}
+            has reported Ready=False for 15 minutes. Changes from Git do not reach the cluster.
+          runbook_url: RUNBOOK_BASE_URL/flux-reconcile-not-ready
+      - alert: BaukitFluxResourceSuspended
+        expr: |
+          max by (customresource_kind, exported_namespace, name) (
+            gotk_resource_info{suspended="true"}
+          ) > 0
+        for: 24h
+        labels:
+          severity: warning
+          component: flux
+        annotations:
+          summary: Flux {{ $labels.customresource_kind }} {{ $labels.exported_namespace }}/{{ $labels.name }} has been suspended for 24h
+          description: >-
+            The {{ $labels.customresource_kind }} {{ $labels.exported_namespace }}/{{ $labels.name }}
+            has had spec.suspend=true for 24 hours. Flux ignores Git for it until someone resumes it.
+          runbook_url: RUNBOOK_BASE_URL/flux-resource-suspended
+      - alert: BaukitFluxSourceFetchFailing
+        expr: |
+          max by (customresource_kind, exported_namespace, name) (
+            gotk_resource_info{customresource_kind=~"GitRepository|OCIRepository|HelmRepository", ready="False"}
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: flux
+        annotations:
+          summary: Flux cannot fetch {{ $labels.customresource_kind }} {{ $labels.exported_namespace }}/{{ $labels.name }}
+          description: >-
+            The {{ $labels.customresource_kind }} {{ $labels.exported_namespace }}/{{ $labels.name }}
+            has reported Ready=False for 10 minutes. Every object that uses this source stays on its
+            last fetched revision.
+          runbook_url: RUNBOOK_BASE_URL/flux-source-fetch-failing

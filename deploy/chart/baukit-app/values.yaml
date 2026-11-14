@@ -19,8 +19,21 @@ containerSecurityContext:
     drop:
       - ALL
 
+# Every release gets its own ServiceAccount. Set create=false and name to
+# reuse an existing one.
 serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
   automountToken: false
+
+# A soft spread of each serving process across nodes. ScheduleAnyway never
+# blocks scheduling on a single node.
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  topologyKey: kubernetes.io/hostname
+  whenUnsatisfiable: ScheduleAnyway
 
 config:
   # Defaults to product, normalized as an uppercase environment-variable prefix.
@@ -35,7 +48,9 @@ api:
   replicas: 1
   image:
     repository: ghcr.io/example/minimal-api
-    tag: latest
+    # Set a release tag or a sha256 digest. latest is rejected.
+    tag: ""
+    digest: ""
     pullPolicy: IfNotPresent
   command: []
   args: []
@@ -48,6 +63,9 @@ api:
     http: 8080
     ops: 9090
   terminationGracePeriodSeconds: 30
+  # Keeps the pod serving while endpoints drop. The drain timeout is the
+  # grace period minus this sleep, so it must stay below the grace period.
+  preStopSleepSeconds: 5
   strategy:
     maxUnavailable: 0
     maxSurge: 1
@@ -58,6 +76,11 @@ api:
     limits:
       cpu: 250m
       memory: 128Mi
+  startupProbe:
+    enabled: true
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 30
   livenessProbe:
     enabled: true
     initialDelaySeconds: 5
@@ -76,9 +99,10 @@ api:
   networkPolicy:
     additionalIngress: []
     additionalEgress: []
-  # Set exactly one of minAvailable or maxUnavailable, as an integer or a percentage.
+  # Renders only with more than one replica (or the API HPA). Set at most one
+  # of minAvailable or maxUnavailable; neither means maxUnavailable: 1.
   podDisruptionBudget:
-    enabled: false
+    enabled: true
     minAvailable: ""
     maxUnavailable: ""
 
@@ -87,7 +111,9 @@ worker:
   replicas: 1
   image:
     repository: ghcr.io/example/minimal-worker
-    tag: latest
+    # Set a release tag or a sha256 digest. latest is rejected.
+    tag: ""
+    digest: ""
     pullPolicy: IfNotPresent
   command: []
   args: []
@@ -105,6 +131,11 @@ worker:
     limits:
       cpu: 250m
       memory: 128Mi
+  startupProbe:
+    enabled: true
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 30
   livenessProbe:
     enabled: true
     initialDelaySeconds: 5
@@ -123,9 +154,10 @@ worker:
   networkPolicy:
     additionalIngress: []
     additionalEgress: []
-  # Set exactly one of minAvailable or maxUnavailable, as an integer or a percentage.
+  # Renders only with more than one replica (or the API HPA). Set at most one
+  # of minAvailable or maxUnavailable; neither means maxUnavailable: 1.
   podDisruptionBudget:
-    enabled: false
+    enabled: true
     minAvailable: ""
     maxUnavailable: ""
 
@@ -142,6 +174,7 @@ redis:
   image:
     repository: redis
     tag: 8.10.2-alpine
+    digest: ""
     pullPolicy: IfNotPresent
   resources:
     requests:
@@ -165,7 +198,9 @@ migration:
   enabled: true
   image:
     repository: ghcr.io/example/minimal-migrate
-    tag: latest
+    # Set a release tag or a sha256 digest. latest is rejected.
+    tag: ""
+    digest: ""
     pullPolicy: IfNotPresent
   command:
     - /app/migrate
@@ -175,6 +210,7 @@ migration:
   volumeMounts: []
   backoffLimit: 2
   activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
   resources:
     requests:
       cpu: 50m
@@ -190,7 +226,9 @@ seed:
   allowProduction: false
   image:
     repository: ghcr.io/example/minimal-seed
-    tag: latest
+    # Set a release tag or a sha256 digest. latest is rejected.
+    tag: ""
+    digest: ""
     pullPolicy: IfNotPresent
   command:
     - /app/seed
@@ -200,6 +238,7 @@ seed:
   volumeMounts: []
   backoffLimit: 1
   activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
   resources:
     requests:
       cpu: 50m
@@ -261,13 +300,16 @@ serviceMonitor:
 
 networkPolicy:
   enabled: true
+  # Matches the Traefik base in deploy/platform/traefik (release traefik in
+  # namespace traefik).
   ingressController:
     namespaceSelector:
       matchLabels:
-        kubernetes.io/metadata.name: kube-system
+        kubernetes.io/metadata.name: traefik
     podSelector:
       matchLabels:
         app.kubernetes.io/name: traefik
+        app.kubernetes.io/instance: traefik-traefik
   prometheus:
     namespaceSelector:
       matchLabels:
@@ -322,7 +364,9 @@ web:
   replicas: 1
   image:
     repository: ghcr.io/example/minimal-web
-    tag: latest
+    # Set a release tag or a sha256 digest. latest is rejected.
+    tag: ""
+    digest: ""
     pullPolicy: IfNotPresent
   port: 8080
   # Required when enabled. Pass the build's policy unchanged:

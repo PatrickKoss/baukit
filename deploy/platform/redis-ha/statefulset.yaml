@@ -36,27 +36,30 @@ spec:
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
-            - -ec
-          args:
-            - |
-              ordinal="${HOSTNAME##*-}"
-              if [ "$ordinal" = "0" ]; then
-                exec redis-server --save "" --appendonly no \
-                  --maxmemory 48mb --maxmemory-policy allkeys-lru
-              fi
-              exec redis-server --save "" --appendonly no \
-                --maxmemory 48mb --maxmemory-policy allkeys-lru \
-                --replicaof redis-0.redis-headless 6379
+            - /scripts/redis-ha.sh
+            - server
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           ports:
             - name: redis
               containerPort: 6379
               protocol: TCP
+          startupProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 36
           livenessProbe:
             exec:
               command:
                 - redis-cli
                 - ping
-            initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 3
@@ -87,28 +90,35 @@ spec:
               mountPath: /data
             - name: tmp
               mountPath: /tmp
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
         - name: sentinel
           image: redis:8.10.2-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
           imagePullPolicy: IfNotPresent
           command:
             - /bin/sh
-            - -ec
-          args:
-            - |
-              printf '%s\n' \
-                'port 26379' \
-                'dir /tmp' \
-                'sentinel resolve-hostnames yes' \
-                'sentinel monitor mymaster redis-0.redis-headless 6379 2' \
-                'sentinel down-after-milliseconds mymaster 5000' \
-                'sentinel failover-timeout mymaster 30000' \
-                'sentinel parallel-syncs mymaster 1' \
-                > /sentinel/sentinel.conf
-              exec redis-sentinel /sentinel/sentinel.conf
+            - /scripts/redis-ha.sh
+            - sentinel
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
           ports:
             - name: sentinel
               containerPort: 26379
               protocol: TCP
+          startupProbe:
+            exec:
+              command:
+                - redis-cli
+                - -p
+                - "26379"
+                - ping
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 36
           livenessProbe:
             exec:
               command:
@@ -116,7 +126,6 @@ spec:
                 - -p
                 - "26379"
                 - ping
-            initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 3
@@ -149,7 +158,13 @@ spec:
               mountPath: /sentinel
             - name: tmp
               mountPath: /tmp
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
       volumes:
+        - name: scripts
+          configMap:
+            name: redis-ha-scripts
         - name: data
           emptyDir: {}
         - name: sentinel-config

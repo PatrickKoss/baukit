@@ -14,7 +14,7 @@ groups:
         annotations:
           summary: Fast 5xx error-budget burn
           description: 'The 5m and 1h windows exceed 14.4x budget for {{ $labels }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/high-error-budget-burn
+          runbook_url: RUNBOOK_BASE_URL/high-error-budget-burn-fast
 
       - alert: BaukitHighErrorBudgetBurnSlow
         expr: |
@@ -27,7 +27,7 @@ groups:
         annotations:
           summary: Sustained 5xx error-budget burn
           description: 'The 30m and 6h windows exceed 6x budget for {{ $labels }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/high-error-budget-burn
+          runbook_url: RUNBOOK_BASE_URL/high-error-budget-burn-slow
 
       - alert: BaukitHttpP95LatencyHigh
         expr: baukit:http_request_duration_seconds:p95_5m{service!=""} > 0.5
@@ -37,7 +37,7 @@ groups:
         annotations:
           summary: HTTP p95 latency is high
           description: 'HTTP p95 latency has exceeded 0.5s for {{ $labels }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/http-latency
+          runbook_url: RUNBOOK_BASE_URL/http-p95-latency-high
 
       - alert: BaukitHttpP99LatencyHigh
         expr: baukit:http_request_duration_seconds:p99_5m{service!=""} > 1
@@ -47,7 +47,7 @@ groups:
         annotations:
           summary: HTTP p99 latency is high
           description: 'HTTP p99 latency has exceeded 1s for {{ $labels }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/http-latency
+          runbook_url: RUNBOOK_BASE_URL/http-p99-latency-high
 
   - name: baukit-readiness-alerts
     rules:
@@ -59,7 +59,7 @@ groups:
         annotations:
           summary: Baukit service scrape is failing
           description: 'Prometheus cannot scrape the service target for {{ $labels }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/service-scrape-down
+          runbook_url: RUNBOOK_BASE_URL/service-scrape-down
 
       - alert: BaukitServiceTargetsAbsent
         expr: absent(up{service!=""})
@@ -69,7 +69,7 @@ groups:
         annotations:
           summary: No Baukit service targets are discoverable
           description: 'Prometheus has no service-labeled targets; alert context is {{ $labels }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/service-targets-absent
+          runbook_url: RUNBOOK_BASE_URL/service-targets-absent
 
       - alert: BaukitBuildInfoAbsent
         expr: |
@@ -82,7 +82,7 @@ groups:
         annotations:
           summary: Build metadata is absent
           description: 'A healthy scrape target is not exposing build_info for {{ $labels }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/build-info-absent
+          runbook_url: RUNBOOK_BASE_URL/build-info-absent
 
   - name: baukit-database-alerts
     rules:
@@ -104,7 +104,7 @@ groups:
         annotations:
           summary: Database pool is saturated
           description: 'More than 90% of database pool connections are in use for {{ $labels }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/database-pool-saturation
+          runbook_url: RUNBOOK_BASE_URL/database-pool-saturated
 
       - alert: BaukitDatabaseAcquireTimeouts
         expr: increase(db_pool_acquire_timeouts_total{service!=""}[10m]) > 0
@@ -114,7 +114,7 @@ groups:
         annotations:
           summary: Database connection acquisition is timing out
           description: 'Database acquire timeouts increased during the last 10m for {{ $labels }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/database-acquire-timeouts
+          runbook_url: RUNBOOK_BASE_URL/database-acquire-timeouts
 
   - name: baukit-rate-limit-alerts
     rules:
@@ -129,7 +129,7 @@ groups:
         annotations:
           summary: Rate-limit store errors are sustained
           description: 'The rate limiter has reported store errors for ten minutes for {{ $labels }}; verify Redis health and whether the configured fail mode is preserving enforcement.'
-          runbook_url: https://runbooks.example.invalid/baukit/rate-limit-store-errors
+          runbook_url: RUNBOOK_BASE_URL/rate-limit-store-errors
 
   - name: baukit-worker-alerts
     rules:
@@ -151,7 +151,7 @@ groups:
         annotations:
           summary: Worker failure rate is high
           description: 'More than 10% of worker runs are failing for job kind {{ $labels.job_kind }} in {{ $labels.service }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/worker-failures
+          runbook_url: RUNBOOK_BASE_URL/worker-failure-rate-high
 
       - alert: BaukitWorkerRetryStorm
         expr: |
@@ -164,7 +164,7 @@ groups:
         annotations:
           summary: Worker retries are elevated
           description: 'Worker retry throughput exceeds one retry per second for job kind {{ $labels.job_kind }} in {{ $labels.service }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/worker-retry-storm
+          runbook_url: RUNBOOK_BASE_URL/worker-retry-storm
 
       - alert: BaukitWorkerQueueOldestAgeHigh
         expr: worker_queue_oldest_age_seconds{service!=""} > 300
@@ -174,15 +174,4 @@ groups:
         annotations:
           summary: Worker queue age is high
           description: 'The oldest queued job is more than five minutes old for {{ $labels }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/worker-queue-age
-
-  - name: baukit-dead-man-alerts
-    rules:
-      - alert: BaukitDeadMansSwitch
-        expr: vector(1)
-        labels:
-          severity: info
-        annotations:
-          summary: Baukit alert pipeline heartbeat
-          description: 'This alert must always be firing; missing notifications indicate a broken alert path for {{ $labels }}.'
-          runbook_url: https://runbooks.example.invalid/baukit/dead-mans-switch
+          runbook_url: RUNBOOK_BASE_URL/worker-queue-oldest-age-high

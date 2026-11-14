@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import helm_yaml
+
 LINT_DIR = Path(__file__).resolve().parent
 FIXTURES = LINT_DIR / "fixtures"
 VALIDATE = LINT_DIR.parent / "validate.sh"
@@ -16,11 +18,8 @@ EXPECTED = {
 
 
 def kubeconform(fixture: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 -- argv is the repo's validate.sh and a fixture path, no shell
-        [str(VALIDATE), "--kubeconform", str(fixture)],
-        capture_output=True,
-        text=True,
-        check=False,
+    return helm_yaml.process_runner.run_process(
+        [str(VALIDATE), "--kubeconform", str(fixture)], capture_output=True, text=True
     )
 
 

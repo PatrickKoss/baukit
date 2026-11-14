@@ -10,7 +10,9 @@ and secrets in the private infrastructure repository.
 Each first-level base owns its namespace manifest and any HelmRepository it
 uses. HelmRelease chart versions are exact pins. Values favor one replica and
 bounded requests/limits suitable for an initial single Hetzner node; overlays
-replace those values from measurements. Bases do not set `priorityClassName`.
+replace those values from measurements. Bases do not set `priorityClassName`,
+except Traefik, which runs as `platform-critical` so the edge survives
+resource pressure.
 
 The conventional namespaces are:
 
@@ -23,7 +25,7 @@ The conventional namespaces are:
 | product analytics | `posthog` |
 | admission policy | `kyverno` |
 | coordinated reboot | `kured` |
-| cloud provider drivers | `kube-system` |
+| cloud provider drivers | `kube-system` (owned by k3s, not managed by a base) |
 | database operator | `cnpg-system` |
 | shared database cluster | `postgres` |
 | shared Redis (direct or Sentinel HA) | `platform-redis` |
@@ -34,6 +36,16 @@ The conventional namespaces are:
 non-default PriorityClasses. Overlays may assign `platform-critical` to the
 minimum controllers needed for recovery/ingress and `platform-standard` to
 other platform workloads. Application workloads normally use neither.
+
+Every Namespace a base manages carries `app.kubernetes.io/part-of:
+baukit-platform`. Prometheus reads PrometheusRules, ServiceMonitors and
+PodMonitors only from namespaces with that label, and Grafana loads dashboard
+ConfigMaps labelled `grafana_dashboard: "1"` from every namespace, filed into
+the folder named by their `grafana_folder` annotation. Namespaces that hold
+volumes or a database (`postgres`, `observability`, `platform-redis`,
+`posthog`), the CNPG `Cluster` and Flux-applied PVCs carry
+`kustomize.toolkit.fluxcd.io/prune: disabled`, so removing a base from a Flux
+Kustomization never deletes data.
 
 Every base is secret-free and personal-data-free. Domains, e-mail addresses,
 cloud and DNS credentials, object-storage endpoints/credentials, alert
@@ -73,6 +85,12 @@ For application namespaces, include
 `cluster-baseline/app-namespace-policy` as a Kustomize component, set the target
 namespace, patch its quota when needed, and supply explicit ingress/egress
 allows in the same overlay. The component is not applied globally.
+
+An application namespace whose ServiceMonitor, PodMonitor or PrometheusRule
+should be scraped or loaded must carry `app.kubernetes.io/part-of:
+baukit-platform`. Without that label Prometheus ignores the namespace. The
+shared `deploy/observability` rule and dashboard pack installs into
+`observability` and needs nothing extra.
 
 ## Validation
 
@@ -141,7 +159,10 @@ owned and contain assignments only.
 | `PLATFORM_BAUKIT_CHECKOUT` | snapshot mode | Baukit working-tree path copied into the disposable snapshot. |
 | `PLATFORM_K3S_IMAGE` | `rancher/k3s:v1.34.8-k3s1` | k3s image used when creating the cluster. |
 | `PLATFORM_FLUX_VERSION` | `flux` in `deploy/tools.toml` (`v2.9.4`) | Flux pin; override only as a reviewed platform upgrade. |
-| `PLATFORM_SNAPSHOT_PORT` | `9418` | Host port for local smart HTTP. |
+| `PLATFORM_SNAPSHOT_PORT` | `9418` | Port for local smart HTTP, published on the k3d network gateway. |
+| `PLATFORM_API_PORT` | `random` | Host port of the Kubernetes API, bound to `127.0.0.1`. |
+| `PLATFORM_HTTP_PORT` | `80` | Host port for HTTP ingress, bound to `127.0.0.1`. |
+| `PLATFORM_HTTPS_PORT` | `443` | Host port for HTTPS ingress, bound to `127.0.0.1`. |
 | `PLATFORM_STATE_DIR` | XDG state path | Disposable snapshot repository state. |
 
 GitHub mode uses the owner/repository fields to bootstrap and verifies desired
@@ -150,10 +171,14 @@ SSH URL used by the committed `GitRepository`, such as
 `ssh://git@github.com/ORGANIZATION/REPOSITORY`. SSH-key mode passes the generic
 URL and key directly to `flux bootstrap git`.
 
-In `local-snapshot` mode, the script copies the Baukit working tree without
-`.git`, build outputs, or local runtime state, makes a disposable commit, and
-serves its bare repository through `git http-backend` in a named Docker
-container. Commit metadata is fixed so identical working-tree content retains
+In `local-snapshot` mode, the script copies the files Git would commit (from
+`git ls-files --cached --others --exclude-standard`, so gitignored files such
+as `.env` never enter the snapshot), makes a disposable commit, and serves its
+bare repository through `git http-backend` in a named Docker container. The
+container runs as uid 65532 with a read-only root filesystem and no
+capabilities, and publishes its port only on the k3d network gateway, the
+address pods reach as `host.k3d.internal`. The Kubernetes API and ports 80 and
+443 bind `127.0.0.1`. Commit metadata is fixed so identical working-tree content retains
 the same snapshot revision across repeated `up` calls. The GitOps overlay
 should point `GitRepository/baukit` at
 `http://host.k3d.internal:9418/baukit.git` on branch `main`. Dumb HTTP is not
@@ -186,7 +211,8 @@ deploy/platform/platform-lifecycle.sh --config /path/to/local.env up
   external age identity are untouched.
 - `recreate` runs `nuke` followed by `up`; this is the reproducibility proof.
 - `status` shows the cluster, container restart policies, Git sources,
-  Kustomizations, HelmReleases, and non-ready pods.
+  Kustomizations, HelmReleases, non-ready pods, and where the secrets live.
+  It never prints secret values.
 
 Because `unless-stopped` is enforced after both create and start, Docker or
 host restarts bring the cluster and snapshot service back without a lifecycle
@@ -213,7 +239,7 @@ remain overlay concerns; the publishable bases do not acquire those values.
 
 `overlays/local` composes the platform's own development environment. It uses
 k3d with the bundled k3s Traefik disabled, publishes the replacement Traefik
-on host ports 80 and 443, installs Flux, and lets the overlay's Flux
+on `127.0.0.1` ports 80 and 443 through k3s ServiceLB, installs Flux, and lets the overlay's Flux
 Kustomizations reconcile all pinned HelmReleases. The local flavor includes the
 baseline, cert-manager and a self-signed `ClusterIssuer`, Traefik, CNPG and one
 PostgreSQL cluster, the observability stack, and RustFS for Loki logs and
@@ -245,18 +271,30 @@ cluster and stops the local Git HTTP process. The ignored
 the same credentials; remove that directory manually only when credential
 rotation is intended.
 
-`status` prints the generated Grafana and RustFS credentials on demand. The state directory is mode 0700 and its
-`secrets.env` is mode 0600. No Secret manifest or credential value is stored in
+`status` prints where the generated Grafana, RustFS and database credentials
+live (the Kubernetes Secret and `secrets.env`), never the values. The state
+directory is mode 0700 and its `secrets.env` is mode 0600.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BAUKIT_PLATFORM_CLUSTER` | `baukit-local` | k3d cluster name. |
+| `BAUKIT_PLATFORM_STATE_DIR` | `deploy/platform/.local-state` | Generated credentials and snapshot state. |
+| `BAUKIT_PLATFORM_GIT_PORT` | `9418` | Snapshot server port on the k3d network gateway. |
+| `BAUKIT_PLATFORM_API_PORT` | `random` | Kubernetes API port on `127.0.0.1`. |
+| `BAUKIT_PLATFORM_HTTP_PORT` | `80` | HTTP ingress port on `127.0.0.1`. |
+| `BAUKIT_PLATFORM_HTTPS_PORT` | `443` | HTTPS ingress port on `127.0.0.1`. | No Secret manifest or credential value is stored in
 the publishable overlay. Kubernetes Secrets for PostgreSQL, Grafana,
 RustFS, and the initial product are generated and applied at runtime.
 
 ### Integration-harness GitRepository contract
 
 Flux still consumes the normal `GitRepository/baukit` contract. The helper
-creates a bare snapshot of the current checkout, including uncommitted and
-untracked platform work but excluding `.git`, build outputs, generated fixtures,
-and local state. A small read-only smart-HTTP server backed by
-`git http-backend` exposes that snapshot on host port 9418; the cluster reaches
+creates a bare snapshot of the files Git would commit from the current checkout
+(`git ls-files --cached --others --exclude-standard`): uncommitted and untracked
+work is included, gitignored files are not. A small read-only smart-HTTP
+server backed by `git http-backend` exposes that snapshot on port 9418 of the
+k3d network gateway, after the cluster exists. It rejects requests without a
+valid `Content-Length` or larger than 16 MiB. The cluster reaches
 it at `http://host.k3d.internal:9418/baukit.git`. This keeps every platform
 component on the same Flux-native path used by real overlays and avoids either
 publishing a private checkout or bypassing Flux with direct Helm installs.

@@ -10,9 +10,12 @@ namespace:
 - Loki 18.13.7 in monolithic mode with one filesystem-backed replica;
 - Tempo 2.4.0 in monolithic mode with one filesystem-backed replica and OTLP
   gRPC/HTTP receivers;
-- Alloy 1.13.0 as a DaemonSet that sends Kubernetes pod logs to Loki; and
+- Alloy 1.13.0 as a DaemonSet that sends Kubernetes pod logs to Loki;
 - the existing `deploy/observability` chart as dashboards, recording rules, and
-  alert content.
+  alert content; and
+- the `deploy/observability-platform` chart with alerts, recording rules and
+  dashboards for the platform components. Its `runbookBaseUrl` value sets the
+  prefix of every alert's `runbook_url`.
 
 The starting retention budgets are visible once in each component's
 HelmRelease: 30 days for metrics, 14 days for logs, and 7 days for traces. PVCs
@@ -27,15 +30,16 @@ An overlay **must** provide all of the following:
 
 1. A `source.toolkit.fluxcd.io/v1` `GitRepository` named `baukit` in
    `flux-system`. It must point at this repository at the release-train tag the
-   cluster has selected. The `baukit-observability` HelmRelease resolves
-   `./deploy/observability` from that source.
+   cluster has selected. The `baukit-observability` and
+   `baukit-platform-observability` HelmReleases resolve `./deploy/observability`
+   and `./deploy/observability-platform` from that source.
 2. A Secret named `grafana-admin` in `observability`, with `admin-user` and
    `admin-password` keys. Grafana anonymous access, ingress, TLS, and any
    external URL are also overlay decisions; this base enables no ingress.
 3. A real Alertmanager receiver before production traffic is served. Patch
    `kube-prometheus-stack.spec.values.alertmanager.config`: add an
    identity-bearing receiver, route actionable alerts to it, and route
-   `BaukitDeadMansSwitch` to the external heartbeat integration. The base's
+   `Watchdog` to the external heartbeat integration. The base's
    `null` receiver intentionally drops every notification.
 4. Storage sizing and a StorageClass appropriate to the node. The defaults are
    30 Gi for Prometheus, 20 Gi for Loki, 10 Gi for Tempo, and 1 Gi for

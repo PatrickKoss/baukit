@@ -93,6 +93,7 @@ class Resource:
 class Alert:
     source: str
     rule: dict
+    pack: str = "platform"
 
     @property
     def name(self) -> str:
@@ -277,8 +278,11 @@ def rule_alert_runbook(context: Context) -> Iterable[str]:
     for alert in context.alerts:
         url = str((alert.rule.get("annotations") or {}).get("runbook_url", "")).strip()
         slug = runbook_slug(url)
-        if not slug or slug not in context.runbook_slugs:
-            yield f"{alert.source}: {alert.name} runbook slug {slug!r} has no docs/runbooks file"
+        if not slug or f"{alert.pack}/{slug}" not in context.runbook_slugs:
+            yield (
+                f"{alert.source}: {alert.name} runbook slug {slug!r} has no "
+                f"docs/runbooks/{alert.pack}/{slug}.md"
+            )
 
 
 def rule_alert_tested(context: Context) -> Iterable[str]:
@@ -526,16 +530,26 @@ def load_alerts(packs: dict[Path, list[dict]], universes: dict[str, list[Resourc
     alerts = []
     for path, documents in packs.items():
         for document in documents:
-            alerts.extend(alerts_in_groups(str(path), document.get("groups") or []))
+            alerts.extend(alerts_in_groups(str(path), document.get("groups") or [], pack_of(path)))
     for resource in universes.get("bases", []):
         if resource.kind == "PrometheusRule" and resource.managed_by_kustomize:
             alerts.extend(alerts_in_groups(resource.ref(), resource.spec.get("groups") or []))
     return alerts
 
 
-def alerts_in_groups(source: str, groups: list[dict]) -> list[Alert]:
+def pack_of(path: Path) -> str:
+    return "app" if "observability" in path.parts else "platform"
+
+
+def runbook_slugs(runbooks: Path) -> set[str]:
+    return {
+        path.relative_to(runbooks).with_suffix("").as_posix() for path in runbooks.rglob("*.md")
+    }
+
+
+def alerts_in_groups(source: str, groups: list[dict], pack: str = "platform") -> list[Alert]:
     return [
-        Alert(source, rule)
+        Alert(source, rule, pack)
         for group in groups
         for rule in group.get("rules") or []
         if "alert" in rule
@@ -597,7 +611,7 @@ def build_context(
         universes=universes,
         alerts=load_alerts({path: parsed[path] for path in packs}, universes),
         fired_alerts=fired_alerts({path: parsed[path] for path in tests}),
-        runbook_slugs={path.stem for path in (repo_root / "docs/runbooks").rglob("*.md")},
+        runbook_slugs=runbook_slugs(repo_root / "docs/runbooks"),
         chart_values=chart_values,
         privileged_namespaces=set(config.get("privileged_namespaces") or []),
         network_policy_exempt=set(config.get("network_policy_exempt_namespaces") or []),

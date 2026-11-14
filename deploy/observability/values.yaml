@@ -1,6 +1,9 @@
 nameOverride: ""
 fullnameOverride: ""
 
+# Required. Alert runbook_url annotations become <runbookBaseUrl>/<slug>.
+runbookBaseUrl: ""
+
 dashboardConfigMap:
   enabled: true
   # Grafana's dashboard sidecar watches this label by default.

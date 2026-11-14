@@ -55,7 +55,7 @@ These are defaults the plan assumes. Each one can be overruled before its phase 
 | D6 | Image signature verification | Parked until product images live in a registry. Today they are built locally and loaded with `k3d image import`. | `verifyImages` needs a registry and signatures. The policy and its test land in Audit mode so they are ready. |
 | D7 | Traefik exposure | Switch from DaemonSet with hostPorts to a Deployment behind k3s ServiceLB (`type: LoadBalancer`). | It fixes the rollout hang (F-01). The `traefik` namespace can then run `restricted`, because the svclb pod holds the hostPort in `kube-system`. |
 | D8 | PostHog | Out of scope for replacement. Fence it with NetworkPolicy, PSA `baseline` and a recorded exception list. | The self-host chart is sunset (F-30). Replacing it is a product decision, not hardening work. |
-| D9 | Platform e2e cost | A separate `platform-e2e` gate lane, selected by `--affected` for `deploy/**`. It runs under the host locks and is not part of the 30-minute full-gate budget until it has been measured. | A disposable k3d cluster with the full stack takes minutes to converge. It must not starve product gates. |
+| D9 | Platform e2e cost | A separate `platform-e2e` gate lane, selected by `--affected` for `deploy/**`. It holds `k3d-full.lock`, waits while both machine-wide heavy-run slots (`/tmp/claude-heavy-slots/slot-{1,2}`) are taken, and is not part of the 30-minute full-gate budget until it has been measured. | A disposable k3d cluster with the full stack takes minutes to converge. It must not starve product gates. |
 
 ## Findings catalog
 
@@ -221,8 +221,9 @@ behave. Later phases add test directories here.
   local-snapshot source (with S6's file filtering), applies `e2e/overlay/`, waits for every Kustomization
   and HelmRelease to be Ready, runs `chainsaw test deploy/platform/e2e/tests`, collects
   `kubectl get events,polr,cpolr -A`, Flux status and pod logs into `.ci-gate/platform-e2e/`, and deletes
-  the cluster on exit (trap, also on SIGINT). Every run takes `flock` on the host's android and browser
-  locks before creating the cluster.
+  the cluster on exit (trap, also on SIGINT). Every run takes `flock` on `k3d-full.lock` and waits while both
+  heavy-run slots are taken before creating the cluster. It does not take the android or browser locks,
+  which belong to the slot holders.
 - [~] **E2 Overlay.** `deploy/platform/e2e/overlay/` composes every base except `hcloud` and `posthog`
   (posthog is checked separately in N4) plus a test tenant namespace built from `components/tenant`, a
   tiny echo app deployed with `baukit-app` (image built in the runner from a pinned `nginx-unprivileged`
@@ -243,12 +244,12 @@ behave. Later phases add test directories here.
 - [~] **C1 Ingress controller default.** Change `networkPolicy.ingressController.namespaceSelector` to
   `kubernetes.io/metadata.name: traefik` and the pod selector to the Traefik base's labels. Add a chart
   test. The e2e echo app must be reachable through Traefik with the chart's defaults (`e2e/tests/ingress/`).
-- [~] **C2 No mutable tags.** Remove the `latest` default from `baukit-app.image`. Each image takes
+- [x] **C2 No mutable tags.** Remove the `latest` default from `baukit-app.image`. Each image takes
   `tag` or `digest`, at least one is required, and `latest` fails the render with a clear message.
   `templates/backend/deploy/values.yaml` writes a placeholder the product's release pipeline replaces
   (for example `tag: "0.0.0-unset"` plus a comment), and the fixture gate renders the chart with the
   generated values to prove it. Regenerate the CLI snapshots and check the diff.
-- [~] **C3 Chart hardening.**
+- [x] **C3 Chart hardening.**
   - `values.schema.json` covering every key, with `additionalProperties: false` at the top level.
   - A dedicated ServiceAccount per release with `automountServiceAccountToken: false`.
   - `startupProbe` on API and worker, so slow boots stop tripping liveness.
@@ -262,7 +263,7 @@ behave. Later phases add test directories here.
 - [~] **C4 Smoke harness under `restricted`.** `deploy/smoke/k3d-smoke.sh` labels its namespace
   `pod-security.kubernetes.io/enforce=restricted` before installing, and installs the baukit Kyverno
   policy library in Enforce mode first. A chart change that breaks either fails the smoke.
-- [~] **C5 Chart tests.** Extend `scripts/test_chart_*.py`: security context on every container,
+- [x] **C5 Chart tests.** Extend `scripts/test_chart_*.py`: security context on every container,
   NetworkPolicy peers per process, env contract (prefix, overrides, secret refs), schema rejection of
   unknown keys and of `latest`. Every C task adds its own cases.
 
@@ -377,7 +378,7 @@ behave. Later phases add test directories here.
   and label every base namespace with it. Grafana's sidecar searches `ALL` with the `grafana_dashboard`
   label and uses `folderAnnotation`, so each component gets its own folder. This fixes F-02. The V4
   convention check fails if a rule lands outside the selector again.
-- [~] **O2 Platform observability pack.** New chart `deploy/observability-platform/`
+- [x] **O2 Platform observability pack.** New chart `deploy/observability-platform/`
   (`baukit-platform-observability`, version-coherent with the rest). Its templates glob
   `alerts/*.yml`, `recording-rules/*.yml` and `dashboards/*.json` with `.Files.Glob`, one PrometheusRule
   per file and one dashboard ConfigMap per file, each toggled per component in values.
@@ -405,7 +406,7 @@ behave. Later phases add test directories here.
   - flagger `podMonitor.enabled`, hcloud CCM/CSI monitors (Hetzner overlays only) and a redis_exporter
     sidecar in both redis bases.
   - Capture the real metric names from a running e2e cluster into `metrics.txt` instead of guessing them.
-- [ ] **O4 Alerts, each with a promtool test that fires and one that stays quiet, and a runbook.**
+- [~] **O4 Alerts, each with a promtool test that fires and one that stays quiet, and a runbook.**
   Names follow `Baukit<Component><Condition>`. Every alert carries a `component` label for routing.
   - Flux: reconcile not Ready for 15m (`gotk_resource_info{ready="False"}`), suspended for 24h,
     source fetch failing.
@@ -436,11 +437,11 @@ behave. Later phases add test directories here.
   - Flux notification-controller sends `Provider` type `alertmanager` events for Kustomization,
     HelmRelease and GitRepository errors.
   - The e2e `alert-pipeline/` test covers the example config.
-- [ ] **O6 Runbooks.** `docs/runbooks/platform/<slug>.md` and `docs/runbooks/app/<slug>.md`, one per
+- [x] **O6 Runbooks.** `docs/runbooks/platform/<slug>.md` and `docs/runbooks/app/<slug>.md`, one per
   alert, with the same headings: meaning, impact, first checks (exact `kubectl`/LogQL/PromQL), fix,
   escalation. `runbook_url` becomes `{{ .Values.runbookBaseUrl }}/<slug>` (overlay value). The V4 check
   enforces that every slug has a file.
-- [ ] **O7 Dashboards.** One per component in its own folder: Flux, cert-manager, CNPG (upstream
+- [x] **O7 Dashboards.** One per component in its own folder: Flux, cert-manager, CNPG (upstream
   dashboard, pinned and vendored), Traefik, Kyverno/Policy Reporter, Falco, platform overview (all
   `Baukit*` alerts by component, Ready state of every Flux object, PSA and policy violation counts).
   `baukit check observability` already checks datasource variables. Add a JSON schema check for
@@ -459,7 +460,7 @@ behave. Later phases add test directories here.
 
   Stop and report if metadata enrichment does not work. The fallback is filtering to the k3d node
   container's cgroup.
-- [ ] **FA1 Base** `deploy/platform/falco/`:
+- [x] **FA1 Base** `deploy/platform/falco/`:
   - Namespace `falco` with PSA `privileged` (allowlisted) and default-deny NetworkPolicy plus
     `prometheus-scrape`. Egress from falcosidekick to loki-gateway and Alertmanager only.
   - HelmRelease for the `falcosecurity/falco` chart (9.2.2 / Falco 0.45.2 as of 2026-11-14; pin what
@@ -470,7 +471,7 @@ behave. Later phases add test directories here.
       Alertmanager), web UI off;
     - bounded resources and `platform-standard` priority.
   - Images by digest (SC2).
-- [ ] **FA2 Rules.** Keep the upstream default ruleset and add `rules/baukit.rules.yaml`, loaded as an
+- [x] **FA2 Rules.** Keep the upstream default ruleset and add `rules/baukit.rules.yaml`, loaded as an
   extra rules file:
   - macros that silence the known k3d and Flux noise from FA0, each with a comment naming the source;
   - app rules keyed on the `baukit.dev/process` label:
@@ -483,7 +484,7 @@ behave. Later phases add test directories here.
     terminal shell in any platform namespace.
 
   The static lane validates rule files with `falco --validate` in the pinned image.
-- [ ] **FA3 Alerts and dashboard** in the platform pack:
+- [x] **FA3 Alerts and dashboard** in the platform pack:
   - `BaukitFalcoDown` (a node without a ready Falco pod);
   - `BaukitFalcoEventsDropped` (kernel drop counter increasing);
   - `BaukitFalcoCriticalEvent` (any event at priority Critical or above in 5m, critical);
@@ -534,7 +535,7 @@ behave. Later phases add test directories here.
 - [ ] **R6 Storage limits** (F-11): `retentionSize` for Prometheus at about 85% of the PVC; Loki
   `retention_period` plus compactor deletion; Tempo `max_block_bytes` / retention sized to its PVC;
   `BaukitPvcFillingUp` covered by kube-prometheus-stack defaults and tested in O4.
-- [ ] **R7 redis-ha recovery** (F-12): an init step asks Sentinel for the current master and only
+- [x] **R7 redis-ha recovery** (F-12): an init step asks Sentinel for the current master and only
   bootstraps `redis-0` as master when no Sentinel answers. Sentinels set `announce-hostnames` and
   `resolve-hostnames`. e2e test: kill the master, wait for failover, restart the old master, assert it
   rejoins as a replica with the data intact.
@@ -718,3 +719,84 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   below it. Gate steps `platform-validate` and `observability-rules` install their pinned tools first, with
   a test that ties each `--only` list to the step's tools. Sent back once: metrics toggle detection moved
   from regex to parsed values, `psa-labels` now requires `enforce-version`.
+
+- 2026-11-14: C merged (C2, C3, C5 done; C1 chart side done, the Traefik reachability test waits on E's
+  `e2e/tests/ingress/`; C4 PSA half done). Images take `tag` or `digest`, `latest` fails the render,
+  `values.schema.json` closes the top level, and each release gets its own ServiceAccount, startup
+  probes, soft spread, a preStop sleep, the default PDB, job TTLs and an `/tmp` emptyDir. The smoke now
+  creates the product namespace `restricted` before applying anything, runs dependencies in
+  `<namespace>-deps` at `baseline`, and fails on PodSecurity events. Sent back once: the first version
+  labelled the namespace only after non-compliant dependencies were running. Open for C4: the smoke
+  applies `BAUKIT_SMOKE_POLICY_DIR` but does not install Kyverno itself, so the Kyverno half still
+  needs a smoke install of `deploy/platform/kyverno` plus the policy library in Enforce mode. Breaking
+  for product smokes: their dependency manifests now land in `<namespace>-deps`, so their Secrets must
+  point at `<svc>.<namespace>-deps.svc`.
+- 2026-11-14: Integration branch fix c9c106f8. V2 and V4 had added three `noqa` sites and pushed
+  `baukit check` past the suppression budget. The lint modules now run subprocesses through
+  `scripts/process_runner.py` and load `helm_yaml` with importlib, so `baukit check` is clean again.
+- 2026-11-14: O2 merged. New chart `deploy/observability-platform/` (baukit-platform-observability,
+  in release-train and version coherence) globs alerts, recording rules and dashboards into one object
+  per file, switched per component; an unknown component or a missing `runbookBaseUrl` fails the render.
+  Rule files carry a `RUNBOOK_BASE_URL/<slug>` token the template replaces, because `tpl` breaks on
+  Prometheus `{{ $labels }}`. Skeleton alert `BaukitPlatformTargetDown` joins `up == 0` to
+  `kube_namespace_labels{label_app_kubernetes_io_part_of="baukit-platform"}`; kube-state-metrics now
+  allowlists that namespace label. `check-rules.sh` takes pack dirs and runs promtool check, promtool
+  test and pint (`--fail-on warning`, `lint/pint.hcl`), and fails when a rule file has no test. The app
+  pack templates use the same glob (F-53). Metric lint in Python and Rust gained per-pack allowlists
+  (`catalog = false`) and stops counting LogQL stages; shared vectors in
+  `fixtures/observability/metric-references.json`. One per-site pint disable on `BaukitDeadMansSwitch`
+  (a heartbeat must always fire).
+- 2026-11-14: O6 merged. Both packs require `runbookBaseUrl` and replace a `RUNBOOK_BASE_URL/<slug>`
+  token; 15 runbooks (13 app, 2 platform) with Meaning, Impact, First checks, Fix, Escalation.
+  `alert-metadata` and `alert-runbook` are active, and slugs resolve per pack (`docs/runbooks/app` vs
+  `docs/runbooks/platform`), with tests for a missing file and a file in the wrong pack. From O4:
+  `BaukitDeadMansSwitch` deleted (Watchdog covers it), the template's `ApiHighErrorRatio` is
+  `severity: critical` with a description and a repo-relative runbook (`docs/runbooks/api-high-error-ratio.md`
+  ships in the product). Every new alert must ship its runbook in the same change.
+- 2026-11-14: FA1-FA3 merged. `deploy/platform/falco/`: chart 9.2.2, Falco 0.45.2 and falcosidekick
+  2.35.1 by digest, `modern_ebpf`, the k3s CRI socket, falcoctl off (the image ships rules and the
+  container plugin, and falcoctl would need internet egress), sidekick with Loki and Alertmanager
+  (`/api/v2/alerts`, min warning) outputs. `rules/baukit.rules.yaml` lands in `/etc/falco/rules.d` via a
+  ConfigMap, plus an optional `falco-overlay-rules` ConfigMap; `validate-rules.sh` runs `falco -V` in the
+  pinned image with `--network none` inside platform-validate, and a broken macro fails the step.
+  `validate.sh` now also passes `--api-versions monitoring.coreos.com/v1`, which renders the sidekick
+  ServiceMonitor (the only new monitor). Five alerts, promtool tests, `dashboards/falco.json`, five runbooks.
+  Live on k3d: rules loaded, the shell, unexpected-process and write-below-/etc rules fired with pod
+  metadata; sent back once to prove the runc exclusion on the token rule live (0 events at container
+  start, a real token read still fires). Idle footprint about 2 min after start: falco 255m/253Mi,
+  sidekick 1m/14Mi. Known limits: "unexpected process" means "not PID 1"; no Flux noise macro yet
+  (FA4 soak decides); network policies sit inline until N2's components land.
+- 2026-11-14: O4 merged except the kube-prometheus-stack `defaultRules` tuning (waits until D, N1 and N2
+  stop editing that file). 25 alerts in one file per component (flux 3, cert-manager 4, cnpg 6, traefik 2,
+  kyverno 4, observability 4, kured 2), each with a firing and a quiet promtool case and a runbook; metric
+  names traced to source at the pinned tags (sources in the O4 report), Traefik and Alloy names scraped
+  live. Deviations with evidence: Traefik v3.7.13 has no reload-failure metric (live scrape), so that
+  alert needs a LogQL rule and the pack's `loki-rules/` has no template yet (open, goes with O5); kured
+  1.23.0 exports only `kured_reboot_required`, so "blocked" means reboot required and the node cordoned
+  for 1h. Kyverno alerts use `kyverno_validating_policy_results_total` (CEL policies), and the enforced-
+  violation alert joins Policy Reporter's `policy_report_result` to policies seen in `Deny` mode. The Flux
+  alerts expect O3's kube-state-metrics config to emit `gotk_resource_info` with the flux2-monitoring-
+  example labels (`exported_namespace`, `name`, `ready`, `suspended`, `customresource_kind`).
+- 2026-11-14: O7 merged. Dashboards for flux, cert-manager, traefik, kyverno (Kyverno and Policy Reporter
+  rows) and a platform overview (`Baukit*` ALERTS by component, Ready state from `gotk_resource_info`, PSA
+  denials from `pod_security_evaluations_total`, `policy_report_result` failures). `cnpg.json` is the
+  upstream cloudnative-pg/grafana-dashboards dashboard at cececeb3 (cluster-v0.0.5, Apache-2.0), changed
+  only in datasource and uid; source and sha256 in the pack README. Its ConfigMap is about 252 KB, so it
+  needs server-side apply (Flux and Helm are fine, client-side `kubectl apply` is not).
+  `deploy/observability/lint/check-dashboards.py` checks structure in both packs inside `metric-names`
+  (15 tests); the metric lint already covers every panel, proven by an injected unknown metric failing it.
+  The Rust check accepts Grafana's `__expr__` datasource uid. Panels on controller_runtime metrics show
+  data once O3 scrapes the CNPG operator and Flux controllers.
+- 2026-11-14: Host sharing changed. Other projects on this host now share two heavy-run slots
+  (`/tmp/claude-heavy-slots/slot-{1,2}`). D9 and E1 now say the platform e2e holds only `k3d-full.lock` and
+  waits while both slots are taken; it no longer holds the android and browser locks, which blocked other
+  projects' gates for the whole run.
+- 2026-11-14: R7 merged. Both redis-ha containers start from `redis-ha.sh` (ConfigMap `redis-ha-scripts`,
+  POSIX sh, every redis-cli call bounded by `timeout 3 redis-cli -t 2`). A starting pod asks the peer
+  Sentinels for the master and joins it as a replica; only `redis-0` bootstraps, after three unanswered
+  rounds 5 s apart. If Sentinels name the pod itself, it waits up to 60 s for a failover and exits 1 when
+  they disagree. Sentinels monitor the master the local Redis chose, set `resolve-hostnames` and
+  `announce-hostnames`, and announce the headless FQDN; both containers have a 3-minute startup probe.
+  12 unittest cases (stubbed redis-cli) run in platform-validate. The chainsaw test
+  `e2e/tests/redis-ha/` (kill master, promotion, old master rejoins as replica, key on both) passed twice
+  on k3d, and a full StatefulSet delete came back with `redis-0` as master. Cold start is about 10 s slower.

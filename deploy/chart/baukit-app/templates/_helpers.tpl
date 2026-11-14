@@ -136,7 +136,7 @@ baukit.dev/process: {{ .process }}
 {{- end }}
 {{- $_ := set $overrides "HTTP__PORT" (toString $root.Values.api.ports.http) -}}
 {{- $_ := set $overrides "OPS__PORT" (toString $root.Values.api.ports.ops) -}}
-{{- $_ := set $overrides "SHUTDOWN__DRAIN_TIMEOUT" (toString $root.Values.api.terminationGracePeriodSeconds) -}}
+{{- $_ := set $overrides "SHUTDOWN__DRAIN_TIMEOUT" (include "baukit-app.apiDrainSeconds" $root) -}}
 {{- else if and (eq $process "worker") $root.Values.worker.ops.enabled }}
 {{- $_ := set $overrides "OPS__PORT" (toString $root.Values.worker.ops.port) -}}
 {{- $_ := set $overrides "SHUTDOWN__DRAIN_TIMEOUT" (toString $root.Values.worker.terminationGracePeriodSeconds) -}}
@@ -158,9 +158,73 @@ baukit.dev/process: {{ .process }}
 {{- end }}
 {{- end }}
 
-{{/* Render an image reference. */}}
+{{/* Render a pinned image reference from (dict "image" <values> "name" <values path>). */}}
 {{- define "baukit-app.image" -}}
-{{- printf "%s:%s" .repository (.tag | default "latest") -}}
+{{- $image := .image -}}
+{{- $repository := required (printf "%s.image.repository is required" .name) $image.repository -}}
+{{- $tag := toString (default "" $image.tag) -}}
+{{- $digest := toString (default "" $image.digest) -}}
+{{- if eq $tag "latest" -}}
+{{- fail (printf "%s.image.tag must not be latest; pin a release tag or set %s.image.digest" .name .name) -}}
+{{- end -}}
+{{- if $digest -}}
+{{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}
+{{- fail (printf "%s.image.digest must look like sha256:<64 hex characters>" .name) -}}
+{{- end -}}
+{{- printf "%s@%s" $repository $digest -}}
+{{- else if $tag -}}
+{{- printf "%s:%s" $repository $tag -}}
+{{- else -}}
+{{- fail (printf "%s.image.tag or %s.image.digest is required" .name .name) -}}
+{{- end -}}
+{{- end }}
+
+{{/* ServiceAccount used by every pod in the release. */}}
+{{- define "baukit-app.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create -}}
+{{- default (include "baukit-app.fullname" .) .Values.serviceAccount.name -}}
+{{- else -}}
+{{- required "serviceAccount.name is required when serviceAccount.create is false" .Values.serviceAccount.name -}}
+{{- end -}}
+{{- end }}
+
+{{/* Pod spec fields shared by every process: (dict "root" $ "process" <name>). */}}
+{{- define "baukit-app.podIdentity" -}}
+serviceAccountName: {{ include "baukit-app.serviceAccountName" .root }}
+automountServiceAccountToken: {{ .root.Values.serviceAccount.automountToken }}
+{{- end }}
+
+{{/* Soft node spread for a serving process: (dict "root" $ "process" <name>). */}}
+{{- define "baukit-app.topologySpread" -}}
+{{- $spread := .root.Values.topologySpread -}}
+topologySpreadConstraints:
+  - maxSkew: {{ $spread.maxSkew }}
+    topologyKey: {{ $spread.topologyKey }}
+    whenUnsatisfiable: {{ $spread.whenUnsatisfiable }}
+    labelSelector:
+      matchLabels:
+        {{- include "baukit-app.processSelectorLabels" . | nindent 8 }}
+{{- end }}
+
+{{/* Writable /tmp for read-only root filesystems. */}}
+{{- define "baukit-app.tmpVolumeMount" -}}
+- name: tmp
+  mountPath: /tmp
+{{- end }}
+
+{{- define "baukit-app.tmpVolume" -}}
+- name: tmp
+  emptyDir: {}
+{{- end }}
+
+{{/* Drain timeout left after the preStop sleep. */}}
+{{- define "baukit-app.apiDrainSeconds" -}}
+{{- $grace := int .Values.api.terminationGracePeriodSeconds -}}
+{{- $sleep := int .Values.api.preStopSleepSeconds -}}
+{{- if ge $sleep $grace -}}
+{{- fail "api.preStopSleepSeconds must be lower than api.terminationGracePeriodSeconds" -}}
+{{- end -}}
+{{- sub $grace $sleep -}}
 {{- end }}
 
 {{/* Render an IntOrString value, quoting percentages. */}}

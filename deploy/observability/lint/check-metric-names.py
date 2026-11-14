@@ -53,6 +53,7 @@ RECORD_NAME = re.compile(r"^\s*-?\s*record:\s*([A-Za-z_:][A-Za-z0-9_:]*)\s*$", r
 FORBIDDEN_PLURAL = re.compile(r"\bhttp_requests_duration_seconds(?:_[a-z]+)?\b")
 LOKI_SERVICE_NAME = re.compile(r"\{[^}\n]*\bservice_name\s*(?:=|!=|=~|!~)")
 STATUS_CLASS = re.compile(r"\bstatus\s*(?:=|!=|=~|!~)\s*[\"'](?:[1-5][xX]{2})[\"']")
+QUOTED = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`[^`]*`')
 PROMQL_KEYWORDS = {
     "and",
     "bool",
@@ -116,7 +117,7 @@ def lint_expression(
 
     references = metric_references(expression)
     if any("worker_job_" in metric for metric in references):
-        unquoted = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', " ", expression)
+        unquoted = QUOTED.sub(" ", expression)
         for labels in re.findall(
             r"\b(?:by|without|on|ignoring|group_left|group_right)\s*\(([^)]*)\)",
             unquoted,
@@ -129,10 +130,40 @@ def lint_expression(
             problems.append(f"{location}: unknown metric {metric!r}")
 
 
+def strip_log_pipelines(text: str) -> str:
+    """Blank LogQL pipeline stages: each `|` up to the next top-level `|` or unmatched `)`.
+
+    PromQL has no `|` operator, so this only removes LogQL parsers (json, logfmt, pattern,
+    regexp), formatters (line_format, label_format), unwrap and label filters after a parser.
+    """
+    kept: list[str] = []
+    index = 0
+    while index < len(text):
+        if text[index] != "|":
+            kept.append(text[index])
+            index += 1
+            continue
+        depth = 0
+        index += 1
+        while index < len(text):
+            character = text[index]
+            if character == "|" and depth == 0:
+                break
+            if character == ")":
+                if depth == 0:
+                    break
+                depth -= 1
+            elif character == "(":
+                depth += 1
+            index += 1
+        kept.append(" ")
+    return "".join(kept)
+
+
 def metric_references(expression: str) -> set[str]:
-    """Return metric identifiers while excluding functions and PromQL labels."""
-    references = set(METRIC_SELECTOR.findall(expression))
-    sanitized = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', " ", expression)
+    """Return metric identifiers while excluding functions, labels and LogQL stages."""
+    sanitized = strip_log_pipelines(QUOTED.sub(" ", expression))
+    references = set(METRIC_SELECTOR.findall(sanitized))
     sanitized = re.sub(r"\{[^}]*\}", " ", sanitized)
     sanitized = re.sub(r"\[[^]]*\]", " ", sanitized)
     sanitized = re.sub(
@@ -210,6 +241,12 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
         "the _bucket, _count, and _sum series; # starts a comment",
     )
     parser.add_argument(
+        "--no-catalog",
+        action="store_true",
+        help="allow only the allowlist, 'up' and local recording rules, not Baukit's "
+        "metric catalog (for packs over third-party metrics)",
+    )
+    parser.add_argument(
         "--rules",
         type=Path,
         action="append",
@@ -270,10 +307,15 @@ def read_rule_documents(paths: Sequence[Path], problems: list[str]) -> list[tupl
 
 
 def allowed_metric_names(
-    product_metrics: set[str], product_histograms: set[str], local_recordings: set[str]
+    product_metrics: set[str],
+    product_histograms: set[str],
+    local_recordings: set[str],
+    catalog: bool = True,
 ) -> set[str]:
-    exposed_metrics = set(SPEC_METRICS) | product_metrics
-    for histogram in HISTOGRAM_METRICS | product_histograms:
+    catalog_metrics = set(SPEC_METRICS) if catalog else set()
+    catalog_histograms = HISTOGRAM_METRICS if catalog else set()
+    exposed_metrics = catalog_metrics | product_metrics
+    for histogram in catalog_histograms | product_histograms:
         exposed_metrics.update(f"{histogram}{suffix}" for suffix in HISTOGRAM_SUFFIXES)
     return exposed_metrics | PROMETHEUS_BUILTINS | local_recordings
 
@@ -321,7 +363,9 @@ def main(argv: Sequence[str] = ()) -> int:
     local_recordings = {
         name for _, content in rule_documents for name in RECORD_NAME.findall(content)
     }
-    allowed_metrics = allowed_metric_names(product_metrics, product_histograms, local_recordings)
+    allowed_metrics = allowed_metric_names(
+        product_metrics, product_histograms, local_recordings, catalog=not arguments.no_catalog
+    )
 
     dashboard_paths = sorted((observability / "dashboards").glob("*.json"))
     lint_dashboards(dashboard_paths, allowed_metrics, problems)

@@ -221,20 +221,34 @@ def chart_values(path: Path) -> dict[str, str]:
     return values
 
 
-def check_charts(rust_version: str) -> int:
-    chart_count = 0
-    for path in sorted((ROOT / "deploy").glob("**/Chart.yaml")):
-        if ".local-state" in path.parts:
-            continue
+def chart_problems(root: Path, rust_version: str) -> tuple[int, list[str]]:
+    """Return the chart count and every chart off the train or not bumped by release-train.sh."""
+    train_script = (root / "scripts/release-train.sh").read_text()
+    problems = []
+    charts = [
+        path
+        for path in sorted((root / "deploy").glob("**/Chart.yaml"))
+        if ".local-state" not in path.parts
+    ]
+    for path in charts:
+        relative = path.relative_to(root)
         values = chart_values(path)
         chart_version = values.get("version", "")
         app_version = values.get("appVersion", "")
-        chart_count += 1
         if chart_version != rust_version or app_version != rust_version:
-            fail(
-                f"Rust is {rust_version}, but {path.relative_to(ROOT)} has "
+            problems.append(
+                f"Rust is {rust_version}, but {relative} has "
                 f"version {chart_version!r} and appVersion {app_version!r}"
             )
+        if str(relative) not in train_script:
+            problems.append(f"scripts/release-train.sh does not bump {relative}")
+    return len(charts), problems
+
+
+def check_charts(rust_version: str) -> int:
+    chart_count, problems = chart_problems(ROOT, rust_version)
+    if problems:
+        fail("; ".join(problems))
     return chart_count
 
 

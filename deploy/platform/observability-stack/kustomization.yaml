@@ -8,4 +8,5 @@ resources:
   - tempo.yaml
   - alloy.yaml
   - baukit-content.yaml
+  - baukit-platform-observability.yaml
 

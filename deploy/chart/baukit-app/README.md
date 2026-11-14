@@ -21,6 +21,12 @@ Place product settings under the alias in the wrapper's `values.yaml`. The repos
 helm template minimal-api . -f ../examples/minimal-api-values.yaml
 ```
 
+## Images
+
+Every image needs `image.tag` or `image.digest`. The chart has no default tag, and `latest` fails both the schema and the render. With `digest` set (`sha256:` plus 64 hex characters) the chart renders `repository@digest` and ignores `tag`. Generated products write the placeholder tag `0.0.0-unset`; the release pipeline replaces it with the built tag or sets the digest, for example `--set api.image.tag=$GIT_SHA`.
+
+`values.schema.json` describes every value. Unknown keys fail `helm lint`, `helm template` and `helm install`.
+
 ## Runtime contract
 
 For `product: minimal-api`, the chart normalizes the configuration prefix to `MINIMAL_API`. It injects `MINIMAL_API_ENVIRONMENT`, `OTEL_EXPORTER_OTLP_ENDPOINT` when configured, listener/drain values such as `MINIMAL_API__HTTP__PORT`, and every entry in `config.overrides` as `MINIMAL_API__<KEY>`. Override keys are suffixes, so `DATABASE__MAX_CONNECTIONS` becomes `MINIMAL_API__DATABASE__MAX_CONNECTIONS`.
@@ -56,7 +62,7 @@ api:
             port: 50051
 ```
 
-The defaults assume K3s Traefik in `kube-system`, Prometheus in `observability`, and CoreDNS in `kube-system`; products must adjust selectors and add database, OTLP, identity-provider, and external-service destinations.
+The defaults assume the Traefik base from `deploy/platform/traefik` (release `traefik` in namespace `traefik`), Prometheus in `observability`, and CoreDNS in `kube-system`; products must adjust selectors and add database, OTLP, identity-provider, and external-service destinations.
 
 Most CNIs can apply the pod-selected CoreDNS rule. K3s installations may enforce policy against the DNS Service IP before destination NAT, which prevents that selector from matching. Set `networkPolicy.dns.k3sCompatible=true` to add a destination-independent rule restricted to TCP/UDP port 53. This trades destination restriction for working DNS and is intentionally opt-in.
 
@@ -78,7 +84,12 @@ Most CNIs can apply the pod-selected CoreDNS rule. K3s installations may enforce
 | `containerSecurityContext.allowPrivilegeEscalation` | `false` | Prevent privilege escalation. |
 | `containerSecurityContext.readOnlyRootFilesystem` | `true` | Make each process root filesystem read-only. |
 | `containerSecurityContext.capabilities.drop` | `[ALL]` | Linux capabilities dropped from every process. |
-| `serviceAccount.automountToken` | `false` | Automount the namespace's default service-account token. |
+| `serviceAccount.create` | `true` | Create a ServiceAccount for the release; every pod uses it. It is a `pre-install,pre-upgrade` hook so the migration Job can use it, so `helm uninstall` leaves it behind. |
+| `serviceAccount.name` | `""` | ServiceAccount name. Empty uses the release full name; required when `create` is false. |
+| `serviceAccount.annotations` | `{}` | Annotations on the created ServiceAccount. |
+| `serviceAccount.automountToken` | `false` | Mount the service-account token into pods. |
+| `topologySpread.enabled` | `true` | Add a topology spread constraint to the API, worker and web pods. |
+| `topologySpread.maxSkew` / `topologyKey` / `whenUnsatisfiable` | `1` / `kubernetes.io/hostname` / `ScheduleAnyway` | Spread settings. The default is soft and never blocks scheduling. |
 | `config.envPrefix` | `""` | Explicit application config prefix; empty derives it from `product`. |
 | `config.otlpEndpoint` | `""` | Value for `OTEL_EXPORTER_OTLP_ENDPOINT`; omitted when empty. |
 | `config.overrides` | `{}` | Non-secret config suffix/value map rendered with the `<APP>__` prefix. |
@@ -86,6 +97,8 @@ Most CNIs can apply the pod-selected CoreDNS rule. K3s installations may enforce
 | `platform.receiverSecretRef.name` | `""` | Existing receiver HMAC Secret. Empty disables injection; only the API receives it. |
 | `platform.receiverSecretRef.key` | `receiver-secret` | Secret key injected as `<APP>__PLATFORM__RECEIVER_SECRET`. |
 | `platform.receiverSecretRef.previousKey` | `""` | Optional previous secret key injected as `<APP>__PLATFORM__PREVIOUS_RECEIVER_SECRET`. |
+
+Every application pod also mounts an `emptyDir` at `/tmp`, so libraries that write temp files keep working with a read-only root filesystem.
 
 The pod and container security-context maps can be replaced when an image needs a numeric `runAsUser`, writable volume mounts, or another seccomp policy; weakening them should be a deliberate product decision.
 
@@ -95,7 +108,7 @@ The pod and container security-context maps can be replaced when an image needs 
 |---|---:|---|
 | `api.replicas` | `1` | API replicas when HPA is disabled. |
 | `api.image.repository` | `ghcr.io/example/minimal-api` | API-only image repository. |
-| `api.image.tag` | `latest` | API image tag. Pin an immutable release tag or digest policy in production. |
+| `api.image.tag` / `api.image.digest` | `""` / `""` | API image tag or `sha256:` digest; one is required and `latest` is rejected. |
 | `api.image.pullPolicy` | `IfNotPresent` | API image pull policy. |
 | `api.command` / `api.args` | `[]` / `[]` | Optional container entrypoint and arguments. |
 | `api.env` | `[]` | Raw API container environment entries; use `secretKeyRef` rather than inline secret values. |
@@ -103,24 +116,27 @@ The pod and container security-context maps can be replaced when an image needs 
 | `api.networkPolicy.additionalIngress` | `[]` | Ingress rules admitted only to API pods. |
 | `api.networkPolicy.additionalEgress` | `[]` | Egress rules added only for API pods. |
 | `api.ports.http` / `api.ports.ops` | `8080` / `9090` | Public API and private operations listener ports. |
-| `api.terminationGracePeriodSeconds` | `30` | SIGTERM drain window; also injected as `SHUTDOWN__DRAIN_TIMEOUT`. |
+| `api.terminationGracePeriodSeconds` | `30` | Pod grace period. `SHUTDOWN__DRAIN_TIMEOUT` is this value minus `api.preStopSleepSeconds`. |
+| `api.preStopSleepSeconds` | `5` | `preStop` sleep that keeps the API serving while endpoints drop. Must be lower than the grace period. |
 | `api.strategy.maxUnavailable` / `api.strategy.maxSurge` | `0` / `1` | RollingUpdate availability controls. |
 | `api.resources.requests.cpu` / `memory` | `50m` / `64Mi` | Initial API resource requests. |
 | `api.resources.limits.cpu` / `memory` | `250m` / `128Mi` | Initial API resource limits. |
+| `api.startupProbe.enabled` | `true` | Probe ops `/healthz` until the process starts, before liveness takes over. |
+| `api.startupProbe.periodSeconds` / `timeoutSeconds` / `failureThreshold` | `5` / `2` / `30` | Startup timing; the default allows 150 s to boot. |
 | `api.livenessProbe.enabled` | `true` | Enable ops `/healthz` liveness probing. |
 | `api.livenessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `5` / `10` / `2` / `3` | Liveness timing and failure threshold. |
 | `api.readinessProbe.enabled` | `true` | Enable ops `/readyz` readiness probing. |
 | `api.readinessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `2` / `5` / `2` / `3` | Readiness timing and failure threshold. |
 | `api.nodeSelector` / `api.affinity` / `api.tolerations` | `{}` / `{}` / `[]` | API scheduling controls. |
-| `api.podDisruptionBudget.enabled` | `false` | Create a `policy/v1` PodDisruptionBudget that selects the API pods. |
-| `api.podDisruptionBudget.minAvailable` / `maxUnavailable` | `""` / `""` | Set exactly one, as an integer or a percentage such as `50%`. Setting both or neither fails rendering. |
+| `api.podDisruptionBudget.enabled` | `true` | Create a `policy/v1` PodDisruptionBudget for the API pods when `api.replicas > 1` or autoscaling is on. |
+| `api.podDisruptionBudget.minAvailable` / `maxUnavailable` | `""` / `""` | Set at most one, as an integer or a percentage such as `50%`. Neither means `maxUnavailable: 1`; both fail rendering. |
 
 ### Worker and release Jobs
 
 | Value | Default | Description |
 |---|---:|---|
 | `worker.enabled` / `worker.replicas` | `false` / `1` | Enable the optional worker Deployment and set replicas. |
-| `worker.image.repository` / `tag` / `pullPolicy` | `ghcr.io/example/minimal-worker` / `latest` / `IfNotPresent` | Worker-only image settings. |
+| `worker.image.repository` / `tag` / `digest` / `pullPolicy` | `ghcr.io/example/minimal-worker` / `""` / `""` / `IfNotPresent` | Worker-only image settings. |
 | `worker.command` / `worker.args` | `[]` / `[]` | Optional worker entrypoint and arguments. |
 | `worker.env` | `[]` | Raw worker container environment entries. |
 | `worker.volumes` / `worker.volumeMounts` | `[]` / `[]` | Worker-only pod volumes and matching mounts, such as an `emptyDir` scratch workspace. |
@@ -130,33 +146,37 @@ The pod and container security-context maps can be replaced when an image needs 
 | `worker.terminationGracePeriodSeconds` | `30` | Worker SIGTERM drain window and injected shutdown timeout. |
 | `worker.resources.requests.cpu` / `memory` | `50m` / `64Mi` | Initial worker requests. |
 | `worker.resources.limits.cpu` / `memory` | `250m` / `128Mi` | Initial worker limits. |
+| `worker.startupProbe.enabled` | `true` | Probe ops `/healthz` until the process starts, before liveness takes over. |
+| `worker.startupProbe.periodSeconds` / `timeoutSeconds` / `failureThreshold` | `5` / `2` / `30` | Startup timing; the default allows 150 s to boot. |
 | `worker.livenessProbe.enabled` | `true` | Probe worker `/healthz` when worker ops is enabled. |
 | `worker.livenessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `5` / `10` / `2` / `3` | Worker liveness settings. |
 | `worker.readinessProbe.enabled` | `true` | Probe worker `/readyz` when worker ops is enabled. |
 | `worker.readinessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `2` / `5` / `2` / `3` | Worker readiness settings. |
 | `worker.nodeSelector` / `worker.affinity` / `worker.tolerations` | `{}` / `{}` / `[]` | Worker scheduling controls. |
-| `worker.podDisruptionBudget.enabled` | `false` | Create a PodDisruptionBudget for the worker pods. It renders only when `worker.enabled` is true. |
-| `worker.podDisruptionBudget.minAvailable` / `maxUnavailable` | `""` / `""` | Set exactly one, as for the API budget. |
+| `worker.podDisruptionBudget.enabled` | `true` | Create a PodDisruptionBudget for the worker pods when the worker is enabled with `worker.replicas > 1`. |
+| `worker.podDisruptionBudget.minAvailable` / `maxUnavailable` | `""` / `""` | Set at most one, as for the API budget. |
 | `migration.enabled` | `true` | Create the `pre-install,pre-upgrade` migration hook Job. |
-| `migration.image.repository` / `tag` / `pullPolicy` | `ghcr.io/example/minimal-migrate` / `latest` / `IfNotPresent` | Migrator-only image settings. |
+| `migration.image.repository` / `tag` / `digest` / `pullPolicy` | `ghcr.io/example/minimal-migrate` / `""` / `""` / `IfNotPresent` | Migrator-only image settings. |
 | `migration.command` / `migration.args` | `[/app/migrate]` / `[]` | Migrator entrypoint and arguments. |
 | `migration.env` | `[]` | Raw migration container environment entries. |
 | `migration.volumes` / `migration.volumeMounts` | `[]` / `[]` | Migration Job pod volumes and matching mounts. |
 | `migration.networkPolicy.additionalEgress` | `[]` | Egress rules selecting migration pods. On an initial Helm install, hook ordering may require namespace-level policy to already admit migration dependencies. |
 | `migration.backoffLimit` / `migration.activeDeadlineSeconds` | `2` / `600` | Migration retry and deadline bounds. |
+| `migration.ttlSecondsAfterFinished` | `86400` | Delete a finished migration Job after a day. |
 | `migration.resources.requests.cpu` / `memory` | `50m` / `64Mi` | Migration requests. |
 | `migration.resources.limits.cpu` / `memory` | `250m` / `128Mi` | Migration limits. |
 | `seed.enabled` / `seed.allowProduction` | `false` / `false` | Enable post-release seeding; production also requires an explicit safety override. |
-| `seed.image.repository` / `tag` / `pullPolicy` | `ghcr.io/example/minimal-seed` / `latest` / `IfNotPresent` | Seed-only image settings. |
+| `seed.image.repository` / `tag` / `digest` / `pullPolicy` | `ghcr.io/example/minimal-seed` / `""` / `""` / `IfNotPresent` | Seed-only image settings. |
 | `seed.command` / `seed.args` | `[/app/seed]` / `[]` | Seed entrypoint and arguments. |
 | `seed.env` | `[]` | Raw seed container environment entries. |
 | `seed.volumes` / `seed.volumeMounts` | `[]` / `[]` | Seed Job pod volumes and matching mounts. |
 | `seed.networkPolicy.additionalEgress` | `[]` | Egress rules added only for seed pods. |
 | `seed.backoffLimit` / `seed.activeDeadlineSeconds` | `1` / `600` | Seed retry and deadline bounds. |
+| `seed.ttlSecondsAfterFinished` | `86400` | Delete a finished seed Job after a day. |
 | `seed.resources.requests.cpu` / `memory` | `50m` / `64Mi` | Seed requests. |
 | `seed.resources.limits.cpu` / `memory` | `250m` / `128Mi` | Seed limits. |
 
-A budget limits voluntary evictions such as node drains. It does not stop a rolling update, which `api.strategy` controls. With two replicas, `minAvailable: 1` lets a drain evict one pod at a time. A `minAvailable` equal to the replica count blocks every drain, so leave room below it. The API budget works with the HPA because it counts the pods that currently match its selector.
+A budget limits voluntary evictions such as node drains. It does not stop a rolling update, which `api.strategy` controls. A single replica gets no budget, because any budget on one pod either blocks every drain or protects nothing. With two replicas, `minAvailable: 1` lets a drain evict one pod at a time. A `minAvailable` equal to the replica count blocks every drain, so leave room below it. The API budget works with the HPA because it counts the pods that currently match its selector.
 
 Migration uses `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`, so completed release Jobs do not accumulate while failed Jobs remain inspectable. Seed uses a `post-install,post-upgrade` hook and refuses to render in production unless both seed flags are explicitly true.
 
@@ -166,7 +186,7 @@ Migration uses `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`
 |---|---:|---|
 | `redis.enabled` | `false` | Create non-persistent Redis for expendable product state. |
 | `redis.replicas` | `1` | `1` creates a Deployment; odd values `>= 3` create Redis + Sentinel pods in a StatefulSet. `2` and even values fail rendering. |
-| `redis.image.repository` / `tag` / `pullPolicy` | `redis` / `8.10.2-alpine` / `IfNotPresent` | Redis image settings; the default tag is an exact Redis 8 Alpine patch release. |
+| `redis.image.repository` / `tag` / `digest` / `pullPolicy` | `redis` / `8.10.2-alpine` / `""` / `IfNotPresent` | Redis image settings; the default tag is an exact Redis 8 Alpine patch release. |
 | `redis.resources.requests.cpu` / `memory` | `10m` / `16Mi` | Minimal Redis resource requests for expendable rate-limit state. |
 | `redis.resources.limits.cpu` / `memory` | `100m` / `64Mi` | Redis resource limits. |
 | `redis.livenessProbe.*` | `5s` initial delay, `10s` period, `2s` timeout, `3` failures | `redis-cli ping` liveness settings. |
@@ -205,8 +225,8 @@ Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops a
 | Value | Default | Description |
 |---|---:|---|
 | `networkPolicy.enabled` | `true` | Create default-deny and explicit allow policies. |
-| `networkPolicy.ingressController.namespaceSelector` | `kube-system` | Namespace selector for the ingress controller. |
-| `networkPolicy.ingressController.podSelector` | `app.kubernetes.io/name=traefik` | Traefik pod selector allowed to the API port. |
+| `networkPolicy.ingressController.namespaceSelector` | `traefik` | Namespace selector for the ingress controller. |
+| `networkPolicy.ingressController.podSelector` | `app.kubernetes.io/name=traefik`, `app.kubernetes.io/instance=traefik-traefik` | Traefik pod selector allowed to the API and web ports. |
 | `networkPolicy.prometheus.namespaceSelector` | `observability` | Namespace selector for metrics scrapers. |
 | `networkPolicy.prometheus.podSelector` | `app.kubernetes.io/name=prometheus` | Scraper pod selector allowed to ops ports. |
 | `networkPolicy.dns.namespaceSelector` | `kube-system` | Namespace selector for DNS. |
@@ -238,10 +258,11 @@ issuer. Serve web and API on one registrable domain (ADR 0006 section 8).
 ## Local validation
 
 ```sh
-helm lint .
-helm template default .
+helm lint --strict . -f tests/images-values.yaml
+helm template default . -f tests/images-values.yaml
 helm template example . -f ../examples/minimal-api-values.yaml
 helm template all-options . -f tests/all-options-values.yaml
+python3 -m unittest discover -s ../../../scripts -p 'test_chart_*.py'
 ```
 
 ## Remote MCP

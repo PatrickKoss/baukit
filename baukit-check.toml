@@ -38,3 +38,10 @@ nolint = 0
 [observability]
 dashboards = ["deploy/observability/dashboards"]
 rules = ["deploy/observability/alerts", "deploy/observability/recording-rules"]
+
+# The platform pack queries third-party metrics only, from its exact allowlist.
+[[observability.packs]]
+dashboards = ["deploy/observability-platform/dashboards"]
+rules = ["deploy/observability-platform/alerts", "deploy/observability-platform/recording-rules"]
+metrics = ["deploy/observability-platform/metrics.txt"]
+catalog = false

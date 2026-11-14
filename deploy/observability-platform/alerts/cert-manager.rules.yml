@@ -1,0 +1,62 @@
+groups:
+  - name: baukit-cert-manager
+    rules:
+      - alert: BaukitCertManagerCertificateExpiringSoon
+        expr: |
+          (
+            max by (namespace, name) (certmanager_certificate_expiration_timestamp_seconds) - time()
+          ) < 21 * 86400
+        for: 1h
+        labels:
+          severity: warning
+          component: cert-manager
+        annotations:
+          summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in under 21 days
+          description: >-
+            Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in
+            {{ $value | humanizeDuration }}. cert-manager renews at two thirds of the lifetime, so
+            renewal is already overdue.
+          runbook_url: RUNBOOK_BASE_URL/cert-manager-certificate-expiring-soon
+      - alert: BaukitCertManagerCertificateExpiryCritical
+        expr: |
+          (
+            max by (namespace, name) (certmanager_certificate_expiration_timestamp_seconds) - time()
+          ) < 7 * 86400
+        for: 10m
+        labels:
+          severity: critical
+          component: cert-manager
+        annotations:
+          summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in under 7 days
+          description: >-
+            Certificate {{ $labels.namespace }}/{{ $labels.name }} expires in
+            {{ $value | humanizeDuration }}. Clients start failing TLS when it does.
+          runbook_url: RUNBOOK_BASE_URL/cert-manager-certificate-expiry-critical
+      - alert: BaukitCertManagerCertificateNotReady
+        expr: |
+          max by (namespace, name) (certmanager_certificate_ready_status{condition=~"False|Unknown"}) == 1
+        for: 10m
+        labels:
+          severity: warning
+          component: cert-manager
+        annotations:
+          summary: Certificate {{ $labels.namespace }}/{{ $labels.name }} is not Ready
+          description: >-
+            Certificate {{ $labels.namespace }}/{{ $labels.name }} has not been Ready for 10 minutes.
+            Its Secret is missing, stale or does not match the spec.
+          runbook_url: RUNBOOK_BASE_URL/cert-manager-certificate-not-ready
+      - alert: BaukitCertManagerAcmeRequestErrors
+        expr: |
+          sum by (host, status) (
+            increase(certmanager_http_acme_client_request_count{status=~"429|5.."}[15m])
+          ) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: cert-manager
+        annotations:
+          summary: ACME server {{ $labels.host }} answers cert-manager with HTTP {{ $labels.status }}
+          description: >-
+            cert-manager got {{ $value }} HTTP {{ $labels.status }} responses from {{ $labels.host }}
+            in 15 minutes, for 15 minutes. Issuance and renewal stall while this lasts.
+          runbook_url: RUNBOOK_BASE_URL/cert-manager-acme-request-errors

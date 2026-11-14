@@ -41,7 +41,7 @@ tests:
             exp_annotations:
               summary: Worker failure rate is high
               description: More than 10% of worker runs are failing for job kind failing in fixture-worker.
-              runbook_url: https://runbooks.example.invalid/baukit/worker-failures
+              runbook_url: RUNBOOK_BASE_URL/worker-failure-rate-high
       - eval_time: 5m
         alertname: BaukitWorkerRetryStorm
         exp_alerts: []
@@ -58,4 +58,4 @@ tests:
             exp_annotations:
               summary: Worker retries are elevated
               description: Worker retry throughput exceeds one retry per second for job kind failing in fixture-worker.
-              runbook_url: https://runbooks.example.invalid/baukit/worker-retry-storm
+              runbook_url: RUNBOOK_BASE_URL/worker-retry-storm

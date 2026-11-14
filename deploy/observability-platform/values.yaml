@@ -1,0 +1,32 @@
+nameOverride: ""
+fullnameOverride: ""
+
+# Required. Alert runbook_url annotations become <runbookBaseUrl>/<slug>.
+runbookBaseUrl: ""
+
+# One switch per component. A rule or dashboard file belongs to the component named by the
+# first dot-separated part of its file name (alerts/platform.rules.yml -> platform). A file
+# whose component is missing here fails the render.
+components:
+  platform: true
+  falco: true
+  flux: true
+  cert-manager: true
+  cnpg: true
+  traefik: true
+  kyverno: true
+  observability: true
+  kured: true
+
+prometheusRule:
+  labels: {}
+  annotations: {}
+
+dashboards:
+  labels:
+    grafana_dashboard: "1"
+  annotations: {}
+  # Grafana's sidecar puts each dashboard in <folderRoot>/<component> when its
+  # folderAnnotation is set to this key.
+  folderAnnotation: k8s-sidecar-target-directory
+  folderRoot: /tmp/dashboards/baukit-platform
