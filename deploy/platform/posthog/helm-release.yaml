@@ -29,6 +29,9 @@ spec:
         value: us-east-1
       - name: AWS_DEFAULT_REGION
         value: us-east-1
+      # PostHog 1.43.0 caps PostgreSQL at 14.1.0; 14.25 only adds patch releases on the same major.
+      - name: SKIP_SERVICE_VERSION_REQUIREMENTS
+        value: "1"
     siteUrl: http://posthog.invalid
     image:
       repository: posthog/posthog

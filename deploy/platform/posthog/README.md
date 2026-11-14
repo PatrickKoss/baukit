@@ -8,8 +8,7 @@ chart references it.
 The application renderer is the final published PostHog Kubernetes chart,
 `30.46.0` (PostHog `1.43.0`). PostHog ended Kubernetes support in 2023, so the
 chart is treated as a pinned renderer rather than an upgrade stream. The
-PostHog, ClickHouse 22.8.21.38, PostgreSQL 14.25, and Redis 6.2.24 (each inside
-PostHog 1.43.0's compatibility ranges),
+PostHog, ClickHouse 22.8.21.38, PostgreSQL 14.25, and Redis 6.2.24,
 Redpanda, ZooKeeper, and BusyBox images
 are pinned by both version and digest. The chart's
 bundled PostgreSQL, Redis, Kafka, ZooKeeper, ingress controller, cert-manager,
@@ -49,6 +48,10 @@ The chart uses external S3 storage at
 its bundled object store by default. PostHog 1.43.0's plugin client forces
 path-style addressing, and its Python client uses the custom endpoint with
 Boto's automatic path-style selection. Session recording remains disabled.
+
+PostHog 1.43.0 refuses PostgreSQL above 14.1.0. 14.25 only adds patch releases
+on the same major, so the release sets `SKIP_SERVICE_VERSION_REQUIREMENTS=1`.
+ClickHouse and Redis sit inside its ranges.
 
 ## Network fence
 
