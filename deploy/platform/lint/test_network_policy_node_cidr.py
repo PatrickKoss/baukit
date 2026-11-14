@@ -3,10 +3,11 @@ from __future__ import annotations
 import ipaddress
 import os
 import re
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+import helm_yaml
 
 PLATFORM = Path(__file__).resolve().parent.parent
 KUSTOMIZE = PLATFORM.parent.parent / ".tools/bin/kustomize"
@@ -18,12 +19,9 @@ NODE_CIDR_LABEL = "baukit.dev/node-cidr-peer"
 OVERLAYS = [PLATFORM / "overlays/everything", *sorted(LOCAL_COMPONENTS.iterdir())]
 
 
-def build(path: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 -- argv is the pinned kustomize and a repo path, no shell
-        [str(KUSTOMIZE), "build", str(path)],
-        capture_output=True,
-        text=True,
-        check=False,
+def build(path: Path):
+    return helm_yaml.process_runner.run_process(
+        [str(KUSTOMIZE), "build", str(path)], capture_output=True, text=True
     )
 
 
