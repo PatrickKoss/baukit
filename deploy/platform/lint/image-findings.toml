@@ -430,31 +430,36 @@ ids = [
   "CVE-2026-97031",
 ]
 
-[images."postgres:14.1-alpine@sha256:578ca5c8452c08a4e0f5e65b55dce5e1812fe63c8fee40ea837641031598e51e"]
+[images."postgres:14.25-alpine@sha256:14078c4aa0db8e2e8492866138cafd796fc39afd5ecb5b1c6f26a912b07529f5"]
 expires = 2026-11-28
-reason = "bump pending in SC2: 14.25-alpine fixes all 21"
+reason = "upstream not rebuilt: gosu in the newest 14-alpine is built with an old Go stdlib; recheck in SC2"
 ids = [
-  "CVE-2018-25032",
-  "CVE-2021-30560",
-  "CVE-2021-3520",
-  "CVE-2022-0778",
-  "CVE-2022-1271",
-  "CVE-2022-1304",
-  "CVE-2022-2309",
-  "CVE-2022-23308",
-  "CVE-2022-24407",
-  "CVE-2022-28391",
-  "CVE-2022-29155",
-  "CVE-2022-29458",
-  "CVE-2022-37434",
-  "CVE-2022-40303",
-  "CVE-2022-40304",
-  "CVE-2022-42898",
-  "CVE-2022-4450",
-  "CVE-2023-0215",
-  "CVE-2023-0286",
-  "CVE-2023-0464",
-  "CVE-2023-29491",
+  "CVE-2025-61726",
+  "CVE-2025-61729",
+  "CVE-2025-68121",
+  "CVE-2026-111943",
+  "CVE-2026-25679",
+  "CVE-2026-27145",
+  "CVE-2026-32280",
+  "CVE-2026-32281",
+  "CVE-2026-32283",
+  "CVE-2026-33811",
+  "CVE-2026-33814",
+  "CVE-2026-33818",
+  "CVE-2026-39820",
+  "CVE-2026-39821",
+  "CVE-2026-39822",
+  "CVE-2026-39836",
+  "CVE-2026-42499",
+  "CVE-2026-42504",
+  "CVE-2026-56853",
+  "CVE-2026-56858",
+  "CVE-2026-56859",
+  "CVE-2026-56860",
+  "CVE-2026-56862",
+  "CVE-2026-78667",
+  "CVE-2026-78669",
+  "CVE-2026-97031",
 ]
 
 [images."posthog/posthog@sha256:74441a9fa04a5af78bf76a5af909f88592033c03ce6f1e14f343cd53d0266827"]

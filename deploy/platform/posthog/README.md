@@ -8,8 +8,7 @@ chart references it.
 The application renderer is the final published PostHog Kubernetes chart,
 `30.46.0` (PostHog `1.43.0`). PostHog ended Kubernetes support in 2023, so the
 chart is treated as a pinned renderer rather than an upgrade stream. The
-PostHog, ClickHouse 22.8.21.38, PostgreSQL 14.1, and Redis 6.2.24 (each inside
-PostHog 1.43.0's compatibility ranges),
+PostHog, ClickHouse 22.8.21.38, PostgreSQL 14.25, and Redis 6.2.24,
 Redpanda, ZooKeeper, and BusyBox images
 are pinned by both version and digest. The chart's
 bundled PostgreSQL, Redis, Kafka, ZooKeeper, ingress controller, cert-manager,
@@ -49,6 +48,41 @@ The chart uses external S3 storage at
 its bundled object store by default. PostHog 1.43.0's plugin client forces
 path-style addressing, and its Python client uses the custom endpoint with
 Boto's automatic path-style selection. Session recording remains disabled.
+
+PostHog 1.43.0 refuses PostgreSQL above 14.1.0. 14.25 only adds patch releases
+on the same major, so the release sets `SKIP_SERVICE_VERSION_REQUIREMENTS=1`.
+ClickHouse and Redis sit inside its ranges.
+
+## Network fence
+
+The namespace starts from the shared `default-deny` and `allow-dns-egress`
+components. `network-policy.yaml` then opens only these pairs:
+
+- Traefik to `posthog-web` and `posthog-events` on 8000;
+- PostHog app pods to PostgreSQL 5432, Redis 6379, Redpanda 9092, ClickHouse
+  8123 and 9000, and RustFS in namespace `postgres` on 9000;
+- ClickHouse to Redpanda 9092 and ZooKeeper 2181;
+- the plugin server to public addresses on 443, for plugin HTTP calls.
+
+Everything else in or out of the namespace is denied, including traffic
+between the dependencies that the pairs above do not name.
+
+## Pod Security gaps
+
+Every dependency in `dependencies.yaml` meets `restricted`. The chart
+workloads do not, and the pinned chart has no values to fix them. These
+containers set no `runAsNonRoot`, `allowPrivilegeEscalation: false`,
+`capabilities.drop: [ALL]` or seccomp profile. They pass `baseline`, since nothing
+runs privileged or on host namespaces, but fail `restricted`:
+
+- `posthog-web`: `wait-for-service-dependencies`, `wait-for-migrations`, `posthog-web`;
+- `posthog-events`: `wait-for-service-dependencies`, `posthog-events`;
+- `posthog-plugins`: `wait-for-service-dependencies`, `wait-for-migrations`, `posthog-plugins`;
+- migrate Job: `wait-for-service-dependencies`, `migrate-job`;
+- Grafana annotation hook Job: `grafana-annotation-job-post`.
+
+Closing them needs post-render patches on the HelmRelease; until then the
+namespace carries no `restricted` enforce label.
 
 ## Overlay contract
 
