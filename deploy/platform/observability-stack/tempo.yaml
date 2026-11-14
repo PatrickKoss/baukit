@@ -47,6 +47,11 @@ spec:
           memory: 1Gi
       # Traces retention budget (§8.5): the single source of truth.
       retention: 168h
+      # Sized to the 10Gi PVC; see the README storage section.
+      ingester:
+        max_block_bytes: 268435456
+      extraArgs:
+        compactor.compaction.compaction.max-block-bytes: "1073741824"
       storage:
         trace:
           backend: local

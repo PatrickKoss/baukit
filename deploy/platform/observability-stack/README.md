@@ -57,6 +57,46 @@ content release depends on the Prometheus stack.
 No domain, e-mail address, token, credential, bucket, endpoint, or user identity
 is stored in this base.
 
+## Storage limits
+
+Every store has a time retention and a cap sized to its PVC. An overlay that
+changes a PVC size changes the matching cap in the same patch.
+
+Prometheus deletes blocks by size once `retentionSize` is reached, so it never
+fills its PVC. `retentionSize` is about 85% of the PVC in Prometheus base-2
+units: `25GB` for the 30 Gi base, `1740MB` for the 2 Gi local overlay.
+`deploy/platform/lint/check_retention_size.py` builds every base and overlay in
+`validate.sh` and fails when `retentionSize` is missing or above 90% of the PVC.
+`BaukitPrometheusStorageNearRetentionSize` fires at 90% of `retentionSize`.
+
+Loki and Tempo have no size-based retention. Their caps are time retention plus
+bounded working space. `KubePersistentVolumeFillingUp` from the
+kube-prometheus-stack defaults fires as a warning above 85% used when the volume
+will fill within four days, and as critical above 97% used.
+`deploy/observability-platform/tests/kubernetes-storage.test.yml` tests that
+upstream rule, and `deploy/platform/lint/check_upstream_rules.py` fails when the
+rendered chart's rule drifts from the copy the test loads.
+
+Loki deletes chunks older than `retention_period` (336h base, 48h local)
+through the compactor: `retention_enabled: true`, delete requests in the object
+store, and the working directory `/var/loki/compactor` on the PVC. The 20 Gi
+base fits 14 days while stored chunks and index average below 17 GiB / 14 days
+= 1.2 GiB per day, about 14 KiB/s after compression. The local overlay writes
+chunks to RustFS, so its 2 Gi Loki PVC holds only the WAL, the TSDB index cache
+and the compactor working directory. Its 48 hours of chunks share the RustFS
+PVC with the Barman backups.
+
+Tempo deletes blocks older than `block_retention` (168h base, 48h local). The
+ingester cuts a block at `ingester.max_block_bytes` (256 MiB base, 64 MiB local)
+and the compactor stops growing a block at
+`compactor.compaction.max_block_bytes` (1 GiB base, 200 MiB local), so a
+compaction needs at most twice that as transient space. On the 10 Gi base that
+leaves 10 GiB - 2 x 1 GiB - 2 x 256 MiB = 7.5 GiB for blocks, which fits 7 days
+below 1.07 GiB per day (about 12.7 KiB/s). On the 2 Gi local PVC it leaves
+2048 - 400 - 128 = 1520 MiB, which fits 48 hours below 760 MiB per day (about
+9 KiB/s). `local-footprint.md` records no log or trace ingest rates, so these
+are budgets, not measurements.
+
 ## Signal ownership
 
 There is one owner per signal. Alloy collects **logs only** from the K3s
