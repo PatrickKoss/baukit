@@ -239,7 +239,7 @@ spec:
   ingress:
     {{- toYaml . | nindent 4 }}
 {{- end }}
-{{ with .Values.api.networkPolicy.additionalEgress }}
+{{- with .Values.api.networkPolicy.additionalEgress }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

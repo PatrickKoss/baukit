@@ -47,7 +47,7 @@ def deny_all(namespace_name: str, types: list[str]) -> cc.Resource:
     )
 
 
-def alert(name: str, **overrides) -> cc.Alert:
+def alert(name: str, pack: str = "platform", **overrides) -> cc.Alert:
     rule = {
         "alert": name,
         "labels": {"severity": "warning"},
@@ -58,7 +58,7 @@ def alert(name: str, **overrides) -> cc.Alert:
         },
     }
     rule.update(overrides)
-    return cc.Alert("pack.yml", rule)
+    return cc.Alert("pack.yml", rule, pack)
 
 
 class PsaLabelsTest(unittest.TestCase):
@@ -183,7 +183,7 @@ class MetricsEnabledTest(unittest.TestCase):
 
 class AlertRulesTest(unittest.TestCase):
     def test_complete_alert_passes(self) -> None:
-        ctx = context(alerts=[alert("Ok")], fired_alerts={"Ok"}, runbook_slugs={"ok"})
+        ctx = context(alerts=[alert("Ok")], fired_alerts={"Ok"}, runbook_slugs={"platform/ok"})
         for rule in ("alert-metadata", "alert-runbook", "alert-tested"):
             self.assertEqual(violations(rule, ctx), [], rule)
 
@@ -195,9 +195,20 @@ class AlertRulesTest(unittest.TestCase):
 
     def test_runbook_slug_without_file_fails(self) -> None:
         found = violations(
-            "alert-runbook", context(alerts=[alert("Gone")], runbook_slugs={"other"})
+            "alert-runbook", context(alerts=[alert("Gone")], runbook_slugs={"platform/other"})
         )
         self.assertIn("'gone'", found[0])
+
+    def test_runbook_in_the_other_pack_does_not_count(self) -> None:
+        ctx = context(alerts=[alert("Same", pack="app")], runbook_slugs={"platform/same"})
+        found = violations("alert-runbook", ctx)
+        self.assertIn("docs/runbooks/app/same.md", found[0])
+        ctx = context(alerts=[alert("Same", pack="app")], runbook_slugs={"app/same"})
+        self.assertEqual(violations("alert-runbook", ctx), [])
+
+    def test_pack_follows_the_chart_directory(self) -> None:
+        self.assertEqual(cc.pack_of(Path("deploy/observability/alerts/a.yml")), "app")
+        self.assertEqual(cc.pack_of(Path("deploy/observability-platform/alerts/a.yml")), "platform")
 
     def test_alert_without_firing_test_fails(self) -> None:
         found = violations("alert-tested", context(alerts=[alert("Quiet")], fired_alerts=set()))
@@ -487,7 +498,9 @@ tests:
 
 
 class MainTest(unittest.TestCase):
-    def run_main(self, budget: int, values: str = "replicas: 1\n") -> tuple[int, str, str]:
+    def run_main(
+        self, budget: int, values: str = "replicas: 1\n", runbook: str = "app/app-down.md"
+    ) -> tuple[int, str, str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             rendered = root / "rendered"
@@ -500,8 +513,8 @@ class MainTest(unittest.TestCase):
             (root / "deploy/observability/alerts/app.yml").write_text(ALERT_PACK)
             (root / "deploy/observability/tests").mkdir(parents=True)
             (root / "deploy/observability/tests/app.test.yml").write_text(ALERT_TEST)
-            (root / "docs/runbooks/app").mkdir(parents=True)
-            (root / "docs/runbooks/app/app-down.md").write_text("# App down\n")
+            (root / "docs/runbooks" / runbook).parent.mkdir(parents=True)
+            (root / "docs/runbooks" / runbook).write_text("# App down\n")
             (root / "conventions.toml").write_text(textwrap.dedent(CONFIG))
             (root / "budget.toml").write_text(f"policy_exceptions = {budget}\n")
             stdout, stderr = io.StringIO(), io.StringIO()
@@ -542,6 +555,12 @@ class MainTest(unittest.TestCase):
         code, _, stderr = self.run_main(budget=1, values=values)
         self.assertEqual(code, 1)
         self.assertIn("[metrics-enabled]", stderr)
+
+    def test_app_alert_with_only_a_platform_runbook_fails(self) -> None:
+        code, _, stderr = self.run_main(budget=1, runbook="platform/app-down.md")
+        self.assertEqual(code, 1)
+        self.assertIn("[alert-runbook]", stderr)
+        self.assertIn("docs/runbooks/app/app-down.md", stderr)
 
     def test_one_exception_over_budget_fails(self) -> None:
         code, _, stderr = self.run_main(budget=0)

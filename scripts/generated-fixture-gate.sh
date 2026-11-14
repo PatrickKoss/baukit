@@ -56,6 +56,8 @@ for flavor in "${flavors[@]}"; do
         cargo clippy --manifest-path "$fixture/backend/Cargo.toml" --all-targets -- -D warnings
         cargo test --manifest-path "$fixture/backend/Cargo.toml" -- --include-ignored
         cargo test --manifest-path "$fixture/backend/Cargo.toml" -p "$name-bin" --test openapi_drift
+        helm lint --strict deploy/chart/baukit-app -f "$fixture/deploy/values.yaml"
+        helm template "$name" deploy/chart/baukit-app -f "$fixture/deploy/values.yaml" >/dev/null
     fi
     if [[ "$flavor" == platform* ]]; then
         cp "$fixture/generated/openapi.d.ts" "$fixture_parent/openapi-before.d.ts"

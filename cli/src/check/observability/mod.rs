@@ -10,7 +10,11 @@ use std::{
 
 use anyhow::{Context, Result};
 
-use super::{CheckContext, Finding, Rule, config::ObservabilityConfig, relative, walk};
+use super::{
+    CheckContext, Finding, Rule,
+    config::{ObservabilityConfig, ObservabilityPack},
+    relative, walk,
+};
 use promql::{Patterns, allowed_metric_names, base_metric};
 use sources::{
     EmittedMetric, MetricKind, MetricScanner, is_test_file, naming_problems, parse_metric_list,
@@ -36,13 +40,30 @@ impl Rule for Observability {
                 "not configured; add an [observability] table to check dashboards and rules",
             )]);
         };
-        Check::new(context.root, config)?.run()
+        let mut findings = Check::new(context.root, config, true)?.run()?;
+        for pack in &config.packs {
+            let pack_config = pack_config(pack, config);
+            findings.extend(Check::new(context.root, &pack_config, pack.catalog)?.run()?);
+        }
+        Ok(findings)
+    }
+}
+
+/// A pack as a configuration without sources, sharing the product's datasource uids.
+fn pack_config(pack: &ObservabilityPack, product: &ObservabilityConfig) -> ObservabilityConfig {
+    ObservabilityConfig {
+        dashboards: pack.dashboards.clone(),
+        rules: pack.rules.clone(),
+        metrics: pack.metrics.clone(),
+        datasource_uids: product.datasource_uids.clone(),
+        ..ObservabilityConfig::default()
     }
 }
 
 struct Check<'a> {
     root: &'a Path,
     config: &'a ObservabilityConfig,
+    catalog: bool,
     patterns: Patterns,
     findings: Vec<Finding>,
 }
@@ -54,10 +75,11 @@ struct RuleFile {
 }
 
 impl<'a> Check<'a> {
-    fn new(root: &'a Path, config: &'a ObservabilityConfig) -> Result<Self> {
+    fn new(root: &'a Path, config: &'a ObservabilityConfig, catalog: bool) -> Result<Self> {
         Ok(Self {
             root,
             config,
+            catalog,
             patterns: Patterns::new()?,
             findings: Vec::new(),
         })
@@ -83,6 +105,7 @@ impl<'a> Check<'a> {
                 .map(|(name, _)| name.as_str()),
         );
         let allowed = allowed_metric_names(
+            self.catalog,
             product_names,
             histograms,
             recordings.iter().map(String::as_str),

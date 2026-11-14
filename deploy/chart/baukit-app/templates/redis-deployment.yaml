@@ -33,7 +33,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      {{- include "baukit-app.podIdentity" (dict "root" . "process" "redis") | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 999
@@ -48,7 +48,7 @@ spec:
       {{- end }}
       containers:
         - name: redis
-          image: {{ include "baukit-app.image" .Values.redis.image | quote }}
+          image: {{ include "baukit-app.image" (dict "image" .Values.redis.image "name" "redis") | quote }}
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
@@ -123,7 +123,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      {{- include "baukit-app.podIdentity" (dict "root" . "process" "redis") | nindent 6 }}
       securityContext:
         runAsNonRoot: true
         runAsUser: 999
@@ -138,7 +138,7 @@ spec:
       {{- end }}
       containers:
         - name: redis
-          image: {{ include "baukit-app.image" .Values.redis.image | quote }}
+          image: {{ include "baukit-app.image" (dict "image" .Values.redis.image "name" "redis") | quote }}
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false
@@ -187,7 +187,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: sentinel
-          image: {{ include "baukit-app.image" .Values.redis.image | quote }}
+          image: {{ include "baukit-app.image" (dict "image" .Values.redis.image "name" "redis") | quote }}
           imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
           securityContext:
             allowPrivilegeEscalation: false

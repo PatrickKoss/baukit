@@ -6,6 +6,8 @@ network_policy_exempt_namespaces = ["kube-system"]
 
 [rules]
 active = [
+  "alert-metadata",
+  "alert-runbook",
   "dashboards-selected",
   "default-deny-network-policy",
   "policy-exception-budget",
@@ -14,8 +16,6 @@ active = [
 [rules.pending]
 psa-labels = "N1"
 metrics-enabled = "O3"
-alert-metadata = "O6"
-alert-runbook = "O6"
 alert-tested = "O4"
 rules-selected = "O1"
 prune-disabled = "R8"

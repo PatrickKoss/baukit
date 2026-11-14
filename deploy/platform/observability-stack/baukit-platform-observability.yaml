@@ -1,0 +1,28 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: baukit-platform-observability
+  namespace: observability
+spec:
+  interval: 30m
+  timeout: 5m
+  dependsOn:
+    - name: kube-prometheus-stack
+      namespace: observability
+  chart:
+    spec:
+      chart: ./deploy/observability-platform
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: baukit
+        namespace: flux-system
+      interval: 30m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    runbookBaseUrl: https://github.com/PatrickKoss/baukit/blob/main/docs/runbooks/platform

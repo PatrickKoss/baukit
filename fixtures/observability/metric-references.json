@@ -1,0 +1,55 @@
+{
+  "description": "Metric names that check-metric-names.py and `baukit check observability` read from PromQL and LogQL expressions. Both sides must return exactly these references.",
+  "vectors": [
+    {
+      "name": "promql functions, labels, ranges and grouping are not metrics",
+      "expression": "sum by (route) (rate(http_requests_total{status=~\"5..\"}[5m])) / on(route) group_left up",
+      "references": ["http_requests_total", "up"]
+    },
+    {
+      "name": "promql comparison keeps both operands",
+      "expression": "up == 0 and on (namespace) kube_namespace_labels{label_app_kubernetes_io_part_of=\"baukit-platform\"}",
+      "references": ["kube_namespace_labels", "up"]
+    },
+    {
+      "name": "json parser",
+      "expression": "{namespace=\"shop\"} | json | level=\"error\"",
+      "references": []
+    },
+    {
+      "name": "logfmt parser with a label filter chain",
+      "expression": "sum by (level) (count_over_time({app=\"api\"} | logfmt | level=\"error\" or status >= 500 [5m]))",
+      "references": []
+    },
+    {
+      "name": "line_format and label_format",
+      "expression": "{app=\"api\"} | logfmt | label_format route=\"{{.path}}\" | line_format \"{{.level}} {{.msg}}\"",
+      "references": []
+    },
+    {
+      "name": "pattern parser with a backtick string",
+      "expression": "rate({app=\"edge\"} | pattern `<ip> - <user> [<_>] \"<method> <path>\" <status>` | status=\"500\" [1m])",
+      "references": []
+    },
+    {
+      "name": "regexp parser",
+      "expression": "count_over_time({app=\"api\"} | regexp \"(?P<route>/[a-z]+)\" | route != \"/health\" [5m])",
+      "references": []
+    },
+    {
+      "name": "unwrap with a conversion function",
+      "expression": "quantile_over_time(0.99, {app=\"api\"} | logfmt | unwrap duration_seconds(latency) | __error__=\"\" [5m]) by (route)",
+      "references": []
+    },
+    {
+      "name": "plain unwrap and line filters",
+      "expression": "sum(rate({app=\"api\"} |= \"timeout\" != \"retry\" |~ `5\\d\\d` | json | unwrap bytes [5m]))",
+      "references": []
+    },
+    {
+      "name": "a metric next to a log query is still a metric",
+      "expression": "sum(count_over_time({app=\"api\"} | logfmt [5m])) / sum(rate(http_requests_total[5m]))",
+      "references": ["http_requests_total"]
+    }
+  ]
+}

@@ -7,11 +7,12 @@ from pathlib import Path
 from process_runner import run_process
 
 CHART = Path(__file__).resolve().parents[1] / "deploy/chart/baukit-app"
+IMAGES = CHART / "tests/images-values.yaml"
 
 
 class PlatformChartTest(unittest.TestCase):
     def render(self, *settings: str) -> subprocess.CompletedProcess:
-        command = ["helm", "template", "platform-test", str(CHART)]
+        command = ["helm", "template", "platform-test", str(CHART), "-f", str(IMAGES)]
         for setting in settings:
             command.extend(["--set", setting])
         return run_process(command, capture_output=True, text=True, check=False)

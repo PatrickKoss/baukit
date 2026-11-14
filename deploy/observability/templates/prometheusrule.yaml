@@ -1,6 +1,11 @@
+{{- $runbookBaseUrl := include "baukit-observability.runbookBaseUrl" . }}
 {{- if and .Values.prometheusRule.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1/PrometheusRule") }}
-{{- $recording := .Files.Get "recording-rules/baukit-red.rules.yml" | fromYaml -}}
-{{- $alerts := .Files.Get "alerts/baukit.rules.yml" | fromYaml -}}
+{{- $groups := list -}}
+{{- range $directory := list "recording-rules" "alerts" }}
+{{- range $path, $_ := $.Files.Glob (printf "%s/*.{yml,yaml}" $directory) }}
+{{- $groups = concat $groups (required (printf "%s has no rule groups" $path) ($.Files.Get $path | replace "RUNBOOK_BASE_URL" $runbookBaseUrl | fromYaml).groups) -}}
+{{- end }}
+{{- end }}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -16,5 +21,5 @@ metadata:
   {{- end }}
 spec:
   groups:
-    {{- concat $recording.groups $alerts.groups | toYaml | nindent 4 }}
+    {{- $groups | toYaml | nindent 4 }}
 {{- end }}
