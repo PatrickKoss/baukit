@@ -440,7 +440,7 @@ behave. Later phases add test directories here.
   alert, with the same headings: meaning, impact, first checks (exact `kubectl`/LogQL/PromQL), fix,
   escalation. `runbook_url` becomes `{{ .Values.runbookBaseUrl }}/<slug>` (overlay value). The V4 check
   enforces that every slug has a file.
-- [ ] **O7 Dashboards.** One per component in its own folder: Flux, cert-manager, CNPG (upstream
+- [x] **O7 Dashboards.** One per component in its own folder: Flux, cert-manager, CNPG (upstream
   dashboard, pinned and vendored), Traefik, Kyverno/Policy Reporter, Falco, platform overview (all
   `Baukit*` alerts by component, Ready state of every Flux object, PSA and policy violation counts).
   `baukit check observability` already checks datasource variables. Add a JSON schema check for
@@ -776,3 +776,13 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   violation alert joins Policy Reporter's `policy_report_result` to policies seen in `Deny` mode. The Flux
   alerts expect O3's kube-state-metrics config to emit `gotk_resource_info` with the flux2-monitoring-
   example labels (`exported_namespace`, `name`, `ready`, `suspended`, `customresource_kind`).
+- 2026-11-14: O7 merged. Dashboards for flux, cert-manager, traefik, kyverno (Kyverno and Policy Reporter
+  rows) and a platform overview (`Baukit*` ALERTS by component, Ready state from `gotk_resource_info`, PSA
+  denials from `pod_security_evaluations_total`, `policy_report_result` failures). `cnpg.json` is the
+  upstream cloudnative-pg/grafana-dashboards dashboard at cececeb3 (cluster-v0.0.5, Apache-2.0), changed
+  only in datasource and uid; source and sha256 in the pack README. Its ConfigMap is about 252 KB, so it
+  needs server-side apply (Flux and Helm are fine, client-side `kubectl apply` is not).
+  `deploy/observability/lint/check-dashboards.py` checks structure in both packs inside `metric-names`
+  (15 tests); the metric lint already covers every panel, proven by an injected unknown metric failing it.
+  The Rust check accepts Grafana's `__expr__` datasource uid. Panels on controller_runtime metrics show
+  data once O3 scrapes the CNPG operator and Flux controllers.
