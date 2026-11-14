@@ -7,8 +7,9 @@ repo_root=$(cd -- "$platform_dir/../.." && pwd)
 
 # shellcheck source=deploy/platform/lib/k3s.sh
 source "$platform_dir/lib/k3s.sh"
+# shellcheck source=deploy/lib/tools.sh
+. "$repo_root/deploy/lib/tools.sh"
 
-flux_version=v2.9.4
 snapshot_port=9418
 echo_image=baukit-e2e-echo:local
 ready_timeout=30m
@@ -20,6 +21,8 @@ test_dirs=("$e2e_dir/tests")
 lock_dir=${BAUKIT_GATE_LOCK_DIR:-$HOME/.cache/baukit-orchestrator/quality-security}
 cluster_lock=${BAUKIT_E2E_CLUSTER_LOCK:-$HOME/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock}
 artifacts_dir=${BAUKIT_E2E_ARTIFACTS:-$repo_root/.ci-gate/platform-e2e}
+state_parent=${BAUKIT_E2E_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/baukit-platform-e2e}
+flux_version=
 
 usage() {
   cat >&2 <<EOF
@@ -72,15 +75,14 @@ suite_path() {
 }
 
 require_tools() {
-  PATH=$repo_root/.tools/bin:$PATH
-  export PATH
+  baukit_use_tools "$repo_root" chainsaw flux k3d kubectl
+  flux_version=v$(baukit_tool_version "$repo_root" flux)
   local missing=() tool
-  for tool in chainsaw docker flock flux git k3d kubectl openssl python3 tar; do
+  for tool in docker flock git openssl python3 tar; do
     command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
   done
   if ((${#missing[@]})); then
     printf 'ERROR: missing required tools: %s\n' "${missing[*]}" >&2
-    printf 'Run scripts/install-deploy-tools.sh to install the pinned tools into .tools/bin.\n' >&2
     exit 2
   fi
 }
@@ -152,6 +154,7 @@ create_cluster() {
     --no-lb \
     --api-port "127.0.0.1:$(free_port)" \
     --kubeconfig-update-default=false \
+    --kubeconfig-switch-context=false \
     "${k3s_args[@]}" \
     --wait >/dev/null
   k3d kubeconfig get "$cluster_name" >"$kubeconfig"
@@ -314,7 +317,8 @@ main() {
   take_locks
   rm -rf -- "$artifacts_dir"
   mkdir -p "$artifacts_dir"
-  state_dir=$(mktemp -d "${TMPDIR:-/tmp}/baukit-platform-e2e.XXXXXX")
+  mkdir -p -- "$state_parent"
+  state_dir=$(mktemp -d "$state_parent/run.XXXXXX")
   kubeconfig=$state_dir/kubeconfig
   export KUBECONFIG=$kubeconfig
   trap cleanup EXIT

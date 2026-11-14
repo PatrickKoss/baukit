@@ -13,7 +13,9 @@ deploy/platform/e2e/run.sh --cluster-name ph-x # another cluster name
 
 The cluster uses the k3s image and flags from `../lib/k3s.sh`, the same file the lifecycle reads. The API
 binds 127.0.0.1 and the snapshot server binds the k3d network gateway. Tools come from `.tools/bin` first
-(`scripts/install-deploy-tools.sh`); a missing tool exits 2.
+(`scripts/install-deploy-tools.sh`); a missing tool exits 2. The kubeconfig and snapshot live in a
+private directory under `BAUKIT_E2E_STATE_DIR` (default `~/.local/state/baukit-platform-e2e`); the
+default kubeconfig is never touched.
 
 Before it creates the cluster the runner takes `flock` on
 `~/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock` (override with `BAUKIT_E2E_CLUSTER_LOCK`)
