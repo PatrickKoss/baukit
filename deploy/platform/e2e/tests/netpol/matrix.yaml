@@ -271,3 +271,27 @@
 - from: {namespace: netpol-tenant-open, labels: {}}
   to: {service: posthog-redis.posthog, port: 6379}
   expect: deny
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {pod: {namespace: falco, labels: {app.kubernetes.io/name: falco}}, port: 8765}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {pod: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}, port: 2801}
+  expect: allow
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {pod: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}, port: 2801}
+  expect: deny
+- from: {namespace: falco, labels: {app.kubernetes.io/name: falco}}
+  to: {pod: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}, port: 2801}
+  expect: allow
+- from: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}
+  to: {service: loki-gateway.observability, port: 80}
+  expect: allow
+- from: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}
+  to: {service: kube-prometheus-stack-alertmanager.observability, port: 9093}
+  expect: allow
+- from: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}
+  to: {host: 1.1.1.1, port: 443}
+  expect: deny
+- from: {namespace: falco, labels: {app.kubernetes.io/name: falco}}
+  to: {service: loki-gateway.observability, port: 80}
+  expect: deny
