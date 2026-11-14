@@ -55,7 +55,7 @@ These are defaults the plan assumes. Each one can be overruled before its phase 
 | D6 | Image signature verification | Parked until product images live in a registry. Today they are built locally and loaded with `k3d image import`. | `verifyImages` needs a registry and signatures. The policy and its test land in Audit mode so they are ready. |
 | D7 | Traefik exposure | Switch from DaemonSet with hostPorts to a Deployment behind k3s ServiceLB (`type: LoadBalancer`). | It fixes the rollout hang (F-01). The `traefik` namespace can then run `restricted`, because the svclb pod holds the hostPort in `kube-system`. |
 | D8 | PostHog | Out of scope for replacement. Fence it with NetworkPolicy, PSA `baseline` and a recorded exception list. | The self-host chart is sunset (F-30). Replacing it is a product decision, not hardening work. |
-| D9 | Platform e2e cost | A separate `platform-e2e` gate lane, selected by `--affected` for `deploy/**`. It runs under the host locks and is not part of the 30-minute full-gate budget until it has been measured. | A disposable k3d cluster with the full stack takes minutes to converge. It must not starve product gates. |
+| D9 | Platform e2e cost | A separate `platform-e2e` gate lane, selected by `--affected` for `deploy/**`. It holds `k3d-full.lock`, waits while both machine-wide heavy-run slots (`/tmp/claude-heavy-slots/slot-{1,2}`) are taken, and is not part of the 30-minute full-gate budget until it has been measured. | A disposable k3d cluster with the full stack takes minutes to converge. It must not starve product gates. |
 
 ## Findings catalog
 
@@ -221,8 +221,9 @@ behave. Later phases add test directories here.
   local-snapshot source (with S6's file filtering), applies `e2e/overlay/`, waits for every Kustomization
   and HelmRelease to be Ready, runs `chainsaw test deploy/platform/e2e/tests`, collects
   `kubectl get events,polr,cpolr -A`, Flux status and pod logs into `.ci-gate/platform-e2e/`, and deletes
-  the cluster on exit (trap, also on SIGINT). Every run takes `flock` on the host's android and browser
-  locks before creating the cluster.
+  the cluster on exit (trap, also on SIGINT). Every run takes `flock` on `k3d-full.lock` and waits while both
+  heavy-run slots are taken before creating the cluster. It does not take the android or browser locks,
+  which belong to the slot holders.
 - [~] **E2 Overlay.** `deploy/platform/e2e/overlay/` composes every base except `hcloud` and `posthog`
   (posthog is checked separately in N4) plus a test tenant namespace built from `components/tenant`, a
   tiny echo app deployed with `baukit-app` (image built in the runner from a pinned `nginx-unprivileged`
@@ -786,3 +787,7 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   (15 tests); the metric lint already covers every panel, proven by an injected unknown metric failing it.
   The Rust check accepts Grafana's `__expr__` datasource uid. Panels on controller_runtime metrics show
   data once O3 scrapes the CNPG operator and Flux controllers.
+- 2026-11-14: Host sharing changed. Other projects on this host now share two heavy-run slots
+  (`/tmp/claude-heavy-slots/slot-{1,2}`). D9 and E1 now say the platform e2e holds only `k3d-full.lock` and
+  waits while both slots are taken; it no longer holds the android and browser locks, which blocked other
+  projects' gates for the whole run.
