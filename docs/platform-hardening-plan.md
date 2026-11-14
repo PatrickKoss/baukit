@@ -448,7 +448,7 @@ behave. Later phases add test directories here.
 
 ## Phase FA: Falco runtime security
 
-- [~] **FA0 Spike (timeboxed, one agent).** On a disposable k3d cluster, install Falco with
+- [x] **FA0 Spike (timeboxed, one agent).** On a disposable k3d cluster, install Falco with
   `modern_ebpf` and record in the log:
   - whether k3s' containerd socket (`/run/k3s/containerd/containerd.sock` inside the node container)
     gives container and Kubernetes metadata;
@@ -669,3 +669,16 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   yannh/kubernetes-json-schema `_definitions.json` at a pinned commit and sha256. Re-verified: step green,
   each misspelled fixture fails on its field. Follow-up for V1: the Flux pin currently lives in
   `platform-lifecycle.sh`; `tools.toml` must become the single source.
+- 2026-11-14: FA0 spike done (report kept in the orchestrator state dir, facts copied here). Falco chart
+  9.2.2 / Falco 0.45.2, falcosidekick 2.35.1, container plugin 0.7.6. Kubernetes metadata enrichment works
+  through `collectors.containerEngine.engines.cri.sockets: [/run/k3s/containerd/containerd.sock]` (docker,
+  containerd and podman engines off). WSL2 cannot attach the TOCTOU mitigation tracepoints; detection
+  still works. Idle host noise: 4 events in 9.5 min, all without `k8s.ns.name` (host dockerd, other k3d
+  nodes). Filter: a `baukit_cluster_pod` macro (`k8s.ns.name` present), but Hetzner must keep
+  `container.id=host` events. Idle footprint: falco 22-85m CPU, 254-321Mi; sidekick 1m/15Mi (1 replica is
+  enough). Metrics: `falcosecurity_scap_n_drops_total` for drops; `rules_matches_total` carries a numeric
+  Falco priority (Critical+ is 0-2) and no namespace; sidekick `falco_events_total` has `k8s_ns_name` and
+  `priority_raw` (its numeric priority runs the other way, so alert on `priority_raw`). Sidekick
+  Alertmanager output needs endpoint `/api/v2/alerts`; Loki output needs `grafanaDashboard` off.
+  `falco -V <file>` (one `-V` per rules file) works in the digest-pinned image with `--network none`.
+  Agents now use private KUBECONFIG files after parallel k3d runs rewrote `~/.kube/config`.
