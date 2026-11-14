@@ -511,7 +511,7 @@ releases.
 | Reanimated / Worklets | 4.7.1 / 0.13.0 | Expo SDK 57 uses 4.5.1 / 0.10.1. Screens 4.26.2 and Safe Area Context 5.7.0 stay on the same SDK baseline. |
 | Gradle / AGP / Kotlin / NDK | 9.8.2 / 9.5.0 / 2.4.21 / r29 | Baukit pins none of them. The Expo SDK 57 template generates Gradle 9.3.1, and React Native 0.86.3 pins AGP 8.12.0, Kotlin 2.1.20, and NDK 27.1.12297006. Overriding them would go past what Expo SDK 57 supports. |
 | Java | Temurin 27 | Expo SDK 57 generates Gradle 9.3.1. [Java 27 requires Gradle 9.8](https://docs.gradle.org/current/userguide/compatibility.html), so Android builds use Temurin 25.0.4.1+1. Gradle supports Java 25 since 9.1.0. |
-| PostgreSQL | 18.6 | PostgreSQL stays on 18.x. Version 19 is still in beta. PostHog's separate database stays on 14.1. |
+| PostgreSQL | 18.6 | PostgreSQL stays on 18.x. Version 19 is still in beta. PostHog's separate database stays on 14.x, currently 14.25. |
 | Keycloak | 26.8.0 | This is still the latest stable release. The theme matrix covers 26.7.5 and 26.8.0. |
 
 Platform chart updates stay within their current major versions. The Tempo

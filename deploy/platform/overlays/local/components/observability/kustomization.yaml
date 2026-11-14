@@ -2,6 +2,10 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../../../observability-stack
+  - ../../cluster-network
+  - network-policy.yaml
+components:
+  - ../../../../components/network-policy/node-cidr
 patches:
   - path: resources.yaml
 
