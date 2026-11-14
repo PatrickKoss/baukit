@@ -535,7 +535,7 @@ behave. Later phases add test directories here.
 - [ ] **R6 Storage limits** (F-11): `retentionSize` for Prometheus at about 85% of the PVC; Loki
   `retention_period` plus compactor deletion; Tempo `max_block_bytes` / retention sized to its PVC;
   `BaukitPvcFillingUp` covered by kube-prometheus-stack defaults and tested in O4.
-- [ ] **R7 redis-ha recovery** (F-12): an init step asks Sentinel for the current master and only
+- [x] **R7 redis-ha recovery** (F-12): an init step asks Sentinel for the current master and only
   bootstraps `redis-0` as master when no Sentinel answers. Sentinels set `announce-hostnames` and
   `resolve-hostnames`. e2e test: kill the master, wait for failover, restart the old master, assert it
   rejoins as a replica with the data intact.
@@ -791,3 +791,12 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   (`/tmp/claude-heavy-slots/slot-{1,2}`). D9 and E1 now say the platform e2e holds only `k3d-full.lock` and
   waits while both slots are taken; it no longer holds the android and browser locks, which blocked other
   projects' gates for the whole run.
+- 2026-11-14: R7 merged. Both redis-ha containers start from `redis-ha.sh` (ConfigMap `redis-ha-scripts`,
+  POSIX sh, every redis-cli call bounded by `timeout 3 redis-cli -t 2`). A starting pod asks the peer
+  Sentinels for the master and joins it as a replica; only `redis-0` bootstraps, after three unanswered
+  rounds 5 s apart. If Sentinels name the pod itself, it waits up to 60 s for a failover and exits 1 when
+  they disagree. Sentinels monitor the master the local Redis chose, set `resolve-hostnames` and
+  `announce-hostnames`, and announce the headless FQDN; both containers have a 3-minute startup probe.
+  12 unittest cases (stubbed redis-cli) run in platform-validate. The chainsaw test
+  `e2e/tests/redis-ha/` (kill master, promotion, old master rejoins as replica, key on both) passed twice
+  on k3d, and a full StatefulSet delete came back with `redis-0` as master. Cold start is about 10 s slower.
