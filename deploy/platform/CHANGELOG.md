@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Every HelmRelease sets a measured `timeout`, `upgrade.cleanupOnFail: true` and `driftDetection.mode: warn`. Charts with a Helm `crds/` directory (alloy, flagger, kube-prometheus-stack, loki, posthog, traefik) install and upgrade CRDs with `CreateReplace`. Falco and Kyverno run their Helm tests (`test.enable: true`). `validate.sh` enforces these rules, exact chart versions, HelmRepository intervals of 1h or more, and `prune`/`wait` on Flux Kustomizations with offline Kyverno policies in `lint/ci-policies/`.
+
 - Breaking: run Traefik as a Deployment behind k3s ServiceLB (`type: LoadBalancer`) instead of a hostPort DaemonSet, so rollouts no longer hang. One replica in the base, `maxUnavailable: 0, maxSurge: 1`, a PodDisruptionBudget with `maxUnavailable: 1`, `platform-critical` priority and `CreateReplace` CRD handling. The hcloud CCM Load Balancer controller is off so ServiceLB stays the only answer.
 
 - Fix node drains on a single-instance CNPG cluster (`enablePDB: false`). The restore-test Role can patch and delete only `postgres-cluster-restore-test`, and the restore cluster takes its StorageClass from `RESTORE_STORAGE_CLASS`. The hcloud base adds the `hcloud-volumes-delete` StorageClass for it.
