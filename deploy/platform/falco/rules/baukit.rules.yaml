@@ -123,12 +123,14 @@
   tags: [baukit, baukit_app, container, network, mitre_exfiltration, T1041]
 
 # The baukit-app chart sets automountServiceAccountToken: false, so an app process has no reason to
-# look for a token. Failed opens count too: the attempt is the signal.
+# look for a token. Failed opens count too: the attempt is the signal. runc probes the mount point while
+# it starts every container (FA live run, 2026-11-14), so runc itself is excluded.
 - rule: Baukit service account token access in app container
   desc: A baukit app process tried to open the Kubernetes service account directory.
   condition: >
     evt.type in (open, openat, openat2)
     and baukit_app_container
+    and not proc.name startswith runc
     and (fs.path.name startswith /var/run/secrets/kubernetes.io or fs.path.name startswith /run/secrets/kubernetes.io)
   output: Baukit app process tried to read a service account token | path=%fs.path.name result=%evt.res process=%proc.name command=%proc.cmdline k8s_ns=%k8s.ns.name k8s_pod=%k8s.pod.name container=%container.name image=%container.image.repository:%container.image.tag
   priority: CRITICAL
