@@ -292,6 +292,7 @@ for base in "${bases[@]}"; do
       ! helm template "$release_name" "$chart_source" \
         --namespace "${release_namespace:-default}" \
         --include-crds \
+        --api-versions monitoring.coreos.com/v1 \
         --api-versions monitoring.coreos.com/v1/ServiceMonitor \
         --api-versions monitoring.coreos.com/v1/PodMonitor \
         --api-versions monitoring.coreos.com/v1/PrometheusRule \
