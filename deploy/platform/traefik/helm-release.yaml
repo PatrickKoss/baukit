@@ -15,15 +15,22 @@ spec:
         namespace: traefik
       interval: 24h
   install:
+    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
     cleanupOnFail: true
+    crds: CreateReplace
     remediation:
       retries: 3
   values:
     deployment:
-      kind: DaemonSet
+      kind: Deployment
+      replicas: 1
+    podDisruptionBudget:
+      enabled: true
+      maxUnavailable: 1
+    priorityClassName: platform-critical
     updateStrategy:
       type: RollingUpdate
       rollingUpdate:
@@ -33,7 +40,7 @@ spec:
     service:
       enabled: true
       spec:
-        type: ClusterIP
+        type: LoadBalancer
     api:
       dashboard: false
       insecure: false
@@ -48,7 +55,6 @@ spec:
         expose:
           default: false
       web:
-        hostPort: 80
         expose:
           default: true
         http:
@@ -56,7 +62,6 @@ spec:
             - traefik-default-rate-limit@kubernetescrd
             - traefik-default-connection-limit@kubernetescrd
       websecure:
-        hostPort: 443
         expose:
           default: true
         http:

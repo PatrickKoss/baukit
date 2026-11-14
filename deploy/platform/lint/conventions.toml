@@ -10,6 +10,8 @@ active = [
   "alert-runbook",
   "dashboards-selected",
   "policy-exception-budget",
+  "prune-disabled",
+  "rules-selected",
 ]
 
 [rules.pending]
@@ -17,5 +19,3 @@ psa-labels = "N1"
 default-deny-network-policy = "N2"
 metrics-enabled = "O3"
 alert-tested = "O4"
-rules-selected = "O1"
-prune-disabled = "R8"

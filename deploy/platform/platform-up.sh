@@ -14,6 +14,12 @@ cluster_name=${BAUKIT_PLATFORM_CLUSTER:-baukit-local}
 # k3s 1.34 patch while testing/production retain the I0 stable-channel pin.
 k3s_image=${BAUKIT_PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.8-k3s1}
 git_port=${BAUKIT_PLATFORM_GIT_PORT:-9418}
+api_port=${BAUKIT_PLATFORM_API_PORT:-random}
+http_port=${BAUKIT_PLATFORM_HTTP_PORT:-80}
+https_port=${BAUKIT_PLATFORM_HTTPS_PORT:-443}
+
+# shellcheck source=deploy/platform/local-git-http.sh
+source "$platform_dir/local-git-http.sh"
 
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -97,17 +103,7 @@ start_git_daemon() {
   stop_git_daemon
   rm -rf -- "$snapshot_tmp" "$git_tmp"
   mkdir -p "$snapshot_tmp" "$git_tmp"
-  (
-    cd "$repo_root"
-    tar \
-      --exclude=.git \
-      --exclude=.generated-fixture \
-      --exclude=deploy/platform/.local-state \
-      --exclude='*/target' \
-      --exclude='*/node_modules' \
-      --exclude='*/.turbo' \
-      -cf - .
-  ) | tar -xf - -C "$snapshot_tmp"
+  snapshot_tree "$repo_root" "$snapshot_tmp"
   (
     cd "$snapshot_tmp"
     git init -q -b main
@@ -122,13 +118,15 @@ start_git_daemon() {
   mv -- "$snapshot_tmp" "$snapshot"
   mv -- "$git_tmp" "$git_root"
 
+  local gateway
+  gateway=$(k3d_gateway "$cluster_name")
   nohup python3 "$platform_dir/local-git-http.py" \
-    --host 0.0.0.0 --root "$git_root" --port "$git_port" \
+    --host "$gateway" --root "$git_root" --port "$git_port" \
     >"$state_dir/git-http.log" 2>&1 &
   printf '%s\n' "$!" >"$git_pid_file"
 
   for _ in {1..50}; do
-    git ls-remote "http://127.0.0.1:$git_port/baukit.git" HEAD >/dev/null 2>&1 && return
+    git ls-remote "http://$gateway:$git_port/baukit.git" HEAD >/dev/null 2>&1 && return
     sleep 0.1
   done
   printf 'ERROR: local git daemon did not become reachable on port %s\n' "$git_port" >&2
@@ -193,30 +191,24 @@ status() {
     kubectl get nodes -o wide
     print_diagnostics
   fi
-  printf '\nLocal credentials (stored mode 0600 in %s):\n' "$secrets_file"
-  printf '  Grafana:            %s / %s\n' "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD"
-  printf '  RustFS:             %s / %s\n' "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
+  printf '\nLocal credentials (values are not printed):\n'
+  printf '  All generated values: %s (mode 0600)\n' "$secrets_file"
+  printf '  Grafana:              Secret observability/grafana-admin (admin-user, admin-password)\n'
+  printf '  RustFS:               Secret postgres/rustfs-root (username, password)\n'
+  printf '  Product database:     Secret postgres/product-db-credentials (username, password)\n'
 }
 
 up() {
   require_tools
   ensure_secret_state
-  start_git_daemon
-
   if ! cluster_exists; then
     printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$k3s_image"
-    k3d cluster create "$cluster_name" \
-      --image "$k3s_image" \
-      --servers 1 \
-      --agents 0 \
-      --k3s-arg '--disable=traefik@server:0' \
-      --port '80:80@loadbalancer' \
-      --port '443:443@loadbalancer' \
-      --wait
+    k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port"
   else
     printf 'Cluster %s already exists; converging it.\n' "$cluster_name"
   fi
   use_context
+  start_git_daemon
 
   printf 'Installing Flux v2.9.4 controllers\n'
   flux install \

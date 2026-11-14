@@ -111,7 +111,12 @@ spec:
           enabled: true
           label: grafana_dashboard
           labelValue: "1"
-          searchNamespace: observability
+          searchNamespace: ALL
+          folderAnnotation: grafana_folder
+          annotations:
+            grafana_folder: Kubernetes
+          provider:
+            foldersFromFilesStructure: true
         datasources:
           enabled: true
           defaultDatasourceEnabled: true
@@ -223,18 +228,22 @@ spec:
                 requests:
                   storage: 30Gi
         ruleSelectorNilUsesHelmValues: false
-        # Select both kube-prometheus-stack's rules and the Baukit content
-        # chart's rules, constrained to the observability namespace below.
+        # Rules, ServiceMonitors and PodMonitors are read from every namespace
+        # labelled app.kubernetes.io/part-of=baukit-platform.
         ruleSelector: {}
         ruleNamespaceSelector:
           matchLabels:
-            kubernetes.io/metadata.name: observability
+            app.kubernetes.io/part-of: baukit-platform
         serviceMonitorSelectorNilUsesHelmValues: false
         serviceMonitorSelector: {}
-        serviceMonitorNamespaceSelector: {}
+        serviceMonitorNamespaceSelector:
+          matchLabels:
+            app.kubernetes.io/part-of: baukit-platform
         podMonitorSelectorNilUsesHelmValues: false
         podMonitorSelector: {}
-        podMonitorNamespaceSelector: {}
+        podMonitorNamespaceSelector:
+          matchLabels:
+            app.kubernetes.io/part-of: baukit-platform
 
     thanosRuler:
       enabled: false

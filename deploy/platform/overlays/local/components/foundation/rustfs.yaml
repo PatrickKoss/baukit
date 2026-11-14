@@ -3,6 +3,8 @@ kind: PersistentVolumeClaim
 metadata:
   name: rustfs
   namespace: postgres
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
   labels:
     app.kubernetes.io/name: rustfs
     app.kubernetes.io/part-of: baukit-platform

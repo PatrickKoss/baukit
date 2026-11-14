@@ -38,7 +38,32 @@ Before reconciliation, an overlay must:
   `ServiceMonitor` and `PrometheusRule`, and configure Prometheus selectors to
   admit resources labeled `app.kubernetes.io/part-of: baukit-platform`;
 - review the restore schedule, then explicitly set the CronJob to
-  `spec.suspend: false`; add a priority class in the overlay if desired.
+  `spec.suspend: false`; add a priority class in the overlay if desired;
+- on a cluster whose default StorageClass retains volumes (Hetzner
+  `hcloud-volumes`), set the CronJob's `RESTORE_STORAGE_CLASS` env to a
+  Delete-policy class such as `hcloud-volumes-delete`.
+
+## Node drains and PodDisruptionBudgets
+
+The base runs one instance with `enablePDB: false`. CNPG's default primary
+PodDisruptionBudget allows zero disruptions, so with one instance it blocks
+every `kubectl drain`, and the weekly kured reboot times out. Without the PDB,
+a drain evicts the only instance and the database is down until the node is
+back. That is the honest trade-off of a single instance.
+
+An overlay that runs two or more instances must set `enablePDB: true` in the
+same patch, so the drain waits for a switchover instead of killing the primary.
+It should also set `spec.nodeMaintenanceWindow`
+(`inProgress: false, reusePVC: true`) as the default, and flip `inProgress` to
+`true` only for planned maintenance on single-node storage, where CNPG then
+waits for the node to return and reuses the PVC.
+
+## Prune safety
+
+The `postgres` Namespace and the `Cluster` carry
+`kustomize.toolkit.fluxcd.io/prune: disabled`. Removing this base from a Flux
+Kustomization leaves the database and its volumes in place; deleting them is a
+manual step.
 
 No endpoint, bucket, credential, database password, domain, or personal value is
 included. The destination string is an intentionally unusable schema marker
@@ -58,13 +83,18 @@ own schemas and tables.
 ## Restore-test freshness metric
 
 The suspended CronJob deletes any prior throwaway cluster, restores the latest
-backup as `postgres-cluster-restore-test`, waits for CNPG `Ready`, pushes
+backup as `postgres-cluster-restore-test` (one instance, no PDB), waits for CNPG `Ready`, pushes
 `baukit_restore_test_last_success_timestamp_seconds`, and deletes the restored
 cluster. A small Pushgateway retains the metric in an `emptyDir` across
 container restarts; losing the pod intentionally makes the metric absent and
 therefore alerts until the proof runs again. The `ServiceMonitor` exposes it to
 the kube-prometheus-stack base, and `BaukitPostgresRestoreTestStale` fires when
 the metric is absent or older than 35 days.
+
+The CronJob's Role can create, get, list and watch CNPG clusters, but patch and
+delete only `postgres-cluster-restore-test`. It cannot change or delete the
+production `postgres-cluster`. Renaming the throwaway cluster means patching
+the Role's `resourceNames` too.
 
 The CronJob image matches the pinned k3s/Kubernetes version. If cluster and
 ObjectStore names are patched, patch the recovery manifest embedded in the
