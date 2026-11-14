@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import helm_yaml  # noqa: E402 -- lives in the parent lint directory
+import helm_yaml
 
 HERE = Path(__file__).resolve().parent
 DATA_FILE = HERE / "chart-contents.toml"
