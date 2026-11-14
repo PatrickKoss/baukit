@@ -158,6 +158,12 @@ spec:
               - op: add
                 path: /spec/ttlSecondsAfterFinished
                 value: 300
+          - target:
+              group: batch
+              version: v1
+              kind: Job
+              name: posthog-migrate-.*
+            patch: |-
               - op: replace
                 path: /spec/template/spec/initContainers/0/command/2
                 value: |-
