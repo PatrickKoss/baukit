@@ -49,11 +49,17 @@ baukit_checkout=${PLATFORM_BAUKIT_CHECKOUT:-}
 k3s_image=${PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.8-k3s1}
 flux_version=${PLATFORM_FLUX_VERSION:-v2.9.4}
 git_port=${PLATFORM_SNAPSHOT_PORT:-9418}
+api_port=${PLATFORM_API_PORT:-random}
+http_port=${PLATFORM_HTTP_PORT:-80}
+https_port=${PLATFORM_HTTPS_PORT:-443}
 state_root=${XDG_STATE_HOME:-${HOME}/.local/state}
 state_dir=${PLATFORM_STATE_DIR:-$state_root/baukit-platform/$cluster_name}
 snapshot_container=${PLATFORM_SNAPSHOT_CONTAINER:-${cluster_name}-baukit-git}
 snapshot_image=${PLATFORM_SNAPSHOT_IMAGE:-${cluster_name}-baukit-git-http}
 git_root=$state_dir/git
+
+# shellcheck source=deploy/platform/local-git-http.sh
+source "$platform_dir/local-git-http.sh"
 
 require_value() {
   local name=$1
@@ -166,7 +172,7 @@ remove_snapshot() {
 }
 
 wait_for_snapshot() {
-  local snapshot_url="http://127.0.0.1:$git_port/baukit.git"
+  local snapshot_url="http://$1:$git_port/baukit.git"
   local attempt
   for ((attempt = 0; attempt < 100; attempt++)); do
     if git ls-remote "$snapshot_url" HEAD >/dev/null 2>&1; then
@@ -191,17 +197,7 @@ build_snapshot() {
   remove_snapshot
   rm -rf -- "$snapshot_tmp" "$git_tmp"
   mkdir -p "$snapshot_tmp" "$git_tmp"
-  (
-    cd "$baukit_checkout"
-    tar \
-      --exclude=.git \
-      --exclude=.generated-fixture \
-      --exclude=deploy/platform/.local-state \
-      --exclude='*/target' \
-      --exclude='*/node_modules' \
-      --exclude='*/.turbo' \
-      -cf - .
-  ) | tar -xf - -C "$snapshot_tmp"
+  snapshot_tree "$baukit_checkout" "$snapshot_tmp"
   (
     cd "$snapshot_tmp"
     git init -q -b main
@@ -219,13 +215,10 @@ build_snapshot() {
 
   docker build -q -f "$platform_dir/local-git-http.Dockerfile" \
     -t "$snapshot_image" "$platform_dir" >/dev/null
-  docker run -d \
-    --name "$snapshot_container" \
-    --restart unless-stopped \
-    -p "$git_port:$git_port" \
-    -v "$git_root:/srv/git:ro" \
-    "$snapshot_image" --host 0.0.0.0 --root /srv/git --port "$git_port" >/dev/null
-  wait_for_snapshot
+  local gateway
+  gateway=$(k3d_gateway "$cluster_name")
+  run_snapshot_container "$snapshot_container" "$snapshot_image" "$git_root" "$git_port" "$gateway" >/dev/null
+  wait_for_snapshot "$gateway"
 }
 
 ensure_snapshot() {
@@ -242,14 +235,7 @@ ensure_cluster() {
     k3d cluster start "$cluster_name" >/dev/null
   else
     printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$k3s_image"
-    k3d cluster create "$cluster_name" \
-      --image "$k3s_image" \
-      --servers 1 \
-      --agents 0 \
-      --k3s-arg '--disable=traefik@server:0' \
-      --port '80:80@loadbalancer' \
-      --port '443:443@loadbalancer' \
-      --wait
+    k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port"
   fi
   local containers=()
   mapfile -t containers < <(docker ps -aq --filter "label=k3d.cluster=$cluster_name")
@@ -326,6 +312,13 @@ bootstrap_gitops() {
   fi
 }
 
+print_secret_locations() {
+  printf '\nSecrets (values are not printed):\n'
+  printf '  SOPS age identity: Secret flux-system/sops-age, from PLATFORM_AGE_KEY_FILE\n'
+  printf '  Flux Git credentials: Secret flux-system/flux-system\n'
+  printf '  Platform secrets: SOPS-encrypted under PLATFORM_GITOPS_PATH in the GitOps repository\n'
+}
+
 print_health() {
   printf '\nK3d cluster:\n'
   k3d cluster list | awk 'NR == 1 || $1 == name' name="$cluster_name"
@@ -365,8 +358,8 @@ wait_for_reconciliation() {
 up() {
   require_tools
   validate_up_config
-  ensure_snapshot
   ensure_cluster
+  ensure_snapshot
   ensure_snapshot_dns
   if [[ $baukit_source_mode == local-snapshot ]]; then
     docker update --restart unless-stopped "$snapshot_container" >/dev/null
@@ -434,6 +427,7 @@ status() {
   fi
   use_cluster
   print_health
+  print_secret_locations
 }
 
 case $command in
