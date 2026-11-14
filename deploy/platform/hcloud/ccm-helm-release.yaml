@@ -26,6 +26,9 @@ spec:
     replicaCount: 1
     networking:
       enabled: false
+    env:
+      HCLOUD_LOAD_BALANCERS_ENABLED:
+        value: "false"
     monitoring:
       enabled: true
       podMonitor:
