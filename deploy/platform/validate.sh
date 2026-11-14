@@ -5,21 +5,9 @@ platform_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "$platform_dir/../.." && pwd)
 cache_dir="$platform_dir/.helm-cache"
 
-missing_tools=()
-for tool in kustomize kubeconform helm; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    missing_tools+=("$tool")
-  fi
-done
-
-if ((${#missing_tools[@]} > 0)); then
-  printf 'ERROR: required platform validation tools are missing: %s\n' "${missing_tools[*]}" >&2
-  printf 'Install pinned releases into a directory on PATH. Upstream releases:\n' >&2
-  printf '  kustomize:  https://github.com/kubernetes-sigs/kustomize/releases\n' >&2
-  printf '  kubeconform: https://github.com/yannh/kubeconform/releases\n' >&2
-  printf '  helm:        https://github.com/helm/helm/releases\n' >&2
-  exit 2
-fi
+# shellcheck source=deploy/lib/tools.sh
+. "$repo_root/deploy/lib/tools.sh"
+baukit_use_tools "$repo_root" kustomize kubeconform helm
 
 mkdir -p "$cache_dir/repository-cache" "$cache_dir/kubeconform-schemas"
 export HELM_REPOSITORY_CONFIG="$cache_dir/repositories.yaml"
