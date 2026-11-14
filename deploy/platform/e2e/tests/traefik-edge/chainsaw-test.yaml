@@ -6,7 +6,9 @@ metadata:
 spec:
   description: >-
     The Traefik edge refuses TLS 1.1, serves TLS 1.2 and 1.3, redirects plain HTTP to HTTPS, adds the
-    security headers on websecure and logs requests without their query string.
+    security headers on websecure and logs requests without their query string. A route without its
+    own secret on a `*.localhost` host gets the TLSStore default certificate, and an SNI no
+    certificate covers is refused.
   namespaceTemplate:
     metadata:
       labels:
@@ -93,6 +95,21 @@ spec:
                         port: 80
                 tls:
                   secretName: edge-cert
+        - apply:
+            resource:
+              apiVersion: traefik.io/v1alpha1
+              kind: IngressRoute
+              metadata:
+                name: whoami-default-cert
+              spec:
+                entryPoints: [websecure]
+                routes:
+                  - kind: Rule
+                    match: Host(`edge.localhost`)
+                    services:
+                      - name: whoami
+                        port: 80
+                tls: {}
         - assert:
             resource:
               apiVersion: apps/v1
@@ -158,3 +175,23 @@ spec:
                 *token=secret*|*'"RequestPath":"/x?'*) echo "access log keeps the query string: $line" >&2; exit 1 ;;
               esac
               echo "access log: $line"
+
+              local_host=edge.localhost
+              code=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' --resolve "$local_host:18080:127.0.0.1" "http://$local_host:18080/")
+              case "$code" in
+                "301 https://$local_host"*|"308 https://$local_host"*) echo "plain http on $local_host: $code" ;;
+                *) echo "plain http on $local_host did not redirect to https: $code" >&2; exit 1 ;;
+              esac
+              openssl s_client -connect 127.0.0.1:18443 -servername "$local_host" -tls1_2 -showcerts </dev/null >"$dir/local.out" 2>&1 ||
+                { echo "TLS 1.2 handshake for $local_host failed" >&2; cat "$dir/local.out" >&2; exit 1; }
+              san=$(openssl x509 -in "$dir/local.out" -noout -ext subjectAltName)
+              printf '%s\n' "$san" | grep -q 'DNS:\*\.localhost' || { echo "default certificate does not cover $local_host: $san" >&2; exit 1; }
+              echo "default certificate for $local_host: $(printf '%s' "$san" | tail -n 1 | tr -d ' ')"
+              curl -ksSf -o /dev/null --resolve "$local_host:18443:127.0.0.1" "https://$local_host:18443/" ||
+                { echo "https on $local_host failed" >&2; exit 1; }
+
+              if openssl s_client -connect 127.0.0.1:18443 -servername other.example -tls1_2 </dev/null >"$dir/strict.out" 2>&1; then
+                echo 'handshake for other.example succeeded despite sniStrict' >&2; exit 1
+              fi
+              grep -q 'alert' "$dir/strict.out" || { echo 'other.example was not refused by the server' >&2; cat "$dir/strict.out" >&2; exit 1; }
+              echo 'SNI other.example refused'

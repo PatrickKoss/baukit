@@ -83,6 +83,27 @@ depth `0` ignores the header.
 `deploy/platform/e2e/tests/traefik-edge` checks the TLS versions, the redirect,
 the headers and the access log on a live cluster.
 
+## Local default certificate
+
+`overlays/local/components/traefik` issues `local-default-tls` from the
+`local-self-signed` ClusterIssuer for `localhost` and `*.localhost`, and adds
+it to the `default` TLSStore (chart value `tlsStore.default`) both as a store
+certificate and as the default certificate. With `sniStrict`, Traefik serves
+only certificates whose SAN matches the SNI, and it never falls back to the
+default certificate, so the store certificate entry is what makes routes
+without their own secret work. The `local-traefik` Flux Kustomization depends
+on `local-issuer` for that reason.
+
+Local hosts must be exactly one label under `localhost`, such as
+`fixture.localhost` or `api-fixture.localhost`. A wildcard covers one label
+only: `localhost` itself is in the SAN list, but `api.fixture.localhost` is
+not, and Traefik refuses its handshake. A product that needs deeper names
+brings its own Certificate. The certificate is self-signed, so browsers and
+clients must trust it explicitly or skip verification.
+
+The base and other overlays get no default certificate: every host there
+needs a TLS secret of its own.
+
 ## Monitoring
 
 The chart emits a ServiceMonitor. The observability stack must install the
