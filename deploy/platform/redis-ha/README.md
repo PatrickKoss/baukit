@@ -8,11 +8,33 @@ application-level rate-limit counters. The application contract URL is:
 redis+sentinel://redis-sentinel.platform-redis.svc:26379/mymaster
 ```
 
-Sentinel monitors master name `mymaster` with quorum 2. Pod `redis-0` is the
-initial master; the other pods initially replicate from
-`redis-0.redis-headless`. Sentinel detects an unavailable master after 5
-seconds, uses a 30-second failover timeout, and synchronizes one replica at a
-time.
+Sentinel monitors master name `mymaster` with quorum 2. Sentinel detects an
+unavailable master after 5 seconds, uses a 30-second failover timeout, and
+synchronizes one replica at a time.
+
+Both containers start through `redis-ha.sh`, which the kustomization ships as
+the `redis-ha-scripts` ConfigMap. On start the script asks the Sentinels in the
+other pods for the current master:
+
+- One master reported: Redis starts as its replica and Sentinel monitors it.
+- No answer after three tries 5 seconds apart: `redis-0` starts as master and
+  the other pods replicate from it. This is the cold-start path.
+- This pod reported as master: the pod was master and restarted before the
+  failover finished. Redis waits up to 60 seconds for the Sentinels to promote
+  another pod and starts as master only if they still agree on this pod.
+- Different masters reported: Redis keeps retrying, then exits so the kubelet
+  restarts it.
+
+Sentinel waits for the local Redis and monitors the master that Redis chose,
+so on a cold start no Sentinel monitors a guess. Both containers have a startup
+probe that allows 3 minutes for this before the liveness probe takes over.
+
+Every pod announces its stable headless name
+(`redis-N.redis-headless.platform-redis.svc.cluster.local`) to Sentinel, with
+`announce-hostnames` and `resolve-hostnames` on, so a restarted pod with a new
+IP keeps its identity. `test_redis_ha.py` covers the decisions with a stubbed
+`redis-cli`, and `deploy/platform/e2e/tests/redis-ha` kills the master on a
+live cluster.
 
 ## Choosing a Redis base
 
