@@ -459,7 +459,7 @@ behave. Later phases add test directories here.
 
   Stop and report if metadata enrichment does not work. The fallback is filtering to the k3d node
   container's cgroup.
-- [ ] **FA1 Base** `deploy/platform/falco/`:
+- [x] **FA1 Base** `deploy/platform/falco/`:
   - Namespace `falco` with PSA `privileged` (allowlisted) and default-deny NetworkPolicy plus
     `prometheus-scrape`. Egress from falcosidekick to loki-gateway and Alertmanager only.
   - HelmRelease for the `falcosecurity/falco` chart (9.2.2 / Falco 0.45.2 as of 2026-11-14; pin what
@@ -470,7 +470,7 @@ behave. Later phases add test directories here.
       Alertmanager), web UI off;
     - bounded resources and `platform-standard` priority.
   - Images by digest (SC2).
-- [ ] **FA2 Rules.** Keep the upstream default ruleset and add `rules/baukit.rules.yaml`, loaded as an
+- [x] **FA2 Rules.** Keep the upstream default ruleset and add `rules/baukit.rules.yaml`, loaded as an
   extra rules file:
   - macros that silence the known k3d and Flux noise from FA0, each with a comment naming the source;
   - app rules keyed on the `baukit.dev/process` label:
@@ -483,7 +483,7 @@ behave. Later phases add test directories here.
     terminal shell in any platform namespace.
 
   The static lane validates rule files with `falco --validate` in the pinned image.
-- [ ] **FA3 Alerts and dashboard** in the platform pack:
+- [x] **FA3 Alerts and dashboard** in the platform pack:
   - `BaukitFalcoDown` (a node without a ready Falco pod);
   - `BaukitFalcoEventsDropped` (kernel drop counter increasing);
   - `BaukitFalcoCriticalEvent` (any event at priority Critical or above in 5m, critical);
@@ -752,3 +752,16 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   `BaukitDeadMansSwitch` deleted (Watchdog covers it), the template's `ApiHighErrorRatio` is
   `severity: critical` with a description and a repo-relative runbook (`docs/runbooks/api-high-error-ratio.md`
   ships in the product). Every new alert must ship its runbook in the same change.
+- 2026-11-14: FA1-FA3 merged. `deploy/platform/falco/`: chart 9.2.2, Falco 0.45.2 and falcosidekick
+  2.35.1 by digest, `modern_ebpf`, the k3s CRI socket, falcoctl off (the image ships rules and the
+  container plugin, and falcoctl would need internet egress), sidekick with Loki and Alertmanager
+  (`/api/v2/alerts`, min warning) outputs. `rules/baukit.rules.yaml` lands in `/etc/falco/rules.d` via a
+  ConfigMap, plus an optional `falco-overlay-rules` ConfigMap; `validate-rules.sh` runs `falco -V` in the
+  pinned image with `--network none` inside platform-validate, and a broken macro fails the step.
+  `validate.sh` now also passes `--api-versions monitoring.coreos.com/v1`, which renders the sidekick
+  ServiceMonitor (the only new monitor). Five alerts, promtool tests, `dashboards/falco.json`, five runbooks.
+  Live on k3d: rules loaded, the shell, unexpected-process and write-below-/etc rules fired with pod
+  metadata; sent back once to prove the runc exclusion on the token rule live (0 events at container
+  start, a real token read still fires). Idle footprint about 2 min after start: falco 255m/253Mi,
+  sidekick 1m/14Mi. Known limits: "unexpected process" means "not PID 1"; no Flux noise macro yet
+  (FA4 soak decides); network policies sit inline until N2's components land.
