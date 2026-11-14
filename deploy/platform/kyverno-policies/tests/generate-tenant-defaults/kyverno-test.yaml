@@ -1,0 +1,20 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: generate-tenant-defaults
+policies:
+  - ../../policies/generate-tenant-defaults.yaml
+resources:
+  - resources.yaml
+results:
+  - isGeneratingPolicy: true
+    policy: generate-tenant-defaults
+    kind: Namespace
+    resources: [shop]
+    generatedResource: generated.yaml
+    result: pass
+  - isGeneratingPolicy: true
+    policy: generate-tenant-defaults
+    kind: Namespace
+    resources: [platform]
+    result: skip

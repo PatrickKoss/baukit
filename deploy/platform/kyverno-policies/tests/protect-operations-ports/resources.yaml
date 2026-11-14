@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: internal-ops
+  namespace: apps
+spec:
+  type: ClusterIP
+  ports:
+    - name: ops
+      port: 9090
+      targetPort: 9090
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-http
+  namespace: apps
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-ops-port
+  namespace: apps
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 9090
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-ops-target
+  namespace: apps
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 80
+      targetPort: 9100
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: public-metrics-name
+  namespace: apps
+spec:
+  type: LoadBalancer
+  ports:
+    - name: metrics
+      port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app
+  namespace: apps
+spec:
+  rules:
+    - host: app.example.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ops-number
+  namespace: apps
+spec:
+  rules:
+    - host: app.example.test
+      http:
+        paths:
+          - path: /metrics
+            pathType: Prefix
+            backend:
+              service:
+                name: app
+                port:
+                  number: 9090
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ops-name
+  namespace: apps
+spec:
+  rules:
+    - host: app.example.test
+      http:
+        paths:
+          - path: /ops
+            pathType: Prefix
+            backend:
+              service:
+                name: app
+                port:
+                  name: ops

@@ -1,0 +1,40 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-wildcard-rbac
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Restrict wildcard RBAC
+    policies.kyverno.io/severity: high
+spec:
+  validationActions:
+    - Audit
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [rbac.authorization.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [roles, clusterroles]
+  matchConditions:
+    - name: outside-system-namespaces
+      expression: >-
+        !(object.metadata.?namespace.orValue("") in
+          ["kube-system", "kube-public", "kube-node-lease", "kyverno", "flux-system"])
+    - name: not-a-builtin-cluster-role
+      expression: >-
+        !(object.metadata.name.startsWith("system:") ||
+          object.metadata.name in ["cluster-admin", "admin", "edit", "view"])
+  variables:
+    - name: wildcards
+      expression: >-
+        object.?rules.orValue([]).filter(r,
+          "*" in r.?verbs.orValue([]) || "*" in r.?resources.orValue([]))
+  validations:
+    - expression: size(variables.wildcards) == 0
+      message: >-
+        RBAC rules must name their verbs and resources instead of using "*". List the exact
+        verbs and resources the component needs.

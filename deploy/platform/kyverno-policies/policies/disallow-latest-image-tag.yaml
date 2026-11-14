@@ -1,0 +1,32 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: disallow-latest-image-tag
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Disallow the latest image tag
+    policies.kyverno.io/severity: medium
+spec:
+  validationActions:
+    - Audit
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  variables:
+    - name: latest
+      expression: >-
+        (object.spec.containers + object.spec.?initContainers.orValue([]))
+        .filter(c, c.image.split('@')[0].endsWith(':latest'))
+        .map(c, c.name)
+  validations:
+    - expression: size(variables.latest) == 0
+      messageExpression: >-
+        'Containers ' + variables.latest.join(', ') +
+        ' use the mutable :latest tag. Pin a release tag or a digest.'

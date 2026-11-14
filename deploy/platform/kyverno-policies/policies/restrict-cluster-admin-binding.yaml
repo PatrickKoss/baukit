@@ -1,0 +1,38 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-cluster-admin-binding
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Restrict cluster-admin bindings
+    policies.kyverno.io/severity: high
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [rbac.authorization.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [clusterrolebindings, rolebindings]
+  matchConditions:
+    - name: binds-cluster-admin
+      expression: object.roleRef.kind == "ClusterRole" && object.roleRef.name == "cluster-admin"
+  variables:
+    - name: systemNamespaces
+      expression: '["kube-system", "flux-system"]'
+    - name: foreign
+      expression: >-
+        object.?subjects.orValue([]).filter(s,
+          !(s.kind == "Group" && s.name == "system:masters") &&
+          !(s.kind == "ServiceAccount" && s.?namespace.orValue("") in variables.systemNamespaces))
+        .map(s, s.kind + "/" + s.?namespace.orValue("") + "/" + s.name)
+  validations:
+    - expression: size(variables.foreign) == 0
+      messageExpression: >-
+        "cluster-admin may only be bound to system:masters and service accounts in kube-system or flux-system, not " +
+        variables.foreign.join(", ") + ". Bind a Role or ClusterRole with the permissions the subject needs."

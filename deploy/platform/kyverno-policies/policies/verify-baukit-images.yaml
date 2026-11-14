@@ -1,0 +1,45 @@
+apiVersion: policies.kyverno.io/v1
+kind: ImageValidatingPolicy
+metadata:
+  name: verify-baukit-images
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Verify baukit product images
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Product images under ghcr.io/patrickkoss must carry a cosign keyless signature made by the
+      product's release workflow. Audit until product images live in a registry (plan D6).
+spec:
+  validationActions:
+    - Audit
+  failurePolicy: Ignore
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  matchImageReferences:
+    - glob: ghcr.io/patrickkoss/*
+  attestors:
+    - name: release
+      cosign:
+        keyless:
+          identities:
+            - issuer: https://token.actions.githubusercontent.com
+              subjectRegExp: '^https://github\.com/patrickkoss/[A-Za-z0-9_.-]+/\.github/workflows/release\.yml@refs/tags/v[0-9].*$'
+        ctlog:
+          url: https://rekor.sigstore.dev
+  validations:
+    - expression: >-
+        images.containers.map(image, verifyImageSignatures(image, [attestors.release])).all(e, e > 0)
+      message: >-
+        Product images must be signed by the product's release workflow with cosign keyless signing.
+        Publish the image through .github/workflows/release.yml, which signs it, and deploy that tag.

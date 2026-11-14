@@ -1,0 +1,31 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-loadbalancer-and-nodeport
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Restrict LoadBalancer and NodePort Services
+    policies.kyverno.io/severity: high
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [services]
+  variables:
+    - name: allowedNamespaces
+      expression: '["kube-system", "traefik"]'
+  validations:
+    - expression: >-
+        !(object.spec.?type.orValue("ClusterIP") in ["LoadBalancer", "NodePort"]) ||
+        object.metadata.?namespace.orValue("") in variables.allowedNamespaces
+      messageExpression: >-
+        "Service type " + object.spec.type + " is only allowed in kube-system and traefik. " +
+        "Use a ClusterIP Service behind an Ingress."

@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: probed
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: shop
+    app.kubernetes.io/part-of: shop
+    baukit.dev/process: api
+spec:
+  selector:
+    matchLabels:
+      app: shop
+  template:
+    metadata:
+      labels:
+        app: shop
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/example/shop:1.0.0
+          readinessProbe:
+            httpGet: {path: /ready, port: 8080}
+          livenessProbe:
+            httpGet: {path: /live, port: 8080}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: readiness-only
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: shop
+    app.kubernetes.io/part-of: shop
+    baukit.dev/process: api
+spec:
+  selector:
+    matchLabels:
+      app: shop
+  template:
+    metadata:
+      labels:
+        app: shop
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/example/shop:1.0.0
+          readinessProbe:
+            httpGet: {path: /ready, port: 8080}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: unprobed-sts
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: shop
+    app.kubernetes.io/part-of: shop
+    baukit.dev/process: api
+spec:
+  selector:
+    matchLabels:
+      app: shop
+  template:
+    metadata:
+      labels:
+        app: shop
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/example/shop:1.0.0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-unprobed
+  namespace: platform
+  labels:
+    app.kubernetes.io/name: shop
+    app.kubernetes.io/part-of: shop
+    baukit.dev/process: api
+spec:
+  selector:
+    matchLabels:
+      app: shop
+  template:
+    metadata:
+      labels:
+        app: shop
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/example/shop:1.0.0

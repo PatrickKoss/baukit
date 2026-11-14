@@ -1,0 +1,34 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-wildcard-rbac
+policies:
+  - ../../policies/restrict-wildcard-rbac.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: restrict-wildcard-rbac
+    kind: Role
+    resources: [explicit]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-wildcard-rbac
+    kind: Role
+    resources: [wildcard-verbs]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-wildcard-rbac
+    kind: ClusterRole
+    resources: [wildcard-resources]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-wildcard-rbac
+    kind: Role
+    resources: [system-wildcard]
+    result: skip
+  - isValidatingPolicy: true
+    policy: restrict-wildcard-rbac
+    kind: ClusterRole
+    resources: [cluster-admin]
+    result: skip
