@@ -1,0 +1,3 @@
+# Third-party metrics the platform pack may query, one per line. Exact names only: the
+# app catalog is not allowed here. Append 'histogram' to also allow _bucket, _count and _sum.
+kube_namespace_labels

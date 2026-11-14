@@ -137,7 +137,8 @@ PYTHON
 # version. The corresponding immutable source version is vX.Y.Z.
 printf '%s\n' "$next" > templates/VERSION
 
-for chart in deploy/chart/baukit-app/Chart.yaml deploy/observability/Chart.yaml; do
+for chart in deploy/chart/baukit-app/Chart.yaml deploy/observability/Chart.yaml \
+  deploy/observability-platform/Chart.yaml; do
   TRAIN_VERSION="$next" perl -0pi -e \
     's{^version: .+$}{"version: ".$ENV{TRAIN_VERSION}}egm; s{^appVersion: .+$}{"appVersion: \"".$ENV{TRAIN_VERSION}."\""}egm' \
     "$chart"

@@ -154,6 +154,9 @@ spec:
       enabled: true
     kube-state-metrics:
       replicas: 1
+      # Platform alerts select namespaces by this label through kube_namespace_labels.
+      metricLabelsAllowlist:
+        - namespaces=[app.kubernetes.io/part-of]
       resources:
         requests:
           cpu: 20m

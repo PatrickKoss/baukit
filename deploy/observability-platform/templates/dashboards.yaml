@@ -1,0 +1,25 @@
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+{{- $file := dict "root" $ "path" $path }}
+{{- $component := include "baukit-platform-observability.component" $file }}
+{{- if index $.Values.components $component }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "baukit-platform-observability.fileName" $file }}
+  labels:
+    {{- include "baukit-platform-observability.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+    {{- with $.Values.dashboards.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{ $.Values.dashboards.folderAnnotation }}: {{ printf "%s/%s" $.Values.dashboards.folderRoot $component | quote }}
+    {{- with $.Values.dashboards.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+data:
+  {{ base $path }}: |
+    {{- $.Files.Get $path | nindent 4 }}
+{{- end }}
+{{- end }}
