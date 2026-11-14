@@ -16,6 +16,7 @@ namespace=${BAUKIT_SMOKE_NAMESPACE:-$product}
 release=${BAUKIT_SMOKE_RELEASE:-$product}
 resource_name=${BAUKIT_SMOKE_RESOURCE_NAME:-$release}
 observability_namespace=${BAUKIT_SMOKE_OBSERVABILITY_NAMESPACE:-observability}
+runbook_base_url=${BAUKIT_SMOKE_RUNBOOK_BASE_URL:-https://github.com/PatrickKoss/baukit/blob/main/docs/runbooks/app}
 dependencies_file=${BAUKIT_SMOKE_DEPENDENCIES_FILE:-}
 dependencies_namespace=${BAUKIT_SMOKE_DEPENDENCIES_NAMESPACE:-$namespace-deps}
 dependencies_pod_security_level=${BAUKIT_SMOKE_DEPENDENCIES_POD_SECURITY_LEVEL:-baseline}
@@ -187,6 +188,7 @@ echo "installing the Baukit observability ConfigMaps"
 helm upgrade --install "$release-observability" "$observability_chart" \
     --namespace "$observability_namespace" \
     --set fullnameOverride=baukit-observability-pack \
+    --set runbookBaseUrl="$runbook_base_url" \
     --wait
 for suffix in dashboard recording-rules alert-rules; do
     kubectl -n "$observability_namespace" get configmap \

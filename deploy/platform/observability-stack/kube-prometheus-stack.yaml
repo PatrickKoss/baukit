@@ -64,9 +64,6 @@ spec:
             - receiver: "null"
               matchers:
                 - alertname = "Watchdog"
-            - receiver: "null"
-              matchers:
-                - alertname = "BaukitDeadMansSwitch"
         receivers:
           - name: "null"
       alertmanagerSpec:

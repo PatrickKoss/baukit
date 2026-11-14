@@ -37,7 +37,7 @@ An overlay **must** provide all of the following:
 3. A real Alertmanager receiver before production traffic is served. Patch
    `kube-prometheus-stack.spec.values.alertmanager.config`: add an
    identity-bearing receiver, route actionable alerts to it, and route
-   `BaukitDeadMansSwitch` to the external heartbeat integration. The base's
+   `Watchdog` to the external heartbeat integration. The base's
    `null` receiver intentionally drops every notification.
 4. Storage sizing and a StorageClass appropriate to the node. The defaults are
    30 Gi for Prometheus, 20 Gi for Loki, 10 Gi for Tempo, and 1 Gi for

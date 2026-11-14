@@ -12,7 +12,7 @@ Use the observability pack from the same Baukit release train as the product. Ne
 1. Read and follow `<baukit-repo>/deploy/observability/README.md` as the import runbook; do not reproduce its assets by hand.
 2. Provision or import `dashboards/baukit-service-overview.json` and bind its Prometheus and Loki datasource variables.
 3. Mount both `recording-rules/*.rules.yml` and `alerts/*.rules.yml` in Prometheus. Load recording rules before interpreting dependent alerts.
-4. Review the product SLO and all supplied thresholds together, replace placeholder runbook URLs, and configure the receiver to detect absence of `BaukitDeadMansSwitch` before production routing.
+4. Review the product SLO and all supplied thresholds together, set the chart's required `runbookBaseUrl` to the directory that holds the `docs/runbooks/app/<slug>.md` runbooks, and configure the receiver to detect absence of kube-prometheus-stack's `Watchdog` before production routing.
 
 ## Enforce telemetry conformance
 
