@@ -15,16 +15,15 @@ import hashlib
 import json
 import re
 import shutil
-import subprocess
 import sys
-import tempfile
 from collections.abc import Iterable
 from pathlib import Path
 
-SOURCE_MARKER = "# crd-source "
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lint"))
+import helm_yaml  # noqa: E402 -- the shared parser lives in the sibling lint directory
+
 STAMP_NAME = ".inputs.sha256"
 CRD_KIND = "CustomResourceDefinition"
-DOCUMENT_SEPARATOR = re.compile(r"^---[ \t]*$", re.MULTILINE)
 CRD_KIND_LINE = re.compile(r"^kind:[ \t]*['\"]?CustomResourceDefinition['\"]?[ \t]*$", re.MULTILINE)
 COMBINATORS = ("allOf", "anyOf", "oneOf")
 SCHEMA_MAPS = ("properties", "patternProperties")
@@ -37,21 +36,6 @@ ROOT_PROPERTIES = {
     "metadata": {"type": "object"},
 }
 
-CONVERTER_CHART = "apiVersion: v2\nname: crd-json\nversion: 0.0.0\n"
-CONVERTER_TEMPLATE = """\
-{{- range $path, $_ := .Files.Glob "files/*.yaml" }}
-{{- range $doc := regexSplit "(?m)^---[ \\t]*$" ($.Files.Get $path) -1 }}
-{{- $obj := fromYaml $doc }}
-{{- if hasKey $obj "Error" }}{{ fail (printf "%s: %s" $path $obj.Error) }}{{ end }}
-{{- if eq (toString (get $obj "kind")) "CustomResourceDefinition" }}
----
-# crd-source {{ $path }}
-{{ toJson $obj }}
-{{- end }}
-{{- end }}
-{{- end }}
-"""
-
 
 class GenerationError(Exception):
     pass
@@ -59,52 +43,28 @@ class GenerationError(Exception):
 
 def inputs_digest(paths: Iterable[Path]) -> str:
     digest = hashlib.sha256(Path(__file__).read_bytes())
+    digest.update(Path(helm_yaml.__file__).read_bytes())
     for content_hash in sorted(hashlib.sha256(path.read_bytes()).hexdigest() for path in paths):
         digest.update(content_hash.encode())
     return digest.hexdigest()
 
 
-def crd_documents(paths: list[Path]) -> Iterable[tuple[str, str, str]]:
-    """Yield (chart file name, source, text) for each YAML document whose kind is a CRD."""
-    index = 0
+def crd_documents(paths: list[Path]) -> Iterable[tuple[str, str]]:
+    """Yield (source, text) for each YAML document whose kind is a CRD."""
     for path in paths:
-        for document in DOCUMENT_SEPARATOR.split(path.read_text()):
+        for document in helm_yaml.split_documents(path.read_text()):
             if CRD_KIND_LINE.search(document):
-                yield f"files/{index:05d}.yaml", str(path), document
-                index += 1
+                yield str(path), document
 
 
 def load_crds(paths: list[Path]) -> list[tuple[str, dict]]:
-    """Return (source, crd) pairs, parsing YAML with helm's fromYaml since stdlib has no YAML."""
-    helm = shutil.which("helm")
-    if helm is None:
-        raise GenerationError("helm is required to parse YAML manifests")
-    with tempfile.TemporaryDirectory() as chart_dir:
-        chart = Path(chart_dir)
-        (chart / "templates").mkdir()
-        (chart / "files").mkdir()
-        (chart / "Chart.yaml").write_text(CONVERTER_CHART)
-        (chart / "templates" / "crds.yaml").write_text(CONVERTER_TEMPLATE)
-        sources = {}
-        for name, source, document in crd_documents(paths):
-            sources[name] = source
-            (chart / name).write_text(document)
-        result = subprocess.run(  # noqa: S603 -- argv is the helm found by shutil.which plus fixed flags, no shell
-            [helm, "template", "crd-json", str(chart)],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    if result.returncode != 0:
-        raise GenerationError(f"helm could not parse the manifests:\n{result.stderr.strip()}")
-    crds = []
-    source = ""
-    for line in result.stdout.splitlines():
-        if line.startswith(SOURCE_MARKER):
-            source = sources[line.removeprefix(SOURCE_MARKER)]
-        elif line.startswith("{"):
-            crds.append((source, json.loads(line)))
-    return crds
+    """Return (source, crd) pairs."""
+    documents = list(crd_documents(paths))
+    try:
+        parsed = helm_yaml.parse_documents([text for _, text in documents])
+    except helm_yaml.YamlError as error:
+        raise GenerationError(str(error)) from error
+    return [(source, crd) for (source, _), crd in zip(documents, parsed, strict=True)]
 
 
 def convert(node: object, *, allow_closing: bool = True) -> object:
