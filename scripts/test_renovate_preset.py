@@ -127,7 +127,9 @@ class RenovatePresetTests(unittest.TestCase):
         tracked = [
             name
             for name in tracked_files()
-            if name.startswith("deploy/platform/") and "rancher/k3s:" in (ROOT / name).read_text()
+            if name.startswith("deploy/platform/")
+            and name.endswith((".yaml", ".sh", ".md"))
+            and "rancher/k3s:" in (ROOT / name).read_text()
         ]
         kubernetes_manifests = {
             name
