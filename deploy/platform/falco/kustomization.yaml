@@ -6,6 +6,22 @@ resources:
   - helm-repository.yaml
   - helm-release.yaml
   - network-policy.yaml
+components:
+  - ../components/network-policy/default-deny
+  - ../components/network-policy/dns-egress
+  - ../components/network-policy/prometheus-scrape
+patches:
+  - target:
+      kind: NetworkPolicy
+      name: allow-prometheus-scrape
+    patch: |-
+      - op: replace
+        path: /spec/ingress/0/ports
+        value:
+          - protocol: TCP
+            port: 8765
+          - protocol: TCP
+            port: 2801
 configMapGenerator:
   - name: falco-baukit-rules
     files:

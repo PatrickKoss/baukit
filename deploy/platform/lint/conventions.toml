@@ -9,6 +9,7 @@ active = [
   "alert-metadata",
   "alert-runbook",
   "dashboards-selected",
+  "default-deny-network-policy",
   "policy-exception-budget",
   "prune-disabled",
   "psa-labels",
@@ -16,6 +17,5 @@ active = [
 ]
 
 [rules.pending]
-default-deny-network-policy = "N2"
 metrics-enabled = "O3"
 alert-tested = "O4"

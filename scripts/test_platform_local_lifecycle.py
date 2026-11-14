@@ -95,6 +95,13 @@ class BindAddressTest(unittest.TestCase):
         self.assertIn("--port 127.0.0.1:8443:443@loadbalancer", calls)
         self.assertIsNone(WILDCARD_ADDRESS.search(calls))
 
+    def test_cluster_forwards_arguments_after_the_fifth_to_k3d(self) -> None:
+        result, calls = self.run_with_stubs(
+            "k3d_create_local_cluster ph img random 8080 8443 --subnet 10.89.0.0/24"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--wait --subnet 10.89.0.0/24", calls)
+
     def test_snapshot_container_publishes_on_the_gateway_only(self) -> None:
         result, calls = self.run_with_stubs("run_snapshot_container c img /srv 9418 172.30.0.1")
         self.assertEqual(result.returncode, 0, result.stderr)

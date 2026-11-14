@@ -373,7 +373,7 @@ behave. Later phases add test directories here.
 
 ## Phase O: platform observability
 
-- [~] **O1 Rule and dashboard discovery.** Set `ruleNamespaceSelector`, `serviceMonitorNamespaceSelector`
+- [x] **O1 Rule and dashboard discovery.** Set `ruleNamespaceSelector`, `serviceMonitorNamespaceSelector`
   and `podMonitorNamespaceSelector` to match `app.kubernetes.io/part-of: baukit-platform` namespaces,
   and label every base namespace with it. Grafana's sidecar searches `ALL` with the `grafana_dashboard`
   label and uses `folderAnnotation`, so each component gets its own folder. This fixes F-02. The V4
@@ -509,11 +509,11 @@ behave. Later phases add test directories here.
 
 ## Phase R: reliability
 
-- [~] **R1 Traefik** (F-01, D7): a Deployment with 2 replicas where the node count allows (1 locally),
+- [x] **R1 Traefik** (F-01, D7): a Deployment with 2 replicas where the node count allows (1 locally),
   `type: LoadBalancer` through k3s ServiceLB, rolling update `maxUnavailable: 0, maxSurge: 1`, PDB,
   `platform-critical`, `install/upgrade.crds: CreateReplace`. The e2e `ingress/` test bumps a pod
   annotation and asserts the rollout completes with no failed requests from a curl loop.
-- [~] **R2 CNPG** (F-03, F-07): `enablePDB: false` when `instances: 1` (documented in the README, with
+- [x] **R2 CNPG** (F-03, F-07): `enablePDB: false` when `instances: 1` (documented in the README, with
   `nodeMaintenanceWindow` for multi-instance overlays). Scope the restore-test Role's delete and patch
   to `resourceNames: [postgres-cluster-restore-test]`. Give the restore test a Delete-policy
   StorageClass on Hetzner. Add an e2e test that drains the node with `kubectl drain --dry-run=server`
@@ -539,7 +539,7 @@ behave. Later phases add test directories here.
   bootstraps `redis-0` as master when no Sentinel answers. Sentinels set `announce-hostnames` and
   `resolve-hostnames`. e2e test: kill the master, wait for failover, restart the old master, assert it
   rejoins as a replica with the data intact.
-- [~] **R8 Prune safety** (F-08): drop `hcloud/namespace.yaml`. Annotate stateful objects (Namespaces
+- [x] **R8 Prune safety** (F-08): drop `hcloud/namespace.yaml`. Annotate stateful objects (Namespaces
   that hold PVCs, CNPG Clusters, PVCs) with `kustomize.toolkit.fluxcd.io/prune: disabled`. The V4
   check enforces it.
 
@@ -553,11 +553,11 @@ behave. Later phases add test directories here.
 - [ ] **SC2 Digests everywhere** (F-25): use the charts' `image.digest` values, a CNPG `ImageCatalog`
   with digests, and `@sha256` on raw manifests. Add a V5 policy that fails any rendered container image
   without a digest outside an allowlist with reasons.
-- [ ] **SC3 Image scanning:** a `platform-images` gate step extracts every image from the rendered bases
+- [x] **SC3 Image scanning:** a `platform-images` gate step extracts every image from the rendered bases
   (V3 already renders them) and runs `trivy image --severity HIGH,CRITICAL --ignore-unfixed` with a
   checked-in `.trivyignore` whose entries need an expiry date and a reason. Also add
   `trivy config` over `deploy/` Dockerfiles and platform-infra's Terraform.
-- [ ] **SC4 Renovate:** custom managers for `tools.toml`, digests in raw manifests and the k3s image
+- [x] **SC4 Renovate:** custom managers for `tools.toml`, digests in raw manifests and the k3s image
   strings. Set `minimumReleaseAge` for charts and grouping per base. Configure the same in platform-infra
   (its `v*` tag pattern fix lands in PI1).
 - [ ] **S3 Traefik edge** (F-27, F-26): a default `TLSOption` (min TLS 1.2, `sniStrict`, curve
@@ -581,7 +581,7 @@ behave. Later phases add test directories here.
 
   Run kube-bench (k3s CIS profile, pinned image) as a report-only e2e step and record the score in
   the log.
-- [~] **S6 Local lifecycle exposure** (F-09, F-10): build the snapshot from
+- [x] **S6 Local lifecycle exposure** (F-09, F-10): build the snapshot from
   `git ls-files --cached --others --exclude-standard`, bind the snapshot server and the k3d API, 80 and
   443 to `127.0.0.1` (or the k3d network gateway), run the snapshot image as non-root, validate
   `Content-Length` in `local-git-http.py` (with a test), and print secret locations instead of values
@@ -800,3 +800,29 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   12 unittest cases (stubbed redis-cli) run in platform-validate. The chainsaw test
   `e2e/tests/redis-ha/` (kill master, promotion, old master rejoins as replica, key on both) passed twice
   on k3d, and a full StatefulSet delete came back with `redis-0` as master. Cold start is about 10 s slower.
+- 2026-11-14 (D merged). R1: Traefik runs as a Deployment (1 replica, PDB `maxUnavailable: 1`,
+  `maxUnavailable: 0`/`maxSurge: 1` rollout, `platform-critical`) behind a `LoadBalancer` Service that k3s
+  ServiceLB answers. hostPorts are gone and the hcloud CCM load balancer controller is off. R2: CNPG
+  `enablePDB: false` at one instance, the restore Role scopes delete/patch to the restore cluster by
+  resourceName, and `hcloud-volumes-delete` exists for `RESTORE_STORAGE_CLASS`. R8: `hcloud/namespace.yaml`
+  dropped, prune disabled on namespaces, the CNPG cluster and the rustfs PVC. O1: rule, ServiceMonitor and
+  PodMonitor namespace selectors use `app.kubernetes.io/part-of: baukit-platform`, and the Grafana sidecar
+  searches all namespaces with folder annotations. hcloud CCM and CSI keep their monitors disabled; O3 owns
+  that. S6: snapshot from `git ls-files`, every bind on loopback or the k3d gateway, the snapshot server
+  runs as uid 65532 and checks Content-Length. Convention rules `rules-selected` and `prune-disabled` are
+  active. Local Grafana limit is 384Mi after an OOMKill at 256Mi. Live proof on k3d by the agent; I re-ran
+  platform-validate, python-lint, shell-lint, observability-rules, metric-names and scripts-tests after the
+  merge.
+- 2026-11-14 (SC3, SC4 merged). `platform-images` (images lane, selected by path) renders the platform,
+  scans 55 images and every tracked Dockerfile with trivy (HIGH/CRITICAL, fixable only, JSON output,
+  no ignorefile) and compares each (target, ID) pair with `deploy/platform/lint/image-findings.toml`.
+  The step fails on an unlisted finding, a listed ID trivy no longer reports, an entry with no findings
+  left, and an expired or malformed entry. All entries expire 2026-11-28 and name SC2 as the follow-up:
+  10 images where a bump fixes every ID, 25 where it fixes most, 15 already on the newest upstream
+  release, and curl and posthog without a tag to compare. The trivy cache is `~/.cache/baukit/trivy`,
+  a cold run takes about 19 min and a warm one about 2 min. After the merge, the D snapshot image
+  (uid 65532) no longer reports DS-0002, the step failed on that stale entry as designed, and I removed
+  the entry. Renovate gained custom managers for `deploy/tools.toml`, digests in raw manifests and the
+  k3s pins, grouped per platform base, with `scripts/test_renovate_preset.py`. I also raised the android
+  QA test stub deadlines (ADB 0.15 s to 10 s, watchdogs 5 s to 120 s), which had failed scripts-tests at
+  load 70; three runs at load 36 to 77 passed.

@@ -37,7 +37,7 @@ k3d_gateway() {
 }
 
 # Creates a single-node k3d cluster without the packaged Traefik. The API and
-# the load balancer ports bind 127.0.0.1 only.
+# the load balancer ports bind 127.0.0.1 only. Arguments after the fifth go to k3d.
 k3d_create_local_cluster() {
   local cluster=$1
   local image=$2
@@ -52,7 +52,8 @@ k3d_create_local_cluster() {
     --api-port "127.0.0.1:$api_port" \
     --port "127.0.0.1:$http_port:80@loadbalancer" \
     --port "127.0.0.1:$https_port:443@loadbalancer" \
-    --wait
+    --wait \
+    "${@:6}"
 }
 
 # Runs the snapshot image with the bare repositories mounted read-only. The
