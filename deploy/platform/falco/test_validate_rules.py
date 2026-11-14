@@ -1,3 +1,4 @@
+import importlib.util
 import subprocess
 import tempfile
 import tomllib
@@ -7,6 +8,19 @@ from pathlib import Path
 FALCO_DIR = Path(__file__).resolve().parent
 REPO_ROOT = FALCO_DIR.parents[2]
 SCRIPT = FALCO_DIR / "validate-rules.sh"
+
+
+def load_process_runner():
+    spec = importlib.util.spec_from_file_location(
+        "process_runner", REPO_ROOT / "scripts/process_runner.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+PROCESS_RUNNER = load_process_runner()
 
 BROKEN_RULES = {
     "undefined macro": """
@@ -27,11 +41,8 @@ BROKEN_RULES = {
 
 
 def validate(*rules_files: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [str(SCRIPT), *map(str, rules_files)],
-        capture_output=True,
-        text=True,
-        check=False,
+    return PROCESS_RUNNER.run_process(
+        [str(SCRIPT), *map(str, rules_files)], capture_output=True, text=True
     )
 
 
