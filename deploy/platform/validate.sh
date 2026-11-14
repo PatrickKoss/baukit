@@ -42,6 +42,11 @@ if [[ ${1:-} == --kubeconform ]]; then
   exit
 fi
 
+render_output=""
+if [[ ${1:-} == --render-to ]]; then
+  render_output=${2:?--render-to needs a directory}
+fi
+
 pinned_flux_version=v$(baukit_tool_version "$repo_root" flux)
 
 mkdir -p "$cache_dir/repository-cache" "$cache_dir/kubeconform-schemas"
@@ -320,6 +325,12 @@ if [[ -d "$platform_dir/overlays" ]]; then
     fi
     ((rendered_overlays += 1))
   done
+fi
+
+if [[ -n $render_output ]]; then
+  mkdir -p "$render_output"
+  cp -- "$rendered_dir"/*.yaml "$render_output"/
+  exit "$status"
 fi
 
 flux_manifest="$work_dir/flux-install-$pinned_flux_version.yaml"

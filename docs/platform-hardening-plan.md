@@ -333,14 +333,14 @@ behave. Later phases add test directories here.
   Split node-exporter and Alloy into a new `observability-agents` namespace (they need hostPID,
   hostNetwork and hostPath), so `observability` itself can run `restricted`. Flux's own namespace gets
   labels through the lifecycle's `flux install` patch.
-- [~] **N2 Reusable NetworkPolicy components** in `deploy/platform/components/network-policy/`:
+- [x] **N2 Reusable NetworkPolicy components** in `deploy/platform/components/network-policy/`:
   `default-deny`, `dns-egress` (CoreDNS pods plus the k3s Service-IP compatibility rule the chart
   already documents), `apiserver-egress` (k3s DNATs `10.43.0.1:443` to the node IP on 6443, so the
   rule takes an `ipBlock` for the node CIDR, set by a Kustomize replacement from one overlay value),
   `prometheus-scrape` (ingress from Prometheus pods on named metrics ports) and `internet-https`
   (`0.0.0.0/0` except RFC 1918, 100.64/10 and link-local, port 443). The e2e test proves the apiserver
   rule against k3d before any base relies on it.
-- [~] **N3 Per-base policies.** Each base composes `default-deny` plus explicit allows. Peer and port
+- [x] **N3 Per-base policies.** Each base composes `default-deny` plus explicit allows. Peer and port
   pairs from the audit (verify each one in e2e; they are a starting point, not a spec):
   - **traefik:** ingress 8000/8443 from anywhere, 9100 from Prometheus. Egress to the apiserver, DNS,
     and backend ports in namespaces labelled `baukit.dev/ingress-backend=true`.
@@ -360,7 +360,7 @@ behave. Later phases add test directories here.
     Prometheus 9090 ingress from Grafana, flagger and kured.
   - **kyverno, kured, flagger, platform-redis, falco:** controller-specific allows plus
     `prometheus-scrape`.
-- [~] **N4 Fence PostHog** (D8): replace the any-to-any internal policy with explicit pairs, deny egress
+- [x] **N4 Fence PostHog** (D8): replace the any-to-any internal policy with explicit pairs, deny egress
   except DNS and `internet-https` for the plugin server, bump `postgres:14.1` to the newest 14.x digest.
   Record the remaining `baseline` gaps as exceptions.
 - [ ] **N5 Probe matrix test.** `deploy/platform/e2e/tests/netpol/matrix.yaml` lists source, destination,
@@ -373,7 +373,7 @@ behave. Later phases add test directories here.
 
 ## Phase O: platform observability
 
-- [~] **O1 Rule and dashboard discovery.** Set `ruleNamespaceSelector`, `serviceMonitorNamespaceSelector`
+- [x] **O1 Rule and dashboard discovery.** Set `ruleNamespaceSelector`, `serviceMonitorNamespaceSelector`
   and `podMonitorNamespaceSelector` to match `app.kubernetes.io/part-of: baukit-platform` namespaces,
   and label every base namespace with it. Grafana's sidecar searches `ALL` with the `grafana_dashboard`
   label and uses `folderAnnotation`, so each component gets its own folder. This fixes F-02. The V4
@@ -509,11 +509,11 @@ behave. Later phases add test directories here.
 
 ## Phase R: reliability
 
-- [~] **R1 Traefik** (F-01, D7): a Deployment with 2 replicas where the node count allows (1 locally),
+- [x] **R1 Traefik** (F-01, D7): a Deployment with 2 replicas where the node count allows (1 locally),
   `type: LoadBalancer` through k3s ServiceLB, rolling update `maxUnavailable: 0, maxSurge: 1`, PDB,
   `platform-critical`, `install/upgrade.crds: CreateReplace`. The e2e `ingress/` test bumps a pod
   annotation and asserts the rollout completes with no failed requests from a curl loop.
-- [~] **R2 CNPG** (F-03, F-07): `enablePDB: false` when `instances: 1` (documented in the README, with
+- [x] **R2 CNPG** (F-03, F-07): `enablePDB: false` when `instances: 1` (documented in the README, with
   `nodeMaintenanceWindow` for multi-instance overlays). Scope the restore-test Role's delete and patch
   to `resourceNames: [postgres-cluster-restore-test]`. Give the restore test a Delete-policy
   StorageClass on Hetzner. Add an e2e test that drains the node with `kubectl drain --dry-run=server`
@@ -539,7 +539,7 @@ behave. Later phases add test directories here.
   bootstraps `redis-0` as master when no Sentinel answers. Sentinels set `announce-hostnames` and
   `resolve-hostnames`. e2e test: kill the master, wait for failover, restart the old master, assert it
   rejoins as a replica with the data intact.
-- [~] **R8 Prune safety** (F-08): drop `hcloud/namespace.yaml`. Annotate stateful objects (Namespaces
+- [x] **R8 Prune safety** (F-08): drop `hcloud/namespace.yaml`. Annotate stateful objects (Namespaces
   that hold PVCs, CNPG Clusters, PVCs) with `kustomize.toolkit.fluxcd.io/prune: disabled`. The V4
   check enforces it.
 
@@ -553,11 +553,11 @@ behave. Later phases add test directories here.
 - [ ] **SC2 Digests everywhere** (F-25): use the charts' `image.digest` values, a CNPG `ImageCatalog`
   with digests, and `@sha256` on raw manifests. Add a V5 policy that fails any rendered container image
   without a digest outside an allowlist with reasons.
-- [ ] **SC3 Image scanning:** a `platform-images` gate step extracts every image from the rendered bases
+- [x] **SC3 Image scanning:** a `platform-images` gate step extracts every image from the rendered bases
   (V3 already renders them) and runs `trivy image --severity HIGH,CRITICAL --ignore-unfixed` with a
   checked-in `.trivyignore` whose entries need an expiry date and a reason. Also add
   `trivy config` over `deploy/` Dockerfiles and platform-infra's Terraform.
-- [ ] **SC4 Renovate:** custom managers for `tools.toml`, digests in raw manifests and the k3s image
+- [x] **SC4 Renovate:** custom managers for `tools.toml`, digests in raw manifests and the k3s image
   strings. Set `minimumReleaseAge` for charts and grouping per base. Configure the same in platform-infra
   (its `v*` tag pattern fix lands in PI1).
 - [ ] **S3 Traefik edge** (F-27, F-26): a default `TLSOption` (min TLS 1.2, `sniStrict`, curve
@@ -581,7 +581,7 @@ behave. Later phases add test directories here.
 
   Run kube-bench (k3s CIS profile, pinned image) as a report-only e2e step and record the score in
   the log.
-- [~] **S6 Local lifecycle exposure** (F-09, F-10): build the snapshot from
+- [x] **S6 Local lifecycle exposure** (F-09, F-10): build the snapshot from
   `git ls-files --cached --others --exclude-standard`, bind the snapshot server and the k3d API, 80 and
   443 to `127.0.0.1` (or the k3d network gateway), run the snapshot image as non-root, validate
   `Content-Length` in `local-git-http.py` (with a test), and print secret locations instead of values
@@ -800,3 +800,46 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   12 unittest cases (stubbed redis-cli) run in platform-validate. The chainsaw test
   `e2e/tests/redis-ha/` (kill master, promotion, old master rejoins as replica, key on both) passed twice
   on k3d, and a full StatefulSet delete came back with `redis-0` as master. Cold start is about 10 s slower.
+- 2026-11-14 (D merged). R1: Traefik runs as a Deployment (1 replica, PDB `maxUnavailable: 1`,
+  `maxUnavailable: 0`/`maxSurge: 1` rollout, `platform-critical`) behind a `LoadBalancer` Service that k3s
+  ServiceLB answers. hostPorts are gone and the hcloud CCM load balancer controller is off. R2: CNPG
+  `enablePDB: false` at one instance, the restore Role scopes delete/patch to the restore cluster by
+  resourceName, and `hcloud-volumes-delete` exists for `RESTORE_STORAGE_CLASS`. R8: `hcloud/namespace.yaml`
+  dropped, prune disabled on namespaces, the CNPG cluster and the rustfs PVC. O1: rule, ServiceMonitor and
+  PodMonitor namespace selectors use `app.kubernetes.io/part-of: baukit-platform`, and the Grafana sidecar
+  searches all namespaces with folder annotations. hcloud CCM and CSI keep their monitors disabled; O3 owns
+  that. S6: snapshot from `git ls-files`, every bind on loopback or the k3d gateway, the snapshot server
+  runs as uid 65532 and checks Content-Length. Convention rules `rules-selected` and `prune-disabled` are
+  active. Local Grafana limit is 384Mi after an OOMKill at 256Mi. Live proof on k3d by the agent; I re-ran
+  platform-validate, python-lint, shell-lint, observability-rules, metric-names and scripts-tests after the
+  merge.
+- 2026-11-14 (SC3, SC4 merged). `platform-images` (images lane, selected by path) renders the platform,
+  scans 55 images and every tracked Dockerfile with trivy (HIGH/CRITICAL, fixable only, JSON output,
+  no ignorefile) and compares each (target, ID) pair with `deploy/platform/lint/image-findings.toml`.
+  The step fails on an unlisted finding, a listed ID trivy no longer reports, an entry with no findings
+  left, and an expired or malformed entry. All entries expire 2026-11-28 and name SC2 as the follow-up:
+  10 images where a bump fixes every ID, 25 where it fixes most, 15 already on the newest upstream
+  release, and curl and posthog without a tag to compare. The trivy cache is `~/.cache/baukit/trivy`,
+  a cold run takes about 19 min and a warm one about 2 min. After the merge, the D snapshot image
+  (uid 65532) no longer reports DS-0002, the step failed on that stale entry as designed, and I removed
+  the entry. Renovate gained custom managers for `deploy/tools.toml`, digests in raw manifests and the
+  k3s pins, grouped per platform base, with `scripts/test_renovate_preset.py`. I also raised the android
+  QA test stub deadlines (ADB 0.15 s to 10 s, watchdogs 5 s to 120 s), which had failed scripts-tests at
+  load 70; three runs at load 36 to 77 passed.
+- 2026-11-14 (N2-N4 merged). Components `default-deny`, `dns-egress`, `apiserver-egress`,
+  `prometheus-scrape` and `node-cidr` in `deploy/platform/components/network-policy/`. Every overlay needs
+  the `baukit-cluster-network` ConfigMap (local: nodeCIDR 10.89.0.0/16) and `platform-up.sh` pins the k3d
+  subnet to `BAUKIT_PLATFORM_SUBNET` (default 10.89.0.0/24); `k3d_create_local_cluster` now forwards
+  extra arguments to k3d. kube-router filters after DNAT, so apiserver egress is allowed to the node CIDR
+  on 6443 and DNS only by the kube-dns pod selector; the `10.43.0.1:443` rule stays but grants nothing on
+  k3s. Every base composes default-deny plus explicit allows, Falco included (sidekick to loki-gateway
+  8080 and Alertmanager 9093, Prometheus to 8765 and 2801). PostHog: explicit pairs only, the plugin
+  server alone reaches public 443. Its post-render patch now targets only `posthog-migrate-.*` (it
+  failed on main because the grafana-annotation hook Job has no initContainers), and its PostgreSQL moved
+  to 14.25 with `SKIP_SERVICE_VERSION_REQUIREMENTS=1` because PostHog 1.43.0 caps PostgreSQL at 14.1.0
+  (this also skips its ClickHouse and Redis checks, both inside range today). Live matrix: 88 of 90 rows
+  passed; #46 and #57 need N1's observability-agents namespace. Finding for N5 and the threat model:
+  kube-router leaves a new pod unfenced for its first seconds (a connection 2 s after start got out in 2
+  of 4 runs, at 12 s never), so the N5 runner waits 10 s before probing and `docs/threat-model.md` records
+  the fail-open window. After the merge, `platform-images` flagged the PostHog PostgreSQL change: the 14.1
+  entry went stale and 14.25 reports 26 Go stdlib findings in gosu, now listed with an upstream reason.

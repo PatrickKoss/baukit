@@ -7,3 +7,4 @@ metadata:
   labels:
     app.kubernetes.io/part-of: baukit-platform
     baukit.dev/component: analytics
+    baukit.dev/ingress-backend: "true"

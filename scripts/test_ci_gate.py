@@ -64,6 +64,7 @@ class CiGateTests(unittest.TestCase):
         cases = {
             "platform_validate": "deploy/platform/validate.sh",
             "observability_rules": "deploy/observability/lint/check-rules.sh",
+            "platform_images": "scripts/platform-images.sh",
         }
         for step, script in cases.items():
             with self.subTest(step=step):

@@ -30,6 +30,7 @@ metric-names fast - always -
 observability-tests fast - always -
 observability-rules fast - always -
 platform-validate fast - always -
+platform-images images - selected -
 media-grants fast - always -
 scripts-tests fast ts-install always -
 rust-clippy rust - always -
@@ -119,7 +120,14 @@ step_platform_validate() {
   scripts/install-deploy-tools.sh --only kustomize,kubeconform,helm,flux
   ./deploy/platform/validate.sh
 }
-step_platform_e2e() { ./deploy/platform/e2e/run.sh; }
+step_platform_e2e() {
+  scripts/install-deploy-tools.sh --only chainsaw,flux,k3d,kubectl
+  ./deploy/platform/e2e/run.sh
+}
+step_platform_images() {
+  scripts/install-deploy-tools.sh --only kustomize,kubeconform,helm,flux,trivy
+  scripts/platform-images.sh
+}
 step_media_grants() { make media-grants-test media-grants-njs-test; }
 step_scripts_tests() { python3 -m unittest discover -s scripts -p 'test_*.py'; }
 

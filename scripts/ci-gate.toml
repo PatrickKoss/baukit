@@ -29,3 +29,6 @@ affected = 15
 "examples/minimal-api/**" = ["examples-test"]
 "examples/expo-sqlite-conformance/**" = ["expo-sqlite"]
 "examples/expo-notifications-conformance/**" = ["expo-notifications"]
+"templates/**/Dockerfile*" = ["platform-images"]
+"examples/**/Dockerfile*" = ["platform-images"]
+"scripts/platform-images.sh" = ["platform-images"]
