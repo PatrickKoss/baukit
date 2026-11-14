@@ -25,8 +25,12 @@ metadata:
 
 def report(*results: tuple[str, str]) -> str:
     rows = [
-        {"policy": policy, "result": outcome, "message": f"{policy} said {outcome}",
-         "resources": [{"kind": "HelmRelease", "namespace": "demo", "name": "app"}]}
+        {
+            "policy": policy,
+            "result": outcome,
+            "message": f"{policy} said {outcome}",
+            "resources": [{"kind": "HelmRelease", "namespace": "demo", "name": "app"}],
+        }
         for policy, outcome in results
     ]
     summary = {key: sum(1 for _, outcome in results if outcome == key) for key in rcp.COUNTED}
@@ -84,7 +88,8 @@ class ApplyTest(unittest.TestCase):
         self.assertEqual(problems, [])
         self.assertTrue(tally.failed)
         self.assertEqual(
-            tally.failures[0], "base-demo: helmrelease-timeout: HelmRelease/demo/app: helmrelease-timeout said fail"
+            tally.failures[0],
+            "base-demo: helmrelease-timeout: HelmRelease/demo/app: helmrelease-timeout said fail",
         )
 
     def test_error_result_fails(self) -> None:
@@ -105,7 +110,9 @@ class ApplyTest(unittest.TestCase):
 
     def test_table_lists_policies_without_results(self) -> None:
         tally = rcp.Tally()
-        tally.add("base-demo", json.loads(report(("helmrelease-timeout", "fail")).split("\n", 1)[1]))
+        tally.add(
+            "base-demo", json.loads(report(("helmrelease-timeout", "fail")).split("\n", 1)[1])
+        )
         table = tally.table(["helmrelease-timeout", "ocirepository-exact-ref"])
         self.assertRegex(table, r"helmrelease-timeout +0 +1 +0 +0")
         self.assertRegex(table, r"ocirepository-exact-ref +0 +0 +0 +0")

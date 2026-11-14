@@ -132,7 +132,9 @@ def policy_list(policy: Path, variable: str) -> list[str]:
 def write_policy_list(policy: Path, variable: str, names: list[str]) -> None:
     text = policy.read_text()
     replacement = json.dumps(names)
-    updated, count = variable_pattern(variable).subn(lambda m: m.group(1) + replacement + m.group(3), text)
+    updated, count = variable_pattern(variable).subn(
+        lambda m: m.group(1) + replacement + m.group(3), text
+    )
     if count != 1:
         raise ContentsError(f"{policy.name} has no {variable} variable")
     policy.write_text(updated)
@@ -143,12 +145,17 @@ def check(contents: dict[str, Contents], data_file: Path, policy_dir: Path) -> l
     recorded = load_data(data_file) if data_file.is_file() else {}
     for key in sorted(set(contents) | set(recorded)):
         if contents.get(key) != recorded.get(key):
-            problems.append(f"{data_file.name}: {key} is {recorded.get(key)}, the pinned chart has {contents.get(key)}")
+            problems.append(
+                f"{data_file.name}: {key} is {recorded.get(key)}, "
+                f"the pinned chart has {contents.get(key)}"
+            )
     for field, (policy_name, variable) in POLICY_LISTS.items():
         expected = chart_names(recorded, field)
         actual = policy_list(policy_dir / policy_name, variable)
         if actual != expected:
-            problems.append(f"{policy_name}: {variable} is {actual}, {data_file.name} says {expected}")
+            problems.append(
+                f"{policy_name}: {variable} is {actual}, {data_file.name} says {expected}"
+            )
     return problems
 
 

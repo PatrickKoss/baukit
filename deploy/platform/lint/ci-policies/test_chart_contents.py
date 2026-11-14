@@ -54,10 +54,16 @@ class Fixture:
         self.policies = root / "policies"
         for directory in (self.rendered, self.cache, self.policies):
             directory.mkdir()
-        archive(self.cache / "ops-1.2.3-42.tgz", ["ops/Chart.yaml", "ops/charts/sub/crds/thing.yaml"])
-        archive(self.cache / "web-2.0.0-42.tgz", ["web/Chart.yaml", "web/templates/crds/thing.yaml"])
-        releases = [RELEASE.format(name="ops", chart="ops", version="1.2.3"),
-                    RELEASE.format(name="web", chart="web", version="2.0.0")]
+        archive(
+            self.cache / "ops-1.2.3-42.tgz", ["ops/Chart.yaml", "ops/charts/sub/crds/thing.yaml"]
+        )
+        archive(
+            self.cache / "web-2.0.0-42.tgz", ["web/Chart.yaml", "web/templates/crds/thing.yaml"]
+        )
+        releases = [
+            RELEASE.format(name="ops", chart="ops", version="1.2.3"),
+            RELEASE.format(name="web", chart="web", version="2.0.0"),
+        ]
         (self.rendered / "base-demo.yaml").write_text("---\n".join(releases))
         (self.rendered / "chart-demo-ops.yaml").write_text("kind: ConfigMap\n")
         (self.rendered / "chart-demo-web.yaml").write_text(TEST_HOOK)
@@ -92,7 +98,10 @@ class ChartContentsTest(unittest.TestCase):
         fixture.write_policies("[]", "[]")
         cc.write(contents, fixture.data, fixture.policies)
         self.assertEqual(cc.check(contents, fixture.data, fixture.policies), [])
-        self.assertEqual(cc.policy_list(fixture.policies / "helmrelease-crd-policy.yaml", "chartsWithCrds"), ["ops"])
+        self.assertEqual(
+            cc.policy_list(fixture.policies / "helmrelease-crd-policy.yaml", "chartsWithCrds"),
+            ["ops"],
+        )
 
     def test_data_file_drift_fails(self) -> None:
         fixture = self.fixture

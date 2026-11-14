@@ -1,4 +1,7 @@
-"""Run the Flux convention policies offline: kyverno test, then kyverno apply on every rendered base and overlay."""
+"""Run the Flux convention policies offline.
+
+Runs kyverno test, then kyverno apply on every rendered base and overlay.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +26,9 @@ Runner = Callable[[list[str]], tuple[int, str]]
 
 
 def run_command(command: list[str]) -> tuple[int, str]:
-    result = chart_contents.helm_yaml.process_runner.run_process(command, capture_output=True, text=True)
+    result = chart_contents.helm_yaml.process_runner.run_process(
+        command, capture_output=True, text=True
+    )
     return result.returncode, result.stdout + result.stderr
 
 
@@ -39,8 +44,11 @@ class Tally:
             self.counts[policy][outcome] += 1
             if outcome in ("fail", "error"):
                 for resource in result.get("resources") or [{}]:
-                    ref = f"{resource.get('kind')}/{resource.get('namespace', '')}/{resource.get('name')}"
-                    self.failures.append(f"{universe}: {policy}: {ref}: {result.get('message', '')}")
+                    kind, name = resource.get("kind"), resource.get("name")
+                    ref = f"{kind}/{resource.get('namespace', '')}/{name}"
+                    self.failures.append(
+                        f"{universe}: {policy}: {ref}: {result.get('message', '')}"
+                    )
 
     def table(self, policies: Iterable[str]) -> str:
         header = f"{'POLICY':<36} {'PASS':>5} {'FAIL':>5} {'ERROR':>5} {'SKIP':>5}"
@@ -73,7 +81,9 @@ def universes(rendered: Path) -> list[Path]:
     return sorted(rendered.glob("base-*.yaml")) + sorted(rendered.glob("overlay-*.yaml"))
 
 
-def apply_policies(rendered: Path, policy_dir: Path, run: Runner, work: Path) -> tuple[Tally, list[str]]:
+def apply_policies(
+    rendered: Path, policy_dir: Path, run: Runner, work: Path
+) -> tuple[Tally, list[str]]:
     tally = Tally()
     problems = []
     for universe in universes(rendered):
@@ -83,7 +93,16 @@ def apply_policies(rendered: Path, policy_dir: Path, run: Runner, work: Path) ->
         resources = work / universe.name
         resources.write_text(flux)
         code, output = run(
-            ["kyverno", "apply", str(policy_dir), "--resource", str(resources), "--policy-report", "--output-format", "json"]
+            [
+                "kyverno",
+                "apply",
+                str(policy_dir),
+                "--resource",
+                str(resources),
+                "--policy-report",
+                "--output-format",
+                "json",
+            ]
         )
         start = output.find("{")
         try:
@@ -91,7 +110,9 @@ def apply_policies(rendered: Path, policy_dir: Path, run: Runner, work: Path) ->
         except json.JSONDecodeError:
             report = None
         if report is None:
-            problems.append(f"{universe.stem}: kyverno apply exited {code} without a report:\n{output.strip()}")
+            problems.append(
+                f"{universe.stem}: kyverno apply exited {code} without a report:\n{output.strip()}"
+            )
             continue
         tally.add(universe.stem, report)
         summary = report.get("summary") or {}
@@ -109,7 +130,9 @@ def main(argv: list[str] | None = None, run: Runner = run_command) -> int:
     parser.add_argument("--tests", type=Path, default=HERE / "tests")
     args = parser.parse_args(argv)
 
-    status = chart_contents.main(["--rendered", str(args.rendered), "--chart-cache", str(args.chart_cache)])
+    status = chart_contents.main(
+        ["--rendered", str(args.rendered), "--chart-cache", str(args.chart_cache)]
+    )
 
     code, output = run(["kyverno", "test", str(args.tests)])
     summary = re.search(r"^Test Summary: .*$", output, re.MULTILINE)
