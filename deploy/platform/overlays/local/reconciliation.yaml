@@ -131,6 +131,7 @@ metadata:
   namespace: flux-system
 spec:
   dependsOn:
+    - name: local-issuer
     - name: local-observability
   interval: 10m
   retryInterval: 30s
