@@ -247,7 +247,7 @@ class AndroidQaHookTests(unittest.TestCase):
             },
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=test_android_qa.HANG_WATCHDOG_SECONDS,
             check=False,
         )
         self.assertEqual(result.returncode, 124, result.stderr)
