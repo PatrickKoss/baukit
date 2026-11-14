@@ -268,7 +268,7 @@ behave. Later phases add test directories here.
 
 ## Phase K: Kyverno policy library
 
-- [~] **K1 Controller.** Bump the Kyverno base to chart 3.10.0 (Kyverno v1.20.0), after reading its
+- [x] **K1 Controller.** Bump the Kyverno base to chart 3.10.0 (Kyverno v1.20.0), after reading its
   upgrade notes.
   - Enable ServiceMonitors for all four controllers.
   - Set `features.policyExceptions.enabled: true` with `namespace: kyverno`, so exceptions can only
@@ -278,15 +278,15 @@ behave. Later phases add test directories here.
     `flux-system`, so a broken policy can never block the controllers that would repair it.
   - Add Policy Reporter (pinned chart, metrics only, UI off), so dashboards show current violations
     and not only admission events.
-- [~] **K2 Migrate the existing three policies** (`require-container-resources`,
+- [x] **K2 Migrate the existing three policies** (`require-container-resources`,
   `disallow-latest-image-tag`, `protect-operations-ports`) to the D4 policy type in a new base
   `deploy/platform/kyverno-policies/`, each with a `kyverno test` suite.
-- [~] **K3 Pod Security.** Install the upstream `kyverno-policies` chart (pinned, `podSecurityStandard:
+- [x] **K3 Pod Security.** Install the upstream `kyverno-policies` chart (pinned, `podSecurityStandard:
   restricted`, `validationFailureAction: Audit` cluster-wide). It reports `restricted` gaps in every
   namespace, platform namespaces included. PSA labels (N1) remain the enforcement backstop. Tenant
   namespaces get `Enforce` through `validationFailureActionByPolicy` plus a namespace selector on
   `baukit.dev/tenant=true`.
-- [~] **K4 Baukit policy set.** Each one ships with pass and fail fixtures, a message that names the fix,
+- [x] **K4 Baukit policy set.** Each one ships with pass and fail fixtures, a message that names the fix,
   and the rollout mode it lands in:
 
   | Policy | Applies to | Mode at landing |
@@ -307,7 +307,7 @@ behave. Later phases add test directories here.
   | `flux-tenant-service-account` (Kustomization/HelmRelease in a tenant namespace must set `serviceAccountName` and may not reference sources in other namespaces) | tenants | Enforce |
   | `verify-baukit-images` (cosign keyless, identity = the product's release workflow) | tenants | Audit (D6) |
 
-- [~] **K5 Generated defaults for tenants.** A `GeneratingPolicy` (or `ClusterPolicy` generate rule if
+- [x] **K5 Generated defaults for tenants.** A `GeneratingPolicy` (or `ClusterPolicy` generate rule if
   D4 says so) creates `default-deny` NetworkPolicy, a LimitRange and the DNS egress allow in every
   namespace labelled `baukit.dev/tenant=true`, with `synchronize: true`. `components/tenant` labels the
   namespace. An overlay that forgets the component still gets a default deny.
@@ -690,3 +690,21 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   PATH and Docker fallbacks. Re-verified on integration: clean install, 17 installer tests, platform-validate,
   observability-rules, shell-lint, python-lint, workflow-lint green. Open: the gate steps exit 2 on a
   checkout without `.tools/`; V4/V6 make the steps install first.
+- 2026-11-14: K1-K5 merged. D4 resolved: Kyverno v1.20 no longer runs legacy `kyverno.io` policies (the
+  3.10.0 chart ships a `pre-install-check-legacy-policies` hook and an `acknowledgeLegacyPoliciesNotEnforced`
+  switch), so every policy is `policies.kyverno.io/v1` (`ValidatingPolicy`, `ImageValidatingPolicy`,
+  `GeneratingPolicy`) and the old `kyverno/policies.yaml` is gone. K1: ServiceMonitors on all four
+  controllers, PDBs `maxUnavailable: 1`, exceptions only in `kyverno`, webhook timeout 5 s, webhooks skip
+  kube-system, flux-system and kyverno, Policy Reporter 3.11.2 (metrics on, UI off). K3 deviation: the
+  upstream PSS chart (3.10.0, restricted, Audit) has fixed policy names and only per-policy action
+  overrides, so it cannot Enforce on tenant namespaces only; tenants get enforcement from PSA
+  `enforce: restricted` (set by `components/tenant`) and `require-psa-labels` rejects a tenant namespace
+  without it. K4: "Audit everywhere, Enforce on tenants" policies are split into two policies each. K5:
+  `generate-tenant-defaults` (default-deny, DNS egress, LimitRange; synchronize + generateExisting).
+  Re-verified: `kyverno test` 78/78, platform-validate (642 objects), shell-lint, python-lint. Known gaps:
+  `verify-baukit-images` has no signed pass fixture (D6); `kyverno apply` cannot evaluate
+  `unique-ingress-host-and-path` offline (cluster lookup), `kyverno test` covers it; expected `skip` rows in
+  `kyverno test` never bite. Ordering constraint: `require-psa-labels` is Deny, so the e2e overlay must not
+  compose `kyverno-policies` before N1 labels every namespace. Live check on k3d (Kyverno only): unlabelled
+  namespace denied, tenant defaults generated, cluster-admin binding denied. One run hit the chart's
+  legacy-check hook Job deadline on a slow pull; watch in e2e.
