@@ -21,7 +21,10 @@ dependency_deployments=${BAUKIT_SMOKE_DEPENDENCY_DEPLOYMENTS:-}
 secret_manifests=${BAUKIT_SMOKE_SECRET_MANIFESTS:-}
 worker_enabled=${BAUKIT_SMOKE_WORKER_ENABLED:-false}
 k3s_dns_enabled=${BAUKIT_SMOKE_K3S_DNS_ENABLED:-true}
-k3d_ports=${BAUKIT_SMOKE_K3D_PORTS:-8081:30081@server:0}
+k3d_ports=${BAUKIT_SMOKE_K3D_PORTS:-127.0.0.1:8081:30081@server:0}
+k3d_api_port=${BAUKIT_SMOKE_K3D_API_PORT:-127.0.0.1:0}
+pod_security_level=${BAUKIT_SMOKE_POD_SECURITY_LEVEL:-restricted}
+policy_dir=${BAUKIT_SMOKE_POLICY_DIR:-}
 api_check_path=${BAUKIT_SMOKE_API_CHECK_PATH:-/me}
 api_check_status=${BAUKIT_SMOKE_API_CHECK_STATUS:-200}
 known_gaps_file=${BAUKIT_SMOKE_KNOWN_GAPS_FILE:-}
@@ -86,6 +89,7 @@ done
 set -- cluster create "$cluster_name" \
     --servers 1 \
     --agents 0 \
+    --api-port "$k3d_api_port" \
     --k3s-arg '--disable=traefik@server:0' \
     --wait
 for port_mapping in $k3d_ports; do
@@ -100,6 +104,28 @@ for image in $images; do
 done
 k3d "$@"
 
+install_admission_policies() {
+    [ -n "$policy_dir" ] || return 0
+    [ -d "$policy_dir" ] || {
+        echo "admission policy directory not found: $policy_dir" >&2
+        exit 2
+    }
+    echo "installing admission policies from $policy_dir"
+    kubectl apply --recursive -f "$policy_dir"
+}
+
+enforce_pod_security() {
+    echo "enforcing Pod Security $pod_security_level in namespace $namespace"
+    kubectl label --overwrite namespace "$namespace" \
+        "pod-security.kubernetes.io/enforce=$pod_security_level" \
+        pod-security.kubernetes.io/enforce-version=latest \
+        "pod-security.kubernetes.io/audit=$pod_security_level" \
+        pod-security.kubernetes.io/audit-version=latest \
+        "pod-security.kubernetes.io/warn=$pod_security_level" \
+        pod-security.kubernetes.io/warn-version=latest
+}
+
+install_admission_policies
 kubectl create namespace "$namespace"
 if [ "$observability_namespace" != "$namespace" ]; then
     kubectl create namespace "$observability_namespace"
@@ -119,6 +145,10 @@ fi
 for deployment in $dependency_deployments; do
     kubectl -n "$namespace" rollout status "deployment/$deployment" --timeout=240s
 done
+
+# Product dependencies are not chart workloads, so the namespace level applies
+# from the chart install on. Every chart pod must pass it.
+enforce_pod_security
 
 echo "installing $product with the Baukit application chart"
 set -- upgrade --install "$release" "$chart" \
@@ -251,4 +281,7 @@ env \
     "$observability_chart/verify/verify-observability.sh" BAUKIT_SMOKE
 
 kubectl -n "$namespace" get pods,services,networkpolicies
+kubectl get namespace "$namespace" \
+    -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}' |
+    grep -qx "$pod_security_level"
 echo "k3d smoke passed for $product; teardown follows"
