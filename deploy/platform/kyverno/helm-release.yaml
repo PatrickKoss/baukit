@@ -8,7 +8,7 @@ spec:
   chart:
     spec:
       chart: kyverno
-      version: "3.9.1"
+      version: "3.10.0"
       sourceRef:
         kind: HelmRepository
         name: kyverno
@@ -22,8 +22,27 @@ spec:
     remediation:
       retries: 3
   values:
+    config:
+      webhooks:
+        namespaceSelector:
+          matchExpressions:
+            - key: kubernetes.io/metadata.name
+              operator: NotIn
+              values:
+                - kube-system
+                - flux-system
+    features:
+      policyExceptions:
+        enabled: true
+        namespace: kyverno
     admissionController:
       replicas: 1
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: null
+        maxUnavailable: 1
+      serviceMonitor:
+        enabled: true
       initContainer:
         resources:
           requests:
@@ -33,6 +52,8 @@ spec:
             cpu: 50m
             memory: 64Mi
       container:
+        extraArgs:
+          webhookTimeout: "5"
         resources:
           requests:
             cpu: 50m
@@ -42,6 +63,12 @@ spec:
             memory: 384Mi
     backgroundController:
       replicas: 1
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: null
+        maxUnavailable: 1
+      serviceMonitor:
+        enabled: true
       resources:
         requests:
           cpu: 25m
@@ -51,6 +78,12 @@ spec:
           memory: 128Mi
     cleanupController:
       replicas: 1
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: null
+        maxUnavailable: 1
+      serviceMonitor:
+        enabled: true
       resources:
         requests:
           cpu: 25m
@@ -60,6 +93,12 @@ spec:
           memory: 128Mi
     reportsController:
       replicas: 1
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: null
+        maxUnavailable: 1
+      serviceMonitor:
+        enabled: true
       resources:
         requests:
           cpu: 25m

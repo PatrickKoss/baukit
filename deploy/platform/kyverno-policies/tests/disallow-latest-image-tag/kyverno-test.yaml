@@ -1,0 +1,19 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: disallow-latest-image-tag
+policies:
+  - ../../policies/disallow-latest-image-tag.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: disallow-latest-image-tag
+    kind: Pod
+    resources: [pinned]
+    result: pass
+  - isValidatingPolicy: true
+    policy: disallow-latest-image-tag
+    kind: Pod
+    resources: [latest-init]
+    result: fail

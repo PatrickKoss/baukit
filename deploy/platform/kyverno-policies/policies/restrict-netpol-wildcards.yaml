@@ -1,0 +1,39 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-netpol-wildcards
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Restrict NetworkPolicy wildcards
+    policies.kyverno.io/severity: high
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [networking.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [networkpolicies]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  variables:
+    - name: peers
+      expression: >-
+        object.spec.?ingress.orValue([]).map(r, r.?from.orValue([])).flatten() +
+        object.spec.?egress.orValue([]).map(r, r.?to.orValue([])).flatten()
+    - name: wildcards
+      expression: >-
+        variables.peers.filter(p,
+          size(p) == 0 ||
+          (has(p.namespaceSelector) && size(p.namespaceSelector) == 0))
+  validations:
+    - expression: size(variables.wildcards) == 0
+      message: >-
+        Tenant NetworkPolicies must not use an empty peer ({}) or an empty namespaceSelector,
+        which match every namespace. Select namespaces by kubernetes.io/metadata.name and pods by label.

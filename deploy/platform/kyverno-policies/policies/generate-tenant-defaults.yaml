@@ -1,0 +1,93 @@
+apiVersion: policies.kyverno.io/v1
+kind: GeneratingPolicy
+metadata:
+  name: generate-tenant-defaults
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Generate tenant defaults
+    policies.kyverno.io/description: >-
+      Every namespace labelled baukit.dev/tenant=true gets a default-deny NetworkPolicy, a DNS egress
+      allow and a LimitRange. Kyverno keeps them in sync, so a tenant cannot delete or loosen them.
+spec:
+  evaluation:
+    synchronize:
+      enabled: true
+    generateExisting:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [namespaces]
+    objectSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  variables:
+    - name: namespace
+      expression: object.metadata.name
+  generate:
+    - template:
+        interpolate: cel
+        value: |
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: default-deny
+            namespace: (( variables.namespace ))
+            labels:
+              app.kubernetes.io/managed-by: kyverno
+              app.kubernetes.io/part-of: baukit-platform
+          spec:
+            podSelector: {}
+            policyTypes:
+              - Ingress
+              - Egress
+          ---
+          apiVersion: networking.k8s.io/v1
+          kind: NetworkPolicy
+          metadata:
+            name: allow-dns-egress
+            namespace: (( variables.namespace ))
+            labels:
+              app.kubernetes.io/managed-by: kyverno
+              app.kubernetes.io/part-of: baukit-platform
+          spec:
+            podSelector: {}
+            policyTypes:
+              - Egress
+            egress:
+              - to:
+                  - namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: kube-system
+                    podSelector:
+                      matchLabels:
+                        k8s-app: kube-dns
+                ports:
+                  - protocol: UDP
+                    port: 53
+                  - protocol: TCP
+                    port: 53
+          ---
+          apiVersion: v1
+          kind: LimitRange
+          metadata:
+            name: default-limits
+            namespace: (( variables.namespace ))
+            labels:
+              app.kubernetes.io/managed-by: kyverno
+              app.kubernetes.io/part-of: baukit-platform
+          spec:
+            limits:
+              - type: Container
+                defaultRequest:
+                  cpu: 50m
+                  memory: 64Mi
+                default:
+                  cpu: 500m
+                  memory: 256Mi
+                max:
+                  cpu: "2"
+                  memory: 2Gi

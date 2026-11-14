@@ -1,0 +1,26 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: disallow-sa-token-automount
+policies:
+  - ../../policies/disallow-sa-token-automount.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: disallow-sa-token-automount
+    kind: Pod
+    resources: [no-token]
+    result: pass
+  - isValidatingPolicy: true
+    policy: disallow-sa-token-automount
+    kind: Pod
+    resources: [default-token]
+    result: fail
+  - isValidatingPolicy: true
+    policy: disallow-sa-token-automount
+    kind: Pod
+    resources: [platform-token]
+    result: skip

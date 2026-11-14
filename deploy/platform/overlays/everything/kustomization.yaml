@@ -11,6 +11,8 @@ resources:
   - ../../hcloud
   - ../../kured
   - ../../kyverno
+  - ../../kyverno-policies
   - ../../observability-stack
   - ../../postgres-cluster
   - ../../traefik
+  - registry-allowlist.yaml

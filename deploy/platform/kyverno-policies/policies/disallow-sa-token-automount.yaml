@@ -1,0 +1,30 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: disallow-sa-token-automount
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Disallow service account token automount
+    policies.kyverno.io/severity: medium
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  validations:
+    - expression: object.spec.?automountServiceAccountToken.orValue(true) == false
+      message: >-
+        Tenant Pods must set spec.automountServiceAccountToken to false. Set
+        serviceAccount.automountToken=false in the baukit-app values, or mount a projected token
+        volume for the one container that needs API access.

@@ -1,0 +1,38 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-baukit-labels
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Require baukit workload labels
+    policies.kyverno.io/severity: medium
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets, daemonsets]
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [jobs, cronjobs]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  variables:
+    - name: missing
+      expression: >-
+        ["app.kubernetes.io/name", "app.kubernetes.io/part-of", "baukit.dev/process"]
+        .filter(l, !(l in object.metadata.?labels.orValue({})))
+  validations:
+    - expression: size(variables.missing) == 0
+      messageExpression: >-
+        "Missing labels " + variables.missing.join(", ") +
+        ". The baukit-app chart sets them; hand-written workloads must set them in metadata.labels."

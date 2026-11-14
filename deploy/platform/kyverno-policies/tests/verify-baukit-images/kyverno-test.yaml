@@ -1,0 +1,21 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: verify-baukit-images
+policies:
+  - ../../policies/verify-baukit-images.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isImageValidatingPolicy: true
+    policy: verify-baukit-images
+    kind: Pod
+    resources: [third-party]
+    result: pass
+  - isImageValidatingPolicy: true
+    policy: verify-baukit-images
+    kind: Pod
+    resources: [unsigned-product]
+    result: fail

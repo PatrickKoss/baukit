@@ -1,0 +1,26 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-image-digest
+policies:
+  - ../../policies/require-image-digest.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: require-image-digest
+    kind: Pod
+    resources: [digest]
+    result: pass
+  - isValidatingPolicy: true
+    policy: require-image-digest
+    kind: Pod
+    resources: [tagged]
+    result: fail
+  - isValidatingPolicy: true
+    policy: require-image-digest
+    kind: Pod
+    resources: [tagged-testing]
+    result: skip
