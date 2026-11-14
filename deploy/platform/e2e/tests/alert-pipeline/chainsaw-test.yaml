@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: alert-pipeline
+spec:
+  description: >-
+    An always-firing rule reaches the webhook sink, which proves rule selection, Prometheus,
+    Alertmanager routing and the receiver end to end.
+  timeouts:
+    exec: 4m
+  steps:
+    - name: create-probe-rule
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.coreos.com/v1
+              kind: PrometheusRule
+              metadata:
+                name: baukit-e2e-probe
+                namespace: observability
+              spec:
+                groups:
+                  - name: baukit-e2e
+                    interval: 10s
+                    rules:
+                      - alert: BaukitE2eProbe
+                        expr: vector(1)
+                        labels:
+                          severity: info
+                        annotations:
+                          summary: Always fires so the e2e suite can trace delivery.
+    - name: sink-receives-probe
+      try:
+        - script:
+            timeout: 4m
+            content: |
+              set -eu
+              deadline=$(($(date +%s) + 180))
+              while [ "$(date +%s)" -lt "$deadline" ]; do
+                if kubectl get --raw /api/v1/namespaces/e2e-receiver/services/alert-sink:http/proxy/alerts |
+                  grep -q '"alertname": "BaukitE2eProbe"'; then
+                  exit 0
+                fi
+                sleep 5
+              done
+              printf 'BaukitE2eProbe did not reach the sink within 3 minutes\n' >&2
+              exit 1

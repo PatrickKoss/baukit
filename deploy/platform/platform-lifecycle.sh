@@ -46,7 +46,9 @@ github_owner_type=${PLATFORM_GITHUB_OWNER_TYPE:-organization}
 age_key_file=${PLATFORM_AGE_KEY_FILE:-}
 baukit_source_mode=${PLATFORM_BAUKIT_SOURCE_MODE:-github-tag}
 baukit_checkout=${PLATFORM_BAUKIT_CHECKOUT:-}
-k3s_image=${PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.8-k3s1}
+# shellcheck source=deploy/platform/lib/k3s.sh
+source "$platform_dir/lib/k3s.sh"
+k3s_image=${PLATFORM_K3S_IMAGE:-$platform_k3s_image}
 flux_version=${PLATFORM_FLUX_VERSION:-v2.9.4}
 git_port=${PLATFORM_SNAPSHOT_PORT:-9418}
 state_root=${XDG_STATE_HOME:-${HOME}/.local/state}
@@ -242,11 +244,15 @@ ensure_cluster() {
     k3d cluster start "$cluster_name" >/dev/null
   else
     printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$k3s_image"
+    local k3s_args=() k3s_arg
+    while IFS= read -r k3s_arg; do
+      k3s_args+=(--k3s-arg "$k3s_arg")
+    done < <(platform_k3s_args)
     k3d cluster create "$cluster_name" \
       --image "$k3s_image" \
       --servers 1 \
       --agents 0 \
-      --k3s-arg '--disable=traefik@server:0' \
+      "${k3s_args[@]}" \
       --port '80:80@loadbalancer' \
       --port '443:443@loadbalancer' \
       --wait

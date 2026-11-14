@@ -1,6 +1,7 @@
 import importlib.util
 import re
 import sys
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -75,6 +76,27 @@ class CiGateTests(unittest.TestCase):
         text = GATE_SCRIPT.read_text()
         self.assertIn("step_generated_fixture()", text)
         self.assertIn("step_platform_fixture()", text)
+
+    def test_platform_e2e_is_its_own_selected_lane(self):
+        step = {step.name: step for step in listed_steps()}["platform-e2e"]
+        self.assertEqual((step.lane, step.after, step.mode), ("platform-e2e", (), "selected"))
+        self.assertIn(
+            "step_platform_e2e() { ./deploy/platform/e2e/run.sh; }", GATE_SCRIPT.read_text()
+        )
+
+    def test_platform_e2e_runs_for_deploy_changes_but_not_for_rust_changes(self):
+        gate = load_gate()
+        settings = tomllib.loads((ROOT / "scripts/ci-gate.toml").read_text())
+        affected = settings["quality"]["affected"]
+        shared = gate.shared_paths(settings)
+
+        def planned(path):
+            selection = gate.select([path], affected, shared)
+            return {item.step.name for item in gate.plan(listed_steps(), selection)}
+
+        self.assertIn("platform-e2e", planned("deploy/platform/kyverno/policies.yaml"))
+        self.assertIn("platform-e2e", planned("deploy/chart/baukit-app/values.yaml"))
+        self.assertNotIn("platform-e2e", planned("rust/crates/baukit-core/src/lib.rs"))
 
     def test_ci_matrix_covers_the_same_flavors(self):
         matrix = re.findall(r"^\s+- flavor: (\S+)$", CI_WORKFLOW.read_text(), re.MULTILINE)

@@ -54,6 +54,7 @@ native-android android ts-check selected -
 expo-sqlite android native-android selected -
 expo-notifications android expo-sqlite selected -
 fuzz fuzz - selected -
+platform-e2e platform-e2e - selected -
 STEPS
 }
 
@@ -105,6 +106,7 @@ step_observability_tests() {
 }
 step_observability_rules() { deploy/observability/lint/check-rules.sh; }
 step_platform_validate() { ./deploy/platform/validate.sh; }
+step_platform_e2e() { ./deploy/platform/e2e/run.sh; }
 step_media_grants() { make media-grants-test media-grants-njs-test; }
 step_scripts_tests() { python3 -m unittest discover -s scripts -p 'test_*.py'; }
 
