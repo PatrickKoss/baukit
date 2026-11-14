@@ -8,4 +8,16 @@ resources:
   - tempo.yaml
   - alloy.yaml
   - baukit-content.yaml
-
+  - network-policy.yaml
+components:
+  - ../components/network-policy/default-deny
+  - ../components/network-policy/dns-egress
+  - ../components/network-policy/apiserver-egress
+patches:
+  - target:
+      kind: NetworkPolicy
+      name: default-deny|allow-dns-egress|allow-apiserver-egress
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: observability
