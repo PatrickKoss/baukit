@@ -108,9 +108,9 @@ class CiGateTests(unittest.TestCase):
     def test_platform_e2e_is_its_own_selected_lane(self):
         step = {step.name: step for step in listed_steps()}["platform-e2e"]
         self.assertEqual((step.lane, step.after, step.mode), ("platform-e2e", (), "selected"))
-        self.assertIn(
-            "step_platform_e2e() { ./deploy/platform/e2e/run.sh; }", GATE_SCRIPT.read_text()
-        )
+        text = GATE_SCRIPT.read_text()
+        self.assertIn("step_platform_e2e() {\n", text)
+        self.assertIn("--only chainsaw,flux,k3d,kubectl\n  ./deploy/platform/e2e/run.sh\n}", text)
 
     def test_platform_e2e_runs_for_deploy_changes_but_not_for_rust_changes(self):
         gate = load_gate()
