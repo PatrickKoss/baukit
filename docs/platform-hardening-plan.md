@@ -320,7 +320,7 @@ behave. Later phases add test directories here.
 
 ## Phase N: Pod Security Admission and NetworkPolicies
 
-- [ ] **N1 PSA labels on every base namespace.** Every Namespace gets `enforce`, `enforce-version`
+- [~] **N1 PSA labels on every base namespace.** Every Namespace gets `enforce`, `enforce-version`
   (pinned to the cluster minor), `audit: restricted` and `warn: restricted`. Target `enforce` levels:
 
   | Level | Namespaces | Work needed |
@@ -332,14 +332,14 @@ behave. Later phases add test directories here.
   Split node-exporter and Alloy into a new `observability-agents` namespace (they need hostPID,
   hostNetwork and hostPath), so `observability` itself can run `restricted`. Flux's own namespace gets
   labels through the lifecycle's `flux install` patch.
-- [ ] **N2 Reusable NetworkPolicy components** in `deploy/platform/components/network-policy/`:
+- [~] **N2 Reusable NetworkPolicy components** in `deploy/platform/components/network-policy/`:
   `default-deny`, `dns-egress` (CoreDNS pods plus the k3s Service-IP compatibility rule the chart
   already documents), `apiserver-egress` (k3s DNATs `10.43.0.1:443` to the node IP on 6443, so the
   rule takes an `ipBlock` for the node CIDR, set by a Kustomize replacement from one overlay value),
   `prometheus-scrape` (ingress from Prometheus pods on named metrics ports) and `internet-https`
   (`0.0.0.0/0` except RFC 1918, 100.64/10 and link-local, port 443). The e2e test proves the apiserver
   rule against k3d before any base relies on it.
-- [ ] **N3 Per-base policies.** Each base composes `default-deny` plus explicit allows. Peer and port
+- [~] **N3 Per-base policies.** Each base composes `default-deny` plus explicit allows. Peer and port
   pairs from the audit (verify each one in e2e; they are a starting point, not a spec):
   - **traefik:** ingress 8000/8443 from anywhere, 9100 from Prometheus. Egress to the apiserver, DNS,
     and backend ports in namespaces labelled `baukit.dev/ingress-backend=true`.
@@ -359,7 +359,7 @@ behave. Later phases add test directories here.
     Prometheus 9090 ingress from Grafana, flagger and kured.
   - **kyverno, kured, flagger, platform-redis, falco:** controller-specific allows plus
     `prometheus-scrape`.
-- [ ] **N4 Fence PostHog** (D8): replace the any-to-any internal policy with explicit pairs, deny egress
+- [~] **N4 Fence PostHog** (D8): replace the any-to-any internal policy with explicit pairs, deny egress
   except DNS and `internet-https` for the plugin server, bump `postgres:14.1` to the newest 14.x digest.
   Record the remaining `baseline` gaps as exceptions.
 - [ ] **N5 Probe matrix test.** `deploy/platform/e2e/tests/netpol/matrix.yaml` lists source, destination,
