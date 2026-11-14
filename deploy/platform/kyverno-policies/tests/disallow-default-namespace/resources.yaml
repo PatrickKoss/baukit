@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: named
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: shop
+    app.kubernetes.io/part-of: shop
+    baukit.dev/process: api
+spec:
+  selector:
+    matchLabels:
+      app: shop
+  template:
+    metadata:
+      labels:
+        app: shop
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/example/shop:1.0.0
+          readinessProbe:
+            httpGet: {path: /ready, port: 8080}
+          livenessProbe:
+            httpGet: {path: /live, port: 8080}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: in-default
+  namespace: default
+  labels:
+    app.kubernetes.io/name: shop
+    app.kubernetes.io/part-of: shop
+    baukit.dev/process: api
+spec:
+  selector:
+    matchLabels:
+      app: shop
+  template:
+    metadata:
+      labels:
+        app: shop
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/example/shop:1.0.0
+          readinessProbe:
+            httpGet: {path: /ready, port: 8080}
+          livenessProbe:
+            httpGet: {path: /live, port: 8080}

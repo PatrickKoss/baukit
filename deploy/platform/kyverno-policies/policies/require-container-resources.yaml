@@ -1,0 +1,36 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-container-resources
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Require container resources
+    policies.kyverno.io/severity: medium
+spec:
+  validationActions:
+    - Audit
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  variables:
+    - name: containers
+      expression: object.spec.containers + object.spec.?initContainers.orValue([])
+    - name: missing
+      expression: >-
+        variables.containers.filter(c,
+          !has(c.resources) ||
+          !(['cpu', 'memory'].all(r,
+            r in c.resources.?requests.orValue({}) && r in c.resources.?limits.orValue({}))))
+        .map(c, c.name)
+  validations:
+    - expression: size(variables.missing) == 0
+      messageExpression: >-
+        'Containers ' + variables.missing.join(', ') +
+        ' need resources.requests and resources.limits for both cpu and memory. Set them in the chart values or the Pod spec.'

@@ -27,6 +27,7 @@ coverage/
 **/__pycache__/**
 .generated-fixture/
 .ci-gate/
+.tools/
 .generated-native-fixture/
 typescript/.playwright-browsers/
 deploy/platform/.local-state/

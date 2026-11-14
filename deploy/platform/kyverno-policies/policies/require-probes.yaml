@@ -1,0 +1,35 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-probes
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Require readiness and liveness probes
+    policies.kyverno.io/severity: medium
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  variables:
+    - name: unprobed
+      expression: >-
+        object.spec.template.spec.containers
+        .filter(c, !has(c.readinessProbe) || !has(c.livenessProbe))
+        .map(c, c.name)
+  validations:
+    - expression: size(variables.unprobed) == 0
+      messageExpression: >-
+        "Containers " + variables.unprobed.join(", ") +
+        " need both readinessProbe and livenessProbe. Point them at the process health endpoints."

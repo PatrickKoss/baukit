@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kured
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+  labels:
+    baukit.dev/tenant: "true"
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: unlabelled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: bogus-level
+  labels:
+    pod-security.kubernetes.io/enforce: strict
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: posthog-privileged
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-baseline
+  labels:
+    baukit.dev/tenant: "true"
+    pod-security.kubernetes.io/enforce: baseline

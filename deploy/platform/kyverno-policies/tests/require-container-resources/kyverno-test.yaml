@@ -1,0 +1,19 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-container-resources
+policies:
+  - ../../policies/require-container-resources.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: require-container-resources
+    kind: Pod
+    resources: [bounded]
+    result: pass
+  - isValidatingPolicy: true
+    policy: require-container-resources
+    kind: Pod
+    resources: [unbounded-init, no-resources]
+    result: fail

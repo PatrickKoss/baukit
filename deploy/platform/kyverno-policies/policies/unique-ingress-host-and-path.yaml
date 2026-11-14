@@ -1,0 +1,45 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: unique-ingress-host-and-path
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Unique Ingress host and path
+    policies.kyverno.io/severity: high
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [networking.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [ingresses]
+  variables:
+    - name: routes
+      expression: >-
+        object.spec.?rules.orValue([])
+          .map(r, r.?http.paths.orValue([]).map(p, r.?host.orValue("*") + p.?path.orValue("/")))
+          .flatten()
+    - name: namespace
+      expression: object.metadata.?namespace.orValue("")
+    - name: others
+      expression: >-
+        dyn(resource.List("networking.k8s.io/v1", "ingresses", "").items)
+        .filter(i, !(i.metadata.namespace == variables.namespace && i.metadata.name == object.metadata.name))
+    - name: taken
+      expression: >-
+        variables.others.map(i, i.spec.?rules.orValue([])
+          .map(r, r.?http.paths.orValue([]).map(p, r.?host.orValue("*") + p.?path.orValue("/")))
+          .flatten()).flatten()
+    - name: clashes
+      expression: variables.routes.filter(route, route in variables.taken)
+  validations:
+    - expression: size(variables.clashes) == 0
+      messageExpression: >-
+        "Host and path " + variables.clashes.join(", ") +
+        " already belong to another Ingress. Pick a different host or path, or delete the old Ingress."
