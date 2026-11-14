@@ -37,6 +37,9 @@ spec:
         maxUnavailable: 0
         maxSurge: 1
     hostNetwork: false
+    global:
+      checkNewVersion: false
+      sendAnonymousUsage: false
     service:
       enabled: true
       spec:
@@ -58,6 +61,11 @@ spec:
         expose:
           default: true
         http:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+              permanent: true
           middlewares:
             - traefik-default-rate-limit@kubernetescrd
             - traefik-default-connection-limit@kubernetescrd
@@ -68,6 +76,7 @@ spec:
           middlewares:
             - traefik-default-rate-limit@kubernetescrd
             - traefik-default-connection-limit@kubernetescrd
+            - traefik-default-security-headers@kubernetescrd
       metrics:
         port: 9100
         expose:
@@ -88,11 +97,28 @@ spec:
         allowExternalNameServices: false
       kubernetesIngress:
         allowExternalNameServices: false
+    tlsOptions:
+      default:
+        minVersion: VersionTLS12
+        sniStrict: true
+        curvePreferences:
+          - X25519
+          - CurveP256
+          - CurveP384
+        cipherSuites:
+          - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+          - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+          - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+          - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+          - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+          - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
     accessLog:
       enabled: true
       format: json
       fields:
         headers:
+          defaultMode: drop
+        queryParameters:
           defaultMode: drop
     resources:
       requests:
@@ -111,6 +137,9 @@ spec:
             average: 100
             burst: 200
             period: 1s
+            sourceCriterion:
+              ipStrategy:
+                depth: 0
       - apiVersion: traefik.io/v1alpha1
         kind: Middleware
         metadata:
@@ -118,3 +147,17 @@ spec:
         spec:
           inFlightReq:
             amount: 100
+            sourceCriterion:
+              ipStrategy:
+                depth: 0
+      - apiVersion: traefik.io/v1alpha1
+        kind: Middleware
+        metadata:
+          name: default-security-headers
+        spec:
+          headers:
+            stsSeconds: 31536000
+            stsIncludeSubdomains: true
+            contentTypeNosniff: true
+            frameDeny: true
+            referrerPolicy: strict-origin-when-cross-origin

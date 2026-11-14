@@ -39,6 +39,52 @@ entrypoint middleware list with a reviewed alternative. The objects are
 rendered through the chart so Helm installs the Traefik CRDs before creating
 them.
 
+## Edge hardening
+
+Every TLS router uses the `default` TLSOption in the `traefik` namespace,
+which the chart renders from `tlsOptions.default`: TLS 1.2 is the minimum,
+`sniStrict` rejects handshakes whose SNI matches no certificate, curves are
+X25519, P-256 and P-384, and TLS 1.2 offers only ECDHE AES-GCM and
+ChaCha20-Poly1305 suites. Go fixes the TLS 1.3 suites.
+
+The `web` entrypoint answers every request with a permanent redirect to
+`websecure` (`ports.web.http.redirections.entryPoint`). The `websecure`
+entrypoint attaches `default-security-headers` after the limit middlewares. It
+sets HSTS for one year with `includeSubDomains`, `X-Content-Type-Options:
+nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy:
+strict-origin-when-cross-origin`. A route that must be framed or must not
+preload HSTS needs its own reviewed entrypoint, not a weaker default.
+
+Access logs are JSON, drop every request header and drop the query string from
+`RequestPath` (`accessLog.fields.queryParameters.defaultMode: drop`, Traefik
+3.7.3 or newer), so OAuth codes and tokens in URLs never reach Loki.
+`global.checkNewVersion` and `global.sendAnonymousUsage` are off.
+
+### Client IP overlay contract
+
+`default-rate-limit` and `default-connection-limit` key on the client IP with
+`sourceCriterion.ipStrategy.depth: 0`, which means the TCP peer address. On
+k3s, ServiceLB forwards the connection without a proxy hop, so the peer is the
+client and the base is correct as it is.
+
+An overlay that puts Traefik behind a load balancer or proxy that terminates
+the connection must set both of these, never just one:
+
+- `ports.web.forwardedHeaders.trustedIPs` and
+  `ports.websecure.forwardedHeaders.trustedIPs` to the proxy's source CIDRs, so
+  Traefik keeps `X-Forwarded-For` only from those peers;
+- `sourceCriterion.ipStrategy.depth` on both limit middlewares to the number of
+  trusted hops, usually `1`, so the limit keys on the address the proxy saw.
+
+With only one of the two, every client shares the proxy's bucket: Traefik
+replaces an `X-Forwarded-For` from an untrusted peer with the peer address, and
+depth `0` ignores the header.
+
+`deploy/platform/e2e/tests/traefik-edge` checks the TLS versions, the redirect,
+the headers and the access log on a live cluster.
+
+## Monitoring
+
 The chart emits a ServiceMonitor. The observability stack must install the
 Prometheus Operator CRDs before the HelmRelease reconciles (typically by a Flux
 `dependsOn` in the consuming overlay). The API check is disabled only so Helm
