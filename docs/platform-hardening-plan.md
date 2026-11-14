@@ -377,7 +377,7 @@ behave. Later phases add test directories here.
   and label every base namespace with it. Grafana's sidecar searches `ALL` with the `grafana_dashboard`
   label and uses `folderAnnotation`, so each component gets its own folder. This fixes F-02. The V4
   convention check fails if a rule lands outside the selector again.
-- [~] **O2 Platform observability pack.** New chart `deploy/observability-platform/`
+- [x] **O2 Platform observability pack.** New chart `deploy/observability-platform/`
   (`baukit-platform-observability`, version-coherent with the rest). Its templates glob
   `alerts/*.yml`, `recording-rules/*.yml` and `dashboards/*.json` with `.Files.Glob`, one PrometheusRule
   per file and one dashboard ConfigMap per file, each toggled per component in values.
@@ -733,3 +733,15 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
 - 2026-11-14: Integration branch fix c9c106f8. V2 and V4 had added three `noqa` sites and pushed
   `baukit check` past the suppression budget. The lint modules now run subprocesses through
   `scripts/process_runner.py` and load `helm_yaml` with importlib, so `baukit check` is clean again.
+- 2026-11-14: O2 merged. New chart `deploy/observability-platform/` (baukit-platform-observability,
+  in release-train and version coherence) globs alerts, recording rules and dashboards into one object
+  per file, switched per component; an unknown component or a missing `runbookBaseUrl` fails the render.
+  Rule files carry a `RUNBOOK_BASE_URL/<slug>` token the template replaces, because `tpl` breaks on
+  Prometheus `{{ $labels }}`. Skeleton alert `BaukitPlatformTargetDown` joins `up == 0` to
+  `kube_namespace_labels{label_app_kubernetes_io_part_of="baukit-platform"}`; kube-state-metrics now
+  allowlists that namespace label. `check-rules.sh` takes pack dirs and runs promtool check, promtool
+  test and pint (`--fail-on warning`, `lint/pint.hcl`), and fails when a rule file has no test. The app
+  pack templates use the same glob (F-53). Metric lint in Python and Rust gained per-pack allowlists
+  (`catalog = false`) and stops counting LogQL stages; shared vectors in
+  `fixtures/observability/metric-references.json`. One per-site pint disable on `BaukitDeadMansSwitch`
+  (a heartbeat must always fire).
