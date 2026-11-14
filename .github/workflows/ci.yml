@@ -271,6 +271,7 @@ jobs:
           persist-credentials: false
       - run: scripts/ci-gate.sh --step metric-names
       - run: scripts/ci-gate.sh --step observability-tests
+      - run: scripts/install-deploy-tools.sh --only promtool
       - run: scripts/ci-gate.sh --step observability-rules
 
   openapi-compatibility:

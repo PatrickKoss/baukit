@@ -1,0 +1,36 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: flux-tenant-service-account
+policies:
+  - ../../policies/flux-tenant-service-account.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: flux-tenant-service-account
+    kind: Kustomization
+    resources: [shop]
+    result: pass
+  - isValidatingPolicy: true
+    policy: flux-tenant-service-account
+    kind: HelmRelease
+    resources: [shop]
+    result: pass
+  - isValidatingPolicy: true
+    policy: flux-tenant-service-account
+    kind: Kustomization
+    resources: [no-service-account]
+    result: fail
+  - isValidatingPolicy: true
+    policy: flux-tenant-service-account
+    kind: HelmRelease
+    resources: [foreign-chart]
+    result: fail
+  - isValidatingPolicy: true
+    policy: flux-tenant-service-account
+    kind: Kustomization
+    resources: [platform]
+    result: skip

@@ -1,0 +1,19 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-psa-labels
+policies:
+  - ../../policies/require-psa-labels.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: require-psa-labels
+    kind: Namespace
+    resources: [cert-manager, kured, shop]
+    result: pass
+  - isValidatingPolicy: true
+    policy: require-psa-labels
+    kind: Namespace
+    resources: [unlabelled, bogus-level, posthog-privileged, tenant-baseline]
+    result: fail

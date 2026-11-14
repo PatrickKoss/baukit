@@ -1,0 +1,70 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: shop
+  namespace: shop
+spec:
+  interval: 10m
+  path: ./deploy
+  prune: true
+  serviceAccountName: shop-reconciler
+  sourceRef:
+    kind: GitRepository
+    name: shop
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: shop
+  namespace: shop
+spec:
+  interval: 10m
+  serviceAccountName: shop-reconciler
+  chart:
+    spec:
+      chart: baukit-app
+      version: 0.25.2
+      sourceRef:
+        kind: HelmRepository
+        name: baukit
+        namespace: shop
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: no-service-account
+  namespace: shop
+spec:
+  interval: 10m
+  path: ./deploy
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: shop
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: foreign-chart
+  namespace: shop
+spec:
+  interval: 10m
+  serviceAccountName: shop-reconciler
+  chartRef:
+    kind: OCIRepository
+    name: baukit-app
+    namespace: flux-system
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: platform
+  namespace: platform
+spec:
+  interval: 10m
+  path: ./deploy
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: platform
+    namespace: flux-system

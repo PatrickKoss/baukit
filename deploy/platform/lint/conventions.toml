@@ -1,0 +1,21 @@
+# Rules that today's bases still violate stay pending on the plan task that fixes them.
+# A pending rule that passes must move to active.
+privileged_namespaces = ["kube-system", "observability-agents", "kured", "falco"]
+# k3s runs CoreDNS, metrics-server and the cloud controllers here; N3 gives them no policies.
+network_policy_exempt_namespaces = ["kube-system"]
+
+[rules]
+active = [
+  "dashboards-selected",
+  "policy-exception-budget",
+  "prune-disabled",
+  "rules-selected",
+]
+
+[rules.pending]
+psa-labels = "N1"
+default-deny-network-policy = "N2"
+metrics-enabled = "O3"
+alert-metadata = "O6"
+alert-runbook = "O6"
+alert-tested = "O4"

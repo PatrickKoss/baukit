@@ -5,21 +5,44 @@ platform_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "$platform_dir/../.." && pwd)
 cache_dir="$platform_dir/.helm-cache"
 
-missing_tools=()
-for tool in kustomize kubeconform helm; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    missing_tools+=("$tool")
-  fi
-done
-
-if ((${#missing_tools[@]} > 0)); then
-  printf 'ERROR: required platform validation tools are missing: %s\n' "${missing_tools[*]}" >&2
-  printf 'Install pinned releases into a directory on PATH. Upstream releases:\n' >&2
-  printf '  kustomize:  https://github.com/kubernetes-sigs/kustomize/releases\n' >&2
-  printf '  kubeconform: https://github.com/yannh/kubeconform/releases\n' >&2
-  printf '  helm:        https://github.com/helm/helm/releases\n' >&2
+# shellcheck source=deploy/lib/tools.sh
+. "$repo_root/deploy/lib/tools.sh"
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'ERROR: required platform validation tool is missing: python3\n' >&2
   exit 2
 fi
+baukit_use_tools "$repo_root" kustomize kubeconform helm flux
+
+schema_dir="$cache_dir/crd-schemas"
+# The default kubernetes-json-schema location has no standalone CustomResourceDefinition
+# schema, so generate.py builds one from this pinned _definitions.json.
+kubernetes_schema_commit=2bfaff3898a7a4fa4e4760da3d2656211c9b4c71
+kubernetes_definitions_sha256=ce5535db873c37e5e16a1e8e4b4fa0a17bf3cdd3847394e135aeaff3bfcfc9a3
+schema_template="$schema_dir/{{ .ResourceKind }}_{{ .ResourceAPIVersion }}.json"
+
+# Core kinds come from the default kubernetes-json-schema location, cached offline.
+# Every custom resource kind needs a schema generated from its CRD, so a kind
+# without one is an error.
+run_kubeconform() {
+  kubeconform -strict -summary \
+    -cache "$cache_dir/kubeconform-schemas" \
+    -schema-location default \
+    -schema-location "$schema_template" \
+    "$@"
+}
+
+if [[ ${1:-} == --kubeconform ]]; then
+  shift
+  if [[ ! -f $schema_dir/.inputs.sha256 ]]; then
+    printf 'ERROR: no generated CRD schemas in %s; run %s first\n' "$schema_dir" "$0" >&2
+    exit 2
+  fi
+  mkdir -p "$cache_dir/kubeconform-schemas"
+  run_kubeconform "$@"
+  exit
+fi
+
+pinned_flux_version=v$(baukit_tool_version "$repo_root" flux)
 
 mkdir -p "$cache_dir/repository-cache" "$cache_dir/kubeconform-schemas"
 export HELM_REPOSITORY_CONFIG="$cache_dir/repositories.yaml"
@@ -27,17 +50,8 @@ export HELM_REPOSITORY_CACHE="$cache_dir/repository-cache"
 
 work_dir=$(mktemp -d)
 trap 'rm -rf -- "$work_dir"' EXIT
-
-# kubeconform validates every core/built-in object strictly. The explicit skip
-# list prevents network schema lookups for CRD definitions and custom-resource
-# kinds known to these bases:
-# Flux HelmRepository/HelmRelease/GitRepository/Kustomization; Traefik
-# Middleware/TraefikService; Flagger Canary/MetricTemplate; Kyverno
-# ClusterPolicy; cert-manager resources; Prometheus
-# Operator ServiceMonitor/PodMonitor/PrometheusRule; CloudNativePG/Barman
-# Cluster/ObjectStore/Backup/ScheduledBackup/Pooler. -ignore-missing-schemas remains a fallback for newly added CRDs.
-# Downloaded core schemas share the offline cache with the Helm chart archives.
-kubeconform_skip_kinds=CustomResourceDefinition,HelmRepository,HelmRelease,GitRepository,Kustomization,Middleware,TraefikService,Canary,MetricTemplate,ClusterPolicy,Certificate,Issuer,ClusterIssuer,ServiceMonitor,PodMonitor,PrometheusRule,Cluster,ObjectStore,Backup,ScheduledBackup,Pooler
+rendered_dir="$work_dir/rendered"
+mkdir -p "$rendered_dir"
 
 strip_yaml_quotes() {
   local value=$1
@@ -142,9 +156,9 @@ split_documents() {
 }
 
 status=0
-skipped_charts=0
-validated_bases=0
-validated_charts=0
+rendered_bases=0
+rendered_charts=0
+rendered_overlays=0
 
 mapfile -d '' bases < <(
   find "$platform_dir" -mindepth 1 -maxdepth 1 -type d ! -name overlays \
@@ -158,23 +172,14 @@ fi
 
 for base in "${bases[@]}"; do
   base_name=${base##*/}
-  rendered="$work_dir/$base_name.yaml"
+  rendered="$rendered_dir/base-$base_name.yaml"
   documents="$work_dir/$base_name-documents"
   printf '==> %s: kustomize build\n' "$base_name"
   if ! kustomize build "$base" >"$rendered"; then
     status=1
     continue
   fi
-
-  printf '==> %s: kubeconform\n' "$base_name"
-  if ! kubeconform -strict -summary -ignore-missing-schemas \
-    -skip "$kubeconform_skip_kinds" \
-    -cache "$cache_dir/kubeconform-schemas" \
-    "$rendered"; then
-    status=1
-    continue
-  fi
-  ((validated_bases += 1))
+  ((rendered_bases += 1))
 
   split_documents "$rendered" "$documents"
   declare -A repositories=()
@@ -244,9 +249,9 @@ for base in "${bases[@]}"; do
             "$base_name" "$release_name" "$chart_name" "$chart_version"
           if ! helm repo add "$repository_alias" "$repository_url" --force-update >/dev/null 2>&1 ||
             ! helm pull "$repository_alias/$chart_name" --version "$chart_version" --destination "$pull_dir" >/dev/null 2>&1; then
-            printf 'SKIP: %s/%s chart is not cached and could not be fetched (offline?)\n' \
-              "$base_name" "$release_name" >&2
-            ((skipped_charts += 1))
+            printf 'ERROR: %s/%s chart %s %s is not cached and could not be fetched\n' \
+              "$base_name" "$release_name" "$chart_name" "$chart_version" >&2
+            status=1
             continue
           fi
           pulled_chart=$(find "$pull_dir" -maxdepth 1 -type f -name '*.tgz' -print -quit)
@@ -290,17 +295,16 @@ for base in "${bases[@]}"; do
         --api-versions monitoring.coreos.com/v1/ServiceMonitor \
         --api-versions monitoring.coreos.com/v1/PodMonitor \
         --api-versions monitoring.coreos.com/v1/PrometheusRule \
-        --values "$values_file" >/dev/null; then
+        --values "$values_file" >"$rendered_dir/chart-$base_name-$release_name.yaml"; then
       status=1
       continue
     fi
-    ((validated_charts += 1))
+    ((rendered_charts += 1))
   done
 
   unset repositories
 done
 
-validated_overlays=0
 if [[ -d "$platform_dir/overlays" ]]; then
   mapfile -d '' overlays < <(
     find "$platform_dir/overlays" -mindepth 1 -maxdepth 1 -type d \
@@ -308,24 +312,64 @@ if [[ -d "$platform_dir/overlays" ]]; then
   )
   for overlay in "${overlays[@]}"; do
     overlay_name="overlays/${overlay##*/}"
-    rendered="$work_dir/overlay-${overlay##*/}.yaml"
     printf '==> %s: kustomize build\n' "$overlay_name"
-    if ! kustomize build "$overlay" >"$rendered"; then
+    if ! kustomize build "$overlay" >"$rendered_dir/overlay-${overlay##*/}.yaml"; then
       status=1
       continue
     fi
-    printf '==> %s: kubeconform\n' "$overlay_name"
-    if ! kubeconform -strict -summary -ignore-missing-schemas \
-      -skip "$kubeconform_skip_kinds" \
-      -cache "$cache_dir/kubeconform-schemas" \
-      "$rendered"; then
-      status=1
-      continue
-    fi
-    ((validated_overlays += 1))
+    ((rendered_overlays += 1))
   done
 fi
 
-printf 'Platform validation: %d bases, %d charts rendered, %d charts skipped (cold/offline cache), %d overlays.\n' \
-  "$validated_bases" "$validated_charts" "$skipped_charts" "$validated_overlays"
+flux_manifest="$work_dir/flux-install-$pinned_flux_version.yaml"
+flux install --export >"$flux_manifest"
+
+kubernetes_definitions="$cache_dir/kubernetes-definitions-$kubernetes_schema_commit.json"
+if [[ ! -s $kubernetes_definitions ]]; then
+  printf '==> fetching kubernetes-json-schema definitions %s\n' "$kubernetes_schema_commit"
+  if ! curl -fsSL --retry 3 -o "$work_dir/definitions.json" \
+    "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/$kubernetes_schema_commit/master/_definitions.json"; then
+    printf 'ERROR: kubernetes-json-schema definitions are not cached and could not be fetched\n' >&2
+    exit 1
+  fi
+  mv -- "$work_dir/definitions.json" "$kubernetes_definitions"
+fi
+if ! printf '%s  %s\n' "$kubernetes_definitions_sha256" "$kubernetes_definitions" | sha256sum --check --quiet; then
+  printf 'ERROR: %s does not match its pinned sha256\n' "$kubernetes_definitions" >&2
+  exit 1
+fi
+
+mapfile -d '' rendered_files < <(find "$rendered_dir" -type f -name '*.yaml' -print0 | sort -z)
+
+printf '==> CRD schemas\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/schemas/generate.py" --output "$schema_dir" \
+  --kubernetes-definitions "$kubernetes_definitions" \
+  "$flux_manifest" "${rendered_files[@]}"; then
+  exit 1
+fi
+
+checked_objects=0
+for rendered in "${rendered_files[@]}"; do
+  printf '==> %s: kubeconform\n' "${rendered##*/}"
+  summary_file="$work_dir/kubeconform-summary"
+  if ! run_kubeconform "$rendered" | tee "$summary_file"; then
+    status=1
+  fi
+  valid=$(sed -n 's/^Summary: .* Valid: \([0-9]*\),.*/\1/p' "$summary_file")
+  ((checked_objects += ${valid:-0}))
+done
+
+printf '==> conventions\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_conventions.py" --rendered "$rendered_dir" --chart-cache "$cache_dir"; then
+  status=1
+fi
+
+printf '==> schema and fixture tests\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/schemas" -p 'test_*.py' ||
+  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/lint" -p 'test_*.py'; then
+  status=1
+fi
+
+printf 'Platform validation: %d bases, %d charts, %d overlays rendered; %d objects schema-checked.\n' \
+  "$rendered_bases" "$rendered_charts" "$rendered_overlays" "$checked_objects"
 exit "$status"

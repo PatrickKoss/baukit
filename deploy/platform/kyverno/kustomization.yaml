@@ -4,4 +4,5 @@ resources:
   - namespace.yaml
   - helm-repository.yaml
   - helm-release.yaml
-  - policies.yaml
+  - policy-reporter-repository.yaml
+  - policy-reporter-release.yaml
