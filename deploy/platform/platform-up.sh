@@ -145,7 +145,7 @@ apply_secret() {
 
 apply_runtime_identity() {
   local namespace
-  for namespace in postgres observability posthog; do
+  for namespace in postgres observability observability-agents posthog; do
     kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     kubectl label namespace "$namespace" app.kubernetes.io/part-of=baukit-platform --overwrite >/dev/null
   done
@@ -169,7 +169,7 @@ apply_runtime_identity() {
   apply_secret observability grafana-admin \
     --from-literal=admin-user="$GRAFANA_ADMIN_USER" \
     --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD"
-  kubectl -n observability create configmap observability-cluster \
+  kubectl -n observability-agents create configmap observability-cluster \
     --from-literal=environment=local --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 

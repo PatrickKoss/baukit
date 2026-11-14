@@ -36,3 +36,15 @@ spec:
         cpu: 250m
         memory: 256Mi
 
+    securityContext:
+      enabled: true
+      context:
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault

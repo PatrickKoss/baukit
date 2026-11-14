@@ -47,6 +47,7 @@ age_key_file=${PLATFORM_AGE_KEY_FILE:-}
 baukit_source_mode=${PLATFORM_BAUKIT_SOURCE_MODE:-github-tag}
 baukit_checkout=${PLATFORM_BAUKIT_CHECKOUT:-}
 k3s_image=${PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.8-k3s1}
+psa_version=v1.34
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"
 flux_version=${PLATFORM_FLUX_VERSION:-v$(baukit_tool_version "$repo_root" flux)}
@@ -283,6 +284,11 @@ ensure_snapshot_dns() {
 
 install_sops_key() {
   kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl label namespace flux-system --overwrite \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/enforce-version="$psa_version" \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted >/dev/null
   kubectl -n flux-system create secret generic sops-age \
     --from-file=age.agekey="$age_key_file" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
