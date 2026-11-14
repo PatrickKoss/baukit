@@ -5,7 +5,7 @@ metadata:
   namespace: observability
 spec:
   interval: 30m
-  timeout: 10m
+  timeout: 5m
   dependsOn:
     - name: kube-prometheus-stack
       namespace: observability
@@ -22,8 +22,11 @@ spec:
     remediation:
       retries: 3
   upgrade:
+    cleanupOnFail: true
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     replicas: 1
     tempo:

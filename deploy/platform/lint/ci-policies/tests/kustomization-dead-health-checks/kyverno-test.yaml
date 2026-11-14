@@ -1,0 +1,24 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: kustomization-dead-health-checks
+policies:
+  - ../../policies/kustomization-dead-health-checks.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: kustomization-dead-health-checks
+    kind: Kustomization
+    resources: [wait-only]
+    result: pass
+  - isValidatingPolicy: true
+    policy: kustomization-dead-health-checks
+    kind: Kustomization
+    resources: [health-checks-only]
+    result: pass
+  - isValidatingPolicy: true
+    policy: kustomization-dead-health-checks
+    kind: Kustomization
+    resources: [dead-health-checks]
+    result: fail

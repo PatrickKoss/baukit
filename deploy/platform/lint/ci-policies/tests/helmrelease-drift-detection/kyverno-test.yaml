@@ -1,0 +1,29 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helmrelease-drift-detection
+policies:
+  - ../../policies/helmrelease-drift-detection.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: helmrelease-drift-detection
+    kind: HelmRelease
+    resources: [drift-warn]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-drift-detection
+    kind: HelmRelease
+    resources: [drift-enabled]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-drift-detection
+    kind: HelmRelease
+    resources: [drift-disabled]
+    result: fail
+  - isValidatingPolicy: true
+    policy: helmrelease-drift-detection
+    kind: HelmRelease
+    resources: [no-drift]
+    result: fail

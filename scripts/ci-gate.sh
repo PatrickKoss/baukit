@@ -116,11 +116,11 @@ step_observability_rules() {
   deploy/observability/lint/check-rules.sh deploy/observability deploy/observability-platform
 }
 step_platform_validate() {
-  scripts/install-deploy-tools.sh --only kustomize,kubeconform,helm,flux
+  scripts/install-deploy-tools.sh --only kustomize,kubeconform,helm,flux,kyverno
   ./deploy/platform/validate.sh
 }
 step_platform_images() {
-  scripts/install-deploy-tools.sh --only kustomize,kubeconform,helm,flux,trivy
+  scripts/install-deploy-tools.sh --only kustomize,kubeconform,helm,flux,kyverno,trivy
   scripts/platform-images.sh
 }
 step_media_grants() { make media-grants-test media-grants-njs-test; }

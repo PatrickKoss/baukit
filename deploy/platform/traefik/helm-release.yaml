@@ -5,6 +5,7 @@ metadata:
   namespace: traefik
 spec:
   interval: 30m
+  timeout: 5m
   chart:
     spec:
       chart: traefik
@@ -23,6 +24,8 @@ spec:
     crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     deployment:
       kind: Deployment

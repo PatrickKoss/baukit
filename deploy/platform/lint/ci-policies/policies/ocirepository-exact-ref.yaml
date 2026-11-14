@@ -1,0 +1,23 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: ocirepository-exact-ref
+  annotations:
+    policies.kyverno.io/title: OCIRepository exact reference
+spec:
+  validationActions:
+    - Deny
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [source.toolkit.fluxcd.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [ocirepositories]
+  validations:
+    - expression: >-
+        object.spec.?ref.?digest.orValue("") != "" ||
+        (object.spec.?ref.?semver.orValue("") == "" &&
+        object.spec.?ref.?tag.orValue("").matches('^v?[0-9]+[.][0-9]+[.][0-9]+(-[0-9A-Za-z.-]+)?([+][0-9A-Za-z.-]+)?$'))
+      messageExpression: >-
+        "OCIRepository " + object.metadata.name + " must pin spec.ref.digest or an exact spec.ref.tag " +
+        "version. spec.ref.semver ranges and moving tags let Flux pull a new artifact on its own."
