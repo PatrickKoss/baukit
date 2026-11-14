@@ -5,6 +5,7 @@ metadata:
   namespace: kured
 spec:
   interval: 30m
+  timeout: 5m
   chart:
     spec:
       chart: kured

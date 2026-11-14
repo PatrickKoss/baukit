@@ -5,6 +5,7 @@ metadata:
   namespace: kyverno
 spec:
   interval: 30m
+  timeout: 5m
   dependsOn:
     - name: kyverno
   chart:
