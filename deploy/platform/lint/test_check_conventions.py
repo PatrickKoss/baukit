@@ -63,7 +63,11 @@ def alert(name: str, **overrides) -> cc.Alert:
 
 class PsaLabelsTest(unittest.TestCase):
     def test_restricted_namespace_with_audit_passes(self) -> None:
-        labels = {f"{PSA}enforce": "restricted", f"{PSA}audit": "restricted"}
+        labels = {
+            f"{PSA}enforce": "restricted",
+            f"{PSA}audit": "restricted",
+            f"{PSA}enforce-version": "v1.33",
+        }
         self.assertEqual(violations("psa-labels", context(namespace("app", labels))), [])
 
     def test_missing_enforce_fails(self) -> None:
@@ -73,10 +77,16 @@ class PsaLabelsTest(unittest.TestCase):
 
     def test_missing_audit_and_warn_fails(self) -> None:
         found = violations("psa-labels", context(namespace("app", {f"{PSA}enforce": "baseline"})))
-        self.assertIn("neither a PSA audit nor a warn", found[0])
+        self.assertIn("neither a PSA audit nor a warn", found[-1])
+
+    def test_missing_enforce_version_fails(self) -> None:
+        labels = {f"{PSA}enforce": "restricted", f"{PSA}audit": "restricted"}
+        found = violations("psa-labels", context(namespace("app", labels)))
+        self.assertEqual(found, [f"Namespace app has no {PSA}enforce-version label"])
 
     def test_privileged_needs_the_allowlist(self) -> None:
         labels = {f"{PSA}enforce": "privileged", f"{PSA}warn": "restricted"}
+        labels[f"{PSA}enforce-version"] = "v1.33"
         ctx = context(namespace("app", labels), namespace("kured", labels))
         ctx.privileged_namespaces = {"kured"}
         found = violations("psa-labels", ctx)
@@ -131,7 +141,7 @@ def helm_release(name: str, chart: str, version: str, namespace_name: str = "app
 class MetricsEnabledTest(unittest.TestCase):
     def test_chart_with_toggle_and_no_monitor_fails(self) -> None:
         ctx = context(helm_release("x", "x", "1.0.0"))
-        ctx.chart_values = {"x@1.0.0": "metrics:\n  serviceMonitor:\n    enabled: false\n"}
+        ctx.chart_values = {"x@1.0.0": {"metrics": {"serviceMonitor": {"enabled": False}}}}
         self.assertIn("monitor toggle", violations("metrics-enabled", ctx)[0])
 
     def test_chart_with_toggle_and_a_monitor_passes(self) -> None:
@@ -139,13 +149,30 @@ class MetricsEnabledTest(unittest.TestCase):
             "PodMonitor", "x", kustomize=False, apiVersion="monitoring.coreos.com/v1"
         )
         ctx = context(helm_release("x", "x", "1.0.0"), monitor)
-        ctx.chart_values = {"x@1.0.0": "monitoring:\n  podMonitorEnabled: true\n"}
+        ctx.chart_values = {"x@1.0.0": {"monitoring": {"podMonitorEnabled": True}}}
         self.assertEqual(violations("metrics-enabled", ctx), [])
 
     def test_chart_without_toggle_passes(self) -> None:
         ctx = context(helm_release("x", "x", "1.0.0"))
-        ctx.chart_values = {"x@1.0.0": "replicas: 1\n"}
+        ctx.chart_values = {"x@1.0.0": {"replicas": 1, "serviceMonitor": {"labels": {}}}}
         self.assertEqual(violations("metrics-enabled", ctx), [])
+
+    def test_known_toggle_paths_are_found_at_any_depth(self) -> None:
+        values = {
+            "serviceMonitor": {"enabled": False},
+            "prometheus": {"servicemonitor": {"enabled": False}},
+            "a": {"metrics": {"serviceMonitor": {"enabled": True}}},
+            "monitoring": {"podMonitorEnabled": False, "enabled": False},
+        }
+        self.assertEqual(
+            cc.monitor_toggles(values),
+            [
+                "serviceMonitor.enabled",
+                "prometheus.servicemonitor.enabled",
+                "a.metrics.serviceMonitor.enabled",
+                "monitoring.podMonitorEnabled",
+            ],
+        )
 
     def test_unknown_chart_values_fail(self) -> None:
         self.assertIn(
@@ -460,7 +487,7 @@ tests:
 
 
 class MainTest(unittest.TestCase):
-    def run_main(self, budget: int) -> tuple[int, str, str]:
+    def run_main(self, budget: int, values: str = "replicas: 1\n") -> tuple[int, str, str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             rendered = root / "rendered"
@@ -468,7 +495,7 @@ class MainTest(unittest.TestCase):
             (rendered / "base-app.yaml").write_text(RENDERED_BASE)
             (rendered / "chart-app-web.yaml").write_text(RENDERED_CHART)
             (root / "charts/web").mkdir(parents=True)
-            (root / "charts/web/values.yaml").write_text("replicas: 1\n")
+            (root / "charts/web/values.yaml").write_text(values)
             (root / "deploy/observability/alerts").mkdir(parents=True)
             (root / "deploy/observability/alerts/app.yml").write_text(ALERT_PACK)
             (root / "deploy/observability/tests").mkdir(parents=True)
@@ -504,6 +531,17 @@ class MainTest(unittest.TestCase):
             "[default-deny-network-policy (N2): 1; psa-labels (N1): 1]",
             stdout,
         )
+
+    def test_commented_out_monitor_toggle_does_not_count(self) -> None:
+        values = "# serviceMonitor:\n#   enabled: false\nreplicas: 1\n"
+        code, _, stderr = self.run_main(budget=1, values=values)
+        self.assertEqual(code, 0, stderr)
+
+    def test_parsed_monitor_toggle_without_a_monitor_fails(self) -> None:
+        values = "metrics:\n  serviceMonitor:\n    enabled: false\n"
+        code, _, stderr = self.run_main(budget=1, values=values)
+        self.assertEqual(code, 1)
+        self.assertIn("[metrics-enabled]", stderr)
 
     def test_one_exception_over_budget_fails(self) -> None:
         code, _, stderr = self.run_main(budget=0)

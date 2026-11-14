@@ -23,7 +23,13 @@ import helm_yaml
 LINT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = LINT_DIR.parents[2]
 CRD_KIND_LINE = re.compile(r"^kind:[ \t]*['\"]?CustomResourceDefinition['\"]?[ \t]*$", re.MULTILINE)
-MONITOR_TOGGLE = re.compile(r"^[ \t]*[A-Za-z]*(?:service|pod)monitor[A-Za-z]*[ \t]*:", re.I | re.M)
+MONITOR_BLOCK_KEYS = {"servicemonitor", "podmonitor"}
+MONITOR_FLAG_KEYS = {
+    "podmonitorenabled",
+    "servicemonitorenabled",
+    "enablepodmonitor",
+    "enableservicemonitor",
+}
 
 PSA_PREFIX = "pod-security.kubernetes.io/"
 PSA_LEVELS = {"privileged", "baseline", "restricted"}
@@ -99,7 +105,7 @@ class Context:
     alerts: list[Alert] = field(default_factory=list)
     fired_alerts: set[str] = field(default_factory=set)
     runbook_slugs: set[str] = field(default_factory=set)
-    chart_values: dict[str, str] = field(default_factory=dict)
+    chart_values: dict[str, dict] = field(default_factory=dict)
     privileged_namespaces: set[str] = field(default_factory=set)
     network_policy_exempt: set[str] = field(default_factory=set)
     policy_exception_budget: int = 0
@@ -179,6 +185,8 @@ def rule_psa_labels(context: Context) -> Iterable[str]:
         if enforce not in PSA_LEVELS:
             yield f"Namespace {namespace.name} has no valid {PSA_PREFIX}enforce label"
             continue
+        if not labels.get(f"{PSA_PREFIX}enforce-version"):
+            yield f"Namespace {namespace.name} has no {PSA_PREFIX}enforce-version label"
         if not any(f"{PSA_PREFIX}{mode}" in labels for mode in ("audit", "warn")):
             yield f"Namespace {namespace.name} has neither a PSA audit nor a warn label"
         if enforce == "privileged" and namespace.name not in context.privileged_namespaces:
@@ -216,6 +224,23 @@ def chart_key(release: Resource) -> str:
     return f"{chart.get('chart', '')}@{chart.get('version', '')}"
 
 
+def monitor_toggles(values: object, path: tuple[str, ...] = ()) -> list[str]:
+    """Return dotted paths of boolean ServiceMonitor or PodMonitor switches at any depth."""
+    if not isinstance(values, dict):
+        return []
+    found = []
+    for key, value in values.items():
+        here = (*path, str(key))
+        lowered = str(key).lower()
+        if isinstance(value, bool) and (
+            lowered in MONITOR_FLAG_KEYS
+            or (lowered == "enabled" and path and path[-1].lower() in MONITOR_BLOCK_KEYS)
+        ):
+            found.append(".".join(here))
+        found.extend(monitor_toggles(value, here))
+    return found
+
+
 def rule_metrics_enabled(context: Context) -> Iterable[str]:
     for universe, resources in context.universes.items():
         monitored = {resource.namespace for resource in resources if resource.kind in MONITOR_KINDS}
@@ -226,7 +251,7 @@ def rule_metrics_enabled(context: Context) -> Iterable[str]:
                 yield f"{universe}: no chart values found for {release.ref()} ({key})"
                 continue
             target = release.spec.get("targetNamespace") or release.namespace
-            if MONITOR_TOGGLE.search(values) and target not in monitored:
+            if monitor_toggles(values) and target not in monitored:
                 yield (
                     f"{universe}: {release.ref()} chart has a metrics monitor toggle, but nothing "
                     f"renders a ServiceMonitor or PodMonitor in namespace {target}"
@@ -559,12 +584,15 @@ def build_context(
     tests = promtool_test_files(repo_root)
     parsed = parse_files([*rendered_paths, *packs, *tests])
     universes = build_universes({path: parsed[path] for path in rendered_paths})
-    chart_values = {}
+    values_text = {}
     for _, resource in all_resources(Context(universes)):
         if resource.kind == "HelmRelease":
             text = chart_values_text(resource, chart_cache, repo_root)
             if text is not None:
-                chart_values[chart_key(resource)] = text
+                values_text[chart_key(resource)] = text
+    keys = sorted(values_text)
+    parsed_values = helm_yaml.parse_documents([values_text[key] for key in keys])
+    chart_values = dict(zip(keys, parsed_values, strict=True))
     return Context(
         universes=universes,
         alerts=load_alerts({path: parsed[path] for path in packs}, universes),
