@@ -185,7 +185,7 @@ versions. This phase comes first so every later task has a place to put its test
   gate. Exceptions are read from the same files the cluster gets.
   Acceptance: a rendered pod without limits fails the stage. The stage prints a per-policy pass/fail
   table to `.ci-gate/`.
-- [~] **V4 Convention checker.** `deploy/platform/lint/check_conventions.py` (stdlib only, unittest
+- [x] **V4 Convention checker.** `deploy/platform/lint/check_conventions.py` (stdlib only, unittest
   tests, same style as `scripts/`). It covers cross-resource rules that one-object policies can't:
   - every Namespace a base owns has PSA `enforce` and `audit`/`warn` labels; `privileged` only for the
     allowlist (N1);
@@ -708,3 +708,13 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   compose `kyverno-policies` before N1 labels every namespace. Live check on k3d (Kyverno only): unlabelled
   namespace denied, tenant defaults generated, cluster-admin binding denied. One run hit the chart's
   legacy-check hook Job deadline on a slow pull; watch in e2e.
+- 2026-11-14: V4 merged. `check_conventions.py` has 10 named rules, each with fail and pass fixtures (45
+  tests), and runs as a validate.sh stage. YAML parsing is shared in `lint/helm_yaml.py`. Active rule set
+  lives in `lint/conventions.toml`; rules today's bases break are pending on the task that fixes them, and
+  the checker fails when a pending rule starts passing (so it has to be activated) or a rule is in neither
+  list. Pending at merge: psa-labels 12 (N1), default-deny-network-policy 17 (N2), metrics-enabled 9 (O3),
+  alert-tested 13 (O4), alert-metadata 1 and alert-runbook 15 (O6), rules-selected 2 (O1, F-02),
+  prune-disabled 7 (R8). PolicyException budget 0, and the budget rule also fails when the count drops
+  below it. Gate steps `platform-validate` and `observability-rules` install their pinned tools first, with
+  a test that ties each `--only` list to the step's tools. Sent back once: metrics toggle detection moved
+  from regex to parsed values, `psa-labels` now requires `enforce-version`.
