@@ -83,6 +83,12 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: alloy
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: falco
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: falcosidekick
       ports:
         - protocol: TCP
           port: 8080
@@ -208,6 +214,12 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: grafana
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: falco
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: falcosidekick
       ports:
         - protocol: TCP
           port: 9093
@@ -304,6 +316,10 @@ spec:
           port: 10250
         - protocol: TCP
           port: 12345
+        - protocol: TCP
+          port: 8765
+        - protocol: TCP
+          port: 2801
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
