@@ -1,0 +1,157 @@
+import importlib.util
+import os
+import subprocess
+import tempfile
+import textwrap
+import unittest
+from pathlib import Path
+
+SCRIPT = Path(__file__).with_name("redis-ha.sh")
+PROCESS_RUNNER = Path(__file__).resolve().parents[3] / "scripts" / "process_runner.py"
+
+
+def load_process_runner():
+    spec = importlib.util.spec_from_file_location("process_runner", PROCESS_RUNNER)
+    if spec is None or spec.loader is None:
+        raise ImportError(PROCESS_RUNNER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+process_runner = load_process_runner()
+SUFFIX = ".redis-headless.platform-redis.svc.cluster.local"
+STUB = textwrap.dedent(
+    """\
+    #!/bin/sh
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = "-h" ]; then host="$2"; fi
+      shift
+    done
+    answer="$STUB_DIR/$host"
+    [ -f "$answer" ] || exit 1
+    cat "$answer"
+    """
+)
+
+
+def fqdn(ordinal: int) -> str:
+    return f"redis-{ordinal}{SUFFIX}"
+
+
+class RedisHaScript:
+    def decide(
+        self,
+        pod: str,
+        answers: dict[int, str],
+        mode: str = "decide",
+        extra_env: dict[str, str] | None = None,
+        local_info: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            stub_dir = Path(tmp)
+            cli = stub_dir / "redis-cli"
+            cli.write_text(STUB)
+            cli.chmod(0o755)
+            sentinel = stub_dir / "redis-sentinel"
+            sentinel.write_text('#!/bin/sh\ncat "$1"\n')
+            sentinel.chmod(0o755)
+            for ordinal, answer in answers.items():
+                (stub_dir / fqdn(ordinal)).write_text(answer)
+            if local_info is not None:
+                (stub_dir / "127.0.0.1").write_text(local_info)
+            env = {
+                **os.environ,
+                "PATH": f"{stub_dir}:{os.environ['PATH']}",
+                "STUB_DIR": str(stub_dir),
+                "POD_NAME": pod,
+                "SELF_WAIT_ATTEMPTS": "2",
+                "RETRY_SECONDS": "0",
+                "NO_ANSWER_ATTEMPTS": "2",
+                "LOCAL_WAIT_ATTEMPTS": "1",
+                "SENTINEL_CONF": str(stub_dir / "sentinel.conf"),
+                **(extra_env or {}),
+            }
+            return process_runner.run_process(
+                ["sh", str(SCRIPT), mode],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+
+class DecideMasterTest(RedisHaScript, unittest.TestCase):
+    def assert_decision(self, pod: str, answers: dict[int, str], expected: str) -> None:
+        result = self.decide(pod, answers)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), expected)
+
+    def test_redis_0_bootstraps_when_no_sentinel_answers(self) -> None:
+        self.assert_decision("redis-0", {}, "self")
+
+    def test_other_pod_follows_redis_0_when_no_sentinel_answers(self) -> None:
+        self.assert_decision("redis-2", {}, fqdn(0))
+
+    def test_restarted_old_master_follows_promoted_replica(self) -> None:
+        answers = {1: f"{fqdn(1)}\n6379\n", 2: f"{fqdn(1)}\n6379\n"}
+        self.assert_decision("redis-0", answers, fqdn(1))
+
+    def test_one_answering_sentinel_is_enough(self) -> None:
+        self.assert_decision("redis-0", {2: f"{fqdn(2)}\n6379\n"}, fqdn(2))
+
+    def test_unknown_master_counts_as_no_answer(self) -> None:
+        self.assert_decision("redis-0", {1: "\n", 2: "IDONTKNOW\n"}, "self")
+
+    def test_self_reported_master_starts_as_master_only_after_waiting(self) -> None:
+        answers = {1: f"{fqdn(0)}\n6379\n", 2: f"{fqdn(0)}\n6379\n"}
+        result = self.decide("redis-0", answers)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "self")
+        self.assertIn("waiting for Sentinels", result.stderr)
+
+    def test_disagreeing_sentinels_fail_the_start(self) -> None:
+        answers = {1: f"{fqdn(1)}\n6379\n", 2: f"{fqdn(2)}\n6379\n"}
+        result = self.decide("redis-0", answers)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("disagree", result.stderr)
+
+
+class SentinelConfigTest(RedisHaScript, unittest.TestCase):
+    def test_sentinel_monitors_reported_master_and_announces_hostname(self) -> None:
+        result = self.decide("redis-0", {1: f"{fqdn(2)}\n6379\n"}, mode="sentinel")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"sentinel monitor mymaster {fqdn(2)} 6379 2", result.stdout)
+        self.assertIn("sentinel announce-hostnames yes", result.stdout)
+        self.assertIn("sentinel resolve-hostnames yes", result.stdout)
+        self.assertIn(f"sentinel announce-ip {fqdn(0)}", result.stdout)
+
+    def test_sentinel_does_not_wait_when_peers_report_this_pod(self) -> None:
+        answers = {1: f"{fqdn(0)}\n6379\n"}
+        extra = {"SELF_WAIT_ATTEMPTS": "1000", "RETRY_SECONDS": "5"}
+        result = self.decide("redis-0", answers, mode="sentinel", extra_env=extra)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"sentinel monitor mymaster {fqdn(0)} 6379 2", result.stdout)
+
+    def test_sentinel_falls_back_to_redis_0_when_peers_disagree(self) -> None:
+        answers = {0: f"{fqdn(0)}\n6379\n", 2: f"{fqdn(2)}\n6379\n"}
+        result = self.decide("redis-1", answers, mode="sentinel")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"sentinel monitor mymaster {fqdn(0)} 6379 2", result.stdout)
+
+    def test_sentinel_monitors_the_master_local_redis_replicates(self) -> None:
+        info = f"# Replication\r\nrole:slave\r\nmaster_host:{fqdn(1)}\r\nmaster_port:6379\r\n"
+        answers = {2: f"{fqdn(2)}\n6379\n"}
+        result = self.decide("redis-0", answers, mode="sentinel", local_info=info)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"sentinel monitor mymaster {fqdn(1)} 6379 2", result.stdout)
+
+    def test_sentinel_monitors_this_pod_when_local_redis_is_master(self) -> None:
+        info = "# Replication\r\nrole:master\r\nconnected_slaves:0\r\n"
+        result = self.decide("redis-0", {}, mode="sentinel", local_info=info)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"sentinel monitor mymaster {fqdn(0)} 6379 2", result.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()
