@@ -1,0 +1,19 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: kustomization-wait
+policies:
+  - ../../policies/kustomization-wait.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: kustomization-wait
+    kind: Kustomization
+    resources: [waits]
+    result: pass
+  - isValidatingPolicy: true
+    policy: kustomization-wait
+    kind: Kustomization
+    resources: [no-wait]
+    result: fail

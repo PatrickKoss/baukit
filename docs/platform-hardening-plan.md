@@ -198,7 +198,7 @@ versions. This phase comes first so every later task has a place to put its test
     selectors admit (prevents a repeat of F-02);
   - the PolicyException count does not exceed the budget in `deploy/platform/lint/budget.toml`, which
     may only go down.
-- [ ] **V5 HelmRelease conventions as offline policies** in `lint/ci-policies/`: exact chart version;
+- [x] **V5 HelmRelease conventions as offline policies** in `lint/ci-policies/`: exact chart version;
   `install.remediation.retries`, `upgrade.remediation.retries`, `upgrade.cleanupOnFail`; explicit
   `timeout`; `driftDetection.mode: enabled`; `install.crds` and `upgrade.crds: CreateReplace` when the
   chart ships CRDs; HelmRepository `interval >= 1h`; Kustomization `prune: true` with `wait: true` and no
@@ -333,14 +333,14 @@ behave. Later phases add test directories here.
   Split node-exporter and Alloy into a new `observability-agents` namespace (they need hostPID,
   hostNetwork and hostPath), so `observability` itself can run `restricted`. Flux's own namespace gets
   labels through the lifecycle's `flux install` patch.
-- [~] **N2 Reusable NetworkPolicy components** in `deploy/platform/components/network-policy/`:
+- [x] **N2 Reusable NetworkPolicy components** in `deploy/platform/components/network-policy/`:
   `default-deny`, `dns-egress` (CoreDNS pods plus the k3s Service-IP compatibility rule the chart
   already documents), `apiserver-egress` (k3s DNATs `10.43.0.1:443` to the node IP on 6443, so the
   rule takes an `ipBlock` for the node CIDR, set by a Kustomize replacement from one overlay value),
   `prometheus-scrape` (ingress from Prometheus pods on named metrics ports) and `internet-https`
   (`0.0.0.0/0` except RFC 1918, 100.64/10 and link-local, port 443). The e2e test proves the apiserver
   rule against k3d before any base relies on it.
-- [~] **N3 Per-base policies.** Each base composes `default-deny` plus explicit allows. Peer and port
+- [x] **N3 Per-base policies.** Each base composes `default-deny` plus explicit allows. Peer and port
   pairs from the audit (verify each one in e2e; they are a starting point, not a spec):
   - **traefik:** ingress 8000/8443 from anywhere, 9100 from Prometheus. Egress to the apiserver, DNS,
     and backend ports in namespaces labelled `baukit.dev/ingress-backend=true`.
@@ -360,7 +360,7 @@ behave. Later phases add test directories here.
     Prometheus 9090 ingress from Grafana, flagger and kured.
   - **kyverno, kured, flagger, platform-redis, falco:** controller-specific allows plus
     `prometheus-scrape`.
-- [~] **N4 Fence PostHog** (D8): replace the any-to-any internal policy with explicit pairs, deny egress
+- [x] **N4 Fence PostHog** (D8): replace the any-to-any internal policy with explicit pairs, deny egress
   except DNS and `internet-https` for the plugin server, bump `postgres:14.1` to the newest 14.x digest.
   Record the remaining `baseline` gaps as exceptions.
 - [ ] **N5 Probe matrix test.** `deploy/platform/e2e/tests/netpol/matrix.yaml` lists source, destination,
@@ -518,7 +518,7 @@ behave. Later phases add test directories here.
   to `resourceNames: [postgres-cluster-restore-test]`. Give the restore test a Delete-policy
   StorageClass on Hetzner. Add an e2e test that drains the node with `kubectl drain --dry-run=server`
   and asserts no PDB blocks it.
-- [ ] **R3 HelmRelease standards** (F-40): apply the V5 conventions to every base. `driftDetection` lands
+- [x] **R3 HelmRelease standards** (F-40): apply the V5 conventions to every base. `driftDetection` lands
   as `mode: warn` first, then `enabled` after one clean e2e run with no drift events. Set explicit
   `timeout`s from measured install times. Add `test.enable` where the chart ships tests.
 - [ ] **R4 Disruption and priority** (F-41, F-44):
@@ -560,7 +560,7 @@ behave. Later phases add test directories here.
 - [x] **SC4 Renovate:** custom managers for `tools.toml`, digests in raw manifests and the k3s image
   strings. Set `minimumReleaseAge` for charts and grouping per base. Configure the same in platform-infra
   (its `v*` tag pattern fix lands in PI1).
-- [ ] **S3 Traefik edge** (F-27, F-26): a default `TLSOption` (min TLS 1.2, `sniStrict`, curve
+- [x] **S3 Traefik edge** (F-27, F-26): a default `TLSOption` (min TLS 1.2, `sniStrict`, curve
   preferences), a web to websecure redirect, a security-headers Middleware (HSTS, nosniff, frame deny,
   referrer policy) attached on websecure, rate limits keyed on `X-Forwarded-For` depth when behind a
   trusted LB, `global.checkNewVersion: false`, and access logs that drop query strings. e2e asserts
@@ -826,3 +826,38 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   k3s pins, grouped per platform base, with `scripts/test_renovate_preset.py`. I also raised the android
   QA test stub deadlines (ADB 0.15 s to 10 s, watchdogs 5 s to 120 s), which had failed scripts-tests at
   load 70; three runs at load 36 to 77 passed.
+- 2026-11-14 (N2-N4 merged). Components `default-deny`, `dns-egress`, `apiserver-egress`,
+  `prometheus-scrape` and `node-cidr` in `deploy/platform/components/network-policy/`. Every overlay needs
+  the `baukit-cluster-network` ConfigMap (local: nodeCIDR 10.89.0.0/16) and `platform-up.sh` pins the k3d
+  subnet to `BAUKIT_PLATFORM_SUBNET` (default 10.89.0.0/24); `k3d_create_local_cluster` now forwards
+  extra arguments to k3d. kube-router filters after DNAT, so apiserver egress is allowed to the node CIDR
+  on 6443 and DNS only by the kube-dns pod selector; the `10.43.0.1:443` rule stays but grants nothing on
+  k3s. Every base composes default-deny plus explicit allows, Falco included (sidekick to loki-gateway
+  8080 and Alertmanager 9093, Prometheus to 8765 and 2801). PostHog: explicit pairs only, the plugin
+  server alone reaches public 443. Its post-render patch now targets only `posthog-migrate-.*` (it
+  failed on main because the grafana-annotation hook Job has no initContainers), and its PostgreSQL moved
+  to 14.25 with `SKIP_SERVICE_VERSION_REQUIREMENTS=1` because PostHog 1.43.0 caps PostgreSQL at 14.1.0
+  (this also skips its ClickHouse and Redis checks, both inside range today). Live matrix: 88 of 90 rows
+  passed; #46 and #57 need N1's observability-agents namespace. Finding for N5 and the threat model:
+  kube-router leaves a new pod unfenced for its first seconds (a connection 2 s after start got out in 2
+  of 4 runs, at 12 s never), so the N5 runner waits 10 s before probing and `docs/threat-model.md` records
+  the fail-open window. After the merge, `platform-images` flagged the PostHog PostgreSQL change: the 14.1
+  entry went stale and 14.25 reports 26 Go stdlib findings in gosu, now listed with an upstream reason.
+- 2026-11-15 VR (V5, R3) merged. `lint/ci-policies/` holds 12 offline ValidatingPolicies with 42
+  `kyverno test` cases, and validate.sh applies them to every rendered base and overlay (35 HelmReleases,
+  27 HelmRepositories, 8 Kustomizations; no OCIRepository exists yet, so that policy has no results). On
+  review I added a guard: the stage fails when no Flux object produced a result, so an empty render
+  cannot pass. Every HelmRelease has `driftDetection: warn`, `cleanupOnFail`, and `CreateReplace` where
+  the chart ships `crds/`. Timeouts come from E's first live run at load about 70: kube-prometheus-stack
+  227 s (12m), kyverno 161 s (9m), the rest under 90 s (5m). posthog keeps 20m, and hcloud and
+  kyverno-policies are unmeasured at 5m. Not yet seen live: the falco and kyverno Helm tests with N2's
+  policies in place.
+- 2026-11-15 S3 merged. The `default` TLSOption sets TLS 1.2 minimum, `sniStrict`, curves and AEAD suites.
+  web redirects to websecure, `default-security-headers` (HSTS, nosniff, DENY, referrer policy) sits on
+  websecure, the limit middlewares key on the TCP peer (`depth: 0`), with the trusted-proxy overlay
+  contract in the traefik README, and access logs drop the query string. Review found that redirect plus
+  `sniStrict` made local hosts without a secret unreachable, so the local overlay now issues `localhost`
+  and `*.localhost` from `local-self-signed` into the default TLSStore as a store certificate (`sniStrict`
+  never falls back to `defaultCertificate`). Local hosts are one label under `localhost`. The chainsaw
+  test `e2e/tests/traefik-edge` passed on a one-node cluster and fails against the old values. When E
+  merges, `e2e-traefik` needs `dependsOn: e2e-issuer`.

@@ -47,6 +47,22 @@ volumes or a database (`postgres`, `observability`, `platform-redis`,
 `kustomize.toolkit.fluxcd.io/prune: disabled`, so removing a base from a Flux
 Kustomization never deletes data.
 
+Every Flux object follows the rules in `lint/ci-policies/`, which
+`validate.sh` enforces on every rendered base and overlay:
+
+- A HelmRelease pins an exact chart version and sets `spec.timeout`,
+  `install.remediation.retries`, `upgrade.remediation.retries`,
+  `upgrade.cleanupOnFail: true` and `driftDetection.mode` (`warn` today).
+- A chart with a Helm `crds/` directory gets `install.crds` and `upgrade.crds:
+  CreateReplace`. A chart that renders Helm test hooks gets `test.enable: true`.
+  `lint/ci-policies/chart-contents.toml` records both facts per pinned chart.
+- A HelmRepository polls no more often than every hour.
+- A Flux Kustomization sets `prune: true` and `wait: true` and has no
+  `healthChecks` list, which Flux ignores once `wait` is on.
+
+Timeouts are about three times the install time measured on the local k3d
+cluster, rounded up to whole minutes, and at least 5m.
+
 Every base is secret-free and personal-data-free. Domains, e-mail addresses,
 cloud and DNS credentials, object-storage endpoints/credentials, alert
 receivers, issuer objects, identity configuration, and cluster inventory are
@@ -102,7 +118,9 @@ deploy/platform/validate.sh
 
 The script discovers every first-level directory containing
 `kustomization.yaml`, renders it, validates known Kubernetes resources, and
-renders each Flux HelmRelease from its pinned chart. Charts and downloaded core
+renders each Flux HelmRelease from its pinned chart, then runs the Flux
+convention policies in `lint/ci-policies/` and prints a pass/fail table per
+policy. Charts and downloaded core
 Kubernetes schemas are cached in `deploy/platform/.helm-cache/`; a warm cache
 makes validation offline friendly. `make ci` runs the same validation.
 

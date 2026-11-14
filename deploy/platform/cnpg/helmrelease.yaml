@@ -5,6 +5,7 @@ metadata:
   namespace: cnpg-system
 spec:
   interval: 30m
+  timeout: 5m
   chart:
     spec:
       chart: cloudnative-pg
@@ -19,9 +20,12 @@ spec:
     remediation:
       retries: 3
   upgrade:
+    cleanupOnFail: true
     crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     replicaCount: 1
     crds:

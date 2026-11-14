@@ -1,0 +1,44 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helmrelease-exact-chart-version
+policies:
+  - ../../policies/helmrelease-exact-chart-version.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: helmrelease-exact-chart-version
+    kind: HelmRelease
+    resources: [exact]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-exact-chart-version
+    kind: HelmRelease
+    resources: [prerelease]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-exact-chart-version
+    kind: HelmRelease
+    resources: [range]
+    result: fail
+  - isValidatingPolicy: true
+    policy: helmrelease-exact-chart-version
+    kind: HelmRelease
+    resources: [wildcard]
+    result: fail
+  - isValidatingPolicy: true
+    policy: helmrelease-exact-chart-version
+    kind: HelmRelease
+    resources: [star]
+    result: fail
+  - isValidatingPolicy: true
+    policy: helmrelease-exact-chart-version
+    kind: HelmRelease
+    resources: [no-version]
+    result: fail
+  - isValidatingPolicy: true
+    policy: helmrelease-exact-chart-version
+    kind: HelmRelease
+    resources: [git-chart]
+    result: skip

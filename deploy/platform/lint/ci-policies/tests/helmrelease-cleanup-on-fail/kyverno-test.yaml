@@ -1,0 +1,24 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helmrelease-cleanup-on-fail
+policies:
+  - ../../policies/helmrelease-cleanup-on-fail.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: helmrelease-cleanup-on-fail
+    kind: HelmRelease
+    resources: [cleanup]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-cleanup-on-fail
+    kind: HelmRelease
+    resources: [no-cleanup]
+    result: fail
+  - isValidatingPolicy: true
+    policy: helmrelease-cleanup-on-fail
+    kind: HelmRelease
+    resources: [cleanup-false]
+    result: fail

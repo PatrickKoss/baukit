@@ -1,0 +1,24 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helmrelease-helm-tests
+policies:
+  - ../../policies/helmrelease-helm-tests.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: helmrelease-helm-tests
+    kind: HelmRelease
+    resources: [tests-enabled]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-helm-tests
+    kind: HelmRelease
+    resources: [tests-missing]
+    result: fail
+  - isValidatingPolicy: true
+    policy: helmrelease-helm-tests
+    kind: HelmRelease
+    resources: [no-tests-chart]
+    result: pass

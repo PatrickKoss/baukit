@@ -1,0 +1,21 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: helmrepository-interval
+  annotations:
+    policies.kyverno.io/title: HelmRepository interval
+spec:
+  validationActions:
+    - Deny
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [source.toolkit.fluxcd.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [helmrepositories]
+  validations:
+    - expression: duration(object.spec.?interval.orValue("0s")) >= duration("1h")
+      messageExpression: >-
+        "HelmRepository " + object.metadata.name + " must set spec.interval to 1h or more, not '" +
+        object.spec.?interval.orValue("") + "'. Charts are pinned to exact versions, so frequent " +
+        "index fetches only load the chart server."

@@ -1,0 +1,29 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helmrepository-interval
+policies:
+  - ../../policies/helmrepository-interval.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: helmrepository-interval
+    kind: HelmRepository
+    resources: [daily]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrepository-interval
+    kind: HelmRepository
+    resources: [hourly]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrepository-interval
+    kind: HelmRepository
+    resources: [frequent]
+    result: fail
+  - isValidatingPolicy: true
+    policy: helmrepository-interval
+    kind: HelmRepository
+    resources: [no-interval]
+    result: fail

@@ -164,7 +164,7 @@ class CompareTests(unittest.TestCase):
 
     def test_entry_for_an_image_that_is_gone_fails(self):
         problems = self.compare({}, {"img:1": allowance(["CVE-1"])})
-        self.assertEqual(problems, ["img:1: listed but has no findings or is no longer scanned; remove the entry"])
+        self.assertEqual(problems, ["img:1: no findings left; remove the entry"])
 
     def test_expired_entry_fails(self):
         problems = self.compare(

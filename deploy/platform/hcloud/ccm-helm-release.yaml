@@ -5,6 +5,7 @@ metadata:
   namespace: kube-system
 spec:
   interval: 30m
+  timeout: 5m
   chart:
     spec:
       chart: hcloud-cloud-controller-manager
@@ -21,6 +22,8 @@ spec:
     cleanupOnFail: true
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     kind: Deployment
     replicaCount: 1

@@ -1,0 +1,40 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: pruned
+  namespace: flux-system
+spec:
+  interval: "10m"
+  path: "./deploy"
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: demo
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: not-pruned
+  namespace: flux-system
+spec:
+  interval: "10m"
+  path: "./deploy"
+  prune: false
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: demo
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: prune-unset
+  namespace: flux-system
+spec:
+  interval: "10m"
+  path: "./deploy"
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: demo

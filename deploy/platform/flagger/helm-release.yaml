@@ -16,12 +16,16 @@ spec:
         namespace: flagger-system
       interval: 24h
   install:
+    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
     cleanupOnFail: true
+    crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     meshProvider: traefik
     metricsServer: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
