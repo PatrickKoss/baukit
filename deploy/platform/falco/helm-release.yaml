@@ -1,0 +1,119 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: falco
+  namespace: falco
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: falco
+      version: "9.2.2"
+      sourceRef:
+        kind: HelmRepository
+        name: falcosecurity
+        namespace: falco
+      interval: 24h
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    image:
+      registry: docker.io
+      repository: falcosecurity/falco
+      tag: "0.45.2@sha256:1562a643953f938e02f47319b5214d93a235f11f646d60e9b8a516fd5a64698e"
+    podPriorityClassName: platform-standard
+    resources:
+      requests:
+        cpu: 100m
+        memory: 384Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+    driver:
+      kind: modern_ebpf
+    collectors:
+      containerEngine:
+        engines:
+          docker:
+            enabled: false
+          podman:
+            enabled: false
+          containerd:
+            enabled: false
+          cri:
+            enabled: true
+            sockets:
+              - /run/k3s/containerd/containerd.sock
+    # The image ships the upstream rules and the container plugin, so no falcoctl
+    # sidecar pulls artifacts from the internet.
+    falcoctl:
+      artifact:
+        install:
+          enabled: false
+        follow:
+          enabled: false
+    mounts:
+      volumes:
+        - name: baukit-rules
+          projected:
+            sources:
+              - configMap:
+                  name: falco-baukit-rules
+              - configMap:
+                  name: falco-overlay-rules
+                  optional: true
+      volumeMounts:
+        - name: baukit-rules
+          mountPath: /etc/falco/rules.d
+          readOnly: true
+    metrics:
+      enabled: true
+      interval: 1m
+      outputRule: false
+      service:
+        create: true
+    serviceMonitor:
+      create: true
+    falco:
+      json_output: true
+      json_include_output_property: true
+      http_output:
+        enabled: true
+    falcosidekick:
+      enabled: true
+      replicaCount: 1
+      image:
+        registry: docker.io
+        repository: falcosecurity/falcosidekick
+        tag: "2.35.1@sha256:a9bb60d2c7742febd912315ca1155839abc0199bf322c58d3adbb8b0849fadb9"
+      priorityClassName: platform-standard
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+      webui:
+        enabled: false
+      serviceMonitor:
+        enabled: true
+      config:
+        loki:
+          hostport: http://loki-gateway.observability.svc.cluster.local
+          endpoint: /loki/api/v1/push
+          format: json
+          minimumpriority: notice
+          extralabels: k8s_ns_name,k8s_pod_name
+          grafanaDashboard:
+            enabled: false
+        alertmanager:
+          hostport: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093
+          endpoint: /api/v2/alerts
+          minimumpriority: warning
+          extralabels: component:falco
