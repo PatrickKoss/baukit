@@ -542,7 +542,7 @@
             "showPoints": "never",
             "spanNulls": false
           },
-          "unit": "decmbytes"
+          "unit": "bytes"
         },
         "overrides": []
       },
@@ -578,7 +578,7 @@
       ],
       "title": "Falco memory RSS",
       "type": "timeseries",
-      "description": "Falco reports RSS in megabytes when metrics.convertMemoryToMB is on (the chart default)."
+      "description": "Falco RSS in bytes, as measured on 0.45.2."
     },
     {
       "datasource": {
