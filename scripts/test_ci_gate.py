@@ -46,7 +46,34 @@ def fixture_script_flavors():
     return flavors.group(1).split()
 
 
+def step_body(name):
+    pattern = rf"^step_{name}\(\) \{{\n(.*?)^\}}"
+    match = re.search(pattern, GATE_SCRIPT.read_text(), re.MULTILINE | re.DOTALL)
+    return match.group(1) if match else ""
+
+
+def required_tools(script):
+    text = (ROOT / script).read_text()
+    match = re.search(r'^baukit_use_tools "\$repo_root" (.+)$', text, re.MULTILINE)
+    return set(match.group(1).split()) if match else set()
+
+
 class CiGateTests(unittest.TestCase):
+    def test_deploy_steps_install_the_pinned_tools_their_scripts_use(self):
+        cases = {
+            "platform_validate": "deploy/platform/validate.sh",
+            "observability_rules": "deploy/observability/lint/check-rules.sh",
+        }
+        for step, script in cases.items():
+            with self.subTest(step=step):
+                body = step_body(step)
+                install = re.search(r"scripts/install-deploy-tools\.sh --only (\S+)", body)
+                self.assertIsNotNone(install, body)
+                self.assertLess(install.start(), body.index(script.removeprefix("./")))
+                tools = required_tools(script)
+                self.assertTrue(tools, script)
+                self.assertEqual(set(install.group(1).split(",")), tools)
+
     def test_every_step_function_exists_for_each_listed_step(self):
         functions = set(re.findall(r"^step_(\w+)\(\)", GATE_SCRIPT.read_text(), re.MULTILINE))
         for step in listed_steps():
