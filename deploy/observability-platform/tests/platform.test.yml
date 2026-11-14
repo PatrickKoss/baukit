@@ -1,0 +1,45 @@
+rule_files:
+  - ../alerts/platform.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: a platform target that stays down fires
+    interval: 1m
+    input_series:
+      - series: 'up{job="cert-manager",instance="10.0.0.5:9402",namespace="cert-manager"}'
+        values: '0x20'
+      - series: 'kube_namespace_labels{namespace="cert-manager",label_app_kubernetes_io_part_of="baukit-platform"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitPlatformTargetDown
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitPlatformTargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: platform
+              job: cert-manager
+              instance: 10.0.0.5:9402
+              namespace: cert-manager
+            exp_annotations:
+              summary: Platform scrape target cert-manager is down
+              description: >-
+                Prometheus has failed to scrape 10.0.0.5:9402 of job cert-manager
+                in namespace cert-manager for 10 minutes.
+              runbook_url: RUNBOOK_BASE_URL/platform-target-down
+  - name: healthy platform targets and down tenant targets stay quiet
+    interval: 1m
+    input_series:
+      - series: 'up{job="cert-manager",instance="10.0.0.5:9402",namespace="cert-manager"}'
+        values: '1x20'
+      - series: 'up{job="shop-api",instance="10.0.1.7:8080",namespace="shop"}'
+        values: '0x20'
+      - series: 'kube_namespace_labels{namespace="cert-manager",label_app_kubernetes_io_part_of="baukit-platform"}'
+        values: '1x20'
+      - series: 'kube_namespace_labels{namespace="shop"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitPlatformTargetDown
+        exp_alerts: []

@@ -1,0 +1,4 @@
+tests/
+loki-rules/
+metrics.txt
+.gitkeep
