@@ -333,14 +333,14 @@ behave. Later phases add test directories here.
   Split node-exporter and Alloy into a new `observability-agents` namespace (they need hostPID,
   hostNetwork and hostPath), so `observability` itself can run `restricted`. Flux's own namespace gets
   labels through the lifecycle's `flux install` patch.
-- [~] **N2 Reusable NetworkPolicy components** in `deploy/platform/components/network-policy/`:
+- [x] **N2 Reusable NetworkPolicy components** in `deploy/platform/components/network-policy/`:
   `default-deny`, `dns-egress` (CoreDNS pods plus the k3s Service-IP compatibility rule the chart
   already documents), `apiserver-egress` (k3s DNATs `10.43.0.1:443` to the node IP on 6443, so the
   rule takes an `ipBlock` for the node CIDR, set by a Kustomize replacement from one overlay value),
   `prometheus-scrape` (ingress from Prometheus pods on named metrics ports) and `internet-https`
   (`0.0.0.0/0` except RFC 1918, 100.64/10 and link-local, port 443). The e2e test proves the apiserver
   rule against k3d before any base relies on it.
-- [~] **N3 Per-base policies.** Each base composes `default-deny` plus explicit allows. Peer and port
+- [x] **N3 Per-base policies.** Each base composes `default-deny` plus explicit allows. Peer and port
   pairs from the audit (verify each one in e2e; they are a starting point, not a spec):
   - **traefik:** ingress 8000/8443 from anywhere, 9100 from Prometheus. Egress to the apiserver, DNS,
     and backend ports in namespaces labelled `baukit.dev/ingress-backend=true`.
@@ -360,7 +360,7 @@ behave. Later phases add test directories here.
     Prometheus 9090 ingress from Grafana, flagger and kured.
   - **kyverno, kured, flagger, platform-redis, falco:** controller-specific allows plus
     `prometheus-scrape`.
-- [~] **N4 Fence PostHog** (D8): replace the any-to-any internal policy with explicit pairs, deny egress
+- [x] **N4 Fence PostHog** (D8): replace the any-to-any internal policy with explicit pairs, deny egress
   except DNS and `internet-https` for the plugin server, bump `postgres:14.1` to the newest 14.x digest.
   Record the remaining `baseline` gaps as exceptions.
 - [ ] **N5 Probe matrix test.** `deploy/platform/e2e/tests/netpol/matrix.yaml` lists source, destination,
@@ -826,3 +826,20 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   k3s pins, grouped per platform base, with `scripts/test_renovate_preset.py`. I also raised the android
   QA test stub deadlines (ADB 0.15 s to 10 s, watchdogs 5 s to 120 s), which had failed scripts-tests at
   load 70; three runs at load 36 to 77 passed.
+- 2026-11-14 (N2-N4 merged). Components `default-deny`, `dns-egress`, `apiserver-egress`,
+  `prometheus-scrape` and `node-cidr` in `deploy/platform/components/network-policy/`. Every overlay needs
+  the `baukit-cluster-network` ConfigMap (local: nodeCIDR 10.89.0.0/16) and `platform-up.sh` pins the k3d
+  subnet to `BAUKIT_PLATFORM_SUBNET` (default 10.89.0.0/24); `k3d_create_local_cluster` now forwards
+  extra arguments to k3d. kube-router filters after DNAT, so apiserver egress is allowed to the node CIDR
+  on 6443 and DNS only by the kube-dns pod selector; the `10.43.0.1:443` rule stays but grants nothing on
+  k3s. Every base composes default-deny plus explicit allows, Falco included (sidekick to loki-gateway
+  8080 and Alertmanager 9093, Prometheus to 8765 and 2801). PostHog: explicit pairs only, the plugin
+  server alone reaches public 443. Its post-render patch now targets only `posthog-migrate-.*` (it
+  failed on main because the grafana-annotation hook Job has no initContainers), and its PostgreSQL moved
+  to 14.25 with `SKIP_SERVICE_VERSION_REQUIREMENTS=1` because PostHog 1.43.0 caps PostgreSQL at 14.1.0
+  (this also skips its ClickHouse and Redis checks, both inside range today). Live matrix: 88 of 90 rows
+  passed; #46 and #57 need N1's observability-agents namespace. Finding for N5 and the threat model:
+  kube-router leaves a new pod unfenced for its first seconds (a connection 2 s after start got out in 2
+  of 4 runs, at 12 s never), so the N5 runner waits 10 s before probing and `docs/threat-model.md` records
+  the fail-open window. After the merge, `platform-images` flagged the PostHog PostgreSQL change: the 14.1
+  entry went stale and 14.25 reports 26 Go stdlib findings in gosu, now listed with an upstream reason.

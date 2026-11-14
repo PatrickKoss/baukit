@@ -17,6 +17,8 @@ git_port=${BAUKIT_PLATFORM_GIT_PORT:-9418}
 api_port=${BAUKIT_PLATFORM_API_PORT:-random}
 http_port=${BAUKIT_PLATFORM_HTTP_PORT:-80}
 https_port=${BAUKIT_PLATFORM_HTTPS_PORT:-443}
+# Must sit inside nodeCIDR in overlays/local/cluster-network/cluster-network.yaml.
+k3d_subnet=${BAUKIT_PLATFORM_SUBNET:-10.89.0.0/24}
 
 # shellcheck source=deploy/platform/local-git-http.sh
 source "$platform_dir/local-git-http.sh"
@@ -203,7 +205,8 @@ up() {
   ensure_secret_state
   if ! cluster_exists; then
     printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$k3s_image"
-    k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port"
+    k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port" \
+      --subnet "$k3d_subnet"
   else
     printf 'Cluster %s already exists; converging it.\n' "$cluster_name"
   fi

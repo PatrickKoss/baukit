@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-alloy
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alloy
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: observability
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: prometheus
+    ports:
+    - protocol: TCP
+      port: 12345
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: observability
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: loki
+          app.kubernetes.io/component: gateway
+    ports:
+    - protocol: TCP
+      port: 8080
