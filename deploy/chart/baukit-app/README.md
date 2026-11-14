@@ -84,7 +84,7 @@ Most CNIs can apply the pod-selected CoreDNS rule. K3s installations may enforce
 | `containerSecurityContext.allowPrivilegeEscalation` | `false` | Prevent privilege escalation. |
 | `containerSecurityContext.readOnlyRootFilesystem` | `true` | Make each process root filesystem read-only. |
 | `containerSecurityContext.capabilities.drop` | `[ALL]` | Linux capabilities dropped from every process. |
-| `serviceAccount.create` | `true` | Create a ServiceAccount for the release; every pod uses it. |
+| `serviceAccount.create` | `true` | Create a ServiceAccount for the release; every pod uses it. It is a `pre-install,pre-upgrade` hook so the migration Job can use it, so `helm uninstall` leaves it behind. |
 | `serviceAccount.name` | `""` | ServiceAccount name. Empty uses the release full name; required when `create` is false. |
 | `serviceAccount.annotations` | `{}` | Annotations on the created ServiceAccount. |
 | `serviceAccount.automountToken` | `false` | Mount the service-account token into pods. |

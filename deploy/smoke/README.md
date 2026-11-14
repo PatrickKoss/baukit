@@ -17,7 +17,7 @@ Common optional settings include `BAUKIT_SMOKE_DEPENDENCIES_FILE`, whitespace-se
 
 The harness labels the product namespace with Pod Security `enforce`, `audit` and `warn` at `restricted` (`BAUKIT_SMOKE_POD_SECURITY_LEVEL`) after the product dependencies roll out and before it installs `baukit-app`. A chart pod that breaks `restricted` is rejected and the smoke fails. Dependencies such as PostgreSQL are admitted before the label, so they do not need to meet it. `BAUKIT_SMOKE_POLICY_DIR` names a directory of admission policies that the harness applies with `kubectl apply --recursive` before it creates the namespace.
 
-The cluster API and the default port mapping bind to `127.0.0.1`. `BAUKIT_SMOKE_K3D_API_PORT` (default `127.0.0.1:0`, a free port) and `BAUKIT_SMOKE_K3D_PORTS` change them.
+The cluster API and the default port mapping bind to `127.0.0.1`. The harness writes the cluster's kubeconfig to its temporary directory and never changes the default kubeconfig. `BAUKIT_SMOKE_K3D_API_PORT` (default: a free port on `127.0.0.1`) and `BAUKIT_SMOKE_K3D_PORTS` change them.
 
 Set `BAUKIT_SMOKE_PRODUCT_CHECK` to an executable product-owned script for CRUD, worker, or persistence assertions. It receives `BAUKIT_SMOKE_API_URL` and `BAUKIT_SMOKE_ACCESS_TOKEN_FILE`; the token file is mode 0600 and is deleted with the disposable working directory. The token is automatically added to the log leak scan. This extension point keeps product payloads out of the shared skeleton.
 

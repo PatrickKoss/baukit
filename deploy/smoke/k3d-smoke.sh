@@ -22,7 +22,7 @@ secret_manifests=${BAUKIT_SMOKE_SECRET_MANIFESTS:-}
 worker_enabled=${BAUKIT_SMOKE_WORKER_ENABLED:-false}
 k3s_dns_enabled=${BAUKIT_SMOKE_K3S_DNS_ENABLED:-true}
 k3d_ports=${BAUKIT_SMOKE_K3D_PORTS:-127.0.0.1:8081:30081@server:0}
-k3d_api_port=${BAUKIT_SMOKE_K3D_API_PORT:-127.0.0.1:0}
+k3d_api_port=${BAUKIT_SMOKE_K3D_API_PORT:-}
 pod_security_level=${BAUKIT_SMOKE_POD_SECURITY_LEVEL:-restricted}
 policy_dir=${BAUKIT_SMOKE_POLICY_DIR:-}
 api_check_path=${BAUKIT_SMOKE_API_CHECK_PATH:-/me}
@@ -34,6 +34,8 @@ prometheus_image=${BAUKIT_SMOKE_PROMETHEUS_IMAGE:-prom/prometheus:v3.13.2}
 
 temporary_dir=$(mktemp -d)
 forward_dir=$temporary_dir/port-forward
+KUBECONFIG=$temporary_dir/kubeconfig
+export KUBECONFIG
 forbidden_file=$temporary_dir/forbidden-values
 created_cluster=false
 api_forward_pid=""
@@ -86,10 +88,15 @@ for image in $images; do
     }
 done
 
+if [ -z "$k3d_api_port" ]; then
+    k3d_api_port=127.0.0.1:$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+fi
 set -- cluster create "$cluster_name" \
     --servers 1 \
     --agents 0 \
     --api-port "$k3d_api_port" \
+    --kubeconfig-update-default=false \
+    --kubeconfig-switch-context=false \
     --k3s-arg '--disable=traefik@server:0' \
     --wait
 for port_mapping in $k3d_ports; do
@@ -97,6 +104,7 @@ for port_mapping in $k3d_ports; do
 done
 created_cluster=true
 k3d "$@"
+k3d kubeconfig get "$cluster_name" >"$KUBECONFIG"
 # Image references cannot contain whitespace, so the list splits on spaces.
 set -- image import --cluster "$cluster_name"
 for image in $images; do
@@ -162,6 +170,8 @@ fi
 if ! helm "$@"; then
     kubectl -n "$namespace" get pods,jobs >&2 || true
     kubectl -n "$namespace" logs -l baukit.dev/process=migrate \
+        --all-containers --tail=100 >&2 || true
+    kubectl -n "$namespace" logs -l baukit.dev/process=api \
         --all-containers --tail=100 >&2 || true
     exit 1
 fi

@@ -88,6 +88,9 @@ class SecurityContextTest(unittest.TestCase):
         accounts = [doc for doc in docs if doc["kind"] == "ServiceAccount"]
         self.assertEqual(len(accounts), 1)
         self.assertIs(accounts[0]["automountServiceAccountToken"], False)
+        hook = accounts[0]["metadata"]["annotations"]
+        self.assertEqual(hook["helm.sh/hook"], "pre-install,pre-upgrade")
+        self.assertLess(int(hook["helm.sh/hook-weight"]), -5)
         name = accounts[0]["metadata"]["name"]
         for process, workload in workloads(docs).items():
             with self.subTest(process=process):
