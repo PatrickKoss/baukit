@@ -11,13 +11,14 @@ source "$platform_dir/lib/k3s.sh"
 . "$repo_root/deploy/lib/tools.sh"
 
 snapshot_port=9418
-echo_image=baukit-e2e-echo:local
+echo_image=localhost/baukit-e2e/echo:local
 ready_timeout=30m
 stats_interval_seconds=15
 
 cluster_name=baukit-platform-e2e
 keep_cluster=false
 test_dirs=("$e2e_dir/tests")
+without=()
 lock_dir=${BAUKIT_GATE_LOCK_DIR:-$HOME/.cache/baukit-orchestrator/quality-security}
 cluster_lock=${BAUKIT_E2E_CLUSTER_LOCK:-$HOME/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock}
 artifacts_dir=${BAUKIT_E2E_ARTIFACTS:-$repo_root/.ci-gate/platform-e2e}
@@ -26,7 +27,7 @@ flux_version=
 
 usage() {
   cat >&2 <<EOF
-usage: ${0##*/} [--keep] [--suite DIR] [--cluster-name NAME]
+usage: ${0##*/} [--keep] [--suite DIR] [--cluster-name NAME] [--without NAME]...
 
 Creates a disposable k3d cluster with the composed platform, runs the chainsaw
 suites under deploy/platform/e2e/tests and deletes the cluster again.
@@ -34,6 +35,8 @@ suites under deploy/platform/e2e/tests and deletes the cluster again.
   --keep               keep the cluster and snapshot server after the run
   --suite DIR          run one test directory, for example tests/smoke
   --cluster-name NAME  k3d cluster name (default: baukit-platform-e2e)
+  --without NAME       leave out the Flux Kustomization e2e-NAME and drop it from
+                       every dependsOn list; repeatable
 EOF
   exit 2
 }
@@ -50,6 +53,11 @@ parse_args() {
       --cluster-name)
         (($# >= 2)) || usage
         cluster_name=$2
+        shift
+        ;;
+      --without)
+        (($# >= 2)) || usage
+        without+=("e2e-$2")
         shift
         ;;
       *) usage ;;
@@ -276,14 +284,31 @@ sample_stats() {
   done >>"$artifacts_dir/docker-stats.log"
 }
 
+# Renders the overlay as a JSON List without the Kustomizations named in $without.
+render_overlay() {
+  kubectl kustomize "$e2e_dir/overlay" |
+    kubectl create --dry-run=client -o json -f - |
+    python3 "$e2e_dir/without.py" "${without[@]}"
+}
+
+report_not_ready() {
+  printf 'Flux objects that are not Ready:\n' >&2
+  kubectl get kustomizations.kustomize.toolkit.fluxcd.io,helmreleases.helm.toolkit.fluxcd.io -A --no-headers \
+    -o 'custom-columns=KIND:.kind,NAMESPACE:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status,MESSAGE:.status.conditions[?(@.type=="Ready")].message' |
+    awk '$4 != "True"' >&2 || true
+}
+
 wait_for_platform() {
-  kubectl apply -k "$e2e_dir/overlay" >/dev/null
+  render_overlay | kubectl apply -f - >/dev/null
   flux reconcile source git baukit --namespace flux-system --timeout=2m >/dev/null
   printf 'Waiting up to %s for every Kustomization and HelmRelease\n' "$ready_timeout"
-  kubectl wait kustomizations.kustomize.toolkit.fluxcd.io -A --all \
-    --for=condition=Ready --timeout="$ready_timeout"
-  kubectl wait helmreleases.helm.toolkit.fluxcd.io -A --all \
-    --for=condition=Ready --timeout=5m
+  if ! kubectl wait kustomizations.kustomize.toolkit.fluxcd.io -A --all \
+    --for=condition=Ready --timeout="$ready_timeout" >/dev/null ||
+    ! kubectl wait helmreleases.helm.toolkit.fluxcd.io -A --all \
+      --for=condition=Ready --timeout=5m >/dev/null; then
+    report_not_ready
+    return 1
+  fi
 }
 
 run_tests() {
@@ -314,6 +339,7 @@ collect_artifacts() {
 main() {
   parse_args "$@"
   require_tools
+  render_overlay >/dev/null
   take_locks
   rm -rf -- "$artifacts_dir"
   mkdir -p "$artifacts_dir"

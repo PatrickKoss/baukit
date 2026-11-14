@@ -361,7 +361,8 @@ done
 
 printf '==> schema and fixture tests\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/schemas" -p 'test_*.py' ||
-  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/lint" -p 'test_*.py'; then
+  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/lint" -p 'test_*.py' ||
+  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/e2e" -p 'test_*.py'; then
   status=1
 fi
 

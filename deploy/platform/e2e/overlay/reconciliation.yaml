@@ -178,7 +178,6 @@ spec:
     kind: GitRepository
     name: baukit
 ---
-# The ClusterPolicy CRDs come from the chart, so the policies apply in e2e-kyverno-policies.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
@@ -196,18 +195,6 @@ spec:
   sourceRef:
     kind: GitRepository
     name: baukit
-  patches:
-    - target:
-        group: kyverno.io
-        version: v1
-        kind: ClusterPolicy
-        labelSelector: app.kubernetes.io/part-of=baukit-platform
-      patch: |-
-        $patch: delete
-        apiVersion: kyverno.io/v1
-        kind: ClusterPolicy
-        metadata:
-          name: ignored
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -220,49 +207,12 @@ spec:
   interval: 10m
   retryInterval: 30s
   timeout: 5m
-  path: ./deploy/platform/kyverno
+  path: ./deploy/platform/e2e/overlay/components/kyverno-policies
   prune: true
   wait: true
   sourceRef:
     kind: GitRepository
     name: baukit
-  patches:
-    - target:
-        version: v1
-        kind: Namespace
-        name: kyverno
-      patch: |-
-        $patch: delete
-        apiVersion: v1
-        kind: Namespace
-        metadata:
-          name: kyverno
-    - target:
-        group: source.toolkit.fluxcd.io
-        version: v1
-        kind: HelmRepository
-        name: kyverno
-        namespace: kyverno
-      patch: |-
-        $patch: delete
-        apiVersion: source.toolkit.fluxcd.io/v1
-        kind: HelmRepository
-        metadata:
-          name: kyverno
-          namespace: kyverno
-    - target:
-        group: helm.toolkit.fluxcd.io
-        version: v2
-        kind: HelmRelease
-        name: kyverno
-        namespace: kyverno
-      patch: |-
-        $patch: delete
-        apiVersion: helm.toolkit.fluxcd.io/v2
-        kind: HelmRelease
-        metadata:
-          name: kyverno
-          namespace: kyverno
 ---
 # The MetricTemplate CRD comes from the chart, so the templates apply in e2e-flagger-metrics.
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -377,6 +327,7 @@ metadata:
 spec:
   dependsOn:
     - name: e2e-baseline
+    - name: e2e-kyverno-policies
   interval: 10m
   retryInterval: 30s
   timeout: 10m
@@ -386,3 +337,4 @@ spec:
   sourceRef:
     kind: GitRepository
     name: baukit
+

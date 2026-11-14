@@ -9,6 +9,7 @@ deploy/platform/e2e/run.sh                     # every suite
 deploy/platform/e2e/run.sh --suite smoke       # one suite
 deploy/platform/e2e/run.sh --keep              # keep the cluster; the KUBECONFIG path is printed
 deploy/platform/e2e/run.sh --cluster-name ph-x # another cluster name
+deploy/platform/e2e/run.sh --without kyverno-policies # leave out Flux Kustomization e2e-kyverno-policies
 ```
 
 The cluster uses the k3s image and flags from `../lib/k3s.sh`, the same file the lifecycle reads. The API
@@ -22,6 +23,11 @@ Before it creates the cluster the runner takes `flock` on
 and then on `android.lock` and `browser.lock` in `BAUKIT_GATE_LOCK_DIR`
 (default `~/.cache/baukit-orchestrator/quality-security`).
 
+`--without NAME` drops `e2e-NAME` from the rendered overlay and from every `dependsOn` list. It is for
+debugging and for measuring while a known blocker is open; a run with it is not a passing gate. If the
+platform does not converge, the runner prints every Kustomization and HelmRelease that is not Ready
+with its condition message.
+
 `overlay/` holds the GitRepository and one Flux Kustomization per base. It composes every base except
 `hcloud` and `posthog`, plus:
 
@@ -29,7 +35,9 @@ and then on `android.lock` and `browser.lock` in `BAUKIT_GATE_LOCK_DIR`
   the webhook sink;
 - `components/receiver`: the sink in `e2e-receiver`. It stores each notification and serves them on
   `GET /alerts`, which tests read through the API server's service proxy;
-- `components/tenant`: the `e2e-tenant` namespace (`baukit.dev/tenant=true`, PSA restricted) and the echo
+- `components/kyverno-policies`: the policy library plus the registry allowlist, which admits only
+  `localhost/baukit-e2e/` images in tenants;
+- `components/tenant`: the `e2e-tenant` namespace built from `../components/tenant` and the echo
   app, deployed with `deploy/chart/baukit-app` from the image the runner builds in `echo/`.
 
 `redis` is left out because it and `redis-ha` own the same objects in `platform-redis`; the overlay
