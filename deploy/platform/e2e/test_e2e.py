@@ -1,7 +1,7 @@
+import importlib.util
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import time
@@ -16,6 +16,19 @@ NOT_BASES = {"components", "e2e", "lib", "lint", "overlays", "schemas"}
 LEFT_OUT = {"hcloud", "posthog", "redis"}
 
 
+def load_process_runner():
+    path = REPO / "scripts/process_runner.py"
+    spec = importlib.util.spec_from_file_location("process_runner", path)
+    if spec is None or spec.loader is None:
+        raise ImportError("cannot load scripts/process_runner.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+process_runner = load_process_runner()
+
+
 def kustomization(name, depends_on=()):
     spec = {"dependsOn": [{"name": dependency} for dependency in depends_on]}
     return {
@@ -27,7 +40,7 @@ def kustomization(name, depends_on=()):
 
 
 def run_without(document, *names):
-    return subprocess.run(  # noqa: S603 -- argv is this interpreter and the repo's without.py
+    return process_runner.run_process(
         [sys.executable, str(E2E / "without.py"), *names],
         input="\n".join(json.dumps(item) for item in document["items"]),
         capture_output=True,
@@ -98,7 +111,7 @@ class OverlayTests(unittest.TestCase):
 class RunnerArgumentTests(unittest.TestCase):
     def run_runner(self, *arguments):
         environment = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
-        return subprocess.run(  # noqa: S603 -- argv is the repo's run.sh, no shell
+        return process_runner.run_process(
             [str(E2E / "run.sh"), *arguments],
             capture_output=True,
             text=True,
@@ -136,9 +149,9 @@ class HeavySlotTests(unittest.TestCase):
             "BAUKIT_HEAVY_SLOT_POLL_SECONDS": "0.1",
             "RUN_SH": str(E2E / "run.sh"),
         }
-        return subprocess.Popen(  # noqa: S603 -- argv is bash sourcing the repo's run.sh, no input
-            ["/bin/bash", "-c", 'source "$RUN_SH" && wait_for_heavy_slot && echo proceeded'],
-            stdout=subprocess.PIPE,
+        return process_runner.start_process(
+            ["bash", "-c", 'source "$RUN_SH" && wait_for_heavy_slot && echo proceeded'],
+            stdout=process_runner.subprocess.PIPE,
             text=True,
             env=environment,
         )
