@@ -1,0 +1,61 @@
+groups:
+  - name: baukit-kyverno
+    rules:
+      - alert: BaukitKyvernoAdmissionControllerDown
+        expr: |
+          kube_deployment_status_replicas_available{namespace="kyverno",deployment="kyverno-admission-controller"} < 1
+        for: 5m
+        labels:
+          severity: critical
+          component: kyverno
+        annotations:
+          summary: The Kyverno admission controller has no available replica
+          description: >-
+            Deployment kyverno/kyverno-admission-controller has had no available replica for
+            5 minutes. Admission webhooks fail closed or open per policy, and no policy is enforced
+            on new objects.
+          runbook_url: RUNBOOK_BASE_URL/kyverno-admission-controller-down
+      - alert: BaukitKyvernoWebhookLatencyHigh
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(kyverno_admission_review_duration_seconds_bucket[5m]))) > 1
+        for: 10m
+        labels:
+          severity: warning
+          component: kyverno
+        annotations:
+          summary: Kyverno admission p99 latency is above 1s
+          description: >-
+            The 99th percentile Kyverno admission review has taken longer than 1s for 10 minutes. The API server times out webhooks after 10s and every write waits on it.
+          runbook_url: RUNBOOK_BASE_URL/kyverno-webhook-latency-high
+      - alert: BaukitKyvernoPolicyFailuresRising
+        expr: |
+          sum by (policy_name) (increase(kyverno_validating_policy_results_total{result="fail"}[30m])) > 10
+        for: 15m
+        labels:
+          severity: warning
+          component: kyverno
+        annotations:
+          summary: Kyverno policy {{ $labels.policy_name }} keeps failing resources
+          description: >-
+            ValidatingPolicy {{ $labels.policy_name }} returned {{ $value | humanize }} fail results in 30 minutes,
+            for 15 minutes. Something keeps sending objects that break it.
+          runbook_url: RUNBOOK_BASE_URL/kyverno-policy-failures-rising
+      - alert: BaukitKyvernoEnforcedPolicyViolations
+        expr: |
+          sum by (policy) (policy_report_result{status="fail"}) > 0
+          and on (policy)
+          label_replace(
+            group by (policy_name) (kyverno_validating_policy_results_total{policy_validation_mode="Deny"}),
+            "policy", "$1", "policy_name", "(.+)"
+          )
+        for: 15m
+        labels:
+          severity: warning
+          component: kyverno
+        annotations:
+          summary: Existing objects violate the enforced policy {{ $labels.policy }}
+          description: >-
+            Policy Reporter lists {{ $value }} failing results for {{ $labels.policy }}, which denies
+            admission. These objects predate the policy or got in through an exception, and their
+            next update will be rejected.
+          runbook_url: RUNBOOK_BASE_URL/kyverno-enforced-policy-violations

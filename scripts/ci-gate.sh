@@ -100,12 +100,25 @@ step_python_lint() {
   tracked_sources '*.py' | xargs -0 ruff format --check --force-exclude
 }
 step_shell_lint() { tracked_sources '*.sh' | xargs -0 shellcheck; }
-step_metric_names() { python3 deploy/observability/lint/check-metric-names.py; }
+step_metric_names() {
+  python3 deploy/observability/lint/check-metric-names.py
+  python3 deploy/observability/lint/check-metric-names.py --observability-root deploy/observability-platform \
+    --allowlist deploy/observability-platform/metrics.txt --no-catalog
+  python3 deploy/observability/lint/check-dashboards.py deploy/observability/dashboards \
+    deploy/observability-platform/dashboards
+}
 step_observability_tests() {
+  scripts/install-deploy-tools.sh --only promtool,pint,helm
   python3 -m unittest discover -s deploy/observability/lint -p 'test_*.py'
 }
-step_observability_rules() { deploy/observability/lint/check-rules.sh; }
-step_platform_validate() { ./deploy/platform/validate.sh; }
+step_observability_rules() {
+  scripts/install-deploy-tools.sh --only promtool,pint
+  deploy/observability/lint/check-rules.sh deploy/observability deploy/observability-platform
+}
+step_platform_validate() {
+  scripts/install-deploy-tools.sh --only kustomize,kubeconform,helm,flux
+  ./deploy/platform/validate.sh
+}
 step_platform_e2e() { ./deploy/platform/e2e/run.sh; }
 step_media_grants() { make media-grants-test media-grants-njs-test; }
 step_scripts_tests() { python3 -m unittest discover -s scripts -p 'test_*.py'; }

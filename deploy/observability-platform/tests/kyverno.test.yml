@@ -1,0 +1,147 @@
+rule_files:
+  - ../alerts/kyverno.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: no available admission controller fires BaukitKyvernoAdmissionControllerDown
+    interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="kyverno",deployment="kyverno-admission-controller"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BaukitKyvernoAdmissionControllerDown
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: BaukitKyvernoAdmissionControllerDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: kyverno
+              namespace: kyverno
+              deployment: kyverno-admission-controller
+            exp_annotations:
+              summary: The Kyverno admission controller has no available replica
+              description: >-
+                Deployment kyverno/kyverno-admission-controller has had no available replica for
+                5 minutes. Admission webhooks fail closed or open per policy, and no policy is enforced
+                on new objects.
+              runbook_url: RUNBOOK_BASE_URL/kyverno-admission-controller-down
+  - name: an available admission controller stays quiet
+    interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="kyverno",deployment="kyverno-admission-controller"}'
+        values: '1x20'
+      - series: 'kube_deployment_status_replicas_available{namespace="kyverno",deployment="kyverno-cleanup-controller"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitKyvernoAdmissionControllerDown
+        exp_alerts: []
+
+  - name: slow admission reviews fire BaukitKyvernoWebhookLatencyHigh
+    interval: 1m
+    input_series:
+      - series: 'kyverno_admission_review_duration_seconds_bucket{le="0.5",resource_kind="Pod",resource_namespace="echo",resource_request_operation="create",allowed="true"}'
+        values: '0+10x30'
+      - series: 'kyverno_admission_review_duration_seconds_bucket{le="1",resource_kind="Pod",resource_namespace="echo",resource_request_operation="create",allowed="true"}'
+        values: '0+10x30'
+      - series: 'kyverno_admission_review_duration_seconds_bucket{le="2.5",resource_kind="Pod",resource_namespace="echo",resource_request_operation="create",allowed="true"}'
+        values: '0+100x30'
+      - series: 'kyverno_admission_review_duration_seconds_bucket{le="+Inf",resource_kind="Pod",resource_namespace="echo",resource_request_operation="create",allowed="true"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitKyvernoWebhookLatencyHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: kyverno
+            exp_annotations:
+              summary: Kyverno admission p99 latency is above 1s
+              description: >-
+                The 99th percentile Kyverno admission review has taken longer than 1s for 10 minutes.
+                The API server times out webhooks after 10s and every write waits on it.
+              runbook_url: RUNBOOK_BASE_URL/kyverno-webhook-latency-high
+  - name: fast admission reviews stay quiet
+    interval: 1m
+    input_series:
+      - series: 'kyverno_admission_review_duration_seconds_bucket{le="0.5",resource_kind="Pod",resource_namespace="echo",resource_request_operation="create",allowed="true"}'
+        values: '0+100x30'
+      - series: 'kyverno_admission_review_duration_seconds_bucket{le="1",resource_kind="Pod",resource_namespace="echo",resource_request_operation="create",allowed="true"}'
+        values: '0+100x30'
+      - series: 'kyverno_admission_review_duration_seconds_bucket{le="+Inf",resource_kind="Pod",resource_namespace="echo",resource_request_operation="create",allowed="true"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitKyvernoWebhookLatencyHigh
+        exp_alerts: []
+
+  - name: a policy that keeps failing fires BaukitKyvernoPolicyFailuresRising
+    interval: 1m
+    input_series:
+      - series: 'kyverno_validating_policy_results_total{policy_name="require-run-as-non-root",policy_namespace="",policy_validation_mode="Deny",policy_background_mode="true",resource_kind="Pod",resource_namespace="echo",resource_request_operation="create",execution_cause="admission_request",result="fail"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: BaukitKyvernoPolicyFailuresRising
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: kyverno
+              policy_name: require-run-as-non-root
+            exp_annotations:
+              summary: Kyverno policy require-run-as-non-root keeps failing resources
+              description: >-
+                ValidatingPolicy require-run-as-non-root returned 30 fail results in 30 minutes,
+                for 15 minutes. Something keeps sending objects that break it.
+              runbook_url: RUNBOOK_BASE_URL/kyverno-policy-failures-rising
+  - name: passing results and rare failures stay quiet
+    interval: 1m
+    input_series:
+      - series: 'kyverno_validating_policy_results_total{policy_name="require-run-as-non-root",policy_namespace="",policy_validation_mode="Deny",policy_background_mode="true",resource_kind="Pod",resource_namespace="echo",resource_request_operation="create",execution_cause="admission_request",result="pass"}'
+        values: '0+5x60'
+      - series: 'kyverno_validating_policy_results_total{policy_name="require-run-as-non-root",policy_namespace="",policy_validation_mode="Deny",policy_background_mode="true",resource_kind="Pod",resource_namespace="echo",resource_request_operation="create",execution_cause="admission_request",result="fail"}'
+        values: '0+0.2x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: BaukitKyvernoPolicyFailuresRising
+        exp_alerts: []
+
+  - name: report failures for a Deny policy fire BaukitKyvernoEnforcedPolicyViolations
+    interval: 1m
+    input_series:
+      - series: 'policy_report_result{exported_namespace="echo",rule="require-run-as-non-root",policy="require-run-as-non-root",report="pol-abc",kind="Pod",name="echo-1",status="fail",severity="",category="",source="KyvernoValidatingPolicy"}'
+        values: '1x30'
+      - series: 'policy_report_result{exported_namespace="echo",rule="require-run-as-non-root",policy="require-run-as-non-root",report="pol-abc",kind="Pod",name="echo-2",status="fail",severity="",category="",source="KyvernoValidatingPolicy"}'
+        values: '1x30'
+      - series: 'kyverno_validating_policy_results_total{policy_name="require-run-as-non-root",policy_validation_mode="Deny",result="pass"}'
+        values: '5x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BaukitKyvernoEnforcedPolicyViolations
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitKyvernoEnforcedPolicyViolations
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: kyverno
+              policy: require-run-as-non-root
+            exp_annotations:
+              summary: Existing objects violate the enforced policy require-run-as-non-root
+              description: >-
+                Policy Reporter lists 2 failing results for require-run-as-non-root, which denies
+                admission. These objects predate the policy or got in through an exception, and their
+                next update will be rejected.
+              runbook_url: RUNBOOK_BASE_URL/kyverno-enforced-policy-violations
+  - name: report failures for an Audit policy stay quiet
+    interval: 1m
+    input_series:
+      - series: 'policy_report_result{exported_namespace="echo",rule="disallow-latest-tag",policy="disallow-latest-tag",report="pol-abc",kind="Pod",name="echo-1",status="fail",severity="",category="",source="KyvernoValidatingPolicy"}'
+        values: '1x30'
+      - series: 'kyverno_validating_policy_results_total{policy_name="disallow-latest-tag",policy_validation_mode="Audit",result="fail"}'
+        values: '5x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitKyvernoEnforcedPolicyViolations
+        exp_alerts: []

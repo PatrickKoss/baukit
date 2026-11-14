@@ -71,7 +71,7 @@ wait_for_url() {
 }
 
 python3 "$observability/lint/check-metric-names.py"
-PROMETHEUS_IMAGE="$prometheus_image" "$observability/lint/check-rules.sh"
+PROMETHEUS_IMAGE="$prometheus_image" "$observability/lint/check-rules.sh" "$observability"
 
 wait_for_url "${api_ops_url%/}/healthz"
 wait_for_url "${api_ops_url%/}/readyz"

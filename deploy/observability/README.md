@@ -8,7 +8,8 @@ Install the pack into the observability namespace:
 
 ```sh
 helm upgrade --install baukit-observability deploy/observability \
-  --namespace observability --create-namespace
+  --namespace observability --create-namespace \
+  --set runbookBaseUrl=https://github.com/PatrickKoss/baukit/blob/main/docs/runbooks/app
 ```
 
 The chart emits separate dashboard, recording-rule, and alert-rule ConfigMaps. The dashboard has `grafana_dashboard: "1"`, the default discovery label used by Grafana dashboard sidecars. Labels and annotations can be extended through `dashboardConfigMap` and `ruleConfigMaps` values.
@@ -52,7 +53,7 @@ The shipped availability template assumes a 99.9% SLO: the burn-rate recording r
 
 The default HTTP latency thresholds are p95 > 0.5s and p99 > 1s for ten minutes. Database saturation defaults to 90%, worker failures to 10%, retries to one per second, and oldest queue age to five minutes. Rate-limit store errors alert at critical severity when `outcome="error"` remains non-zero for ten minutes, because a default fail-open limiter may no longer enforce quotas. Treat these as product templates and test changes with `promtool check rules`.
 
-Replace every `https://runbooks.example.invalid/...` annotation before routing alerts to production. The always-firing `BaukitDeadMansSwitch` must be monitored for absence by the notification receiver.
+Every alert's `runbook_url` is written as `RUNBOOK_BASE_URL/<slug>` in the rule file. The chart requires `runbookBaseUrl` and replaces the token in both the `PrometheusRule` and the alert-rule ConfigMap, so a render without it fails. Baukit's runbooks live in [`docs/runbooks/app/`](../../docs/runbooks/app/), one `<slug>.md` per alert; point `runbookBaseUrl` at that directory in the Baukit release you deploy, or at a copy you maintain. Heartbeat monitoring is kube-prometheus-stack's `Watchdog` alert; this pack ships no heartbeat of its own.
 
 ## Lint contract
 

@@ -5,8 +5,8 @@ e2e_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 platform_dir=$(cd -- "$e2e_dir/.." && pwd)
 repo_root=$(cd -- "$platform_dir/../.." && pwd)
 
-# shellcheck source=deploy/platform/lib/k3s.sh
-source "$platform_dir/lib/k3s.sh"
+# shellcheck source=deploy/platform/local-git-http.sh
+source "$platform_dir/local-git-http.sh"
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"
 
@@ -156,59 +156,22 @@ create_cluster() {
     printf 'ERROR: cluster %s already exists; delete it or pass --cluster-name\n' "$cluster_name" >&2
     exit 2
   fi
-  local k3s_args=() k3s_arg
-  while IFS= read -r k3s_arg; do
-    k3s_args+=(--k3s-arg "$k3s_arg")
-  done < <(platform_k3s_args)
-  printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$platform_k3s_image"
+  local image
+  image=$(platform_k3s_image)
+  printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$image"
   cluster_created=true
-  k3d cluster create "$cluster_name" \
-    --image "$platform_k3s_image" \
-    --servers 1 \
-    --agents 0 \
-    --no-lb \
-    --api-port "127.0.0.1:$(free_port)" \
+  k3d_create_local_cluster "$cluster_name" "$image" "$(free_port)" "$(free_port)" "$(free_port)" \
     --kubeconfig-update-default=false \
-    --kubeconfig-switch-context=false \
-    "${k3s_args[@]}" \
-    --wait >/dev/null
+    --kubeconfig-switch-context=false >/dev/null
   k3d kubeconfig get "$cluster_name" >"$kubeconfig"
   chmod 0600 "$kubeconfig"
   kubectl wait node --all --for=condition=Ready --timeout=5m >/dev/null
 }
 
-cluster_gateway() {
-  local gateway
-  for gateway in $(docker network inspect "k3d-$cluster_name" \
-    --format '{{range .IPAM.Config}}{{.Gateway}} {{end}}'); do
-    if [[ $gateway =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
-      printf '%s\n' "$gateway"
-      return
-    fi
-  done
-  printf 'ERROR: cannot determine the IPv4 gateway of Docker network k3d-%s\n' "$cluster_name" >&2
-  exit 1
-}
-
-snapshot_tree() {
-  local destination=$1
-  git -C "$repo_root" ls-files -z --cached --others --exclude-standard |
-    (
-      cd -- "$repo_root"
-      while IFS= read -r -d '' path; do
-        if [[ -e $path || -L $path ]]; then
-          printf '%s\0' "$path"
-        fi
-      done
-    ) |
-    tar -C "$repo_root" --null --no-recursion -T - -cf - |
-    tar -xf - -C "$destination"
-}
-
 serve_snapshot() {
   local tree=$state_dir/tree git_root=$state_dir/git image=$cluster_name-git-http
   mkdir -p "$tree" "$git_root"
-  snapshot_tree "$tree"
+  snapshot_tree "$repo_root" "$tree"
   (
     cd "$tree"
     git init -q -b main
@@ -219,18 +182,10 @@ serve_snapshot() {
   git clone -q --bare "$tree" "$git_root/baukit.git"
   docker build -q -f "$platform_dir/local-git-http.Dockerfile" -t "$image" "$platform_dir" >/dev/null
   local gateway
-  gateway=$(cluster_gateway)
+  gateway=$(k3d_gateway "$cluster_name")
   snapshot_container=$cluster_name-git
   docker rm -f -v "$snapshot_container" >/dev/null 2>&1 || true
-  docker run -d \
-    --name "$snapshot_container" \
-    --read-only \
-    --cap-drop ALL \
-    --security-opt no-new-privileges \
-    --tmpfs /tmp \
-    -p "$gateway:$snapshot_port:$snapshot_port" \
-    -v "$git_root:/srv/git:ro" \
-    "$image" --host 0.0.0.0 --root /srv/git --port "$snapshot_port" >/dev/null
+  run_snapshot_container "$snapshot_container" "$image" "$git_root" "$snapshot_port" "$gateway" >/dev/null
   local attempt
   for ((attempt = 0; attempt < 100; attempt++)); do
     git ls-remote "http://$gateway:$snapshot_port/baukit.git" HEAD >/dev/null 2>&1 && return

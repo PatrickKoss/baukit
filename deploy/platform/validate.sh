@@ -292,6 +292,7 @@ for base in "${bases[@]}"; do
       ! helm template "$release_name" "$chart_source" \
         --namespace "${release_namespace:-default}" \
         --include-crds \
+        --api-versions monitoring.coreos.com/v1 \
         --api-versions monitoring.coreos.com/v1/ServiceMonitor \
         --api-versions monitoring.coreos.com/v1/PodMonitor \
         --api-versions monitoring.coreos.com/v1/PrometheusRule \
@@ -342,7 +343,7 @@ fi
 mapfile -d '' rendered_files < <(find "$rendered_dir" -type f -name '*.yaml' -print0 | sort -z)
 
 printf '==> CRD schemas\n'
-if ! python3 "$platform_dir/schemas/generate.py" --output "$schema_dir" \
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/schemas/generate.py" --output "$schema_dir" \
   --kubernetes-definitions "$kubernetes_definitions" \
   "$flux_manifest" "${rendered_files[@]}"; then
   exit 1
@@ -359,9 +360,24 @@ for rendered in "${rendered_files[@]}"; do
   ((checked_objects += ${valid:-0}))
 done
 
+printf '==> conventions\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_conventions.py" --rendered "$rendered_dir" --chart-cache "$cache_dir"; then
+  status=1
+fi
+
+printf '==> falco rules\n'
+if ! falco_output=$("$platform_dir/falco/validate-rules.sh" 2>&1); then
+  printf '%s\n' "$falco_output" >&2
+  status=1
+else
+  sed -n '/: Ok$/p' <<<"$falco_output"
+fi
+
 printf '==> schema and fixture tests\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/schemas" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/lint" -p 'test_*.py' ||
+  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/falco" -p 'test_*.py' ||
+  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/redis-ha" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/e2e" -p 'test_*.py'; then
   status=1
 fi

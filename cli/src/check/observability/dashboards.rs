@@ -3,7 +3,12 @@ use std::collections::BTreeSet;
 use serde_json::Value;
 
 /// Grafana's built-in datasources, valid in every dashboard.
-const BUILTIN_DATASOURCE_UIDS: &[&str] = &["-- Grafana --", "-- Mixed --", "-- Dashboard --"];
+const BUILTIN_DATASOURCE_UIDS: &[&str] = &[
+    "-- Grafana --",
+    "-- Mixed --",
+    "-- Dashboard --",
+    "__expr__",
+];
 
 /// Every string `expr` in a dashboard, with its JSON path in check-metric-names.py's notation.
 pub fn expressions(document: &Value, location: &str) -> Vec<(String, String)> {
@@ -132,6 +137,7 @@ mod tests {
                 {"datasource": {"uid": "prometheus"}},
                 {"datasource": {"type": "prometheus"}},
                 {"datasource": "-- Grafana --"},
+                {"datasource": {"type": "__expr__", "uid": "__expr__"}},
                 {"datasource": null}
             ]
         });

@@ -1,0 +1,148 @@
+rule_files:
+  - ../alerts/observability.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: rate-limited log lines fire BaukitLokiDiscardedSamples
+    interval: 1m
+    input_series:
+      - series: 'loki_discarded_samples_total{namespace="observability",pod="loki-0",reason="rate_limited",tenant="fake"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitLokiDiscardedSamples
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: observability
+              reason: rate_limited
+              tenant: fake
+            exp_annotations:
+              summary: Loki discards log lines for rate_limited
+              description: >-
+                Loki rejected 10 log lines of tenant fake in 10 minutes with
+                reason rate_limited, for 10 minutes. Those lines are gone.
+              runbook_url: RUNBOOK_BASE_URL/loki-discarded-samples
+  - name: an old discard count stays quiet
+    interval: 1m
+    input_series:
+      - series: 'loki_discarded_samples_total{namespace="observability",pod="loki-0",reason="rate_limited",tenant="fake"}'
+        values: '12x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitLokiDiscardedSamples
+        exp_alerts: []
+
+  - name: dropped entries fire BaukitAlloyWriteFailures
+    interval: 1m
+    input_series:
+      - series: 'loki_write_dropped_entries_total{namespace="observability",pod="alloy-abcde",host="loki-gateway.observability.svc.cluster.local",reason="ingester_error"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitAlloyWriteFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: observability
+              namespace: observability
+              pod: alloy-abcde
+            exp_annotations:
+              summary: Alloy pod alloy-abcde drops log entries it cannot write to Loki
+              description: >-
+                Alloy pod observability/alloy-abcde dropped 10 log entries in
+                10 minutes after its retries to Loki ran out.
+              runbook_url: RUNBOOK_BASE_URL/alloy-write-failures
+  - name: a flat drop counter stays quiet
+    interval: 1m
+    input_series:
+      - series: 'loki_write_dropped_entries_total{namespace="observability",pod="alloy-abcde",host="loki-gateway.observability.svc.cluster.local",reason="ingester_error"}'
+        values: '4x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitAlloyWriteFailures
+        exp_alerts: []
+
+  - name: storage at 95% of retentionSize fires BaukitPrometheusStorageNearRetentionSize
+    interval: 1m
+    input_series:
+      - series: 'prometheus_tsdb_storage_blocks_bytes{namespace="observability",pod="prometheus-kps-0"}'
+        values: '800x60'
+      - series: 'prometheus_tsdb_wal_storage_size_bytes{namespace="observability",pod="prometheus-kps-0"}'
+        values: '100x60'
+      - series: 'prometheus_tsdb_head_chunks_storage_size_bytes{namespace="observability",pod="prometheus-kps-0"}'
+        values: '50x60'
+      - series: 'prometheus_tsdb_retention_limit_bytes{namespace="observability",pod="prometheus-kps-0"}'
+        values: '1000x60'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitPrometheusStorageNearRetentionSize
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: BaukitPrometheusStorageNearRetentionSize
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: observability
+              namespace: observability
+              pod: prometheus-kps-0
+            exp_annotations:
+              summary: Prometheus prometheus-kps-0 uses over 90% of its retentionSize
+              description: >-
+                Prometheus observability/prometheus-kps-0 uses 95%
+                of retentionSize. It now deletes blocks by size, so history is shorter than the
+                configured retention time.
+              runbook_url: RUNBOOK_BASE_URL/prometheus-storage-near-retention-size
+  - name: an unset retentionSize and roomy storage stay quiet
+    interval: 1m
+    input_series:
+      - series: 'prometheus_tsdb_storage_blocks_bytes{namespace="observability",pod="prometheus-kps-0"}'
+        values: '800x60'
+      - series: 'prometheus_tsdb_wal_storage_size_bytes{namespace="observability",pod="prometheus-kps-0"}'
+        values: '100x60'
+      - series: 'prometheus_tsdb_head_chunks_storage_size_bytes{namespace="observability",pod="prometheus-kps-0"}'
+        values: '50x60'
+      - series: 'prometheus_tsdb_retention_limit_bytes{namespace="observability",pod="prometheus-kps-0"}'
+        values: '0x60'
+      - series: 'prometheus_tsdb_storage_blocks_bytes{namespace="observability",pod="prometheus-kps-1"}'
+        values: '800x60'
+      - series: 'prometheus_tsdb_wal_storage_size_bytes{namespace="observability",pod="prometheus-kps-1"}'
+        values: '100x60'
+      - series: 'prometheus_tsdb_head_chunks_storage_size_bytes{namespace="observability",pod="prometheus-kps-1"}'
+        values: '50x60'
+      - series: 'prometheus_tsdb_retention_limit_bytes{namespace="observability",pod="prometheus-kps-1"}'
+        values: '5000x60'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: BaukitPrometheusStorageNearRetentionSize
+        exp_alerts: []
+
+  - name: failing evaluations fire BaukitPrometheusRuleEvaluationFailures
+    interval: 1m
+    input_series:
+      - series: 'prometheus_rule_evaluation_failures_total{namespace="observability",pod="prometheus-kps-0",rule_group="/etc/prometheus/rules/flux.yaml;baukit-flux"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: BaukitPrometheusRuleEvaluationFailures
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: observability
+              namespace: observability
+              pod: prometheus-kps-0
+              rule_group: /etc/prometheus/rules/flux.yaml;baukit-flux
+            exp_annotations:
+              summary: Prometheus fails to evaluate rule group /etc/prometheus/rules/flux.yaml;baukit-flux
+              description: >-
+                Prometheus observability/prometheus-kps-0 failed 10 evaluations of
+                /etc/prometheus/rules/flux.yaml;baukit-flux in 10 minutes, for 15 minutes. Alerts in that group cannot fire.
+              runbook_url: RUNBOOK_BASE_URL/prometheus-rule-evaluation-failures
+  - name: a flat failure counter stays quiet
+    interval: 1m
+    input_series:
+      - series: 'prometheus_rule_evaluation_failures_total{namespace="observability",pod="prometheus-kps-0",rule_group="/etc/prometheus/rules/flux.yaml;baukit-flux"}'
+        values: '2x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: BaukitPrometheusRuleEvaluationFailures
+        exp_alerts: []

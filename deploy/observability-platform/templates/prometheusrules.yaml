@@ -1,0 +1,26 @@
+{{- $baseUrl := required "runbookBaseUrl is required" .Values.runbookBaseUrl | trimSuffix "/" -}}
+{{- range $path, $_ := .Files.Glob "{alerts,recording-rules}/*.{yml,yaml}" }}
+{{- $file := dict "root" $ "path" $path }}
+{{- $component := include "baukit-platform-observability.component" $file }}
+{{- if index $.Values.components $component }}
+{{- $rules := $.Files.Get $path | replace "RUNBOOK_BASE_URL" $baseUrl | fromYaml }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "baukit-platform-observability.fileName" $file }}
+  labels:
+    {{- include "baukit-platform-observability.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+    {{- with $.Values.prometheusRule.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $.Values.prometheusRule.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  groups:
+    {{- required (printf "%s has no rule groups" $path) $rules.groups | toYaml | nindent 4 }}
+{{- end }}
+{{- end }}

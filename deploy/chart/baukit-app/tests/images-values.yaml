@@ -1,0 +1,15 @@
+api:
+  image:
+    tag: 1.0.0
+worker:
+  image:
+    tag: 1.0.0
+migration:
+  image:
+    tag: 1.0.0
+seed:
+  image:
+    tag: 1.0.0
+web:
+  image:
+    tag: 1.0.0
