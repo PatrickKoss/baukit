@@ -38,12 +38,6 @@ spec:
         - nginx
         - -g
         - daemon off;
-      volumes:
-        - name: tmp
-          emptyDir: {}
-      volumeMounts:
-        - name: tmp
-          mountPath: /tmp
     migration:
       enabled: false
     networkPolicy:

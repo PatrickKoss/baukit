@@ -61,6 +61,7 @@ spec:
           resources:
             {{- toYaml .Values.seed.resources | nindent 12 }}
           volumeMounts:
+            {{- include "baukit-app.assertNoTmpOverride" (dict "process" "seed" "volumes" .Values.seed.volumes "volumeMounts" .Values.seed.volumeMounts) }}
             {{- include "baukit-app.tmpVolumeMount" . | nindent 12 }}
             {{- with .Values.seed.volumeMounts }}
             {{- toYaml . | nindent 12 }}

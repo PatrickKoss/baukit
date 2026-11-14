@@ -44,6 +44,8 @@ with its condition message.
 `redis` is left out because it and `redis-ha` own the same objects in `platform-redis`; the overlay
 composes `redis-ha`.
 
+The last line, `platform-e2e cluster time Ns, exit S`, counts from cluster creation to the end of cleanup and leaves out lock and slot waits.
+
 Artifacts land in `.ci-gate/platform-e2e/`: the chainsaw JUnit report, events, policy reports, Flux
 status, pod logs and `docker-stats.log`, sampled every 15 seconds.
 

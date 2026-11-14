@@ -102,6 +102,7 @@ spec:
           resources:
             {{- toYaml .Values.api.resources | nindent 12 }}
           volumeMounts:
+            {{- include "baukit-app.assertNoTmpOverride" (dict "process" "api" "volumes" .Values.api.volumes "volumeMounts" .Values.api.volumeMounts) }}
             {{- include "baukit-app.tmpVolumeMount" . | nindent 12 }}
             {{- with .Values.api.volumeMounts }}
             {{- toYaml . | nindent 12 }}

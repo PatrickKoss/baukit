@@ -117,6 +117,7 @@ kubeconfig=
 snapshot_container=
 stats_pid=
 cluster_created=false
+started=
 
 cleanup() {
   local status=$?
@@ -136,6 +137,9 @@ cleanup() {
     [[ -n $state_dir ]] && rm -rf -- "$state_dir"
   fi
   printf 'Artifacts: %s\n' "$artifacts_dir"
+  if [[ -n $started ]]; then
+    printf 'platform-e2e cluster time %ss, exit %s\n' "$((SECONDS - started))" "$status"
+  fi
   exit "$status"
 }
 
@@ -325,7 +329,7 @@ main() {
   trap cleanup EXIT
   trap interrupted INT TERM
 
-  local started=$SECONDS
+  started=$SECONDS
   create_cluster
   sample_stats &
   stats_pid=$!
