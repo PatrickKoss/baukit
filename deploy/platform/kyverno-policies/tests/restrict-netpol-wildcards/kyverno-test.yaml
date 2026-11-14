@@ -1,0 +1,26 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-netpol-wildcards
+policies:
+  - ../../policies/restrict-netpol-wildcards.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: restrict-netpol-wildcards
+    kind: NetworkPolicy
+    resources: [allow-traefik]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-netpol-wildcards
+    kind: NetworkPolicy
+    resources: [empty-peer, any-namespace-egress]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-netpol-wildcards
+    kind: NetworkPolicy
+    resources: [platform-any-namespace]
+    result: skip

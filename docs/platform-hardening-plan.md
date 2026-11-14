@@ -160,7 +160,7 @@ docs/runbooks/platform/<slug>.md  one per alert
 Goal: every later phase lands with offline checks that run in seconds, locally and in CI, at pinned
 versions. This phase comes first so every later task has a place to put its tests.
 
-- [~] **V1 Pinned tools.** Add `deploy/tools.toml` listing kubeconform, kustomize, helm, kyverno CLI,
+- [x] **V1 Pinned tools.** Add `deploy/tools.toml` listing kubeconform, kustomize, helm, kyverno CLI,
   chainsaw, promtool, pint, trivy, k3d, flux and yamllint with exact versions and per-platform sha256.
   Add `scripts/install-deploy-tools.sh`, which installs into gitignored `.tools/bin` and verifies checksums.
   `validate.sh`, `check-rules.sh` and the e2e runner put `.tools/bin` first on PATH and fail with exit 2
@@ -185,7 +185,7 @@ versions. This phase comes first so every later task has a place to put its test
   gate. Exceptions are read from the same files the cluster gets.
   Acceptance: a rendered pod without limits fails the stage. The stage prints a per-policy pass/fail
   table to `.ci-gate/`.
-- [ ] **V4 Convention checker.** `deploy/platform/lint/check_conventions.py` (stdlib only, unittest
+- [~] **V4 Convention checker.** `deploy/platform/lint/check_conventions.py` (stdlib only, unittest
   tests, same style as `scripts/`). It covers cross-resource rules that one-object policies can't:
   - every Namespace a base owns has PSA `enforce` and `audit`/`warn` labels; `privileged` only for the
     allowlist (N1);
@@ -268,7 +268,7 @@ behave. Later phases add test directories here.
 
 ## Phase K: Kyverno policy library
 
-- [~] **K1 Controller.** Bump the Kyverno base to chart 3.10.0 (Kyverno v1.20.0), after reading its
+- [x] **K1 Controller.** Bump the Kyverno base to chart 3.10.0 (Kyverno v1.20.0), after reading its
   upgrade notes.
   - Enable ServiceMonitors for all four controllers.
   - Set `features.policyExceptions.enabled: true` with `namespace: kyverno`, so exceptions can only
@@ -278,15 +278,15 @@ behave. Later phases add test directories here.
     `flux-system`, so a broken policy can never block the controllers that would repair it.
   - Add Policy Reporter (pinned chart, metrics only, UI off), so dashboards show current violations
     and not only admission events.
-- [~] **K2 Migrate the existing three policies** (`require-container-resources`,
+- [x] **K2 Migrate the existing three policies** (`require-container-resources`,
   `disallow-latest-image-tag`, `protect-operations-ports`) to the D4 policy type in a new base
   `deploy/platform/kyverno-policies/`, each with a `kyverno test` suite.
-- [~] **K3 Pod Security.** Install the upstream `kyverno-policies` chart (pinned, `podSecurityStandard:
+- [x] **K3 Pod Security.** Install the upstream `kyverno-policies` chart (pinned, `podSecurityStandard:
   restricted`, `validationFailureAction: Audit` cluster-wide). It reports `restricted` gaps in every
   namespace, platform namespaces included. PSA labels (N1) remain the enforcement backstop. Tenant
   namespaces get `Enforce` through `validationFailureActionByPolicy` plus a namespace selector on
   `baukit.dev/tenant=true`.
-- [~] **K4 Baukit policy set.** Each one ships with pass and fail fixtures, a message that names the fix,
+- [x] **K4 Baukit policy set.** Each one ships with pass and fail fixtures, a message that names the fix,
   and the rollout mode it lands in:
 
   | Policy | Applies to | Mode at landing |
@@ -307,7 +307,7 @@ behave. Later phases add test directories here.
   | `flux-tenant-service-account` (Kustomization/HelmRelease in a tenant namespace must set `serviceAccountName` and may not reference sources in other namespaces) | tenants | Enforce |
   | `verify-baukit-images` (cosign keyless, identity = the product's release workflow) | tenants | Audit (D6) |
 
-- [~] **K5 Generated defaults for tenants.** A `GeneratingPolicy` (or `ClusterPolicy` generate rule if
+- [x] **K5 Generated defaults for tenants.** A `GeneratingPolicy` (or `ClusterPolicy` generate rule if
   D4 says so) creates `default-deny` NetworkPolicy, a LimitRange and the DNS egress allow in every
   namespace labelled `baukit.dev/tenant=true`, with `synchronize: true`. `components/tenant` labels the
   namespace. An overlay that forgets the component still gets a default deny.
@@ -320,7 +320,7 @@ behave. Later phases add test directories here.
 
 ## Phase N: Pod Security Admission and NetworkPolicies
 
-- [ ] **N1 PSA labels on every base namespace.** Every Namespace gets `enforce`, `enforce-version`
+- [~] **N1 PSA labels on every base namespace.** Every Namespace gets `enforce`, `enforce-version`
   (pinned to the cluster minor), `audit: restricted` and `warn: restricted`. Target `enforce` levels:
 
   | Level | Namespaces | Work needed |
@@ -332,14 +332,14 @@ behave. Later phases add test directories here.
   Split node-exporter and Alloy into a new `observability-agents` namespace (they need hostPID,
   hostNetwork and hostPath), so `observability` itself can run `restricted`. Flux's own namespace gets
   labels through the lifecycle's `flux install` patch.
-- [ ] **N2 Reusable NetworkPolicy components** in `deploy/platform/components/network-policy/`:
+- [~] **N2 Reusable NetworkPolicy components** in `deploy/platform/components/network-policy/`:
   `default-deny`, `dns-egress` (CoreDNS pods plus the k3s Service-IP compatibility rule the chart
   already documents), `apiserver-egress` (k3s DNATs `10.43.0.1:443` to the node IP on 6443, so the
   rule takes an `ipBlock` for the node CIDR, set by a Kustomize replacement from one overlay value),
   `prometheus-scrape` (ingress from Prometheus pods on named metrics ports) and `internet-https`
   (`0.0.0.0/0` except RFC 1918, 100.64/10 and link-local, port 443). The e2e test proves the apiserver
   rule against k3d before any base relies on it.
-- [ ] **N3 Per-base policies.** Each base composes `default-deny` plus explicit allows. Peer and port
+- [~] **N3 Per-base policies.** Each base composes `default-deny` plus explicit allows. Peer and port
   pairs from the audit (verify each one in e2e; they are a starting point, not a spec):
   - **traefik:** ingress 8000/8443 from anywhere, 9100 from Prometheus. Egress to the apiserver, DNS,
     and backend ports in namespaces labelled `baukit.dev/ingress-backend=true`.
@@ -359,7 +359,7 @@ behave. Later phases add test directories here.
     Prometheus 9090 ingress from Grafana, flagger and kured.
   - **kyverno, kured, flagger, platform-redis, falco:** controller-specific allows plus
     `prometheus-scrape`.
-- [ ] **N4 Fence PostHog** (D8): replace the any-to-any internal policy with explicit pairs, deny egress
+- [~] **N4 Fence PostHog** (D8): replace the any-to-any internal policy with explicit pairs, deny egress
   except DNS and `internet-https` for the plugin server, bump `postgres:14.1` to the newest 14.x digest.
   Record the remaining `baseline` gaps as exceptions.
 - [ ] **N5 Probe matrix test.** `deploy/platform/e2e/tests/netpol/matrix.yaml` lists source, destination,
@@ -682,3 +682,29 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   Alertmanager output needs endpoint `/api/v2/alerts`; Loki output needs `grafanaDashboard` off.
   `falco -V <file>` (one `-V` per rules file) works in the digest-pinned image with `--network none`.
   Agents now use private KUBECONFIG files after parallel k3d runs rewrote `~/.kube/config`.
+- 2026-11-14: V1 merged. `deploy/tools.toml` pins kubeconform 0.8.0, kustomize 5.8.3, helm 4.3.1, kyverno
+  1.20.0, chainsaw 0.2.15, promtool 3.15.1, pint 0.89.4, trivy 0.76.1, k3d 5.9.0, flux 2.9.4, kubectl
+  1.36.6 and yamllint 1.38.0 (PyPI wheels with `--require-hashes`), plus the falco and prometheus images by
+  digest. Spot-checked helm, kubeconform and kyverno sha256 against upstream checksum files. Flux is
+  pinned only in `tools.toml` now (validate.sh and the lifecycle read it). `check-rules.sh` lost both its
+  PATH and Docker fallbacks. Re-verified on integration: clean install, 17 installer tests, platform-validate,
+  observability-rules, shell-lint, python-lint, workflow-lint green. Open: the gate steps exit 2 on a
+  checkout without `.tools/`; V4/V6 make the steps install first.
+- 2026-11-14: K1-K5 merged. D4 resolved: Kyverno v1.20 no longer runs legacy `kyverno.io` policies (the
+  3.10.0 chart ships a `pre-install-check-legacy-policies` hook and an `acknowledgeLegacyPoliciesNotEnforced`
+  switch), so every policy is `policies.kyverno.io/v1` (`ValidatingPolicy`, `ImageValidatingPolicy`,
+  `GeneratingPolicy`) and the old `kyverno/policies.yaml` is gone. K1: ServiceMonitors on all four
+  controllers, PDBs `maxUnavailable: 1`, exceptions only in `kyverno`, webhook timeout 5 s, webhooks skip
+  kube-system, flux-system and kyverno, Policy Reporter 3.11.2 (metrics on, UI off). K3 deviation: the
+  upstream PSS chart (3.10.0, restricted, Audit) has fixed policy names and only per-policy action
+  overrides, so it cannot Enforce on tenant namespaces only; tenants get enforcement from PSA
+  `enforce: restricted` (set by `components/tenant`) and `require-psa-labels` rejects a tenant namespace
+  without it. K4: "Audit everywhere, Enforce on tenants" policies are split into two policies each. K5:
+  `generate-tenant-defaults` (default-deny, DNS egress, LimitRange; synchronize + generateExisting).
+  Re-verified: `kyverno test` 78/78, platform-validate (642 objects), shell-lint, python-lint. Known gaps:
+  `verify-baukit-images` has no signed pass fixture (D6); `kyverno apply` cannot evaluate
+  `unique-ingress-host-and-path` offline (cluster lookup), `kyverno test` covers it; expected `skip` rows in
+  `kyverno test` never bite. Ordering constraint: `require-psa-labels` is Deny, so the e2e overlay must not
+  compose `kyverno-policies` before N1 labels every namespace. Live check on k3d (Kyverno only): unlabelled
+  namespace denied, tenant defaults generated, cluster-admin binding denied. One run hit the chart's
+  legacy-check hook Job deadline on a slow pull; watch in e2e.

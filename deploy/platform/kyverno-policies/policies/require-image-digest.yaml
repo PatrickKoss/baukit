@@ -1,0 +1,36 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-image-digest
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Require image digests in production tenants
+    policies.kyverno.io/severity: medium
+spec:
+  validationActions:
+    - Audit
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+        baukit.dev/environment: production
+  variables:
+    - name: undigested
+      expression: >-
+        (object.spec.containers + object.spec.?initContainers.orValue([]))
+        .filter(c, !c.image.contains("@sha256:"))
+        .map(c, c.name)
+  validations:
+    - expression: size(variables.undigested) == 0
+      messageExpression: >-
+        "Containers " + variables.undigested.join(", ") +
+        " reference images by tag. Production tenants pin images as repository@sha256:<digest>."

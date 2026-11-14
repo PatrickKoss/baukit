@@ -1,0 +1,62 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: protect-operations-ports
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Protect operations ports
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Public Services and Ingresses must not reach the private operations range 9000-9999 or ports
+      named ops or metrics.
+spec:
+  validationActions:
+    - Audit
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [services]
+      - apiGroups: [networking.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [ingresses]
+  variables:
+    - name: opsNames
+      expression: "['ops', 'metrics']"
+    - name: isPublicService
+      expression: >-
+        object.kind == 'Service' &&
+        object.spec.?type.orValue('ClusterIP') in ['NodePort', 'LoadBalancer']
+    - name: servicePorts
+      expression: "variables.isPublicService ? object.spec.?ports.orValue([]) : []"
+    - name: ingressBackends
+      expression: >-
+        object.kind != 'Ingress' ? [] :
+        object.spec.?rules.orValue([])
+          .map(r, r.?http.paths.orValue([]))
+          .map(paths, paths.map(p, p.backend.?service.?port.orValue({})))
+          .flatten()
+  validations:
+    - expression: "!variables.servicePorts.exists(p, p.port >= 9000 && p.port <= 9999)"
+      message: >-
+        Public Services must not expose ports 9000-9999. Keep operations ports on a ClusterIP Service.
+    - expression: >-
+        !variables.servicePorts.exists(p, string(p.?targetPort.orValue('')).matches('^9[0-9]{3}$'))
+      message: >-
+        Public Services must not target container ports 9000-9999. Keep operations ports on a ClusterIP Service.
+    - expression: "!variables.servicePorts.exists(p, p.?name.orValue('') in variables.opsNames)"
+      message: >-
+        Public Services must not expose ports named ops or metrics. Rename the port or use a ClusterIP Service.
+    - expression: >-
+        !variables.ingressBackends.exists(b, b.?number.orValue(0) >= 9000 && b.?number.orValue(0) <= 9999)
+      message: >-
+        Ingresses must not route to Service ports 9000-9999. Route to the public application port.
+    - expression: "!variables.ingressBackends.exists(b, b.?name.orValue('') in variables.opsNames)"
+      message: >-
+        Ingresses must not route to Service ports named ops or metrics. Route to the public application port.
