@@ -17,6 +17,8 @@ release=${BAUKIT_SMOKE_RELEASE:-$product}
 resource_name=${BAUKIT_SMOKE_RESOURCE_NAME:-$release}
 observability_namespace=${BAUKIT_SMOKE_OBSERVABILITY_NAMESPACE:-observability}
 dependencies_file=${BAUKIT_SMOKE_DEPENDENCIES_FILE:-}
+dependencies_namespace=${BAUKIT_SMOKE_DEPENDENCIES_NAMESPACE:-$namespace-deps}
+dependencies_pod_security_level=${BAUKIT_SMOKE_DEPENDENCIES_POD_SECURITY_LEVEL:-baseline}
 dependency_deployments=${BAUKIT_SMOKE_DEPENDENCY_DEPLOYMENTS:-}
 secret_manifests=${BAUKIT_SMOKE_SECRET_MANIFESTS:-}
 worker_enabled=${BAUKIT_SMOKE_WORKER_ENABLED:-false}
@@ -122,19 +124,23 @@ install_admission_policies() {
     kubectl apply --recursive -f "$policy_dir"
 }
 
-enforce_pod_security() {
-    echo "enforcing Pod Security $pod_security_level in namespace $namespace"
-    kubectl label --overwrite namespace "$namespace" \
-        "pod-security.kubernetes.io/enforce=$pod_security_level" \
-        pod-security.kubernetes.io/enforce-version=latest \
-        "pod-security.kubernetes.io/audit=$pod_security_level" \
-        pod-security.kubernetes.io/audit-version=latest \
-        "pod-security.kubernetes.io/warn=$pod_security_level" \
-        pod-security.kubernetes.io/warn-version=latest
+create_namespace() {
+    target=$1
+    level=$2
+    kubectl create namespace "$target" --dry-run=client -o yaml |
+        kubectl label --local -f - -o yaml \
+            "pod-security.kubernetes.io/enforce=$level" \
+            pod-security.kubernetes.io/enforce-version=latest \
+            "pod-security.kubernetes.io/audit=$level" \
+            pod-security.kubernetes.io/audit-version=latest \
+            "pod-security.kubernetes.io/warn=$level" \
+            pod-security.kubernetes.io/warn-version=latest |
+        kubectl create -f -
 }
 
 install_admission_policies
-kubectl create namespace "$namespace"
+create_namespace "$namespace" "$pod_security_level"
+create_namespace "$dependencies_namespace" "$dependencies_pod_security_level"
 if [ "$observability_namespace" != "$namespace" ]; then
     kubectl create namespace "$observability_namespace"
 fi
@@ -148,15 +154,12 @@ if [ -n "$secret_manifests" ]; then
     IFS=$old_ifs
 fi
 if [ -n "$dependencies_file" ]; then
-    kubectl -n "$namespace" apply -f "$dependencies_file"
+    kubectl -n "$dependencies_namespace" apply -f "$dependencies_file"
 fi
 for deployment in $dependency_deployments; do
-    kubectl -n "$namespace" rollout status "deployment/$deployment" --timeout=240s
+    kubectl -n "$dependencies_namespace" rollout status "deployment/$deployment" --timeout=240s
 done
 
-# Product dependencies are not chart workloads, so the namespace level applies
-# from the chart install on. Every chart pod must pass it.
-enforce_pod_security
 
 echo "installing $product with the Baukit application chart"
 set -- upgrade --install "$release" "$chart" \
@@ -294,4 +297,9 @@ kubectl -n "$namespace" get pods,services,networkpolicies
 kubectl get namespace "$namespace" \
     -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}' |
     grep -qx "$pod_security_level"
+if kubectl -n "$namespace" get events -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' |
+    grep -i 'podsecurity\|violates'; then
+    echo "namespace $namespace recorded Pod Security violations" >&2
+    exit 1
+fi
 echo "k3d smoke passed for $product; teardown follows"
