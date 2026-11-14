@@ -1,6 +1,7 @@
-"""Drops the named Flux Kustomizations from a JSON List and from every dependsOn list.
+"""Drops the named Flux Kustomizations from a stream of JSON objects and from every dependsOn list.
 
-Usage: without.py NAME... < list.json > list.json. Exits 2 when a NAME is not in the List.
+Usage: without.py NAME... < objects.json > list.json. The input is what `kubectl create -o json`
+prints, one object after another; the output is a v1 List. Exits 2 when a NAME is not in the input.
 """
 
 import json
@@ -15,13 +16,23 @@ def is_kustomization(item):
     )
 
 
-def without(document, names):
-    present = {item["metadata"]["name"] for item in document["items"] if is_kustomization(item)}
+def read_objects(text):
+    decoder = json.JSONDecoder()
+    objects, position = [], 0
+    while text[position:].strip():
+        position += len(text[position:]) - len(text[position:].lstrip())
+        item, position = decoder.raw_decode(text, position)
+        objects.append(item)
+    return objects
+
+
+def without(items, names):
+    present = {item["metadata"]["name"] for item in items if is_kustomization(item)}
     unknown = sorted(set(names) - present)
     if unknown:
         raise KeyError(", ".join(unknown))
     kept = []
-    for item in document["items"]:
+    for item in items:
         if is_kustomization(item) and item["metadata"]["name"] in names:
             continue
         if is_kustomization(item) and "dependsOn" in item["spec"]:
@@ -31,12 +42,12 @@ def without(document, names):
                 if dependency["name"] not in names
             ]
         kept.append(item)
-    return {**document, "items": kept}
+    return {"apiVersion": "v1", "kind": "List", "items": kept}
 
 
 def main():
     try:
-        result = without(json.load(sys.stdin), set(sys.argv[1:]))
+        result = without(read_objects(sys.stdin.read()), set(sys.argv[1:]))
     except KeyError as error:
         print(
             f"ERROR: --without names no Kustomization in the overlay: {error.args[0]}",

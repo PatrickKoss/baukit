@@ -27,7 +27,7 @@ def kustomization(name, depends_on=()):
 def run_without(document, *names):
     return subprocess.run(  # noqa: S603 -- argv is this interpreter and the repo's without.py
         [sys.executable, str(E2E / "without.py"), *names],
-        input=json.dumps(document),
+        input="\n".join(json.dumps(item) for item in document["items"]),
         capture_output=True,
         text=True,
         check=False,
@@ -68,7 +68,7 @@ class WithoutTests(unittest.TestCase):
         self.assertEqual(items[0]["spec"]["dependsOn"], [{"name": "e2e-c"}])
 
     def test_keeps_everything_without_names(self):
-        document = {"kind": "List", "items": [kustomization("e2e-a")]}
+        document = {"apiVersion": "v1", "kind": "List", "items": [kustomization("e2e-a")]}
         result = run_without(document)
         self.assertEqual(json.loads(result.stdout), document)
 
