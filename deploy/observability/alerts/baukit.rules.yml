@@ -178,6 +178,8 @@ groups:
 
   - name: baukit-dead-man-alerts
     rules:
+      # A heartbeat alert must always fire; Alertmanager routes it to the dead man's switch.
+      # pint disable alerts/comparison
       - alert: BaukitDeadMansSwitch
         expr: vector(1)
         labels:
