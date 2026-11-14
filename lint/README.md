@@ -206,6 +206,21 @@ every referenced metric must exist. A metric exists when it is in Baukit's catal
 a `metrics` list, or a `counter!`, `gauge!` or `histogram!` call (or its `describe_` form) with a
 literal name under `sources`. The Python script stays the source of truth for Baukit's CI;
 `cli/tests/check_observability.rs` runs both on the same fixtures and on `deploy/observability`.
+LogQL pipeline stages (`json`, `logfmt`, `pattern`, `regexp`, `line_format`, `label_format`,
+`unwrap` and label filters after a parser) never count as metrics.
+`fixtures/observability/metric-references.json` holds the expressions both sides must read alike.
+
+Each `[[observability.packs]]` entry is checked on its own, with its own `metrics` lists, so names
+allowed in one pack never leak into another. `catalog = false` drops Baukit's catalog and leaves only
+the pack's lists, `up` and its recording rules, the same as `check-metric-names.py --no-catalog`.
+Baukit's platform pack uses it:
+
+```toml
+[[observability.packs]]
+rules = ["deploy/observability-platform/alerts"]
+metrics = ["deploy/observability-platform/metrics.txt"]
+catalog = false
+```
 
 On top of that it checks what the product linters checked:
 

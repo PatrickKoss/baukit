@@ -9,6 +9,9 @@ import unittest
 from pathlib import Path
 
 LINTER_PATH = Path(__file__).resolve().parent / "check-metric-names.py"
+REFERENCE_VECTORS = (
+    Path(__file__).resolve().parents[3] / "fixtures/observability/metric-references.json"
+)
 SPEC = importlib.util.spec_from_file_location("check_metric_names", LINTER_PATH)
 assert SPEC is not None and SPEC.loader is not None
 linter = importlib.util.module_from_spec(SPEC)
@@ -73,6 +76,18 @@ class BaukitInvocationTests(unittest.TestCase):
             r"^Observability metric-name lint passed: 1 dashboard\(s\), "
             r"\d+ rule file\(s\), \d+ local recording rule\(s\)\.\n$",
         )
+
+
+class MetricReferenceVectorTests(unittest.TestCase):
+    def test_shared_vectors(self) -> None:
+        vectors = json.loads(REFERENCE_VECTORS.read_text(encoding="utf-8"))["vectors"]
+        self.assertTrue(vectors)
+        for vector in vectors:
+            with self.subTest(vector["name"]):
+                self.assertEqual(
+                    sorted(linter.metric_references(vector["expression"])),
+                    vector["references"],
+                )
 
 
 class ProductInvocationTests(unittest.TestCase):
@@ -168,6 +183,40 @@ class ProductInvocationTests(unittest.TestCase):
                 status, _, stderr = self.product.lint()
                 self.assertEqual(status, 1)
                 self.assertIn("worker handler types must use job_kind", stderr)
+
+    def test_no_catalog_allows_only_the_allowlist_and_up(self) -> None:
+        self.product.write_allowlist("kube_namespace_labels\n")
+        self.product.write_alert("up == 0 and on (namespace) kube_namespace_labels")
+        self.product.write_dashboard("sum(rate(http_requests_total[5m]))")
+
+        status, _, stderr = self.product.lint("--no-catalog")
+
+        self.assertEqual(status, 1)
+        self.assertIn("unknown metric 'http_requests_total'", stderr)
+        self.assertNotIn("kube_namespace_labels", stderr)
+        self.product.write_dashboard("up")
+        status, _, stderr = self.product.lint("--no-catalog")
+        self.assertEqual(status, 0, stderr)
+
+    def test_third_party_names_never_reach_the_catalog_lint(self) -> None:
+        self.product.write_allowlist("")
+        self.product.write_alert("kube_namespace_labels > 0")
+
+        status, _, stderr = self.product.lint()
+
+        self.assertEqual(status, 1)
+        self.assertIn("unknown metric 'kube_namespace_labels'", stderr)
+
+    def test_log_queries_with_parsers_pass(self) -> None:
+        self.product.write_allowlist("")
+        self.product.write_dashboard(
+            '{namespace="shop"} | logfmt | level="error" | line_format "{{.msg}}"',
+            'sum by (route) (rate({app="api"} | json | unwrap duration_seconds(latency) [5m]))',
+        )
+
+        status, _, stderr = self.product.lint()
+
+        self.assertEqual(status, 0, stderr)
 
     def test_rejects_a_missing_observability_root(self) -> None:
         status, _, stderr = run("--observability-root", str(self.product.root / "missing"))

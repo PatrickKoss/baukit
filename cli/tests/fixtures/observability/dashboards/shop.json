@@ -22,7 +22,10 @@
       "datasource": { "type": "loki", "uid": "${DS_LOKI}" },
       "targets": [
         { "expr": "{service_name=\"shop\"} | json" },
-        { "expr": "sum(count_over_time({app=\"shop\"} | json [5m]))" }
+        { "expr": "sum(count_over_time({app=\"shop\"} | json [5m]))" },
+        { "expr": "sum by (level) (count_over_time({app=\"shop\"} | logfmt | level=\"error\" or status >= 500 | line_format \"{{.msg}}\" [5m]))" },
+        { "expr": "quantile_over_time(0.99, {app=\"shop\"} | regexp `(?P<route>/[a-z]+)` | label_format path=\"{{.route}}\" | unwrap duration_seconds(latency) [5m]) by (path)" },
+        { "expr": "sum(rate({app=\"shop\"} | pattern `<_> <status>` | status=\"500\" [5m])) / sum(rate(shop_unlisted_total[5m]))" }
       ]
     }
   ]

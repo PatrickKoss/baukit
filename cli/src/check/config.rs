@@ -75,6 +75,29 @@ pub struct ObservabilityConfig {
     pub datasource_uids: Vec<String>,
     /// Prefix every product metric emitted from `sources` must start with.
     pub metric_prefix: Option<String>,
+    /// Further packs, each checked alone against its own metric lists.
+    #[serde(default)]
+    pub packs: Vec<ObservabilityPack>,
+}
+
+/// A pack of dashboards and rules with its own allowed metrics, such as one over third-party metrics.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct ObservabilityPack {
+    #[serde(default)]
+    pub dashboards: Vec<String>,
+    #[serde(default)]
+    pub rules: Vec<String>,
+    /// Metric lists in the `check-metric-names.py --allowlist` format.
+    #[serde(default)]
+    pub metrics: Vec<String>,
+    /// Whether the pack may query Baukit's metric catalog; `false` matches `--no-catalog`.
+    #[serde(default = "default_catalog")]
+    pub catalog: bool,
+}
+
+const fn default_catalog() -> bool {
+    true
 }
 
 impl CheckConfig {

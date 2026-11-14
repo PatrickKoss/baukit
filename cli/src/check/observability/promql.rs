@@ -89,7 +89,7 @@ pub struct Patterns {
 impl Patterns {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            quoted: Regex::new(r#""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'"#)?,
+            quoted: Regex::new(r#""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`[^`]*`"#)?,
             braces: Regex::new(r"\{[^}]*\}")?,
             brackets: Regex::new(r"\[[^\]]*\]")?,
             grouping: Regex::new(
@@ -104,14 +104,14 @@ impl Patterns {
         })
     }
 
-    /// Metric identifiers in an expression, excluding functions, keywords and labels.
+    /// Metric identifiers in an expression, excluding functions, keywords, labels and LogQL stages.
     pub fn metric_references(&self, expression: &str) -> BTreeSet<String> {
-        let mut references: BTreeSet<String> = identifiers(expression)
+        let sanitized = strip_log_pipelines(&self.quoted.replace_all(expression, " "));
+        let mut references: BTreeSet<String> = identifiers(&sanitized)
             .into_iter()
             .filter(|(_, rest)| rest.trim_start().starts_with(['{', '[']))
             .map(|(name, _)| name.to_owned())
             .collect();
-        let sanitized = self.quoted.replace_all(expression, " ");
         let sanitized = self.braces.replace_all(&sanitized, " ");
         let sanitized = self.brackets.replace_all(&sanitized, " ");
         let sanitized = self.grouping.replace_all(&sanitized, " ");
@@ -206,6 +206,33 @@ impl Patterns {
     }
 }
 
+/// Blanks LogQL pipeline stages: each `|` up to the next top-level `|` or unmatched `)`.
+///
+/// PromQL has no `|` operator, so this only removes LogQL parsers (json, logfmt, pattern, regexp),
+/// formatters (line_format, label_format), unwrap and label filters after a parser.
+fn strip_log_pipelines(text: &str) -> String {
+    let mut kept = String::with_capacity(text.len());
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character != '|' {
+            kept.push(character);
+            continue;
+        }
+        let mut depth = 0_usize;
+        while let Some(&next) = characters.peek() {
+            match next {
+                '|' | ')' if depth == 0 => break,
+                '(' => depth += 1,
+                ')' => depth -= 1,
+                _ => {}
+            }
+            characters.next();
+        }
+        kept.push(' ');
+    }
+    kept
+}
+
 /// The indented lines after a block-scalar `expr:`, and the index of the first line after them.
 fn block_scalar(lines: &[&str], start: usize, indentation: usize) -> (String, usize) {
     let mut block = Vec::new();
@@ -267,19 +294,25 @@ fn unquote(value: &str) -> &str {
     value
 }
 
-/// Every series name a product may query: the catalog, product metrics and recording rules.
+/// Every series name a pack may query: the catalog when enabled, `up`, listed metrics and recording rules.
 pub fn allowed_metric_names<'a>(
+    catalog: bool,
     product_metrics: impl IntoIterator<Item = &'a str>,
     product_histograms: impl IntoIterator<Item = &'a str>,
     recordings: impl IntoIterator<Item = &'a str>,
 ) -> BTreeSet<String> {
-    let mut allowed: BTreeSet<String> = CATALOG_METRICS
+    let (catalog_metrics, catalog_histograms) = if catalog {
+        (CATALOG_METRICS, CATALOG_HISTOGRAMS)
+    } else {
+        (&[][..], &[][..])
+    };
+    let mut allowed: BTreeSet<String> = catalog_metrics
         .iter()
         .chain(PROMETHEUS_BUILTINS)
         .map(|name| (*name).to_owned())
         .collect();
     allowed.extend(product_metrics.into_iter().map(str::to_owned));
-    for histogram in CATALOG_HISTOGRAMS.iter().copied().chain(product_histograms) {
+    for histogram in catalog_histograms.iter().copied().chain(product_histograms) {
         allowed.extend(
             HISTOGRAM_SUFFIXES
                 .iter()
@@ -301,6 +334,7 @@ pub fn base_metric(name: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Context;
 
     fn references(expression: &str) -> Result<Vec<String>> {
         Ok(Patterns::new()?
@@ -349,9 +383,54 @@ mod tests {
         Ok(())
     }
 
+    const REFERENCE_VECTORS: &str =
+        include_str!("../../../../fixtures/observability/metric-references.json");
+
+    #[test]
+    fn shared_reference_vectors_match() -> Result<()> {
+        let document: serde_json::Value = serde_json::from_str(REFERENCE_VECTORS)?;
+        let vectors = document["vectors"]
+            .as_array()
+            .context("metric-references.json has a vectors array")?;
+        assert!(!vectors.is_empty());
+        for vector in vectors {
+            let expression = vector["expression"]
+                .as_str()
+                .context("vector has an expression")?;
+            let expected: Vec<String> = serde_json::from_value(vector["references"].clone())?;
+            assert_eq!(references(expression)?, expected, "{}", vector["name"]);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn log_pipelines_are_blanked_up_to_the_unmatched_parenthesis() {
+        assert_eq!(
+            strip_log_pipelines("rate(x | logfmt | unwrap bytes(size) [5m]) + y"),
+            "rate(x   ) + y"
+        );
+    }
+
+    #[test]
+    fn without_the_catalog_only_listed_names_and_up_are_allowed() {
+        let allowed = allowed_metric_names(false, ["kube_pod_info"], ["kube_x_seconds"], ["a:b"]);
+        let expected: BTreeSet<String> = [
+            "a:b",
+            "kube_pod_info",
+            "kube_x_seconds_bucket",
+            "kube_x_seconds_count",
+            "kube_x_seconds_sum",
+            "up",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        assert_eq!(allowed, expected);
+    }
+
     #[test]
     fn worker_job_label_is_rejected() -> Result<()> {
-        let allowed = allowed_metric_names([], [], []);
+        let allowed = allowed_metric_names(true, [], [], []);
         assert_eq!(
             Patterns::new()?.lint_expression("sum by (job) (worker_job_runs_total)", &allowed),
             vec!["worker handler types must use job_kind, not job"]
@@ -361,7 +440,7 @@ mod tests {
 
     #[test]
     fn unknown_and_forbidden_names_are_reported() -> Result<()> {
-        let allowed = allowed_metric_names(["shop_orders_total"], [], []);
+        let allowed = allowed_metric_names(true, ["shop_orders_total"], [], []);
         let problems = Patterns::new()?.lint_expression(
             r#"rate(http_requests_duration_seconds_bucket{status="5xx"}[5m]) + shop_orders_total + nope_total"#,
             &allowed,
