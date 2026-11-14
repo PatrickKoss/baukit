@@ -9,6 +9,7 @@ runbookBaseUrl: ""
 # whose component is missing here fails the render.
 components:
   platform: true
+  falco: true
 
 prometheusRule:
   labels: {}

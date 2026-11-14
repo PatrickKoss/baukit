@@ -182,7 +182,8 @@ class PlatformChartTests(unittest.TestCase):
     def test_a_disabled_component_renders_nothing(self) -> None:
         result = self.render("--set", "components.platform=false")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotIn("kind: PrometheusRule", result.stdout)
+        self.assertNotIn("app.kubernetes.io/component: platform", result.stdout)
+        self.assertIn("app.kubernetes.io/component: falco", result.stdout)
 
     def test_runbook_base_url_is_required(self) -> None:
         result = helm_template(PLATFORM_PACK)
