@@ -26,9 +26,9 @@ results:
     policy: restrict-wildcard-rbac
     kind: Role
     resources: [system-wildcard]
-    result: skip
+    result: pass
   - isValidatingPolicy: true
     policy: restrict-wildcard-rbac
     kind: ClusterRole
     resources: [cluster-admin]
-    result: skip
+    result: pass

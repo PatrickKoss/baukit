@@ -19,10 +19,9 @@ spec:
         apiVersions: [v1]
         operations: [CREATE, UPDATE]
         resources: [clusterrolebindings, rolebindings]
-  matchConditions:
-    - name: binds-cluster-admin
-      expression: object.roleRef.kind == "ClusterRole" && object.roleRef.name == "cluster-admin"
   variables:
+    - name: bindsClusterAdmin
+      expression: object.roleRef.kind == "ClusterRole" && object.roleRef.name == "cluster-admin"
     - name: systemNamespaces
       expression: '["kube-system", "flux-system"]'
     - name: foreign
@@ -32,7 +31,7 @@ spec:
           !(s.kind == "ServiceAccount" && s.?namespace.orValue("") in variables.systemNamespaces))
         .map(s, s.kind + "/" + s.?namespace.orValue("") + "/" + s.name)
   validations:
-    - expression: size(variables.foreign) == 0
+    - expression: "!variables.bindsClusterAdmin || size(variables.foreign) == 0"
       messageExpression: >-
         "cluster-admin may only be bound to system:masters and service accounts in kube-system or flux-system, not " +
         variables.foreign.join(", ") + ". Bind a Role or ClusterRole with the permissions the subject needs."

@@ -26,4 +26,4 @@ results:
     policy: restrict-cluster-admin-binding
     kind: RoleBinding
     resources: [view]
-    result: skip
+    result: pass
