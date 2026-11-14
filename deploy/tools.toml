@@ -78,7 +78,7 @@ url = "https://github.com/k3d-io/k3d/releases/download/v{version}/k3d-{os}-{arch
 version_args = ["version"]
 sha256 = { linux-amd64 = "06d8f25bc3a971c4eb29e0ff08429b180402db0f4dec838c9eac427e296800a0", linux-arm64 = "03cde5cf23e6e8e67de5a039ecf26e5b85aca82fba3e5d13dadf904cd218a250", darwin-arm64 = "fe106541d5d0a3f18debcd4d432a16f8c0ce3e6ddc06f8fbb6f696a122313e00" }
 
-# Matches the Flux version deploy/platform/platform-lifecycle.sh installs.
+# validate.sh and platform-lifecycle.sh read the Flux version from here.
 [tools.flux]
 version = "2.9.4"
 url = "https://github.com/fluxcd/flux2/releases/download/v{version}/flux_{version}_{os}_{arch}.tar.gz"

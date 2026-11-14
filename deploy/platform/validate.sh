@@ -7,14 +7,11 @@ cache_dir="$platform_dir/.helm-cache"
 
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"
-baukit_use_tools "$repo_root" kustomize kubeconform helm
-
-for tool in flux python3; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    printf 'ERROR: required platform validation tool is missing: %s\n' "$tool" >&2
-    exit 2
-  fi
-done
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'ERROR: required platform validation tool is missing: python3\n' >&2
+  exit 2
+fi
+baukit_use_tools "$repo_root" kustomize kubeconform helm flux
 
 schema_dir="$cache_dir/crd-schemas"
 # The default kubernetes-json-schema location has no standalone CustomResourceDefinition
@@ -45,14 +42,7 @@ if [[ ${1:-} == --kubeconform ]]; then
   exit
 fi
 
-pinned_flux_version=$(sed -n 's/^flux_version=[$]{PLATFORM_FLUX_VERSION:-\(v[0-9.]*\)}$/\1/p' \
-  "$platform_dir/platform-lifecycle.sh")
-installed_flux_version=$(flux version --client | awk '{print $2}')
-if [[ -z $pinned_flux_version || $installed_flux_version != "$pinned_flux_version" ]]; then
-  printf 'ERROR: flux CLI %s does not match the pinned Flux %s\n' \
-    "$installed_flux_version" "${pinned_flux_version:-<unknown>}" >&2
-  exit 2
-fi
+pinned_flux_version=v$(baukit_tool_version "$repo_root" flux)
 
 mkdir -p "$cache_dir/repository-cache" "$cache_dir/kubeconform-schemas"
 export HELM_REPOSITORY_CONFIG="$cache_dir/repositories.yaml"

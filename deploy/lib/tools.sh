@@ -32,3 +32,18 @@ PY
     PATH=$baukit_tools_bin:$PATH
     export PATH
 }
+
+# Prints the version deploy/tools.toml pins for a tool. Usage: baukit_tool_version <repo-root> <tool>
+baukit_tool_version() {
+    python3 - "$1" "$2" <<'PY'
+import pathlib
+import sys
+import tomllib
+
+manifest = pathlib.Path(sys.argv[1], "deploy/tools.toml").read_text(encoding="utf-8")
+tool = tomllib.loads(manifest)["tools"].get(sys.argv[2])
+if tool is None:
+    sys.exit(f"ERROR: deploy/tools.toml pins no tool named {sys.argv[2]}")
+print(tool["version"])
+PY
+}

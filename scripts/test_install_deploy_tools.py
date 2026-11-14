@@ -280,6 +280,16 @@ class ToolsHelperTest(unittest.TestCase):
             result.stdout.splitlines(), [str(self.repo / ".tools" / "bin" / "demo"), "fake 2.0.0"]
         )
 
+    def test_tool_version_prints_pin_and_rejects_unknown_tool(self) -> None:
+        def version(name: str) -> subprocess.CompletedProcess[str]:
+            script = f'. "{HELPER}"; baukit_tool_version "{self.repo}" {name}'
+            return run_process(["sh", "-c", script], capture_output=True, text=True)
+
+        self.assertEqual(version("demo").stdout, "2.0.0\n")
+        unknown = version("missing")
+        self.assertNotEqual(unknown.returncode, 0)
+        self.assertIn("pins no tool named missing", unknown.stderr)
+
 
 class ManifestTest(unittest.TestCase):
     def setUp(self) -> None:
