@@ -48,6 +48,8 @@ spec:
       compactor:
         retention_enabled: true
         delete_request_store: filesystem
+        # /var/loki is the singleBinary PVC mount.
+        working_directory: /var/loki/compactor
 
     singleBinary:
       replicas: 1

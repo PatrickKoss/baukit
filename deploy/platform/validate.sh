@@ -376,6 +376,12 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_conventions.py"
   status=1
 fi
 
+printf '==> storage limits\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_retention_size.py" --kustomize "$(command -v kustomize)" ||
+  ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_upstream_rules.py" --rendered "$rendered_dir"; then
+  status=1
+fi
+
 printf '==> falco rules\n'
 if ! falco_output=$("$platform_dir/falco/validate-rules.sh" 2>&1); then
   printf '%s\n' "$falco_output" >&2
