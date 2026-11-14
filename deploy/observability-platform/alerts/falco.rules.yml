@@ -1,0 +1,85 @@
+groups:
+  - name: baukit-falco
+    rules:
+      - alert: BaukitFalcoDown
+        expr: |
+          (
+            kube_daemonset_status_desired_number_scheduled{namespace="falco",daemonset="falco"}
+            - kube_daemonset_status_number_ready{namespace="falco",daemonset="falco"}
+          ) > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: falco
+        annotations:
+          summary: Falco is not ready on {{ $value }} node(s)
+          description: >-
+            The falco DaemonSet in namespace falco has had {{ $value }} scheduled pod(s) without
+            a ready Falco for 10 minutes. Runtime detection is blind on those nodes.
+          runbook_url: RUNBOOK_BASE_URL/falco-down
+      - alert: BaukitFalcoEventsDropped
+        expr: |
+          sum by (namespace, pod) (increase(falcosecurity_scap_n_drops_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: falco
+        annotations:
+          summary: Falco pod {{ $labels.pod }} drops kernel events
+          description: >-
+            Falco pod {{ $labels.pod }} dropped {{ $value }} kernel events in the last 10 minutes.
+            Rules do not see dropped events.
+          runbook_url: RUNBOOK_BASE_URL/falco-events-dropped
+      - alert: BaukitFalcoCriticalEvent
+        # Falco creates a rule's match counter on its first match, so a new series counts as an event.
+        expr: |
+          sum by (rule_name) (
+            (increase(falcosecurity_falco_rules_matches_total{priority=~"[0-2]"}[5m]) > 0)
+            or
+            (
+              falcosecurity_falco_rules_matches_total{priority=~"[0-2]"}
+              unless falcosecurity_falco_rules_matches_total{priority=~"[0-2]"} offset 5m
+            )
+          ) > 0
+        labels:
+          severity: critical
+          component: falco
+        annotations:
+          summary: 'Falco rule "{{ $labels.rule_name }}" fired at priority Critical or above'
+          description: >-
+            Falco matched "{{ $labels.rule_name }}" {{ $value }} time(s) in the last 5 minutes at
+            priority Critical or above.
+          runbook_url: RUNBOOK_BASE_URL/falco-critical-event
+      - alert: BaukitFalcoWarningEventsHigh
+        expr: |
+          sum by (rule_name) (increase(falcosecurity_falco_rules_matches_total{priority=~"[34]"}[15m])) > 10
+        for: 15m
+        labels:
+          severity: warning
+          component: falco
+        annotations:
+          summary: 'Falco rule "{{ $labels.rule_name }}" fires often at Warning or Error'
+          description: >-
+            Falco matched "{{ $labels.rule_name }}" {{ $value }} times in 15 minutes at priority
+            Warning or Error, for 15 minutes.
+          runbook_url: RUNBOOK_BASE_URL/falco-warning-events-high
+      - alert: BaukitFalcosidekickOutputErrors
+        expr: |
+          sum by (destination) (
+            (increase(falcosecurity_falcosidekick_outputs_total{status="error"}[5m]) > 0)
+            or
+            (
+              falcosecurity_falcosidekick_outputs_total{status="error"}
+              unless falcosecurity_falcosidekick_outputs_total{status="error"} offset 5m
+            )
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: falco
+        annotations:
+          summary: Falcosidekick fails to deliver events to {{ $labels.destination }}
+          description: >-
+            Falcosidekick has failed to forward Falco events to {{ $labels.destination }} for
+            10 minutes. Those events are missing from Loki or Alertmanager.
+          runbook_url: RUNBOOK_BASE_URL/falcosidekick-output-errors

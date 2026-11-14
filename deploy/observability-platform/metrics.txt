@@ -1,3 +1,11 @@
 # Third-party metrics the platform pack may query, one per line. Exact names only: the
 # app catalog is not allowed here. Append 'histogram' to also allow _bucket, _count and _sum.
 kube_namespace_labels
+kube_daemonset_status_desired_number_scheduled
+kube_daemonset_status_number_ready
+falcosecurity_scap_n_drops_total
+falcosecurity_falco_rules_matches_total
+falcosecurity_falcosidekick_outputs_total
+falcosecurity_falcosidekick_falco_events_total
+falcosecurity_scap_n_evts_total
+falcosecurity_falco_memory_rss_bytes

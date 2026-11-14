@@ -1,0 +1,171 @@
+rule_files:
+  - ../alerts/falco.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: a falco pod that stays unready fires BaukitFalcoDown
+    interval: 1m
+    input_series:
+      - series: 'kube_daemonset_status_desired_number_scheduled{namespace="falco",daemonset="falco"}'
+        values: '1x20'
+      - series: 'kube_daemonset_status_number_ready{namespace="falco",daemonset="falco"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitFalcoDown
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitFalcoDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: falco
+              namespace: falco
+              daemonset: falco
+            exp_annotations:
+              summary: Falco is not ready on 1 node(s)
+              description: >-
+                The falco DaemonSet in namespace falco has had 1 scheduled pod(s) without
+                a ready Falco for 10 minutes. Runtime detection is blind on those nodes.
+              runbook_url: RUNBOOK_BASE_URL/falco-down
+  - name: a ready falco DaemonSet stays quiet
+    interval: 1m
+    input_series:
+      - series: 'kube_daemonset_status_desired_number_scheduled{namespace="falco",daemonset="falco"}'
+        values: '1x20'
+      - series: 'kube_daemonset_status_number_ready{namespace="falco",daemonset="falco"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitFalcoDown
+        exp_alerts: []
+
+  - name: rising kernel drops fire BaukitFalcoEventsDropped
+    interval: 1m
+    input_series:
+      - series: 'falcosecurity_scap_n_drops_total{namespace="falco",pod="falco-abcde"}'
+        values: '0+5x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitFalcoEventsDropped
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: falco
+              namespace: falco
+              pod: falco-abcde
+            exp_annotations:
+              summary: Falco pod falco-abcde drops kernel events
+              description: >-
+                Falco pod falco-abcde dropped 50 kernel events in the last 10 minutes.
+                Rules do not see dropped events.
+              runbook_url: RUNBOOK_BASE_URL/falco-events-dropped
+  - name: a flat drop counter stays quiet
+    interval: 1m
+    input_series:
+      - series: 'falcosecurity_scap_n_drops_total{namespace="falco",pod="falco-abcde"}'
+        values: '7x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitFalcoEventsDropped
+        exp_alerts: []
+
+  - name: the first critical match of a rule fires BaukitFalcoCriticalEvent
+    interval: 1m
+    input_series:
+      - series: 'falcosecurity_falco_rules_matches_total{namespace="falco",pod="falco-abcde",priority="2",rule_name="Baukit shell or package manager in app container",source="syscall"}'
+        values: '_x5 1x10'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: BaukitFalcoCriticalEvent
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: falco
+              rule_name: Baukit shell or package manager in app container
+            exp_annotations:
+              summary: 'Falco rule "Baukit shell or package manager in app container" fired at priority Critical or above'
+              description: >-
+                Falco matched "Baukit shell or package manager in app container" 1 time(s) in the last 5 minutes at
+                priority Critical or above.
+              runbook_url: RUNBOOK_BASE_URL/falco-critical-event
+      - eval_time: 15m
+        alertname: BaukitFalcoCriticalEvent
+        exp_alerts: []
+  - name: old critical matches and new warning matches do not fire BaukitFalcoCriticalEvent
+    interval: 1m
+    input_series:
+      - series: 'falcosecurity_falco_rules_matches_total{namespace="falco",pod="falco-abcde",priority="2",rule_name="Baukit exec into protected platform namespace",source="syscall"}'
+        values: '3x20'
+      - series: 'falcosecurity_falco_rules_matches_total{namespace="falco",pod="falco-abcde",priority="4",rule_name="Baukit terminal shell in platform namespace",source="syscall"}'
+        values: '_x5 1+1x15'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BaukitFalcoCriticalEvent
+        exp_alerts: []
+
+  - name: a busy warning rule fires BaukitFalcoWarningEventsHigh
+    interval: 1m
+    input_series:
+      - series: 'falcosecurity_falco_rules_matches_total{namespace="falco",pod="falco-abcde",priority="4",rule_name="Baukit unexpected process in api or worker",source="syscall"}'
+        values: '0+2x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: BaukitFalcoWarningEventsHigh
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: falco
+              rule_name: Baukit unexpected process in api or worker
+            exp_annotations:
+              summary: 'Falco rule "Baukit unexpected process in api or worker" fires often at Warning or Error'
+              description: >-
+                Falco matched "Baukit unexpected process in api or worker" 30 times in 15 minutes at priority
+                Warning or Error, for 15 minutes.
+              runbook_url: RUNBOOK_BASE_URL/falco-warning-events-high
+  - name: a slow warning rule and a busy notice rule stay quiet
+    interval: 1m
+    input_series:
+      - series: 'falcosecurity_falco_rules_matches_total{namespace="falco",pod="falco-abcde",priority="4",rule_name="Baukit unexpected process in api or worker",source="syscall"}'
+        values: '0+0.5x40'
+      - series: 'falcosecurity_falco_rules_matches_total{namespace="falco",pod="falco-abcde",priority="5",rule_name="Terminal shell in container",source="syscall"}'
+        values: '0+5x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: BaukitFalcoWarningEventsHigh
+        exp_alerts: []
+
+  - name: failing loki deliveries fire BaukitFalcosidekickOutputErrors
+    interval: 1m
+    input_series:
+      - series: 'falcosecurity_falcosidekick_outputs_total{namespace="falco",pod="falco-falcosidekick-abc",destination="loki",status="error"}'
+        values: '_x2 1+1x20'
+      - series: 'falcosecurity_falcosidekick_outputs_total{namespace="falco",pod="falco-falcosidekick-abc",destination="alertmanager",status="ok"}'
+        values: '0+1x22'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitFalcosidekickOutputErrors
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitFalcosidekickOutputErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: falco
+              destination: loki
+            exp_annotations:
+              summary: Falcosidekick fails to deliver events to loki
+              description: >-
+                Falcosidekick has failed to forward Falco events to loki for
+                10 minutes. Those events are missing from Loki or Alertmanager.
+              runbook_url: RUNBOOK_BASE_URL/falcosidekick-output-errors
+  - name: successful deliveries and old errors stay quiet
+    interval: 1m
+    input_series:
+      - series: 'falcosecurity_falcosidekick_outputs_total{namespace="falco",pod="falco-falcosidekick-abc",destination="loki",status="error"}'
+        values: '4x30'
+      - series: 'falcosecurity_falcosidekick_outputs_total{namespace="falco",pod="falco-falcosidekick-abc",destination="loki",status="ok"}'
+        values: '0+3x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitFalcosidekickOutputErrors
+        exp_alerts: []
