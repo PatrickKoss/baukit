@@ -365,6 +365,12 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_conventions.py"
   status=1
 fi
 
+printf '==> exclusive bases\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_exclusive_bases.py" \
+  "$platform_dir"/overlays/*/ "$platform_dir/e2e/overlay"; then
+  status=1
+fi
+
 printf '==> falco rules\n'
 if ! falco_output=$("$platform_dir/falco/validate-rules.sh" 2>&1); then
   printf '%s\n' "$falco_output" >&2
