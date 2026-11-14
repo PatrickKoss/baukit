@@ -8,10 +8,10 @@ network_policy_exempt_namespaces = ["kube-system"]
 active = [
   "dashboards-selected",
   "policy-exception-budget",
+  "psa-labels",
 ]
 
 [rules.pending]
-psa-labels = "N1"
 default-deny-network-policy = "N2"
 metrics-enabled = "O3"
 alert-metadata = "O6"
