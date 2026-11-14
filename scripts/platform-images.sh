@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+
+# shellcheck source=deploy/lib/tools.sh
+. "$repo_root/deploy/lib/tools.sh"
+baukit_use_tools "$repo_root" kustomize kubeconform helm flux trivy
+
+cache_dir=${BAUKIT_TRIVY_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/baukit/trivy}
+work_dir=$(mktemp -d)
+trap 'rm -rf -- "$work_dir"' EXIT
+
+"$repo_root/deploy/platform/validate.sh" --render-to "$work_dir/rendered" >/dev/null
+mkdir -p "$cache_dir"
+PYTHONDONTWRITEBYTECODE=1 python3 "$repo_root/deploy/platform/lint/platform_images.py" \
+  --rendered "$work_dir/rendered" --repo-root "$repo_root" --cache "$cache_dir" \
+  --work "$work_dir" --allowlist "$repo_root/deploy/platform/lint/image-findings.toml"
