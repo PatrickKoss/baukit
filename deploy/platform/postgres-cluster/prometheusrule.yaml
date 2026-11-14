@@ -20,4 +20,5 @@ spec:
             description: >-
               The monthly recovery proof is absent or older than 35 days. Check
               the postgres-restore-test CronJob and the CNPG backup object store.
+            runbook_url: https://github.com/PatrickKoss/baukit/blob/main/docs/runbooks/platform/postgres-restore-test-stale.md
 

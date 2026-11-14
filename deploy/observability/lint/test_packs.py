@@ -212,9 +212,12 @@ class PlatformChartTests(unittest.TestCase):
             self.assertIn("flux.json: |", result.stdout)
 
 
+APP_RUNBOOKS = "runbookBaseUrl=https://runbooks.test/app/"
+
+
 class AppChartTests(unittest.TestCase):
     def test_every_pack_file_renders(self) -> None:
-        result = helm_template(APP_PACK)
+        result = helm_template(APP_PACK, "--set", APP_RUNBOOKS)
         self.assertEqual(result.returncode, 0, result.stderr)
         for directory in ("alerts", "recording-rules", "dashboards"):
             for path in (APP_PACK / directory).glob("*.*"):
@@ -229,10 +232,26 @@ class AppChartTests(unittest.TestCase):
             (chart / "alerts/extra.rules.yml").write_text(
                 "groups:\n  - name: extra-group\n    rules: []\n", encoding="utf-8"
             )
-            result = helm_template(chart)
+            result = helm_template(chart, "--set", APP_RUNBOOKS)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("extra.rules.yml: |", result.stdout)
             self.assertIn("- name: extra-group", result.stdout)
+
+    def test_runbook_base_url_is_required(self) -> None:
+        result = helm_template(APP_PACK)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("runbookBaseUrl is required", result.stderr)
+
+    def test_runbook_urls_resolve_in_the_rule_and_the_config_map(self) -> None:
+        result = helm_template(APP_PACK, "--set", APP_RUNBOOKS)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        alerts = (APP_PACK / "alerts/baukit.rules.yml").read_text(encoding="utf-8")
+        tokens = alerts.count("RUNBOOK_BASE_URL/service-scrape-down")
+        self.assertEqual(tokens, 1)
+        self.assertEqual(
+            result.stdout.count("runbook_url: https://runbooks.test/app/service-scrape-down"), 2
+        )
+        self.assertNotIn("RUNBOOK_BASE_URL", result.stdout)
 
 
 if __name__ == "__main__":
