@@ -118,6 +118,8 @@ def apply_policies(
         summary = report.get("summary") or {}
         if code != 0 and not (summary.get("fail") or summary.get("error")):
             problems.append(f"{universe.stem}: kyverno apply exited {code}:\n{output.strip()}")
+    if not tally.counts and not problems:
+        problems.append(f"{rendered}: no rendered Flux object produced a policy result")
     return tally, problems
 
 

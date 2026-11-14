@@ -108,6 +108,15 @@ class ApplyTest(unittest.TestCase):
         _, problems = rcp.apply_policies(self.rendered, Path("policies"), kyverno, self.work)
         self.assertEqual(len(problems), 2)
 
+    def test_no_flux_objects_is_a_problem(self) -> None:
+        for universe in self.rendered.glob("*.yaml"):
+            universe.write_text("apiVersion: v1\nkind: Namespace\nmetadata:\n  name: demo\n")
+        kyverno = FakeKyverno(report(("helmrelease-timeout", "pass")))
+        _, problems = rcp.apply_policies(self.rendered, Path("policies"), kyverno, self.work)
+        self.assertEqual(kyverno.applied, [])
+        self.assertEqual(len(problems), 1)
+        self.assertIn("no rendered Flux object", problems[0])
+
     def test_table_lists_policies_without_results(self) -> None:
         tally = rcp.Tally()
         tally.add(
