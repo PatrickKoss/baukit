@@ -405,7 +405,7 @@ behave. Later phases add test directories here.
   - flagger `podMonitor.enabled`, hcloud CCM/CSI monitors (Hetzner overlays only) and a redis_exporter
     sidecar in both redis bases.
   - Capture the real metric names from a running e2e cluster into `metrics.txt` instead of guessing them.
-- [ ] **O4 Alerts, each with a promtool test that fires and one that stays quiet, and a runbook.**
+- [~] **O4 Alerts, each with a promtool test that fires and one that stays quiet, and a runbook.**
   Names follow `Baukit<Component><Condition>`. Every alert carries a `component` label for routing.
   - Flux: reconcile not Ready for 15m (`gotk_resource_info{ready="False"}`), suspended for 24h,
     source fetch failing.
@@ -765,3 +765,14 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   start, a real token read still fires). Idle footprint about 2 min after start: falco 255m/253Mi,
   sidekick 1m/14Mi. Known limits: "unexpected process" means "not PID 1"; no Flux noise macro yet
   (FA4 soak decides); network policies sit inline until N2's components land.
+- 2026-11-14: O4 merged except the kube-prometheus-stack `defaultRules` tuning (waits until D, N1 and N2
+  stop editing that file). 25 alerts in one file per component (flux 3, cert-manager 4, cnpg 6, traefik 2,
+  kyverno 4, observability 4, kured 2), each with a firing and a quiet promtool case and a runbook; metric
+  names traced to source at the pinned tags (sources in the O4 report), Traefik and Alloy names scraped
+  live. Deviations with evidence: Traefik v3.7.13 has no reload-failure metric (live scrape), so that
+  alert needs a LogQL rule and the pack's `loki-rules/` has no template yet (open, goes with O5); kured
+  1.23.0 exports only `kured_reboot_required`, so "blocked" means reboot required and the node cordoned
+  for 1h. Kyverno alerts use `kyverno_validating_policy_results_total` (CEL policies), and the enforced-
+  violation alert joins Policy Reporter's `policy_report_result` to policies seen in `Deny` mode. The Flux
+  alerts expect O3's kube-state-metrics config to emit `gotk_resource_info` with the flux2-monitoring-
+  example labels (`exported_namespace`, `name`, `ready`, `suspended`, `customresource_kind`).
