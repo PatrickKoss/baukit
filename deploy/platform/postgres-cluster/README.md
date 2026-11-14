@@ -7,9 +7,11 @@ daily base-backup schedule, and a suspended monthly restore proof. It is a
 template: consumers should patch names and instantiate it once per desired
 cluster rather than treating it as a platform singleton.
 
-The primary and restore-test clusters pin PostgreSQL 18.6 with
-`ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie`, matching the operator
-default image flavor. CNPG manages its own data directory and PVC mounts; the
+The primary and restore-test clusters take PostgreSQL 18 from the `postgresql`
+`ImageCatalog` in `image-catalog.yaml`, which pins
+`ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie` by its multi-arch index
+digest, matching the operator default image flavor. A patch release changes
+only the catalog. CNPG manages its own data directory and PVC mounts; the
 Docker Official Image mount convention does not apply here. Recreate local
 clusters and PVCs when switching major versions.
 

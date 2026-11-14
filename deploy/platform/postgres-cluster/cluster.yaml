@@ -9,7 +9,11 @@ spec:
   # A single instance cannot move during a drain. Its default primary PDB would
   # block every node drain, so it is off until the overlay runs 2+ instances.
   enablePDB: false
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+  imageCatalogRef:
+    apiGroup: postgresql.cnpg.io
+    kind: ImageCatalog
+    name: postgresql
+    major: 18
   enableSuperuserAccess: false
   bootstrap:
     initdb:

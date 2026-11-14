@@ -27,6 +27,7 @@ spec:
   values:
     replicas: 1
     tempo:
+      tag: "2.10.10@sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38"
       reportingEnabled: false
       memBallastSizeMbs: 128
       resources:

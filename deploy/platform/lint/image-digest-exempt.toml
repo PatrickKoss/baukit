@@ -1,0 +1,6 @@
+# Rendered container images that cannot carry an @sha256 digest, for the V5 digest policy.
+# Every other rendered image is pinned by its multi-arch index digest.
+
+[images."curlimages/curl"]
+source = "deploy/platform/falco/helm-release.yaml (falcosidekick 0.14.1 subchart, templates/tests/test-connection.yaml)"
+reason = "the chart hardcodes the untagged image in a helm test-success hook with no values key; the HelmRelease sets no spec.test, so Flux never creates the pod"

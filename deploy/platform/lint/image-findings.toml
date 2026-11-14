@@ -2,47 +2,9 @@
 # scripts/platform-images.sh fails on any finding missing here, on any listed ID trivy no longer
 # reports, and on any entry past its expiry, so this list only shrinks.
 
-[images."amazon/aws-cli:2.37.8@sha256:420ab345e847291b541b45d989535f55bcff957c27fa1100fae4aa233e86398c"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 2.40.3 fixes all 32"
-ids = [
-  "CVE-2026-103111",
-  "CVE-2026-103242",
-  "CVE-2026-119371",
-  "CVE-2026-119372",
-  "CVE-2026-119373",
-  "CVE-2026-119375",
-  "CVE-2026-119376",
-  "CVE-2026-119378",
-  "CVE-2026-19553",
-  "CVE-2026-35191",
-  "CVE-2026-42772",
-  "CVE-2026-54872",
-  "CVE-2026-54873",
-  "CVE-2026-72897",
-  "CVE-2026-75804",
-  "CVE-2026-75805",
-  "CVE-2026-75806",
-  "CVE-2026-78659",
-  "CVE-2026-78667",
-  "CVE-2026-84782",
-  "CVE-2026-84784",
-  "CVE-2026-84837",
-  "CVE-2026-86145",
-  "CVE-2026-86805",
-  "CVE-2026-89156",
-  "CVE-2026-89160",
-  "CVE-2026-92392",
-  "CVE-2026-94440",
-  "CVE-2026-95519",
-  "CVE-2026-95520",
-  "CVE-2026-95521",
-  "CVE-2026-97689",
-]
-
 [images."curlimages/curl"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release n/a still ships these; recheck in SC2"
+expires = 2026-12-12
+reason = "falcosidekick chart 0.14.1 hardcodes this untagged image in its helm test pod with no values key, so it cannot be pinned (see image-digest-exempt.toml); Flux never runs the test, recheck with SC1/VR chart work"
 ids = [
   "CVE-2026-107364",
   "CVE-2026-112315",
@@ -63,169 +25,52 @@ ids = [
 ]
 
 [images."docker.io/falcosecurity/falcosidekick:2.35.1@sha256:a9bb60d2c7742febd912315ca1155839abc0199bf322c58d3adbb8b0849fadb9"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release 2.35.1 still ships these; recheck in SC2"
+expires = 2026-12-12
+reason = "2.35.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
   "CVE-2026-78669",
 ]
 
-[images."docker.io/grafana/alloy:v1.20.0"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v1.22.0 fixes all 8"
+[images."docker.io/grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf"]
+expires = 2026-12-12
+reason = "13.3.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-109518",
   "CVE-2026-111943",
-  "CVE-2026-116587",
-  "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-84782",
-  "CVE-2026-97031",
-]
-
-[images."docker.io/grafana/grafana:13.2.0"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 13.3.1 fixes 43 of 50; the rest stays in 13.3.1"
-ids = [
-  "CVE-2026-100349",
-  "CVE-2026-100351",
-  "CVE-2026-100352",
-  "CVE-2026-100353",
-  "CVE-2026-100354",
-  "CVE-2026-107891",
-  "CVE-2026-111497",
-  "CVE-2026-111943",
-  "CVE-2026-116587",
-  "CVE-2026-14456",
   "CVE-2026-21728",
-  "CVE-2026-25679",
-  "CVE-2026-25681",
-  "CVE-2026-27136",
-  "CVE-2026-27145",
   "CVE-2026-28377",
-  "CVE-2026-29181",
-  "CVE-2026-32280",
-  "CVE-2026-32281",
-  "CVE-2026-32283",
-  "CVE-2026-33811",
-  "CVE-2026-33814",
-  "CVE-2026-33818",
-  "CVE-2026-39820",
-  "CVE-2026-39821",
-  "CVE-2026-39822",
-  "CVE-2026-39836",
-  "CVE-2026-39883",
-  "CVE-2026-42499",
-  "CVE-2026-42504",
-  "CVE-2026-43871",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
-  "CVE-2026-56852",
-  "CVE-2026-56853",
-  "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
-  "CVE-2026-63209",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
-  "CVE-2026-85091",
-  "CVE-2026-92392",
   "CVE-2026-97031",
-  "GHSA-hrxh-6v49-42gf",
 ]
 
-[images."docker.io/grafana/loki:3.7.8"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 3.7.10 fixes all 6"
+[images."docker.io/grafana/tempo:2.10.10@sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38"]
+expires = 2026-12-12
+reason = "2.10.10 is the newest 2.10 release; Tempo 3 needs the tempo chart 3.x major, a separate bump after SC2"
 ids = [
-  "CVE-2026-111943",
   "CVE-2026-116587",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-97031",
 ]
 
-[images."docker.io/grafana/tempo:2.10.8"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 2.10.10 fixes 17 of 19; the rest stays in 2.10.10"
+[images."docker.io/hetznercloud/hcloud-cloud-controller-manager:v1.39.3@sha256:9d739ba54a13f1de79d6dbb93cbda5a2ed4a5bdb9bf2936e2687e24fa9ccfaf7"]
+expires = 2026-12-12
+reason = "v1.39.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-111943",
-  "CVE-2026-116587",
-  "CVE-2026-33818",
-  "CVE-2026-39821",
-  "CVE-2026-43871",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
-  "CVE-2026-56853",
-  "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
-  "CVE-2026-97031",
 ]
 
-[images."docker.io/hetznercloud/hcloud-cloud-controller-manager:v1.38.0"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v1.39.3 fixes 8 of 9; the rest stays in v1.39.3"
+[images."docker.io/hetznercloud/hcloud-csi-driver:v2.24.2@sha256:c231060c9d24d485c8ac25eeb3dd445994ce1abb7417c5a49b88301931a9fe29"]
+expires = 2026-12-12
+reason = "v2.24.2 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-107891",
-  "CVE-2026-111943",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
-  "CVE-2026-85091",
-  "CVE-2026-97031",
 ]
 
-[images."docker.io/hetznercloud/hcloud-csi-driver:v2.23.0"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v2.24.2 fixes 23 of 24; the rest stays in v2.24.2"
-ids = [
-  "CVE-2026-107891",
-  "CVE-2026-111943",
-  "CVE-2026-113351",
-  "CVE-2026-115506",
-  "CVE-2026-117610",
-  "CVE-2026-118370",
-  "CVE-2026-14456",
-  "CVE-2026-19445",
-  "CVE-2026-19553",
-  "CVE-2026-53612",
-  "CVE-2026-53613",
-  "CVE-2026-53614",
-  "CVE-2026-76642",
-  "CVE-2026-77214",
-  "CVE-2026-78408",
-  "CVE-2026-78409",
-  "CVE-2026-78410",
-  "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-82049",
-  "CVE-2026-85091",
-  "CVE-2026-93990",
-  "CVE-2026-97031",
-]
-
-[images."docker.io/nginxinc/nginx-unprivileged:1.31-alpine"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release 1.31-alpine still ships these; recheck in SC2"
+[images."docker.io/nginxinc/nginx-unprivileged@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e"]
+expires = 2026-12-12
+reason = "1.31.7-alpine is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-107891",
   "CVE-2026-111497",
@@ -240,23 +85,9 @@ ids = [
   "CVE-2026-9947",
 ]
 
-[images."docker.io/traefik:v3.7.13"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v3.7.19 fixes all 8"
-ids = [
-  "CVE-2026-107891",
-  "CVE-2026-111943",
-  "CVE-2026-116587",
-  "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-85091",
-  "CVE-2026-97031",
-]
-
-[images."ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release 1.30.1 still ships these; recheck in SC2"
+[images."ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07"]
+expires = 2026-12-12
+reason = "1.30.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
@@ -265,23 +96,20 @@ ids = [
   "CVE-2026-97031",
 ]
 
-[images."ghcr.io/cloudnative-pg/plugin-barman-cloud:v0.15.1"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v0.16.0 fixes 3 of 8; the rest stays in v0.16.0"
+[images."ghcr.io/cloudnative-pg/plugin-barman-cloud:v0.16.0@sha256:6404a416718bd7aad943c67a25a7bb20d0558b43edfeab0bf167f013ca435882"]
+expires = 2026-12-12
+reason = "v0.16.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-103111",
   "CVE-2026-111943",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
-  "CVE-2026-86145",
-  "CVE-2026-89161",
   "CVE-2026-97031",
 ]
 
-[images."ghcr.io/fluxcd/flagger:1.45.0"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release 1.45.0 still ships these; recheck in SC2"
+[images."ghcr.io/fluxcd/flagger:1.45.0@sha256:15b372d35012f9ae450f9030bc82217369c0aee082ed5a5225830010cf972b2b"]
+expires = 2026-12-12
+reason = "1.45.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-107891",
   "CVE-2026-111943",
@@ -299,30 +127,23 @@ ids = [
   "CVE-2026-97031",
 ]
 
-[images."ghcr.io/jkroepke/access-log-exporter:0.4.21"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 0.5.2 fixes 3 of 4; the rest stays in 0.5.2"
+[images."ghcr.io/jkroepke/access-log-exporter@sha256:a1448056c0081f067ecb48096a81cea9abc418b1405e49eac8a29d2b31302576"]
+expires = 2026-12-12
+reason = "0.5.2 is the newest 0.x release the loki 18 chart runs; 1.x is a major jump, a separate bump after SC2"
 ids = [
   "CVE-2026-111943",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-97031",
 ]
 
-[images."ghcr.io/jkroepke/kube-webhook-certgen:1.8.8"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 1.11.1 fixes 4 of 5; the rest stays in 1.11.1"
+[images."ghcr.io/jkroepke/kube-webhook-certgen:1.11.1@sha256:8009b04f9873f7279b5adee37fdd03b6a9aa7b6751d4f69fde2683010e41cd1f"]
+expires = 2026-12-12
+reason = "1.11.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-111943",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-97031",
 ]
 
-[images."ghcr.io/kubereboot/kured:1.23.0"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release 1.23.0 still ships these; recheck in SC2"
+[images."ghcr.io/kubereboot/kured:1.23.0@sha256:8dfd3c2e889337595731d801afc5c031b545876a29427897b3f711d2983f30c4"]
+expires = 2026-12-12
+reason = "1.23.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-107891",
   "CVE-2026-111943",
@@ -345,23 +166,23 @@ ids = [
   "CVE-2026-97031",
 ]
 
-[images."ghcr.io/kyverno/policy-reporter:3.11.2"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release 3.11.2 still ships these; recheck in SC2"
+[images."ghcr.io/kyverno/policy-reporter:3.11.2@sha256:2b33409d34be3195f16d9ed2c89f8b58001aeec986b254ba6bb45323d6d1e884"]
+expires = 2026-12-12
+reason = "3.11.2 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-78661",
 ]
 
-[images."ghcr.io/kyverno/readiness-checker:v1.20.0"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release v1.20.0 still ships these; recheck in SC2"
+[images."ghcr.io/kyverno/readiness-checker:v1.20.0@sha256:6079a30d75fe7ba868a5a7e5dfa71ee92a3a8bae97adcea1c8cfb1009280ee6c"]
+expires = 2026-12-12
+reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."mirror.gcr.io/clickhouse/clickhouse-server:22.8.21.38-alpine@sha256:d3c96b46a803e35f202b0cacb75e1966be1f5f9ea10a56d051bda7db3bf3cdea"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 22.12.6.22-alpine fixes 2 of 65; the rest stays in 22.12.6.22-alpine"
+expires = 2026-12-12
+reason = "22.8 is the ClickHouse line PostHog 1.43 schema runs on; 22.12 fixes 2 of 65 but is outside PostHog's supported versions, revisit when PostHog leaves the platform (SC2 follow-up)"
 ids = [
   "CVE-2022-27664",
   "CVE-2022-28131",
@@ -430,36 +251,41 @@ ids = [
   "CVE-2026-97031",
 ]
 
-[images."postgres:14.1-alpine@sha256:578ca5c8452c08a4e0f5e65b55dce5e1812fe63c8fee40ea837641031598e51e"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 14.25-alpine fixes all 21"
+[images."postgres:14.25-alpine@sha256:14078c4aa0db8e2e8492866138cafd796fc39afd5ecb5b1c6f26a912b07529f5"]
+expires = 2026-12-12
+reason = "14.25 is the newest PostgreSQL 14 release, the major PostHog 1.43 supports; the base OS packages wait for an upstream rebuild (SC4 Renovate)"
 ids = [
-  "CVE-2018-25032",
-  "CVE-2021-30560",
-  "CVE-2021-3520",
-  "CVE-2022-0778",
-  "CVE-2022-1271",
-  "CVE-2022-1304",
-  "CVE-2022-2309",
-  "CVE-2022-23308",
-  "CVE-2022-24407",
-  "CVE-2022-28391",
-  "CVE-2022-29155",
-  "CVE-2022-29458",
-  "CVE-2022-37434",
-  "CVE-2022-40303",
-  "CVE-2022-40304",
-  "CVE-2022-42898",
-  "CVE-2022-4450",
-  "CVE-2023-0215",
-  "CVE-2023-0286",
-  "CVE-2023-0464",
-  "CVE-2023-29491",
+  "CVE-2025-61726",
+  "CVE-2025-61729",
+  "CVE-2025-68121",
+  "CVE-2026-111943",
+  "CVE-2026-25679",
+  "CVE-2026-27145",
+  "CVE-2026-32280",
+  "CVE-2026-32281",
+  "CVE-2026-32283",
+  "CVE-2026-33811",
+  "CVE-2026-33814",
+  "CVE-2026-33818",
+  "CVE-2026-39820",
+  "CVE-2026-39821",
+  "CVE-2026-39822",
+  "CVE-2026-39836",
+  "CVE-2026-42499",
+  "CVE-2026-42504",
+  "CVE-2026-56853",
+  "CVE-2026-56858",
+  "CVE-2026-56859",
+  "CVE-2026-56860",
+  "CVE-2026-56862",
+  "CVE-2026-78667",
+  "CVE-2026-78669",
+  "CVE-2026-97031",
 ]
 
-[images."posthog/posthog@sha256:74441a9fa04a5af78bf76a5af909f88592033c03ce6f1e14f343cd53d0266827"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release n/a still ships these; recheck in SC2"
+[images."posthog/posthog:release-1.43.0@sha256:74441a9fa04a5af78bf76a5af909f88592033c03ce6f1e14f343cd53d0266827"]
+expires = 2026-12-12
+reason = "release-1.43.0 is the final self-hosted PostHog release (chart 30.46.0, Kubernetes support ended 2023); no fixed build exists, revisit when PostHog leaves the platform (SC2 follow-up)"
 ids = [
   "CVE-2015-20107",
   "CVE-2020-10735",
@@ -2231,114 +2057,57 @@ ids = [
   "GHSA-vjh7-7g9h-fjfh",
 ]
 
-[images."prom/pushgateway:v1.11.3"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v1.11.5 fixes 17 of 19; the rest stays in v1.11.5"
+[images."prom/pushgateway:v1.11.5@sha256:bf6442633f6129d3e3f9861fa14c77bc012d74b33a1dd213d7b458b89ce3cc5d"]
+expires = 2026-12-12
+reason = "v1.11.5 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-111943",
-  "CVE-2026-27145",
-  "CVE-2026-33818",
-  "CVE-2026-39821",
-  "CVE-2026-39822",
-  "CVE-2026-42504",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
-  "CVE-2026-56852",
-  "CVE-2026-56853",
-  "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
   "CVE-2026-78661",
-  "CVE-2026-78667",
   "CVE-2026-78669",
-  "CVE-2026-97031",
 ]
 
-[images."quay.io/jetstack/cert-manager-cainjector:v1.21.2"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v1.21.3 fixes 4 of 5; the rest stays in v1.21.3"
+[images."quay.io/jetstack/cert-manager-cainjector:v1.21.3@sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f"]
+expires = 2026-12-12
+reason = "v1.21.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-111943",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-97031",
 ]
 
-[images."quay.io/jetstack/cert-manager-controller:v1.21.2"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v1.21.3 fixes 4 of 6; the rest stays in v1.21.3"
+[images."quay.io/jetstack/cert-manager-controller:v1.21.3@sha256:9f4f96a33c7774cef24466fcd85031997531a03a8d117f151126baa8d1290dcc"]
+expires = 2026-12-12
+reason = "v1.21.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-111943",
   "CVE-2026-116587",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-97031",
 ]
 
-[images."quay.io/jetstack/cert-manager-startupapicheck:v1.21.2"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v1.21.3 fixes 4 of 5; the rest stays in v1.21.3"
+[images."quay.io/jetstack/cert-manager-startupapicheck:v1.21.3@sha256:1c519d4afca1413d1e4ccd78bdc756184418ab55a34569a3b3de39d32f9974e1"]
+expires = 2026-12-12
+reason = "v1.21.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-111943",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-97031",
 ]
 
-[images."quay.io/jetstack/cert-manager-webhook:v1.21.2"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v1.21.3 fixes 4 of 5; the rest stays in v1.21.3"
+[images."quay.io/jetstack/cert-manager-webhook:v1.21.3@sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458"]
+expires = 2026-12-12
+reason = "v1.21.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-111943",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-97031",
 ]
 
-[images."quay.io/kiwigrid/k8s-sidecar:2.10.1"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 2.14.3 fixes 16 of 18; the rest stays in 2.14.3"
+[images."quay.io/kiwigrid/k8s-sidecar:2.14.3@sha256:52d311dcedd587421a236c4d6c621f05614c40a51386e955e0699dca97ec0880"]
+expires = 2026-12-12
+reason = "2.14.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-107891",
-  "CVE-2026-118669",
-  "CVE-2026-119194",
-  "CVE-2026-119195",
-  "CVE-2026-119196",
-  "CVE-2026-119197",
-  "CVE-2026-14456",
-  "CVE-2026-49272",
-  "CVE-2026-53612",
-  "CVE-2026-53613",
-  "CVE-2026-53614",
-  "CVE-2026-76642",
-  "CVE-2026-78408",
-  "CVE-2026-78410",
-  "CVE-2026-85091",
+  "CVE-2025-47273",
+  "CVE-2026-114613",
   "CVE-2026-97687",
   "CVE-2026-97689",
-  "GHSA-6q48-6c7w-9gw2",
+  "GHSA-6v7p-g79w-8964",
 ]
 
-[images."quay.io/prometheus-operator/prometheus-config-reloader:v0.94.0@sha256:142a1f11df8dd165f00375b0b1826aecb9c9adeb05c39855893138d7c7575ff7"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v0.95.2 fixes all 5"
-ids = [
-  "CVE-2026-111943",
-  "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-97031",
-]
-
-[images."quay.io/prometheus-operator/prometheus-operator:v0.93.1"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v0.95.2 fixes all 17"
+[images."quay.io/prometheus-operator/prometheus-operator:v0.93.1@sha256:e52bb28fd41c98dd407c7a8cba8bdcfe7eabd7447e250afaf1fe7bb816dedbff"]
+expires = 2026-12-12
+reason = "v0.95.2 fixes these but ships only with kube-prometheus-stack 93.x; the pinned 88.6.5 and every 88.x to 90.x release carry operator v0.93.1, and a chart major jump is out of scope for SC2"
 ids = [
   "CVE-2026-111943",
   "CVE-2026-33818",
@@ -2359,26 +2128,16 @@ ids = [
   "CVE-2026-97031",
 ]
 
-[images."quay.io/prometheus/alertmanager:v0.34.0"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v0.35.0 fixes 10 of 11; the rest stays in v0.35.0"
+[images."quay.io/prometheus/alertmanager:v0.35.0@sha256:5f6e66c01bd610aef6dd671642a52eee775fd3a89bd8788ebada33efaf373d10"]
+expires = 2026-12-12
+reason = "v0.35.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-111943",
-  "CVE-2026-56851",
-  "CVE-2026-56854",
-  "CVE-2026-56864",
-  "CVE-2026-56865",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
-  "CVE-2026-97031",
 ]
 
-[images."quay.io/prometheus/node-exporter:v1.12.1-distroless"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release v1.12.1-distroless still ships these; recheck in SC2"
+[images."quay.io/prometheus/node-exporter:v1.12.1-distroless@sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106"]
+expires = 2026-12-12
+reason = "v1.12.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-111943",
   "CVE-2026-33818",
@@ -2397,198 +2156,112 @@ ids = [
   "CVE-2026-97031",
 ]
 
-[images."quay.io/prometheus/prometheus:v3.14.0-distroless"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v3.16.0-distroless fixes 8 of 9; the rest stays in v3.16.0-distroless"
+[images."quay.io/prometheus/prometheus:v3.16.0-distroless@sha256:9764044e09eb2c9e1abdb12d0f0188d4efb7384b0262d3c080f0fc59045c89ba"]
+expires = 2026-12-12
+reason = "v3.16.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-111943",
-  "CVE-2026-56851",
-  "CVE-2026-56854",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
-  "CVE-2026-97031",
 ]
 
-[images."rancher/k3s:v1.34.8-k3s1"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v1.37.2-k3s1 fixes 47 of 49; the rest stays in v1.37.2-k3s1"
+[images."rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f"]
+expires = 2026-12-12
+reason = "v1.34.13 is the newest k3s that runs on the cgroup v1 WSL2 host (k3s 1.36 rejects cgroup v1, see deploy/platform/README.md); Renovate (SC4) moves the pin"
 ids = [
-  "CVE-2025-47913",
-  "CVE-2026-111943",
-  "CVE-2026-116587",
-  "CVE-2026-25681",
-  "CVE-2026-27136",
-  "CVE-2026-27145",
   "CVE-2026-33186",
-  "CVE-2026-33811",
-  "CVE-2026-33814",
-  "CVE-2026-33818",
-  "CVE-2026-39820",
-  "CVE-2026-39821",
-  "CVE-2026-39822",
   "CVE-2026-39828",
   "CVE-2026-39829",
   "CVE-2026-39830",
   "CVE-2026-39831",
   "CVE-2026-39832",
   "CVE-2026-39835",
-  "CVE-2026-39836",
-  "CVE-2026-42499",
-  "CVE-2026-42504",
   "CVE-2026-42508",
   "CVE-2026-46595",
   "CVE-2026-46597",
-  "CVE-2026-46600",
-  "CVE-2026-46680",
-  "CVE-2026-53488",
-  "CVE-2026-53489",
-  "CVE-2026-53492",
-  "CVE-2026-56851",
-  "CVE-2026-56852",
-  "CVE-2026-56853",
   "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
-  "CVE-2026-56864",
-  "CVE-2026-56865",
-  "CVE-2026-63209",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
   "CVE-2026-84304",
   "CVE-2026-84445",
-  "CVE-2026-95837",
-  "CVE-2026-97031",
   "GHSA-hrxh-6v49-42gf",
 ]
 
-[images."rancher/k3s:v1.37.1-k3s1"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v1.37.2-k3s1 fixes 16 of 18; the rest stays in v1.37.2-k3s1"
+[images."rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332"]
+expires = 2026-12-12
+reason = "v1.37.2-k3s1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-111943",
-  "CVE-2026-116587",
-  "CVE-2026-25681",
-  "CVE-2026-27136",
-  "CVE-2026-33814",
-  "CVE-2026-39821",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
   "CVE-2026-56854",
-  "CVE-2026-56864",
-  "CVE-2026-56865",
   "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
-  "CVE-2026-95837",
-  "CVE-2026-97031",
 ]
 
 [images."redis:6.2.24-alpine@sha256:b362b5dff9d14d961dc3352db4776aba6a8c53ca2661d7c74ad2c121f82cdaea"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 8.10.3-alpine fixes all 3"
+expires = 2026-12-12
+reason = "6.2.24 is the newest Redis 6.2 release, the line PostHog 1.43 documents; Redis 8 is a major jump for PostHog, revisit when PostHog leaves the platform (SC2 follow-up)"
 ids = [
   "CVE-2026-107891",
   "CVE-2026-84782",
   "CVE-2026-85091",
 ]
 
-[images."redis:8.10.2-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 8.10.3-alpine fixes all 2"
+[images."redpandadata/redpanda:v25.3.18@sha256:f932b4ebedf5711d4c19d3f38c428ee10208a162f232a313aa741e0271212f8a"]
+expires = 2026-12-12
+reason = "v25.3.18 is the newest 25.3 release; 26.x is a major jump for the PostHog Kafka API, a separate bump after SC2"
 ids = [
-  "CVE-2026-107891",
-  "CVE-2026-85091",
-]
-
-[images."redpandadata/redpanda:v25.3.17@sha256:c96a71811ec85eee436b7471e4d2777b70ceb4d6a0bc5447094854b3150511c1"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v25.3.18 fixes 20 of 24; the rest stays in v25.3.18"
-ids = [
-  "CVE-2026-103111",
   "CVE-2026-109518",
   "CVE-2026-111497",
-  "CVE-2026-11822",
-  "CVE-2026-11824",
-  "CVE-2026-13221",
-  "CVE-2026-14456",
-  "CVE-2026-41992",
-  "CVE-2026-42496",
-  "CVE-2026-42497",
-  "CVE-2026-48962",
-  "CVE-2026-57432",
-  "CVE-2026-57433",
-  "CVE-2026-58050",
   "CVE-2026-76844",
-  "CVE-2026-8286",
-  "CVE-2026-8376",
-  "CVE-2026-84782",
   "CVE-2026-85091",
-  "CVE-2026-86145",
-  "CVE-2026-89157",
-  "CVE-2026-89161",
-  "CVE-2026-8927",
-  "CVE-2026-92392",
 ]
 
-[images."reg.kyverno.io/kyverno/background-controller:v1.20.0"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release v1.20.0 still ships these; recheck in SC2"
+[images."reg.kyverno.io/kyverno/background-controller:v1.20.0@sha256:c72df38320a48fc9de10f9d23d087a117853bb08207b7f60f6d1e8457fb3ddb7"]
+expires = 2026-12-12
+reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
-[images."reg.kyverno.io/kyverno/cleanup-controller:v1.20.0"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release v1.20.0 still ships these; recheck in SC2"
+[images."reg.kyverno.io/kyverno/cleanup-controller:v1.20.0@sha256:0f9ce0c203561c52499e871a987ff987371f57385fcafe7af1a01dfd6db1feee"]
+expires = 2026-12-12
+reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
-[images."reg.kyverno.io/kyverno/kyverno-cli:v1.20.0"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release v1.20.0 still ships these; recheck in SC2"
+[images."reg.kyverno.io/kyverno/kyverno-cli:v1.20.0@sha256:bd2b8b7c9d550ecf04e0bacaf351adce2f82ce67fd3f291075edcee7f8ab4ab4"]
+expires = 2026-12-12
+reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
-[images."reg.kyverno.io/kyverno/kyverno:v1.20.0"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release v1.20.0 still ships these; recheck in SC2"
+[images."reg.kyverno.io/kyverno/kyverno:v1.20.0@sha256:9de49c5416ea536f00a205527197ac048abdf32c5a75d633cd9afff8928f359d"]
+expires = 2026-12-12
+reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
-[images."reg.kyverno.io/kyverno/kyvernopre:v1.20.0"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release v1.20.0 still ships these; recheck in SC2"
+[images."reg.kyverno.io/kyverno/kyvernopre:v1.20.0@sha256:339067e083430e0c97007541bef9cfdbac89bee13f7228772c77ae8aead14b8b"]
+expires = 2026-12-12
+reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
-[images."reg.kyverno.io/kyverno/reports-controller:v1.20.0"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release v1.20.0 still ships these; recheck in SC2"
+[images."reg.kyverno.io/kyverno/reports-controller:v1.20.0@sha256:f54e3cc106fadb1a615d0ec11c42f741f51d3580a5f70dfbe7bd7ec58864ef03"]
+expires = 2026-12-12
+reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
-[images."registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0"]
-expires = 2026-11-28
-reason = "upstream not rebuilt: the newest release v2.20.0 still ships these; recheck in SC2"
+[images."registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b"]
+expires = 2026-12-12
+reason = "v2.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-111943",
   "CVE-2026-56851",
@@ -2602,281 +2275,73 @@ ids = [
   "GHSA-hrxh-6v49-42gf",
 ]
 
-[images."registry.k8s.io/sig-storage/csi-attacher:v4.11.0"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v4.13.0 fixes 41 of 46; the rest stays in v4.13.0"
+[images."registry.k8s.io/sig-storage/csi-attacher:v4.13.0@sha256:d1a26170efed45491074ca4545c81844eee2b9043fb885ac01fb4aed6f8b72d2"]
+expires = 2026-12-12
+reason = "newest release of this CSI sidecar and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-111943",
-  "CVE-2026-24051",
-  "CVE-2026-25679",
-  "CVE-2026-25681",
-  "CVE-2026-27136",
-  "CVE-2026-27145",
-  "CVE-2026-29181",
-  "CVE-2026-32280",
-  "CVE-2026-32281",
-  "CVE-2026-32283",
-  "CVE-2026-33186",
-  "CVE-2026-33811",
-  "CVE-2026-33814",
-  "CVE-2026-33818",
-  "CVE-2026-39820",
-  "CVE-2026-39821",
-  "CVE-2026-39822",
-  "CVE-2026-39828",
-  "CVE-2026-39829",
-  "CVE-2026-39830",
-  "CVE-2026-39831",
-  "CVE-2026-39832",
-  "CVE-2026-39835",
-  "CVE-2026-39836",
-  "CVE-2026-39883",
-  "CVE-2026-42499",
-  "CVE-2026-42504",
-  "CVE-2026-42508",
-  "CVE-2026-46595",
-  "CVE-2026-46597",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
-  "CVE-2026-56852",
-  "CVE-2026-56853",
-  "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
   "CVE-2026-97031",
-  "GHSA-hrxh-6v49-42gf",
 ]
 
-[images."registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.16.0"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v2.18.0 fixes 29 of 34; the rest stays in v2.18.0"
+[images."registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.18.0@sha256:b7fefd08651f00ac4df1a196ed4c621c2451fbb899297fe9fad9e36c667af0c0"]
+expires = 2026-12-12
+reason = "newest release of this CSI sidecar and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-111943",
-  "CVE-2026-25679",
-  "CVE-2026-25681",
-  "CVE-2026-27136",
-  "CVE-2026-27145",
-  "CVE-2026-29181",
-  "CVE-2026-32280",
-  "CVE-2026-32281",
-  "CVE-2026-32283",
-  "CVE-2026-33186",
-  "CVE-2026-33811",
-  "CVE-2026-33814",
-  "CVE-2026-33818",
-  "CVE-2026-39820",
-  "CVE-2026-39821",
-  "CVE-2026-39822",
-  "CVE-2026-39836",
-  "CVE-2026-42499",
-  "CVE-2026-42504",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
-  "CVE-2026-56852",
-  "CVE-2026-56853",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
   "CVE-2026-97031",
-  "GHSA-hrxh-6v49-42gf",
 ]
 
-[images."registry.k8s.io/sig-storage/csi-provisioner:v6.2.0"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v6.4.0 fixes 40 of 45; the rest stays in v6.4.0"
+[images."registry.k8s.io/sig-storage/csi-provisioner:v6.4.0@sha256:6ebe60fd8ed67a7f8a90d34402e9e706b274e53612d6fa5fbb8285728db622e2"]
+expires = 2026-12-12
+reason = "newest release of this CSI sidecar and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-111943",
-  "CVE-2026-25679",
-  "CVE-2026-25681",
-  "CVE-2026-27136",
-  "CVE-2026-27145",
-  "CVE-2026-29181",
-  "CVE-2026-32280",
-  "CVE-2026-32281",
-  "CVE-2026-32283",
-  "CVE-2026-33186",
-  "CVE-2026-33811",
-  "CVE-2026-33814",
-  "CVE-2026-33818",
-  "CVE-2026-39820",
-  "CVE-2026-39821",
-  "CVE-2026-39822",
-  "CVE-2026-39828",
-  "CVE-2026-39829",
-  "CVE-2026-39830",
-  "CVE-2026-39831",
-  "CVE-2026-39832",
-  "CVE-2026-39835",
-  "CVE-2026-39836",
-  "CVE-2026-39883",
-  "CVE-2026-42499",
-  "CVE-2026-42504",
-  "CVE-2026-42508",
-  "CVE-2026-46595",
-  "CVE-2026-46597",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
-  "CVE-2026-56852",
-  "CVE-2026-56853",
-  "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
   "CVE-2026-97031",
-  "GHSA-hrxh-6v49-42gf",
 ]
 
-[images."registry.k8s.io/sig-storage/csi-resizer:v2.1.0"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v2.3.0 fixes 41 of 46; the rest stays in v2.3.0"
+[images."registry.k8s.io/sig-storage/csi-resizer:v2.3.0@sha256:48fb3deb93cd848e3c8998b6368f4322c93bb5ce4a90d1307b6dda0dbefb9a0e"]
+expires = 2026-12-12
+reason = "newest release of this CSI sidecar and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-111943",
-  "CVE-2026-24051",
-  "CVE-2026-25679",
-  "CVE-2026-25681",
-  "CVE-2026-27136",
-  "CVE-2026-27145",
-  "CVE-2026-29181",
-  "CVE-2026-32280",
-  "CVE-2026-32281",
-  "CVE-2026-32283",
-  "CVE-2026-33186",
-  "CVE-2026-33811",
-  "CVE-2026-33814",
-  "CVE-2026-33818",
-  "CVE-2026-39820",
-  "CVE-2026-39821",
-  "CVE-2026-39822",
-  "CVE-2026-39828",
-  "CVE-2026-39829",
-  "CVE-2026-39830",
-  "CVE-2026-39831",
-  "CVE-2026-39832",
-  "CVE-2026-39835",
-  "CVE-2026-39836",
-  "CVE-2026-39883",
-  "CVE-2026-42499",
-  "CVE-2026-42504",
-  "CVE-2026-42508",
-  "CVE-2026-46595",
-  "CVE-2026-46597",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
-  "CVE-2026-56852",
-  "CVE-2026-56853",
-  "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
   "CVE-2026-97031",
-  "GHSA-hrxh-6v49-42gf",
 ]
 
-[images."registry.k8s.io/sig-storage/livenessprobe:v2.18.0"]
-expires = 2026-11-28
-reason = "bump pending in SC2: v2.20.0 fixes 29 of 34; the rest stays in v2.20.0"
+[images."registry.k8s.io/sig-storage/livenessprobe:v2.20.0@sha256:19f2cf2f40e1987c7943945deca5f65cd4e4bf5cc0657fc78a5df131861578e8"]
+expires = 2026-12-12
+reason = "newest release of this CSI sidecar and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-111943",
-  "CVE-2026-25679",
-  "CVE-2026-25681",
-  "CVE-2026-27136",
-  "CVE-2026-27145",
-  "CVE-2026-29181",
-  "CVE-2026-32280",
-  "CVE-2026-32281",
-  "CVE-2026-32283",
-  "CVE-2026-33186",
-  "CVE-2026-33811",
-  "CVE-2026-33814",
-  "CVE-2026-33818",
-  "CVE-2026-39820",
-  "CVE-2026-39821",
-  "CVE-2026-39822",
-  "CVE-2026-39836",
-  "CVE-2026-42499",
-  "CVE-2026-42504",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
-  "CVE-2026-56852",
-  "CVE-2026-56853",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
   "CVE-2026-97031",
-  "GHSA-hrxh-6v49-42gf",
 ]
 
-[images."rustfs/rustfs:1.0.1@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 1.0.5 fixes all 4"
-ids = [
-  "CVE-2026-107891",
-  "CVE-2026-111497",
-  "CVE-2026-85091",
-  "CVE-2026-92392",
-]
-
-[images."zookeeper:3.9.5@sha256:e6b279d0135070507e867a3220c941fe90b791937b6d469b6929b79a5dfb01ba"]
-expires = 2026-11-28
-reason = "bump pending in SC2: 3.9.7 fixes 18 of 23; the rest stays in 3.9.7"
+[images."zookeeper:3.9.7@sha256:7654645af057c76db8facc77c5d6fc0749f0f566bdd5c41efe6e3b824d1248c0"]
+expires = 2026-12-12
+reason = "3.9.7 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-10050",
   "CVE-2026-108106",
-  "CVE-2026-109518",
-  "CVE-2026-111497",
   "CVE-2026-2332",
-  "CVE-2026-42583",
-  "CVE-2026-44249",
-  "CVE-2026-45416",
-  "CVE-2026-50010",
-  "CVE-2026-54512",
-  "CVE-2026-54513",
-  "CVE-2026-56740",
-  "CVE-2026-56741",
-  "CVE-2026-59901",
-  "CVE-2026-68494",
-  "CVE-2026-68497",
-  "CVE-2026-75595",
   "CVE-2026-77422",
-  "CVE-2026-84782",
-  "CVE-2026-89425",
-  "CVE-2026-91776",
-  "CVE-2026-91777",
   "CVE-2026-93451",
 ]
 
 [dockerfiles."templates/web/web/Dockerfile"]
-expires = 2026-11-28
+expires = 2026-12-12
 reason = "relies on uid 101 from nginx-unprivileged; an explicit USER changes the golden snapshots, pending in C2"
 ids = ["DS-0002"]

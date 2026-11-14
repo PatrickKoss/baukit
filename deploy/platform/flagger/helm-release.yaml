@@ -23,6 +23,8 @@ spec:
     remediation:
       retries: 3
   values:
+    image:
+      tag: "1.45.0@sha256:15b372d35012f9ae450f9030bc82217369c0aee082ed5a5225830010cf972b2b"
     meshProvider: traefik
     metricsServer: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
     selectorLabels: baukit.dev/workload

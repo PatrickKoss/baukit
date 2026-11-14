@@ -22,6 +22,20 @@ spec:
     remediation:
       retries: 3
   values:
+    webhooksCleanup:
+      image:
+        tag: "v1.20.0@sha256:6079a30d75fe7ba868a5a7e5dfa71ee92a3a8bae97adcea1c8cfb1009280ee6c"
+    test:
+      image:
+        tag: "v1.20.0@sha256:6079a30d75fe7ba868a5a7e5dfa71ee92a3a8bae97adcea1c8cfb1009280ee6c"
+    crds:
+      migration:
+        image:
+          tag: "v1.20.0@sha256:bd2b8b7c9d550ecf04e0bacaf351adce2f82ce67fd3f291075edcee7f8ab4ab4"
+    upgrade:
+      legacyPolicyCheck:
+        image:
+          tag: "v1.20.0@sha256:bd2b8b7c9d550ecf04e0bacaf351adce2f82ce67fd3f291075edcee7f8ab4ab4"
     config:
       webhooks:
         namespaceSelector:
@@ -44,6 +58,8 @@ spec:
       serviceMonitor:
         enabled: true
       initContainer:
+        image:
+          tag: "v1.20.0@sha256:339067e083430e0c97007541bef9cfdbac89bee13f7228772c77ae8aead14b8b"
         resources:
           requests:
             cpu: 10m
@@ -52,6 +68,8 @@ spec:
             cpu: 50m
             memory: 64Mi
       container:
+        image:
+          tag: "v1.20.0@sha256:9de49c5416ea536f00a205527197ac048abdf32c5a75d633cd9afff8928f359d"
         extraArgs:
           webhookTimeout: "5"
         resources:
@@ -62,6 +80,8 @@ spec:
             cpu: 500m
             memory: 384Mi
     backgroundController:
+      image:
+        tag: "v1.20.0@sha256:c72df38320a48fc9de10f9d23d087a117853bb08207b7f60f6d1e8457fb3ddb7"
       replicas: 1
       podDisruptionBudget:
         enabled: true
@@ -77,6 +97,8 @@ spec:
           cpu: 200m
           memory: 128Mi
     cleanupController:
+      image:
+        tag: "v1.20.0@sha256:0f9ce0c203561c52499e871a987ff987371f57385fcafe7af1a01dfd6db1feee"
       replicas: 1
       podDisruptionBudget:
         enabled: true
@@ -92,6 +114,8 @@ spec:
           cpu: 200m
           memory: 128Mi
     reportsController:
+      image:
+        tag: "v1.20.0@sha256:f54e3cc106fadb1a615d0ec11c42f741f51d3580a5f70dfbe7bd7ec58864ef03"
       replicas: 1
       podDisruptionBudget:
         enabled: true

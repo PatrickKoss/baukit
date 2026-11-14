@@ -67,6 +67,9 @@ spec:
         receivers:
           - name: "null"
       alertmanagerSpec:
+        image:
+          sha: 5f6e66c01bd610aef6dd671642a52eee775fd3a89bd8788ebada33efaf373d10
+          tag: v0.35.0
         replicas: 1
         resources:
           requests:
@@ -85,6 +88,9 @@ spec:
                   storage: 1Gi
 
     grafana:
+      image:
+        sha: 0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
+        tag: "13.3.1"
       enabled: true
       replicas: 1
       # The overlay creates this Secret with admin-user and admin-password.
@@ -100,6 +106,9 @@ spec:
           cpu: 300m
           memory: 384Mi
       sidecar:
+        image:
+          sha: 52d311dcedd587421a236c4d6c621f05614c40a51386e955e0699dca97ec0880
+          tag: 2.14.3
         resources:
           requests:
             cpu: 10m
@@ -155,6 +164,9 @@ spec:
     kubeStateMetrics:
       enabled: true
     kube-state-metrics:
+      image:
+        sha: sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+        tag: v2.20.0
       replicas: 1
       # Platform alerts select namespaces by this label through kube_namespace_labels.
       metricLabelsAllowlist:
@@ -170,6 +182,10 @@ spec:
     nodeExporter:
       enabled: true
     prometheus-node-exporter:
+      image:
+        digest: sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106
+        distroless: true
+        tag: v1.12.1
       resources:
         requests:
           cpu: 20m
@@ -179,9 +195,18 @@ spec:
           memory: 96Mi
 
     prometheusOperator:
+      thanosImage:
+        sha: b567818fe608067eb0f1d7c2c4fe361e7ad83c8a256234c97685f1d0bf670cc8
+        tag: v0.42.4
+      image:
+        sha: e52bb28fd41c98dd407c7a8cba8bdcfe7eabd7447e250afaf1fe7bb816dedbff
+        tag: v0.93.1
       enabled: true
       admissionWebhooks:
         patch:
+          image:
+            sha: 8009b04f9873f7279b5adee37fdd03b6a9aa7b6751d4f69fde2683010e41cd1f
+            tag: 1.11.1
           resources:
             requests:
               cpu: 10m
@@ -190,6 +215,9 @@ spec:
               cpu: 100m
               memory: 64Mi
       prometheusConfigReloader:
+        image:
+          sha: 428f088fe6fe07ab138bda92113664b04848a1dc408e4d3680a60ecdb55d1a65
+          tag: v0.93.1
         resources:
           requests:
             cpu: 10m
@@ -208,6 +236,9 @@ spec:
     prometheus:
       enabled: true
       prometheusSpec:
+        image:
+          sha: 9764044e09eb2c9e1abdb12d0f0188d4efb7384b0262d3c080f0fc59045c89ba
+          tag: v3.16.0-distroless
         replicas: 1
         shards: 1
         # Metrics retention budget (§8.5): the single source of truth.
