@@ -284,10 +284,22 @@ sample_stats() {
   done >>"$artifacts_dir/docker-stats.log"
 }
 
+validate_without() {
+  local rendered name
+  rendered=$(kubectl kustomize "$e2e_dir/overlay")
+  for name in "${without[@]}"; do
+    if ! grep -Fqx "  name: $name" <<<"$rendered"; then
+      printf 'ERROR: --without names no Kustomization in the overlay: %s\n' "$name" >&2
+      exit 2
+    fi
+  done
+}
+
+# Needs the cluster: kubectl converts the YAML to JSON with the server's type mapping.
 # Renders the overlay as a JSON List without the Kustomizations named in $without.
 render_overlay() {
   kubectl kustomize "$e2e_dir/overlay" |
-    kubectl create --dry-run=client -o json -f - |
+    kubectl create --dry-run=client --validate=false -o json -f - |
     python3 "$e2e_dir/without.py" "${without[@]}"
 }
 
@@ -339,7 +351,7 @@ collect_artifacts() {
 main() {
   parse_args "$@"
   require_tools
-  render_overlay >/dev/null
+  validate_without
   take_locks
   rm -rf -- "$artifacts_dir"
   mkdir -p "$artifacts_dir"

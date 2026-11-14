@@ -115,6 +115,11 @@ class RunnerArgumentTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("--cluster-name", result.stderr)
 
+    def test_unknown_without_exits_2(self):
+        result = self.run_runner("--without", "no-such-kustomization")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("e2e-no-such-kustomization", result.stderr)
+
     def test_missing_suite_exits_2(self):
         result = self.run_runner("--suite", "no-such-suite")
         self.assertEqual(result.returncode, 2)
