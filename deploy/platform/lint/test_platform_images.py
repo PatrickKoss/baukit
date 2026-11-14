@@ -136,44 +136,80 @@ class ImageReferenceTests(unittest.TestCase):
                 self.assertTrue(platform_images.is_image_reference(candidate))
 
 
-class IgnoreFileTests(unittest.TestCase):
-    def problems(self, text: str) -> list[str]:
-        return [str(problem) for problem in platform_images.check_ignore_file(text, TODAY)]
+def allowance(ids, expires=datetime.date(2026, 11, 28), reason="bump pending in SC2"):
+    return platform_images.Allowance(expires, reason, frozenset(ids))
 
-    def test_entry_with_reason_and_future_expiry_passes(self):
-        self.assertEqual(self.problems("# bump pending in SC2\nCVE-2026-0001 exp:2026-11-28\n"), [])
 
-    def test_one_reason_covers_the_entries_below_it(self):
-        text = "# bump pending in SC2\nCVE-2026-0001 exp:2026-11-28\nCVE-2026-0002 exp:2026-11-28\n"
-        self.assertEqual(self.problems(text), [])
+class CompareTests(unittest.TestCase):
+    def compare(self, reported, allowed):
+        return platform_images.compare(reported, allowed, TODAY)
 
-    def test_entry_without_reason_fails(self):
+    def test_listed_findings_pass(self):
+        self.assertEqual(self.compare({"img:1": {"CVE-1"}}, {"img:1": allowance(["CVE-1"])}), [])
+
+    def test_unlisted_finding_fails(self):
         self.assertEqual(
-            self.problems("CVE-2026-0001 exp:2026-11-28\n"),
-            ["line 1: CVE-2026-0001 has no reason comment above it"],
+            self.compare({"img:1": {"CVE-1"}}, {}), ["img:1: CVE-1 is not in the allowlist"]
         )
 
-    def test_blank_line_separates_a_reason_from_the_entry(self):
-        problems = self.problems("# bump pending in SC2\n\nCVE-2026-0001 exp:2026-11-28\n")
-        self.assertEqual(problems, ["line 3: CVE-2026-0001 has no reason comment above it"])
-
-    def test_entry_without_expiry_fails(self):
-        self.assertEqual(
-            self.problems("# bump pending in SC2\nCVE-2026-0001\n"),
-            ["line 2: CVE-2026-0001 has no exp:YYYY-MM-DD expiry"],
+    def test_allowance_does_not_cover_another_image(self):
+        problems = self.compare(
+            {"img:1": {"CVE-1"}, "img:2": {"CVE-1"}}, {"img:1": allowance(["CVE-1"])}
         )
+        self.assertEqual(problems, ["img:2: CVE-1 is not in the allowlist"])
+
+    def test_stale_id_fails_so_the_list_only_shrinks(self):
+        problems = self.compare({"img:1": {"CVE-1"}}, {"img:1": allowance(["CVE-1", "CVE-2"])})
+        self.assertEqual(problems, ["img:1: CVE-2 is no longer reported; remove it from the list"])
+
+    def test_entry_for_an_image_that_is_gone_fails(self):
+        problems = self.compare({}, {"img:1": allowance(["CVE-1"])})
+        self.assertEqual(problems, ["img:1: listed but no longer scanned; remove the entry"])
 
     def test_expired_entry_fails(self):
-        self.assertEqual(
-            self.problems("# bump pending in SC2\nCVE-2026-0001 exp:2026-11-13\n"),
-            ["line 2: CVE-2026-0001 expired on 2026-11-13"],
+        problems = self.compare(
+            {"img:1": {"CVE-1"}}, {"img:1": allowance(["CVE-1"], datetime.date(2026, 11, 13))}
         )
+        self.assertEqual(problems, ["img:1: expired on 2026-11-13"])
 
-    def test_invalid_date_fails(self):
-        self.assertEqual(
-            self.problems("# reason\nCVE-2026-0001 exp:2026-13-01\n"),
-            ["line 2: 2026-13-01 is not a valid date"],
+    def test_missing_expiry_fails(self):
+        problems = self.compare({"img:1": {"CVE-1"}}, {"img:1": allowance(["CVE-1"], None)})
+        self.assertEqual(problems, ["img:1: expires must be a YYYY-MM-DD date"])
+
+    def test_reason_without_task_fails(self):
+        problems = self.compare(
+            {"img:1": {"CVE-1"}}, {"img:1": allowance(["CVE-1"], reason="later")}
         )
+        self.assertEqual(problems, ["img:1: reason must name the follow-up task"])
+
+    def test_empty_ids_fail(self):
+        problems = self.compare({}, {"img:1": allowance([])})
+        self.assertIn("img:1: ids is empty; remove the entry", problems)
+
+
+class AllowlistFileTests(unittest.TestCase):
+    def load(self, text):
+        with tempfile.NamedTemporaryFile("w", suffix=".toml", delete=False) as handle:
+            handle.write(text)
+        self.addCleanup(Path(handle.name).unlink)
+        return platform_images.load_allowlist(Path(handle.name))
+
+    def test_sections_parse_with_toml_dates(self):
+        loaded = self.load(
+            '[images."redis:8"]\nexpires = 2026-11-28\nreason = "SC2"\nids = ["CVE-1"]\n'
+            '[dockerfiles."deploy/x.Dockerfile"]\nexpires = 2026-11-28\nreason = "S6"\n'
+            'ids = ["DS-0002"]\n'
+        )
+        self.assertEqual(loaded["images"]["redis:8"], allowance(["CVE-1"], reason="SC2"))
+        self.assertEqual(loaded["dockerfiles"]["deploy/x.Dockerfile"].ids, {"DS-0002"})
+
+    def test_string_expiry_is_not_a_date(self):
+        loaded = self.load('[images."a:1"]\nexpires = "2026-11-28"\nreason = "SC2"\nids = ["X"]\n')
+        self.assertIsNone(loaded["images"]["a:1"].expires)
+
+    def test_unknown_section_fails(self):
+        with self.assertRaises(platform_images.ScanError):
+            self.load('[ignore."a"]\nids = []\n')
 
 
 class JinjaDockerfileTests(unittest.TestCase):
@@ -191,12 +227,22 @@ class JinjaDockerfileTests(unittest.TestCase):
 FAKE_TRIVY = """\
 #!/bin/sh
 printf '%s\\n' "$*" >>"$TRIVY_CALLS"
-for argument in "$@"; do
-  case $argument in
-    *vulnerable*) exit 1 ;;
-  esac
-done
-exit 0
+case " $* " in
+  *" --download-"*) exit 0 ;;
+  *" config "*)
+    if [ -n "${FAKE_DS:-}" ]; then
+      printf '{"Results":[{"Target":"deploy__app./Dockerfile","Misconfigurations":'
+      printf '[{"ID":"DS-0002","Status":"FAIL"}]}]}'
+    else
+      printf '{"Results":[]}'
+    fi
+    exit 0 ;;
+  *vulnerable*)
+    printf '{"Results":[{"Target":"x","Vulnerabilities":[{"VulnerabilityID":"CVE-2026-1"}]}]}'
+    exit 0 ;;
+  *broken*) exit 1 ;;
+esac
+printf '{"Results":[{"Target":"x","Vulnerabilities":null}]}'
 """
 
 
@@ -223,37 +269,49 @@ class MainTests(unittest.TestCase):
         run_process(["git", "-C", str(self.repo), "add", "."], check=True)
         self.rendered = self.directory / "rendered"
         self.rendered.mkdir()
-        self.ignore = self.directory / ".trivyignore"
-        self.ignore.write_text("")
+        self.allowlist = self.directory / "image-findings.toml"
+        self.allowlist.write_text("")
 
-    def run_main(self, image: str) -> int:
+    def run_main(self, image: str, **environment: str) -> int:
         (self.rendered / "base.yaml").write_text(
             f"kind: Pod\nspec:\n  containers:\n    - image: {image}\n"
         )
         arguments = [
             "--rendered", str(self.rendered), "--repo-root", str(self.repo),
             "--cache", str(self.directory / "cache"), "--work", str(self.directory / "work"),
-            "--ignore-file", str(self.ignore), "--today", TODAY.isoformat(),
+            "--allowlist", str(self.allowlist), "--today", TODAY.isoformat(),
         ]  # fmt: skip
-        with mock.patch.dict(os.environ, self.environment):
+        with mock.patch.dict(os.environ, self.environment | environment):
             return platform_images.main(arguments)
 
     def test_clean_images_and_dockerfiles_pass(self):
         self.assertEqual(self.run_main("ghcr.io/example/clean:1.0"), 0)
         calls = self.calls.read_text()
-        self.assertIn("--ignore-unfixed --exit-code 1", calls)
+        self.assertIn("--ignore-unfixed --format json ghcr.io/example/clean:1.0", calls)
         self.assertIn("--scanners vuln", calls)
-        self.assertIn("ghcr.io/example/clean:1.0", calls)
+        self.assertNotIn("--ignorefile", calls)
         self.assertRegex(calls, r"(?m)^config .*/work/dockerfiles$")
-        staged = self.directory / "work" / "dockerfiles" / "deploy__app." / "Dockerfile"
-        self.assertTrue(staged.is_file())
 
-    def test_finding_fails_the_step(self):
+    def test_unlisted_image_finding_fails(self):
         self.assertEqual(self.run_main("ghcr.io/example/vulnerable:1.0"), 1)
 
-    def test_invalid_ignore_file_fails_the_step(self):
-        self.ignore.write_text("CVE-2026-0001\n")
-        self.assertEqual(self.run_main("ghcr.io/example/clean:1.0"), 1)
+    def test_listed_image_finding_passes(self):
+        self.allowlist.write_text(
+            '[images."ghcr.io/example/vulnerable:1.0"]\n'
+            'expires = 2026-11-28\nreason = "bump pending in SC2"\nids = ["CVE-2026-1"]\n'
+        )
+        self.assertEqual(self.run_main("ghcr.io/example/vulnerable:1.0"), 0)
+
+    def test_dockerfile_finding_is_keyed_by_repository_path(self):
+        self.assertEqual(self.run_main("ghcr.io/example/clean:1.0", FAKE_DS="1"), 1)
+        self.allowlist.write_text(
+            '[dockerfiles."deploy/app.Dockerfile"]\n'
+            'expires = 2026-11-28\nreason = "USER pending in S6"\nids = ["DS-0002"]\n'
+        )
+        self.assertEqual(self.run_main("ghcr.io/example/clean:1.0", FAKE_DS="1"), 0)
+
+    def test_trivy_error_fails_the_step(self):
+        self.assertEqual(self.run_main("ghcr.io/example/broken:1.0"), 1)
 
 
 if __name__ == "__main__":

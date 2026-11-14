@@ -15,4 +15,4 @@ trap 'rm -rf -- "$work_dir"' EXIT
 mkdir -p "$cache_dir"
 PYTHONDONTWRITEBYTECODE=1 python3 "$repo_root/deploy/platform/lint/platform_images.py" \
   --rendered "$work_dir/rendered" --repo-root "$repo_root" --cache "$cache_dir" \
-  --work "$work_dir" --ignore-file "$repo_root/.trivyignore"
+  --work "$work_dir" --allowlist "$repo_root/deploy/platform/lint/image-findings.toml"

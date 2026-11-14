@@ -30,7 +30,7 @@ metric-names fast - always -
 observability-tests fast - always -
 observability-rules fast - always -
 platform-validate fast - always -
-platform-images fast - always -
+platform-images images - selected -
 media-grants fast - always -
 scripts-tests fast ts-install always -
 rust-clippy rust - always -

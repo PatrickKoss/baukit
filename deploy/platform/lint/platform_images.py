@@ -5,9 +5,12 @@ from __future__ import annotations
 import argparse
 import datetime
 import itertools
+import json
 import re
+import subprocess
 import sys
 import textwrap
+import tomllib
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,7 +26,8 @@ IMAGE_REFERENCE = re.compile(
     r"(?::[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?"
     r"(?:@sha256:[a-f0-9]{64})?$"
 )
-EXPIRY = re.compile(r"(?:^|\s)exp:(\d{4}-\d{2}-\d{2})(?:\s|$)")
+FOLLOW_UP_TASK = re.compile(r"\b[A-Z]{1,3}[0-9]{1,2}\b")
+ALLOWLIST_SECTIONS = ("images", "dockerfiles")
 INLINE_PATCH_IMAGE = re.compile(r"path:\s*\S*/image\s*\n\s*value:\s*[\"']?([^\s\"']+)")
 JINJA_STATEMENT = re.compile(r"\{%-?.*?-?%\}", re.DOTALL)
 JINJA_EXPRESSION = re.compile(r"\{\{-?.*?-?\}\}", re.DOTALL)
@@ -37,15 +41,6 @@ RAW_EXCLUDED = ("tests", "fixtures")
 
 class ScanError(Exception):
     pass
-
-
-@dataclass(frozen=True)
-class IgnoreProblem:
-    line: int
-    message: str
-
-    def __str__(self) -> str:
-        return f"line {self.line}: {self.message}"
 
 
 def patched_image(value: dict) -> str | None:
@@ -108,46 +103,66 @@ def raw_manifests(repo_root: Path, roots: Sequence[str], excluded: Sequence[str]
     ]
 
 
-def check_ignore_file(text: str, today: datetime.date) -> list[IgnoreProblem]:
-    """A comment block is the reason for the entries below it, up to the next blank line."""
-    problems: list[IgnoreProblem] = []
-    reason = ""
-    in_entries = False
-    for number, raw in enumerate(text.splitlines(), start=1):
-        line = raw.strip()
-        if not line:
-            reason, in_entries = "", False
-        elif line.startswith("#"):
-            comment = line.lstrip("#").strip()
-            reason = comment if in_entries else f"{reason} {comment}".strip()
-            in_entries = False
-        else:
-            problems.extend(entry_problems(number, line, reason, today))
-            in_entries = True
+def load_allowlist(path: Path) -> dict[str, dict[str, Allowance]]:
+    data = tomllib.loads(path.read_text())
+    unknown = set(data) - set(ALLOWLIST_SECTIONS)
+    if unknown:
+        raise ScanError(f"{path}: unknown sections {sorted(unknown)}")
+    return {
+        section: {key: Allowance.parse(key, entry) for key, entry in data.get(section, {}).items()}
+        for section in ALLOWLIST_SECTIONS
+    }
+
+
+@dataclass(frozen=True)
+class Allowance:
+    expires: datetime.date | None
+    reason: str
+    ids: frozenset[str]
+
+    @classmethod
+    def parse(cls, key: str, entry: object) -> Allowance:
+        if not isinstance(entry, dict):
+            raise ScanError(f"{key}: entry must be a table")
+        expires, reason, ids = entry.get("expires"), entry.get("reason", ""), entry.get("ids", [])
+        if not isinstance(ids, list) or not all(isinstance(item, str) for item in ids):
+            raise ScanError(f"{key}: ids must be a list of strings")
+        return cls(
+            expires if isinstance(expires, datetime.date) else None,
+            reason if isinstance(reason, str) else "",
+            frozenset(ids),
+        )
+
+
+def allowance_problems(key: str, allowance: Allowance, today: datetime.date) -> list[str]:
+    problems = []
+    if not FOLLOW_UP_TASK.search(allowance.reason):
+        problems.append(f"{key}: reason must name the follow-up task")
+    if allowance.expires is None:
+        problems.append(f"{key}: expires must be a YYYY-MM-DD date")
+    elif allowance.expires < today:
+        problems.append(f"{key}: expired on {allowance.expires}")
+    if not allowance.ids:
+        problems.append(f"{key}: ids is empty; remove the entry")
     return problems
 
 
-def entry_problems(
-    number: int, line: str, reason: str, today: datetime.date
-) -> list[IgnoreProblem]:
+def compare(
+    reported: dict[str, set[str]], allowed: dict[str, Allowance], today: datetime.date
+) -> list[str]:
+    """Fail on unlisted findings, stale listed IDs and listed targets that are gone."""
     problems = []
-    if not reason:
-        problems.append(
-            IgnoreProblem(number, f"{line.split(maxsplit=1)[0]} has no reason comment above it")
-        )
-    expiry = EXPIRY.search(line)
-    if expiry is None:
-        problems.append(
-            IgnoreProblem(number, f"{line.split(maxsplit=1)[0]} has no exp:YYYY-MM-DD expiry")
-        )
-        return problems
-    try:
-        expires = datetime.date.fromisoformat(expiry.group(1))
-    except ValueError:
-        problems.append(IgnoreProblem(number, f"{expiry.group(1)} is not a valid date"))
-        return problems
-    if expires < today:
-        problems.append(IgnoreProblem(number, f"{line.split(maxsplit=1)[0]} expired on {expires}"))
+    for key, allowance in sorted(allowed.items()):
+        problems.extend(allowance_problems(key, allowance, today))
+        if key not in reported:
+            problems.append(f"{key}: listed but no longer scanned; remove the entry")
+            continue
+        for stale in sorted(allowance.ids - reported[key]):
+            problems.append(f"{key}: {stale} is no longer reported; remove it from the list")
+    for key, found in sorted(reported.items()):
+        listed = allowed[key].ids if key in allowed else frozenset()
+        for new in sorted(found - listed):
+            problems.append(f"{key}: {new} is not in the allowlist")
     return problems
 
 
@@ -170,8 +185,9 @@ def tracked_dockerfiles(repo_root: Path) -> list[Path]:
     return [repo_root / line for line in result.stdout.splitlines() if line]
 
 
-def stage_dockerfiles(dockerfiles: Sequence[Path], repo_root: Path, stage: Path) -> list[Path]:
-    staged = []
+def stage_dockerfiles(dockerfiles: Sequence[Path], repo_root: Path, stage: Path) -> dict[str, Path]:
+    """Copy each Dockerfile to its own directory; map its repository path to the staged file."""
+    staged = {}
     for source in dockerfiles:
         name = source.relative_to(repo_root).as_posix().replace("/", "__")
         text = source.read_text()
@@ -181,45 +197,82 @@ def stage_dockerfiles(dockerfiles: Sequence[Path], repo_root: Path, stage: Path)
         target = stage / name.replace("Dockerfile", "") / "Dockerfile"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text)
-        staged.append(target)
+        staged[source.relative_to(repo_root).as_posix()] = target
     return staged
 
 
-Runner = Callable[[list[str]], int]
+Runner = Callable[[list[str]], tuple[int, str]]
 
 
-def run_command(command: list[str]) -> int:
+def run_command(command: list[str]) -> tuple[int, str]:
     print("+ " + " ".join(command), flush=True)
-    return process_runner.run_process(command).returncode
+    result = process_runner.run_process(command, stdout=subprocess.PIPE, text=True)
+    return result.returncode, result.stdout
 
 
-def scan_images(images: Sequence[str], cache: Path, ignore_file: Path, run: Runner) -> list[str]:
+def trivy_json(command: list[str], run: Runner) -> dict:
+    code, output = run(command)
+    if code != 0:
+        raise ScanError(f"trivy failed with exit code {code}: {' '.join(command)}")
+    try:
+        report = json.loads(output)
+    except json.JSONDecodeError as error:
+        raise ScanError(f"trivy printed no JSON report: {error}") from error
+    if not isinstance(report, dict):
+        raise ScanError("trivy printed a JSON report that is not an object")
+    return report
+
+
+def report_ids(report: dict, field: str) -> dict[str, set[str]]:
+    found: dict[str, set[str]] = {}
+    for result in report.get("Results") or []:
+        target = str(result.get("Target", ""))
+        for item in result.get(field) or []:
+            if item.get("Status", "FAIL") == "FAIL":
+                found.setdefault(target, set()).add(
+                    str(item["VulnerabilityID" if field == "Vulnerabilities" else "ID"])
+                )
+    return found
+
+
+def scan_images(images: Sequence[str], cache: Path, run: Runner) -> dict[str, set[str]]:
     common = ["--cache-dir", str(cache), "--quiet"]
-    if run(["trivy", "image", *common, "--download-db-only"]) != 0:
-        raise ScanError("trivy could not download its vulnerability database")
-    if run(["trivy", "image", *common, "--download-java-db-only"]) != 0:
-        raise ScanError("trivy could not download its Java database")
-    failed = []
+    for database in ("--download-db-only", "--download-java-db-only"):
+        if run(["trivy", "image", *common, database])[0] != 0:
+            raise ScanError(f"trivy {database} failed")
+    reported = {}
     for image in images:
         command = [
             "trivy", "image", *common,
             "--skip-db-update", "--skip-java-db-update",
             "--scanners", "vuln", "--timeout", SCAN_TIMEOUT,
-            "--severity", SEVERITIES, "--ignore-unfixed", "--exit-code", "1",
-            "--ignorefile", str(ignore_file), image,
+            "--severity", SEVERITIES, "--ignore-unfixed", "--format", "json", image,
         ]  # fmt: skip
-        if run(command) != 0:
-            failed.append(image)
-    return failed
+        per_target = report_ids(trivy_json(command, run), "Vulnerabilities")
+        reported[image] = set().union(*per_target.values()) if per_target else set()
+    return reported
 
 
-def scan_configs(stage: Path, cache: Path, ignore_file: Path, run: Runner) -> bool:
+def scan_dockerfiles(
+    staged: dict[str, Path], stage: Path, cache: Path, run: Runner
+) -> dict[str, set[str]]:
     command = [
         "trivy", "config", "--cache-dir", str(cache), "--quiet",
-        "--severity", SEVERITIES, "--exit-code", "1",
-        "--ignorefile", str(ignore_file), str(stage),
+        "--severity", SEVERITIES, "--format", "json", str(stage),
     ]  # fmt: skip
-    return run(command) == 0
+    per_target = report_ids(trivy_json(command, run), "Misconfigurations")
+    by_staged = {path.relative_to(stage).as_posix(): source for source, path in staged.items()}
+    reported = {source: set() for source in staged}
+    for target, ids in per_target.items():
+        source = by_staged.get(target)
+        if source is None:
+            raise ScanError(f"trivy reported {target}, which maps to no tracked Dockerfile")
+        reported[source] |= ids
+    return reported
+
+
+def drop_clean(reported: dict[str, set[str]]) -> dict[str, set[str]]:
+    return {key: ids for key, ids in reported.items() if ids}
 
 
 def main(argv: list[str] | None = None, run: Runner = run_command) -> int:
@@ -228,32 +281,31 @@ def main(argv: list[str] | None = None, run: Runner = run_command) -> int:
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
-    parser.add_argument("--ignore-file", type=Path, required=True)
+    parser.add_argument("--allowlist", type=Path, required=True)
     parser.add_argument("--today", type=datetime.date.fromisoformat, default=datetime.date.today())
     args = parser.parse_args(argv)
 
-    problems = check_ignore_file(args.ignore_file.read_text(), args.today)
-    for problem in problems:
-        print(f"ERROR: {args.ignore_file}: {problem}", file=sys.stderr)
     try:
+        allowlist = load_allowlist(args.allowlist)
         manifests = sorted(args.rendered.glob("*.yaml"))
         manifests += raw_manifests(args.repo_root, RAW_ROOTS, RAW_EXCLUDED)
         images = extract_images(load_documents(manifests))
         if not images:
             raise ScanError(f"no container images found under {args.rendered}")
         print(f"==> {len(images)} images", flush=True)
-        failed = scan_images(images, args.cache, args.ignore_file, run)
+        image_findings = scan_images(images, args.cache, run)
         stage = args.work / "dockerfiles"
-        stage_dockerfiles(tracked_dockerfiles(args.repo_root), args.repo_root, stage)
-        configs_clean = scan_configs(stage, args.cache, args.ignore_file, run)
-    except (ScanError, helm_yaml.YamlError, OSError) as error:
+        staged = stage_dockerfiles(tracked_dockerfiles(args.repo_root), args.repo_root, stage)
+        dockerfile_findings = scan_dockerfiles(staged, stage, args.cache, run)
+    except (ScanError, helm_yaml.YamlError, OSError, tomllib.TOMLDecodeError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    for image in failed:
-        print(f"ERROR: {image} has HIGH or CRITICAL findings with a fix", file=sys.stderr)
-    if not configs_clean:
-        print("ERROR: trivy config reported HIGH or CRITICAL Dockerfile findings", file=sys.stderr)
-    return 1 if problems or failed or not configs_clean else 0
+    problems = compare(drop_clean(image_findings), allowlist["images"], args.today)
+    problems += compare(drop_clean(dockerfile_findings), allowlist["dockerfiles"], args.today)
+    for problem in problems:
+        print(f"ERROR: {args.allowlist.name}: {problem}", file=sys.stderr)
+    print(f"==> {len(problems)} allowlist problems", flush=True)
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":
