@@ -12,15 +12,28 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import importlib.util
 import json
 import re
 import shutil
 import sys
 from collections.abc import Iterable
 from pathlib import Path
+from types import ModuleType
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lint"))
-import helm_yaml  # noqa: E402 -- the shared parser lives in the sibling lint directory
+HELM_YAML = Path(__file__).resolve().parents[1] / "lint" / "helm_yaml.py"
+
+
+def load_helm_yaml() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("helm_yaml", HELM_YAML)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {HELM_YAML}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+helm_yaml = load_helm_yaml()
 
 STAMP_NAME = ".inputs.sha256"
 CRD_KIND = "CustomResourceDefinition"
