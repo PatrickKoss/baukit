@@ -160,7 +160,7 @@ docs/runbooks/platform/<slug>.md  one per alert
 Goal: every later phase lands with offline checks that run in seconds, locally and in CI, at pinned
 versions. This phase comes first so every later task has a place to put its tests.
 
-- [~] **V1 Pinned tools.** Add `deploy/tools.toml` listing kubeconform, kustomize, helm, kyverno CLI,
+- [x] **V1 Pinned tools.** Add `deploy/tools.toml` listing kubeconform, kustomize, helm, kyverno CLI,
   chainsaw, promtool, pint, trivy, k3d, flux and yamllint with exact versions and per-platform sha256.
   Add `scripts/install-deploy-tools.sh`, which installs into gitignored `.tools/bin` and verifies checksums.
   `validate.sh`, `check-rules.sh` and the e2e runner put `.tools/bin` first on PATH and fail with exit 2
@@ -682,3 +682,11 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   Alertmanager output needs endpoint `/api/v2/alerts`; Loki output needs `grafanaDashboard` off.
   `falco -V <file>` (one `-V` per rules file) works in the digest-pinned image with `--network none`.
   Agents now use private KUBECONFIG files after parallel k3d runs rewrote `~/.kube/config`.
+- 2026-11-14: V1 merged. `deploy/tools.toml` pins kubeconform 0.8.0, kustomize 5.8.3, helm 4.3.1, kyverno
+  1.20.0, chainsaw 0.2.15, promtool 3.15.1, pint 0.89.4, trivy 0.76.1, k3d 5.9.0, flux 2.9.4, kubectl
+  1.36.6 and yamllint 1.38.0 (PyPI wheels with `--require-hashes`), plus the falco and prometheus images by
+  digest. Spot-checked helm, kubeconform and kyverno sha256 against upstream checksum files. Flux is
+  pinned only in `tools.toml` now (validate.sh and the lifecycle read it). `check-rules.sh` lost both its
+  PATH and Docker fallbacks. Re-verified on integration: clean install, 17 installer tests, platform-validate,
+  observability-rules, shell-lint, python-lint, workflow-lint green. Open: the gate steps exit 2 on a
+  checkout without `.tools/`; V4/V6 make the steps install first.
