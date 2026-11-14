@@ -1,0 +1,131 @@
+rule_files:
+  - ../alerts/cert-manager.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: a certificate with 10 days left fires only the 21-day warning
+    interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="traefik",name="wildcard",issuer_name="letsencrypt",issuer_kind="ClusterIssuer",issuer_group="cert-manager.io"}'
+        values: '871200x150'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: BaukitCertManagerCertificateExpiringSoon
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: cert-manager
+              namespace: traefik
+              name: wildcard
+            exp_annotations:
+              summary: Certificate traefik/wildcard expires in under 21 days
+              description: >-
+                Certificate traefik/wildcard expires in
+                10d 0h 0m 0s. cert-manager renews at two thirds of the lifetime, so
+                renewal is already overdue.
+              runbook_url: RUNBOOK_BASE_URL/cert-manager-certificate-expiring-soon
+      - eval_time: 2h
+        alertname: BaukitCertManagerCertificateExpiryCritical
+        exp_alerts: []
+  - name: a certificate with 3 days left fires BaukitCertManagerCertificateExpiryCritical
+    interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="traefik",name="wildcard",issuer_name="letsencrypt",issuer_kind="ClusterIssuer",issuer_group="cert-manager.io"}'
+        values: '266400x150'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: BaukitCertManagerCertificateExpiryCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: cert-manager
+              namespace: traefik
+              name: wildcard
+            exp_annotations:
+              summary: Certificate traefik/wildcard expires in under 7 days
+              description: >-
+                Certificate traefik/wildcard expires in
+                3d 0h 0m 0s. Clients start failing TLS when it does.
+              runbook_url: RUNBOOK_BASE_URL/cert-manager-certificate-expiry-critical
+  - name: a certificate with 60 days left stays quiet
+    interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_expiration_timestamp_seconds{namespace="traefik",name="wildcard",issuer_name="letsencrypt",issuer_kind="ClusterIssuer",issuer_group="cert-manager.io"}'
+        values: '5184000x150'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: BaukitCertManagerCertificateExpiringSoon
+        exp_alerts: []
+      - eval_time: 2h
+        alertname: BaukitCertManagerCertificateExpiryCritical
+        exp_alerts: []
+
+  - name: a certificate that stays not Ready fires BaukitCertManagerCertificateNotReady
+    interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_ready_status{namespace="traefik",name="wildcard",condition="False",issuer_name="letsencrypt",issuer_kind="ClusterIssuer",issuer_group="cert-manager.io"}'
+        values: '1x20'
+      - series: 'certmanager_certificate_ready_status{namespace="traefik",name="wildcard",condition="True",issuer_name="letsencrypt",issuer_kind="ClusterIssuer",issuer_group="cert-manager.io"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitCertManagerCertificateNotReady
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitCertManagerCertificateNotReady
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: cert-manager
+              namespace: traefik
+              name: wildcard
+            exp_annotations:
+              summary: Certificate traefik/wildcard is not Ready
+              description: >-
+                Certificate traefik/wildcard has not been Ready for 10 minutes.
+                Its Secret is missing, stale or does not match the spec.
+              runbook_url: RUNBOOK_BASE_URL/cert-manager-certificate-not-ready
+  - name: a Ready certificate stays quiet
+    interval: 1m
+    input_series:
+      - series: 'certmanager_certificate_ready_status{namespace="traefik",name="wildcard",condition="False",issuer_name="letsencrypt",issuer_kind="ClusterIssuer",issuer_group="cert-manager.io"}'
+        values: '0x20'
+      - series: 'certmanager_certificate_ready_status{namespace="traefik",name="wildcard",condition="True",issuer_name="letsencrypt",issuer_kind="ClusterIssuer",issuer_group="cert-manager.io"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitCertManagerCertificateNotReady
+        exp_alerts: []
+
+  - name: ACME rate limiting fires BaukitCertManagerAcmeRequestErrors
+    interval: 1m
+    input_series:
+      - series: 'certmanager_http_acme_client_request_count{scheme="https",host="acme-v02.api.letsencrypt.org",path="/acme/new-order",method="POST",status="429"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: BaukitCertManagerAcmeRequestErrors
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: cert-manager
+              host: acme-v02.api.letsencrypt.org
+              status: "429"
+            exp_annotations:
+              summary: ACME server acme-v02.api.letsencrypt.org answers cert-manager with HTTP 429
+              description: >-
+                cert-manager got 15 HTTP 429 responses from acme-v02.api.letsencrypt.org
+                in 15 minutes, for 15 minutes. Issuance and renewal stall while this lasts.
+              runbook_url: RUNBOOK_BASE_URL/cert-manager-acme-request-errors
+  - name: successful ACME calls and badNonce retries stay quiet
+    interval: 1m
+    input_series:
+      - series: 'certmanager_http_acme_client_request_count{scheme="https",host="acme-v02.api.letsencrypt.org",path="/acme/new-order",method="POST",status="201"}'
+        values: '0+1x40'
+      - series: 'certmanager_http_acme_client_request_count{scheme="https",host="acme-v02.api.letsencrypt.org",path="/acme/new-order",method="POST",status="400"}'
+        values: '0+1x40'
+      - series: 'certmanager_http_acme_client_request_count{scheme="https",host="acme-v02.api.letsencrypt.org",path="/acme/new-order",method="POST",status="503"}'
+        values: '2x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: BaukitCertManagerAcmeRequestErrors
+        exp_alerts: []

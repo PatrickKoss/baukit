@@ -10,6 +10,13 @@ runbookBaseUrl: ""
 components:
   platform: true
   falco: true
+  flux: true
+  cert-manager: true
+  cnpg: true
+  traefik: true
+  kyverno: true
+  observability: true
+  kured: true
 
 prometheusRule:
   labels: {}

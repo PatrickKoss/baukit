@@ -1,0 +1,62 @@
+groups:
+  - name: baukit-observability
+    rules:
+      - alert: BaukitLokiDiscardedSamples
+        expr: |
+          sum by (reason, tenant) (increase(loki_discarded_samples_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: observability
+        annotations:
+          summary: Loki discards log lines for {{ $labels.reason }}
+          description: >-
+            Loki rejected {{ $value }} log lines of tenant {{ $labels.tenant }} in 10 minutes with
+            reason {{ $labels.reason }}, for 10 minutes. Those lines are gone.
+          runbook_url: RUNBOOK_BASE_URL/loki-discarded-samples
+      - alert: BaukitAlloyWriteFailures
+        expr: |
+          sum by (namespace, pod) (increase(loki_write_dropped_entries_total[10m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: observability
+        annotations:
+          summary: Alloy pod {{ $labels.pod }} drops log entries it cannot write to Loki
+          description: >-
+            Alloy pod {{ $labels.namespace }}/{{ $labels.pod }} dropped {{ $value }} log entries in
+            10 minutes after its retries to Loki ran out.
+          runbook_url: RUNBOOK_BASE_URL/alloy-write-failures
+      - alert: BaukitPrometheusStorageNearRetentionSize
+        expr: |
+          (
+            prometheus_tsdb_storage_blocks_bytes
+            + prometheus_tsdb_wal_storage_size_bytes
+            + prometheus_tsdb_head_chunks_storage_size_bytes
+          )
+          / (prometheus_tsdb_retention_limit_bytes > 0)
+          > 0.9
+        for: 30m
+        labels:
+          severity: warning
+          component: observability
+        annotations:
+          summary: Prometheus {{ $labels.pod }} uses over 90% of its retentionSize
+          description: >-
+            Prometheus {{ $labels.namespace }}/{{ $labels.pod }} uses {{ $value | humanizePercentage }}
+            of retentionSize. It now deletes blocks by size, so history is shorter than the
+            configured retention time.
+          runbook_url: RUNBOOK_BASE_URL/prometheus-storage-near-retention-size
+      - alert: BaukitPrometheusRuleEvaluationFailures
+        expr: |
+          sum by (namespace, pod, rule_group) (increase(prometheus_rule_evaluation_failures_total[10m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: observability
+        annotations:
+          summary: Prometheus fails to evaluate rule group {{ $labels.rule_group }}
+          description: >-
+            Prometheus {{ $labels.namespace }}/{{ $labels.pod }} failed {{ $value }} evaluations of
+            {{ $labels.rule_group }} in 10 minutes, for 15 minutes. Alerts in that group cannot fire.
+          runbook_url: RUNBOOK_BASE_URL/prometheus-rule-evaluation-failures

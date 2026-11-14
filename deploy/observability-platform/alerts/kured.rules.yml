@@ -1,0 +1,31 @@
+groups:
+  - name: baukit-kured
+    rules:
+      - alert: BaukitKuredRebootPending
+        expr: |
+          max by (node) (kured_reboot_required) > 0
+        for: 48h
+        labels:
+          severity: warning
+          component: kured
+        annotations:
+          summary: Node {{ $labels.node }} has needed a reboot for 48 hours
+          description: >-
+            kured has reported a pending reboot on {{ $labels.node }} for 48 hours. Kernel and
+            library updates are installed but not running.
+          runbook_url: RUNBOOK_BASE_URL/kured-reboot-pending
+      - alert: BaukitKuredRebootBlocked
+        expr: |
+          max by (node) (kured_reboot_required) > 0
+          and on (node)
+          max by (node) (kube_node_spec_unschedulable) > 0
+        for: 1h
+        labels:
+          severity: warning
+          component: kured
+        annotations:
+          summary: Node {{ $labels.node }} is cordoned with a reboot still pending
+          description: >-
+            {{ $labels.node }} has been cordoned for an hour and still needs a reboot. kured drained
+            it but did not reboot or uncordon it, so the node takes no new pods.
+          runbook_url: RUNBOOK_BASE_URL/kured-reboot-blocked
