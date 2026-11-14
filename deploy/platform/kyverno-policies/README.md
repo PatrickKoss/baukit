@@ -64,6 +64,9 @@ Each policy has `tests/<name>/kyverno-test.yaml` with at least one passing and o
 kyverno test deploy/platform/kyverno-policies/tests/
 ```
 
+`validate.sh` runs these suites and applies the policies to every render; see
+`../lint/ci-policies/README.md`.
+
 Expected `skip` results do not bite: the CLI reports an excluded resource as matching any
 expectation. The pass and fail rows do.
 
