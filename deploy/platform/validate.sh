@@ -342,7 +342,7 @@ fi
 mapfile -d '' rendered_files < <(find "$rendered_dir" -type f -name '*.yaml' -print0 | sort -z)
 
 printf '==> CRD schemas\n'
-if ! python3 "$platform_dir/schemas/generate.py" --output "$schema_dir" \
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/schemas/generate.py" --output "$schema_dir" \
   --kubernetes-definitions "$kubernetes_definitions" \
   "$flux_manifest" "${rendered_files[@]}"; then
   exit 1
@@ -358,6 +358,11 @@ for rendered in "${rendered_files[@]}"; do
   valid=$(sed -n 's/^Summary: .* Valid: \([0-9]*\),.*/\1/p' "$summary_file")
   ((checked_objects += ${valid:-0}))
 done
+
+printf '==> conventions\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_conventions.py" --rendered "$rendered_dir" --chart-cache "$cache_dir"; then
+  status=1
+fi
 
 printf '==> schema and fixture tests\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/schemas" -p 'test_*.py' ||
