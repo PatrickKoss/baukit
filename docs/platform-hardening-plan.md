@@ -215,7 +215,7 @@ versions. This phase comes first so every later task has a place to put its test
 Goal: one command builds a disposable cluster with the composed platform and proves the guardrails
 behave. Later phases add test directories here.
 
-- [ ] **E1 Runner.** `deploy/platform/e2e/run.sh` creates the k3d cluster `baukit-platform-e2e` with the
+- [~] **E1 Runner.** `deploy/platform/e2e/run.sh` creates the k3d cluster `baukit-platform-e2e` with the
   same k3s image and hardening flags as the lifecycle (S5), binds everything to `127.0.0.1`, installs Flux
   at the pinned version (including notification-controller), serves the working tree through the
   local-snapshot source (with S6's file filtering), applies `e2e/overlay/`, waits for every Kustomization
@@ -223,16 +223,16 @@ behave. Later phases add test directories here.
   `kubectl get events,polr,cpolr -A`, Flux status and pod logs into `.ci-gate/platform-e2e/`, and deletes
   the cluster on exit (trap, also on SIGINT). Every run takes `flock` on the host's android and browser
   locks before creating the cluster.
-- [ ] **E2 Overlay.** `deploy/platform/e2e/overlay/` composes every base except `hcloud` and `posthog`
+- [~] **E2 Overlay.** `deploy/platform/e2e/overlay/` composes every base except `hcloud` and `posthog`
   (posthog is checked separately in N4) plus a test tenant namespace built from `components/tenant`, a
   tiny echo app deployed with `baukit-app` (image built in the runner from a pinned `nginx-unprivileged`
   digest, so it needs no product), and a webhook sink (pinned image) that records Alertmanager
   notifications for assertions.
-- [ ] **E3 Gate lane.** Add `platform-e2e` to `scripts/ci-gate.sh` and `ci-gate.toml`, selected for
+- [~] **E3 Gate lane.** Add `platform-e2e` to `scripts/ci-gate.sh` and `ci-gate.toml`, selected for
   `deploy/platform/**`, `deploy/chart/**` and `deploy/observability*/**`. Measure wall time over three
   runs and record it in the log. If the median exceeds 15 minutes, split the chainsaw suites into two
   lanes before adding it to the full gate (D9). Add a `make platform-e2e` target and a CLAUDE.md row.
-- [ ] **E4 Baseline tests**, present from day one so every later phase has a pattern to copy:
+- [~] **E4 Baseline tests**, present from day one so every later phase has a pattern to copy:
   `smoke/` asserts all Flux objects are Ready and no pod restarted more than once;
   `alert-pipeline/` creates a PrometheusRule with an always-firing `BaukitE2eProbe` alert and asserts the
   webhook sink receives it within 3 minutes (this proves rule selection, Prometheus, Alertmanager
