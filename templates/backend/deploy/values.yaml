@@ -11,10 +11,13 @@ config:
     WORKER__POLL_INTERVAL_MILLISECONDS: 250
 {% endif %}
 
+# Image tags are placeholders. The release pipeline replaces 0.0.0-unset with
+# the built tag, or sets image.digest (sha256:...), for example with
+# --set api.image.tag=$GIT_SHA. The chart rejects latest.
 api:
   image:
     repository: ghcr.io/patrickkoss/{{ context.app_name }}
-    tag: latest{% if context.port_offset > 0 or context.service_ports_declared %}
+    tag: "0.0.0-unset"{% if context.port_offset > 0 or context.service_ports_declared %}
   ports:
     http: {{ context.api_container_port }}
     ops: {{ context.ops_container_port }}
@@ -24,7 +27,7 @@ migration:
   enabled: true
   image:
     repository: ghcr.io/patrickkoss/{{ context.app_name }}-migrate
-    tag: latest
+    tag: "0.0.0-unset"
   command:
     - /app/migrate
 
@@ -32,7 +35,7 @@ worker:
   enabled: {{ "true" if context.worker else "false" }}
 {% if context.worker %}  image:
     repository: ghcr.io/patrickkoss/{{ context.app_name }}-worker
-    tag: latest
+    tag: "0.0.0-unset"
   command:
     - /app/worker{% if context.port_offset > 0 or context.service_ports_declared %}
   ops:

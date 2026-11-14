@@ -20,6 +20,8 @@ class RedisChartImageTest(unittest.TestCase):
                         "template",
                         "redis-image-test",
                         str(CHART),
+                        "-f",
+                        str(CHART / "tests/images-values.yaml"),
                         "--set",
                         "redis.enabled=true",
                         "--set",

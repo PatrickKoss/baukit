@@ -14,7 +14,17 @@ POLICY = "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancesto
 
 def render(*args: str) -> subprocess.CompletedProcess[str]:
     return run_process(
-        ["helm", "template", "web-test", str(CHART), "--set", "web.enabled=true", *args],
+        [
+            "helm",
+            "template",
+            "web-test",
+            str(CHART),
+            "-f",
+            str(CHART / "tests/images-values.yaml"),
+            "--set",
+            "web.enabled=true",
+            *args,
+        ],
         capture_output=True,
         text=True,
         check=False,
