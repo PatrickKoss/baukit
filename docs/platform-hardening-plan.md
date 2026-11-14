@@ -160,7 +160,7 @@ docs/runbooks/platform/<slug>.md  one per alert
 Goal: every later phase lands with offline checks that run in seconds, locally and in CI, at pinned
 versions. This phase comes first so every later task has a place to put its tests.
 
-- [ ] **V1 Pinned tools.** Add `deploy/tools.toml` listing kubeconform, kustomize, helm, kyverno CLI,
+- [~] **V1 Pinned tools.** Add `deploy/tools.toml` listing kubeconform, kustomize, helm, kyverno CLI,
   chainsaw, promtool, pint, trivy, k3d, flux and yamllint with exact versions and per-platform sha256.
   Add `scripts/install-deploy-tools.sh`, which installs into gitignored `.tools/bin` and verifies checksums.
   `validate.sh`, `check-rules.sh` and the e2e runner put `.tools/bin` first on PATH and fail with exit 2
@@ -169,7 +169,7 @@ versions. This phase comes first so every later task has a place to put its test
   Acceptance: `scripts/test_install_deploy_tools.py` covers checksum mismatch, unknown platform and
   idempotent re-run. `scripts/check-version-coherence.py` or a new test fails if `tools.toml` and the
   CI workflow disagree.
-- [ ] **V2 Real schemas for every kind.** Add `deploy/platform/schemas/generate.py`. It extracts CRDs
+- [x] **V2 Real schemas for every kind.** Add `deploy/platform/schemas/generate.py`. It extracts CRDs
   from the cached chart tarballs, the vendored manifests (barman plugin) and `flux install --export` at
   the pinned Flux version, converts them to kubeconform JSON schemas in `.helm-cache/crd-schemas/`, and
   is deterministic. `validate.sh` passes `-schema-location default` plus the local template, deletes
@@ -240,15 +240,15 @@ behave. Later phases add test directories here.
 
 ## Phase C: app chart and templates
 
-- [ ] **C1 Ingress controller default.** Change `networkPolicy.ingressController.namespaceSelector` to
+- [~] **C1 Ingress controller default.** Change `networkPolicy.ingressController.namespaceSelector` to
   `kubernetes.io/metadata.name: traefik` and the pod selector to the Traefik base's labels. Add a chart
   test. The e2e echo app must be reachable through Traefik with the chart's defaults (`e2e/tests/ingress/`).
-- [ ] **C2 No mutable tags.** Remove the `latest` default from `baukit-app.image`. Each image takes
+- [~] **C2 No mutable tags.** Remove the `latest` default from `baukit-app.image`. Each image takes
   `tag` or `digest`, at least one is required, and `latest` fails the render with a clear message.
   `templates/backend/deploy/values.yaml` writes a placeholder the product's release pipeline replaces
   (for example `tag: "0.0.0-unset"` plus a comment), and the fixture gate renders the chart with the
   generated values to prove it. Regenerate the CLI snapshots and check the diff.
-- [ ] **C3 Chart hardening.**
+- [~] **C3 Chart hardening.**
   - `values.schema.json` covering every key, with `additionalProperties: false` at the top level.
   - A dedicated ServiceAccount per release with `automountServiceAccountToken: false`.
   - `startupProbe` on API and worker, so slow boots stop tripping liveness.
@@ -259,16 +259,16 @@ behave. Later phases add test directories here.
   - An `emptyDir` `/tmp` mount, so `readOnlyRootFilesystem` keeps working when a library writes temp files.
   - Fix the stray `{{ with` (missing `-`) before `api.networkPolicy.additionalEgress` in
     `templates/networkpolicy.yaml`.
-- [ ] **C4 Smoke harness under `restricted`.** `deploy/smoke/k3d-smoke.sh` labels its namespace
+- [~] **C4 Smoke harness under `restricted`.** `deploy/smoke/k3d-smoke.sh` labels its namespace
   `pod-security.kubernetes.io/enforce=restricted` before installing, and installs the baukit Kyverno
   policy library in Enforce mode first. A chart change that breaks either fails the smoke.
-- [ ] **C5 Chart tests.** Extend `scripts/test_chart_*.py`: security context on every container,
+- [~] **C5 Chart tests.** Extend `scripts/test_chart_*.py`: security context on every container,
   NetworkPolicy peers per process, env contract (prefix, overrides, secret refs), schema rejection of
   unknown keys and of `latest`. Every C task adds its own cases.
 
 ## Phase K: Kyverno policy library
 
-- [ ] **K1 Controller.** Bump the Kyverno base to chart 3.10.0 (Kyverno v1.20.0), after reading its
+- [~] **K1 Controller.** Bump the Kyverno base to chart 3.10.0 (Kyverno v1.20.0), after reading its
   upgrade notes.
   - Enable ServiceMonitors for all four controllers.
   - Set `features.policyExceptions.enabled: true` with `namespace: kyverno`, so exceptions can only
@@ -278,15 +278,15 @@ behave. Later phases add test directories here.
     `flux-system`, so a broken policy can never block the controllers that would repair it.
   - Add Policy Reporter (pinned chart, metrics only, UI off), so dashboards show current violations
     and not only admission events.
-- [ ] **K2 Migrate the existing three policies** (`require-container-resources`,
+- [~] **K2 Migrate the existing three policies** (`require-container-resources`,
   `disallow-latest-image-tag`, `protect-operations-ports`) to the D4 policy type in a new base
   `deploy/platform/kyverno-policies/`, each with a `kyverno test` suite.
-- [ ] **K3 Pod Security.** Install the upstream `kyverno-policies` chart (pinned, `podSecurityStandard:
+- [~] **K3 Pod Security.** Install the upstream `kyverno-policies` chart (pinned, `podSecurityStandard:
   restricted`, `validationFailureAction: Audit` cluster-wide). It reports `restricted` gaps in every
   namespace, platform namespaces included. PSA labels (N1) remain the enforcement backstop. Tenant
   namespaces get `Enforce` through `validationFailureActionByPolicy` plus a namespace selector on
   `baukit.dev/tenant=true`.
-- [ ] **K4 Baukit policy set.** Each one ships with pass and fail fixtures, a message that names the fix,
+- [~] **K4 Baukit policy set.** Each one ships with pass and fail fixtures, a message that names the fix,
   and the rollout mode it lands in:
 
   | Policy | Applies to | Mode at landing |
@@ -307,7 +307,7 @@ behave. Later phases add test directories here.
   | `flux-tenant-service-account` (Kustomization/HelmRelease in a tenant namespace must set `serviceAccountName` and may not reference sources in other namespaces) | tenants | Enforce |
   | `verify-baukit-images` (cosign keyless, identity = the product's release workflow) | tenants | Audit (D6) |
 
-- [ ] **K5 Generated defaults for tenants.** A `GeneratingPolicy` (or `ClusterPolicy` generate rule if
+- [~] **K5 Generated defaults for tenants.** A `GeneratingPolicy` (or `ClusterPolicy` generate rule if
   D4 says so) creates `default-deny` NetworkPolicy, a LimitRange and the DNS egress allow in every
   namespace labelled `baukit.dev/tenant=true`, with `synchronize: true`. `components/tenant` labels the
   namespace. An overlay that forgets the component still gets a default deny.
@@ -372,7 +372,7 @@ behave. Later phases add test directories here.
 
 ## Phase O: platform observability
 
-- [ ] **O1 Rule and dashboard discovery.** Set `ruleNamespaceSelector`, `serviceMonitorNamespaceSelector`
+- [~] **O1 Rule and dashboard discovery.** Set `ruleNamespaceSelector`, `serviceMonitorNamespaceSelector`
   and `podMonitorNamespaceSelector` to match `app.kubernetes.io/part-of: baukit-platform` namespaces,
   and label every base namespace with it. Grafana's sidecar searches `ALL` with the `grafana_dashboard`
   label and uses `folderAnnotation`, so each component gets its own folder. This fixes F-02. The V4
@@ -448,7 +448,7 @@ behave. Later phases add test directories here.
 
 ## Phase FA: Falco runtime security
 
-- [ ] **FA0 Spike (timeboxed, one agent).** On a disposable k3d cluster, install Falco with
+- [~] **FA0 Spike (timeboxed, one agent).** On a disposable k3d cluster, install Falco with
   `modern_ebpf` and record in the log:
   - whether k3s' containerd socket (`/run/k3s/containerd/containerd.sock` inside the node container)
     gives container and Kubernetes metadata;
@@ -508,11 +508,11 @@ behave. Later phases add test directories here.
 
 ## Phase R: reliability
 
-- [ ] **R1 Traefik** (F-01, D7): a Deployment with 2 replicas where the node count allows (1 locally),
+- [~] **R1 Traefik** (F-01, D7): a Deployment with 2 replicas where the node count allows (1 locally),
   `type: LoadBalancer` through k3s ServiceLB, rolling update `maxUnavailable: 0, maxSurge: 1`, PDB,
   `platform-critical`, `install/upgrade.crds: CreateReplace`. The e2e `ingress/` test bumps a pod
   annotation and asserts the rollout completes with no failed requests from a curl loop.
-- [ ] **R2 CNPG** (F-03, F-07): `enablePDB: false` when `instances: 1` (documented in the README, with
+- [~] **R2 CNPG** (F-03, F-07): `enablePDB: false` when `instances: 1` (documented in the README, with
   `nodeMaintenanceWindow` for multi-instance overlays). Scope the restore-test Role's delete and patch
   to `resourceNames: [postgres-cluster-restore-test]`. Give the restore test a Delete-policy
   StorageClass on Hetzner. Add an e2e test that drains the node with `kubectl drain --dry-run=server`
@@ -538,7 +538,7 @@ behave. Later phases add test directories here.
   bootstraps `redis-0` as master when no Sentinel answers. Sentinels set `announce-hostnames` and
   `resolve-hostnames`. e2e test: kill the master, wait for failover, restart the old master, assert it
   rejoins as a replica with the data intact.
-- [ ] **R8 Prune safety** (F-08): drop `hcloud/namespace.yaml`. Annotate stateful objects (Namespaces
+- [~] **R8 Prune safety** (F-08): drop `hcloud/namespace.yaml`. Annotate stateful objects (Namespaces
   that hold PVCs, CNPG Clusters, PVCs) with `kustomize.toolkit.fluxcd.io/prune: disabled`. The V4
   check enforces it.
 
@@ -580,7 +580,7 @@ behave. Later phases add test directories here.
 
   Run kube-bench (k3s CIS profile, pinned image) as a report-only e2e step and record the score in
   the log.
-- [ ] **S6 Local lifecycle exposure** (F-09, F-10): build the snapshot from
+- [~] **S6 Local lifecycle exposure** (F-09, F-10): build the snapshot from
   `git ls-files --cached --others --exclude-standard`, bind the snapshot server and the k3d API, 80 and
   443 to `127.0.0.1` (or the k3d network gateway), run the snapshot image as non-root, validate
   `Content-Length` in `local-git-http.py` (with a test), and print secret locations instead of values
@@ -658,3 +658,14 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   removed keycloak base; `ci.yml` has no platform-validate job. Upstream versions seen today: Kyverno
   chart 3.10.0 (v1.20.0), kyverno-policies 3.10.0, Falco chart 9.2.2 (Falco 0.45.2), falcosidekick
   chart 0.14.3.
+- 2026-11-14: orchestration started. Integration branch `task/platform-hardening`
+  (`baukit-worktrees/ph-int`); agents branch from it into `baukit-worktrees/ph-<task>`. Wave 1 (6 agents,
+  Opus low): V1, V2, C (C1-C3, C5, C4 namespace part), D (R1, R2, R8, O1, S6), FA0 spike, K (K1-K5
+  offline). Decisions D1-D9 taken at their defaults.
+- 2026-11-14: V2 merged. kubeconform now checks 560 objects (was 92 checked, 95 skipped) including every
+  HelmRelease's rendered chart, with no skip list and no `-ignore-missing-schemas`. CRD schemas come from
+  the rendered charts (cert-manager, cnpg, kyverno and kube-prometheus-stack template their CRDs, so a
+  tarball scan misses them) plus `flux install --export`. The CRD kind's own schema is built from
+  yannh/kubernetes-json-schema `_definitions.json` at a pinned commit and sha256. Re-verified: step green,
+  each misspelled fixture fails on its field. Follow-up for V1: the Flux pin currently lives in
+  `platform-lifecycle.sh`; `tools.toml` must become the single source.
