@@ -1,0 +1,31 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-probes
+policies:
+  - ../../policies/require-probes.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: require-probes
+    kind: Deployment
+    resources: [probed]
+    result: pass
+  - isValidatingPolicy: true
+    policy: require-probes
+    kind: Deployment
+    resources: [readiness-only]
+    result: fail
+  - isValidatingPolicy: true
+    policy: require-probes
+    kind: StatefulSet
+    resources: [unprobed-sts]
+    result: fail
+  - isValidatingPolicy: true
+    policy: require-probes
+    kind: Deployment
+    resources: [platform-unprobed]
+    result: skip

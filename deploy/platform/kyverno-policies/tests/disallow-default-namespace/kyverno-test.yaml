@@ -1,0 +1,19 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: disallow-default-namespace
+policies:
+  - ../../policies/disallow-default-namespace.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: disallow-default-namespace
+    kind: Deployment
+    resources: [named]
+    result: pass
+  - isValidatingPolicy: true
+    policy: disallow-default-namespace
+    kind: Deployment
+    resources: [in-default]
+    result: fail

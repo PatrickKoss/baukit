@@ -1,0 +1,29 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-cluster-admin-binding
+policies:
+  - ../../policies/restrict-cluster-admin-binding.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: restrict-cluster-admin-binding
+    kind: ClusterRoleBinding
+    resources: [cluster-reconciler-flux-system, masters]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-cluster-admin-binding
+    kind: ClusterRoleBinding
+    resources: [tenant-admin]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-cluster-admin-binding
+    kind: RoleBinding
+    resources: [user-admin]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-cluster-admin-binding
+    kind: RoleBinding
+    resources: [view]
+    result: pass

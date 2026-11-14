@@ -1,0 +1,44 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-psa-labels
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Require Pod Security Admission labels
+    policies.kyverno.io/severity: high
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [namespaces]
+  variables:
+    - name: labels
+      expression: object.metadata.?labels.orValue({})
+    - name: enforce
+      expression: variables.labels[?"pod-security.kubernetes.io/enforce"].orValue("")
+    - name: privilegedAllowlist
+      expression: '["kube-system", "observability-agents", "kured", "falco"]'
+    - name: isTenant
+      expression: variables.labels[?"baukit.dev/tenant"].orValue("") == "true"
+  validations:
+    - expression: variables.enforce in ["privileged", "baseline", "restricted"]
+      message: >-
+        Namespaces must carry pod-security.kubernetes.io/enforce set to restricted, baseline or
+        privileged. Add the label, plus enforce-version, audit and warn, to the Namespace manifest.
+    - expression: >-
+        variables.enforce != "privileged" || object.metadata.name in variables.privilegedAllowlist
+      messageExpression: >-
+        "Namespace " + object.metadata.name + " may not enforce privileged. Only kube-system, " +
+        "observability-agents, kured and falco may; use restricted or baseline."
+    - expression: "!variables.isTenant || variables.enforce == 'restricted'"
+      message: >-
+        Tenant namespaces (baukit.dev/tenant=true) must enforce restricted. Include the tenant
+        component instead of labelling the namespace by hand.

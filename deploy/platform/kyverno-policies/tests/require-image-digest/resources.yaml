@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: digest
+  namespace: shop-production
+spec:
+  containers:
+    - name: app
+      image: ghcr.io/example/app@sha256:1111111111111111111111111111111111111111111111111111111111111111
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tagged
+  namespace: shop-production
+spec:
+  containers:
+    - name: app
+      image: ghcr.io/example/app:1.0.0
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: tagged-testing
+  namespace: shop-testing
+spec:
+  containers:
+    - name: app
+      image: ghcr.io/example/app:1.0.0

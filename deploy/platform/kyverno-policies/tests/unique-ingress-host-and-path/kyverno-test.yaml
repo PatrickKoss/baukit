@@ -1,0 +1,21 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: unique-ingress-host-and-path
+policies:
+  - ../../policies/unique-ingress-host-and-path.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: unique-ingress-host-and-path
+    kind: Ingress
+    resources: [existing, other-path, other-host]
+    result: pass
+  - isValidatingPolicy: true
+    policy: unique-ingress-host-and-path
+    kind: Ingress
+    resources: [clash]
+    result: fail
