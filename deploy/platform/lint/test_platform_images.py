@@ -232,13 +232,14 @@ case " $* " in
   *" config "*)
     if [ -n "${FAKE_DS:-}" ]; then
       printf '{"Results":[{"Target":"deploy__app./Dockerfile","Misconfigurations":'
-      printf '[{"ID":"DS-0002","Status":"FAIL"}]}]}'
+      printf '[{"ID":"DS-0002","Status":"FAIL"},{"ID":"DS-0001","Status":"PASS"}]}]}'
     else
       printf '{"Results":[]}'
     fi
     exit 0 ;;
   *vulnerable*)
-    printf '{"Results":[{"Target":"x","Vulnerabilities":[{"VulnerabilityID":"CVE-2026-1"}]}]}'
+    printf '{"Results":[{"Target":"x","Vulnerabilities":'
+    printf '[{"VulnerabilityID":"CVE-2026-1","Status":"fixed"}]}]}'
     exit 0 ;;
   *broken*) exit 1 ;;
 esac

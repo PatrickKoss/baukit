@@ -223,15 +223,15 @@ def trivy_json(command: list[str], run: Runner) -> dict:
     return report
 
 
-def report_ids(report: dict, field: str) -> dict[str, set[str]]:
+def report_ids(report: dict, field: str, id_key: str) -> dict[str, set[str]]:
+    """Map each target to its finding IDs. Misconfigurations count only when they FAIL."""
     found: dict[str, set[str]] = {}
     for result in report.get("Results") or []:
         target = str(result.get("Target", ""))
         for item in result.get(field) or []:
-            if item.get("Status", "FAIL") == "FAIL":
-                found.setdefault(target, set()).add(
-                    str(item["VulnerabilityID" if field == "Vulnerabilities" else "ID"])
-                )
+            if field == "Misconfigurations" and item.get("Status") != "FAIL":
+                continue
+            found.setdefault(target, set()).add(str(item[id_key]))
     return found
 
 
@@ -248,7 +248,7 @@ def scan_images(images: Sequence[str], cache: Path, run: Runner) -> dict[str, se
             "--scanners", "vuln", "--timeout", SCAN_TIMEOUT,
             "--severity", SEVERITIES, "--ignore-unfixed", "--format", "json", image,
         ]  # fmt: skip
-        per_target = report_ids(trivy_json(command, run), "Vulnerabilities")
+        per_target = report_ids(trivy_json(command, run), "Vulnerabilities", "VulnerabilityID")
         reported[image] = set().union(*per_target.values()) if per_target else set()
     return reported
 
@@ -260,7 +260,7 @@ def scan_dockerfiles(
         "trivy", "config", "--cache-dir", str(cache), "--quiet",
         "--severity", SEVERITIES, "--format", "json", str(stage),
     ]  # fmt: skip
-    per_target = report_ids(trivy_json(command, run), "Misconfigurations")
+    per_target = report_ids(trivy_json(command, run), "Misconfigurations", "ID")
     by_staged = {path.relative_to(stage).as_posix(): source for source, path in staged.items()}
     reported = {source: set() for source in staged}
     for target, ids in per_target.items():
