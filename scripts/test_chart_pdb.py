@@ -48,7 +48,8 @@ class PodDisruptionBudgetChartTest(unittest.TestCase):
         self.assertEqual(list(budgets), [f"{RELEASE}-baukit-app-api"])
 
     def test_disabled_budget_stays_off(self) -> None:
-        self.assertEqual(self.budgets("api.replicas=3", "api.podDisruptionBudget.enabled=false"), {})
+        budgets = self.budgets("api.replicas=3", "api.podDisruptionBudget.enabled=false")
+        self.assertEqual(budgets, {})
 
     def test_api_budget_selects_the_api_pods(self) -> None:
         budgets = self.budgets("api.replicas=2", "api.podDisruptionBudget.minAvailable=1")

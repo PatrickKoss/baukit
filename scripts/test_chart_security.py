@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import yaml
 from process_runner import run_process
@@ -70,9 +70,7 @@ class SecurityContextTest(unittest.TestCase):
 
     def test_every_container_meets_restricted(self) -> None:
         docs = render("--set", "redis.enabled=true")
-        self.assertEqual(
-            set(workloads(docs)), {"api", "worker", "migrate", "seed", "web", "redis"}
-        )
+        self.assertEqual(set(workloads(docs)), {"api", "worker", "migrate", "seed", "web", "redis"})
         self.assert_restricted(docs)
 
     def test_sentinel_containers_meet_restricted(self) -> None:
@@ -108,8 +106,10 @@ class SecurityContextTest(unittest.TestCase):
             with self.subTest(process=process):
                 volumes = {v["name"]: v for v in pod_spec(workload)["volumes"]}
                 self.assertEqual(volumes["tmp"], {"name": "tmp", "emptyDir": {}})
-                mounts = {m["mountPath"] for m in containers(workload)[0]["volumeMounts"]}
-                self.assertIn("/tmp", mounts)
+                mounts = {
+                    m["name"]: m["mountPath"] for m in containers(workload)[0]["volumeMounts"]
+                }
+                self.assertEqual(PurePosixPath(mounts["tmp"]).parts, ("/", "tmp"))
 
 
 class LifecycleTest(unittest.TestCase):
