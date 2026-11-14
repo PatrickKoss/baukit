@@ -243,12 +243,12 @@ behave. Later phases add test directories here.
 - [~] **C1 Ingress controller default.** Change `networkPolicy.ingressController.namespaceSelector` to
   `kubernetes.io/metadata.name: traefik` and the pod selector to the Traefik base's labels. Add a chart
   test. The e2e echo app must be reachable through Traefik with the chart's defaults (`e2e/tests/ingress/`).
-- [~] **C2 No mutable tags.** Remove the `latest` default from `baukit-app.image`. Each image takes
+- [x] **C2 No mutable tags.** Remove the `latest` default from `baukit-app.image`. Each image takes
   `tag` or `digest`, at least one is required, and `latest` fails the render with a clear message.
   `templates/backend/deploy/values.yaml` writes a placeholder the product's release pipeline replaces
   (for example `tag: "0.0.0-unset"` plus a comment), and the fixture gate renders the chart with the
   generated values to prove it. Regenerate the CLI snapshots and check the diff.
-- [~] **C3 Chart hardening.**
+- [x] **C3 Chart hardening.**
   - `values.schema.json` covering every key, with `additionalProperties: false` at the top level.
   - A dedicated ServiceAccount per release with `automountServiceAccountToken: false`.
   - `startupProbe` on API and worker, so slow boots stop tripping liveness.
@@ -262,7 +262,7 @@ behave. Later phases add test directories here.
 - [~] **C4 Smoke harness under `restricted`.** `deploy/smoke/k3d-smoke.sh` labels its namespace
   `pod-security.kubernetes.io/enforce=restricted` before installing, and installs the baukit Kyverno
   policy library in Enforce mode first. A chart change that breaks either fails the smoke.
-- [~] **C5 Chart tests.** Extend `scripts/test_chart_*.py`: security context on every container,
+- [x] **C5 Chart tests.** Extend `scripts/test_chart_*.py`: security context on every container,
   NetworkPolicy peers per process, env contract (prefix, overrides, secret refs), schema rejection of
   unknown keys and of `latest`. Every C task adds its own cases.
 
@@ -718,3 +718,18 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   below it. Gate steps `platform-validate` and `observability-rules` install their pinned tools first, with
   a test that ties each `--only` list to the step's tools. Sent back once: metrics toggle detection moved
   from regex to parsed values, `psa-labels` now requires `enforce-version`.
+
+- 2026-11-14: C merged (C2, C3, C5 done; C1 chart side done, the Traefik reachability test waits on E's
+  `e2e/tests/ingress/`; C4 PSA half done). Images take `tag` or `digest`, `latest` fails the render,
+  `values.schema.json` closes the top level, and each release gets its own ServiceAccount, startup
+  probes, soft spread, a preStop sleep, the default PDB, job TTLs and an `/tmp` emptyDir. The smoke now
+  creates the product namespace `restricted` before applying anything, runs dependencies in
+  `<namespace>-deps` at `baseline`, and fails on PodSecurity events. Sent back once: the first version
+  labelled the namespace only after non-compliant dependencies were running. Open for C4: the smoke
+  applies `BAUKIT_SMOKE_POLICY_DIR` but does not install Kyverno itself, so the Kyverno half still
+  needs a smoke install of `deploy/platform/kyverno` plus the policy library in Enforce mode. Breaking
+  for product smokes: their dependency manifests now land in `<namespace>-deps`, so their Secrets must
+  point at `<svc>.<namespace>-deps.svc`.
+- 2026-11-14: Integration branch fix c9c106f8. V2 and V4 had added three `noqa` sites and pushed
+  `baukit check` past the suppression budget. The lint modules now run subprocesses through
+  `scripts/process_runner.py` and load `helm_yaml` with importlib, so `baukit check` is clean again.
