@@ -436,7 +436,7 @@ behave. Later phases add test directories here.
   - Flux notification-controller sends `Provider` type `alertmanager` events for Kustomization,
     HelmRelease and GitRepository errors.
   - The e2e `alert-pipeline/` test covers the example config.
-- [ ] **O6 Runbooks.** `docs/runbooks/platform/<slug>.md` and `docs/runbooks/app/<slug>.md`, one per
+- [x] **O6 Runbooks.** `docs/runbooks/platform/<slug>.md` and `docs/runbooks/app/<slug>.md`, one per
   alert, with the same headings: meaning, impact, first checks (exact `kubectl`/LogQL/PromQL), fix,
   escalation. `runbook_url` becomes `{{ .Values.runbookBaseUrl }}/<slug>` (overlay value). The V4 check
   enforces that every slug has a file.
@@ -745,3 +745,10 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   (`catalog = false`) and stops counting LogQL stages; shared vectors in
   `fixtures/observability/metric-references.json`. One per-site pint disable on `BaukitDeadMansSwitch`
   (a heartbeat must always fire).
+- 2026-11-14: O6 merged. Both packs require `runbookBaseUrl` and replace a `RUNBOOK_BASE_URL/<slug>`
+  token; 15 runbooks (13 app, 2 platform) with Meaning, Impact, First checks, Fix, Escalation.
+  `alert-metadata` and `alert-runbook` are active, and slugs resolve per pack (`docs/runbooks/app` vs
+  `docs/runbooks/platform`), with tests for a missing file and a file in the wrong pack. From O4:
+  `BaukitDeadMansSwitch` deleted (Watchdog covers it), the template's `ApiHighErrorRatio` is
+  `severity: critical` with a description and a repo-relative runbook (`docs/runbooks/api-high-error-ratio.md`
+  ships in the product). Every new alert must ship its runbook in the same change.
