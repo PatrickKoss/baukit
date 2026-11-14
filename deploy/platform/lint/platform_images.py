@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import itertools
 import re
 import sys
 import textwrap
@@ -28,7 +29,9 @@ JINJA_STATEMENT = re.compile(r"\{%-?.*?-?%\}", re.DOTALL)
 JINJA_EXPRESSION = re.compile(r"\{\{-?.*?-?\}\}", re.DOTALL)
 JINJA_PLACEHOLDER = "placeholder"
 SEVERITIES = "HIGH,CRITICAL"
+SCAN_TIMEOUT = "20m"
 RAW_ROOTS = ("deploy/platform",)
+DOCKERFILE_ROOTS = ("deploy", "templates", "examples")
 RAW_EXCLUDED = ("tests", "fixtures")
 
 
@@ -106,18 +109,21 @@ def raw_manifests(repo_root: Path, roots: Sequence[str], excluded: Sequence[str]
 
 
 def check_ignore_file(text: str, today: datetime.date) -> list[IgnoreProblem]:
+    """A comment block is the reason for the entries below it, up to the next blank line."""
     problems: list[IgnoreProblem] = []
     reason = ""
+    in_entries = False
     for number, raw in enumerate(text.splitlines(), start=1):
         line = raw.strip()
         if not line:
-            reason = ""
-            continue
-        if line.startswith("#"):
-            reason = f"{reason} {line.lstrip('#').strip()}".strip()
-            continue
-        problems.extend(entry_problems(number, line, reason, today))
-        reason = ""
+            reason, in_entries = "", False
+        elif line.startswith("#"):
+            comment = line.lstrip("#").strip()
+            reason = comment if in_entries else f"{reason} {comment}".strip()
+            in_entries = False
+        else:
+            problems.extend(entry_problems(number, line, reason, today))
+            in_entries = True
     return problems
 
 
@@ -146,13 +152,15 @@ def entry_problems(
 
 
 def render_jinja_superset(text: str) -> str:
-    """Drop Jinja statements and fill expressions, so every branch of the template is scanned."""
-    return JINJA_EXPRESSION.sub(JINJA_PLACEHOLDER, JINJA_STATEMENT.sub("", text))
+    """Drop Jinja statements and give each expression its own name, so every branch is scanned."""
+    counter = itertools.count(1)
+    without_statements = JINJA_STATEMENT.sub("", text)
+    return JINJA_EXPRESSION.sub(lambda _: f"{JINJA_PLACEHOLDER}{next(counter)}", without_statements)
 
 
 def tracked_dockerfiles(repo_root: Path) -> list[Path]:
     result = process_runner.run_process(
-        ["git", "ls-files", "--", "*Dockerfile*"],
+        ["git", "ls-files", "--", *(f"{root}/*Dockerfile*" for root in DOCKERFILE_ROOTS)],
         capture_output=True,
         text=True,
         cwd=repo_root,
@@ -196,6 +204,7 @@ def scan_images(images: Sequence[str], cache: Path, ignore_file: Path, run: Runn
         command = [
             "trivy", "image", *common,
             "--skip-db-update", "--skip-java-db-update",
+            "--scanners", "vuln", "--timeout", SCAN_TIMEOUT,
             "--severity", SEVERITIES, "--ignore-unfixed", "--exit-code", "1",
             "--ignorefile", str(ignore_file), image,
         ]  # fmt: skip

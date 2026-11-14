@@ -143,6 +143,10 @@ class IgnoreFileTests(unittest.TestCase):
     def test_entry_with_reason_and_future_expiry_passes(self):
         self.assertEqual(self.problems("# bump pending in SC2\nCVE-2026-0001 exp:2026-11-28\n"), [])
 
+    def test_one_reason_covers_the_entries_below_it(self):
+        text = "# bump pending in SC2\nCVE-2026-0001 exp:2026-11-28\nCVE-2026-0002 exp:2026-11-28\n"
+        self.assertEqual(self.problems(text), [])
+
     def test_entry_without_reason_fails(self):
         self.assertEqual(
             self.problems("CVE-2026-0001 exp:2026-11-28\n"),
@@ -180,7 +184,7 @@ class JinjaDockerfileTests(unittest.TestCase):
         )
         self.assertEqual(
             platform_images.render_jinja_superset(template),
-            "FROM base\nRUN apt-get install placeholder\nFROM placeholder AS placeholder\n",
+            "FROM base\nRUN apt-get install placeholder1\nFROM placeholder2 AS placeholder3\n",
         )
 
 
@@ -238,6 +242,7 @@ class MainTests(unittest.TestCase):
         self.assertEqual(self.run_main("ghcr.io/example/clean:1.0"), 0)
         calls = self.calls.read_text()
         self.assertIn("--ignore-unfixed --exit-code 1", calls)
+        self.assertIn("--scanners vuln", calls)
         self.assertIn("ghcr.io/example/clean:1.0", calls)
         self.assertRegex(calls, r"(?m)^config .*/work/dockerfiles$")
         staged = self.directory / "work" / "dockerfiles" / "deploy__app." / "Dockerfile"
