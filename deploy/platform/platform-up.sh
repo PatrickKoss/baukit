@@ -14,6 +14,8 @@ cluster_name=${BAUKIT_PLATFORM_CLUSTER:-baukit-local}
 # k3s 1.34 patch while testing/production retain the I0 stable-channel pin.
 k3s_image=${BAUKIT_PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.8-k3s1}
 git_port=${BAUKIT_PLATFORM_GIT_PORT:-9418}
+# Must sit inside nodeCIDR in overlays/local/cluster-network/cluster-network.yaml.
+k3d_subnet=${BAUKIT_PLATFORM_SUBNET:-10.89.0.0/24}
 
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -209,6 +211,7 @@ up() {
       --image "$k3s_image" \
       --servers 1 \
       --agents 0 \
+      --subnet "$k3d_subnet" \
       --k3s-arg '--disable=traefik@server:0' \
       --port '80:80@loadbalancer' \
       --port '443:443@loadbalancer' \

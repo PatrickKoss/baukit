@@ -1,0 +1,9 @@
+# Example node network for the composition check.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: baukit-cluster-network
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  nodeCIDR: 10.89.0.0/16
