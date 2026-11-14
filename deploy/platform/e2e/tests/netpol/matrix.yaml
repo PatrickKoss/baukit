@@ -1,0 +1,273 @@
+# Expected NetworkPolicy verdicts for the probe runner (N5). Each row starts a short-lived probe pod in
+# from.namespace with from.labels and opens a TCP connection to the destination:
+#   service: <name>.<namespace>   the Service's cluster DNS name and port
+#   pod: {namespace, labels}       the first Ready pod matching the labels, by pod IP
+#   host: <ip> | node              a literal address; "node" is the IP of the node the probe runs on
+# Namespaces starting with netpol- are created by the runner and carry the tenant component labels, so
+# Kyverno generates the tenant defaults (default deny, DNS egress). netpol-tenant keeps only those.
+# netpol-tenant-open adds a NetworkPolicy that allows all egress, so its rows test the destination's
+# ingress rules. netpol-tenant-pg is netpol-tenant-open plus baukit.dev/postgres-client=true.
+# Probe pods in platform namespaces borrow the pod labels of the workload whose policy they exercise.
+# Every allow rule in the N3 per-base policies has at least one row here.
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: postgres-cluster-rw.postgres, port: 5432}
+  expect: deny
+- from: {namespace: netpol-tenant-open, labels: {baukit.dev/postgres-client: "true"}}
+  to: {service: postgres-cluster-rw.postgres, port: 5432}
+  expect: deny
+- from: {namespace: netpol-tenant-pg, labels: {}}
+  to: {service: postgres-cluster-rw.postgres, port: 5432}
+  expect: deny
+- from: {namespace: netpol-tenant-pg, labels: {baukit.dev/postgres-client: "true"}}
+  to: {service: postgres-cluster-rw.postgres, port: 5432}
+  expect: allow
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: loki-gateway.observability, port: 80}
+  expect: deny
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: restore-test-pushgateway.postgres, port: 9091}
+  expect: deny
+- from: {namespace: netpol-tenant, labels: {}}
+  to: {host: 10.43.0.1, port: 443}
+  expect: deny
+- from: {namespace: netpol-tenant, labels: {}}
+  to: {host: node, port: 6443}
+  expect: deny
+- from: {namespace: netpol-tenant, labels: {}}
+  to: {host: 169.254.169.254, port: 80}
+  expect: deny
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: kube-prometheus-stack-prometheus.observability, port: 9090}
+  expect: deny
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: kube-prometheus-stack-alertmanager.observability, port: 9093}
+  expect: deny
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: tempo.observability, port: 3200}
+  expect: deny
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: rustfs.postgres, port: 9000}
+  expect: deny
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: tempo.observability, port: 4317}
+  expect: allow
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: tempo.observability, port: 4318}
+  expect: allow
+
+# Metadata endpoint and apiserver from platform namespaces.
+- from: {namespace: cert-manager, labels: {app.kubernetes.io/name: cert-manager, app.kubernetes.io/component: controller}}
+  to: {host: 169.254.169.254, port: 80}
+  expect: deny
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {host: 169.254.169.254, port: 80}
+  expect: deny
+- from: {namespace: cert-manager, labels: {app.kubernetes.io/name: cert-manager, app.kubernetes.io/component: controller}}
+  to: {host: 10.43.0.1, port: 443}
+  expect: allow
+- from: {namespace: postgres, labels: {app.kubernetes.io/name: restore-test-pushgateway}}
+  to: {host: 10.43.0.1, port: 443}
+  expect: allow
+
+# internet-https
+- from: {namespace: cert-manager, labels: {app.kubernetes.io/name: cert-manager, app.kubernetes.io/component: controller}}
+  to: {host: 1.1.1.1, port: 443}
+  expect: allow
+- from: {namespace: cert-manager, labels: {app.kubernetes.io/name: cert-manager, app.kubernetes.io/component: controller}}
+  to: {host: 1.1.1.1, port: 80}
+  expect: deny
+- from: {namespace: cert-manager, labels: {app.kubernetes.io/name: webhook, app.kubernetes.io/instance: cert-manager}}
+  to: {host: 1.1.1.1, port: 443}
+  expect: deny
+- from: {namespace: kyverno, labels: {app.kubernetes.io/component: admission-controller, app.kubernetes.io/instance: kyverno}}
+  to: {host: 1.1.1.1, port: 443}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: alertmanager}}
+  to: {host: 1.1.1.1, port: 443}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: grafana}}
+  to: {host: 1.1.1.1, port: 443}
+  expect: deny
+- from: {namespace: postgres, labels: {cnpg.io/podRole: instance}}
+  to: {host: 1.1.1.1, port: 443}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: plugins}}
+  to: {host: 1.1.1.1, port: 443}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {host: 1.1.1.1, port: 443}
+  expect: deny
+
+# cert-manager HTTP-01 self-check
+- from: {namespace: cert-manager, labels: {app.kubernetes.io/name: cert-manager, app.kubernetes.io/component: controller}}
+  to: {pod: {namespace: traefik, labels: {app.kubernetes.io/name: traefik}}, port: 8000}
+  expect: allow
+
+# Prometheus scrape targets
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: cert-manager.cert-manager, port: 9402}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: grafana}}
+  to: {service: cert-manager.cert-manager, port: 9402}
+  expect: deny
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {pod: {namespace: cnpg-system, labels: {app.kubernetes.io/name: cloudnative-pg}}, port: 8080}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: flagger.flagger-system, port: 8080}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: kured.kured, port: 8080}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: kyverno-svc-metrics.kyverno, port: 8000}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: policy-reporter.kyverno, port: 8080}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: traefik-metrics.traefik, port: 9100}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {pod: {namespace: postgres, labels: {cnpg.io/podRole: instance}}, port: 9187}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: restore-test-pushgateway.postgres, port: 9091}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: kube-prometheus-stack-kube-state-metrics.observability, port: 8080}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: kube-prometheus-stack-operator.observability, port: 443}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: kube-prometheus-stack-alertmanager.observability, port: 9093}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: kube-prometheus-stack-grafana.observability, port: 80}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: loki.observability, port: 3100}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: loki-gateway-exporter.observability, port: 4040}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: tempo.observability, port: 3200}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: alloy.observability-agents, port: 12345}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {pod: {namespace: kube-system, labels: {k8s-app: kube-dns}}, port: 9153}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {host: node, port: 10250}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {host: node, port: 9100}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {host: node, port: 6443}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: grafana}}
+  to: {host: node, port: 10250}
+  expect: deny
+
+# Observability internals
+- from: {namespace: observability, labels: {app.kubernetes.io/name: grafana}}
+  to: {service: kube-prometheus-stack-prometheus.observability, port: 9090}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: grafana}}
+  to: {service: loki-gateway.observability, port: 80}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: grafana}}
+  to: {service: tempo.observability, port: 3200}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: grafana}}
+  to: {service: kube-prometheus-stack-alertmanager.observability, port: 9093}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: grafana}}
+  to: {service: loki.observability, port: 3100}
+  expect: deny
+- from: {namespace: observability-agents, labels: {app.kubernetes.io/name: alloy}}
+  to: {service: loki-gateway.observability, port: 80}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: loki, app.kubernetes.io/component: gateway}}
+  to: {service: loki.observability, port: 3100}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: tempo}}
+  to: {service: loki-gateway.observability, port: 80}
+  expect: deny
+- from: {namespace: flagger-system, labels: {app.kubernetes.io/name: flagger}}
+  to: {service: kube-prometheus-stack-prometheus.observability, port: 9090}
+  expect: allow
+- from: {namespace: kured, labels: {app.kubernetes.io/name: kured}}
+  to: {service: kube-prometheus-stack-prometheus.observability, port: 9090}
+  expect: deny
+- from: {namespace: observability, labels: {app.kubernetes.io/name: loki, app.kubernetes.io/component: single-binary}}
+  to: {service: rustfs.postgres, port: 9000}
+  expect: allow
+
+# PostgreSQL and the restore test
+- from: {namespace: cnpg-system, labels: {app.kubernetes.io/name: cloudnative-pg}}
+  to: {pod: {namespace: postgres, labels: {cnpg.io/podRole: instance}}, port: 8000}
+  expect: allow
+- from: {namespace: cnpg-system, labels: {app.kubernetes.io/name: cloudnative-pg}}
+  to: {service: postgres-cluster-rw.postgres, port: 5432}
+  expect: allow
+- from: {namespace: cnpg-system, labels: {app.kubernetes.io/name: cloudnative-pg}}
+  to: {service: barman-cloud.cnpg-system, port: 9090}
+  expect: allow
+- from: {namespace: postgres, labels: {cnpg.io/podRole: instance}}
+  to: {service: rustfs.postgres, port: 9000}
+  expect: allow
+- from: {namespace: postgres, labels: {app.kubernetes.io/name: postgres-restore-test}}
+  to: {service: restore-test-pushgateway.postgres, port: 9091}
+  expect: allow
+- from: {namespace: postgres, labels: {app.kubernetes.io/name: rustfs}}
+  to: {service: restore-test-pushgateway.postgres, port: 9091}
+  expect: deny
+- from: {namespace: observability, labels: {app.kubernetes.io/name: grafana}}
+  to: {service: restore-test-pushgateway.postgres, port: 9091}
+  expect: deny
+
+# Traefik
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: traefik.traefik, port: 80}
+  expect: allow
+- from: {namespace: traefik, labels: {app.kubernetes.io/name: traefik}}
+  to: {pod: {namespace: posthog, labels: {app: posthog, role: web}}, port: 8000}
+  expect: allow
+- from: {namespace: traefik, labels: {app.kubernetes.io/name: traefik}}
+  to: {service: kube-prometheus-stack-prometheus.observability, port: 9090}
+  expect: deny
+
+# PostHog fence
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: posthog-postgresql.posthog, port: 5432}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: posthog-clickhouse.posthog, port: 8123}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: posthog-kafka.posthog, port: 9092}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: posthog-redis.posthog, port: 6379}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: rustfs.postgres, port: 9000}
+  expect: allow
+- from: {namespace: posthog, labels: {app.kubernetes.io/name: posthog-clickhouse}}
+  to: {service: posthog-zookeeper.posthog, port: 2181}
+  expect: allow
+- from: {namespace: posthog, labels: {app.kubernetes.io/name: posthog-redis}}
+  to: {service: posthog-postgresql.posthog, port: 5432}
+  expect: deny
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: posthog-zookeeper.posthog, port: 2181}
+  expect: deny
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: posthog-redis.posthog, port: 6379}
+  expect: deny
