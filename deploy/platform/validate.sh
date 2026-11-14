@@ -5,28 +5,13 @@ platform_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "$platform_dir/../.." && pwd)
 cache_dir="$platform_dir/.helm-cache"
 
-missing_tools=()
-for tool in kustomize kubeconform helm; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    missing_tools+=("$tool")
-  fi
-done
-
-if ((${#missing_tools[@]} > 0)); then
-  printf 'ERROR: required platform validation tools are missing: %s\n' "${missing_tools[*]}" >&2
-  printf 'Install pinned releases into a directory on PATH. Upstream releases:\n' >&2
-  printf '  kustomize:  https://github.com/kubernetes-sigs/kustomize/releases\n' >&2
-  printf '  kubeconform: https://github.com/yannh/kubeconform/releases\n' >&2
-  printf '  helm:        https://github.com/helm/helm/releases\n' >&2
+# shellcheck source=deploy/lib/tools.sh
+. "$repo_root/deploy/lib/tools.sh"
+if ! command -v python3 >/dev/null 2>&1; then
+  printf 'ERROR: required platform validation tool is missing: python3\n' >&2
   exit 2
 fi
-
-for tool in flux python3; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    printf 'ERROR: required platform validation tool is missing: %s\n' "$tool" >&2
-    exit 2
-  fi
-done
+baukit_use_tools "$repo_root" kustomize kubeconform helm flux
 
 schema_dir="$cache_dir/crd-schemas"
 # The default kubernetes-json-schema location has no standalone CustomResourceDefinition
@@ -57,14 +42,7 @@ if [[ ${1:-} == --kubeconform ]]; then
   exit
 fi
 
-pinned_flux_version=$(sed -n 's/^flux_version=[$]{PLATFORM_FLUX_VERSION:-\(v[0-9.]*\)}$/\1/p' \
-  "$platform_dir/platform-lifecycle.sh")
-installed_flux_version=$(flux version --client | awk '{print $2}')
-if [[ -z $pinned_flux_version || $installed_flux_version != "$pinned_flux_version" ]]; then
-  printf 'ERROR: flux CLI %s does not match the pinned Flux %s\n' \
-    "$installed_flux_version" "${pinned_flux_version:-<unknown>}" >&2
-  exit 2
-fi
+pinned_flux_version=v$(baukit_tool_version "$repo_root" flux)
 
 mkdir -p "$cache_dir/repository-cache" "$cache_dir/kubeconform-schemas"
 export HELM_REPOSITORY_CONFIG="$cache_dir/repositories.yaml"

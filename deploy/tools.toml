@@ -1,0 +1,108 @@
+# Pinned validator tools for deploy/. scripts/install-deploy-tools.sh installs them into .tools/bin.
+#
+# Each tool key is the installed binary name. `url` and `member` are templates with {version}, {os}
+# and {arch}; `os_names` and `arch_names` map the platform parts to the names upstream uses. `member`
+# is the path inside a tar.gz; a tool without `member` downloads a bare binary. Every sha256 comes from
+# the upstream checksum file of that release, not from hashing a local download.
+#
+# yamllint has no standalone release build, so it installs from PyPI wheels with
+# `pip --require-hashes --only-binary :all:`. The hashes are the PyPI wheel digests; PyYAML lists one
+# wheel per CPython 3.11 to 3.14 on each platform (tomllib already needs 3.11).
+
+schema = 1
+platforms = ["linux-amd64", "linux-arm64", "darwin-arm64"]
+
+[tools.kubeconform]
+version = "0.8.0"
+url = "https://github.com/yannh/kubeconform/releases/download/v{version}/kubeconform-{os}-{arch}.tar.gz"
+member = "kubeconform"
+version_args = ["-v"]
+sha256 = { linux-amd64 = "9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883", linux-arm64 = "1f53fc8e81258197a35e8603054162a5af1de8c5af13746c71ab680d9534ed87", darwin-arm64 = "f84f4dfbebf4a6b0b230385fa065a39ea35e02608c2b50d025dcf64775a69d67" }
+
+[tools.kustomize]
+version = "5.8.3"
+url = "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv{version}/kustomize_v{version}_{os}_{arch}.tar.gz"
+member = "kustomize"
+version_args = ["version"]
+sha256 = { linux-amd64 = "cb9e31198d3f63b44848bd0afc4c8efc56e6cfef9c93a4a39a211940e6decd61", linux-arm64 = "9867b76482cfc6d25b546abc1d2b5a32bd137505aba640649b4b378f64f6d68f", darwin-arm64 = "4cbb08e209d8fff47cd60bfb6407daaf5ee699f9b9295849a1065024fac2d1ef" }
+
+[tools.helm]
+version = "4.3.1"
+url = "https://get.helm.sh/helm-v{version}-{os}-{arch}.tar.gz"
+member = "{os}-{arch}/helm"
+version_args = ["version", "--short"]
+sha256 = { linux-amd64 = "0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b", linux-arm64 = "8cf8f66ecbc252ac8f7f06cca68aba88508ddfde3a6a34feb1678ad1694b4f88", darwin-arm64 = "6b4e61c8cd27d99e5a801e63ff25dd5c70b36875c2cd659d3e9ce6b76fc23198" }
+
+# Matches the Kyverno chart 3.10.0 app version.
+[tools.kyverno]
+version = "1.20.0"
+url = "https://github.com/kyverno/kyverno/releases/download/v{version}/kyverno-cli_v{version}_{os}_{arch}.tar.gz"
+member = "kyverno"
+arch_names = { amd64 = "x86_64" }
+version_args = ["version"]
+sha256 = { linux-amd64 = "06b8f3ca7b5626473be8fb4d343ad54ab84e317142766f72420e7d44b80942e2", linux-arm64 = "7d002205369f8ebb8a5570efb6a1bfc4fa02e67ca74d6d8cf2f27783e0e54759", darwin-arm64 = "9f7e537bdf39ff4f1819d978aec791a4dafa1cfd382f75f53baf422702452149" }
+
+[tools.chainsaw]
+version = "0.2.15"
+url = "https://github.com/kyverno/chainsaw/releases/download/v{version}/chainsaw_{os}_{arch}.tar.gz"
+member = "chainsaw"
+version_args = ["version"]
+sha256 = { linux-amd64 = "295d226c89f126c0a97775d364be149f47a810c8a3f9829ee410583d0c1abe3c", linux-arm64 = "fecf5f3ea74d11da2cd5d95a4c016d5d2543cbc4844ce21adf5e727e7ffd9e44", darwin-arm64 = "502bef17dd822217e82590e9ccf01c1e26a56b3fa34a835789b9af73e82a169a" }
+
+[tools.promtool]
+version = "3.15.1"
+url = "https://github.com/prometheus/prometheus/releases/download/v{version}/prometheus-{version}.{os}-{arch}.tar.gz"
+member = "prometheus-{version}.{os}-{arch}/promtool"
+version_args = ["--version"]
+sha256 = { linux-amd64 = "6a726885328ad9efebbf36e876ce2fb6225468a71fd1e7ce3ba666d5f4d97a84", linux-arm64 = "ceb6d21493c37ca0b4513b147642797c68cf39a0f50a444d50e1e80c74f21b26", darwin-arm64 = "0d4d3d9837d27e4fcd0bd16d115b1b8d6732a4bf3e69107f1190d9ef653ae471" }
+
+[tools.pint]
+version = "0.89.4"
+url = "https://github.com/cloudflare/pint/releases/download/v{version}/pint-{version}-{os}-{arch}.tar.gz"
+member = "pint-{os}-{arch}"
+version_args = ["version"]
+sha256 = { linux-amd64 = "5077e58cc66e40dc60991a3604ee62752b7377a5251cd78745fbe657d5a5ebc9", linux-arm64 = "e400f00910c8af5eae7445fd4ff70ed27653143cba3040da5a3821f939328a68", darwin-arm64 = "4e916abeab2ad194ebeac4ad54fef3589681414ef383832b129d82ace2d8fd7b" }
+
+[tools.trivy]
+version = "0.76.1"
+url = "https://github.com/aquasecurity/trivy/releases/download/v{version}/trivy_{version}_{os}-{arch}.tar.gz"
+member = "trivy"
+os_names = { linux = "Linux", darwin = "macOS" }
+arch_names = { amd64 = "64bit", arm64 = "ARM64" }
+version_args = ["--version"]
+sha256 = { linux-amd64 = "c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0", linux-arm64 = "e174dff2a6dba5e3ae41f8d0537a6324405bd08132497340304c6b20e0f16a1f", darwin-arm64 = "11a9b6cd2752011b54f01ea4bd0dbfa9f0c41dc6538d5a3f9d23955f471bf4e5" }
+
+[tools.k3d]
+version = "5.9.0"
+url = "https://github.com/k3d-io/k3d/releases/download/v{version}/k3d-{os}-{arch}"
+version_args = ["version"]
+sha256 = { linux-amd64 = "06d8f25bc3a971c4eb29e0ff08429b180402db0f4dec838c9eac427e296800a0", linux-arm64 = "03cde5cf23e6e8e67de5a039ecf26e5b85aca82fba3e5d13dadf904cd218a250", darwin-arm64 = "fe106541d5d0a3f18debcd4d432a16f8c0ce3e6ddc06f8fbb6f696a122313e00" }
+
+# validate.sh and platform-lifecycle.sh read the Flux version from here.
+[tools.flux]
+version = "2.9.4"
+url = "https://github.com/fluxcd/flux2/releases/download/v{version}/flux_{version}_{os}_{arch}.tar.gz"
+member = "flux"
+version_args = ["version", "--client"]
+sha256 = { linux-amd64 = "c2c397a52930f52d2005c01d276116b059d062de379386d58e98115380a766a2", linux-arm64 = "dcab945f8d8658662fa1db93e150a602ba1f91da367a82e099bd65595fc7c62c", darwin-arm64 = "5350675411f1c8c20fb7fd827450933e939f7ab82a2cd92f8fa2abe497761911" }
+
+# Matches the k3s v1.36 stable channel the infrastructure pins.
+[tools.kubectl]
+version = "1.36.6"
+url = "https://dl.k8s.io/release/v{version}/bin/{os}/{arch}/kubectl"
+version_args = ["version", "--client"]
+sha256 = { linux-amd64 = "29818b6729dc9262b692307470d0558d027725e738be5dd47c760261868a2634", linux-arm64 = "35507ef408c3d38849e5d3203e18f8e861db822aa664101a9ced0869edd06046", darwin-arm64 = "1cf735c3d35ccfec28d0618784cb06a4614d2c42aade28b6be0eab76a2ffb623" }
+
+[tools.yamllint]
+version = "1.38.0"
+version_args = ["--version"]
+requirements = [
+  "yamllint==1.38.0 --hash=sha256:fc394a5b3be980a4062607b8fdddc0843f4fa394152b6da21722f5d59013c220",
+  "pathspec==1.1.1 --hash=sha256:a00ce642f577bf7f473932318056212bc4f8bfdf53128c78bbd5af0b9b20b189",
+  "pyyaml==6.0.3 --hash=sha256:b8bb0864c5a28024fac8a632c443c87c5aa6f215c0b126c449ae1a150412f31d --hash=sha256:10892704fc220243f5305762e276552a0395f7beb4dbf9b14ec8fd43b57f126c --hash=sha256:652cb6edd41e718550aad172851962662ff2681490a8a711af6a4d288dd96824 --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc --hash=sha256:9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28 --hash=sha256:fc09d0aa354569bc501d4e787133afc08552722d3ab34836a80547331bb5d4a0 --hash=sha256:0f29edc409a6392443abf94b9cf89ce99889a1dd5376d94316ae5145dfedd5d6 --hash=sha256:ee2922902c45ae8ccada2c5b501ab86c36525b883eff4255313a253a3160861c --hash=sha256:2283a07e2c21a2aa78d9c4442724ec1eb15f5e42a723b99cb3d822d48f5f7ad1 --hash=sha256:c458b6d084f9b935061bc36216e8a69a7e293a2f1e68bf956dcd9e6cbcd143f5 --hash=sha256:501a031947e3a9025ed4405a168e6ef5ae3126c59f90ce0cd6f2bfc477be31b7 --hash=sha256:34d5fcd24b8445fadc33f9cf348c1047101756fd760b4dacb5c3e99755703310",
+]
+
+# Images run by validators, pinned by digest.
+[images]
+prometheus = "prom/prometheus:v3.13.2@sha256:508729e0e2d18e11fd742a5a5ca70e557b940a93948c3c95fd0123a6fd538b69"
+falco = "falcosecurity/falco:0.45.2@sha256:1562a643953f938e02f47319b5214d93a235f11f646d60e9b8a516fd5a64698e"
