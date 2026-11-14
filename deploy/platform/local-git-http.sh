@@ -9,7 +9,7 @@ snapshot_tree() {
   local destination=$2
   git -C "$source" ls-files -z --cached --others --exclude-standard |
     (
-      cd -- "$source"
+      cd -- "$source" || exit
       while IFS= read -r -d '' path; do
         if [[ -e $path || -L $path ]]; then
           printf '%s\0' "$path"

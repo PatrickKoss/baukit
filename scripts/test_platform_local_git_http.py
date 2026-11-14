@@ -16,7 +16,8 @@ from process_runner import run_process
 
 SERVER_PATH = Path(__file__).resolve().parent.parent / "deploy/platform/local-git-http.py"
 _spec = importlib.util.spec_from_file_location("local_git_http", SERVER_PATH)
-assert _spec is not None and _spec.loader is not None  # noqa: S101 -- test setup, the file is part of this repo
+if _spec is None or _spec.loader is None:
+    raise ImportError(f"cannot load {SERVER_PATH}")
 local_git_http = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(local_git_http)
 
@@ -51,10 +52,14 @@ class QuietHandler(local_git_http.GitHandler):
         del message, args
 
 
+class GitServer(ThreadingHTTPServer):
+    git_root: Path
+
+
 @contextmanager
 def serve(root: Path) -> Iterator[int]:
-    server = ThreadingHTTPServer(("127.0.0.1", 0), QuietHandler)
-    server.git_root = root  # type: ignore[attr-defined]  # HTTPServer has no git_root; the handler reads it
+    server = GitServer(("127.0.0.1", 0), QuietHandler)
+    server.git_root = root
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -76,8 +81,20 @@ class GitHttpServerTest(unittest.TestCase):
         self.git = str(git)
         for argv in (
             [self.git, "init", "-q", "-b", "main", str(work)],
-            [self.git, "-C", str(work), "-c", "user.name=t", "-c", "user.email=t@invalid",
-             "commit", "-q", "--allow-empty", "-m", "snapshot"],
+            [
+                self.git,
+                "-C",
+                str(work),
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@invalid",
+                "commit",
+                "-q",
+                "--allow-empty",
+                "-m",
+                "snapshot",
+            ],
             [self.git, "clone", "-q", "--bare", str(work), str(self.root / "baukit.git")],
         ):
             run_process(argv, check=True, capture_output=True, stdin=subprocess.DEVNULL)

@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
 from process_runner import run_process
 
 PLATFORM = Path(__file__).resolve().parent.parent / "deploy/platform"
@@ -68,7 +67,9 @@ class TraefikExposureTest(unittest.TestCase):
         self.assertGreaterEqual(pdb["maxUnavailable"], 1)
 
     def test_crds_are_upgraded(self) -> None:
-        release = next(r for r in objects("HelmRelease", "traefik") if r["metadata"]["name"] == "traefik")
+        release = next(
+            r for r in objects("HelmRelease", "traefik") if r["metadata"]["name"] == "traefik"
+        )
         self.assertEqual(release["spec"]["install"]["crds"], "CreateReplace")
         self.assertEqual(release["spec"]["upgrade"]["crds"], "CreateReplace")
 
@@ -85,7 +86,9 @@ class PostgresDisruptionTest(unittest.TestCase):
     def test_restore_role_cannot_touch_the_production_cluster(self) -> None:
         (role,) = objects("Role", "postgres-cluster")
         for rule in role["rules"]:
-            destructive = {"delete", "patch", "update", "deletecollection", "*"} & set(rule["verbs"])
+            destructive = {"delete", "patch", "update", "deletecollection", "*"} & set(
+                rule["verbs"]
+            )
             if destructive:
                 self.assertEqual(rule.get("resourceNames"), ["postgres-cluster-restore-test"])
         verbs = {verb for rule in role["rules"] for verb in rule["verbs"]}
@@ -121,8 +124,14 @@ class PruneSafetyTest(unittest.TestCase):
 
 class ObservabilityDiscoveryTest(unittest.TestCase):
     def test_prometheus_selects_platform_namespaces(self) -> None:
-        spec = helm_values("kube-prometheus-stack", "observability-stack")["prometheus"]["prometheusSpec"]
-        for key in ("ruleNamespaceSelector", "serviceMonitorNamespaceSelector", "podMonitorNamespaceSelector"):
+        spec = helm_values("kube-prometheus-stack", "observability-stack")["prometheus"][
+            "prometheusSpec"
+        ]
+        for key in (
+            "ruleNamespaceSelector",
+            "serviceMonitorNamespaceSelector",
+            "podMonitorNamespaceSelector",
+        ):
             with self.subTest(selector=key):
                 self.assertEqual(spec[key], {"matchLabels": {PART_OF: "baukit-platform"}})
 

@@ -9,15 +9,17 @@ import unittest
 from pathlib import Path
 
 import yaml
-
 from process_runner import run_process
 
 PLATFORM = Path(__file__).resolve().parent.parent / "deploy/platform"
 HELPER = PLATFORM / "local-git-http.sh"
+WILDCARD_ADDRESS = re.compile(r"(?<![\d.])0\.0\.0\.0(?![\d.])")
 LIFECYCLE_SCRIPTS = (PLATFORM / "platform-up.sh", PLATFORM / "platform-lifecycle.sh")
 
 
-def bash(script: str, *, cwd: Path | None = None, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def bash(
+    script: str, *, cwd: Path | None = None, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     return run_process(
         ["bash", "-euo", "pipefail", "-c", script],
         env={**os.environ, **(env or {})},
@@ -66,28 +68,35 @@ class SnapshotTreeTest(unittest.TestCase):
 
 
 class BindAddressTest(unittest.TestCase):
-    def run_with_stubs(self, script: str, docker_output: str = "") -> tuple[subprocess.CompletedProcess[str], str]:
+    def run_with_stubs(
+        self, script: str, docker_output: str = ""
+    ) -> tuple[subprocess.CompletedProcess[str], str]:
         with tempfile.TemporaryDirectory() as directory:
             bin_dir = Path(directory)
             calls = bin_dir / "calls"
             for tool in ("k3d", "docker"):
-                write_stub(bin_dir, tool, f'printf "%s\\n" "$*" >> "{calls}"\nprintf "%s" "$STUB_OUTPUT"\n')
+                write_stub(
+                    bin_dir, tool, f'printf "%s\\n" "$*" >> "{calls}"\nprintf "%s" "$STUB_OUTPUT"\n'
+                )
             result = bash(
                 f'source "{HELPER}"\n{script}',
-                env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "STUB_OUTPUT": docker_output},
+                env={
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                    "STUB_OUTPUT": docker_output,
+                },
             )
             return result, calls.read_text() if calls.exists() else ""
 
     def test_cluster_api_and_ports_bind_loopback(self) -> None:
-        result, calls = self.run_with_stubs('k3d_create_local_cluster ph img random 8080 8443')
+        result, calls = self.run_with_stubs("k3d_create_local_cluster ph img random 8080 8443")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--api-port 127.0.0.1:random", calls)
         self.assertIn("--port 127.0.0.1:8080:80@loadbalancer", calls)
         self.assertIn("--port 127.0.0.1:8443:443@loadbalancer", calls)
-        self.assertNotIn("0.0.0.0", calls)
+        self.assertIsNone(WILDCARD_ADDRESS.search(calls))
 
     def test_snapshot_container_publishes_on_the_gateway_only(self) -> None:
-        result, calls = self.run_with_stubs('run_snapshot_container c img /srv 9418 172.30.0.1')
+        result, calls = self.run_with_stubs("run_snapshot_container c img /srv 9418 172.30.0.1")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("-p 172.30.0.1:9418:9418", calls)
         self.assertIn("-v /srv:/srv/git:ro", calls)
@@ -109,7 +118,7 @@ class BindAddressTest(unittest.TestCase):
             text = script.read_text()
             with self.subTest(script=script.name):
                 self.assertIn('source "$platform_dir/local-git-http.sh"', text)
-                self.assertNotIn("0.0.0.0", text)
+                self.assertIsNone(WILDCARD_ADDRESS.search(text))
                 self.assertNotIn("k3d cluster create", text)
                 self.assertNotIn("docker run", text)
                 self.assertNotIn("tar \\", text)
@@ -173,7 +182,9 @@ class RestoreTestScriptTest(unittest.TestCase):
         cluster = yaml.safe_load(self.run_restore("hcloud-volumes-delete"))
         self.assertEqual(cluster["metadata"]["name"], "postgres-cluster-restore-test")
         self.assertIs(cluster["spec"]["enablePDB"], False)
-        self.assertEqual(cluster["spec"]["storage"], {"size": "10Gi", "storageClass": "hcloud-volumes-delete"})
+        self.assertEqual(
+            cluster["spec"]["storage"], {"size": "10Gi", "storageClass": "hcloud-volumes-delete"}
+        )
 
     def test_restore_cluster_defaults_to_the_default_storage_class(self) -> None:
         cluster = yaml.safe_load(self.run_restore(""))
