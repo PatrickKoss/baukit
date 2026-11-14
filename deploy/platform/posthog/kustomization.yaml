@@ -7,3 +7,7 @@ resources:
   - helm-repository.yaml
   - helm-release.yaml
   - network-policy.yaml
+namespace: posthog
+components:
+  - ../components/network-policy/default-deny
+  - ../components/network-policy/dns-egress
