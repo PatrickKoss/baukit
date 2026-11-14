@@ -19,9 +19,10 @@ private directory under `BAUKIT_E2E_STATE_DIR` (default `~/.local/state/baukit-p
 default kubeconfig is never touched.
 
 Before it creates the cluster the runner takes `flock` on
-`~/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock` (override with `BAUKIT_E2E_CLUSTER_LOCK`)
-and then on `android.lock` and `browser.lock` in `BAUKIT_GATE_LOCK_DIR`
-(default `~/.cache/baukit-orchestrator/quality-security`).
+`~/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock` (override with `BAUKIT_E2E_CLUSTER_LOCK`).
+It then waits, polling every 30 seconds, while both `slot-1` and `slot-2` exist in the host's heavy-run
+slot directory `/tmp/claude-heavy-slots` (override with `BAUKIT_HEAVY_SLOT_DIR`). It holds no product
+gate lock such as `android.lock` or `browser.lock`.
 
 `--without NAME` drops `e2e-NAME` from the rendered overlay and from every `dependsOn` list. It is for
 debugging and for measuring while a known blocker is open; a run with it is not a passing gate. If the

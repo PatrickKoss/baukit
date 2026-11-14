@@ -3,6 +3,8 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -124,6 +126,41 @@ class RunnerArgumentTests(unittest.TestCase):
         result = self.run_runner("--suite", "no-such-suite")
         self.assertEqual(result.returncode, 2)
         self.assertIn("no chainsaw-test.yaml", result.stderr)
+
+
+class HeavySlotTests(unittest.TestCase):
+    def start_wait(self, slot_dir):
+        environment = {
+            **os.environ,
+            "BAUKIT_HEAVY_SLOT_DIR": slot_dir,
+            "BAUKIT_HEAVY_SLOT_POLL_SECONDS": "0.1",
+            "RUN_SH": str(E2E / "run.sh"),
+        }
+        return subprocess.Popen(  # noqa: S603 -- argv is bash sourcing the repo's run.sh, no input
+            ["/bin/bash", "-c", 'source "$RUN_SH" && wait_for_heavy_slot && echo proceeded'],
+            stdout=subprocess.PIPE,
+            text=True,
+            env=environment,
+        )
+
+    def test_blocks_while_both_slots_exist_and_proceeds_when_one_frees(self):
+        with tempfile.TemporaryDirectory() as slot_dir:
+            for slot in ("slot-1", "slot-2"):
+                Path(slot_dir, slot).mkdir()
+            process = self.start_wait(slot_dir)
+            time.sleep(1)
+            self.assertIsNone(process.poll(), "the wait returned while both slots were taken")
+            Path(slot_dir, "slot-2").rmdir()
+            output, _ = process.communicate(timeout=10)
+        self.assertEqual(process.returncode, 0)
+        self.assertIn("Waiting for a free heavy-run slot", output)
+        self.assertTrue(output.endswith("proceeded\n"))
+
+    def test_proceeds_at_once_with_one_slot_free(self):
+        with tempfile.TemporaryDirectory() as slot_dir:
+            Path(slot_dir, "slot-1").mkdir()
+            output, _ = self.start_wait(slot_dir).communicate(timeout=10)
+        self.assertEqual(output, "proceeded\n")
 
 
 if __name__ == "__main__":

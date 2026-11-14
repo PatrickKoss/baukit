@@ -19,7 +19,8 @@ cluster_name=baukit-platform-e2e
 keep_cluster=false
 test_dirs=("$e2e_dir/tests")
 without=()
-lock_dir=${BAUKIT_GATE_LOCK_DIR:-$HOME/.cache/baukit-orchestrator/quality-security}
+heavy_slot_dir=${BAUKIT_HEAVY_SLOT_DIR:-/tmp/claude-heavy-slots}
+heavy_slot_poll_seconds=${BAUKIT_HEAVY_SLOT_POLL_SECONDS:-30}
 cluster_lock=${BAUKIT_E2E_CLUSTER_LOCK:-$HOME/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock}
 artifacts_dir=${BAUKIT_E2E_ARTIFACTS:-$repo_root/.ci-gate/platform-e2e}
 state_parent=${BAUKIT_E2E_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/baukit-platform-e2e}
@@ -95,13 +96,19 @@ require_tools() {
   fi
 }
 
-take_locks() {
-  mkdir -p -- "$lock_dir" "$(dirname -- "$cluster_lock")"
-  local lock fd
-  for lock in "$cluster_lock" "$lock_dir/android.lock" "$lock_dir/browser.lock"; do
-    exec {fd}>"$lock"
-    printf 'Waiting for %s\n' "$lock"
-    flock "$fd"
+take_cluster_lock() {
+  mkdir -p -- "$(dirname -- "$cluster_lock")"
+  local fd
+  exec {fd}>"$cluster_lock"
+  printf 'Waiting for %s\n' "$cluster_lock"
+  flock "$fd"
+}
+
+# Other projects on this host hold at most two heavy runs, one per slot directory.
+wait_for_heavy_slot() {
+  while [[ -e $heavy_slot_dir/slot-1 && -e $heavy_slot_dir/slot-2 ]]; do
+    printf 'Waiting for a free heavy-run slot: %s/slot-1 and slot-2 both exist\n' "$heavy_slot_dir"
+    sleep "$heavy_slot_poll_seconds"
   done
 }
 
@@ -352,7 +359,8 @@ main() {
   parse_args "$@"
   require_tools
   validate_without
-  take_locks
+  take_cluster_lock
+  wait_for_heavy_slot
   rm -rf -- "$artifacts_dir"
   mkdir -p "$artifacts_dir"
   mkdir -p -- "$state_parent"
@@ -376,4 +384,6 @@ main() {
   printf 'platform-e2e passed in %ss\n' "$((SECONDS - started))"
 }
 
-main "$@"
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
+  main "$@"
+fi
