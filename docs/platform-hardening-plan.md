@@ -185,7 +185,7 @@ versions. This phase comes first so every later task has a place to put its test
   gate. Exceptions are read from the same files the cluster gets.
   Acceptance: a rendered pod without limits fails the stage. The stage prints a per-policy pass/fail
   table to `.ci-gate/`.
-- [ ] **V4 Convention checker.** `deploy/platform/lint/check_conventions.py` (stdlib only, unittest
+- [~] **V4 Convention checker.** `deploy/platform/lint/check_conventions.py` (stdlib only, unittest
   tests, same style as `scripts/`). It covers cross-resource rules that one-object policies can't:
   - every Namespace a base owns has PSA `enforce` and `audit`/`warn` labels; `privileged` only for the
     allowlist (N1);
