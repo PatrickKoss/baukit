@@ -103,6 +103,8 @@ step_metric_names() {
   python3 deploy/observability/lint/check-metric-names.py
   python3 deploy/observability/lint/check-metric-names.py --observability-root deploy/observability-platform \
     --allowlist deploy/observability-platform/metrics.txt --no-catalog
+  python3 deploy/observability/lint/check-dashboards.py deploy/observability/dashboards \
+    deploy/observability-platform/dashboards
 }
 step_observability_tests() {
   scripts/install-deploy-tools.sh --only promtool,pint,helm
