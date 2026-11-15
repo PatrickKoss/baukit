@@ -1,0 +1,160 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: flux-tenancy
+spec:
+  description: >-
+    A tenant namespace built from components/tenant reconciles as its flux-reconciler service account.
+    The component's Kustomization writes into the tenant namespace. A Kustomization the tenant writes
+    itself with targetNamespace flux-system is forbidden, and a remote base is refused. Needs the controllers installed with components/flux-lockdown and the snapshot server
+    at BAUKIT_E2E_GIT_URL (default http://host.k3d.internal:9418/baukit.git).
+  timeouts:
+    apply: 1m
+    exec: 4m
+  steps:
+    - name: create-tenant-from-component
+      try:
+        - script:
+            content: |
+              set -eu
+              dir=$(mktemp -d)
+              trap 'rm -rf "$dir"' EXIT
+              cp -R ../../../components/tenant "$dir/tenant-component"
+              git_url=${BAUKIT_E2E_GIT_URL:-http://host.k3d.internal:9418/baukit.git}
+              cat >"$dir/kustomization.yaml" <<YAML
+              apiVersion: kustomize.config.k8s.io/v1beta1
+              kind: Kustomization
+              namespace: $NAMESPACE
+              resources:
+                - tenant.yaml
+              components:
+                - tenant-component
+              YAML
+              cat >"$dir/tenant.yaml" <<YAML
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: $NAMESPACE
+              ---
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: baukit-tenant
+                annotations:
+                  config.kubernetes.io/local-config: "true"
+              data:
+                sopsSecretName: sops-age-tenant
+                sopsAgeRecipient: age1qyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqs3290gq
+              ---
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: sops-age-tenant
+              stringData:
+                age.agekey: ""
+              ---
+              apiVersion: source.toolkit.fluxcd.io/v1
+              kind: GitRepository
+              metadata:
+                name: baukit
+              spec:
+                interval: 1m
+                timeout: 1m
+                url: $git_url
+                ref:
+                  branch: main
+              YAML
+              for case in own-namespace remote-base; do
+                cat >>"$dir/tenant.yaml" <<YAML
+              ---
+              apiVersion: kustomize.toolkit.fluxcd.io/v1
+              kind: Kustomization
+              metadata:
+                name: $case
+              spec:
+                interval: 1m
+                retryInterval: 15s
+                timeout: 1m
+                path: ./deploy/platform/e2e/tests/flux-tenancy/payload/$case
+                prune: true
+                sourceRef:
+                  kind: GitRepository
+                  name: baukit
+              YAML
+              done
+              kubectl kustomize "$dir" | kubectl apply -f -
+              kubectl apply -f - <<YAML
+              apiVersion: kustomize.toolkit.fluxcd.io/v1
+              kind: Kustomization
+              metadata:
+                name: into-flux-system
+                namespace: $NAMESPACE
+              spec:
+                interval: 1m
+                retryInterval: 15s
+                timeout: 1m
+                path: ./deploy/platform/e2e/tests/flux-tenancy/payload/flux-system
+                prune: true
+                serviceAccountName: flux-reconciler
+                targetNamespace: flux-system
+                sourceRef:
+                  kind: GitRepository
+                  name: baukit
+              YAML
+    - name: own-namespace-reconciles
+      catch:
+        - script:
+            content: kubectl -n "$NAMESPACE" get gitrepositories,kustomizations -o yaml
+      try:
+        - script:
+            content: |
+              set -eu
+              kubectl -n "$NAMESPACE" wait kustomization/own-namespace --for=condition=Ready --timeout=3m >/dev/null
+              kubectl -n "$NAMESPACE" get configmap flux-tenancy-probe -o jsonpath='{.data.written-by}'
+            check:
+              ($stdout): tenant
+    - name: flux-system-write-is-forbidden
+      catch:
+        - script:
+            content: kubectl -n "$NAMESPACE" get gitrepositories,kustomizations -o yaml
+      try:
+        - script:
+            content: |
+              set -eu
+              for _ in $(seq 36); do
+                message=$(kubectl -n "$NAMESPACE" get kustomization into-flux-system \
+                  -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}')
+                case $message in
+                  *forbidden*"system:serviceaccount:$NAMESPACE:flux-reconciler"*) printf forbidden; exit 0 ;;
+                esac
+                sleep 5
+              done
+              printf 'unexpected Ready message: %s\n' "$message" >&2
+              exit 1
+            check:
+              ($stdout): forbidden
+        - script:
+            content: kubectl -n flux-system get configmap flux-tenancy-probe
+            check:
+              ($error != null): true
+    - name: remote-base-is-refused
+      catch:
+        - script:
+            content: kubectl -n "$NAMESPACE" get gitrepositories,kustomizations -o yaml
+      try:
+        - script:
+            content: |
+              set -eu
+              for _ in $(seq 36); do
+                message=$(kubectl -n "$NAMESPACE" get kustomization remote-base \
+                  -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}')
+                case $message in
+                  *"kustomize build failed"*"github.com/fluxcd"*"fs-security-constraint"*) printf refused; exit 0 ;;
+                esac
+                sleep 5
+              done
+              printf 'unexpected Ready message: %s\n' "$message" >&2
+              exit 1
+            check:
+              ($stdout): refused
