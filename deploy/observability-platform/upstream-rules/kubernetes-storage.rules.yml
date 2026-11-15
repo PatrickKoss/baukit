@@ -1,4 +1,4 @@
-# Copied from kube-prometheus-stack 88.6.5 (PrometheusRule kube-prometheus-stack-kubernetes-storage).
+# Copied from kube-prometheus-stack 93.3.0 (PrometheusRule kube-prometheus-stack-kubernetes-storage).
 # deploy/platform/lint/check_upstream_rules.py fails when the rendered chart differs.
 groups:
 - name: kubernetes-storage

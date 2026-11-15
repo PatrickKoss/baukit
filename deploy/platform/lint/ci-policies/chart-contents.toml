@@ -10,7 +10,7 @@ tests = false
 crds = false
 tests = false
 
-["alloy@1.13.0"]
+["alloy@1.16.0"]
 crds = true
 tests = false
 
@@ -38,7 +38,7 @@ tests = false
 crds = false
 tests = false
 
-["kube-prometheus-stack@88.6.5"]
+["kube-prometheus-stack@93.3.0"]
 crds = true
 tests = false
 
@@ -54,7 +54,7 @@ tests = false
 crds = false
 tests = true
 
-["loki@18.13.7"]
+["loki@21.2.3"]
 crds = true
 tests = false
 
@@ -66,7 +66,7 @@ tests = false
 crds = true
 tests = false
 
-["tempo@2.4.0"]
+["tempo@3.2.1"]
 crds = false
 tests = false
 

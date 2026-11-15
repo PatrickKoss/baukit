@@ -9,15 +9,10 @@ spec:
   dependsOn:
     - name: loki
       namespace: observability
-  chart:
-    spec:
-      chart: alloy
-      version: "1.13.0"
-      sourceRef:
-        kind: HelmRepository
-        name: grafana
-        namespace: observability-agents
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: alloy
+    namespace: observability-agents
   install:
     crds: CreateReplace
     remediation:
