@@ -389,6 +389,12 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_retention_size.
   status=1
 fi
 
+printf '==> alertmanager routing\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_alertmanager_config.py" \
+  --rendered "$rendered_dir" --kustomize "$(command -v kustomize)"; then
+  status=1
+fi
+
 printf '==> in-cluster kyverno policies\n'
 policies_started=$SECONDS
 if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/ci-policies/run_cluster_policies.py" \

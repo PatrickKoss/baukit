@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: alert-pipeline
+spec:
+  description: >-
+    Alerts posted into Alertmanager reach the webhook sink through the routes of the local
+    alertmanager-routing Secret: Watchdog to heartbeat, a critical falco alert to security-pager and a
+    warning platform alert to platform-tickets. A critical alert inhibits a warning with the same
+    alertname and namespace, so only the critical one is delivered. The sink is alert-sink in
+    observability from the local observability component; it also logs each notification to stdout.
+  timeouts:
+    exec: 5m
+  steps:
+    - name: post-test-alerts
+      try:
+        - script:
+            content: |
+              set -eu
+              pod=alertmanager-kube-prometheus-stack-alertmanager-0
+              kubectl -n observability wait pod "$pod" --for=condition=Ready --timeout=3m
+              post() {
+                kubectl -n observability exec "$pod" -c alertmanager -- \
+                  amtool alert add --alertmanager.url=http://127.0.0.1:9093 \
+                  --annotation=summary=e2e "namespace=$NAMESPACE" "$@"
+              }
+              post alertname=BaukitE2eRouteCritical severity=critical component=falco
+              post alertname=BaukitE2eRouteWarning severity=warning component=platform
+              post alertname=BaukitE2eInhibit severity=critical component=platform
+              post alertname=BaukitE2eInhibit severity=warning component=platform
+    - name: alertmanager-inhibits-the-warning
+      try:
+        - script:
+            timeout: 2m
+            content: |
+              set -eu
+              pod=alertmanager-kube-prometheus-stack-alertmanager-0
+              deadline=$(($(date +%s) + 90))
+              while [ "$(date +%s)" -lt "$deadline" ]; do
+                alerts=$(kubectl -n observability exec "$pod" -c alertmanager -- \
+                  wget -qO- "http://127.0.0.1:9093/api/v2/alerts?filter=alertname=%22BaukitE2eInhibit%22")
+                if printf '%s' "$alerts" | NAMESPACE=$NAMESPACE python3 -c '
+              import json, os, sys
+              alerts = [a for a in json.load(sys.stdin) if a["labels"].get("namespace") == os.environ["NAMESPACE"]]
+              state = {a["labels"]["severity"]: a["status"] for a in alerts}
+              warning, critical = state.get("warning", {}), state.get("critical", {})
+              ok = warning.get("state") == "suppressed" and warning.get("inhibitedBy") and critical.get("state") == "active"
+              sys.exit(0 if ok else 1)
+              '; then
+                  exit 0
+                fi
+                sleep 5
+              done
+              printf 'the warning BaukitE2eInhibit was not inhibited by the critical one:\n%s\n' "$alerts" >&2
+              exit 1
+    - name: sink-receives-each-route
+      try:
+        - script:
+            timeout: 4m
+            content: |
+              set -eu
+              pod=alertmanager-kube-prometheus-stack-alertmanager-0
+              deadline=$(($(date +%s) + 180))
+              while [ "$(date +%s)" -lt "$deadline" ]; do
+                notifications=$(kubectl -n observability exec "$pod" -c alertmanager -- \
+                  wget -qO- http://alert-sink.observability.svc.cluster.local:8080/alerts)
+                if printf '%s' "$notifications" | NAMESPACE=$NAMESPACE python3 -c '
+              import json, os, sys
+              seen = set()
+              for notification in json.load(sys.stdin):
+                  for alert in notification.get("alerts", []):
+                      labels = alert["labels"]
+                      if labels.get("alertname") == "Watchdog":
+                          seen.add((notification["receiver"], "Watchdog", labels.get("severity")))
+                      elif labels.get("namespace") == os.environ["NAMESPACE"]:
+                          seen.add((notification["receiver"], labels["alertname"], labels["severity"]))
+              wanted = {
+                  ("heartbeat", "Watchdog", "none"),
+                  ("security-pager", "BaukitE2eRouteCritical", "critical"),
+                  ("platform-tickets", "BaukitE2eRouteWarning", "warning"),
+                  ("platform-pager", "BaukitE2eInhibit", "critical"),
+              }
+              inhibited = any(name == "BaukitE2eInhibit" and severity == "warning" for _, name, severity in seen)
+              if inhibited:
+                  print("the inhibited warning BaukitE2eInhibit reached the sink", file=sys.stderr)
+                  sys.exit(2)
+              sys.exit(0 if wanted <= seen else 1)
+              '; then
+                  exit 0
+                elif [ $? -eq 2 ]; then
+                  exit 1
+                fi
+                sleep 5
+              done
+              printf 'the sink did not receive every expected route within 3 minutes\n' >&2
+              exit 1
+    - name: sink-logs-each-notification
+      try:
+        - script:
+            content: |
+              set -eu
+              logs=$(kubectl -n observability logs deploy/alert-sink -c sink)
+              for alertname in BaukitE2eRouteCritical BaukitE2eRouteWarning; do
+                if ! printf '%s\n' "$logs" | grep -F "\"$alertname\"" | grep -qF "\"$NAMESPACE\""; then
+                  printf 'alert-sink logged no notification for %s in %s\n' "$alertname" "$NAMESPACE" >&2
+                  exit 1
+                fi
+              done

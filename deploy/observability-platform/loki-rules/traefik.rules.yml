@@ -1,0 +1,20 @@
+groups:
+  - name: baukit-traefik-logs
+    rules:
+      # Traefik v3.7.13 has no reload-failure metric. Its Kubernetes providers log this line from
+      # pkg/provider/kubernetes/{crd,ingress}/kubernetes.go when they cannot build a new configuration.
+      - alert: BaukitTraefikConfigReloadFailing
+        expr: |
+          sum by (namespace) (
+            count_over_time({namespace="traefik"} |= "Provider error, retrying in" [5m])
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: traefik
+        annotations:
+          summary: Traefik cannot load new routing configuration
+          description: >-
+            A Traefik provider in namespace {{ $labels.namespace }} has logged "Provider error" for
+            10 minutes. Traefik keeps serving its last good configuration and ignores route changes.
+          runbook_url: RUNBOOK_BASE_URL/traefik-config-reload-failing
