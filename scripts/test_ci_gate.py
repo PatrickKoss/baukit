@@ -55,7 +55,7 @@ def step_body(name):
 
 def required_tools(script):
     text = (ROOT / script).read_text()
-    match = re.search(r'^baukit_use_tools "\$repo_root" (.+)$', text, re.MULTILINE)
+    match = re.search(r'^\s*baukit_use_tools "\$repo_root" (.+)$', text, re.MULTILINE)
     return set(match.group(1).split()) if match else set()
 
 
@@ -85,19 +85,23 @@ def deploy_tool_steps():
 class CiGateTests(unittest.TestCase):
     def test_deploy_steps_install_the_pinned_tools_their_scripts_use(self):
         cases = {
-            "platform_validate": "deploy/platform/validate.sh",
-            "observability_rules": "deploy/observability/lint/check-rules.sh",
-            "platform_images": "scripts/platform-images.sh",
+            "platform_validate": ("deploy/platform/validate.sh", "deploy/platform/e2e/run.sh"),
+            "observability_rules": ("deploy/observability/lint/check-rules.sh",),
+            "platform_images": ("scripts/platform-images.sh",),
         }
-        for step, script in cases.items():
+        for step, scripts in cases.items():
             with self.subTest(step=step):
                 body = step_body(step)
                 install = re.search(r"scripts/install-deploy-tools\.sh --only (\S+)", body)
                 self.assertIsNotNone(install, body)
-                self.assertLess(install.start(), body.index(script.removeprefix("./")))
-                tools = required_tools(script)
-                self.assertTrue(tools, script)
+                self.assertLess(install.start(), body.index(scripts[0].removeprefix("./")))
+                tools = set().union(*(required_tools(script) for script in scripts))
+                self.assertTrue(all(required_tools(script) for script in scripts), scripts)
                 self.assertEqual(set(install.group(1).split(",")), tools)
+
+    def test_platform_validate_runs_the_e2e_runner_tests(self):
+        text = (ROOT / "deploy/platform/validate.sh").read_text()
+        self.assertIn('unittest discover -s "$platform_dir/e2e"', text)
 
     def test_every_step_function_exists_for_each_listed_step(self):
         functions = set(re.findall(r"^step_(\w+)\(\)", GATE_SCRIPT.read_text(), re.MULTILINE))
