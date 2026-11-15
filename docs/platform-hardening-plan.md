@@ -260,7 +260,7 @@ behave. Later phases add test directories here.
   - An `emptyDir` `/tmp` mount, so `readOnlyRootFilesystem` keeps working when a library writes temp files.
   - Fix the stray `{{ with` (missing `-`) before `api.networkPolicy.additionalEgress` in
     `templates/networkpolicy.yaml`.
-- [~] **C4 Smoke harness under `restricted`.** `deploy/smoke/k3d-smoke.sh` labels its namespace
+- [x] **C4 Smoke harness under `restricted`.** `deploy/smoke/k3d-smoke.sh` labels its namespace
   `pod-security.kubernetes.io/enforce=restricted` before installing, and installs the baukit Kyverno
   policy library in Enforce mode first. A chart change that breaks either fails the smoke.
 - [x] **C5 Chart tests.** Extend `scripts/test_chart_*.py`: security context on every container,
@@ -550,7 +550,7 @@ behave. Later phases add test directories here.
   cnpg, kured, traefik, kyverno, falcosecurity). Add `verify.provider: cosign` with
   `matchOIDCIdentity` wherever signatures exist. Record unsigned ones in the base README. Update
   `validate.sh` and the V2 schema generator to pull OCI charts.
-- [ ] **SC2 Digests everywhere** (F-25): use the charts' `image.digest` values, a CNPG `ImageCatalog`
+- [x] **SC2 Digests everywhere** (F-25): use the charts' `image.digest` values, a CNPG `ImageCatalog`
   with digests, and `@sha256` on raw manifests. Add a V5 policy that fails any rendered container image
   without a digest outside an allowlist with reasons.
 - [x] **SC3 Image scanning:** a `platform-images` gate step extracts every image from the rendered bases
@@ -975,3 +975,33 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
 - 2026-11-15 `alert-tested` is still pending, with 12 alerts that have no firing promtool case. 11 are
   app-pack alerts in `deploy/observability/alerts/baukit.rules.yml`. O4 covered only the platform pack.
   O4b adds the cases and activates the rule.
+- 2026-11-15 O4b merged. The 11 app-pack alerts have firing and quiet promtool cases in
+  `deploy/observability/tests/` (slo, readiness, dependencies). `BaukitPostgresRestoreTestStale` moved
+  from the postgres-cluster PrometheusRule into the platform pack (`alerts/cnpg.rules.yml`, component
+  cnpg) with its own test. Descriptions that printed the raw `$labels` map now name the labels.
+  `alert-tested` is active: conventions report 11 active, 0 pending.
+- 2026-11-15 C4 merged. `deploy/smoke/kyverno-enforce.sh` installs Kyverno with helm from the pin in
+  the platform HelmRelease, switches every ValidatingPolicy and ImageValidatingPolicy to Deny (an
+  unknown policy kind fails the render), writes a registry allowlist from `BAUKIT_SMOKE_IMAGES`, and
+  waits for the webhooks. `k3d-smoke.sh` runs it before creating any namespace, and the product
+  namespace is a tenant. The good case passed live in 122s. The bad case failed on
+  require-container-resources, as intended. Kyverno adds 86s and about 240Mi.
+  Release notes (breaking for product smokes): Kyverno images must be pullable, dependency manifests
+  need resources and no `latest` tag, and only images in `BAUKIT_SMOKE_IMAGES` may run. SC1's OCI
+  migration must update `kyverno-enforce.sh`, which reads `spec.chart.spec`.
+- 2026-11-15 SC2 merged. Every rendered image carries a digest except the exemptions in
+  `deploy/platform/lint/image-digest-exempt.toml`, each with a reason. Those are curl in the
+  falcosidekick test hook (no values key) and the four k3s add-ons, which are embedded in the
+  digest-pinned `rancher/k3s` image. The new `image-digest` convention reads the same renders as the other
+  rules, including init containers, test hooks, the CNPG ImageCatalog, the Barman sidecar from the
+  plugin's base64 Secret and the Flux lockdown install. It fails on a missing digest and on a stale
+  exemption. Conventions now report 12 active, 0 pending. The Flux v2.9.4 controllers are pinned in
+  `components/flux-lockdown`, and `flux_lockdown_verify` fails when a live controller runs another
+  image. Chart bumps: cert-manager v1.21.3, hcloud-ccm 1.39.3 and hcloud-csi 2.24.2, plus image bumps
+  in most bases (table in the SC2 report). Grafana 13.3 and k8s-sidecar 2.14 needed more memory (768Mi
+  and 256Mi limits). The trivy allowlist dropped from 2542 to 2072 IDs. Every entry expires on
+  2026-12-12, including 133 IDs in Flux v2.9.4 (v2.10.0 cuts them to 12; that upgrade is open for S4 or
+  SC4) and 5 in the Barman sidecar v0.16.0. Left on purpose: PostHog redis 6.2 and ClickHouse 22.8,
+  prometheus-operator v0.93.1 (the fix needs the kps 93 major), local k3s v1.34.13 (cgroup v1 host),
+  and the tempo, redpanda and access-log-exporter majors. The live run on the local overlay came up
+  clean.

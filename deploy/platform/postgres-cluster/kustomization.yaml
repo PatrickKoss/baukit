@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: postgres
 resources:
   - namespace.yaml
+  - image-catalog.yaml
   - cluster.yaml
   - objectstore.yaml
   - scheduledbackup.yaml

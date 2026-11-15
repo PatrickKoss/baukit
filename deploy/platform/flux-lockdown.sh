@@ -4,6 +4,12 @@
 
 flux_lockdown_components=source-controller,kustomize-controller,helm-controller,notification-controller
 flux_lockdown_controllers=(source-controller kustomize-controller helm-controller notification-controller)
+flux_lockdown_images=(
+  ghcr.io/fluxcd/source-controller:v1.9.4@sha256:8a8ed0a57b8b86f561d5a4309a69f65e62f0cebe4de8801593c5ff35a3bc3c23
+  ghcr.io/fluxcd/kustomize-controller:v1.9.4@sha256:2b8bec54ffb6caf421bd2a6c005d27f567d5dd4db7feb55794fb51fcabd69b8f
+  ghcr.io/fluxcd/helm-controller:v1.6.3@sha256:16ada99456385100698a5d7adf90aba8a2089d987ab541c9566b6d7b0e897038
+  ghcr.io/fluxcd/notification-controller:v1.9.3@sha256:071c351a0fb163eeb6a2bb82f1e894f51b6b0734216d2e97d3d99c9ab9d710b9
+)
 flux_lockdown_expected_args=(
   "kustomize-controller --no-cross-namespace-refs=true"
   "kustomize-controller --no-remote-bases=true"
@@ -43,8 +49,9 @@ flux_lockdown_wait() {
 }
 
 # Usage: flux_lockdown_missing. Prints one "<controller> <flag>" line per lockdown flag the live
-# controllers lack, and "flux-system serviceAccountName" when the bootstrap Kustomization exists
-# without spec.serviceAccountName=kustomize-controller.
+# controllers lack, one "<controller> image <ref>" line per controller not running its pinned
+# image, and "flux-system serviceAccountName" when the bootstrap Kustomization exists without
+# spec.serviceAccountName=kustomize-controller.
 flux_lockdown_missing() {
   local entry controller flag args
   for entry in "${flux_lockdown_expected_args[@]}"; do
@@ -53,6 +60,14 @@ flux_lockdown_missing() {
     args=$(kubectl -n flux-system get deployment "$controller" \
       -o jsonpath='{range .spec.template.spec.containers[0].args[*]}{@}{"\n"}{end}' 2>/dev/null) || args=
     grep -qxF -- "$flag" <<<"$args" || printf '%s %s\n' "$controller" "$flag"
+  done
+  local image live_image
+  for image in "${flux_lockdown_images[@]}"; do
+    controller=${image##*/}
+    controller=${controller%%:*}
+    live_image=$(kubectl -n flux-system get deployment "$controller" \
+      -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null) || live_image=
+    [[ $live_image == "$image" ]] || printf '%s image %s\n' "$controller" "$image"
   done
   local sync_sa
   if sync_sa=$(kubectl -n flux-system get kustomizations.kustomize.toolkit.fluxcd.io flux-system \
@@ -68,7 +83,7 @@ flux_lockdown_verify() {
   missing=$(flux_lockdown_missing)
   if [[ -n $missing ]]; then
     printf 'ERROR: Flux multi-tenancy lockdown is incomplete:\n%s\n' "$missing" >&2
-    printf 'Add the patches in %s/components/flux-lockdown/kustomization.yaml to the GitOps\n' \
+    printf 'Add the patches and images in %s/components/flux-lockdown/kustomization.yaml to the GitOps\n' \
       "$platform_dir" >&2
     printf 'repository flux-system/kustomization.yaml and run up again.\n' >&2
     return 1

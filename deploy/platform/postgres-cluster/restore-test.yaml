@@ -89,7 +89,7 @@ spec:
               type: RuntimeDefault
           initContainers:
             - name: write-sentinel
-              image: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+              image: ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie@sha256:5a5dfbde88d5909fd4938189c141f53fb153f53c519f14907dce9e7c04baa153
               imagePullPolicy: IfNotPresent
               command:
                 - /bin/sh
@@ -148,7 +148,7 @@ spec:
                   mountPath: /work
           containers:
             - name: restore-test
-              image: rancher/k3s:v1.37.1-k3s1
+              image: rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332
               imagePullPolicy: IfNotPresent
               command:
                 - /bin/sh
@@ -223,7 +223,11 @@ spec:
                   spec:
                     instances: 1
                     enablePDB: false
-                    imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+                    imageCatalogRef:
+                      apiGroup: postgresql.cnpg.io
+                      kind: ImageCatalog
+                      name: postgresql
+                      major: 18
                     bootstrap:
                       recovery:
                         source: source

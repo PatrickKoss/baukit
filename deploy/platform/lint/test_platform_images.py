@@ -1,3 +1,4 @@
+import base64
 import datetime
 import os
 import stat
@@ -118,6 +119,29 @@ class ExtractImagesTests(unittest.TestCase):
                 "rancher/k3s:v1.34.8-k3s1",
             ],
         )
+
+
+class SecretImageTests(unittest.TestCase):
+    def test_base64_image_keys_in_a_secret_are_found(self):
+        sidecar = f"ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0{DIGEST}"
+        secret = {
+            "kind": "Secret",
+            "data": {
+                "SIDECAR_IMAGE": base64.b64encode(sidecar.encode()).decode(),
+                "password": base64.b64encode(b"redis:8.10.2").decode(),
+            },
+            "stringData": {"HELPER_IMAGE": "busybox:1.38.0"},
+        }
+        self.assertEqual(platform_images.extract_images([secret]), ["busybox:1.38.0", sidecar])
+
+    def test_image_keys_outside_a_secret_are_not_decoded(self):
+        config = {"kind": "ConfigMap", "data": {"SIDECAR_IMAGE": "cmVkaXM6OA=="}}
+        self.assertEqual(platform_images.extract_images([config]), [])
+
+    def test_undecodable_secret_image_fails(self):
+        secret = {"kind": "Secret", "data": {"SIDECAR_IMAGE": "not base64!"}}
+        with self.assertRaises(platform_images.ScanError):
+            platform_images.extract_images([secret])
 
 
 class ImageReferenceTests(unittest.TestCase):
