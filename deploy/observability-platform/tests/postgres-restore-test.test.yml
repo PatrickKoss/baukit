@@ -1,0 +1,57 @@
+rule_files:
+  - ../alerts/cnpg.rules.yml
+evaluation_interval: 10m
+tests:
+  - name: a missing restore proof fires BaukitPostgresRestoreTestStale after 1h
+    interval: 5m
+    input_series:
+      - series: 'cnpg_collector_up{cluster="postgres-cluster",namespace="postgres",pod="postgres-cluster-1"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: BaukitPostgresRestoreTestStale
+        exp_alerts: []
+      - eval_time: 2h
+        alertname: BaukitPostgresRestoreTestStale
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: cnpg
+            exp_annotations:
+              summary: The PostgreSQL restore test has not succeeded in 35 days
+              description: >-
+                The monthly recovery proof is absent or older than 35 days. Check
+                the postgres-restore-test CronJob and the CNPG backup object store.
+              runbook_url: RUNBOOK_BASE_URL/postgres-restore-test-stale
+  - name: a proof older than 35 days fires and a 34-day-old proof stays quiet
+    interval: 5m
+    input_series:
+      - series: 'baukit_restore_test_last_success_timestamp_seconds{cluster="postgres-cluster",job="restore-test-pushgateway"}'
+        values: '0x10500'
+    alert_rule_test:
+      - eval_time: 34d
+        alertname: BaukitPostgresRestoreTestStale
+        exp_alerts: []
+      - eval_time: 36d
+        alertname: BaukitPostgresRestoreTestStale
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: cnpg
+              cluster: postgres-cluster
+              job: restore-test-pushgateway
+            exp_annotations:
+              summary: The PostgreSQL restore test has not succeeded in 35 days
+              description: >-
+                The monthly recovery proof is absent or older than 35 days. Check
+                the postgres-restore-test CronJob and the CNPG backup object store.
+              runbook_url: RUNBOOK_BASE_URL/postgres-restore-test-stale
+  - name: a fresh proof stays quiet
+    interval: 5m
+    input_series:
+      - series: 'baukit_restore_test_last_success_timestamp_seconds{cluster="postgres-cluster",job="restore-test-pushgateway"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: BaukitPostgresRestoreTestStale
+        exp_alerts: []

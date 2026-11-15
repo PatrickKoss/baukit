@@ -5,6 +5,7 @@ resources:
   - statefulset.yaml
   - services.yaml
   - network-policy.yaml
+  - podmonitor.yaml
 configMapGenerator:
   - name: redis-ha-scripts
     namespace: platform-redis

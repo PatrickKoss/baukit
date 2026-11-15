@@ -3,13 +3,19 @@
 privileged_namespaces = ["kube-system", "observability-agents", "kured", "falco"]
 # k3s runs CoreDNS, metrics-server and the cloud controllers here; N3 gives them no policies.
 network_policy_exempt_namespaces = ["kube-system"]
+# exporters-scraped: a base workload running one of these image repositories needs a PodMonitor
+# that selects its pods on a port the pod declares (the exporter sidecar, or CNPG's "metrics").
+scraped_images = { redis = "Redis", postgresql = "CNPG PostgreSQL" }
 
 [rules]
 active = [
   "alert-metadata",
   "alert-runbook",
+  "alert-tested",
   "dashboards-selected",
   "default-deny-network-policy",
+  "exporters-scraped",
+  "metrics-enabled",
   "policy-exception-budget",
   "prune-disabled",
   "psa-labels",
@@ -17,5 +23,3 @@ active = [
 ]
 
 [rules.pending]
-metrics-enabled = "O3"
-alert-tested = "O4"

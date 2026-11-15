@@ -395,7 +395,7 @@ behave. Later phases add test directories here.
     `unwrap`, label filters after a parser) in both the Python lint and `cli/src/check/observability/`,
     with unit tests in both.
   - Ship the pack through a HelmRelease in the observability-stack base.
-- [ ] **O3 Exporters on.**
+- [x] **O3 Exporters on.**
   - cert-manager: `prometheus.servicemonitor.enabled`.
   - CNPG: operator `monitoring.podMonitorEnabled` and Cluster `monitoring.enablePodMonitor`, plus a
     barman plugin PodMonitor.
@@ -406,7 +406,7 @@ behave. Later phases add test directories here.
   - flagger `podMonitor.enabled`, hcloud CCM/CSI monitors (Hetzner overlays only) and a redis_exporter
     sidecar in both redis bases.
   - Capture the real metric names from a running e2e cluster into `metrics.txt` instead of guessing them.
-- [~] **O4 Alerts, each with a promtool test that fires and one that stays quiet, and a runbook.**
+- [x] **O4 Alerts, each with a promtool test that fires and one that stays quiet, and a runbook.**
   Names follow `Baukit<Component><Condition>`. Every alert carries a `component` label for routing.
   - Flux: reconcile not Ready for 15m (`gotk_resource_info{ready="False"}`), suspended for 24h,
     source fetch failing.
@@ -427,7 +427,7 @@ behave. Later phases add test directories here.
     `runbook_url` to the baukit runbooks where baukit adds one.
   - Delete `BaukitDeadMansSwitch`, which duplicates kube-prometheus-stack's `Watchdog`.
   - Move the template's `ApiHighErrorRatio` to `severity: critical`, with a runbook URL.
-- [ ] **O5 Routing that fails loudly** (F-04).
+- [x] **O5 Routing that fails loudly** (F-04).
   - Alertmanager reads its config from an overlay-provided Secret (`alertmanagerSpec.useExistingSecret`
     / `configSecret`). Without it, Alertmanager does not start, Watchdog stops, and the external dead
     man's switch fires.
@@ -927,3 +927,51 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   - `lint/test_flux_tenancy.py` checks every overlay, the e2e overlay included.
   - The e2e `flux-tenancy` suite passed on a small cluster. Its full-e2e run lands with the integration
     proof.
+- 2026-11-15 O5 merged, with the O4 leftovers, so O4 is done. Alertmanager reads its routing from the
+  overlay Secret `alertmanager-routing` (`useExistingSecret`, `configSecret`). The Secret is also listed
+  in `spec.secrets`, so without it the pod hangs in FailedMount. Shown live: on its own, the operator
+  would fall back to a drop-all config. The base ships `alertmanager.example.yaml`:
+  - routes by severity and component
+  - critical-inhibits-warning and InfoInhibitor
+  - Watchdog to the heartbeat receiver
+  
+  The local overlay adds `alert-sink` in `observability`. It reuses E's sink.py on the pinned python
+  digest, logs each notification as a JSON line to Loki, and has `GET /alerts`. It is restricted, with an
+  ingress netpol from Alertmanager only. Every local receiver points at it, so the local platform never
+  routes to a host that does not exist. That was review round 1.
+  
+  Flux notification-controller is installed by S4's lockdown render, with a `Provider` of type
+  alertmanager. The `flux-errors` Alert covers Kustomization, GitRepository and HelmRelease in every
+  namespace that holds Flux objects. `check_alertmanager_config.py` (17 tests) runs in validate.sh and
+  fails on four things:
+  - null-only routing
+  - missing inhibit rules or a missing Watchdog route
+  - a Flux namespace without an event source
+  - a receiver Service the overlay does not render
+  
+  defaultRules drops the windows groups and gives Watchdog a runbook. BaukitDeadMansSwitch was already
+  gone, and ApiHighErrorRatio was already critical with a runbook. The Traefik reload failure is a LogQL
+  rule (`BaukitTraefikConfigReloadFailing`, on "Provider error, retrying in" from the v3.7.13 providers),
+  served by the Loki ruler from the pack's ConfigMap. Loki now requires that ConfigMap. The chainsaw suite
+  `alert-pipeline` passed live on a small cluster, and fails with the inhibit rules removed.
+- 2026-11-15 E's rustfs bucket-job DNS egress fix (962f6d4f) is applied to the integration branch ahead of
+  E. SC2's live run failed on it: the bucket Job could not resolve rustfs, so local-foundation stalled.
+- 2026-11-15 O3 merged. The platform exporters are on:
+  - a cert-manager ServiceMonitor
+  - the CNPG operator PodMonitor, plus PodMonitors for the postgres instances and the barman plugin
+    (plugin metrics on 8080 through args)
+  - hcloud CCM and CSI monitors
+  - a redis_exporter v1.97.0 sidecar, pinned by digest, in redis, redis-ha and posthog-redis, each with
+    a PodMonitor and a 9121 scrape netpol
+  - kube-state-metrics `customResourceState` emitting `gotk_resource_info` for 5 Flux kinds, with the
+    labels O4's alerts use, and the four Flux controllers through `additionalPodMonitors`
+  
+  `metrics-enabled` is now active and checks for a monitor in the release's own render with merged chart
+  values. A new `exporters-scraped` rule covers images listed in `conventions.toml`. Both rules have fail
+  and pass tests. Every target was up on a small capture cluster. The metrics.txt names that were not seen
+  have reasons in the report (component not deployed, counters that start on errors, metrics that need
+  replicas), so metrics.txt did not change. Local cert-manager and cnpg now depend on local-observability,
+  for the monitor CRDs. The e2e overlay needs the same ordering when E merges.
+- 2026-11-15 `alert-tested` is still pending, with 12 alerts that have no firing promtool case. 11 are
+  app-pack alerts in `deploy/observability/alerts/baukit.rules.yml`. O4 covered only the platform pack.
+  O4b adds the cases and activates the rule.

@@ -93,3 +93,17 @@ groups:
             The CNPG volume {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is
             {{ $value | humanizePercentage }} full. PostgreSQL stops accepting writes when it fills.
           runbook_url: RUNBOOK_BASE_URL/cnpg-volume-filling
+      - alert: BaukitPostgresRestoreTestStale
+        expr: |
+          (time() - baukit_restore_test_last_success_timestamp_seconds > 3024000)
+          or absent(baukit_restore_test_last_success_timestamp_seconds)
+        for: 1h
+        labels:
+          severity: critical
+          component: cnpg
+        annotations:
+          summary: The PostgreSQL restore test has not succeeded in 35 days
+          description: >-
+            The monthly recovery proof is absent or older than 35 days. Check
+            the postgres-restore-test CronJob and the CNPG backup object store.
+          runbook_url: RUNBOOK_BASE_URL/postgres-restore-test-stale

@@ -6,6 +6,7 @@ resources:
   - helmrelease.yaml
   - plugin-barman-cloud-v0.15.1.yaml
   - network-policy.yaml
+  - podmonitor.yaml
 namespace: cnpg-system
 components:
   - ../components/network-policy/default-deny
@@ -20,6 +21,18 @@ patches:
       name: barman-cloud
       namespace: cnpg-system
     patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --metrics-bind-address=:8080
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --metrics-secure=false
+      - op: add
+        path: /spec/template/spec/containers/0/ports/-
+        value:
+          name: metrics
+          containerPort: 8080
+          protocol: TCP
       - op: replace
         path: /spec/template/spec/containers/0/resources
         value:
