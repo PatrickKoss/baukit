@@ -15,8 +15,12 @@ registry_mirror_upstreams=(
   docker.io=https://registry-1.docker.io=5701
   ghcr.io=https://ghcr.io=5702
   quay.io=https://quay.io=5703
-  reg.kyverno.io=https://reg.kyverno.io=5704
   registry.k8s.io=https://registry.k8s.io=5705
+)
+# host=mirrored host whose mirror serves it. reg.kyverno.io fronts ghcr.io/kyverno with the same
+# digests, and the registry proxy cannot authenticate against it because its /v2/ answers 405.
+registry_mirror_aliases=(
+  reg.kyverno.io=ghcr.io
 )
 
 # Usage: registry_mirror_name <registry host>. Prints the k3d registry name without the k3d- prefix.
@@ -84,6 +88,9 @@ registry_mirrors_k3s_config() {
     registry_mirror_fields "$entry"
     printf '  %s:\n    endpoint:\n      - http://k3d-%s:5000\n' "$mirror_host" "$(registry_mirror_name "$mirror_host")"
   done
+  for entry in "${registry_mirror_aliases[@]}"; do
+    printf '  %s:\n    endpoint:\n      - http://k3d-%s:5000\n' "${entry%%=*}" "$(registry_mirror_name "${entry#*=}")"
+  done
 }
 
 # Prints one k3d cluster create argument per line.
@@ -104,6 +111,16 @@ registry_mirrors_trivy_config() {
     # trivy names Docker Hub index.docker.io, k3s names it docker.io.
     [[ $mirror_host == docker.io ]] && mirror_host=index.docker.io
     printf '    %s:\n      - localhost:%s\n' "$mirror_host" "$mirror_port"
+  done
+  local alias_entry alias_target
+  for alias_entry in "${registry_mirror_aliases[@]}"; do
+    alias_target=${alias_entry#*=}
+    for entry in "${registry_mirror_upstreams[@]}"; do
+      registry_mirror_fields "$entry"
+      if [[ $mirror_host == "$alias_target" ]]; then
+        printf '    %s:\n      - localhost:%s\n' "${alias_entry%%=*}" "$mirror_port"
+      fi
+    done
   done
 }
 
