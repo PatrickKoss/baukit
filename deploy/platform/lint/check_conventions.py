@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import helm_yaml
+import image_digests
 
 LINT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = LINT_DIR.parents[2]
@@ -115,6 +116,10 @@ class Context:
     privileged_namespaces: set[str] = field(default_factory=set)
     network_policy_exempt: set[str] = field(default_factory=set)
     policy_exception_budget: int = 0
+    digest_exemptions: image_digests.Exemptions = field(
+        default_factory=lambda: image_digests.Exemptions({}, {})
+    )
+    installs: dict[str, list[Resource]] = field(default_factory=dict)
 
 
 Rule = Callable[[Context], Iterable[str]]
@@ -494,6 +499,14 @@ def rule_prune_disabled(context: Context) -> Iterable[str]:
                 yield f"{universe}: {resource.ref()} lacks {PRUNE_ANNOTATION}: {PRUNE_DISABLED}"
 
 
+def rule_image_digest(context: Context) -> Iterable[str]:
+    sources = {
+        universe: [(resource.ref(), resource.obj) for resource in resources]
+        for universe, resources in {**context.universes, **context.installs}.items()
+    }
+    return image_digests.problems(sources, context.digest_exemptions)
+
+
 RULES: dict[str, Rule] = {
     "psa-labels": rule_psa_labels,
     "default-deny-network-policy": rule_default_deny,
@@ -506,6 +519,7 @@ RULES: dict[str, Rule] = {
     "dashboards-selected": rule_dashboards_selected,
     "policy-exception-budget": rule_policy_exception_budget,
     "prune-disabled": rule_prune_disabled,
+    "image-digest": rule_image_digest,
 }
 
 
@@ -717,8 +731,23 @@ def promtool_test_files(repo_root: Path) -> list[Path]:
     )
 
 
+def build_installs(rendered: dict[Path, list[dict]]) -> dict[str, list[Resource]]:
+    return {
+        f"installs/{path.stem.removeprefix('install-')}": resources_of(
+            objects, default_namespace=DEFAULT_NAMESPACE, kustomize=False
+        )
+        for path, objects in sorted(rendered.items())
+        if path.name.startswith("install-")
+    }
+
+
 def build_context(
-    rendered_dir: Path, chart_cache: Path, repo_root: Path, config: dict, budget: dict
+    rendered_dir: Path,
+    chart_cache: Path,
+    repo_root: Path,
+    config: dict,
+    budget: dict,
+    digest_exemptions: image_digests.Exemptions | None = None,
 ) -> Context:
     rendered_paths = sorted(rendered_dir.glob("*.yaml"))
     if not rendered_paths:
@@ -755,6 +784,8 @@ def build_context(
         privileged_namespaces=set(config.get("privileged_namespaces") or []),
         network_policy_exempt=set(config.get("network_policy_exempt_namespaces") or []),
         policy_exception_budget=int(budget.get("policy_exceptions", 0)),
+        digest_exemptions=digest_exemptions or image_digests.Exemptions({}, {}),
+        installs=build_installs({path: parsed[path] for path in rendered_paths}),
     )
 
 
@@ -765,13 +796,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
     parser.add_argument("--config", type=Path, default=LINT_DIR / "conventions.toml")
     parser.add_argument("--budget", type=Path, default=LINT_DIR / "budget.toml")
+    parser.add_argument(
+        "--digest-exempt", type=Path, default=LINT_DIR / "image-digest-exempt.toml"
+    )
     args = parser.parse_args(argv)
     try:
         config = tomllib.loads(args.config.read_text())
         activation = load_activation(config)
         budget = tomllib.loads(args.budget.read_text())
-        context = build_context(args.rendered, args.chart_cache, args.repo_root, config, budget)
-    except (ConventionError, helm_yaml.YamlError, OSError, tomllib.TOMLDecodeError) as error:
+        exemptions = image_digests.load_exemptions(args.digest_exempt)
+        context = build_context(
+            args.rendered, args.chart_cache, args.repo_root, config, budget, exemptions
+        )
+    except (
+        ConventionError,
+        helm_yaml.YamlError,
+        image_digests.ExemptionError,
+        OSError,
+        tomllib.TOMLDecodeError,
+    ) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
     outcome = evaluate(context, activation)

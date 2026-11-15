@@ -260,6 +260,12 @@ live Deployments and fails `up` when a flag is missing:
 component does not work there, because `--no-remote-bases` refuses it. The last patch gives the
 bootstrap Kustomization `serviceAccountName: kustomize-controller`; the verifier checks that too.
 
+The component's `images:` list pins each controller of Flux v2.9.4 by multi-arch index digest, and
+`flux_lockdown_images` in `flux-lockdown.sh` lists the same references. The GitOps repository's
+`flux-system/kustomization.yaml` needs that `images:` list as well: the verifier fails `up` and the
+lifecycle bootstrap with `<controller> image <ref>` when a live controller runs another image. A Flux
+upgrade changes both lists; `scripts/test_platform_flux_lockdown.py` fails when they disagree.
+
 With `--default-service-account=default`, a Kustomization without `serviceAccountName` runs as the
 `default` ServiceAccount of its namespace, which has no RBAC. Platform Kustomizations live in
 `flux-system` and set `serviceAccountName: kustomize-controller` (cluster-admin through Flux's

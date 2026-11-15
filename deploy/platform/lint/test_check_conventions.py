@@ -476,6 +476,116 @@ class PruneDisabledTest(unittest.TestCase):
         self.assertEqual(violations("prune-disabled", ctx), [])
 
 
+DIGEST = "@sha256:" + "a" * 64
+
+
+def pod_spec(*, containers: list[str], init: list[str] | None = None) -> dict:
+    return {
+        "containers": [{"name": f"c{i}", "image": image} for i, image in enumerate(containers)],
+        "initContainers": [{"name": f"i{i}", "image": image} for i, image in enumerate(init or [])],
+    }
+
+
+class ImageDigestTest(unittest.TestCase):
+    def exemptions(self, rendered=None, embedded=None) -> cc.image_digests.Exemptions:
+        return cc.image_digests.Exemptions(rendered or {}, embedded or {})
+
+    def test_undigested_containers_init_containers_and_test_hooks_fail(self) -> None:
+        deployment = resource(
+            "Deployment",
+            "app",
+            spec={"template": {"spec": pod_spec(containers=[f"app:1{DIGEST}"], init=["init:1"])}},
+        )
+        hook = resource(
+            "Pod",
+            "chart-test",
+            kustomize=False,
+            annotations={"helm.sh/hook": "test-success"},
+            spec=pod_spec(containers=["curlimages/curl"]),
+        )
+        found = violations("image-digest", context(deployment, hook))
+        self.assertEqual(
+            found,
+            [
+                "bases: Deployment app/app runs init:1 without an @sha256 digest",
+                "bases: Pod app/chart-test runs curlimages/curl without an @sha256 digest",
+            ],
+        )
+
+    def test_secret_injected_image_and_flux_install_are_checked(self) -> None:
+        secret = resource("Secret", "plugin", data={"SIDECAR_IMAGE": "c2lkZWNhcjox"})
+        controller = resource(
+            "Deployment",
+            "source-controller",
+            "flux-system",
+            kustomize=False,
+            spec={"template": {"spec": pod_spec(containers=["ghcr.io/fluxcd/source-controller:v1"])}},
+        )
+        ctx = context(secret, installs={"installs/flux": [controller]})
+        self.assertEqual(
+            violations("image-digest", ctx),
+            [
+                "bases: Secret app/plugin runs sidecar:1 without an @sha256 digest",
+                "installs/flux: Deployment flux-system/source-controller runs "
+                "ghcr.io/fluxcd/source-controller:v1 without an @sha256 digest",
+            ],
+        )
+
+    def test_digests_and_matching_exemptions_pass(self) -> None:
+        catalog = resource(
+            "ImageCatalog",
+            "postgresql",
+            apiVersion="postgresql.cnpg.io/v1",
+            spec={"images": [{"major": 18, "image": f"postgresql:18{DIGEST}"}]},
+        )
+        hook = resource("Pod", "test", spec=pod_spec(containers=["curlimages/curl"]))
+        k3s = resource("Job", "restore", spec={"template": {"spec": pod_spec(containers=[f"rancher/k3s:v1{DIGEST}"])}})
+        release = resource("HelmRelease", "chart", spec={"values": {"image": "values:1"}})
+        ctx = context(
+            catalog,
+            hook,
+            k3s,
+            release,
+            digest_exemptions=self.exemptions(
+                {"curlimages/curl": "hardcoded"}, {"rancher/klipper-lb:v1": "rancher/k3s"}
+            ),
+        )
+        self.assertEqual(violations("image-digest", ctx), [])
+
+    def test_stale_exemptions_fail(self) -> None:
+        ctx = context(
+            digest_exemptions=self.exemptions(
+                {"curlimages/curl": "hardcoded"}, {"rancher/klipper-lb:v1": "rancher/k3s"}
+            )
+        )
+        self.assertEqual(
+            violations("image-digest", ctx),
+            [
+                "exemption curlimages/curl matches no rendered image; remove the entry",
+                "embedded rancher/klipper-lb:v1 names carrier rancher/k3s, "
+                "which no render pins by digest",
+            ],
+        )
+
+    def test_exemption_file_needs_reasons_and_carriers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "exempt.toml"
+            for text, message in [
+                ('[images."a:1"]\nreason = ""\n', "needs a reason"),
+                ('[embedded."a:1"]\nreason = "r"\n', "needs a carrier"),
+                ('[other."a:1"]\nreason = "r"\n', "unknown sections"),
+            ]:
+                with self.subTest(message=message):
+                    path.write_text(text)
+                    with self.assertRaisesRegex(cc.image_digests.ExemptionError, message):
+                        cc.image_digests.load_exemptions(path)
+
+    def test_checked_in_exemptions_load(self) -> None:
+        exemptions = cc.image_digests.load_exemptions(cc.LINT_DIR / "image-digest-exempt.toml")
+        self.assertIn("curlimages/curl", exemptions.rendered)
+        self.assertEqual(set(exemptions.embedded.values()), {"rancher/k3s"})
+
+
 class ActivationTest(unittest.TestCase):
     def config(self, active: list[str], pending: dict[str, str]) -> dict:
         return {"rules": {"active": active, "pending": pending}}
@@ -573,7 +683,8 @@ metadata:
 CONFIG = """\
 [rules]
 active = ["policy-exception-budget", "dashboards-selected", "metrics-enabled", "alert-metadata",
-  "alert-runbook", "alert-tested", "rules-selected", "prune-disabled", "exporters-scraped"]
+  "alert-runbook", "alert-tested", "rules-selected", "prune-disabled", "exporters-scraped",
+  "image-digest"]
 [rules.pending]
 psa-labels = "N1"
 default-deny-network-policy = "N2"
@@ -623,6 +734,7 @@ class MainTest(unittest.TestCase):
             (root / "docs/runbooks" / runbook).write_text("# App down\n")
             (root / "conventions.toml").write_text(textwrap.dedent(CONFIG))
             (root / "budget.toml").write_text(f"policy_exceptions = {budget}\n")
+            (root / "exempt.toml").write_text("")
             stdout, stderr = io.StringIO(), io.StringIO()
             argv = [
                 "--rendered",
@@ -637,6 +749,8 @@ class MainTest(unittest.TestCase):
                 str(root / "conventions.toml"),
                 "--budget",
                 str(root / "budget.toml"),
+                "--digest-exempt",
+                str(root / "exempt.toml"),
             ]
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 code = cc.main(argv)
@@ -646,7 +760,7 @@ class MainTest(unittest.TestCase):
         code, stdout, stderr = self.run_main(budget=1)
         self.assertEqual(code, 0, stderr)
         self.assertIn(
-            "Conventions: 9 active, 2 pending "
+            "Conventions: 10 active, 2 pending "
             "[default-deny-network-policy (N2): 1; psa-labels (N1): 1]",
             stdout,
         )

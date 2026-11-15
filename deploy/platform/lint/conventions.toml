@@ -15,6 +15,7 @@ active = [
   "dashboards-selected",
   "default-deny-network-policy",
   "exporters-scraped",
+  "image-digest",
   "metrics-enabled",
   "policy-exception-budget",
   "prune-disabled",

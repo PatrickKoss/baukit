@@ -4,7 +4,7 @@
 
 [images."curlimages/curl"]
 expires = 2026-12-12
-reason = "falcosidekick chart 0.14.1 hardcodes this untagged image in its helm test pod with no values key, so it cannot be pinned (see image-digest-exempt.toml); Flux never runs the test, recheck with SC1/VR chart work"
+reason = "falcosidekick chart 0.14.1 hardcodes this untagged image in its helm test pod and offers no values key, so it cannot be pinned or bumped (see image-digest-exempt.toml); Flux runs the test pod (test.enable: true), recheck with SC1/VR chart work"
 ids = [
   "CVE-2026-107364",
   "CVE-2026-112315",
@@ -2074,6 +2074,174 @@ ids = [
   "CVE-2026-97687",
   "CVE-2026-97689",
   "GHSA-6v7p-g79w-8964",
+]
+
+[images."ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0@sha256:c669259e20ed1e11fad821f735c396c19d929985aa05b9544b13ecc8b5a386d0"]
+expires = 2026-12-12
+reason = "v0.16.0 is the newest plugin-barman-cloud release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+ids = [
+  "CVE-2026-111943",
+  "CVE-2026-78661",
+  "CVE-2026-78667",
+  "CVE-2026-78669",
+  "CVE-2026-97031",
+]
+
+[images."ghcr.io/fluxcd/helm-controller:v1.6.3@sha256:16ada99456385100698a5d7adf90aba8a2089d987ab541c9566b6d7b0e897038"]
+expires = 2026-12-12
+reason = "Flux v2.9.4 is the version deploy/tools.toml and flux-lockdown.sh install; Flux v2.10.0 drops the controllers' findings from 133 to 12, a CLI, CRD and lockdown upgrade for S4/SC4"
+ids = [
+  "CVE-2026-107891",
+  "CVE-2026-111943",
+  "CVE-2026-14456",
+  "CVE-2026-33818",
+  "CVE-2026-39821",
+  "CVE-2026-46600",
+  "CVE-2026-50163",
+  "CVE-2026-56851",
+  "CVE-2026-56853",
+  "CVE-2026-56854",
+  "CVE-2026-56858",
+  "CVE-2026-56859",
+  "CVE-2026-56860",
+  "CVE-2026-56862",
+  "CVE-2026-78661",
+  "CVE-2026-78667",
+  "CVE-2026-78669",
+  "CVE-2026-84304",
+  "CVE-2026-84445",
+  "CVE-2026-85091",
+  "CVE-2026-85731",
+  "CVE-2026-97031",
+  "GHSA-hrxh-6v49-42gf",
+]
+
+[images."ghcr.io/fluxcd/kustomize-controller:v1.9.4@sha256:2b8bec54ffb6caf421bd2a6c005d27f567d5dd4db7feb55794fb51fcabd69b8f"]
+expires = 2026-12-12
+reason = "Flux v2.9.4 is the version deploy/tools.toml and flux-lockdown.sh install; Flux v2.10.0 drops the controllers' findings from 133 to 12, a CLI, CRD and lockdown upgrade for S4/SC4"
+ids = [
+  "CVE-2026-103111",
+  "CVE-2026-105437",
+  "CVE-2026-107891",
+  "CVE-2026-111497",
+  "CVE-2026-111760",
+  "CVE-2026-111943",
+  "CVE-2026-113351",
+  "CVE-2026-11352",
+  "CVE-2026-114466",
+  "CVE-2026-115506",
+  "CVE-2026-11586",
+  "CVE-2026-116587",
+  "CVE-2026-117610",
+  "CVE-2026-11822",
+  "CVE-2026-11824",
+  "CVE-2026-118370",
+  "CVE-2026-12064",
+  "CVE-2026-123158",
+  "CVE-2026-14456",
+  "CVE-2026-33818",
+  "CVE-2026-39821",
+  "CVE-2026-46600",
+  "CVE-2026-56851",
+  "CVE-2026-56852",
+  "CVE-2026-56853",
+  "CVE-2026-56854",
+  "CVE-2026-56858",
+  "CVE-2026-56859",
+  "CVE-2026-56860",
+  "CVE-2026-56862",
+  "CVE-2026-66046",
+  "CVE-2026-76641",
+  "CVE-2026-76956",
+  "CVE-2026-76957",
+  "CVE-2026-77214",
+  "CVE-2026-78661",
+  "CVE-2026-78667",
+  "CVE-2026-78669",
+  "CVE-2026-8286",
+  "CVE-2026-84304",
+  "CVE-2026-84445",
+  "CVE-2026-8458",
+  "CVE-2026-85091",
+  "CVE-2026-86145",
+  "CVE-2026-89157",
+  "CVE-2026-89161",
+  "CVE-2026-8925",
+  "CVE-2026-8927",
+  "CVE-2026-92392",
+  "CVE-2026-93990",
+  "CVE-2026-9547",
+  "CVE-2026-97031",
+  "GHSA-hrxh-6v49-42gf",
+]
+
+[images."ghcr.io/fluxcd/notification-controller:v1.9.3@sha256:071c351a0fb163eeb6a2bb82f1e894f51b6b0734216d2e97d3d99c9ab9d710b9"]
+expires = 2026-12-12
+reason = "Flux v2.9.4 is the version deploy/tools.toml and flux-lockdown.sh install; Flux v2.10.0 drops the controllers' findings from 133 to 12, a CLI, CRD and lockdown upgrade for S4/SC4"
+ids = [
+  "CVE-2026-107891",
+  "CVE-2026-111943",
+  "CVE-2026-116587",
+  "CVE-2026-14456",
+  "CVE-2026-33818",
+  "CVE-2026-39821",
+  "CVE-2026-46600",
+  "CVE-2026-56851",
+  "CVE-2026-56852",
+  "CVE-2026-56853",
+  "CVE-2026-56854",
+  "CVE-2026-56858",
+  "CVE-2026-56859",
+  "CVE-2026-56860",
+  "CVE-2026-56862",
+  "CVE-2026-56864",
+  "CVE-2026-56865",
+  "CVE-2026-63209",
+  "CVE-2026-71556",
+  "CVE-2026-78661",
+  "CVE-2026-78667",
+  "CVE-2026-78669",
+  "CVE-2026-84304",
+  "CVE-2026-84445",
+  "CVE-2026-85091",
+  "CVE-2026-97031",
+  "GHSA-hrxh-6v49-42gf",
+]
+
+[images."ghcr.io/fluxcd/source-controller:v1.9.4@sha256:8a8ed0a57b8b86f561d5a4309a69f65e62f0cebe4de8801593c5ff35a3bc3c23"]
+expires = 2026-12-12
+reason = "Flux v2.9.4 is the version deploy/tools.toml and flux-lockdown.sh install; Flux v2.10.0 drops the controllers' findings from 133 to 12, a CLI, CRD and lockdown upgrade for S4/SC4"
+ids = [
+  "CVE-2026-107891",
+  "CVE-2026-111943",
+  "CVE-2026-116587",
+  "CVE-2026-14456",
+  "CVE-2026-33818",
+  "CVE-2026-39821",
+  "CVE-2026-46600",
+  "CVE-2026-49478",
+  "CVE-2026-50163",
+  "CVE-2026-56851",
+  "CVE-2026-56852",
+  "CVE-2026-56853",
+  "CVE-2026-56854",
+  "CVE-2026-56858",
+  "CVE-2026-56859",
+  "CVE-2026-56860",
+  "CVE-2026-56862",
+  "CVE-2026-56864",
+  "CVE-2026-56865",
+  "CVE-2026-63209",
+  "CVE-2026-71556",
+  "CVE-2026-78661",
+  "CVE-2026-78667",
+  "CVE-2026-78669",
+  "CVE-2026-84304",
+  "CVE-2026-84445",
+  "CVE-2026-85091",
+  "CVE-2026-85731",
+  "CVE-2026-97031",
+  "GHSA-hrxh-6v49-42gf",
 ]
 
 [images."quay.io/jetstack/cert-manager-cainjector:v1.21.3@sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f"]

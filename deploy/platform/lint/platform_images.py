@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import datetime
 import itertools
 import json
@@ -20,6 +22,7 @@ import helm_yaml
 process_runner = helm_yaml.process_runner
 
 IMAGE_KEYS = frozenset({"image", "imageName"})
+IMAGE_DATA_KEY = re.compile(r"(?:^|_)IMAGE$")
 IMAGE_REFERENCE = re.compile(
     r"^[a-z0-9]+(?:[._-][a-z0-9]+)*(?::[0-9]+)?"
     r"(?:/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*"
@@ -50,8 +53,24 @@ def patched_image(value: dict) -> str | None:
     return None
 
 
+def secret_images(value: dict) -> Iterable[str]:
+    """Image references a Secret carries under *_IMAGE keys, such as the Barman plugin sidecar."""
+    if value.get("kind") != "Secret":
+        return
+    for key, encoded in (value.get("data") or {}).items():
+        if IMAGE_DATA_KEY.search(str(key)) and isinstance(encoded, str):
+            try:
+                yield base64.b64decode(encoded, validate=True).decode().strip()
+            except (binascii.Error, UnicodeDecodeError) as error:
+                raise ScanError(f"Secret data {key} is not base64 text: {error}") from error
+    for key, plain in (value.get("stringData") or {}).items():
+        if IMAGE_DATA_KEY.search(str(key)) and isinstance(plain, str):
+            yield plain.strip()
+
+
 def images_in(value: object) -> Iterable[str]:
     if isinstance(value, dict):
+        yield from secret_images(value)
         patched = patched_image(value)
         if patched is not None:
             yield patched
