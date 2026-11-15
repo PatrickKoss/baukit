@@ -243,6 +243,40 @@ entry can disappear after a container/host restart on some releases; the
 custom server entry persists in the Kubernetes datastore so Flux can reacquire
 the smart-HTTP snapshot without a repair command.
 
+### Flux multi-tenancy lockdown
+
+Both `platform-up.sh` and the lifecycle run source-, kustomize-, helm- and notification-controller with
+the patches in `components/flux-lockdown`, then `flux_lockdown_verify` (`flux-lockdown.sh`) checks the
+live Deployments and fails `up` when a flag is missing:
+
+| Controller | Flags |
+|---|---|
+| kustomize-controller | `--no-cross-namespace-refs=true`, `--no-remote-bases=true`, `--default-service-account=default` |
+| helm-controller | `--no-cross-namespace-refs=true` |
+| notification-controller | none |
+
+`flux bootstrap` takes its manifests from the GitOps repository, so that repository's
+`<PLATFORM_GITOPS_PATH>/flux-system/kustomization.yaml` must carry the same patches inline. A remote
+component does not work there, because `--no-remote-bases` refuses it. The last patch gives the
+bootstrap Kustomization `serviceAccountName: kustomize-controller`; the verifier checks that too.
+
+With `--default-service-account=default`, a Kustomization without `serviceAccountName` runs as the
+`default` ServiceAccount of its namespace, which has no RBAC. Platform Kustomizations live in
+`flux-system` and set `serviceAccountName: kustomize-controller` (cluster-admin through Flux's
+`cluster-reconciler-flux-system` binding). Tenants use `components/tenant`.
+
+notification-controller runs without `--no-cross-namespace-refs`, although Flux documents the flag for
+it. The platform Alert in `flux-system` (`observability-stack/flux-notifications.yaml`) watches
+Kustomizations, HelmReleases and GitRepositories in every platform namespace, and the flag would make
+it ignore all of them. The Kyverno policy `flux-tenant-alert-sources` denies a tenant Alert whose
+`eventSources` name another namespace, so a tenant cannot subscribe to platform events.
+
+helm-controller keeps reconciling as itself. Platform HelmReleases live in their component namespaces,
+and `restrict-cluster-admin-binding` only lets cluster-admin go to service accounts in `flux-system`
+and `kube-system`, so a per-namespace reconciler account is not possible. Tenant HelmReleases get
+`serviceAccountName` from `components/tenant`, and Kyverno denies one without it. HelmReleases that
+use the `baukit` GitRepository live in `flux-system` with `targetNamespace` and `storageNamespace`.
+
 ### Adapting the contract to a remote cluster
 
 Keep the GitOps repository, Flux entrypoint, SOPS secret name, and component
