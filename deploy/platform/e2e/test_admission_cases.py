@@ -51,24 +51,38 @@ def resource_of(manifest):
 def policy_matches(policy, manifest):
     group, resource = resource_of(manifest)
     rules = policy["spec"].get("matchConstraints", {}).get("resourceRules", [])
-    return any(group in rule.get("apiGroups", []) and resource in rule.get("resources", []) for rule in rules)
+    return any(
+        group in rule.get("apiGroups", []) and resource in rule.get("resources", [])
+        for rule in rules
+    )
 
 
 def case_problems(policies, cases_dir=CASES):
     problems = []
-    cases = {path.name for path in cases_dir.iterdir() if path.is_dir()} if cases_dir.is_dir() else set()
-    problems += [f"Deny policy {name} has no admission case" for name in sorted(set(policies) - cases)]
+    cases = (
+        {path.name for path in cases_dir.iterdir() if path.is_dir()}
+        if cases_dir.is_dir()
+        else set()
+    )
+    problems += [
+        f"Deny policy {name} has no admission case" for name in sorted(set(policies) - cases)
+    ]
     problems += [f"case {name} names no Deny policy" for name in sorted(cases - set(policies))]
     for name in sorted(cases & set(policies)):
         files = {path.name for path in (cases_dir / name).iterdir()}
         problems += [f"case {name} lacks {file}" for file in sorted(CASE_FILES - files)]
-        problems += [f"case {name} has unexpected {file}" for file in sorted(files - CASE_FILES - OPTIONAL_FILES)]
+        problems += [
+            f"case {name} has unexpected {file}"
+            for file in sorted(files - CASE_FILES - OPTIONAL_FILES)
+        ]
         for file in sorted(CASE_FILES & files):
             manifests = parse_file(cases_dir / name / file)
             if len(manifests) != 1:
                 problems.append(f"case {name}/{file} holds {len(manifests)} manifests, not one")
             elif not policy_matches(policies[name], manifests[0]):
-                problems.append(f"case {name}/{file} is a {manifests[0]['kind']} the policy does not match")
+                problems.append(
+                    f"case {name}/{file} is a {manifests[0]['kind']} the policy does not match"
+                )
     return problems
 
 
