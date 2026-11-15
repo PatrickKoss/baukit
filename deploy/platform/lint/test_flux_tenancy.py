@@ -190,43 +190,106 @@ class FluxLockdownComponentTest(unittest.TestCase):
         self.assertEqual(sync["spec"]["serviceAccountName"], "kustomize-controller")
 
 
-class PlatformUnderLockdownTest(unittest.TestCase):
-    def test_platform_kustomizations_name_the_controller_account(self) -> None:
-        result = kustomize(PLATFORM / "overlays/local")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        kustomizations = [doc for doc in objects(result.stdout) if is_flux_object(doc)]
-        self.assertTrue(kustomizations)
-        for doc in kustomizations:
-            with self.subTest(name=doc["metadata"]["name"]):
-                self.assertEqual(doc["metadata"]["namespace"], "flux-system")
-                self.assertEqual(doc["spec"].get("serviceAccountName"), "kustomize-controller")
+def kustomization_roots() -> list[Path]:
+    roots = [
+        path.parent
+        for path in sorted((PLATFORM / "overlays").rglob("kustomization.yaml"))
+        if "kind: Kustomization" in path.read_text()
+    ]
+    e2e_overlay = PLATFORM / "e2e/overlay"
+    if (e2e_overlay / "kustomization.yaml").is_file():
+        roots.append(e2e_overlay)
+    return roots
 
-    def test_platform_flux_objects_reference_sources_in_their_own_namespace(self) -> None:
-        bases = sorted(
-            path.parent
-            for path in PLATFORM.glob("*/kustomization.yaml")
-            if path.parent.name != "overlays"
+
+def render_roots() -> list[Path]:
+    bases = sorted(
+        path.parent for path in PLATFORM.glob("*/kustomization.yaml") if path.parent.name != "overlays"
+    )
+    return bases + kustomization_roots()
+
+
+def account_findings(docs: list[dict]) -> list[str]:
+    return [
+        f"{doc['metadata'].get('namespace', '')}/{doc['metadata']['name']}"
+        for doc in docs
+        if doc.get("kind") == "Kustomization"
+        and is_flux_object(doc)
+        and (
+            doc["metadata"].get("namespace") != "flux-system"
+            or doc["spec"].get("serviceAccountName") != "kustomize-controller"
         )
+    ]
+
+
+def source_findings(docs: list[dict]) -> list[str]:
+    return [
+        f"{doc['kind']}/{doc['metadata'].get('namespace', '')}/{doc['metadata']['name']}"
+        for doc in docs
+        if is_flux_object(doc)
+        and set(source_namespaces(doc)) - {doc["metadata"].get("namespace", "")}
+    ]
+
+
+def rendered(path: Path) -> list[dict]:
+    result = kustomize(path)
+    if result.returncode != 0:
+        raise AssertionError(f"{path}: {result.stderr}")
+    return objects(result.stdout)
+
+
+PLATFORM_KUSTOMIZATION = {
+    "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+    "kind": "Kustomization",
+    "metadata": {"name": "local-baseline", "namespace": "flux-system"},
+    "spec": {"serviceAccountName": "kustomize-controller", "sourceRef": {"kind": "GitRepository", "name": "baukit"}},
+}
+
+
+class PlatformUnderLockdownTest(unittest.TestCase):
+    def test_every_overlay_is_covered(self) -> None:
+        roots = {path.relative_to(PLATFORM).as_posix() for path in kustomization_roots()}
+        self.assertIn("overlays/local", roots)
+        self.assertIn("overlays/everything", roots)
+
+    def test_platform_kustomizations_name_the_controller_account(self) -> None:
         checked = 0
-        for base in bases:
-            result = kustomize(base)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            for doc in objects(result.stdout):
-                if not is_flux_object(doc):
-                    continue
-                checked += 1
-                with self.subTest(base=base.name, name=doc["metadata"]["name"]):
-                    self.assertEqual(set(source_namespaces(doc)), {doc["metadata"]["namespace"]})
+        for root in kustomization_roots():
+            docs = rendered(root)
+            checked += sum(1 for doc in docs if is_flux_object(doc) and doc["kind"] == "Kustomization")
+            with self.subTest(root=root.relative_to(PLATFORM).as_posix()):
+                self.assertEqual(account_findings(docs), [])
         self.assertGreater(checked, 0)
 
-    def test_cross_namespace_source_is_detected(self) -> None:
+    def test_platform_flux_objects_reference_sources_in_their_own_namespace(self) -> None:
+        checked = 0
+        for root in render_roots():
+            docs = rendered(root)
+            checked += sum(1 for doc in docs if is_flux_object(doc))
+            with self.subTest(root=root.relative_to(PLATFORM).as_posix()):
+                self.assertEqual(source_findings(docs), [])
+        self.assertGreater(checked, 0)
+
+    def test_kustomization_without_the_controller_account_is_found(self) -> None:
+        self.assertEqual(account_findings([PLATFORM_KUSTOMIZATION]), [])
+        missing = {**PLATFORM_KUSTOMIZATION, "spec": {"sourceRef": PLATFORM_KUSTOMIZATION["spec"]["sourceRef"]}}
+        self.assertEqual(account_findings([missing]), ["flux-system/local-baseline"])
+        elsewhere = {**PLATFORM_KUSTOMIZATION, "metadata": {"name": "x", "namespace": "observability"}}
+        self.assertEqual(account_findings([elsewhere]), ["observability/x"])
+
+    def test_cross_namespace_source_is_found(self) -> None:
         doc = {
             "kind": "HelmRelease",
             "apiVersion": "helm.toolkit.fluxcd.io/v2",
             "metadata": {"name": "x", "namespace": "observability"},
-            "spec": {"chart": {"spec": {"sourceRef": {"kind": "GitRepository", "name": "baukit", "namespace": "flux-system"}}}},
+            "spec": {
+                "dependsOn": [{"name": "kube-prometheus-stack", "namespace": "observability"}],
+                "chart": {"spec": {"sourceRef": {"kind": "GitRepository", "name": "baukit", "namespace": "flux-system"}}},
+            },
         }
-        self.assertEqual(source_namespaces(doc), ["flux-system"])
+        self.assertEqual(source_findings([doc]), ["HelmRelease/observability/x"])
+        own = {**doc, "metadata": {"name": "x", "namespace": "flux-system"}}
+        self.assertEqual(source_findings([own]), [])
 
 
 if __name__ == "__main__":
