@@ -388,6 +388,11 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_monitor_order.p
   status=1
 fi
 
+printf '==> helm test network policies\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_helm_test_netpol.py" --rendered "$rendered_dir"; then
+  status=1
+fi
+
 printf '==> flux convention policies\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/ci-policies/run_ci_policies.py" \
   --rendered "$rendered_dir" --chart-cache "$cache_dir" \

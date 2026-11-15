@@ -26,6 +26,11 @@ spec:
     mode: warn
   test:
     enable: true
+    filters:
+      # The chart's only test curls the sidekick within 1 ms of starting, before kube-router admits
+      # the new pod's IP, and the chart offers no delay or retry. e2e/tests/netpol probes the same path.
+      - name: falco-falcosidekick-test-connection
+        exclude: true
   values:
     image:
       registry: docker.io

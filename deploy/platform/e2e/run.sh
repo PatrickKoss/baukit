@@ -26,6 +26,7 @@ keep_cluster=false
 test_dirs=("$e2e_dir/tests")
 without=()
 heavy_slot_dir=${BAUKIT_HEAVY_SLOT_DIR:-/tmp/claude-heavy-slots}
+ready_poll_seconds=30
 heavy_slot_poll_seconds=${BAUKIT_HEAVY_SLOT_POLL_SECONDS:-30}
 cluster_lock=${BAUKIT_E2E_CLUSTER_LOCK:-$HOME/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock}
 artifacts_dir=${BAUKIT_E2E_ARTIFACTS:-$repo_root/.ci-gate/platform-e2e}
@@ -284,14 +285,28 @@ report_not_ready() {
     awk '$4 != "True"' >&2 || true
 }
 
+# Prints the HelmReleases whose remediation retries are used up; Flux marks them Stalled.
+stalled_releases() {
+  kubectl get helmreleases.helm.toolkit.fluxcd.io -A -o \
+    jsonpath='{range .items[?(@.status.conditions[?(@.type=="Stalled")].status=="True")]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}'
+}
+
 wait_for_platform() {
   render_overlay | kubectl apply -f - >/dev/null
   flux reconcile source git baukit --namespace flux-system --timeout=2m >/dev/null
   printf 'Waiting up to %s for every Kustomization and HelmRelease\n' "$ready_timeout"
-  if ! kubectl wait kustomizations.kustomize.toolkit.fluxcd.io -A --all \
-    --for=condition=Ready --timeout="$ready_timeout" >/dev/null ||
-    ! kubectl wait helmreleases.helm.toolkit.fluxcd.io -A --all \
-      --for=condition=Ready --timeout=5m >/dev/null; then
+  local deadline=$((SECONDS + ${ready_timeout%m} * 60)) stalled
+  until kubectl wait kustomizations.kustomize.toolkit.fluxcd.io -A --all \
+    --for=condition=Ready --timeout="${ready_poll_seconds}s" >/dev/null 2>&1; do
+    stalled=$(stalled_releases)
+    if [[ -n $stalled ]] || ((SECONDS >= deadline)); then
+      [[ -n $stalled ]] && printf 'Stalled HelmReleases, retries exhausted:\n%s\n' "$stalled"
+      report_not_ready
+      return 1
+    fi
+  done
+  if ! kubectl wait helmreleases.helm.toolkit.fluxcd.io -A --all \
+    --for=condition=Ready --timeout=5m >/dev/null; then
     report_not_ready
     return 1
   fi
