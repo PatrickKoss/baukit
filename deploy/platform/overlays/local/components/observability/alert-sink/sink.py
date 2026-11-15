@@ -1,14 +1,16 @@
-"""Records Alertmanager webhook posts and serves them back as JSON on GET /alerts."""
+"""Logs each Alertmanager webhook post to stdout and serves the latest ones on GET /alerts."""
 
 import json
 import threading
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MAX_BODY_BYTES = 1 << 20
 PORT = 8080
+KEPT_NOTIFICATIONS = 500
 
 lock = threading.Lock()
-notifications = []
+notifications = deque(maxlen=KEPT_NOTIFICATIONS)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -24,7 +26,7 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(200, b"{}")
         elif self.path == "/alerts":
             with lock:
-                body = json.dumps(notifications).encode()
+                body = json.dumps(list(notifications)).encode()
             self.reply(200, body)
         else:
             self.reply(404)

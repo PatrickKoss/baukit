@@ -36,11 +36,23 @@ An overlay **must** provide all of the following:
 2. A Secret named `grafana-admin` in `observability`, with `admin-user` and
    `admin-password` keys. Grafana anonymous access, ingress, TLS, and any
    external URL are also overlay decisions; this base enables no ingress.
-3. A real Alertmanager receiver before production traffic is served. Patch
-   `kube-prometheus-stack.spec.values.alertmanager.config`: add an
-   identity-bearing receiver, route actionable alerts to it, and route
-   `Watchdog` to the external heartbeat integration. The base's
-   `null` receiver intentionally drops every notification.
+3. A Secret named `alertmanager-routing` in `observability` with an
+   `alertmanager.yaml` key. Start from `alertmanager/alertmanager.example.yaml`:
+   routes by `severity` and `component`, Watchdog first to an external
+   heartbeat receiver, and the two inhibit rules (critical inhibits warning
+   for the same `alertname` and `namespace`, and `InfoInhibitor`). The base
+   mounts this Secret into the Alertmanager pod, so without it the pod stays
+   in `ContainerCreating` with `secret "alertmanager-routing" not found`, no
+   Watchdog reaches the heartbeat, and the external dead man's switch fires.
+   The mount matters because Prometheus Operator v0.93.1 does not fail on a
+   missing config Secret: it logs `config secret not found, using default
+   Alertmanager configuration` and starts with a config that drops every
+   alert. `lint/check_alertmanager_config.py` checks the example and every
+   overlay Secret. A webhook URL on `*.svc.cluster.local` must name a Service
+   that the same overlay renders. The local overlay routes every receiver to
+   `alert-sink` in `observability`, which logs each notification as one JSON
+   line on stdout, so local alerts land in Loki, and serves the last 500 on
+   `GET /alerts`.
 4. Storage sizing and a StorageClass appropriate to the node. The defaults are
    30 Gi for Prometheus, 20 Gi for Loki, 10 Gi for Tempo, and 1 Gi for
    Alertmanager. The overlay owns backup/recovery expectations for these
@@ -56,6 +68,22 @@ content release depends on the Prometheus stack.
 
 No domain, e-mail address, token, credential, bucket, endpoint, or user identity
 is stored in this base.
+
+## Alert routing
+
+Alertmanager is the single sink for three sources:
+
+- Prometheus rules from kube-prometheus-stack and both baukit packs.
+- Loki ruler rules from `deploy/observability-platform/loki-rules/`. The pack
+  renders them into ConfigMap `baukit-platform-observability-loki-rules`, which
+  Loki mounts as the rule directory of tenant `fake`. Loki does not start until
+  that ConfigMap exists.
+- Flux events. `flux-notifications.yaml` holds a `Provider` of type
+  `alertmanager` and an `Alert` for error events from every Kustomization,
+  GitRepository and HelmRelease namespace. Flux sends them with
+  `severity="error"` and `component="flux"`. The lifecycle installs Flux's
+  notification-controller (`platform-up.sh` adds it to `--components`;
+  `flux bootstrap` installs it by default).
 
 ## Storage limits
 

@@ -301,3 +301,12 @@
 - from: {namespace: falco, labels: {app.kubernetes.io/name: falco}}
   to: {service: loki-gateway.observability, port: 80}
   expect: deny
+- from: {namespace: flux-system, labels: {app: notification-controller}}
+  to: {service: kube-prometheus-stack-alertmanager.observability, port: 9093}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: loki, app.kubernetes.io/component: single-binary}}
+  to: {service: kube-prometheus-stack-alertmanager.observability, port: 9093}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: alertmanager}}
+  to: {service: alert-sink.observability, port: 8080}
+  expect: allow

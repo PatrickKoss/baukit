@@ -35,10 +35,9 @@ with its condition message.
 `overlay/` holds the GitRepository and one Flux Kustomization per base. It composes every base except
 `hcloud` and `posthog`, plus:
 
-- `components/observability`: the local observability component with Alertmanager routing every alert to
-  the webhook sink;
-- `components/receiver`: the sink in `e2e-receiver`. It stores each notification and serves them on
-  `GET /alerts`, which tests read through the API server's service proxy;
+- `components/observability`: the local observability component, which brings the `alertmanager-routing`
+  Secret and `alert-sink` in `observability`. The sink stores each notification and serves them on
+  `GET /alerts`;
 - `components/kyverno-policies`: the policy library plus the registry allowlist, which admits only
   `localhost/baukit-e2e/` images in tenants;
 - `components/tenant`: the `e2e-tenant` namespace built from `../components/tenant` and the echo
