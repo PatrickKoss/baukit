@@ -1,8 +1,8 @@
 """Logs each Alertmanager webhook post to stdout and serves the latest ones on GET /alerts."""
 
 import json
-from collections import deque
 import threading
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MAX_BODY_BYTES = 1 << 20
