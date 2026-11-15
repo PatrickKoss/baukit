@@ -113,6 +113,17 @@ class OverlayTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn(NODE_CIDR_PLACEHOLDER, result.stdout)
 
+    def test_a_base_with_a_local_component_is_composed_through_it(self):
+        local = PLATFORM / "overlays/local/components"
+        paths = set(re.findall(r"^  path: \./(\S+)$", RECONCILIATION.read_text(), re.M))
+        for component in sorted(path.parent for path in local.glob("*/kustomization.yaml")):
+            with self.subTest(base=component.name):
+                own = E2E / "overlay/components" / component.name / "kustomization.yaml"
+                via_local = str(component.relative_to(REPO)) in paths
+                reference = f"../../../../overlays/local/components/{component.name}\n"
+                via_own = own.is_file() and reference in own.read_text()
+                self.assertTrue(via_local or via_own, f"e2e composes {component.name} without it")
+
     def test_tenant_waits_for_the_policies(self):
         text = RECONCILIATION.read_text()
         tenant = next(doc for doc in text.split("\n---\n") if "name: e2e-tenant\n" in doc)
