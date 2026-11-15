@@ -16,7 +16,9 @@ Every pod a base renders sets `priorityClassName`. `platform-critical` goes to
 the controllers needed to recover the cluster and serve traffic: Traefik, the
 CNPG operator and the PostgreSQL instance, Kyverno admission, cert-manager and
 the hcloud CSI driver. Every other platform pod runs as `platform-standard`.
-The hcloud CCM keeps its chart's `system-cluster-critical`. A chart without a
+The hcloud CCM keeps its chart's `system-cluster-critical`. The Flux controllers run as `system-cluster-critical` too. `flux install` sets it
+on source-, kustomize- and helm-controller, and `components/flux-lockdown` adds it to
+notification-controller, which starts before cluster-baseline creates the platform classes. A chart without a
 values key gets the class from a `postRenderers` patch, which `validate.sh`
 applies to its render too. Every workload that can run more than one replica
 has a PodDisruptionBudget that allows at least one eviction. The convention
