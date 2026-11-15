@@ -3,11 +3,19 @@
 # snapshot that Flux pulls from the host, plus the local k3s image that
 # deploy/smoke/k3d-smoke.sh uses too.
 
-# Kubernetes 1.35 removed cgroup-v1 support. The current development host is a
-# cgroup-v1 WSL2 Docker engine, so local clusters use the newest supported
-# k3s 1.34 patch while testing/production retain the I0 stable-channel pin.
+# Local clusters run the newest k3s release. Kubernetes 1.35 and later do not
+# support cgroup v1, so platform_require_cgroup_v2 stops on a cgroup v1 Docker engine.
 platform_k3s_image() {
-  printf '%s\n' rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f
+  printf '%s\n' rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332
+}
+
+platform_require_cgroup_v2() {
+  local version
+  version=$(docker info --format '{{.CgroupVersion}}') || return 1
+  if [[ $version != 2 ]]; then
+    printf 'ERROR: Docker reports cgroup v%s; k3s v1.35 and later need cgroup v2. On WSL2 set kernelCommandLine = cgroup_no_v1=all under [wsl2] in .wslconfig and run wsl --shutdown.\n' "$version" >&2
+    return 1
+  fi
 }
 
 # Copies the files Git would commit (tracked plus untracked, minus ignored)
@@ -52,6 +60,7 @@ k3d_create_local_cluster() {
   local api_port=$3
   local http_port=$4
   local https_port=$5
+  platform_require_cgroup_v2 || return 1
   k3d cluster create "$cluster" \
     --image "$image" \
     --servers 1 \
