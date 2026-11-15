@@ -216,7 +216,7 @@ up() {
   printf 'Installing Flux v2.9.4 controllers\n'
   flux install \
     --version=v2.9.4 \
-    --components=source-controller,kustomize-controller,helm-controller \
+    --components=source-controller,kustomize-controller,helm-controller,notification-controller \
     --network-policy=false \
     --timeout=5m >/dev/null
   kubectl label namespace flux-system --overwrite \
@@ -227,6 +227,7 @@ up() {
   kubectl -n flux-system rollout status deployment/source-controller --timeout=5m
   kubectl -n flux-system rollout status deployment/kustomize-controller --timeout=5m
   kubectl -n flux-system rollout status deployment/helm-controller --timeout=5m
+  kubectl -n flux-system rollout status deployment/notification-controller --timeout=5m
 
   apply_runtime_identity
   kubectl apply -k "$platform_dir/overlays/local" >/dev/null

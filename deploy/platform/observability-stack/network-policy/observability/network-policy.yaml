@@ -157,6 +157,13 @@ spec:
           port: 7946
         - protocol: TCP
           port: 9095
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager
+      ports:
+        - protocol: TCP
+          port: 9093
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -220,6 +227,16 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: falcosidekick
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loki
+              app.kubernetes.io/component: single-binary
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: flux-system
+          podSelector:
+            matchLabels:
+              app: notification-controller
       ports:
         - protocol: TCP
           port: 9093

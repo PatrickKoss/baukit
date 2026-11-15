@@ -1,0 +1,66 @@
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: alertmanager
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  type: alertmanager
+  address: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093/api/v2/alerts/
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: flux-errors
+  namespace: flux-system
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  providerRef:
+    name: alertmanager
+  eventSeverity: error
+  eventMetadata:
+    component: flux
+  # One entry per kind and namespace that holds Flux objects. check_alertmanager_config.py fails
+  # when a rendered Kustomization, HelmRelease or GitRepository sits in a namespace missing here.
+  eventSources:
+    - kind: Kustomization
+      name: "*"
+      namespace: flux-system
+    - kind: GitRepository
+      name: "*"
+      namespace: flux-system
+    - kind: HelmRelease
+      name: "*"
+      namespace: cert-manager
+    - kind: HelmRelease
+      name: "*"
+      namespace: cnpg-system
+    - kind: HelmRelease
+      name: "*"
+      namespace: falco
+    - kind: HelmRelease
+      name: "*"
+      namespace: flagger-system
+    - kind: HelmRelease
+      name: "*"
+      namespace: kube-system
+    - kind: HelmRelease
+      name: "*"
+      namespace: kured
+    - kind: HelmRelease
+      name: "*"
+      namespace: kyverno
+    - kind: HelmRelease
+      name: "*"
+      namespace: observability
+    - kind: HelmRelease
+      name: "*"
+      namespace: observability-agents
+    - kind: HelmRelease
+      name: "*"
+      namespace: posthog
+    - kind: HelmRelease
+      name: "*"
+      namespace: traefik
