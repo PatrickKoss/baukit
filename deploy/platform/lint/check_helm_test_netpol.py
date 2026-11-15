@@ -75,7 +75,8 @@ def mounted_scripts(pod: dict, chart: list[dict]) -> str:
 def names_port(line: str, service: str, port: int) -> bool:
     if mentions(line, str(port)):
         return True
-    return port == HTTP_PORT and re.search(rf"http://{re.escape(service)}(?![\w.:-])", line) is not None
+    url = re.search(rf"http://{re.escape(service)}(?![\w.:-])", line)
+    return port == HTTP_PORT and url is not None
 
 
 def backends(service: dict, chart: list[dict]) -> list[tuple[dict, dict]]:
