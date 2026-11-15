@@ -259,6 +259,7 @@ ensure_cluster() {
   fi
   use_cluster
   kubectl wait node --all --for=condition=Ready --timeout=5m
+  platform_label_system_namespaces
 }
 
 ensure_snapshot_dns() {

@@ -192,6 +192,7 @@ up() {
     printf 'Cluster %s already exists; converging it.\n' "$cluster_name"
   fi
   use_context
+  platform_label_system_namespaces
   start_git_daemon
 
   printf 'Installing Flux v2.9.4 controllers with the multi-tenancy lockdown\n'

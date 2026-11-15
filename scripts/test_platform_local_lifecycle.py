@@ -413,6 +413,35 @@ class RegistryMirrorClusterTest(unittest.TestCase):
                 self.assertLess(disconnect, calls.index("k3d cluster delete demo"))
 
 
+class SystemNamespaceLabelTest(unittest.TestCase):
+    CALLERS = (*LIFECYCLE_SCRIPTS, PLATFORM / "e2e/run.sh")
+
+    def test_labels_all_system_namespaces(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            calls = Path(directory) / "calls"
+            result = bash(
+                f'source "{HELPER}"\n'
+                f'kubectl() {{ printf "%s\\n" "$*" >>"{calls}"; }}\n'
+                "platform_label_system_namespaces"
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lines = calls.read_text().splitlines()
+        levels = {line.split()[2]: line for line in lines}
+        self.assertEqual(set(levels), {"kube-system", "default", "kube-public", "kube-node-lease"})
+        for namespace, line in levels.items():
+            level = "privileged" if namespace == "kube-system" else "restricted"
+            with self.subTest(namespace=namespace):
+                self.assertIn("--overwrite", line)
+                self.assertIn("enforce-version=v1.37", line)
+                for mode in ("enforce", "audit", "warn"):
+                    self.assertIn(f"pod-security.kubernetes.io/{mode}={level}", line)
+
+    def test_every_cluster_entry_point_labels_them(self) -> None:
+        for script in self.CALLERS:
+            with self.subTest(script=script.name):
+                self.assertRegex(script.read_text(), r"(?m)^\s+platform_label_system_namespaces$")
+
+
 class RestoreTestScriptTest(unittest.TestCase):
     PRIMARY = "postgres-cluster-restore-test-1"
 

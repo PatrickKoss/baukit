@@ -26,6 +26,21 @@ platform_k3s_audit_log=/var/log/kubernetes/audit/audit.log
 # platform_k3s_server_args, so its datastore stays a separate decision.
 platform_local_etcd_arg() { printf '%s\n' '--cluster-init@server:0'; }
 
+# k3s creates these namespaces without Pod Security labels, which require-psa-labels reports.
+# kube-system matches its exemption in the admission config.
+platform_label_system_namespaces() {
+  local level namespace
+  for namespace in kube-system default kube-public kube-node-lease; do
+    level=restricted
+    [[ $namespace == kube-system ]] && level=privileged
+    kubectl label namespace "$namespace" --overwrite \
+      pod-security.kubernetes.io/enforce="$level" \
+      pod-security.kubernetes.io/enforce-version=v1.37 \
+      pod-security.kubernetes.io/audit="$level" \
+      pod-security.kubernetes.io/warn="$level" >/dev/null
+  done
+}
+
 platform_k3s_server_args() {
   printf '%s\n' \
     --disable=traefik \
