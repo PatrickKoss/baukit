@@ -233,7 +233,9 @@ def rule_default_deny(context: Context) -> Iterable[str]:
                 )
 
 
-def release_chart(release: Resource, sources: dict[chart_source.SourceKey, dict]) -> tuple[str, str]:
+def release_chart(
+    release: Resource, sources: dict[chart_source.SourceKey, dict]
+) -> tuple[str, str]:
     try:
         return chart_source.release_chart(release.obj, sources, release.namespace)
     except chart_source.ChartSourceError as error:

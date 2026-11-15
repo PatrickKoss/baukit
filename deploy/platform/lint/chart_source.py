@@ -12,13 +12,16 @@ class ChartSourceError(Exception):
     pass
 
 
-def oci_sources(objects: Iterable[dict], default_namespace: str = "default") -> dict[SourceKey, dict]:
+def oci_sources(
+    objects: Iterable[dict], default_namespace: str = "default"
+) -> dict[SourceKey, dict]:
     sources = {}
     for obj in objects:
         if obj.get("kind") != OCI_KIND:
             continue
         metadata = obj.get("metadata") or {}
-        sources[(metadata.get("namespace") or default_namespace, str(metadata.get("name", "")))] = obj
+        namespace = metadata.get("namespace") or default_namespace
+        sources[(namespace, str(metadata.get("name", "")))] = obj
     return sources
 
 
@@ -39,7 +42,8 @@ def release_chart(
     metadata = release.get("metadata") or {}
     name = metadata.get("name", "")
     if chart_ref.get("kind") != OCI_KIND:
-        raise ChartSourceError(f"HelmRelease {name} chartRef kind {chart_ref.get('kind')} is not {OCI_KIND}")
+        kind = chart_ref.get("kind")
+        raise ChartSourceError(f"HelmRelease {name} chartRef kind {kind} is not {OCI_KIND}")
     namespace = chart_ref.get("namespace") or metadata.get("namespace") or default_namespace
     source = sources.get((namespace, str(chart_ref.get("name", ""))))
     if source is None:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check every HelmRelease chart source against the chart sources table in deploy/platform/README.md.
+"""Check every HelmRelease chart source against the deploy/platform/README.md chart sources table.
 
 A chart the table lists as OCI must come from an OCIRepository through spec.chartRef, at the URL in
 the table, and the OCIRepository is named after the chart. A chart the table lists with cosign
@@ -28,6 +28,8 @@ OCI = "OCI"
 HELM_REPOSITORY = "HelmRepository"
 COSIGN = "cosign"
 NO_VERIFY = "none"
+MIN_TABLE_LINES = 3
+IDENTITY_SPANS = 2
 
 
 class TableError(Exception):
@@ -58,7 +60,7 @@ def table_lines(text: str) -> list[str]:
             lines.append(line)
         elif lines or line.startswith("#"):
             break
-    if len(lines) < 3:
+    if len(lines) < MIN_TABLE_LINES:
         raise TableError(f"'{TABLE_HEADING}' has no table rows")
     return lines
 
@@ -76,10 +78,12 @@ def parse_row(header: list[str], line: str) -> Row:
         reason=values["Reason"],
     )
     if row.source not in (OCI, HELM_REPOSITORY) or not row.url:
-        raise TableError(f"{row.chart}: Source must be 'OCI `oci://...`' or 'HelmRepository `https://...`'")
+        raise TableError(
+            f"{row.chart}: Source must be 'OCI `oci://...`' or 'HelmRepository `https://...`'"
+        )
     if row.verify not in (COSIGN, NO_VERIFY):
         raise TableError(f"{row.chart}: Flux verify must be '{COSIGN}' or '{NO_VERIFY}'")
-    if row.verify == COSIGN and len(row.identity) != 2:
+    if row.verify == COSIGN and len(row.identity) != IDENTITY_SPANS:
         raise TableError(f"{row.chart}: cosign rows name the issuer and subject as two code spans")
     return row
 
@@ -110,7 +114,9 @@ def flux_objects(rendered: Path) -> list[dict]:
 def verify_errors(name: str, source: dict, row: Row) -> list[str]:
     verify = (source.get("spec") or {}).get("verify")
     if row.verify == NO_VERIFY:
-        return [f"{name}: README marks {row.chart} unverified, but its source sets verify"] if verify else []
+        if not verify:
+            return []
+        return [f"{name}: README marks {row.chart} unverified, but its source sets verify"]
     if not verify or verify.get("provider") != COSIGN:
         return [f"{name}: {row.chart} is cosign-signed, but its OCIRepository has no cosign verify"]
     identities = {
@@ -130,7 +136,7 @@ def release_errors(release: dict, sources: dict, row: Row | None, chart: str) ->
     spec = release.get("spec") or {}
     if row.source == HELM_REPOSITORY:
         if spec.get("chartRef"):
-            return [f"{name}: README lists {chart} as HelmRepository, but the release uses chartRef"]
+            return [f"{name}: README lists {chart} as HelmRepository, but it uses chartRef"]
         return [] if row.reason else [f"{name}: README gives no reason why {chart} is not OCI"]
     if "chartRef" not in spec:
         return [f"{name}: {chart} is published as OCI, use spec.chartRef to an OCIRepository"]
@@ -159,7 +165,8 @@ def check(objects: list[dict], table: dict[str, Row]) -> list[str]:
             continue
         used.add(chart)
         errors.extend(release_errors(release, sources, table.get(chart), chart))
-    errors.extend(f"README chart sources row {chart} matches no HelmRelease" for chart in sorted(set(table) - used))
+    stale = sorted(set(table) - used)
+    errors.extend(f"README chart sources row {chart} matches no HelmRelease" for chart in stale)
     return errors
 
 
