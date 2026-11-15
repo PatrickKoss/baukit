@@ -215,6 +215,10 @@
   to: {service: rustfs.postgres, port: 9000}
   expect: allow
 
+- from: {namespace: postgres, labels: {cnpg.io/jobRole: full-recovery}}
+  to: {service: rustfs.postgres, port: 9000}
+  expect: allow
+
 # PostgreSQL and the restore test
 - from: {namespace: cnpg-system, labels: {app.kubernetes.io/name: cloudnative-pg}}
   to: {pod: {namespace: postgres, labels: {cnpg.io/podRole: instance}}, port: 8000}

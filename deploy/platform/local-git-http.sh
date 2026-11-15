@@ -10,9 +10,6 @@ platform_k3s_image() {
   printf '%s\n' rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f
 }
 
-# Prints the k3s image that local and e2e clusters run.
-platform_k3s_image() { printf '%s\n' rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f; }
-
 # Copies the files Git would commit (tracked plus untracked, minus ignored)
 # from a checkout into an empty directory.
 snapshot_tree() {
