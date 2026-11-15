@@ -13,6 +13,10 @@ trap 'rm -rf -- "$work_dir"' EXIT
 
 "$repo_root/deploy/platform/validate.sh" --render-to "$work_dir/rendered" >/dev/null
 mkdir -p "$cache_dir"
+# shellcheck source=deploy/platform/registry-mirrors.sh
+source "$repo_root/deploy/platform/registry-mirrors.sh"
+# Scans read through the local pull-through caches when they run, see registry-mirrors.sh.
+registry_mirrors_trivy_config >"$work_dir/trivy.yaml"
 PYTHONDONTWRITEBYTECODE=1 python3 "$repo_root/deploy/platform/lint/platform_images.py" \
   --rendered "$work_dir/rendered" --repo-root "$repo_root" --cache "$cache_dir" \
-  --work "$work_dir" --allowlist "$repo_root/deploy/platform/lint/image-findings.toml"
+  --work "$work_dir" --trivy-config "$work_dir/trivy.yaml" --allowlist "$repo_root/deploy/platform/lint/image-findings.toml"

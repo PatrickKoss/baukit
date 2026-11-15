@@ -254,8 +254,12 @@ def report_ids(report: dict, field: str, id_key: str) -> dict[str, set[str]]:
     return found
 
 
-def scan_images(images: Sequence[str], cache: Path, run: Runner) -> dict[str, set[str]]:
+def scan_images(
+    images: Sequence[str], cache: Path, run: Runner, config: Path | None = None
+) -> dict[str, set[str]]:
     common = ["--cache-dir", str(cache), "--quiet"]
+    if config is not None:
+        common += ["--config", str(config)]
     for database in ("--download-db-only", "--download-java-db-only"):
         if run(["trivy", "image", *common, database])[0] != 0:
             raise ScanError(f"trivy {database} failed")
@@ -301,6 +305,9 @@ def main(argv: list[str] | None = None, run: Runner = run_command) -> int:
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--allowlist", type=Path, required=True)
+    parser.add_argument(
+        "--trivy-config", type=Path, help="trivy.yaml, for example registry mirrors"
+    )
     parser.add_argument("--today", type=datetime.date.fromisoformat, default=datetime.date.today())
     args = parser.parse_args(argv)
 
@@ -312,7 +319,7 @@ def main(argv: list[str] | None = None, run: Runner = run_command) -> int:
         if not images:
             raise ScanError(f"no container images found under {args.rendered}")
         print(f"==> {len(images)} images", flush=True)
-        image_findings = scan_images(images, args.cache, run)
+        image_findings = scan_images(images, args.cache, run, args.trivy_config)
         stage = args.work / "dockerfiles"
         staged = stage_dockerfiles(tracked_dockerfiles(args.repo_root), args.repo_root, stage)
         dockerfile_findings = scan_dockerfiles(staged, stage, args.cache, run)
