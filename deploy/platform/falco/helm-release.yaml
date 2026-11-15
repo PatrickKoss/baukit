@@ -122,3 +122,13 @@ spec:
           endpoint: /api/v2/alerts
           minimumpriority: warning
           extralabels: component:falco
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              version: v1
+              kind: Pod
+            patch: |-
+              - op: add
+                path: /spec/priorityClassName
+                value: platform-standard

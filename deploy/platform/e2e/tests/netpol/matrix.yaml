@@ -204,6 +204,12 @@
   expect: allow
 - from: {namespace: kured, labels: {app.kubernetes.io/name: kured}}
   to: {service: kube-prometheus-stack-prometheus.observability, port: 9090}
+  expect: allow
+- from: {namespace: kured, labels: {app.kubernetes.io/name: kured}}
+  to: {service: alert-sink.observability, port: 8080}
+  expect: allow
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: alert-sink.observability, port: 8080}
   expect: deny
 - from: {namespace: observability, labels: {app.kubernetes.io/name: loki, app.kubernetes.io/component: single-binary}}
   to: {service: rustfs.postgres, port: 9000}

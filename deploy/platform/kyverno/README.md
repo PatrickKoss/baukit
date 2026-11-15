@@ -12,6 +12,9 @@ Settings that matter:
 
 - one replica per controller, each with a PodDisruptionBudget of `maxUnavailable: 1`. A single
   replica still drains, and a multi-replica overlay keeps all but one pod up.
+- the admission controller runs as `platform-critical`, the other controllers and Policy Reporter
+  as `platform-standard`. The chart has no priority key for its hook Jobs and test Pods, so a
+  `postRenderers` patch sets `platform-standard` on them.
 - ServiceMonitors for the admission, background, cleanup and reports controllers, plus Policy
   Reporter's ServiceMonitor. Policy Reporter runs with metrics on, UI, Kyverno plugin and Grafana
   dashboards off.

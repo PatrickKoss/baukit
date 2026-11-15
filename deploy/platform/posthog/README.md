@@ -17,7 +17,8 @@ in this base instead. A zero-pod `posthog-pgbouncer` Service alias maps the
 legacy chart's mandatory port 6543 check directly to PostgreSQL; no PgBouncer
 process is installed. Redpanda provides the Kafka API without a second Kafka
 JVM, while ZooKeeper remains because PostHog's supported ClickHouse schema uses
-replicated tables.
+replicated tables. Every pod runs as `platform-standard`; the chart has no
+priority key for web, events and its Jobs, so `postRenderers` patches set it.
 
 The ClickHouse image is fetched through Google's public Docker Hub mirror but
 keeps the upstream manifest-list digest. This avoids anonymous Docker Hub rate

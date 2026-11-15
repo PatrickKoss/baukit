@@ -34,6 +34,7 @@ spec:
         app.kubernetes.io/name: rustfs
         app.kubernetes.io/part-of: baukit-platform
     spec:
+      priorityClassName: platform-standard
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -130,6 +131,7 @@ spec:
         app.kubernetes.io/name: rustfs-create-bucket
         app.kubernetes.io/part-of: baukit-platform
     spec:
+      priorityClassName: platform-standard
       restartPolicy: Never
       securityContext:
         runAsNonRoot: true

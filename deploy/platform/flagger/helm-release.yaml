@@ -27,6 +27,7 @@ spec:
   driftDetection:
     mode: warn
   values:
+    podPriorityClassName: platform-standard
     image:
       tag: "1.45.0@sha256:15b372d35012f9ae450f9030bc82217369c0aee082ed5a5225830010cf972b2b"
     meshProvider: traefik

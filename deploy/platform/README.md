@@ -10,9 +10,19 @@ and secrets in the private infrastructure repository.
 Each first-level base owns its namespace manifest and any HelmRepository it
 uses. HelmRelease chart versions are exact pins. Values favor one replica and
 bounded requests/limits suitable for an initial single Hetzner node; overlays
-replace those values from measurements. Bases do not set `priorityClassName`,
-except Traefik, which runs as `platform-critical` so the edge survives
-resource pressure.
+replace those values from measurements.
+
+Every pod a base renders sets `priorityClassName`. `platform-critical` goes to
+the controllers needed to recover the cluster and serve traffic: Traefik, the
+CNPG operator and the PostgreSQL instance, Kyverno admission, cert-manager and
+the hcloud CSI driver. Every other platform pod runs as `platform-standard`.
+The hcloud CCM keeps its chart's `system-cluster-critical`. The Flux controllers run as `system-cluster-critical` too. `flux install` sets it
+on source-, kustomize- and helm-controller, and `components/flux-lockdown` adds it to
+notification-controller, which starts before cluster-baseline creates the platform classes. A chart without a
+values key gets the class from a `postRenderers` patch, which `validate.sh`
+applies to its render too. Every workload that can run more than one replica
+has a PodDisruptionBudget that allows at least one eviction. The convention
+rules `priority-class` and `pdb-multi-replica` enforce both.
 
 The conventional namespaces are:
 
@@ -33,9 +43,7 @@ The conventional namespaces are:
 | node-level agents (node-exporter, Alloy) | `observability-agents` |
 
 `cluster-baseline` defines `platform-critical` and `platform-standard` as
-non-default PriorityClasses. Overlays may assign `platform-critical` to the
-minimum controllers needed for recovery/ingress and `platform-standard` to
-other platform workloads. Application workloads normally use neither.
+non-default PriorityClasses. Application workloads normally use neither.
 
 Every Namespace a base manages carries `app.kubernetes.io/part-of:
 baukit-platform`. Prometheus reads PrometheusRules, ServiceMonitors and

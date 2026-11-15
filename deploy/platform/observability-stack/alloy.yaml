@@ -36,6 +36,7 @@ spec:
     crds:
       create: false
     controller:
+      priorityClassName: platform-standard
       type: daemonset
     alloy:
       enableReporting: false

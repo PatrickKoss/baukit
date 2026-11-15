@@ -26,7 +26,9 @@ The overlay should also remove k3s `local-path` as the default StorageClass (or
 patch `hcloud-volumes` to non-default) so the cluster has exactly one default.
 Both charts render their monitors (a PodMonitor for the CCM on 8233, a
 ServiceMonitor for the CSI driver), so reconcile this base after the one that
-installs the Prometheus Operator CRDs. Set a `priorityClassName` if desired.
+installs the Prometheus Operator CRDs. The CSI controller and node pods run as
+`platform-critical`, since volumes must attach before PostgreSQL can recover.
+The CCM keeps the chart's `system-cluster-critical`.
 
 The local k3d flavor must omit this entire base. It is also optional on a
 Hetzner cluster that uses neither Cloud Volumes nor a managed Load Balancer.

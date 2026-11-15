@@ -27,6 +27,8 @@ spec:
   test:
     enable: true
   values:
+    global:
+      priorityClassName: platform-standard
     webhooksCleanup:
       image:
         tag: "v1.20.0@sha256:6079a30d75fe7ba868a5a7e5dfa71ee92a3a8bae97adcea1c8cfb1009280ee6c"
@@ -55,6 +57,7 @@ spec:
         enabled: true
         namespace: kyverno
     admissionController:
+      priorityClassName: platform-critical
       replicas: 1
       podDisruptionBudget:
         enabled: true
@@ -135,3 +138,21 @@ spec:
         limits:
           cpu: 200m
           memory: 128Mi
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              group: batch
+              version: v1
+              kind: Job
+            patch: |-
+              - op: add
+                path: /spec/template/spec/priorityClassName
+                value: platform-standard
+          - target:
+              version: v1
+              kind: Pod
+            patch: |-
+              - op: add
+                path: /spec/priorityClassName
+                value: platform-standard
