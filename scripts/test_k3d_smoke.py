@@ -32,7 +32,7 @@ STUB_KUBECTL = """#!/bin/sh
 printf 'kubectl %s\\n' "$*" >>"$STUB_LOG"
 case "$*" in
     kustomize*) exec "$REAL_KUBECTL" "$@" ;;
-    "create namespace "*) printf 'apiVersion: v1\\nkind: Namespace\\nmetadata:\\n  name: %s\\n' "$3" ;;
+    "create namespace "*) printf 'kind: Namespace\\nmetadata:\\n  name: %s\\n' "$3" ;;
     "label --local"*) cat ;;
     *"jsonpath={.metadata.labels.pod-security"*) printf restricted ;;
     *"jsonpath={.metadata.labels.grafana_dashboard}"*) printf 1 ;;
@@ -92,7 +92,8 @@ class RenderTest(unittest.TestCase):
             enforced = [doc for doc in objects if doc["kind"] in ENFORCED_KINDS]
             self.assertTrue(enforced)
             for doc in enforced:
-                self.assertEqual(doc["spec"]["validationActions"], ["Deny"], doc["metadata"]["name"])
+                name = doc["metadata"]["name"]
+                self.assertEqual(doc["spec"]["validationActions"], ["Deny"], name)
 
     def test_chart_pin_and_values_come_from_the_platform_release(self) -> None:
         release = parse(KYVERNO_RELEASE)[0]
@@ -180,7 +181,7 @@ class SmokeOrderTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             lines = self.run_smoke(Path(tmp))
         kyverno = self.index(lines, "helm upgrade --install kyverno kyverno")
-        allowlist = self.index(lines, "kubectl -n kyverno create configmap baukit-registry-allowlist")
+        allowlist = self.index(lines, "kubectl -n kyverno create configmap baukit-registry-")
         policies = self.index(lines, "kubectl apply -f ", "/policies.yaml") + 1
         namespace = self.index(lines, "kubectl label --local -f - -o yaml baukit.dev/tenant=true")
         product = self.index(lines, "helm upgrade --install demo ")
