@@ -144,7 +144,7 @@ available through `make platform-{up,down,nuke,recreate,status}`.
 
 Install Docker, k3d, Flux, kubectl, SOPS, age, Git, and tar. The lifecycle pins
 Flux `v2.9.4` and defaults to the WSL2/cgroup-v1-safe
-`rancher/k3s:v1.34.8-k3s1`. The GitOps repository must already contain the
+`rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f`. The GitOps repository must already contain the
 Flux entrypoint at the configured cluster path. Its committed sync manifests
 may exist already; bootstrap reuses and reconciles them idempotently.
 
@@ -175,7 +175,7 @@ owned and contain assignments only.
 | `PLATFORM_AGE_KEY_FILE` | required for `up` | SOPS age identity installed as `flux-system/sops-age`. |
 | `PLATFORM_BAUKIT_SOURCE_MODE` | `github-tag` | `github-tag` or `local-snapshot`. The GitOps overlay owns the matching `GitRepository/baukit` manifest. |
 | `PLATFORM_BAUKIT_CHECKOUT` | snapshot mode | Baukit working-tree path copied into the disposable snapshot. |
-| `PLATFORM_K3S_IMAGE` | `rancher/k3s:v1.34.8-k3s1` | k3s image used when creating the cluster. |
+| `PLATFORM_K3S_IMAGE` | `rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f` | k3s image used when creating the cluster. |
 | `PLATFORM_FLUX_VERSION` | `flux` in `deploy/tools.toml` (`v2.9.4`) | Flux pin; override only as a reviewed platform upgrade. |
 | `PLATFORM_SNAPSHOT_PORT` | `9418` | Port for local smart HTTP, published on the k3d network gateway. |
 | `PLATFORM_API_PORT` | `random` | Host port of the Kubernetes API, bound to `127.0.0.1`. |
@@ -259,6 +259,12 @@ live Deployments and fails `up` when a flag is missing:
 `<PLATFORM_GITOPS_PATH>/flux-system/kustomization.yaml` must carry the same patches inline. A remote
 component does not work there, because `--no-remote-bases` refuses it. The last patch gives the
 bootstrap Kustomization `serviceAccountName: kustomize-controller`; the verifier checks that too.
+
+The component's `images:` list pins each controller of Flux v2.9.4 by multi-arch index digest, and
+`flux_lockdown_images` in `flux-lockdown.sh` lists the same references. The GitOps repository's
+`flux-system/kustomization.yaml` needs that `images:` list as well: the verifier fails `up` and the
+lifecycle bootstrap with `<controller> image <ref>` when a live controller runs another image. A Flux
+upgrade changes both lists; `scripts/test_platform_flux_lockdown.py` fails when they disagree.
 
 With `--default-service-account=default`, a Kustomization without `serviceAccountName` runs as the
 `default` ServiceAccount of its namespace, which has no RBAC. Platform Kustomizations live in
@@ -404,7 +410,7 @@ for the measured complete-stack footprint.
 The infrastructure pin is the stable k3s v1.36 channel. k3s v1.36 rejects
 cgroup v1 hosts, including the WSL2 Docker environment used for this proof, so
 the k3d flavor uses the newest k3s release that still supports that host:
-`v1.34.8-k3s1`. Real nodes must use the I0 v1.36 stable pin. Upgrade the local
+`v1.34.13-k3s1`. Real nodes must use the I0 v1.36 stable pin. Upgrade the local
 exception once the development Docker host exposes cgroup v2.
 
 - If `GitRepository/baukit` reports an EOF or connection failure, inspect

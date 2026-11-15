@@ -18,10 +18,10 @@ spec:
       resources:
         requests:
           cpu: 25m
-          memory: 96Mi
+          memory: 256Mi
         limits:
           cpu: 200m
-          memory: 384Mi
+          memory: 768Mi
     prometheusOperator:
       resources:
         requests:

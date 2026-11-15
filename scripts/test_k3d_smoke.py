@@ -5,6 +5,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from collections.abc import Iterator
 from pathlib import Path
 from types import ModuleType
 
@@ -64,6 +65,18 @@ def write_executable(path: Path, text: str) -> None:
     path.chmod(0o755)
 
 
+def image_tags(value: object, path: str = "") -> Iterator[tuple[str, str]]:
+    if isinstance(value, dict):
+        image = value.get("image")
+        if isinstance(image, dict) and isinstance(image.get("tag"), str):
+            yield f"{path}.image", image["tag"]
+        for key, child in value.items():
+            yield from image_tags(child, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from image_tags(child, f"{path}[{index}]")
+
+
 def render(out: Path, library: Path | None = None) -> object:
     env = dict(os.environ)
     if library is not None:
@@ -105,6 +118,16 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(chart["version"], release["spec"]["chart"]["spec"]["version"])
         self.assertEqual(chart["chart"], "kyverno")
         self.assertEqual(values, release["spec"]["values"])
+
+    def test_smoke_install_pins_every_kyverno_image_by_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.assertEqual(render(out).returncode, 0)
+            values = parse(out / "values.yaml")[0]
+        tags = dict(image_tags(values))
+        self.assertGreaterEqual(len(tags), 9)
+        for path, tag in tags.items():
+            self.assertRegex(tag, r"@sha256:[0-9a-f]{64}$", path)
 
     def test_exceptions_are_kept_and_unknown_policy_kinds_fail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

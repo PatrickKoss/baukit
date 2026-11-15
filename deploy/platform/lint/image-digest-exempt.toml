@@ -1,0 +1,26 @@
+# Container images that run without an @sha256 digest, for the V5 image-digest convention rule
+# (check_conventions.py). Every other rendered image is pinned by its multi-arch index digest.
+#
+# [images."<reference>"] exempts a rendered reference exactly; an entry no render shows fails.
+# [embedded."<reference>"] lists an image no render shows because its carrier image ships it;
+# the carrier repository must appear pinned by digest in some render.
+
+[images."curlimages/curl"]
+source = "deploy/platform/falco/helm-release.yaml (falcosidekick 0.14.1 subchart, templates/tests/test-connection.yaml)"
+reason = "the falcosidekick chart hardcodes the untagged image in its helm test-success hook and offers no values key for it; the HelmRelease sets test.enable: true, so Flux runs this pod after each install and upgrade"
+
+[embedded."rancher/klipper-lb:v0.4.17"]
+carrier = "rancher/k3s"
+reason = "k3s ServiceLB, shipped in the digest-pinned rancher/k3s image"
+
+[embedded."rancher/local-path-provisioner:v0.0.37"]
+carrier = "rancher/k3s"
+reason = "k3s local-path storage add-on, shipped in the digest-pinned rancher/k3s image"
+
+[embedded."rancher/mirrored-coredns-coredns:1.14.7"]
+carrier = "rancher/k3s"
+reason = "k3s CoreDNS add-on, shipped in the digest-pinned rancher/k3s image"
+
+[embedded."rancher/mirrored-metrics-server:v0.9.0"]
+carrier = "rancher/k3s"
+reason = "k3s metrics-server add-on, shipped in the digest-pinned rancher/k3s image"

@@ -46,7 +46,7 @@ github_owner_type=${PLATFORM_GITHUB_OWNER_TYPE:-organization}
 age_key_file=${PLATFORM_AGE_KEY_FILE:-}
 baukit_source_mode=${PLATFORM_BAUKIT_SOURCE_MODE:-github-tag}
 baukit_checkout=${PLATFORM_BAUKIT_CHECKOUT:-}
-k3s_image=${PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.8-k3s1}
+k3s_image=${PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f}
 psa_version=v1.34
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"

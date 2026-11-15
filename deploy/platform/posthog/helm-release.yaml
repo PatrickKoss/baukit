@@ -39,8 +39,7 @@ spec:
     siteUrl: http://posthog.invalid
     image:
       repository: posthog/posthog
-      tag: release-1.43.0
-      sha: sha256:74441a9fa04a5af78bf76a5af909f88592033c03ce6f1e14f343cd53d0266827
+      tag: release-1.43.0@sha256:74441a9fa04a5af78bf76a5af909f88592033c03ce6f1e14f343cd53d0266827
       pullPolicy: IfNotPresent
     posthogSecretKey:
       existingSecret: posthog-secrets

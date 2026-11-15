@@ -327,6 +327,15 @@ if [[ -d "$platform_dir/overlays" ]]; then
   done
 fi
 
+# The image scan and the image-digest convention rule read the Flux install platform-up applies.
+# shellcheck source=deploy/platform/flux-lockdown.sh
+. "$platform_dir/flux-lockdown.sh"
+if ! flux_lockdown_render "$platform_dir" "$pinned_flux_version" \
+  >"$rendered_dir/install-flux-lockdown.yaml"; then
+  printf 'ERROR: the Flux lockdown install did not render\n' >&2
+  exit 1
+fi
+
 if [[ -n $render_output ]]; then
   mkdir -p "$render_output"
   cp -- "$rendered_dir"/*.yaml "$render_output"/
@@ -351,7 +360,8 @@ if ! printf '%s  %s\n' "$kubernetes_definitions_sha256" "$kubernetes_definitions
   exit 1
 fi
 
-mapfile -d '' rendered_files < <(find "$rendered_dir" -type f -name '*.yaml' -print0 | sort -z)
+# The Flux install carries its own CRDs, which the flux_manifest schemas already cover.
+mapfile -d '' rendered_files < <(find "$rendered_dir" -type f -name '*.yaml' ! -name 'install-*' -print0 | sort -z)
 
 printf '==> CRD schemas\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/schemas/generate.py" --output "$schema_dir" \

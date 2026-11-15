@@ -12,7 +12,7 @@ cluster_name=${BAUKIT_PLATFORM_CLUSTER:-baukit-local}
 # Kubernetes 1.35 removed cgroup-v1 support. The current development host is a
 # cgroup-v1 WSL2 Docker engine, so the local flavor uses the newest supported
 # k3s 1.34 patch while testing/production retain the I0 stable-channel pin.
-k3s_image=${BAUKIT_PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.8-k3s1}
+k3s_image=${BAUKIT_PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f}
 git_port=${BAUKIT_PLATFORM_GIT_PORT:-9418}
 api_port=${BAUKIT_PLATFORM_API_PORT:-random}
 http_port=${BAUKIT_PLATFORM_HTTP_PORT:-80}
