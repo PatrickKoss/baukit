@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 E2E = Path(__file__).resolve().parent
@@ -699,6 +700,113 @@ class KubeBenchScoreTests(unittest.TestCase):
             result.stdout, r"image: docker\.io/aquasec/kube-bench:v[\d.]+@sha256:[0-9a-f]{64}"
         )
         self.assertIn("--benchmark, k3s-cis-", result.stdout)
+
+
+SINCE = "2026-11-15T16:00:00Z"
+SHELL_RULE = "Baukit shell or package manager in app container"
+SHADOW_RULE = "Read sensitive file untrusted"
+
+
+def falco_event(priority, rule, namespace, process, pod=None):
+    return {
+        "time": "2026-11-15T16:00:00Z",
+        "priority": priority,
+        "rule": rule,
+        "output": f"{priority} {rule}",
+        "output_fields": {"k8s.ns.name": namespace, "proc.name": process, "k8s.pod.name": pod},
+    }
+
+
+class FalcoEventsTests(unittest.TestCase):
+    EVENTS = [
+        falco_event(
+            "Notice", "Redirect STDOUT/STDIN to Network Connection in Container", None, "sh"
+        ),
+        falco_event("Warning", SHADOW_RULE, "chainsaw-a", "runc:[1:CHILD]", "shadow-reader"),
+        falco_event("Warning", SHADOW_RULE, "chainsaw-a", "cat", "shadow-reader"),
+        falco_event("Critical", SHELL_RULE, "e2e-tenant", "sh", "echo-api-7d9-x2"),
+    ]
+
+    def run_events(self, *args):
+        lines = [json.dumps(event) for event in self.EVENTS]
+        loki = {"data": {"result": [{"values": [["1", line] for line in lines]}]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "falco.log").write_text("Sun Nov 15 falco banner\n" + "\n".join(lines) + "\n")
+            Path(tmp, "loki.json").write_text(json.dumps(loki))
+            kubectl = Path(tmp) / "kubectl"
+            kubectl.write_text(
+                "#!/bin/sh\n"
+                'echo "$*" >>"$STUB/calls"\n'
+                'case "$*" in\n'
+                '  *"get pods"*) echo pod/falco-a ;;\n'
+                '  *logs*) cat "$STUB/falco.log" ;;\n'
+                '  *"get --raw"*) cat "$STUB/loki.json" ;;\n'
+                "  *) exit 9 ;;\n"
+                "esac\n"
+            )
+            kubectl.chmod(0o755)
+            env = {**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}", "STUB": tmp}
+            result = process_runner.run_process(
+                [str(E2E / "tests/falco/falco-events.sh"), *args],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            calls = Path(tmp, "calls")
+            self.calls = calls.read_text() if calls.exists() else ""
+        return result
+
+    def rules(self, result):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return [json.loads(line)["rule"] for line in result.stdout.splitlines()]
+
+    def query(self, source, priority, *filters):
+        return self.run_events(
+            "--source", source, "--since", SINCE, "--min-priority", priority, *filters
+        )
+
+    def test_soak_floor_drops_notice_events(self):
+        rules = self.rules(self.query("falco", "Warning"))
+        self.assertEqual(len(rules), 3)
+        self.assertNotIn("Redirect STDOUT/STDIN to Network Connection in Container", rules)
+
+    def test_loki_and_falco_sources_agree(self):
+        falco = self.query("falco", "Debug").stdout
+        loki = self.query("loki", "Debug").stdout
+        self.assertEqual(falco, loki)
+        self.assertEqual(len(loki.splitlines()), 4)
+
+    def test_loki_window_starts_at_since(self):
+        self.query("loki", "Debug")
+        since_s = int(datetime.fromisoformat(SINCE.replace("Z", "+00:00")).timestamp())
+        self.assertIn(f"start={since_s * 1_000_000_000}&", self.calls)
+
+    def test_loki_triggers_start_at_falco_pod_start(self):
+        chainsaw = (E2E / "tests/falco/chainsaw-test.yaml").read_text()
+        falco_start = "kubectl -n falco get pods -l app.kubernetes.io/name=falco"
+        self.assertNotIn("since=$(date", chainsaw)
+        self.assertEqual(chainsaw.count(f"since=$({falco_start}"), 3)
+
+    def test_process_filter_skips_the_runc_mount_read(self):
+        filters = ("--rule", SHADOW_RULE, "--namespace", "chainsaw-a", "--process", "cat")
+        self.assertEqual(len(self.rules(self.query("loki", "Warning", *filters))), 1)
+
+    def test_namespace_filter(self):
+        filters = ("--rule", SHELL_RULE, "--namespace", "other")
+        self.assertEqual(self.rules(self.query("loki", "Critical", *filters)), [])
+
+    def test_excluded_trigger_pods_leave_other_events(self):
+        filters = ("--exclude-pod", "shadow-reader", "--exclude-pod", "echo-api-7d9-x2")
+        self.assertEqual(self.rules(self.query("falco", "Warning", *filters)), [])
+        only_echo = self.query("falco", "Warning", "--exclude-pod", "echo-api-7d9-x2")
+        self.assertEqual(self.rules(only_echo), [SHADOW_RULE, SHADOW_RULE])
+
+    def test_unknown_source_exits_2(self):
+        self.assertEqual(self.query("journal", "Warning").returncode, 2)
+
+    def test_missing_since_exits_2(self):
+        self.assertEqual(self.run_events("--source", "falco").returncode, 2)
 
 
 class RegistryMirrorTests(unittest.TestCase):

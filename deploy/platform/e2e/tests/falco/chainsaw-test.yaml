@@ -1,0 +1,152 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: falco
+spec:
+  description: >-
+    A shell in the echo app must reach Loki under the baukit rule and raise BaukitFalcoCriticalEvent at
+    the alert sink, and reading /etc/shadow in a test pod must fire the upstream "Read sensitive file
+    untrusted" rule. The last step is the noise check: from Falco's start, through platform install and
+    the suites that run alongside this one, no event at Warning or above may come from a pod other than
+    the deliberate triggers.
+  timeouts:
+    exec: 9m
+  steps:
+    - name: shell-in-echo-app-reaches-loki-and-the-sink
+      try:
+        - script:
+            content: |
+              set -eu
+              # On WSL2 Falco's event clock lags the wall clock by an amount that grows with its uptime,
+              # so the Loki window opens at Falco's start. Rule, namespace and priority match only this trigger.
+              since=$(kubectl -n falco get pods -l app.kubernetes.io/name=falco -o jsonpath='{.items[0].status.startTime}')
+              pod=$(kubectl -n e2e-tenant get pods -l baukit.dev/process=api -o jsonpath='{.items[0].metadata.name}')
+              kubectl -n "$NAMESPACE" create configmap falco-triggers --from-literal=echo-pod="$pod"
+              kubectl -n e2e-tenant exec "$pod" -c api -- sh -c 'echo falco-e2e'
+              rule='Baukit shell or package manager in app container'
+              deadline=$(($(date +%s) + 180))
+              until events=$(./falco-events.sh --source loki --since "$since" --min-priority Critical \
+                --rule "$rule" --namespace e2e-tenant) && [ -n "$events" ]; do
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  printf 'no "%s" event in Loki within 3 minutes\n' "$rule" >&2
+                  exit 1
+                fi
+                sleep 5
+              done
+              printf 'Loki: %s\n' "$events"
+        - script:
+            timeout: 8m
+            content: |
+              set -eu
+              rule='Baukit shell or package manager in app container'
+              pod=alertmanager-kube-prometheus-stack-alertmanager-0
+              deadline=$(($(date +%s) + 420))
+              while [ "$(date +%s)" -lt "$deadline" ]; do
+                if kubectl -n observability exec "$pod" -c alertmanager -- \
+                  wget -qO- http://alert-sink.observability.svc.cluster.local:8080/alerts |
+                  RULE=$rule python3 -c '
+              import json, os, sys
+              for notification in json.load(sys.stdin):
+                  for alert in notification.get("alerts", []):
+                      labels = alert["labels"]
+                      if labels.get("alertname") == "BaukitFalcoCriticalEvent" and labels.get("rule_name") == os.environ["RULE"]:
+                          print(json.dumps({"receiver": notification["receiver"], "status": alert["status"], "labels": labels}))
+                          sys.exit(0)
+              sys.exit(1)
+              '; then
+                  exit 0
+                fi
+                sleep 10
+              done
+              printf 'BaukitFalcoCriticalEvent for "%s" did not reach the sink within 7 minutes\n' "$rule" >&2
+              exit 1
+    - name: shadow-read-fires-the-upstream-rule
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: fake-shadow
+              data:
+                shadow: "root:*:20000:0:99999:7:::\n"
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: shadow-reader
+              spec:
+                restartPolicy: Never
+                automountServiceAccountToken: false
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 101
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: reader
+                    image: localhost/baukit-e2e/echo:local
+                    imagePullPolicy: Never
+                    # runc also opens the mount target while it starts the container, so the assertion keys on cat.
+                    command: [cat, /etc/shadow]
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                        drop: [ALL]
+                    resources:
+                      requests:
+                        cpu: 10m
+                        memory: 16Mi
+                      limits:
+                        cpu: 100m
+                        memory: 32Mi
+                    volumeMounts:
+                      - name: shadow
+                        mountPath: /etc/shadow
+                        subPath: shadow
+                volumes:
+                  - name: shadow
+                    configMap:
+                      name: fake-shadow
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: shadow-reader
+              status:
+                phase: Succeeded
+        - script:
+            content: |
+              set -eu
+              # Falco's event clock lags on WSL2, see the first step. The test namespace and process match only this pod.
+              since=$(kubectl -n falco get pods -l app.kubernetes.io/name=falco -o jsonpath='{.items[0].status.startTime}')
+              rule='Read sensitive file untrusted'
+              deadline=$(($(date +%s) + 180))
+              until events=$(./falco-events.sh --source loki --since "$since" --min-priority Warning \
+                --rule "$rule" --namespace "$NAMESPACE" --process cat) && [ -n "$events" ]; do
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  printf 'no "%s" event from cat in namespace %s in Loki within 3 minutes\n' "$rule" "$NAMESPACE" >&2
+                  exit 1
+                fi
+                sleep 5
+              done
+              printf 'Loki: %s\n' "$events"
+    - name: no-warning-events-outside-the-triggers
+      try:
+        - script:
+            content: |
+              set -eu
+              since=$(kubectl -n falco get pods -l app.kubernetes.io/name=falco -o jsonpath='{.items[0].status.startTime}')
+              echo_pod=$(kubectl -n "$NAMESPACE" get configmap falco-triggers -o jsonpath='{.data.echo-pod}')
+              # The triggers above, and the e2e-backup-* clusters into which backup-restore execs psql.
+              events=$(./falco-events.sh --source falco --since "$since" --min-priority Warning \
+                --exclude-pod "$echo_pod" --exclude-pod shadow-reader --exclude-pod e2e-backup-)
+              if [ -n "$events" ]; then
+                printf 'Falco raised Warning+ events outside the deliberate triggers since %s:\n%s\n' "$since" "$events" >&2
+                exit 1
+              fi
+              printf 'no Warning+ Falco events outside the triggers since %s\n' "$since"

@@ -32,7 +32,8 @@ Look at `output_fields` in the events: `proc.cmdline`, `proc.pname`, `container.
   should be dropped by `baukit_foreign_host_event`; if they are not, check that the rule appends
   `and not baukit_known_noise` in `baukit.rules.yaml`.
 - A legitimate workload: add a narrow exception macro with a comment naming the source, run
-  `deploy/platform/falco/validate-rules.sh`, and commit it.
+  `deploy/platform/falco/validate-rules.sh`, and commit it. `deploy/platform/falco/README.md` has the
+  noise-tuning steps and an example macro.
 
 ## Escalation
 

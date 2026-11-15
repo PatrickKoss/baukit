@@ -5,7 +5,7 @@ falco_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "$falco_dir/../../.." && pwd)
 
 if (($# == 0)); then
-  set -- "$falco_dir"/rules/*.yaml
+  set -- "$falco_dir"/rules/*.yaml "$falco_dir"/../components/falco-shared-kernel/*.rules.yaml
 fi
 
 if ! command -v docker >/dev/null 2>&1; then

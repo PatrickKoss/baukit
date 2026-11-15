@@ -48,6 +48,8 @@ with its condition message.
   `GET /alerts`;
 - `components/kyverno-policies`: the policy library plus the registry allowlist, which admits only
   `localhost/baukit-e2e/` images in tenants;
+- `components/falco`: the falco base plus `../components/falco-shared-kernel`, because the e2e cluster
+  shares the host kernel with Docker and other clusters;
 - `components/tenant`: the `e2e-tenant` namespace built from `../components/tenant` and the echo
   app, deployed with `deploy/chart/baukit-app` from the image the runner builds in `echo/`.
 

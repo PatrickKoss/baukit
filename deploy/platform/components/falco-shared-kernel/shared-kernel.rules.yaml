@@ -1,0 +1,5 @@
+# Loaded after baukit.rules.yaml. Events without k8s.ns.name come from processes outside this cluster.
+- macro: baukit_shared_kernel
+  condition: (evt.num >= 0)
+  override:
+    condition: replace
