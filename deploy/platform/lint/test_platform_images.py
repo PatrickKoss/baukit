@@ -132,9 +132,7 @@ class SecretImageTests(unittest.TestCase):
             },
             "stringData": {"HELPER_IMAGE": "busybox:1.38.0"},
         }
-        self.assertEqual(
-            platform_images.extract_images([secret]), ["busybox:1.38.0", sidecar]
-        )
+        self.assertEqual(platform_images.extract_images([secret]), ["busybox:1.38.0", sidecar])
 
     def test_image_keys_outside_a_secret_are_not_decoded(self):
         config = {"kind": "ConfigMap", "data": {"SIDECAR_IMAGE": "cmVkaXM6OA=="}}

@@ -519,7 +519,9 @@ class ImageDigestTest(unittest.TestCase):
             "source-controller",
             "flux-system",
             kustomize=False,
-            spec={"template": {"spec": pod_spec(containers=["ghcr.io/fluxcd/source-controller:v1"])}},
+            spec={
+                "template": {"spec": pod_spec(containers=["ghcr.io/fluxcd/source-controller:v1"])}
+            },
         )
         ctx = context(secret, installs={"installs/flux": [controller]})
         self.assertEqual(
@@ -539,7 +541,11 @@ class ImageDigestTest(unittest.TestCase):
             spec={"images": [{"major": 18, "image": f"postgresql:18{DIGEST}"}]},
         )
         hook = resource("Pod", "test", spec=pod_spec(containers=["curlimages/curl"]))
-        k3s = resource("Job", "restore", spec={"template": {"spec": pod_spec(containers=[f"rancher/k3s:v1{DIGEST}"])}})
+        k3s = resource(
+            "Job",
+            "restore",
+            spec={"template": {"spec": pod_spec(containers=[f"rancher/k3s:v1{DIGEST}"])}},
+        )
         release = resource("HelmRelease", "chart", spec={"values": {"image": "values:1"}})
         ctx = context(
             catalog,

@@ -57,7 +57,9 @@ def repository(image: str) -> str:
     return name.rsplit(":", 1)[0] if ":" in last else name
 
 
-def problems(sources: Mapping[str, Iterable[tuple[str, object]]], exemptions: Exemptions) -> list[str]:
+def problems(
+    sources: Mapping[str, Iterable[tuple[str, object]]], exemptions: Exemptions
+) -> list[str]:
     """sources maps a universe name to (object reference, object) pairs."""
     found: list[str] = []
     seen: set[str] = set()
@@ -77,5 +79,7 @@ def problems(sources: Mapping[str, Iterable[tuple[str, object]]], exemptions: Ex
     pinned_repositories = {repository(image) for image in seen if DIGEST_MARK in image}
     for image, carrier in sorted(exemptions.embedded.items()):
         if carrier not in pinned_repositories:
-            found.append(f"embedded {image} names carrier {carrier}, which no render pins by digest")
+            found.append(
+                f"embedded {image} names carrier {carrier}, which no render pins by digest"
+            )
     return found

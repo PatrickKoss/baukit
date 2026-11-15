@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import fnmatch
 import re
 import sys
@@ -742,12 +743,7 @@ def build_installs(rendered: dict[Path, list[dict]]) -> dict[str, list[Resource]
 
 
 def build_context(
-    rendered_dir: Path,
-    chart_cache: Path,
-    repo_root: Path,
-    config: dict,
-    budget: dict,
-    digest_exemptions: image_digests.Exemptions | None = None,
+    rendered_dir: Path, chart_cache: Path, repo_root: Path, config: dict, budget: dict
 ) -> Context:
     rendered_paths = sorted(rendered_dir.glob("*.yaml"))
     if not rendered_paths:
@@ -784,7 +780,6 @@ def build_context(
         privileged_namespaces=set(config.get("privileged_namespaces") or []),
         network_policy_exempt=set(config.get("network_policy_exempt_namespaces") or []),
         policy_exception_budget=int(budget.get("policy_exceptions", 0)),
-        digest_exemptions=digest_exemptions or image_digests.Exemptions({}, {}),
         installs=build_installs({path: parsed[path] for path in rendered_paths}),
     )
 
@@ -796,17 +791,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
     parser.add_argument("--config", type=Path, default=LINT_DIR / "conventions.toml")
     parser.add_argument("--budget", type=Path, default=LINT_DIR / "budget.toml")
-    parser.add_argument(
-        "--digest-exempt", type=Path, default=LINT_DIR / "image-digest-exempt.toml"
-    )
+    parser.add_argument("--digest-exempt", type=Path, default=LINT_DIR / "image-digest-exempt.toml")
     args = parser.parse_args(argv)
     try:
         config = tomllib.loads(args.config.read_text())
         activation = load_activation(config)
         budget = tomllib.loads(args.budget.read_text())
         exemptions = image_digests.load_exemptions(args.digest_exempt)
-        context = build_context(
-            args.rendered, args.chart_cache, args.repo_root, config, budget, exemptions
+        context = dataclasses.replace(
+            build_context(args.rendered, args.chart_cache, args.repo_root, config, budget),
+            digest_exemptions=exemptions,
         )
     except (
         ConventionError,

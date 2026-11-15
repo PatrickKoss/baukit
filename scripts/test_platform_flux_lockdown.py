@@ -66,9 +66,7 @@ def pinned_images() -> dict[str, str]:
 
 def component_images() -> set[str]:
     text = COMPONENT.read_text()
-    entries = re.findall(
-        r"- name: (\S+)\n\s+newTag: (\S+)\n\s+digest: (sha256:[0-9a-f]{64})", text
-    )
+    entries = re.findall(r"- name: (\S+)\n\s+newTag: (\S+)\n\s+digest: (sha256:[0-9a-f]{64})", text)
     return {f"{name}:{tag}@{digest}" for name, tag, digest in entries}
 
 
@@ -145,7 +143,10 @@ class FluxLockdownVerifyTest(unittest.TestCase):
 
     def test_unpinned_or_other_image_fails(self) -> None:
         pinned = pinned_images()
-        for wrong in ("ghcr.io/fluxcd/helm-controller:v1.6.3", "ghcr.io/fluxcd/helm-controller:v1.0.0"):
+        for wrong in (
+            "ghcr.io/fluxcd/helm-controller:v1.6.3",
+            "ghcr.io/fluxcd/helm-controller:v1.0.0",
+        ):
             with self.subTest(image=wrong):
                 result = self.run_verify(
                     COMPLETE, "kustomize-controller", {**pinned, "helm-controller": wrong}
