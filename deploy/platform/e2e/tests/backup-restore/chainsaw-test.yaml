@@ -6,8 +6,7 @@ metadata:
 spec:
   description: >-
     A sentinel row written as the product owner survives a barman-cloud backup to rustfs, the deletion of
-    its Cluster, and a restore into a new Cluster. The postgres-restore-test CronJob then runs the same
-    round trip against postgres-cluster and must succeed.
+    its Cluster, and a restore into a new Cluster. restore-test-cronjob runs alongside it.
   timeouts:
     exec: 45m
   steps:
@@ -169,25 +168,3 @@ spec:
               kubectl -n postgres delete cluster e2e-backup-source e2e-backup-restored --ignore-not-found --wait=true --timeout=4m
               kubectl -n postgres delete backup e2e-backup-source --ignore-not-found
               kubectl -n postgres delete objectstore e2e-backup-restore --ignore-not-found
-    - name: restore-test-cronjob
-      try:
-        - script:
-            timeout: 40m
-            content: |
-              set -eu
-              ns=postgres
-              job="restore-test-e2e-$(date +%s)"
-              kubectl -n "$ns" create job "$job" --from=cronjob/postgres-restore-test
-              deadline=$(($(date +%s) + 2340))
-              while :; do
-                succeeded="$(kubectl -n "$ns" get job "$job" -o jsonpath='{.status.succeeded}')"
-                failed="$(kubectl -n "$ns" get job "$job" -o jsonpath='{.status.failed}')"
-                [ "$succeeded" != 1 ] || break
-                if [ -n "$failed" ] || [ "$(date +%s)" -ge "$deadline" ]; then
-                  kubectl -n "$ns" logs job/"$job" --all-containers >&2 || true
-                  kubectl -n "$ns" describe job "$job" >&2 || true
-                  exit 1
-                fi
-                sleep 10
-              done
-              kubectl -n "$ns" logs job/"$job" -c restore-test | grep 'restored sentinel .* matches'

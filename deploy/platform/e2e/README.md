@@ -23,9 +23,11 @@ private directory under `BAUKIT_E2E_STATE_DIR` (default `~/.local/state/baukit-p
 default kubeconfig is never touched.
 
 Before it creates the cluster the runner takes `flock` on
-`~/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock` (override with `BAUKIT_E2E_CLUSTER_LOCK`).
-It then waits, polling every 30 seconds, while both `slot-1` and `slot-2` exist in the host's heavy-run
-slot directory `/tmp/claude-heavy-slots` (override with `BAUKIT_HEAVY_SLOT_DIR`). It holds no product
+`${XDG_CACHE_HOME:-~/.cache}/baukit/platform-e2e.lock` (override with `BAUKIT_E2E_CLUSTER_LOCK`).
+When `BAUKIT_HEAVY_SLOT_DIR` is set, it then waits, polling every 30 seconds, while both `slot-1` and
+`slot-2` exist in that directory. Without it there is no slot wait. After k3d creates the cluster it
+waits up to 2 minutes for a node to register and prints the server's last 30 log lines if none does.
+It holds no product
 gate lock such as `android.lock` or `browser.lock`.
 
 `--without NAME` drops `e2e-NAME` from the rendered overlay and from every `dependsOn` list. It is for

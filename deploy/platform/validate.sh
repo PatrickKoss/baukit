@@ -486,6 +486,12 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_monitor_order.p
   status=1
 fi
 
+printf '==> admission ordering\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_admission_order.py" --kustomize "$(command -v kustomize)" \
+  "$platform_dir/overlays/local/reconciliation.yaml" "$platform_dir/e2e/overlay/reconciliation.yaml"; then
+  status=1
+fi
+
 printf '==> helm test network policies\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_helm_test_netpol.py" --rendered "$rendered_dir"; then
   status=1

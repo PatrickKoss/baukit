@@ -11,6 +11,8 @@ source "$platform_dir/local-git-http.sh"
 source "$platform_dir/flux-lockdown.sh"
 # shellcheck source=deploy/platform/runtime-identity.sh
 source "$platform_dir/runtime-identity.sh"
+# shellcheck source=deploy/platform/registry-mirrors.sh
+source "$platform_dir/registry-mirrors.sh"
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"
 
@@ -26,11 +28,14 @@ keep_cluster=false
 test_dirs=("$e2e_dir/tests")
 suites_given=false
 without=()
-heavy_slot_dir=${BAUKIT_HEAVY_SLOT_DIR:-/tmp/claude-heavy-slots}
+heavy_slot_dir=${BAUKIT_HEAVY_SLOT_DIR:-}
 ready_poll_seconds=30
+dependency_requeue=5s
+node_registration_attempts=60
+node_registration_poll_seconds=${BAUKIT_E2E_NODE_POLL_SECONDS:-2}
 failed_poll_limit=3
 heavy_slot_poll_seconds=${BAUKIT_HEAVY_SLOT_POLL_SECONDS:-30}
-cluster_lock=${BAUKIT_E2E_CLUSTER_LOCK:-$HOME/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock}
+cluster_lock=${BAUKIT_E2E_CLUSTER_LOCK:-${XDG_CACHE_HOME:-$HOME/.cache}/baukit/platform-e2e.lock}
 artifacts_dir=${BAUKIT_E2E_ARTIFACTS:-$repo_root/.ci-gate/platform-e2e}
 state_parent=${BAUKIT_E2E_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/baukit-platform-e2e}
 flux_version=
@@ -117,6 +122,7 @@ take_cluster_lock() {
 
 # Other projects on this host hold at most two heavy runs, one per slot directory.
 wait_for_heavy_slot() {
+  [[ -n $heavy_slot_dir ]] || return 0
   while [[ -e $heavy_slot_dir/slot-1 && -e $heavy_slot_dir/slot-2 ]]; do
     printf 'Waiting for a free heavy-run slot: %s/slot-1 and slot-2 both exist\n' "$heavy_slot_dir"
     sleep "$heavy_slot_poll_seconds"
@@ -143,7 +149,10 @@ cleanup() {
   if [[ $keep_cluster == true ]]; then
     printf 'Kept cluster %s. KUBECONFIG=%s\n' "$cluster_name" "$kubeconfig"
   else
-    [[ $cluster_created == true ]] && k3d cluster delete "$cluster_name" >/dev/null
+    if [[ $cluster_created == true ]]; then
+      registry_mirrors_detach "k3d-$cluster_name"
+      k3d cluster delete "$cluster_name" >/dev/null
+    fi
     [[ -n $snapshot_container ]] && docker rm -f -v "$snapshot_container" >/dev/null 2>&1
     [[ -n $state_dir ]] && rm -rf -- "$state_dir"
   fi
@@ -194,13 +203,32 @@ create_cluster() {
   image=$(platform_k3s_image)
   printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$image"
   cluster_created=true
+  registry_mirrors_start
+  registry_mirrors_k3s_config >"$state_dir/registries.yaml"
+  local mirror_args=()
+  mapfile -t mirror_args < <(registry_mirrors_cluster_args)
   k3d_create_local_cluster "$cluster_name" "$image" "$(free_port)" "$(free_port)" "$(free_port)" \
     --subnet "$(free_subnet)" \
+    --registry-config "$state_dir/registries.yaml" \
+    "${mirror_args[@]}" \
     --kubeconfig-update-default=false \
     --kubeconfig-switch-context=false >/dev/null
   k3d kubeconfig get "$cluster_name" >"$kubeconfig"
   chmod 0600 "$kubeconfig"
+  wait_for_node_registration "$cluster_name"
   kubectl wait node --all --for=condition=Ready --timeout=5m >/dev/null
+}
+
+# kubectl wait --all exits at once when no node has registered yet.
+wait_for_node_registration() {
+  local attempt
+  for ((attempt = 0; attempt < node_registration_attempts; attempt++)); do
+    [[ -n $(kubectl get nodes -o name 2>/dev/null) ]] && return 0
+    sleep "$node_registration_poll_seconds"
+  done
+  printf 'ERROR: no node registered in cluster %s\n' "$1" >&2
+  docker logs --tail 30 "k3d-$1-server-0" >&2 || true
+  return 1
 }
 
 serve_snapshot() {
@@ -240,6 +268,16 @@ apply_runtime_identity() {
     "$(openssl rand -hex 18)" admin "$(openssl rand -hex 18)"
 }
 
+# The platform is a dependsOn chain, and each hop otherwise waits the controllers' 30s default.
+shorten_dependency_requeue() {
+  local controller
+  for controller in kustomize-controller helm-controller; do
+    kubectl -n flux-system patch deployment "$controller" --type json -p \
+      "[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"--requeue-dependency=${dependency_requeue}\"}]" \
+      >/dev/null
+  done
+}
+
 install_flux() {
   printf 'Installing Flux %s with the multi-tenancy lockdown\n' "$flux_version"
   flux_lockdown_render "$platform_dir" "$flux_version" | kubectl apply --server-side -f - >/dev/null
@@ -248,6 +286,7 @@ install_flux() {
     pod-security.kubernetes.io/enforce-version=v1.37 \
     pod-security.kubernetes.io/audit=restricted \
     pod-security.kubernetes.io/warn=restricted >/dev/null
+  shorten_dependency_requeue
   flux_lockdown_wait
   flux_lockdown_verify "$platform_dir"
 }

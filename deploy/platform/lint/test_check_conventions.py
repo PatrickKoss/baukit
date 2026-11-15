@@ -159,6 +159,26 @@ class MetricsEnabledTest(unittest.TestCase):
         ctx.chart_values = {"x@1.0.0": {"monitoring": {"podMonitorEnabled": False}}}
         self.assertIn("monitoring.podMonitorEnabled", violations("metrics-enabled", ctx)[0])
 
+    def test_monitor_enabled_by_a_values_from_config_map_passes(self) -> None:
+        release = helm_release("x", "x", "1.0.0")
+        release.spec["valuesFrom"] = [
+            {"kind": "ConfigMap", "name": "x-monitoring", "optional": True}
+        ]
+        enabled = "metrics:\n  serviceMonitor:\n    enabled: true\n"
+        config_map = resource("ConfigMap", "x-monitoring", data={"values.yaml": enabled})
+        ctx = context(release, config_map)
+        ctx.chart_values = {"x@1.0.0": {"metrics": {"serviceMonitor": {"enabled": False}}}}
+        self.assertEqual(violations("metrics-enabled", ctx), [])
+
+    def test_values_from_config_map_must_enable_a_monitor(self) -> None:
+        release = helm_release("x", "x", "1.0.0")
+        release.spec["valuesFrom"] = [{"kind": "ConfigMap", "name": "x-monitoring"}]
+        disabled = "metrics:\n  serviceMonitor:\n    enabled: false\n"
+        config_map = resource("ConfigMap", "x-monitoring", data={"values.yaml": disabled})
+        ctx = context(release, config_map)
+        ctx.chart_values = {"x@1.0.0": {"metrics": {"serviceMonitor": {"enabled": False}}}}
+        self.assertIn("monitor toggle", violations("metrics-enabled", ctx)[0])
+
     def test_release_values_override_chart_defaults(self) -> None:
         release = helm_release("x", "x", "1.0.0")
         release.spec["values"] = {"sub": {"enabled": False}}

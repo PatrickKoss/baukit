@@ -4,8 +4,6 @@ resources:
   - namespace.yaml
   - oci-repository.yaml
   - helm-release.yaml
-  - policy-reporter-oci-repository.yaml
-  - policy-reporter-release.yaml
   - network-policy.yaml
 namespace: kyverno
 components:
