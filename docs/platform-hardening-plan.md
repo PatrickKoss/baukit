@@ -493,13 +493,13 @@ behave. Later phases add test directories here.
 
   Add the falco dashboard: events by rule, priority and namespace, drop rate, and a Loki panel with the
   latest events. Add the metric names from FA0 to `metrics.txt`.
-- [ ] **FA4 Detection tests** in `e2e/tests/falco/`:
+- [x] **FA4 Detection tests** in `e2e/tests/falco/`:
   - exec a shell in the echo app and assert an event with the baukit rule name appears in Loki and
     `BaukitFalcoCriticalEvent` reaches the webhook sink;
   - read `/etc/shadow` in a test pod and assert the upstream rule fires;
   - a 10-minute soak on the idle e2e cluster produces zero Warning+ events, so noise regressions fail
     the lane.
-- [ ] **FA5 Footprint and docs.** Measure Falco and falcosidekick at idle and record it in
+- [x] **FA5 Footprint and docs.** Measure Falco and falcosidekick at idle and record it in
   `local-footprint.md`. Write the base README (overlay contract, the noise-tuning procedure, how to add
   an exception macro with a reason) and the runbooks.
 - [ ] **FA6 Kubernetes audit events (optional, after FA4).** Configure the k3s API server audit webhook
@@ -560,7 +560,7 @@ behave. Later phases add test directories here.
 - [x] **SC4 Renovate:** custom managers for `tools.toml`, digests in raw manifests and the k3s image
   strings. Set `minimumReleaseAge` for charts and grouping per base. Configure the same in platform-infra
   (its `v*` tag pattern fix lands in PI1).
-- [~] **SC5 Latest stable pins** (user request 2026-11-15): move every pinnable platform component to
+- [x] **SC5 Latest stable pins** (user request 2026-11-15): move every pinnable platform component to
   its newest stable release (no `latest`, no pre-releases), pinned by version and digest. That covers
   charts, images, the Flux controllers and CLI, `tools.toml`, and k3s where the host allows it. Read
   the upgrade notes for every major, migrate CRDs and values, and record anything that cannot move
@@ -577,7 +577,7 @@ behave. Later phases add test directories here.
   notification-controller. `components/tenant` creates a tenant ServiceAccount with a namespace-scoped
   RoleBinding, which tenant Kustomizations must use (K4 policy). Tenant SOPS uses a per-tenant age
   recipient. e2e test: a tenant Kustomization that tries to write into `flux-system` fails.
-- [ ] **S5 k3s hardening** for the lifecycle and the e2e cluster (and later the Terraform cloud-init):
+- [~] **S5 k3s hardening** for the lifecycle and the e2e cluster (and later the Terraform cloud-init):
   - `--secrets-encryption`;
   - an audit policy with a log file that Alloy ships to Loki;
   - `--pod-security-admission-config-file` with cluster default `enforce: baseline`,
@@ -1128,3 +1128,14 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
 - 2026-11-15 21:25: S5 platform-up failed twice at the 5 min Flux controller rollout under load 40-108.
   platform-up pulls from upstream registries, while e2e uses the pull-through mirrors. The code is
   reviewed; S5 merges after the N5 gate, and platform-up gets one more run at lower load before release.
+- 2026-11-15 21:45: S5 (3fa72d9b), FA45 and SC5a (c92e3e4a) merged; the gate is green on both, workflow-lint
+  included. FA4, FA5 and SC5 are done. S5 stays open until platform-up passes, after K6 adds mirror support.
+  FA45 keeps a CNPG exception that also covers the wal-archive, barman and backup execs. SC5a touched
+  check_helm_test_netpol.py, the observability Grafana-test NetworkPolicy and helmrelease-helm-tests.yaml
+  outside its ownership; all three are reviewed. The FA45 full-run failure was the leader-election restart
+  E5 fixes.
+- 2026-11-15 22:10: E5 039a4389 turns off leader election for kcm, ccm and scheduler and raises the wrangler
+  lease timings for e2e on etcd; a concurrent rerun at load 70 passed in 917s with RestartCount 0. E5 now
+  moves these args into one helper shared by run.sh, platform-up and the lifecycle. K6 is ready apart from
+  require-psa-labels on default, kube-public, kube-system and kube-node-lease. Decision: label them in the
+  bring-up scripts (kube-system privileged, the rest restricted), not a 12th exception.
