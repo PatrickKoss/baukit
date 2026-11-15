@@ -10,7 +10,8 @@ namespace:
 - Loki 18.13.7 in monolithic mode with one filesystem-backed replica;
 - Tempo 2.4.0 in monolithic mode with one filesystem-backed replica and OTLP
   gRPC/HTTP receivers;
-- Alloy 1.13.0 as a DaemonSet that sends Kubernetes pod logs to Loki;
+- Alloy 1.13.0 as a DaemonSet that sends Kubernetes pod logs and the k3s API server
+  audit log (`{service="kube-audit"}`, written by `deploy/platform/k3s/audit-policy.yaml`) to Loki;
 - the existing `deploy/observability` chart as dashboards, recording rules, and
   alert content; and
 - the `deploy/observability-platform` chart with alerts, recording rules and

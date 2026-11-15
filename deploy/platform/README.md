@@ -126,6 +126,11 @@ everywhere, so a gap shows up as a warning even where `enforce` is looser.
 | `baseline` | `posthog` |
 | `privileged` | `kube-system`, `kured`, `observability-agents`, `falco` |
 
+A namespace without labels gets the cluster default from `k3s/pod-security.yaml`:
+`enforce: baseline`, `audit` and `warn` `restricted`, with only `kube-system`
+exempt. The Kyverno `require-psa-labels` policy denies such a namespace anyway;
+the default covers the time before Kyverno runs or when its webhook fails open.
+
 Node-exporter and Alloy need hostPID, hostNetwork or hostPath, so they run in
 `observability-agents` and `observability` stays `restricted`. The Kyverno
 policy `require-psa-labels` rejects a Namespace without an `enforce` label and
@@ -460,6 +465,22 @@ cgroup v1, so `k3d_create_local_cluster` and the k3d smoke stop before k3d when
 `kernelCommandLine = cgroup_no_v1=all` under `[wsl2]` in `%UserProfile%\.wslconfig`,
 run `wsl --shutdown`, and check that `stat -fc %T /sys/fs/cgroup` prints
 `cgroup2fs`.
+
+Every local cluster gets the server flags from `platform_k3s_server_args` in
+`local-git-http.sh`: `--secrets-encryption`, the audit policy in
+`k3s/audit-policy.yaml` (log at `/var/log/kubernetes/audit/audit.log` in the
+server container, shipped by Alloy as `{service="kube-audit"}`), the Pod Security
+config in `k3s/pod-security.yaml` and `--protect-kernel-defaults`. `k3s/` is
+mounted read-only at `/etc/baukit/k3s`, so moving the checkout breaks a kept
+cluster's restart. The audit policy drops health probes, leases, Events and
+control plane reads, logs Secrets, ConfigMaps and token reviews at `Metadata` so
+no payload reaches Loki, keeps the request body of RBAC writes, and logs
+everything else at `Metadata`. `--protect-kernel-defaults` makes the kubelet
+refuse to start unless the host already has `vm.overcommit_memory=1`,
+`vm.panic_on_oom=0`, `kernel.panic=10` and `kernel.panic_on_oops=1`;
+`k3d_create_local_cluster` checks them first and names the ones to set with
+`sysctl -w`. The WSL2 kernel ships these values. A cluster created before these
+flags keeps its old arguments; recreate it with `down --delete` and `up`.
 
 - If `GitRepository/baukit` reports an EOF or connection failure, inspect
   `.local-state/git-http.log`, verify the PID recorded in

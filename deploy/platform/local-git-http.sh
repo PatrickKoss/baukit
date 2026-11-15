@@ -9,6 +9,47 @@ platform_k3s_image() {
   printf '%s\n' rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332
 }
 
+platform_k3s_config_dir() {
+  local here
+  here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || return 1
+  printf '%s/k3s\n' "$here"
+}
+
+# k3s server arguments shared by every local cluster and the e2e cluster. The
+# files they name come from platform_k3s_config_dir, mounted at
+# platform_k3s_config_mount.
+platform_k3s_config_mount=/etc/baukit/k3s
+platform_k3s_audit_log=/var/log/kubernetes/audit/audit.log
+
+platform_k3s_server_args() {
+  printf '%s\n' \
+    --disable=traefik \
+    --secrets-encryption \
+    --protect-kernel-defaults \
+    "--pod-security-admission-config-file=$platform_k3s_config_mount/pod-security.yaml" \
+    "--kube-apiserver-arg=audit-policy-file=$platform_k3s_config_mount/audit-policy.yaml" \
+    "--kube-apiserver-arg=audit-log-path=$platform_k3s_audit_log" \
+    --kube-apiserver-arg=audit-log-maxage=7 \
+    --kube-apiserver-arg=audit-log-maxbackup=3 \
+    --kube-apiserver-arg=audit-log-maxsize=100
+}
+
+# The kubelet refuses to start under --protect-kernel-defaults unless these
+# sysctls already hold the values it would set. Containers share the host values.
+platform_require_kernel_defaults() {
+  local sysctl_root=${platform_sysctl_root:-/proc/sys}
+  local expected setting actual wrong=()
+  for expected in vm/overcommit_memory=1 vm/panic_on_oom=0 kernel/panic=10 kernel/panic_on_oops=1; do
+    setting=${expected%=*}
+    actual=$(cat -- "$sysctl_root/$setting" 2>/dev/null) || actual=unreadable
+    [[ $actual == "${expected#*=}" ]] || wrong+=("${setting//\//.}=${expected#*=} (now $actual)")
+  done
+  if ((${#wrong[@]})); then
+    printf 'ERROR: k3s runs with --protect-kernel-defaults and needs these host sysctls: %s\n' "${wrong[*]}" >&2
+    return 1
+  fi
+}
+
 platform_require_cgroup_v2() {
   local version
   version=$(docker info --format '{{.CgroupVersion}}') || return 1
@@ -52,7 +93,7 @@ k3d_gateway() {
   return 1
 }
 
-# Creates a single-node k3d cluster without the packaged Traefik. The API and
+# Creates a single-node k3d cluster with platform_k3s_server_args. The API and
 # the load balancer ports bind 127.0.0.1 only. Arguments after the fifth go to k3d.
 k3d_create_local_cluster() {
   local cluster=$1
@@ -61,11 +102,18 @@ k3d_create_local_cluster() {
   local http_port=$4
   local https_port=$5
   platform_require_cgroup_v2 || return 1
+  platform_require_kernel_defaults || return 1
+  local config_dir arg k3s_args=()
+  config_dir=$(platform_k3s_config_dir) || return 1
+  while IFS= read -r arg; do
+    k3s_args+=(--k3s-arg "$arg@server:0")
+  done < <(platform_k3s_server_args)
   k3d cluster create "$cluster" \
     --image "$image" \
     --servers 1 \
     --agents 0 \
-    --k3s-arg '--disable=traefik@server:0' \
+    --volume "$config_dir:$platform_k3s_config_mount:ro@server:0" \
+    "${k3s_args[@]}" \
     --api-port "127.0.0.1:$api_port" \
     --port "127.0.0.1:$http_port:80@loadbalancer" \
     --port "127.0.0.1:$https_port:443@loadbalancer" \

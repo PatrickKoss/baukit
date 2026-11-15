@@ -314,5 +314,154 @@ class FailedKustomizationTests(unittest.TestCase):
         self.assertEqual(output.split("|\n"), ["", "", "", "", "", "a\n", ""])
 
 
+class SubnetTests(unittest.TestCase):
+    """free_subnet and create_k3d_cluster with stubbed docker and k3d binaries."""
+
+    def run_runner_function(self, call, subnets, k3d_failures="", extra_env=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_dir = Path(tmp)
+            calls = bin_dir / "calls"
+            failures = bin_dir / "failures"
+            failures.write_text(k3d_failures)
+            (bin_dir / "docker").write_text(
+                "#!/bin/sh\n"
+                'case "$1 $2" in\n'
+                '  "network ls") echo net1 ;;\n'
+                '  "network inspect") printf "%s\\n" "$SUBNETS" ;;\n'
+                '  "info --format") echo 2 ;;\n'
+                "esac\n"
+            )
+            (bin_dir / "k3d").write_text(
+                "#!/bin/sh\n"
+                'printf "%s\\n" "$*" >>"$CALLS"\n'
+                '[ "$1 $2" = "cluster create" ] || exit 0\n'
+                'line=$(head -n 1 "$FAILURES")\n'
+                '[ -n "$line" ] || exit 0\n'
+                'sed -i 1d "$FAILURES"\n'
+                'printf "%s\\n" "$line" >&2\n'
+                "exit 1\n"
+            )
+            for tool in ("docker", "k3d"):
+                (bin_dir / tool).chmod(0o755)
+            script = (
+                f'source "{E2E / "run.sh"}"\n'
+                "platform_require_kernel_defaults() { :; }\n"
+                f'state_dir="{tmp}"\n'
+                f"{call}"
+            )
+            env = {k: v for k, v in os.environ.items() if k != "BAUKIT_E2E_SUBNET"}
+            env.update(
+                PATH=f"{bin_dir}:{os.environ['PATH']}",
+                SUBNETS=subnets,
+                CALLS=str(calls),
+                FAILURES=str(failures),
+                **(extra_env or {}),
+            )
+            result = process_runner.run_process(
+                ["bash", "-c", script], env=env, capture_output=True, text=True, check=False
+            )
+            creates = [
+                re.search(r"--subnet (\S+)", line).group(1)
+                for line in (calls.read_text() if calls.exists() else "").splitlines()
+                if line.startswith("cluster create")
+            ]
+            return result, creates
+
+    def test_an_overlapping_wider_pool_is_skipped(self):
+        result, _ = self.run_runner_function("free_subnet", "10.89.96.0/20 fd00:89::/64 ")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "10.89.112.0/24\n")
+
+    def test_an_exact_match_is_skipped(self):
+        result, _ = self.run_runner_function("free_subnet", "10.89.100.0/24 172.17.0.0/16 ")
+        self.assertEqual(result.stdout, "10.89.101.0/24\n")
+
+    def test_an_overlapping_slash_16_leaves_no_candidate(self):
+        result, _ = self.run_runner_function("free_subnet", "10.89.0.0/16 ")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("no free /24", result.stderr)
+
+    def test_ipv6_pools_are_ignored(self):
+        result, _ = self.run_runner_function("free_subnet", "fd00::/8 ")
+        self.assertEqual(result.stdout, "10.89.100.0/24\n")
+
+    def test_tried_subnets_are_skipped(self):
+        result, _ = self.run_runner_function(
+            "tried_subnets=(10.89.100.0/24)\nfree_subnet", "10.89.101.0/24 "
+        )
+        self.assertEqual(result.stdout, "10.89.102.0/24\n")
+
+    def test_pool_overlap_on_create_retries_with_the_next_subnet(self):
+        overlap = "Error response from daemon: Pool overlaps with other one on this address space\n"
+        result, creates = self.run_runner_function(
+            "create_k3d_cluster img 1 2 3", "", k3d_failures=overlap
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(creates, ["10.89.100.0/24", "10.89.101.0/24"])
+        self.assertIn("retrying with the next one", result.stderr)
+
+    def test_retries_stop_after_five_attempts(self):
+        overlap = "Pool overlaps with other one on this address space\n" * 6
+        result, creates = self.run_runner_function(
+            "create_k3d_cluster img 1 2 3", "", k3d_failures=overlap
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(creates), 5)
+
+    def test_other_create_errors_do_not_retry(self):
+        result, creates = self.run_runner_function(
+            "create_k3d_cluster img 1 2 3", "", k3d_failures="port is already allocated\n"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(creates, ["10.89.100.0/24"])
+        self.assertIn("port is already allocated", result.stderr)
+
+    def test_an_explicit_subnet_never_retries(self):
+        result, creates = self.run_runner_function(
+            "create_k3d_cluster img 1 2 3",
+            "",
+            k3d_failures="Pool overlaps with other one on this address space\n",
+            extra_env={"BAUKIT_E2E_SUBNET": "10.89.150.0/24"},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(creates, ["10.89.150.0/24"])
+
+
+class KubeBenchScoreTests(unittest.TestCase):
+    def score(self, report):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "report.txt"
+            path.write_text(report)
+            script = f'source "{E2E / "k3s-checks.sh"}"\nkube_bench_score "{path}"'
+            return process_runner.run_process(
+                ["bash", "-c", script], capture_output=True, text=True, check=False
+            )
+
+    def test_reads_the_total_summary(self):
+        report = (
+            "== Summary master ==\n9 checks PASS\n1 checks FAIL\n0 checks WARN\n0 checks INFO\n"
+            "== Summary total ==\n70 checks PASS\n12 checks FAIL\n40 checks WARN\n0 checks INFO\n"
+        )
+        result = self.score(report)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "70 12 40 0\n")
+
+    def test_a_report_without_a_total_fails(self):
+        result = self.score("== Summary master ==\n9 checks PASS\n")
+        self.assertEqual(result.returncode, 1)
+
+    def test_the_job_pins_the_image_by_digest_and_runs_in_kube_system(self):
+        script = f'source "{E2E / "k3s-checks.sh"}"\nkube_bench_job'
+        result = process_runner.run_process(
+            ["bash", "-c", script], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("namespace: kube-system", result.stdout)
+        self.assertRegex(
+            result.stdout, r"image: docker\.io/aquasec/kube-bench:v[\d.]+@sha256:[0-9a-f]{64}"
+        )
+        self.assertIn("--benchmark, k3s-cis-", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
