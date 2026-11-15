@@ -133,6 +133,12 @@ class RunRowTests(unittest.TestCase):
         self.assertEqual(outcome.status, "PASS")
         self.assertTrue(runner.ran("10.89.100.2 6443"))
 
+    def test_the_pod_prefix_names_the_probe_pod(self):
+        runner = FakeRunner(connects=[1], rules=RULES.replace(POD, "other-1"))
+        outcome = probe.run_row(probe.Cluster(runner), row("deny"), "other")
+        self.assertEqual(outcome.status, "PASS")
+        self.assertTrue(runner.ran("pod/other-1"))
+
     def test_the_probe_pod_is_deleted_after_an_error(self):
         runner = FakeRunner(endpoints=False)
         self.run_row(runner, row("deny"))

@@ -103,4 +103,4 @@ spec:
                 to: {service: echo.$NAMESPACE, port: 80}
                 expect: deny
               EOF
-              PYTHONDONTWRITEBYTECODE=1 python3 ../netpol/probe.py --matrix "$matrix"
+              PYTHONDONTWRITEBYTECODE=1 python3 ../netpol/probe.py --matrix "$matrix" --pod-prefix ingress-probe

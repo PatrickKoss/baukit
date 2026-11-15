@@ -27,6 +27,7 @@ Row = netpol_matrix.Row
 SUITE = Path(__file__).resolve().parent
 IMAGE = "localhost/baukit-e2e/echo:local"
 PROBE_LABEL = "baukit.dev/netpol-probe"
+POD_PREFIX = "netpol-probe"
 SENTINEL_NAME = "kubernetes.default.svc.cluster.local"
 WORKERS = 16
 CONNECT_TIMEOUT_SECONDS = 3
@@ -205,10 +206,10 @@ def wait_until(check: Callable[[], bool], timeout: float, message: str) -> None:
 
 
 class Probe:
-    def __init__(self, cluster: Cluster, row: Row) -> None:
+    def __init__(self, cluster: Cluster, row: Row, prefix: str = POD_PREFIX) -> None:
         self.cluster = cluster
         self.row = row
-        self.name = f"netpol-probe-{row.number}"
+        self.name = f"{prefix}-{row.number}"
 
     def start(self) -> tuple[str, str]:
         namespace = self.row.namespace
@@ -282,8 +283,8 @@ class Probe:
         )
 
 
-def run_row(cluster: Cluster, row: Row) -> Outcome:
-    probe = Probe(cluster, row)
+def run_row(cluster: Cluster, row: Row, prefix: str = POD_PREFIX) -> Outcome:
+    probe = Probe(cluster, row, prefix)
     try:
         _, node_ip = probe.start()
         address = destination_address(cluster, row, node_ip)
@@ -301,10 +302,10 @@ def run_row(cluster: Cluster, row: Row) -> Outcome:
     )
 
 
-def run_matrix(cluster: Cluster, rows: list[Row], workers: int) -> list[Outcome]:
+def run_matrix(cluster: Cluster, rows: list[Row], workers: int, prefix: str) -> list[Outcome]:
     outcomes = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [pool.submit(run_row, cluster, row) for row in rows]
+        futures = [pool.submit(run_row, cluster, row, prefix) for row in rows]
         for future in as_completed(futures):
             outcome = future.result()
             outcomes.append(outcome)
@@ -328,12 +329,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--matrix", type=Path, default=SUITE / "matrix.yaml")
     parser.add_argument("--rows", type=int, nargs="*", help="run only these row numbers")
     parser.add_argument("--workers", type=int, default=WORKERS)
+    parser.add_argument(
+        "--pod-prefix",
+        default=POD_PREFIX,
+        help="probe pod name prefix, unique per concurrent suite",
+    )
     args = parser.parse_args(argv)
     rows = netpol_matrix.load(args.matrix)
     if args.rows:
         rows = [row for row in rows if row.number in set(args.rows)]
     started = time.monotonic()
-    outcomes = run_matrix(Cluster(), rows, args.workers)
+    outcomes = run_matrix(Cluster(), rows, args.workers, args.pod_prefix)
     bad = [item for item in outcomes if item.status != "PASS"]
     if bad:
         print("Rows that did not pass:", file=sys.stderr)
