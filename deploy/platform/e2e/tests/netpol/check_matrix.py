@@ -6,11 +6,15 @@ renders of its HelmReleases from validate.sh, the Flux install and the namespace
 creates. Objects that operators create at runtime are derived from their custom resources (CNPG
 Cluster) or, for pod labels, accepted when a NetworkPolicy selects them. The suite's own tenant
 namespaces have no workloads, so their probe labels must be ones a cross-namespace peer selects.
+
+The live probe cannot tell a denied 169.254.169.254 from a missing listener, so the check also fails
+when a rendered NetworkPolicy or the tenant defaults allow egress into 169.254.0.0/16.
 """
 
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import re
 import sys
 from dataclasses import dataclass, field
@@ -28,6 +32,8 @@ NAME_LABEL = "kubernetes.io/metadata.name"
 TENANT_LABEL = "baukit.dev/tenant"
 CNPG_PORTS = frozenset({5432, 8000, 9187})
 CNPG_SERVICE_SUFFIXES = ("rw", "ro", "r")
+LINK_LOCAL = ipaddress.ip_network("169.254.0.0/16")
+TENANT_DEFAULTS = E2E.parent / "kyverno-policies/tests/generate-tenant-defaults/generated.yaml"
 K3S_NAMESPACES = {"kube-system", "default"}
 K3S_PODS = [("kube-system", {"k8s-app": "kube-dns"}, frozenset({53, 9153}))]
 
@@ -40,6 +46,7 @@ class Inventory:
     scoped: list[tuple[dict, dict]] = field(default_factory=list)
     synthetic: set[str] = field(default_factory=set)
     services: dict[tuple[str, str], set[int]] = field(default_factory=dict)
+    policies: list[tuple[str, str, dict]] = field(default_factory=list)
 
     def add(self, obj: dict, namespace: str) -> None:
         kind = obj.get("kind")
@@ -62,6 +69,7 @@ class Inventory:
 
     def add_policy(self, policy: dict, namespace: str) -> None:
         spec = policy.get("spec") or {}
+        self.policies.append((namespace, (policy.get("metadata") or {}).get("name", ""), spec))
         own = (spec.get("podSelector") or {}).get("matchLabels") or {}
         ports = frozenset(
             item["port"]
@@ -246,12 +254,54 @@ def suite_problems(chainsaw_test: Path) -> list[str]:
     return problems
 
 
-def problems(
-    rendered: Path, kustomize: str, matrix: Path, paths: list[Path], chainsaw_test: Path
-) -> list[str]:
+def opens_link_local(peer: dict) -> bool:
+    block = peer.get("ipBlock")
+    if block is None:
+        return False
+    cidr = ipaddress.ip_network(block["cidr"], strict=False)
+    if cidr.version != LINK_LOCAL.version or not cidr.overlaps(LINK_LOCAL):
+        return False
+    excluded = (ipaddress.ip_network(item, strict=False) for item in block.get("except") or [])
+    return not any(
+        item.version == LINK_LOCAL.version and LINK_LOCAL.subnet_of(item) for item in excluded
+    )
+
+
+def metadata_problems(policies: list[tuple[str, str, dict]]) -> list[str]:
+    problems = []
+    for namespace, name, spec in policies:
+        for index, rule in enumerate(spec.get("egress") or []):
+            peers = rule.get("to") or []
+            if not peers or any(opens_link_local(peer) for peer in peers):
+                problems.append(
+                    f"NetworkPolicy {namespace}/{name} egress rule {index} allows "
+                    f"{LINK_LOCAL}, which holds the metadata endpoint"
+                )
+    return problems
+
+
+def tenant_policies(tenant_defaults: Path) -> list[tuple[str, str, dict]]:
+    found = Inventory()
+    for obj in parse(tenant_defaults.read_text()):
+        if obj.get("kind") == "NetworkPolicy":
+            found.add_policy(obj, "<tenant>")
+    return found.policies
+
+
+@dataclass(frozen=True)
+class Sources:
+    rendered: Path
+    kustomize: str
+    paths: list[Path]
+    chainsaw_test: Path = CHAINSAW_TEST
+    tenant_defaults: Path = TENANT_DEFAULTS
+
+
+def problems(sources: Sources, matrix: Path) -> list[str]:
     rows = netpol_matrix.load(matrix)
-    found = inventory(rendered, kustomize, paths, chainsaw_test)
-    result = suite_problems(chainsaw_test)
+    found = inventory(sources.rendered, sources.kustomize, sources.paths, sources.chainsaw_test)
+    result = suite_problems(sources.chainsaw_test)
+    result += metadata_problems(found.policies + tenant_policies(sources.tenant_defaults))
     for row in rows:
         result += row_problems(row, found)
     return result
@@ -264,6 +314,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--matrix", type=Path, default=SUITE / "matrix.yaml")
     parser.add_argument("--reconciliation", type=Path, default=RECONCILIATION)
     parser.add_argument("--chainsaw-test", type=Path, default=CHAINSAW_TEST)
+    parser.add_argument("--tenant-defaults", type=Path, default=TENANT_DEFAULTS)
     parser.add_argument(
         "--extra-path",
         type=Path,
@@ -274,7 +325,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     paths = overlay_paths(args.reconciliation) + [path.resolve() for path in args.extra_path]
     try:
-        found = problems(args.rendered, args.kustomize, args.matrix, paths, args.chainsaw_test)
+        sources = Sources(
+            args.rendered, args.kustomize, paths, args.chainsaw_test, args.tenant_defaults
+        )
+        found = problems(sources, args.matrix)
     except (netpol_matrix.MatrixError, helm_yaml.YamlError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
