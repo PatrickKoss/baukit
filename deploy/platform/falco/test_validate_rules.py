@@ -113,7 +113,8 @@ def kustomize_build(directory: Path) -> str:
 
 class SharedKernelFilterTest(unittest.TestCase):
     def test_base_watches_host_processes(self) -> None:
-        condition = macro_condition(BAUKIT_RULES.read_text(encoding="utf-8"), "baukit_shared_kernel")
+        rules = BAUKIT_RULES.read_text(encoding="utf-8")
+        condition = macro_condition(rules, "baukit_shared_kernel")
 
         self.assertEqual(condition, "(never_true)")
 
@@ -121,7 +122,8 @@ class SharedKernelFilterTest(unittest.TestCase):
         rendered = kustomize_build(PLATFORM_DIR / "overlays/everything")
 
         maps = config_maps(rendered)
-        self.assertIn("baukit_shared_kernel\n      condition: (never_true)", maps["falco-baukit-rules"])
+        base = maps["falco-baukit-rules"]
+        self.assertIn("baukit_shared_kernel\n      condition: (never_true)", base)
         self.assertNotIn("falco-overlay-rules", maps)
 
     def test_e2e_turns_the_filter_on(self) -> None:
@@ -131,7 +133,8 @@ class SharedKernelFilterTest(unittest.TestCase):
         self.assertIn("  namespace: falco", overlay)
         self.assertRegex(
             overlay,
-            r"- macro: baukit_shared_kernel\n\s+condition: \(evt\.num >= 0\)\n\s+override:\n\s+condition: replace",
+            r"- macro: baukit_shared_kernel\n\s+condition: \(evt\.num >= 0\)\n"
+            r"\s+override:\n\s+condition: replace",
         )
 
 
