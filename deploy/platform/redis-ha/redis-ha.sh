@@ -8,10 +8,17 @@ headless="${REDIS_HEADLESS:-redis-headless}"
 namespace="${POD_NAMESPACE:-platform-redis}"
 cluster_domain="${CLUSTER_DOMAIN:-cluster.local}"
 sentinel_conf="${SENTINEL_CONF:-/sentinel/sentinel.conf}"
-self_wait_attempts="${SELF_WAIT_ATTEMPTS:-12}"
 no_answer_attempts="${NO_ANSWER_ATTEMPTS:-3}"
 local_wait_attempts="${LOCAL_WAIT_ATTEMPTS:-24}"
 retry_seconds="${RETRY_SECONDS:-5}"
+down_after_ms=5000
+failover_timeout_ms=30000
+# After a split vote Sentinel retries the failover only twice the failover timeout after the first try.
+# A restarted master that is still reported as master waits for that retry and its promotion, because
+# starting as master without persistence would make the replicas resync to an empty data set.
+self_wait_seconds="${SELF_WAIT_SECONDS:-$(((down_after_ms + 3 * failover_timeout_ms) / 1000))}"
+poll_seconds=$((retry_seconds > 0 ? retry_seconds : 1))
+self_wait_attempts=$((self_wait_seconds / poll_seconds + 1))
 
 pod_name="${POD_NAME:-$(hostname)}"
 statefulset="${pod_name%-*}"
@@ -140,8 +147,8 @@ run_sentinel() {
     'sentinel announce-hostnames yes' \
     "sentinel announce-ip $self" \
     "sentinel monitor $master_name $master 6379 2" \
-    "sentinel down-after-milliseconds $master_name 5000" \
-    "sentinel failover-timeout $master_name 30000" \
+    "sentinel down-after-milliseconds $master_name $down_after_ms" \
+    "sentinel failover-timeout $master_name $failover_timeout_ms" \
     "sentinel parallel-syncs $master_name 1" \
     >"$sentinel_conf"
   exec redis-sentinel "$sentinel_conf"
