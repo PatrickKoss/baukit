@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from collections.abc import Iterator
@@ -69,6 +70,7 @@ esac
 exit 0
 """
 STUB_OK = "#!/bin/sh\nexit 0\n"
+STUB_DOCKER = "#!/bin/sh\nprintf '%s\\n' \"${STUB_CGROUP_VERSION:-2}\"\n"
 TOKEN_COMMAND = "#!/bin/sh\nprintf 'stub-token\\n' >\"$BAUKIT_SMOKE_ACCESS_TOKEN_FILE\"\n"
 
 
@@ -194,15 +196,18 @@ class RenderTest(unittest.TestCase):
 
 
 class SmokeOrderTest(unittest.TestCase):
-    def run_smoke(
-        self, tmp: Path, digest: str | None = None, extra_env: dict[str, str] | None = None
-    ) -> list[str]:
+    def smoke_process(
+        self,
+        tmp: Path,
+        digest: str | None = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         bin_dir = tmp / "bin"
         write_executable(bin_dir / "kubectl", STUB_KUBECTL)
         write_executable(bin_dir / "helm", STUB_HELM)
         write_executable(bin_dir / "curl", STUB_CURL)
         write_executable(bin_dir / "k3d", STUB_K3D)
-        write_executable(bin_dir / "docker", STUB_OK)
+        write_executable(bin_dir / "docker", STUB_DOCKER)
         observability = tmp / "observability"
         observability.mkdir()
         (observability / "Chart.yaml").write_text("name: stub\n")
@@ -226,9 +231,18 @@ class SmokeOrderTest(unittest.TestCase):
             STUB_CHART_DIGEST=digest or parse(KYVERNO_SOURCE)[0]["spec"]["ref"]["digest"],
         )
         env.update(extra_env or {})
-        result = process_runner.run_process(
+        return process_runner.run_process(
             ["sh", str(SMOKE)], capture_output=True, text=True, env=env
         )
+
+    def run_smoke(
+        self,
+        tmp: Path,
+        digest: str | None = None,
+        extra_env: dict[str, str] | None = None,
+    ) -> list[str]:
+        result = self.smoke_process(tmp, digest, extra_env)
+        log = tmp / "calls.log"
         if digest is not None:
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("is not the pinned sha256:", result.stderr)
@@ -282,6 +296,15 @@ class SmokeOrderTest(unittest.TestCase):
             lines = self.run_smoke(Path(tmp), extra_env={"BAUKIT_SMOKE_K3S_IMAGE": override})
         args = self.cluster_create(lines)
         self.assertEqual(args[args.index("--image") + 1], override)
+
+    def test_cgroup_v1_host_fails_before_k3d(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.smoke_process(Path(tmp), extra_env={"STUB_CGROUP_VERSION": "1"})
+            log = Path(tmp) / "calls.log"
+            calls = log.read_text() if log.exists() else ""
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cgroup_no_v1=all", result.stderr)
+        self.assertNotIn("k3d cluster create", calls)
 
     def test_a_chart_with_another_digest_is_not_installed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

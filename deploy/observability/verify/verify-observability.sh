@@ -41,7 +41,7 @@ wait_attempts=$(setting WAIT_ATTEMPTS)
 
 api_public_url=${api_public_url:-http://127.0.0.1:18080}
 api_ops_url=${api_ops_url:-http://127.0.0.1:19090}
-prometheus_image=${prometheus_image:-prom/prometheus:v3.13.2}
+prometheus_image=${prometheus_image:-prom/prometheus:v3.16.0}
 wait_attempts=${wait_attempts:-60}
 
 [ -n "$log_files" ] || {
