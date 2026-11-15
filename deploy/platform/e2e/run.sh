@@ -306,6 +306,8 @@ collect_artifacts() {
   kubectl get policyreports,clusterpolicyreports -A -o wide >"$artifacts_dir/policy-reports.txt" 2>&1 || true
   flux get all -A >"$artifacts_dir/flux-status.txt" 2>&1 || true
   kubectl get pods -A -o wide >"$artifacts_dir/pods.txt" 2>&1 || true
+  kubectl get networkpolicies -A -o yaml >"$artifacts_dir/network-policies.yaml" 2>&1 || true
+  kubectl get jobs -A -o yaml >"$artifacts_dir/jobs.yaml" 2>&1 || true
   mkdir -p "$artifacts_dir/logs"
   local namespace pod
   while read -r namespace pod; do

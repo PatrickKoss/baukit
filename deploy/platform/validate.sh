@@ -382,6 +382,12 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_exclusive_bases
   status=1
 fi
 
+printf '==> monitor CRD ordering\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_monitor_order.py" --rendered "$rendered_dir" \
+  "$platform_dir/overlays/local/reconciliation.yaml" "$platform_dir/e2e/overlay/reconciliation.yaml"; then
+  status=1
+fi
+
 printf '==> flux convention policies\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/ci-policies/run_ci_policies.py" \
   --rendered "$rendered_dir" --chart-cache "$cache_dir" \

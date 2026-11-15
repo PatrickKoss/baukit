@@ -132,6 +132,7 @@ metadata:
 spec:
   dependsOn:
     - name: e2e-observability
+    - name: e2e-issuer
   interval: 10m
   retryInterval: 30s
   timeout: 15m
@@ -168,6 +169,7 @@ metadata:
 spec:
   dependsOn:
     - name: e2e-baseline
+    - name: e2e-observability
   interval: 10m
   retryInterval: 30s
   timeout: 10m
@@ -205,6 +207,7 @@ metadata:
 spec:
   dependsOn:
     - name: e2e-baseline
+    - name: e2e-observability
   interval: 10m
   retryInterval: 30s
   timeout: 15m

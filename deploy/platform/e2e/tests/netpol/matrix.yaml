@@ -222,6 +222,9 @@
 - from: {namespace: postgres, labels: {cnpg.io/podRole: instance}}
   to: {service: rustfs.postgres, port: 9000}
   expect: allow
+- from: {namespace: postgres, labels: {app.kubernetes.io/name: rustfs-create-bucket}}
+  to: {service: rustfs.postgres, port: 9000}
+  expect: allow
 - from: {namespace: postgres, labels: {app.kubernetes.io/name: postgres-restore-test}}
   to: {service: restore-test-pushgateway.postgres, port: 9091}
   expect: allow
