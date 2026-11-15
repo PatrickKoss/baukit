@@ -53,7 +53,9 @@ ALLOW_TEST = [
         "spec": {
             "podSelector": {"matchLabels": TESTER},
             "policyTypes": ["Egress"],
-            "egress": [{"to": [{"podSelector": {"matchLabels": SERVER}}], "ports": [{"port": 8080}]}],
+            "egress": [
+                {"to": [{"podSelector": {"matchLabels": SERVER}}], "ports": [{"port": 8080}]}
+            ],
         },
     },
     {
@@ -66,7 +68,9 @@ ALLOW_TEST = [
                 ]
             },
             "policyTypes": ["Ingress"],
-            "ingress": [{"from": [{"podSelector": {"matchLabels": TESTER}}], "ports": [{"port": 8080}]}],
+            "ingress": [
+                {"from": [{"podSelector": {"matchLabels": TESTER}}], "ports": [{"port": 8080}]}
+            ],
         },
     },
 ]
