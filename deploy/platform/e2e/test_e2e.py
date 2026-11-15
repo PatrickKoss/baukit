@@ -17,17 +17,17 @@ LEFT_OUT = {"hcloud", "posthog", "redis"}
 NODE_CIDR_PLACEHOLDER = "192.0.2.0/32"
 
 
-def load_process_runner():
-    path = REPO / "scripts/process_runner.py"
-    spec = importlib.util.spec_from_file_location("process_runner", path)
+def load_module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise ImportError("cannot load scripts/process_runner.py")
+        raise ImportError(f"cannot load {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-process_runner = load_process_runner()
+process_runner = load_module("process_runner", REPO / "scripts/process_runner.py")
+helm_yaml = load_module("helm_yaml", PLATFORM / "lint/helm_yaml.py")
 
 
 def kustomization(name, depends_on=()):
@@ -227,6 +227,42 @@ class RuntimeIdentityTests(unittest.TestCase):
                 ("observability", "grafana-admin"),
             },
         )
+
+    def test_pre_created_namespaces_carry_their_base_psa_labels(self):
+        manifests = {
+            doc["metadata"]["name"]: doc["metadata"]["labels"]
+            for path in PLATFORM.glob("*/namespace.yaml")
+            for doc in helm_yaml.parse_documents(helm_yaml.split_documents(path.read_text()))
+            if doc.get("kind") == "Namespace"
+        }
+        names = self.source_identity('printf "%s\\n" "${platform_runtime_namespaces[@]}"').split()
+        for name in [*names, "posthog"]:
+            with self.subTest(namespace=name):
+                applied = helm_yaml.parse_documents(
+                    [self.source_identity(f"platform_namespace_manifest {name}")]
+                )[0]
+                labels = applied["metadata"]["labels"]
+                psa = {k: v for k, v in labels.items() if k.startswith("pod-security.")}
+                self.assertEqual(len(psa), 4)
+                self.assertEqual(labels, manifests[name])
+
+    def test_unknown_namespace_fails(self):
+        helper = PLATFORM / "runtime-identity.sh"
+        result = process_runner.run_process(
+            ["bash", "-c", f'source "{helper}"; platform_ensure_namespace nope'],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Namespace nope", result.stderr)
+
+    def source_identity(self, call):
+        helper = PLATFORM / "runtime-identity.sh"
+        result = process_runner.run_process(
+            ["bash", "-c", f'source "{helper}"; {call}'], capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
 
     def test_both_entry_points_share_the_helper(self):
         for script in (PLATFORM / "platform-up.sh", E2E / "run.sh"):
