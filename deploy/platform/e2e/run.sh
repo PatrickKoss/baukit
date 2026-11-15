@@ -355,6 +355,7 @@ run_tests() {
     args+=(--test-dir "$test_dir")
   done
   chainsaw test "${args[@]}" \
+    --config "$e2e_dir/chainsaw-config.yaml" \
     --report-format JUNIT-TEST \
     --report-path "$artifacts_dir" \
     --report-name chainsaw-report
