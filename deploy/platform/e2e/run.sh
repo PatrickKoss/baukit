@@ -34,6 +34,9 @@ node_registration_attempts=60
 # The suites import the echo image long before a pod uses it. On a host disk above kubelet's 85%
 # default, image GC would delete it and the tenant pod fails with ErrImageNeverPull.
 kubelet_image_gc_arg='--kubelet-arg=image-gc-high-threshold=100@server:0'
+# Under host starvation kine's SQLite commit fails after a cancelled request and k3s exits fatally.
+# Embedded etcd does not take that path, so e2e clusters run on it.
+embedded_etcd_arg='--cluster-init@server:0'
 node_registration_poll_seconds=${BAUKIT_E2E_NODE_POLL_SECONDS:-2}
 failed_poll_limit=3
 heavy_slot_poll_seconds=${BAUKIT_HEAVY_SLOT_POLL_SECONDS:-30}
@@ -211,6 +214,7 @@ create_cluster() {
     --subnet "$(free_subnet)" \
     --registry-config "$state_dir/registries.yaml" \
     --k3s-arg "$kubelet_image_gc_arg" \
+    --k3s-arg "$embedded_etcd_arg" \
     "${mirror_args[@]}" \
     --kubeconfig-update-default=false \
     --kubeconfig-switch-context=false >/dev/null

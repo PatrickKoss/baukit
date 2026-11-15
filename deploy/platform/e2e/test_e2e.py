@@ -209,6 +209,13 @@ class HeavySlotTests(unittest.TestCase):
         self.assertEqual(output, "proceeded\n")
 
 
+class DatastoreTests(unittest.TestCase):
+    def test_cluster_runs_on_embedded_etcd(self):
+        text = (E2E / "run.sh").read_text()
+        self.assertIn("embedded_etcd_arg='--cluster-init@server:0'", text)
+        self.assertIn('--k3s-arg "$embedded_etcd_arg"', text)
+
+
 class NodeRegistrationTests(unittest.TestCase):
     def wait(self, empty_calls):
         with tempfile.TemporaryDirectory() as tmp:
