@@ -9,7 +9,8 @@ git_root=$state_dir/git
 git_pid_file=$state_dir/git-daemon.pid
 
 cluster_name=${BAUKIT_PLATFORM_CLUSTER:-baukit-local}
-git_port=${BAUKIT_PLATFORM_GIT_PORT:-9418}
+# overlays/local/source.yaml points Flux at this port.
+git_port=9418
 api_port=${BAUKIT_PLATFORM_API_PORT:-random}
 http_port=${BAUKIT_PLATFORM_HTTP_PORT:-80}
 https_port=${BAUKIT_PLATFORM_HTTPS_PORT:-443}

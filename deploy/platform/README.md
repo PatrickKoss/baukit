@@ -383,7 +383,6 @@ directory is mode 0700 and its `secrets.env` is mode 0600.
 |---|---|---|
 | `BAUKIT_PLATFORM_CLUSTER` | `baukit-local` | k3d cluster name. |
 | `BAUKIT_PLATFORM_STATE_DIR` | `deploy/platform/.local-state` | Generated credentials and snapshot state. |
-| `BAUKIT_PLATFORM_GIT_PORT` | `9418` | Snapshot server port on the k3d network gateway. |
 | `BAUKIT_PLATFORM_API_PORT` | `random` | Kubernetes API port on `127.0.0.1`. |
 | `BAUKIT_PLATFORM_HTTP_PORT` | `80` | HTTP ingress port on `127.0.0.1`. |
 | `BAUKIT_PLATFORM_HTTPS_PORT` | `443` | HTTPS ingress port on `127.0.0.1`. | No Secret manifest or credential value is stored in

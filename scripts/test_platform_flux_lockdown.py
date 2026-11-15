@@ -183,5 +183,16 @@ class FluxLockdownVerifyTest(unittest.TestCase):
         self.assertIn(f"# Flux v{version} controller images", COMPONENT.read_text())
 
 
+class LocalGitPortTest(unittest.TestCase):
+    def test_platform_up_serves_the_port_the_local_source_names(self) -> None:
+        up = (PLATFORM / "platform-up.sh").read_text()
+        source = (PLATFORM / "overlays/local/source.yaml").read_text()
+        port = re.search(r"^git_port=(\d+)$", up, re.MULTILINE)
+        self.assertIsNotNone(port)
+        assert port is not None
+        self.assertIn(f"url: http://host.k3d.internal:{port.group(1)}/baukit.git", source)
+        self.assertNotIn("BAUKIT_PLATFORM_GIT_PORT", up)
+
+
 if __name__ == "__main__":
     unittest.main()
