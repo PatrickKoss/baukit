@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: redis
+  namespace: platform-redis
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: redis
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  podMetricsEndpoints:
+    - port: metrics

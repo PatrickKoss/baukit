@@ -81,3 +81,11 @@ baukit.dev/redis-client: "true"
 Redis pods may reach each other on 6379 and 26379 for replication and Sentinel
 gossip, plus cluster DNS for peer-name resolution. No Secret, credentials,
 product labels, or product configuration live in this base.
+
+## Metrics
+
+A `redis_exporter` sidecar (v1.97.0, pinned by digest) in every pod reads the local Redis on
+127.0.0.1 and serves `redis_*` metrics on port 9121 (`metrics`). The base ships a
+PodMonitor for it, and Prometheus in `observability` is the only allowed client
+of that port. Order this base after the Kustomization that installs the
+Prometheus Operator CRDs.

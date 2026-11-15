@@ -324,6 +324,8 @@ spec:
         - protocol: TCP
           port: 9100
         - protocol: TCP
+          port: 9121
+        - protocol: TCP
           port: 9153
         - protocol: TCP
           port: 9187

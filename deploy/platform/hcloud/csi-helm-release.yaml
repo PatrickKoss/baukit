@@ -95,7 +95,7 @@ spec:
     metrics:
       enabled: true
       serviceMonitor:
-        enabled: false
+        enabled: true
     storageClasses:
       - name: hcloud-volumes
         defaultStorageClass: true

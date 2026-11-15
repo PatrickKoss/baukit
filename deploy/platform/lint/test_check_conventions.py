@@ -148,9 +148,44 @@ class MetricsEnabledTest(unittest.TestCase):
         monitor = resource(
             "PodMonitor", "x", kustomize=False, apiVersion="monitoring.coreos.com/v1"
         )
-        ctx = context(helm_release("x", "x", "1.0.0"), monitor)
+        monitor = cc.Resource(monitor.obj, "x", False, ("x", "x"))
+        ctx = context(helm_release("x", "x", "1.0.0", "x"), monitor)
         ctx.chart_values = {"x@1.0.0": {"monitoring": {"podMonitorEnabled": True}}}
         self.assertEqual(violations("metrics-enabled", ctx), [])
+
+    def test_monitor_from_another_release_does_not_count(self) -> None:
+        other = resource("PodMonitor", "y", "x", apiVersion="monitoring.coreos.com/v1")
+        ctx = context(helm_release("x", "x", "1.0.0", "x"), other)
+        ctx.chart_values = {"x@1.0.0": {"monitoring": {"podMonitorEnabled": False}}}
+        self.assertIn("monitoring.podMonitorEnabled", violations("metrics-enabled", ctx)[0])
+
+    def test_release_values_override_chart_defaults(self) -> None:
+        release = helm_release("x", "x", "1.0.0")
+        release.spec["values"] = {"sub": {"enabled": False}}
+        ctx = context(release)
+        ctx.chart_values = {"x@1.0.0": {"sub": {"serviceMonitor": {"enabled": False}}}}
+        ctx.chart_dependencies = {"x@1.0.0": [("sub", "sub.enabled")]}
+        self.assertEqual(violations("metrics-enabled", ctx), [])
+        release.spec["values"] = {"sub": {"enabled": True}}
+        self.assertIn("sub.serviceMonitor.enabled", violations("metrics-enabled", ctx)[0])
+
+    def test_condition_uses_the_first_path_that_resolves(self) -> None:
+        values = {"a": {"enabled": True}, "b": {"enabled": False}}
+        self.assertFalse(cc.condition_disabled(values, "missing.enabled,a.enabled,b.enabled"))
+        self.assertTrue(cc.condition_disabled(values, "b.enabled,a.enabled"))
+        self.assertFalse(cc.condition_disabled(values, "missing.enabled"))
+
+    def test_dependency_conditions_use_the_alias(self) -> None:
+        chart = {
+            "dependencies": [
+                {"name": "loki", "condition": "loki.enabled"},
+                {"name": "redis", "alias": "cache", "condition": "cache.enabled"},
+                {"name": "always"},
+            ]
+        }
+        self.assertEqual(
+            cc.dependency_conditions(chart), [("loki", "loki.enabled"), ("cache", "cache.enabled")]
+        )
 
     def test_chart_without_toggle_passes(self) -> None:
         ctx = context(helm_release("x", "x", "1.0.0"))
@@ -179,6 +214,77 @@ class MetricsEnabledTest(unittest.TestCase):
             "no chart values",
             violations("metrics-enabled", context(helm_release("x", "x", "1")))[0],
         )
+
+
+def redis_deployment(ports: list[dict]) -> cc.Resource:
+    container = {"name": "redis", "image": "docker.io/library/redis:8.10.2-alpine@sha256:ab"}
+    sidecar = {"name": "redis-exporter", "image": "docker.io/oliver006/redis_exporter:v1"}
+    template = {
+        "metadata": {"labels": {"app": "redis"}},
+        "spec": {"containers": [container, {**sidecar, "ports": ports}]},
+    }
+    return resource(
+        "Deployment", "redis", "cache", apiVersion="apps/v1", spec={"template": template}
+    )
+
+
+def pod_monitor(namespace_name: str, match: dict, port: str = "metrics", **spec) -> cc.Resource:
+    spec = {"selector": {"matchLabels": match}, "podMetricsEndpoints": [{"port": port}], **spec}
+    return resource(
+        "PodMonitor", "m", namespace_name, apiVersion="monitoring.coreos.com/v1", spec=spec
+    )
+
+
+class ExportersScrapedTest(unittest.TestCase):
+    SCRAPED = {"redis": "Redis", "postgresql": "PostgreSQL"}
+
+    def check(self, *resources: cc.Resource) -> list[str]:
+        return violations("exporters-scraped", context(*resources, scraped_images=self.SCRAPED))
+
+    def test_redis_without_a_pod_monitor_fails(self) -> None:
+        found = self.check(redis_deployment([{"name": "metrics", "containerPort": 9121}]))
+        self.assertIn("Deployment cache/redis runs Redis", found[0])
+
+    def test_redis_with_exporter_and_pod_monitor_passes(self) -> None:
+        workload = redis_deployment([{"name": "metrics", "containerPort": 9121}])
+        self.assertEqual(self.check(workload, pod_monitor("cache", {"app": "redis"})), [])
+
+    def test_pod_monitor_on_a_port_the_pod_lacks_fails(self) -> None:
+        self.assertEqual(
+            len(self.check(redis_deployment([]), pod_monitor("cache", {"app": "redis"}))), 1
+        )
+
+    def test_pod_monitor_in_another_namespace_needs_match_names(self) -> None:
+        workload = redis_deployment([{"name": "metrics", "containerPort": 9121}])
+        elsewhere = pod_monitor("observability", {"app": "redis"})
+        self.assertEqual(len(self.check(workload, elsewhere)), 1)
+        across = pod_monitor(
+            "observability", {"app": "redis"}, namespaceSelector={"matchNames": ["cache"]}
+        )
+        self.assertEqual(self.check(workload, across), [])
+
+    def test_cnpg_cluster_needs_a_pod_monitor_on_its_instances(self) -> None:
+        cluster = resource(
+            "Cluster",
+            "pg",
+            "db",
+            apiVersion="postgresql.cnpg.io/v1",
+            spec={"imageName": "ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie"},
+        )
+        self.assertIn("Cluster db/pg runs PostgreSQL", self.check(cluster)[0])
+        wrong = pod_monitor("db", {"cnpg.io/cluster": "other"})
+        self.assertEqual(len(self.check(cluster, wrong)), 1)
+        right = pod_monitor("db", {"cnpg.io/cluster": "pg", "cnpg.io/podRole": "instance"})
+        self.assertEqual(self.check(cluster, right), [])
+
+    def test_chart_rendered_workloads_are_left_to_metrics_enabled(self) -> None:
+        workload = redis_deployment([])
+        chart_owned = cc.Resource(workload.obj, "cache", False, ("cache", "x"))
+        self.assertEqual(self.check(chart_owned), [])
+
+    def test_image_repository_ignores_registry_tag_and_digest(self) -> None:
+        for image in ("redis", "redis:8", "docker.io/library/redis:8@sha256:ab", "host:5000/redis"):
+            self.assertEqual(cc.image_repository(image), "redis", image)
 
 
 class AlertRulesTest(unittest.TestCase):
@@ -467,7 +573,7 @@ metadata:
 CONFIG = """\
 [rules]
 active = ["policy-exception-budget", "dashboards-selected", "metrics-enabled", "alert-metadata",
-  "alert-runbook", "alert-tested", "rules-selected", "prune-disabled"]
+  "alert-runbook", "alert-tested", "rules-selected", "prune-disabled", "exporters-scraped"]
 [rules.pending]
 psa-labels = "N1"
 default-deny-network-policy = "N2"
@@ -540,7 +646,7 @@ class MainTest(unittest.TestCase):
         code, stdout, stderr = self.run_main(budget=1)
         self.assertEqual(code, 0, stderr)
         self.assertIn(
-            "Conventions: 8 active, 2 pending "
+            "Conventions: 9 active, 2 pending "
             "[default-deny-network-policy (N2): 1; psa-labels (N1): 1]",
             stdout,
         )

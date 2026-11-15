@@ -43,6 +43,7 @@ spec:
   serviceAccountName: kustomize-controller
   dependsOn:
     - name: local-baseline
+    - name: local-observability
   interval: 10m
   retryInterval: 30s
   timeout: 10m
@@ -100,6 +101,7 @@ spec:
   serviceAccountName: kustomize-controller
   dependsOn:
     - name: local-cert-manager
+    - name: local-observability
   interval: 10m
   retryInterval: 30s
   timeout: 15m

@@ -24,8 +24,9 @@ The overlay **must** create a Secret named `hcloud` in `kube-system` with key
 The token needs only the cloud permissions required by the enabled components.
 The overlay should also remove k3s `local-path` as the default StorageClass (or
 patch `hcloud-volumes` to non-default) so the cluster has exactly one default.
-Enable the charts' PodMonitor/ServiceMonitor values only after the Prometheus
-Operator CRDs exist, and set a `priorityClassName` if desired.
+Both charts render their monitors (a PodMonitor for the CCM on 8233, a
+ServiceMonitor for the CSI driver), so reconcile this base after the one that
+installs the Prometheus Operator CRDs. Set a `priorityClassName` if desired.
 
 The local k3d flavor must omit this entire base. It is also optional on a
 Hetzner cluster that uses neither Cloud Volumes nor a managed Load Balancer.
