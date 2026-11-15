@@ -24,8 +24,11 @@ An overlay must:
 - arrange Flux ordering so this base is ready before any `postgres-cluster`
   instance, normally with `Kustomization.spec.dependsOn`;
 - add a priority class only if the cluster policy needs one;
-- decide whether to enable the operator PodMonitor after the Prometheus Operator
-  CRDs exist.
+- reconcile this base after the one that installs the Prometheus Operator CRDs,
+  because the operator chart renders a PodMonitor and the base ships a
+  PodMonitor for the Barman plugin. The plugin serves its controller metrics
+  over plain HTTP on 8080 (`--metrics-bind-address=:8080 --metrics-secure=false`),
+  and only Prometheus may reach that port.
 
 ## Vendored Barman plugin
 

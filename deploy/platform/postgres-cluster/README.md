@@ -37,7 +37,7 @@ Before reconciliation, an overlay must:
 - ensure a default StorageClass exists and patch storage/resources from measured
   load if the small defaults are insufficient;
 - ensure the Prometheus Operator CRDs exist before applying the included
-  `ServiceMonitor` and `PrometheusRule`, and configure Prometheus selectors to
+  `PodMonitor`, `ServiceMonitor` and `PrometheusRule`, and configure Prometheus selectors to
   admit resources labeled `app.kubernetes.io/part-of: baukit-platform`;
 - review the restore schedule, then explicitly set the CronJob to
   `spec.suspend: false`; add a priority class in the overlay if desired;
@@ -117,7 +117,8 @@ that a restored cluster turns `Ready`:
 A small Pushgateway retains the metric in an `emptyDir` across container
 restarts; losing the pod intentionally makes the metric absent and therefore
 alerts until the proof runs again. The `ServiceMonitor` exposes it to the
-kube-prometheus-stack base, and `BaukitPostgresRestoreTestStale` fires when the
+kube-prometheus-stack base, and `BaukitPostgresRestoreTestStale` in the platform
+pack (`deploy/observability-platform/alerts/cnpg.rules.yml`) fires when the
 metric is absent or older than 35 days. The platform e2e suite
 `deploy/platform/e2e/tests/backup-restore` runs the same round trip on a
 throwaway cluster, deletes it, restores it, and then runs this CronJob once.

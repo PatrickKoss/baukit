@@ -9,7 +9,7 @@ resources:
   - scheduledbackup.yaml
   - pushgateway.yaml
   - restore-test.yaml
-  - prometheusrule.yaml
+  - podmonitor.yaml
   - network-policy.yaml
 components:
   - ../components/network-policy/default-deny

@@ -1,0 +1,12 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: barman-cloud
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  selector:
+    matchLabels:
+      app: barman-cloud
+  podMetricsEndpoints:
+    - port: metrics

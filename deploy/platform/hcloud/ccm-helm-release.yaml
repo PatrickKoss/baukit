@@ -37,7 +37,7 @@ spec:
     monitoring:
       enabled: true
       podMonitor:
-        enabled: false
+        enabled: true
     resources:
       requests:
         cpu: 25m

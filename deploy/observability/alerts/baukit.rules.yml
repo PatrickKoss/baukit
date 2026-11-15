@@ -13,7 +13,7 @@ groups:
           severity: critical
         annotations:
           summary: Fast 5xx error-budget burn
-          description: 'The 5m and 1h windows exceed 14.4x budget for {{ $labels }}.'
+          description: 'The 5m and 1h windows exceed 14.4x budget for {{ $labels.service }} in {{ $labels.environment }}.'
           runbook_url: RUNBOOK_BASE_URL/high-error-budget-burn-fast
 
       - alert: BaukitHighErrorBudgetBurnSlow
@@ -26,7 +26,7 @@ groups:
           severity: warning
         annotations:
           summary: Sustained 5xx error-budget burn
-          description: 'The 30m and 6h windows exceed 6x budget for {{ $labels }}.'
+          description: 'The 30m and 6h windows exceed 6x budget for {{ $labels.service }} in {{ $labels.environment }}.'
           runbook_url: RUNBOOK_BASE_URL/high-error-budget-burn-slow
 
       - alert: BaukitHttpP95LatencyHigh
@@ -36,7 +36,7 @@ groups:
           severity: warning
         annotations:
           summary: HTTP p95 latency is high
-          description: 'HTTP p95 latency has exceeded 0.5s for {{ $labels }}.'
+          description: 'HTTP p95 latency has exceeded 0.5s for route {{ $labels.route }} of {{ $labels.service }} in {{ $labels.environment }}.'
           runbook_url: RUNBOOK_BASE_URL/http-p95-latency-high
 
       - alert: BaukitHttpP99LatencyHigh
@@ -46,7 +46,7 @@ groups:
           severity: critical
         annotations:
           summary: HTTP p99 latency is high
-          description: 'HTTP p99 latency has exceeded 1s for {{ $labels }}.'
+          description: 'HTTP p99 latency has exceeded 1s for route {{ $labels.route }} of {{ $labels.service }} in {{ $labels.environment }}.'
           runbook_url: RUNBOOK_BASE_URL/http-p99-latency-high
 
   - name: baukit-readiness-alerts
@@ -58,7 +58,7 @@ groups:
           severity: critical
         annotations:
           summary: Baukit service scrape is failing
-          description: 'Prometheus cannot scrape the service target for {{ $labels }}.'
+          description: 'Prometheus cannot scrape the service target {{ $labels.instance }} of {{ $labels.service }} in {{ $labels.namespace }}.'
           runbook_url: RUNBOOK_BASE_URL/service-scrape-down
 
       - alert: BaukitServiceTargetsAbsent
@@ -68,7 +68,7 @@ groups:
           severity: critical
         annotations:
           summary: No Baukit service targets are discoverable
-          description: 'Prometheus has no service-labeled targets; alert context is {{ $labels }}.'
+          description: 'Prometheus has no service-labeled targets, so every other Baukit alert has no data.'
           runbook_url: RUNBOOK_BASE_URL/service-targets-absent
 
       - alert: BaukitBuildInfoAbsent
@@ -81,7 +81,7 @@ groups:
           severity: warning
         annotations:
           summary: Build metadata is absent
-          description: 'A healthy scrape target is not exposing build_info for {{ $labels }}.'
+          description: 'A healthy scrape target is not exposing build_info: {{ $labels.instance }} of {{ $labels.service }} in {{ $labels.namespace }}.'
           runbook_url: RUNBOOK_BASE_URL/build-info-absent
 
   - name: baukit-database-alerts
@@ -103,7 +103,7 @@ groups:
           severity: warning
         annotations:
           summary: Database pool is saturated
-          description: 'More than 90% of database pool connections are in use for {{ $labels }}.'
+          description: 'More than 90% of database pool connections are in use on {{ $labels.instance }} of {{ $labels.service }} in {{ $labels.namespace }}.'
           runbook_url: RUNBOOK_BASE_URL/database-pool-saturated
 
       - alert: BaukitDatabaseAcquireTimeouts
@@ -113,7 +113,7 @@ groups:
           severity: critical
         annotations:
           summary: Database connection acquisition is timing out
-          description: 'Database acquire timeouts increased during the last 10m for {{ $labels }}.'
+          description: 'Database acquire timeouts increased during the last 10m on {{ $labels.instance }} of {{ $labels.service }} in {{ $labels.namespace }}.'
           runbook_url: RUNBOOK_BASE_URL/database-acquire-timeouts
 
   - name: baukit-rate-limit-alerts
@@ -128,7 +128,7 @@ groups:
           severity: critical
         annotations:
           summary: Rate-limit store errors are sustained
-          description: 'The rate limiter has reported store errors for ten minutes for {{ $labels }}; verify Redis health and whether the configured fail mode is preserving enforcement.'
+          description: 'The rate limiter has reported store errors for ten minutes for scope {{ $labels.scope }} in {{ $labels.service }}; verify Redis health and whether the configured fail mode is preserving enforcement.'
           runbook_url: RUNBOOK_BASE_URL/rate-limit-store-errors
 
   - name: baukit-worker-alerts
@@ -173,5 +173,5 @@ groups:
           severity: warning
         annotations:
           summary: Worker queue age is high
-          description: 'The oldest queued job is more than five minutes old for {{ $labels }}.'
+          description: 'The oldest queued job is more than five minutes old for job kind {{ $labels.job_kind }} in {{ $labels.service }}.'
           runbook_url: RUNBOOK_BASE_URL/worker-queue-oldest-age-high

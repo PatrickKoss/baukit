@@ -260,7 +260,7 @@ behave. Later phases add test directories here.
   - An `emptyDir` `/tmp` mount, so `readOnlyRootFilesystem` keeps working when a library writes temp files.
   - Fix the stray `{{ with` (missing `-`) before `api.networkPolicy.additionalEgress` in
     `templates/networkpolicy.yaml`.
-- [~] **C4 Smoke harness under `restricted`.** `deploy/smoke/k3d-smoke.sh` labels its namespace
+- [x] **C4 Smoke harness under `restricted`.** `deploy/smoke/k3d-smoke.sh` labels its namespace
   `pod-security.kubernetes.io/enforce=restricted` before installing, and installs the baukit Kyverno
   policy library in Enforce mode first. A chart change that breaks either fails the smoke.
 - [x] **C5 Chart tests.** Extend `scripts/test_chart_*.py`: security context on every container,
@@ -395,7 +395,7 @@ behave. Later phases add test directories here.
     `unwrap`, label filters after a parser) in both the Python lint and `cli/src/check/observability/`,
     with unit tests in both.
   - Ship the pack through a HelmRelease in the observability-stack base.
-- [ ] **O3 Exporters on.**
+- [x] **O3 Exporters on.**
   - cert-manager: `prometheus.servicemonitor.enabled`.
   - CNPG: operator `monitoring.podMonitorEnabled` and Cluster `monitoring.enablePodMonitor`, plus a
     barman plugin PodMonitor.
@@ -956,3 +956,36 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   `alert-pipeline` passed live on a small cluster, and fails with the inhibit rules removed.
 - 2026-11-15 E's rustfs bucket-job DNS egress fix (962f6d4f) is applied to the integration branch ahead of
   E. SC2's live run failed on it: the bucket Job could not resolve rustfs, so local-foundation stalled.
+- 2026-11-15 O3 merged. The platform exporters are on:
+  - a cert-manager ServiceMonitor
+  - the CNPG operator PodMonitor, plus PodMonitors for the postgres instances and the barman plugin
+    (plugin metrics on 8080 through args)
+  - hcloud CCM and CSI monitors
+  - a redis_exporter v1.97.0 sidecar, pinned by digest, in redis, redis-ha and posthog-redis, each with
+    a PodMonitor and a 9121 scrape netpol
+  - kube-state-metrics `customResourceState` emitting `gotk_resource_info` for 5 Flux kinds, with the
+    labels O4's alerts use, and the four Flux controllers through `additionalPodMonitors`
+  
+  `metrics-enabled` is now active and checks for a monitor in the release's own render with merged chart
+  values. A new `exporters-scraped` rule covers images listed in `conventions.toml`. Both rules have fail
+  and pass tests. Every target was up on a small capture cluster. The metrics.txt names that were not seen
+  have reasons in the report (component not deployed, counters that start on errors, metrics that need
+  replicas), so metrics.txt did not change. Local cert-manager and cnpg now depend on local-observability,
+  for the monitor CRDs. The e2e overlay needs the same ordering when E merges.
+- 2026-11-15 `alert-tested` is still pending, with 12 alerts that have no firing promtool case. 11 are
+  app-pack alerts in `deploy/observability/alerts/baukit.rules.yml`. O4 covered only the platform pack.
+  O4b adds the cases and activates the rule.
+- 2026-11-15 O4b merged. The 11 app-pack alerts have firing and quiet promtool cases in
+  `deploy/observability/tests/` (slo, readiness, dependencies). `BaukitPostgresRestoreTestStale` moved
+  from the postgres-cluster PrometheusRule into the platform pack (`alerts/cnpg.rules.yml`, component
+  cnpg) with its own test. Descriptions that printed the raw `$labels` map now name the labels.
+  `alert-tested` is active: conventions report 11 active, 0 pending.
+- 2026-11-15 C4 merged. `deploy/smoke/kyverno-enforce.sh` installs Kyverno with helm from the pin in
+  the platform HelmRelease, switches every ValidatingPolicy and ImageValidatingPolicy to Deny (an
+  unknown policy kind fails the render), writes a registry allowlist from `BAUKIT_SMOKE_IMAGES`, and
+  waits for the webhooks. `k3d-smoke.sh` runs it before creating any namespace, and the product
+  namespace is a tenant. The good case passed live in 122s. The bad case failed on
+  require-container-resources, as intended. Kyverno adds 86s and about 240Mi.
+  Release notes (breaking for product smokes): Kyverno images must be pullable, dependency manifests
+  need resources and no `latest` tag, and only images in `BAUKIT_SMOKE_IMAGES` may run. SC1's OCI
+  migration must update `kyverno-enforce.sh`, which reads `spec.chart.spec`.

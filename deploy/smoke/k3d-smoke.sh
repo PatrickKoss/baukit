@@ -128,8 +128,9 @@ install_admission_policies() {
 create_namespace() {
     target=$1
     level=$2
+    shift 2
     kubectl create namespace "$target" --dry-run=client -o yaml |
-        kubectl label --local -f - -o yaml \
+        kubectl label --local -f - -o yaml "$@" \
             "pod-security.kubernetes.io/enforce=$level" \
             pod-security.kubernetes.io/enforce-version=latest \
             "pod-security.kubernetes.io/audit=$level" \
@@ -139,11 +140,16 @@ create_namespace() {
         kubectl create -f -
 }
 
+set -- install
+for image in $images; do
+    set -- "$@" "$image"
+done
+"$script_dir/kyverno-enforce.sh" "$@"
 install_admission_policies
-create_namespace "$namespace" "$pod_security_level"
+create_namespace "$namespace" "$pod_security_level" baukit.dev/tenant=true
 create_namespace "$dependencies_namespace" "$dependencies_pod_security_level"
 if [ "$observability_namespace" != "$namespace" ]; then
-    kubectl create namespace "$observability_namespace"
+    create_namespace "$observability_namespace" restricted
 fi
 
 if [ -n "$secret_manifests" ]; then
@@ -173,6 +179,8 @@ if [ "$k3s_dns_enabled" = true ]; then
 fi
 if ! helm "$@"; then
     kubectl -n "$namespace" get pods,jobs >&2 || true
+    kubectl -n "$namespace" get events --field-selector type=Warning \
+        -o jsonpath='{range .items[*]}{.involvedObject.kind}/{.involvedObject.name}: {.message}{"\n"}{end}' >&2 || true
     kubectl -n "$namespace" logs -l baukit.dev/process=migrate \
         --all-containers --tail=100 >&2 || true
     kubectl -n "$namespace" logs -l baukit.dev/process=api \
