@@ -1,0 +1,29 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: ocirepository-exact-ref
+policies:
+  - ../../policies/ocirepository-exact-ref.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: ocirepository-exact-ref
+    kind: OCIRepository
+    resources: [tag]
+    result: pass
+  - isValidatingPolicy: true
+    policy: ocirepository-exact-ref
+    kind: OCIRepository
+    resources: [digest]
+    result: pass
+  - isValidatingPolicy: true
+    policy: ocirepository-exact-ref
+    kind: OCIRepository
+    resources: [semver]
+    result: fail
+  - isValidatingPolicy: true
+    policy: ocirepository-exact-ref
+    kind: OCIRepository
+    resources: [latest]
+    result: fail

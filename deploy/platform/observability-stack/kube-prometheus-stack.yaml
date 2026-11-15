@@ -5,7 +5,7 @@ metadata:
   namespace: observability
 spec:
   interval: 30m
-  timeout: 15m
+  timeout: 12m
   chart:
     spec:
       chart: kube-prometheus-stack
@@ -20,9 +20,12 @@ spec:
     remediation:
       retries: 3
   upgrade:
+    cleanupOnFail: true
     crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     crds:
       enabled: true
@@ -212,6 +215,8 @@ spec:
         shards: 1
         # Metrics retention budget (§8.5): the single source of truth.
         retention: 30d
+        # About 85% of the 30Gi PVC, in Prometheus base-2 units. Change both together.
+        retentionSize: 25GB
         resources:
           requests:
             cpu: 200m

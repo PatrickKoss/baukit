@@ -1,0 +1,52 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: timeout
+  namespace: demo
+spec:
+  interval: "30m"
+  timeout: "5m"
+  chart:
+    spec:
+      chart: traefik
+      version: "41.6.1"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+  driftDetection:
+    mode: warn
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: no-timeout
+  namespace: demo
+spec:
+  interval: "30m"
+  chart:
+    spec:
+      chart: traefik
+      version: "41.6.1"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+  driftDetection:
+    mode: warn
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3

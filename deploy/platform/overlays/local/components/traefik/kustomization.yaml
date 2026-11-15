@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - ../../../../traefik
   - ../../cluster-network
+  - default-certificate.yaml
 components:
   - ../../../../components/network-policy/node-cidr
 patches:
@@ -24,3 +25,11 @@ patches:
       - op: replace
         path: /spec/values/resources/limits/memory
         value: 192Mi
+      - op: add
+        path: /spec/values/tlsStore
+        value:
+          default:
+            certificates:
+              - secretName: local-default-tls
+            defaultCertificate:
+              secretName: local-default-tls

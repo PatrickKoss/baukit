@@ -198,7 +198,7 @@ versions. This phase comes first so every later task has a place to put its test
     selectors admit (prevents a repeat of F-02);
   - the PolicyException count does not exceed the budget in `deploy/platform/lint/budget.toml`, which
     may only go down.
-- [ ] **V5 HelmRelease conventions as offline policies** in `lint/ci-policies/`: exact chart version;
+- [x] **V5 HelmRelease conventions as offline policies** in `lint/ci-policies/`: exact chart version;
   `install.remediation.retries`, `upgrade.remediation.retries`, `upgrade.cleanupOnFail`; explicit
   `timeout`; `driftDetection.mode: enabled`; `install.crds` and `upgrade.crds: CreateReplace` when the
   chart ships CRDs; HelmRepository `interval >= 1h`; Kustomization `prune: true` with `wait: true` and no
@@ -518,7 +518,7 @@ behave. Later phases add test directories here.
   to `resourceNames: [postgres-cluster-restore-test]`. Give the restore test a Delete-policy
   StorageClass on Hetzner. Add an e2e test that drains the node with `kubectl drain --dry-run=server`
   and asserts no PDB blocks it.
-- [ ] **R3 HelmRelease standards** (F-40): apply the V5 conventions to every base. `driftDetection` lands
+- [x] **R3 HelmRelease standards** (F-40): apply the V5 conventions to every base. `driftDetection` lands
   as `mode: warn` first, then `enabled` after one clean e2e run with no drift events. Set explicit
   `timeout`s from measured install times. Add `test.enable` where the chart ships tests.
 - [ ] **R4 Disruption and priority** (F-41, F-44):
@@ -532,7 +532,7 @@ behave. Later phases add test directories here.
   test checks a sentinel row, not just Ready. Document an off-node backup target for the local overlay
   (host bind mount or a second object store) in the base README. Add an e2e test that runs backup,
   deletes the cluster, restores and compares the sentinel.
-- [ ] **R6 Storage limits** (F-11): `retentionSize` for Prometheus at about 85% of the PVC; Loki
+- [x] **R6 Storage limits** (F-11): `retentionSize` for Prometheus at about 85% of the PVC; Loki
   `retention_period` plus compactor deletion; Tempo `max_block_bytes` / retention sized to its PVC;
   `BaukitPvcFillingUp` covered by kube-prometheus-stack defaults and tested in O4.
 - [x] **R7 redis-ha recovery** (F-12): an init step asks Sentinel for the current master and only
@@ -560,7 +560,7 @@ behave. Later phases add test directories here.
 - [x] **SC4 Renovate:** custom managers for `tools.toml`, digests in raw manifests and the k3s image
   strings. Set `minimumReleaseAge` for charts and grouping per base. Configure the same in platform-infra
   (its `v*` tag pattern fix lands in PI1).
-- [ ] **S3 Traefik edge** (F-27, F-26): a default `TLSOption` (min TLS 1.2, `sniStrict`, curve
+- [x] **S3 Traefik edge** (F-27, F-26): a default `TLSOption` (min TLS 1.2, `sniStrict`, curve
   preferences), a web to websecure redirect, a security-headers Middleware (HSTS, nosniff, frame deny,
   referrer policy) attached on websecure, rate limits keyed on `X-Forwarded-For` depth when behind a
   trusted LB, `global.checkNewVersion: false`, and access logs that drop query strings. e2e asserts
@@ -843,3 +843,31 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   of 4 runs, at 12 s never), so the N5 runner waits 10 s before probing and `docs/threat-model.md` records
   the fail-open window. After the merge, `platform-images` flagged the PostHog PostgreSQL change: the 14.1
   entry went stale and 14.25 reports 26 Go stdlib findings in gosu, now listed with an upstream reason.
+- 2026-11-15 VR (V5, R3) merged. `lint/ci-policies/` holds 12 offline ValidatingPolicies with 42
+  `kyverno test` cases, and validate.sh applies them to every rendered base and overlay (35 HelmReleases,
+  27 HelmRepositories, 8 Kustomizations; no OCIRepository exists yet, so that policy has no results). On
+  review I added a guard: the stage fails when no Flux object produced a result, so an empty render
+  cannot pass. Every HelmRelease has `driftDetection: warn`, `cleanupOnFail`, and `CreateReplace` where
+  the chart ships `crds/`. Timeouts come from E's first live run at load about 70: kube-prometheus-stack
+  227 s (12m), kyverno 161 s (9m), the rest under 90 s (5m). posthog keeps 20m, and hcloud and
+  kyverno-policies are unmeasured at 5m. Not yet seen live: the falco and kyverno Helm tests with N2's
+  policies in place.
+- 2026-11-15 S3 merged. The `default` TLSOption sets TLS 1.2 minimum, `sniStrict`, curves and AEAD suites.
+  web redirects to websecure, `default-security-headers` (HSTS, nosniff, DENY, referrer policy) sits on
+  websecure, the limit middlewares key on the TCP peer (`depth: 0`), with the trusted-proxy overlay
+  contract in the traefik README, and access logs drop the query string. Review found that redirect plus
+  `sniStrict` made local hosts without a secret unreachable, so the local overlay now issues `localhost`
+  and `*.localhost` from `local-self-signed` into the default TLSStore as a store certificate (`sniStrict`
+  never falls back to `defaultCertificate`). Local hosts are one label under `localhost`. The chainsaw
+  test `e2e/tests/traefik-edge` passed on a one-node cluster and fails against the old values. When E
+  merges, `e2e-traefik` needs `dependsOn: e2e-issuer`.
+- 2026-11-15 R6 merged. Prometheus `retentionSize` is 25GB on the 30Gi PVC and 1740MB on the local 2Gi PVC
+  (Prometheus counts base-2). `lint/check_retention_size.py` renders every base, overlay and local component,
+  and fails if the size is missing or above 90% of the PVC. Loki already had retention and the delete
+  store, and now names the compactor working directory on its PVC. Tempo sets ingester `max_block_bytes`
+  and the compactor flag through `extraArgs`, because the chart hardcodes that config section. A live
+  `/status/config` shows the flag value. kube-prometheus-stack 88.6.5 keeps `kubernetesStorage` on, so the
+  pack tests the upstream `KubePersistentVolumeFillingUp` from a verbatim copy in `upstream-rules/`.
+  `lint/check_upstream_rules.py` fails when the rendered rule drifts from the copy. The retention budgets
+  are arithmetic, not measured ingest, and are in the observability-stack README. O4 tuning must keep
+  `kubernetesStorage` on, and must update the copy if it changes that rule's runbook URL.

@@ -5,6 +5,7 @@ metadata:
   namespace: kyverno
 spec:
   interval: 30m
+  timeout: 9m
   chart:
     spec:
       chart: kyverno
@@ -21,6 +22,10 @@ spec:
     cleanupOnFail: true
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
+  test:
+    enable: true
   values:
     config:
       webhooks:

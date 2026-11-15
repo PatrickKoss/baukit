@@ -5,7 +5,7 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"
-baukit_use_tools "$repo_root" kustomize kubeconform helm flux trivy
+baukit_use_tools "$repo_root" kustomize kubeconform helm flux kyverno trivy
 
 cache_dir=${BAUKIT_TRIVY_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/baukit/trivy}
 work_dir=$(mktemp -d)
