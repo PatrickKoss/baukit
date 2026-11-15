@@ -22,6 +22,27 @@ spec:
         kind: HelmRepository
         name: demo
 """
+OCI_RELEASE = """\
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: ops
+  namespace: demo
+spec:
+  url: oci://ghcr.io/acme/charts/ops
+  ref:
+    tag: "1.2.3"
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ops
+  namespace: demo
+spec:
+  chartRef:
+    kind: OCIRepository
+    name: ops
+"""
 TEST_HOOK = """\
 apiVersion: v1
 kind: Pod
@@ -128,6 +149,22 @@ class ChartContentsTest(unittest.TestCase):
         base.write_text(base.read_text().replace('"1.2.3"', '"1.2.4"'))
         problems = cc.check(fixture.collect(), fixture.data, fixture.policies)
         self.assertTrue(any("ops@1.2.4" in problem for problem in problems), problems)
+
+    def test_chart_ref_reads_name_and_version_from_the_oci_repository(self) -> None:
+        base = self.fixture.rendered / "base-demo.yaml"
+        base.write_text(
+            base.read_text().replace(
+                RELEASE.format(name="ops", chart="ops", version="1.2.3"), OCI_RELEASE
+            )
+        )
+        contents = self.fixture.collect()
+        self.assertEqual(contents["ops@1.2.3"], cc.Contents(crds=True, tests=False))
+
+    def test_chart_ref_without_its_oci_repository_raises(self) -> None:
+        base = self.fixture.rendered / "base-demo.yaml"
+        base.write_text(OCI_RELEASE.split("---\n", 1)[1])
+        with self.assertRaisesRegex(cc.ContentsError, "missing OCIRepository demo/ops"):
+            self.fixture.collect()
 
     def test_missing_chart_archive_raises(self) -> None:
         (self.fixture.cache / "ops-1.2.3-42.tgz").unlink()

@@ -8,15 +8,10 @@ spec:
   timeout: 5m
   dependsOn:
     - name: kyverno
-  chart:
-    spec:
-      chart: policy-reporter
-      version: "3.11.2"
-      sourceRef:
-        kind: HelmRepository
-        name: policy-reporter
-        namespace: kyverno
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: policy-reporter
+    namespace: kyverno
   install:
     remediation:
       retries: 3

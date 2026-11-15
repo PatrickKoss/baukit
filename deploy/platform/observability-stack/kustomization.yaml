@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - helmrepositories.yaml
+  - oci-repositories.yaml
   - kube-prometheus-stack.yaml
   - loki.yaml
   - tempo.yaml

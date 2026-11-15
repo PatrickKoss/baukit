@@ -2,9 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - namespace.yaml
-  - helm-repository.yaml
+  - oci-repository.yaml
   - helm-release.yaml
-  - policy-reporter-repository.yaml
+  - policy-reporter-oci-repository.yaml
   - policy-reporter-release.yaml
   - network-policy.yaml
 namespace: kyverno

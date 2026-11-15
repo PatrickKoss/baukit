@@ -6,15 +6,10 @@ metadata:
 spec:
   interval: 30m
   timeout: 5m
-  chart:
-    spec:
-      chart: flagger
-      version: "1.45.0"
-      sourceRef:
-        kind: HelmRepository
-        name: flagger
-        namespace: flagger-system
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: flagger
+    namespace: flagger-system
   install:
     crds: CreateReplace
     remediation:

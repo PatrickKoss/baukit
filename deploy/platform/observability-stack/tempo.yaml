@@ -9,15 +9,10 @@ spec:
   dependsOn:
     - name: kube-prometheus-stack
       namespace: observability
-  chart:
-    spec:
-      chart: tempo
-      version: "2.4.0"
-      sourceRef:
-        kind: HelmRepository
-        name: grafana-community
-        namespace: observability
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: tempo
+    namespace: observability
   install:
     remediation:
       retries: 3

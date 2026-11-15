@@ -815,12 +815,25 @@ class ChartValuesTest(unittest.TestCase):
                 archive.addfile(info, io.BytesIO(payload))
             (root / "charts/local").mkdir(parents=True)
             (root / "charts/local/values.yaml").write_text("a: 1\n")
-            remote = cc.chart_values_text(helm_release("x", "x", "1.0.0"), root, root)
-            local = cc.chart_values_text(helm_release("l", "./charts/local", ""), root, root)
-            missing = cc.chart_values_text(helm_release("x", "x", "2.0.0"), root, root)
+            remote = cc.chart_values_text(("x", "1.0.0"), root, root)
+            local = cc.chart_values_text(("./charts/local", ""), root, root)
+            missing = cc.chart_values_text(("x", "2.0.0"), root, root)
         self.assertEqual(remote, payload.decode())
         self.assertEqual(local, "a: 1\n")
         self.assertIsNone(missing)
+
+    def test_chart_ref_resolves_through_its_oci_repository(self) -> None:
+        release = resource(
+            "HelmRelease",
+            "x",
+            "app",
+            apiVersion="helm.toolkit.fluxcd.io/v2",
+            spec={"chartRef": {"kind": "OCIRepository", "name": "x"}},
+        )
+        source = {"spec": {"url": "oci://ghcr.io/acme/charts/x", "ref": {"tag": "1.0.0"}}}
+        self.assertEqual(cc.chart_key(release, {("app", "x"): source}), "x@1.0.0")
+        with self.assertRaisesRegex(cc.ConventionError, "missing OCIRepository app/x"):
+            cc.chart_key(release, {})
 
 
 RENDERED_BASE = """\

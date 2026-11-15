@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import chart_source
 import helm_yaml
 import image_digests
 
@@ -121,6 +122,7 @@ class Context:
         default_factory=lambda: image_digests.Exemptions({}, {})
     )
     installs: dict[str, list[Resource]] = field(default_factory=dict)
+    chart_sources: dict[chart_source.SourceKey, dict] = field(default_factory=dict)
 
 
 Rule = Callable[[Context], Iterable[str]]
@@ -231,9 +233,18 @@ def rule_default_deny(context: Context) -> Iterable[str]:
                 )
 
 
-def chart_key(release: Resource) -> str:
-    chart = (release.spec.get("chart") or {}).get("spec") or {}
-    return f"{chart.get('chart', '')}@{chart.get('version', '')}"
+def release_chart(
+    release: Resource, sources: dict[chart_source.SourceKey, dict]
+) -> tuple[str, str]:
+    try:
+        return chart_source.release_chart(release.obj, sources, release.namespace)
+    except chart_source.ChartSourceError as error:
+        raise ConventionError(str(error)) from error
+
+
+def chart_key(release: Resource, sources: dict[chart_source.SourceKey, dict]) -> str:
+    name, version = release_chart(release, sources)
+    return f"{name}@{version}"
 
 
 def monitor_toggles(values: object, path: tuple[str, ...] = ()) -> list[str]:
@@ -274,7 +285,7 @@ def condition_disabled(values: dict, condition: str) -> bool:
 
 
 def effective_values(release: Resource, context: Context) -> dict | None:
-    key = chart_key(release)
+    key = chart_key(release, context.chart_sources)
     defaults = context.chart_values.get(key)
     if defaults is None:
         return None
@@ -297,7 +308,7 @@ def rule_metrics_enabled(context: Context) -> Iterable[str]:
         for release in by_kind(resources, "HelmRelease"):
             values = effective_values(release, context)
             if values is None:
-                key = chart_key(release)
+                key = chart_key(release, context.chart_sources)
                 yield f"{universe}: no chart values found for {release.ref()} ({key})"
                 continue
             toggles = monitor_toggles(values)
@@ -813,14 +824,12 @@ def build_universes(rendered: dict[Path, list[dict]]) -> dict[str, list[Resource
 
 
 def chart_file_text(
-    release: Resource, chart_cache: Path, repo_root: Path, file: str = "values.yaml"
+    chart: tuple[str, str], chart_cache: Path, repo_root: Path, file: str = "values.yaml"
 ) -> str | None:
-    chart = (release.spec.get("chart") or {}).get("spec") or {}
-    name = str(chart.get("chart", ""))
+    name, version = chart
     if name.startswith("./"):
         path = repo_root / name / file
         return path.read_text() if path.is_file() else None
-    version = str(chart.get("version", ""))
     for archive in sorted(chart_cache.glob("*.tgz")):
         if not fnmatch.fnmatchcase(archive.name, f"{name}-{version}-*.tgz"):
             continue
@@ -831,8 +840,8 @@ def chart_file_text(
     return None
 
 
-def chart_values_text(release: Resource, chart_cache: Path, repo_root: Path) -> str | None:
-    return chart_file_text(release, chart_cache, repo_root)
+def chart_values_text(chart: tuple[str, str], chart_cache: Path, repo_root: Path) -> str | None:
+    return chart_file_text(chart, chart_cache, repo_root)
 
 
 def dependency_conditions(chart: dict) -> list[tuple[str, str]]:
@@ -925,14 +934,22 @@ def build_context(
     tests = promtool_test_files(repo_root)
     parsed = parse_files([*rendered_paths, *packs, *tests])
     universes = build_universes({path: parsed[path] for path in rendered_paths})
+    sources = {
+        key: obj
+        for resources in universes.values()
+        for key, obj in chart_source.oci_sources(
+            [resource.obj for resource in resources if resource.managed_by_kustomize]
+        ).items()
+    }
     values_text, chart_text = {}, {}
     for _, resource in all_resources(Context(universes)):
         if resource.kind == "HelmRelease":
-            text = chart_values_text(resource, chart_cache, repo_root)
+            chart = release_chart(resource, sources)
+            text = chart_values_text(chart, chart_cache, repo_root)
             if text is not None:
-                values_text[chart_key(resource)] = text
-                chart_text[chart_key(resource)] = (
-                    chart_file_text(resource, chart_cache, repo_root, "Chart.yaml") or "{}"
+                values_text[chart_key(resource, sources)] = text
+                chart_text[chart_key(resource, sources)] = (
+                    chart_file_text(chart, chart_cache, repo_root, "Chart.yaml") or "{}"
                 )
     keys = sorted(values_text)
     chart_documents = helm_yaml.parse_documents(
@@ -954,6 +971,7 @@ def build_context(
         network_policy_exempt=set(config.get("network_policy_exempt_namespaces") or []),
         policy_exception_budget=int(budget.get("policy_exceptions", 0)),
         installs=build_installs({path: parsed[path] for path in rendered_paths}),
+        chart_sources=sources,
     )
 
 

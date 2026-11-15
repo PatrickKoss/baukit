@@ -103,3 +103,47 @@ spec:
     crds: CreateReplace
     remediation:
       retries: 3
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: oci-crd-chart
+  namespace: demo
+spec:
+  interval: "30m"
+  timeout: "5m"
+  chartRef:
+    kind: OCIRepository
+    name: traefik
+  driftDetection:
+    mode: warn
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: oci-crd-chart-default
+  namespace: demo
+spec:
+  interval: "30m"
+  timeout: "5m"
+  chartRef:
+    kind: OCIRepository
+    name: traefik
+  driftDetection:
+    mode: warn
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3

@@ -1,0 +1,44 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: kube-prometheus-stack
+  namespace: observability
+spec:
+  interval: 24h
+  url: oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack
+  ref:
+    tag: "88.6.5"
+    digest: sha256:6d1ebbcdd48c63658a5da23bcf11a9f048d19b2909f22017cfa6a9cbf4d5aff9
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: loki
+  namespace: observability
+spec:
+  interval: 24h
+  url: oci://ghcr.io/grafana-community/helm-charts/loki
+  ref:
+    tag: "18.13.7"
+    digest: sha256:e1895eab42130d19a574e1c7a19af84d7e03a8f7fbe2fc6da5fa7e878f15c2bd
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: tempo
+  namespace: observability
+spec:
+  interval: 24h
+  url: oci://ghcr.io/grafana-community/helm-charts/tempo
+  ref:
+    tag: "2.4.0"
+    digest: sha256:276b42fdc8170df2e3eb5b510c193f9e62048af436caef9189abe46e587a548d
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy

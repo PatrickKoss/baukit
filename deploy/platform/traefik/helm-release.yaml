@@ -6,15 +6,10 @@ metadata:
 spec:
   interval: 30m
   timeout: 5m
-  chart:
-    spec:
-      chart: traefik
-      version: "41.6.1"
-      sourceRef:
-        kind: HelmRepository
-        name: traefik
-        namespace: traefik
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: traefik
+    namespace: traefik
   install:
     crds: CreateReplace
     remediation:
