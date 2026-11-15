@@ -9,6 +9,8 @@ repo_root=$(cd -- "$platform_dir/../.." && pwd)
 source "$platform_dir/local-git-http.sh"
 # shellcheck source=deploy/platform/flux-lockdown.sh
 source "$platform_dir/flux-lockdown.sh"
+# shellcheck source=deploy/platform/runtime-identity.sh
+source "$platform_dir/runtime-identity.sh"
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"
 
@@ -228,34 +230,9 @@ import_echo_image() {
   k3d image import -c "$cluster_name" "$echo_image" >/dev/null
 }
 
-apply_secret() {
-  local namespace=$1 name=$2
-  shift 2
-  kubectl -n "$namespace" create secret generic "$name" "$@" \
-    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-}
-
 apply_runtime_identity() {
-  local namespace
-  for namespace in postgres observability; do
-    kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-    kubectl label namespace "$namespace" app.kubernetes.io/part-of=baukit-platform --overwrite >/dev/null
-  done
-  local access_key secret_key
-  access_key="e2e-$(openssl rand -hex 6)"
-  secret_key=$(openssl rand -hex 18)
-  apply_secret postgres product-db-credentials --type=kubernetes.io/basic-auth \
-    --from-literal=username=product_owner --from-literal=password="$(openssl rand -hex 18)"
-  apply_secret postgres postgres-backup-credentials \
-    --from-literal=ACCESS_KEY_ID="$access_key" --from-literal=ACCESS_SECRET_KEY="$secret_key"
-  apply_secret postgres rustfs-root \
-    --from-literal=username="$access_key" --from-literal=password="$secret_key"
-  apply_secret observability rustfs-root \
-    --from-literal=username="$access_key" --from-literal=password="$secret_key"
-  apply_secret observability grafana-admin \
-    --from-literal=admin-user=admin --from-literal=admin-password="$(openssl rand -hex 18)"
-  kubectl -n observability create configmap observability-cluster \
-    --from-literal=environment=e2e --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  platform_runtime_identity e2e "$(openssl rand -hex 18)" "e2e-$(openssl rand -hex 6)" \
+    "$(openssl rand -hex 18)" admin "$(openssl rand -hex 18)"
 }
 
 install_flux() {

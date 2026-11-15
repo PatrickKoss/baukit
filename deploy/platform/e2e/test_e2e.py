@@ -187,5 +187,53 @@ class HeavySlotTests(unittest.TestCase):
         self.assertEqual(output, "proceeded\n")
 
 
+class RuntimeIdentityTests(unittest.TestCase):
+    def run_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = Path(tmp) / "calls"
+            kubectl = Path(tmp) / "kubectl"
+            kubectl.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >>"$CALLS"\n')
+            kubectl.chmod(0o755)
+            helper = PLATFORM / "runtime-identity.sh"
+            script = f'source "{helper}"; platform_runtime_identity e2e p a s u g'
+            env = {**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}", "CALLS": str(calls)}
+            result = process_runner.run_process(
+                ["bash", "-c", script], env=env, capture_output=True, text=True
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return calls.read_text().splitlines()
+
+    def test_cluster_config_map_lands_where_alloy_runs(self):
+        calls = self.run_identity()
+        self.assertIn(
+            "-n observability-agents create configmap observability-cluster "
+            "--from-literal=environment=e2e --dry-run=client -o yaml",
+            calls,
+        )
+
+    def test_secrets_land_in_their_consumer_namespaces(self):
+        created = {
+            tuple(call.split()[1:2] + call.split()[5:6])
+            for call in self.run_identity()
+            if " create secret generic " in call
+        }
+        self.assertEqual(
+            created,
+            {
+                ("postgres", "product-db-credentials"),
+                ("postgres", "postgres-backup-credentials"),
+                ("postgres", "rustfs-root"),
+                ("observability", "rustfs-root"),
+                ("observability", "grafana-admin"),
+            },
+        )
+
+    def test_both_entry_points_share_the_helper(self):
+        for script in (PLATFORM / "platform-up.sh", E2E / "run.sh"):
+            text = script.read_text()
+            self.assertIn("platform_runtime_identity ", text, script)
+            self.assertNotIn("create configmap observability-cluster", text, script)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -43,6 +43,7 @@ spec:
   serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-baseline
+    - name: e2e-observability
   interval: 10m
   retryInterval: 30s
   timeout: 10m
@@ -100,6 +101,7 @@ spec:
   serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-cert-manager
+    - name: e2e-observability
   interval: 10m
   retryInterval: 30s
   timeout: 15m
@@ -160,6 +162,7 @@ spec:
   serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-baseline
+    - name: e2e-observability
   interval: 10m
   retryInterval: 30s
   timeout: 10m
