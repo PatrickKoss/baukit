@@ -90,12 +90,12 @@ YAML
 
 # Prints "PASS FAIL WARN INFO" from the "== Summary total ==" block of a kube-bench report.
 kube_bench_score() {
-  awk '
-    /^== Summary total ==/ { total = 1; next }
-    total && /checks PASS/ { pass = $1 }
-    total && /checks FAIL/ { fail = $1 }
-    total && /checks WARN/ { warn = $1 }
-    total && /checks INFO/ { info = $1 }
+  awk -v header="== Summary ${2:-total} ==" '
+    /^== Summary / { inside = ($0 == header); next }
+    inside && /checks PASS/ { pass = $1 }
+    inside && /checks FAIL/ { fail = $1 }
+    inside && /checks WARN/ { warn = $1 }
+    inside && /checks INFO/ { info = $1 }
     END {
       if (pass == "" || fail == "" || warn == "" || info == "") exit 1
       print pass, fail, warn, info
@@ -104,7 +104,7 @@ kube_bench_score() {
 }
 
 kube_bench_report() {
-  local report=$1/kube-bench.txt score pass fail warn info
+  local report=$1/kube-bench.txt score pass fail warn info section
   printf 'Running kube-bench %s (report only)\n' "$kube_bench_benchmark"
   kubectl -n kube-system delete job kube-bench --ignore-not-found >/dev/null
   kube_bench_job | kubectl apply -f - >/dev/null
@@ -114,11 +114,13 @@ kube_bench_report() {
     return 1
   fi
   kubectl -n kube-system logs job/kube-bench >"$report"
-  if ! score=$(kube_bench_score "$report"); then
-    printf 'ERROR: kube-bench printed no summary; see %s\n' "$report" >&2
-    return 1
-  fi
-  read -r pass fail warn info <<<"$score"
-  printf 'kube-bench %s: %s PASS, %s FAIL, %s WARN, %s INFO (report: %s)\n' \
-    "$kube_bench_benchmark" "$pass" "$fail" "$warn" "$info" "$report"
+  for section in total etcd; do
+    if ! score=$(kube_bench_score "$report" "$section"); then
+      printf 'ERROR: kube-bench printed no %s summary; see %s\n' "$section" "$report" >&2
+      return 1
+    fi
+    read -r pass fail warn info <<<"$score"
+    printf 'kube-bench %s %s: %s PASS, %s FAIL, %s WARN, %s INFO (report: %s)\n' \
+      "$kube_bench_benchmark" "$section" "$pass" "$fail" "$warn" "$info" "$report"
+  done
 }

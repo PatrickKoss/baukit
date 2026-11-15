@@ -29,7 +29,9 @@ Before it creates the cluster the runner takes `flock` on
 When `BAUKIT_HEAVY_SLOT_DIR` is set, it then waits, polling every 30 seconds, while both `slot-1` and
 `slot-2` exist in that directory. Without it there is no slot wait. After k3d creates the cluster it
 waits up to 2 minutes for a node to register and prints the server's last 30 log lines if none does.
-It holds no product
+The cluster runs on k3s's embedded etcd (`--cluster-init`). The default SQLite datastore through kine
+exits fatally on a failed commit when a starved host cancels its request, which restarted servers
+mid-run. It holds no product
 gate lock such as `android.lock` or `browser.lock`.
 
 `--without NAME` drops `e2e-NAME` from the rendered overlay and from every `dependsOn` list. It is for
@@ -65,7 +67,8 @@ Three checks prove they bite:
   a `k8s:enc:` envelope and no plaintext, then creates a Secret and polls Loki for its audit event
   (`{service="kube-audit"}`) and checks the event carries no request body;
 - after the suites, `kube_bench_report` runs kube-bench (`k3s-cis-1.9`, image pinned by digest) as a Job
-  in `kube-system` and prints `kube-bench k3s-cis-1.9: N PASS, N FAIL, N WARN, N INFO`. The findings are
+  in `kube-system` and prints `kube-bench k3s-cis-1.9 total: N PASS, N FAIL, N WARN, N INFO`, then the same
+  line for the `etcd` section. The findings are
   report-only; the step fails only when the Job does not complete or prints no summary. The full report is
   `kube-bench.txt` in the artifacts.
 

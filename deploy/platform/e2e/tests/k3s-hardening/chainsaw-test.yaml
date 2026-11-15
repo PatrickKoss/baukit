@@ -23,11 +23,11 @@ spec:
               status=$(docker exec "$server" k3s secrets-encrypt status)
               printf '%s\n' "$status" | grep -q '^Encryption Status: Enabled' || { echo "$status" >&2; exit 1; }
               key=/registry/secrets/$NAMESPACE/at-rest
-              found=$(docker exec "$server" sh -c 'cat /var/lib/rancher/k3s/server/db/state.db* | grep -c "$1" || true' sh "$key")
+              found=$(docker exec "$server" sh -c 'find /var/lib/rancher/k3s/server/db -type f -exec cat {} + | grep -c "$1" || true' sh "$key")
               [ "$found" -gt 0 ] || { echo "the datastore has no row for $key" >&2; exit 1; }
-              plain=$(docker exec "$server" sh -c 'cat /var/lib/rancher/k3s/server/db/state.db* | grep -c "$1" || true' sh "$marker")
+              plain=$(docker exec "$server" sh -c 'find /var/lib/rancher/k3s/server/db -type f -exec cat {} + | grep -c "$1" || true' sh "$marker")
               [ "$plain" -eq 0 ] || { echo "the datastore holds the Secret value in plaintext" >&2; exit 1; }
-              docker exec "$server" sh -c 'cat /var/lib/rancher/k3s/server/db/state.db* | grep -q "k8s:enc:"' ||
+              docker exec "$server" sh -c 'find /var/lib/rancher/k3s/server/db -type f -exec cat {} + | grep -q "k8s:enc:"' ||
                 { echo "the datastore has no k8s:enc: envelope" >&2; exit 1; }
               echo "Secret $key is encrypted at rest"
     - name: secret-write-reaches-loki-as-audit-event
