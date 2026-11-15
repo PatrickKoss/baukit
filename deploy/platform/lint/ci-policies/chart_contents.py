@@ -14,6 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import chart_source
 import helm_yaml
 
 HERE = Path(__file__).resolve().parent
@@ -42,9 +43,11 @@ class Contents:
     tests: bool
 
 
-def chart_reference(release: dict) -> tuple[str, str]:
-    spec = (release.get("spec") or {}).get("chart", {}).get("spec") or {}
-    return str(spec.get("chart", "")), str(spec.get("version", ""))
+def chart_reference(release: dict, sources: dict | None = None) -> tuple[str, str]:
+    try:
+        return chart_source.release_chart(release, sources or {})
+    except chart_source.ChartSourceError as error:
+        raise ContentsError(str(error)) from error
 
 
 def chart_key(name: str, version: str) -> str:
@@ -71,25 +74,29 @@ def find_archive(chart_cache: Path, name: str, version: str) -> Path:
     return matches[0]
 
 
-def releases_by_render(rendered: Path) -> list[tuple[dict, Path]]:
+def releases_by_render(rendered: Path) -> list[tuple[dict, Path, dict]]:
     found = []
     for base in sorted(rendered.glob("base-*.yaml")):
         documents = [
             document
             for document in helm_yaml.split_documents(base.read_text())
-            if re.search(r"^kind: HelmRelease$", document, re.MULTILINE)
+            if re.search(r"^kind: (HelmRelease|OCIRepository)$", document, re.MULTILINE)
         ]
         base_name = base.stem.removeprefix("base-")
-        for release in helm_yaml.parse_documents(documents):
+        objects = helm_yaml.parse_documents(documents)
+        sources = chart_source.oci_sources(objects)
+        for release in objects:
+            if release.get("kind") != "HelmRelease":
+                continue
             name = release["metadata"]["name"]
-            found.append((release, rendered / f"chart-{base_name}-{name}.yaml"))
+            found.append((release, rendered / f"chart-{base_name}-{name}.yaml", sources))
     return found
 
 
 def collect(rendered: Path, chart_cache: Path, repo_root: Path) -> dict[str, Contents]:
     contents: dict[str, Contents] = {}
-    for release, chart_render in releases_by_render(rendered):
-        name, version = chart_reference(release)
+    for release, chart_render, sources in releases_by_render(rendered):
+        name, version = chart_reference(release, sources)
         if name.startswith("./"):
             crds = local_chart_has_crds(repo_root / name)
         else:

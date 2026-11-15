@@ -229,7 +229,7 @@ def render_app(profile: str, values: Path, run: Runner) -> str:
 
 def release_namespaces(rendered: Path) -> dict[str, str]:
     namespaces = {}
-    for release, chart in chart_contents.releases_by_render(rendered):
+    for release, chart, _ in chart_contents.releases_by_render(rendered):
         spec = release.get("spec") or {}
         namespaces[chart.name] = spec.get("targetNamespace") or namespace_of(release) or "default"
     return namespaces

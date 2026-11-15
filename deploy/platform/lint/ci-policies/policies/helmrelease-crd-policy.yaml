@@ -17,7 +17,8 @@ spec:
     - name: chartsWithCrds
       expression: '["alloy", "flagger", "kube-prometheus-stack", "loki", "posthog", "traefik"]'
     - name: chart
-      expression: object.spec.?chart.?spec.?chart.orValue("")
+      expression: >-
+        object.spec.?chart.?spec.?chart.orValue(object.spec.?chartRef.?name.orValue(""))
   validations:
     - expression: >-
         !(variables.chart in variables.chartsWithCrds) ||
