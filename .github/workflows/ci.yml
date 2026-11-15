@@ -326,8 +326,8 @@ jobs:
           path: .tools
           key: deploy-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('deploy/tools.toml') }}
       - run: scripts/install-deploy-tools.sh
-      - name: Kernel defaults for k3s --protect-kernel-defaults
-        run: sudo sysctl -w vm.overcommit_memory=1 vm.panic_on_oom=0 kernel.panic=10 kernel.panic_on_oops=1
+      - name: Host sysctls for local k3s
+        run: sudo sysctl -w vm.overcommit_memory=1 vm.panic_on_oom=0 kernel.panic=10 kernel.panic_on_oops=1 fs.inotify.max_user_instances=1024 fs.inotify.max_user_watches=1048576
       - run: scripts/ci-gate.sh --step platform-e2e
 
   openapi-compatibility:

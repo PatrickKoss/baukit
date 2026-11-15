@@ -44,6 +44,8 @@ KERNEL_DEFAULTS = {
     "vm/panic_on_oom": "0",
     "kernel/panic": "10",
     "kernel/panic_on_oops": "1",
+    "fs/inotify/max_user_instances": "512",
+    "fs/inotify/max_user_watches": "524288",
 }
 
 
@@ -173,6 +175,27 @@ class BindAddressTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("vm.overcommit_memory=1 (now 0)", result.stderr)
+        self.assertNotIn("cluster create", calls)
+
+    def test_inotify_limits_are_minimums(self) -> None:
+        result, calls = self.run_with_stubs(
+            "k3d_create_local_cluster ph img random 8080 8443",
+            sysctls={
+                **KERNEL_DEFAULTS,
+                "fs/inotify/max_user_instances": "1024",
+                "fs/inotify/max_user_watches": "1048576",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("cluster create", calls)
+
+    def test_low_inotify_limits_fail_before_k3d(self) -> None:
+        result, calls = self.run_with_stubs(
+            "k3d_create_local_cluster ph img random 8080 8443",
+            sysctls={**KERNEL_DEFAULTS, "fs/inotify/max_user_instances": "128"},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fs.inotify.max_user_instances>=512 (now 128)", result.stderr)
         self.assertNotIn("cluster create", calls)
 
     def test_missing_kernel_setting_fails_before_k3d(self) -> None:

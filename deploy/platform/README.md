@@ -485,8 +485,11 @@ no payload reaches Loki, keeps the request body of RBAC writes, and logs
 everything else at `Metadata`. `--protect-kernel-defaults` makes the kubelet
 refuse to start unless the host already has `vm.overcommit_memory=1`,
 `vm.panic_on_oom=0`, `kernel.panic=10` and `kernel.panic_on_oops=1`;
-`k3d_create_local_cluster` checks them first and names the ones to set with
-`sysctl -w`. The WSL2 kernel ships these values. A cluster created before these
+`k3d_create_local_cluster` checks them first, plus the minimums
+`fs.inotify.max_user_instances>=512` and `fs.inotify.max_user_watches>=524288`,
+and names the ones to set with `sysctl -w`. Every container of the host user shares
+the inotify limits, so with the default of 128 instances a second or third
+parallel cluster fails with `too many open files` and its node never registers. The WSL2 kernel ships these values. A cluster created before these
 flags keeps its old arguments; recreate it with `down --delete` and `up`.
 
 - If `GitRepository/baukit` reports an EOF or connection failure, inspect

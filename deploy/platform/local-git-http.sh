@@ -36,18 +36,28 @@ platform_k3s_server_args() {
     --kube-apiserver-arg=audit-log-maxsize=100
 }
 
-# The kubelet refuses to start under --protect-kernel-defaults unless these
-# sysctls already hold the values it would set. Containers share the host values.
+# The kubelet refuses to start under --protect-kernel-defaults unless the exact
+# sysctls already hold the values it would set. The inotify minimums are shared
+# by every container of the host user, so parallel clusters exhaust the default
+# 128 instances and a k3s server never registers its node. Containers share the
+# host values.
 platform_require_kernel_defaults() {
   local sysctl_root=${platform_sysctl_root:-/proc/sys}
-  local expected setting actual wrong=()
-  for expected in vm/overcommit_memory=1 vm/panic_on_oom=0 kernel/panic=10 kernel/panic_on_oops=1; do
-    setting=${expected%=*}
+  local check setting want actual wrong=()
+  for check in vm/overcommit_memory=1 vm/panic_on_oom=0 kernel/panic=10 kernel/panic_on_oops=1 \
+    'fs/inotify/max_user_instances>=512' 'fs/inotify/max_user_watches>=524288'; do
+    setting=${check%%[=>]*}
+    want=${check#"$setting"}
     actual=$(cat -- "$sysctl_root/$setting" 2>/dev/null) || actual=unreadable
-    [[ $actual == "${expected#*=}" ]] || wrong+=("${setting//\//.}=${expected#*=} (now $actual)")
+    if [[ $want == '>='* ]]; then
+      [[ $actual =~ ^[0-9]+$ ]] && ((actual >= ${want#>=})) && continue
+    elif [[ $actual == "${want#=}" ]]; then
+      continue
+    fi
+    wrong+=("${setting//\//.}$want (now $actual)")
   done
   if ((${#wrong[@]})); then
-    printf 'ERROR: k3s runs with --protect-kernel-defaults and needs these host sysctls: %s\n' "${wrong[*]}" >&2
+    printf 'ERROR: local k3s needs these host sysctls (set them with sysctl -w): %s\n' "${wrong[*]}" >&2
     return 1
   fi
 }
