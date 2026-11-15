@@ -295,7 +295,10 @@ class SmokeOrderTest(unittest.TestCase):
         self.assertLess(allowlist, policies)
         self.assertLess(policies, namespace)
         self.assertLess(namespace, product)
-        self.assertIn("registries=demo-api:1\npostgres:18 ", "\n".join(lines))
+        self.assertIn(
+            "registries=docker.io/library/demo-api:1\ndocker.io/library/postgres:18 ",
+            "\n".join(lines),
+        )
         applied = "\n".join(lines[policies:namespace])
         self.assertIn("kind: ValidatingPolicy", applied)
         self.assertNotIn("- Audit", applied)
@@ -351,3 +354,26 @@ class SmokeOrderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResolvedImageTest(unittest.TestCase):
+    def test_allowlist_uses_the_form_the_registry_policy_compares(self) -> None:
+        text = ENFORCE.read_text()
+        start = text.index("resolved_image() {")
+        function = text[start : text.index("\n}\n", start) + 3]
+        cases = {
+            "postgres:18": "docker.io/library/postgres:18",
+            "rancher/k3s:v1": "docker.io/rancher/k3s:v1",
+            "ghcr.io/org/app:1": "ghcr.io/org/app:1",
+            "localhost:5000/app:1": "localhost:5000/app:1",
+            "localhost/app:1": "localhost/app:1",
+        }
+        for image, expected in cases.items():
+            with self.subTest(image=image):
+                result = process_runner.run_process(
+                    ["bash", "-c", f'{function}resolved_image "$1"', "resolved_image", image],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.stdout.strip(), expected)
