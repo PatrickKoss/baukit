@@ -14,7 +14,8 @@ deploy/platform/e2e/run.sh --without kyverno-policies # leave out Flux Kustomiza
 
 The cluster comes from `k3d_create_local_cluster` in `../local-git-http.sh`, the helper the lifecycle uses. The API
 and load balancer bind 127.0.0.1 and the snapshot server binds the k3d network gateway. The cluster network is the
-first `/24` in `10.89.100-199` that overlaps no IPv4 subnet of a Docker network (override with
+first `/24` in `10.89.100-199` that overlaps no IPv4 subnet of a Docker network and whose gateway `.1`
+no running container publishes a port on (override with
 `BAUKIT_E2E_SUBNET`). If `k3d cluster create` still fails with `Pool overlaps`, the runner retries with the
 next free `/24`, up to 5 attempts, unless `BAUKIT_E2E_SUBNET` is set. The subnet sits inside the `nodeCIDR` of
 `../overlays/local/cluster-network`, so the node-cidr NetworkPolicies admit the API server. Every base with

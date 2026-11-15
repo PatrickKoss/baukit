@@ -165,14 +165,16 @@ cluster_exists() {
 
 # The cluster network must sit inside nodeCIDR (10.89.0.0/16) from overlays/local/cluster-network, so
 # the node-cidr NetworkPolicies match the node. Picks the first /24 that overlaps no IPv4 subnet of a
-# Docker network and is not in $tried_subnets.
+# Docker network, whose gateway .1 no running container publishes a port on (a leaked container can
+# outlive its network), and is not in $tried_subnets.
 free_subnet() {
   if [[ -n ${BAUKIT_E2E_SUBNET:-} ]]; then
     printf '%s\n' "$BAUKIT_E2E_SUBNET"
     return
   fi
-  local used
+  local used bound
   used=$(docker network ls -q | xargs -r docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}')
+  bound=$(docker ps --format '{{.Ports}}' | grep -oE '10\.89\.[0-9]+\.1:' | sed 's#:$#/32#' || true)
   python3 -c '
 import ipaddress, sys
 first, last, used = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3].split()
@@ -184,7 +186,7 @@ for third in range(first, last + 1):
         print(candidate)
         sys.exit(0)
 sys.exit(1)
-' "$e2e_subnet_first" "$e2e_subnet_last" "$used" "${tried_subnets[@]}" && return
+' "$e2e_subnet_first" "$e2e_subnet_last" "$used $bound" "${tried_subnets[@]}" && return
   printf 'ERROR: no free /24 in 10.89.%s-%s.0; set BAUKIT_E2E_SUBNET\n' "$e2e_subnet_first" "$e2e_subnet_last" >&2
   exit 1
 }

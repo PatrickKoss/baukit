@@ -328,6 +328,7 @@ class SubnetTests(unittest.TestCase):
                 'case "$1 $2" in\n'
                 '  "network ls") echo net1 ;;\n'
                 '  "network inspect") printf "%s\\n" "$SUBNETS" ;;\n'
+                '  "ps --format") printf "%s\\n" "${PORTS:-}" ;;\n'
                 '  "info --format") echo 2 ;;\n'
                 "esac\n"
             )
@@ -374,6 +375,18 @@ class SubnetTests(unittest.TestCase):
 
     def test_an_exact_match_is_skipped(self):
         result, _ = self.run_runner_function("free_subnet", "10.89.100.0/24 172.17.0.0/16 ")
+        self.assertEqual(result.stdout, "10.89.101.0/24\n")
+
+    def test_a_gateway_bound_by_a_leaked_container_is_skipped(self):
+        result, _ = self.run_runner_function(
+            "free_subnet",
+            "",
+            extra_env={
+                "PORTS": "10.89.100.1:9418->9418/tcp, 127.0.0.1:8080->80/tcp\n"
+                "10.89.101.7:80->80/tcp"
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "10.89.101.0/24\n")
 
     def test_an_overlapping_slash_16_leaves_no_candidate(self):
