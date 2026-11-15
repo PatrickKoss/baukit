@@ -18,11 +18,11 @@ use std::{
 use tower::ServiceExt;
 use uuid::Uuid;
 
-const PRODUCT: &str = "ahp";
+const PRODUCT: &str = "bv";
 const ALICE: &str = "suite-test|alice";
 const PLANS_URL: &str = "https://accounts.example.test/plans";
-const PRIVACY: &str = "ahp.privacy";
-const AUTOMATION: &str = "ahp.automation";
+const PRIVACY: &str = "bv.privacy";
+const AUTOMATION: &str = "bv.automation";
 const STUDIO: Uuid = Uuid::from_u128(0x0a);
 const AGENCY: Uuid = Uuid::from_u128(0x0b);
 const STRANGERS: Uuid = Uuid::from_u128(0x0c);

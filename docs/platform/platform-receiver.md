@@ -289,7 +289,7 @@ release calls do not emit one. On `PlatformEventKind::CreditsChanged`, call
 `CreditBalance` follows the bucketed balance of Schlüsselbund C21:
 
 ```json
-{"suiteSubject":"suite-dev|alice","wallet":"sololeveling","revision":3,"total":160,"grant":{"available":110,"expiresAt":1780272000},"packs":[{"available":50,"expiresAt":1804636800}]}
+{"suiteSubject":"suite-dev|alice","wallet":"heldengang","revision":3,"total":160,"grant":{"available":110,"expiresAt":1780272000},"packs":[{"available":50,"expiresAt":1804636800}]}
 ```
 
 `total` is what a reserve can take now: `grant.available` plus every pack.
@@ -356,7 +356,7 @@ For other routes with query parameters, call
 form-encoded in the given order, path segments are percent-encoded as in
 `get_json`, and an empty slice sends no `?`. The call uses the same cached token,
 single 401 retry and `HubError` mapping. Runtime Analyzer and
-architecture-health-platform can drop their own client-credentials token fetch
+bauvisite can drop their own client-credentials token fetch
 and page the seat directory through the shared `HubClient`.
 
 The contract tests in `tests/platform_hub.rs` serve the recorded hub bodies from

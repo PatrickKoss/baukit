@@ -542,7 +542,7 @@ mod tests {
     #[test]
     fn default_emulator_ports_start_a_product_block() {
         let ports: Vec<u16> = [
-            "architecture-health-platform",
+            "bauvisite",
             "eigenruhe",
             "hebkit",
             "kassensturz",
@@ -552,7 +552,7 @@ mod tests {
             "finops",
             "schlauzug",
             "schluesselbund",
-            "solo-leveling-system",
+            "heldengang",
             "tiefgang",
         ]
         .iter()

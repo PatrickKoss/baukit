@@ -47,7 +47,7 @@ declare const transport: Transport<ProductEvent>; // for example, a PostHog adap
 const analytics = new AnalyticsClient<ProductEvent>({
   context: {
     schema_version: 1,
-    app: 'architecture-health',
+    app: 'bauvisite',
     app_version: '1.0.0',
     platform: 'web',
     environment: 'production',

@@ -45,7 +45,7 @@ violation with its JSON pointer. Generated products run it in the `openapi_drift
 
 ## Versioning and releases
 
-- Everything stays 0.x until the fourth application (the architecture health platform) has survived two foundation upgrades. Pre-1.0, breaking changes bump the minor version.
+- Everything stays 0.x until the fourth application (Bauvisite) has survived two foundation upgrades. Pre-1.0, breaking changes bump the minor version.
 - Rust: `release-plz` for versioning, changelogs, and release tags. Products consume the crates from crates.io pinned to an exact version; a git dependency on a release tag stays available for unreleased work.
 - Third-party Rust dependencies use caret requirements with tested minimum versions. A bare version such as `"1.53.1"` means `^1.53.1`; `"0.9.0"` permits compatible 0.9 patches. Products own their lockfiles and can update these dependencies within the declared ranges without a Baukit release. Baukit commits its lockfiles to keep CI reproducible and verifies both direct minimums and the newest compatible resolution when changing requirements. Exact third-party pins need a documented semver incompatibility, a comment beside the requirement, and an exception in `scripts/test_rust_dependency_requirements.py`. Internal `baukit-*` requirements stay exact because the crates release together.
 - TypeScript: Changesets for versioning and changelogs. The release workflow publishes every `@baukit/*` package to npm through trusted publishing, and products pin each one to the exact train version. Renovate updates the pins.

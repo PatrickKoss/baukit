@@ -933,7 +933,7 @@
           "id": "0199ba71-6000-7000-8000-000000000010",
           "linkId": null,
           "peerApp": "beta",
-          "returnUrl": "solo-leveling-system://suite/linked?view=settings",
+          "returnUrl": "heldengang://suite/linked?view=settings",
           "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
           "userId": "0199ba71-6000-7000-8000-000000000004"
         }
@@ -947,7 +947,7 @@
         "state": "ICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8"
       },
       "response": {
-        "location": "solo-leveling-system://suite/linked?view=settings&state=client-nonce-17&request=0199ba71-6000-7000-8000-000000000010&code=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+        "location": "heldengang://suite/linked?view=settings&state=client-nonce-17&request=0199ba71-6000-7000-8000-000000000010&code=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
       }
     },
     {
@@ -1232,7 +1232,7 @@
     }
   ],
   "returnUrls": {
-    "scheme": "solo-leveling-system",
+    "scheme": "heldengang",
     "vectors": [
       {
         "expected": true,
@@ -1240,7 +1240,7 @@
       },
       {
         "expected": true,
-        "url": "solo-leveling-system://suite/linked"
+        "url": "heldengang://suite/linked"
       },
       {
         "expected": true,
@@ -1268,7 +1268,7 @@
       },
       {
         "expected": false,
-        "url": "solo-leveling-system://other/linked"
+        "url": "heldengang://other/linked"
       },
       {
         "expected": false,

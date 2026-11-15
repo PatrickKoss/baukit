@@ -18,9 +18,9 @@ import { PurchasesProvider, useFeature, useOrganizationPlan } from './react.js';
 
 const STUDIO = '00000000-0000-0000-0000-00000000000a';
 const AGENCY = '00000000-0000-0000-0000-00000000000b';
-const PRIVACY = 'ahp.privacy';
-const AUTOMATION = 'ahp.automation';
-const context = { productId: 'ahp' };
+const PRIVACY = 'bv.privacy';
+const AUTOMATION = 'bv.automation';
+const context = { productId: 'bv' };
 
 function organizationPlan(
   organizationId: string,
@@ -149,7 +149,7 @@ describe('useFeature with an organization plan', () => {
       port: createNoopPurchasesPort(),
       backend: { refreshEntitlement: () => Promise.resolve(null) },
     });
-    return createElement(PurchasesProvider, { flow, productId: 'ahp' }, children);
+    return createElement(PurchasesProvider, { flow, productId: 'bv' }, children);
   }
 
   it('gates without a suite session, as for an organization token', async () => {

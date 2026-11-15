@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "tierOrder": {
-    "sololeveling": [
+    "heldengang": [
       "free",
       "premium"
     ],
@@ -35,7 +35,7 @@
       "professional",
       "enterprise"
     ],
-    "architecture_health_platform": [
+    "bauvisite": [
       "starter",
       "professional",
       "enterprise"
@@ -83,19 +83,19 @@
   },
   "plans": [
     {
-      "id": "app.sololeveling",
+      "id": "app.heldengang",
       "line": "self_improvement",
       "storefront": "consumer",
       "includedProducts": [
         {
-          "productId": "sololeveling",
+          "productId": "heldengang",
           "tier": "premium",
           "features": [
-            "sololeveling.ai_quest_generation",
-            "sololeveling.ai_coaching",
-            "sololeveling.hunter_reports",
-            "sololeveling.lifegraph_narration",
-            "sololeveling.goal_milestone_suggestions"
+            "heldengang.ai_quest_generation",
+            "heldengang.ai_coaching",
+            "heldengang.hunter_reports",
+            "heldengang.lifegraph_narration",
+            "heldengang.goal_milestone_suggestions"
           ]
         }
       ],
@@ -105,17 +105,17 @@
       "providerPriceIds": {
         "development": {
           "paddle": null,
-          "revenuecat": "de.schluesselbund.app.sololeveling.development",
+          "revenuecat": "de.schluesselbund.app.heldengang.development",
           "stripe": null
         },
         "staging": {
           "paddle": null,
-          "revenuecat": "de.schluesselbund.app.sololeveling.staging",
+          "revenuecat": "de.schluesselbund.app.heldengang.staging",
           "stripe": null
         },
         "production": {
           "paddle": null,
-          "revenuecat": "de.schluesselbund.app.sololeveling.production",
+          "revenuecat": "de.schluesselbund.app.heldengang.production",
           "stripe": null
         }
       },
@@ -349,14 +349,14 @@
       "storefront": "consumer",
       "includedProducts": [
         {
-          "productId": "sololeveling",
+          "productId": "heldengang",
           "tier": "premium",
           "features": [
-            "sololeveling.ai_quest_generation",
-            "sololeveling.ai_coaching",
-            "sololeveling.hunter_reports",
-            "sololeveling.lifegraph_narration",
-            "sololeveling.goal_milestone_suggestions"
+            "heldengang.ai_quest_generation",
+            "heldengang.ai_coaching",
+            "heldengang.hunter_reports",
+            "heldengang.lifegraph_narration",
+            "heldengang.goal_milestone_suggestions"
           ]
         },
         {
@@ -455,7 +455,7 @@
           "paddle": null,
           "revenuecat": {
             "apps": {
-              "sololeveling": "de.schluesselbund.suite.individual.sololeveling.development",
+              "heldengang": "de.schluesselbund.suite.individual.heldengang.development",
               "eigenruhe": "de.schluesselbund.suite.individual.eigenruhe.development",
               "hebkit": "de.schluesselbund.suite.individual.hebkit.development",
               "leitbild": "de.schluesselbund.suite.individual.leitbild.development",
@@ -472,7 +472,7 @@
           "paddle": null,
           "revenuecat": {
             "apps": {
-              "sololeveling": "de.schluesselbund.suite.individual.sololeveling.staging",
+              "heldengang": "de.schluesselbund.suite.individual.heldengang.staging",
               "eigenruhe": "de.schluesselbund.suite.individual.eigenruhe.staging",
               "hebkit": "de.schluesselbund.suite.individual.hebkit.staging",
               "leitbild": "de.schluesselbund.suite.individual.leitbild.staging",
@@ -489,7 +489,7 @@
           "paddle": null,
           "revenuecat": {
             "apps": {
-              "sololeveling": "de.schluesselbund.suite.individual.sololeveling.production",
+              "heldengang": "de.schluesselbund.suite.individual.heldengang.production",
               "eigenruhe": "de.schluesselbund.suite.individual.eigenruhe.production",
               "hebkit": "de.schluesselbund.suite.individual.hebkit.production",
               "leitbild": "de.schluesselbund.suite.individual.leitbild.production",
@@ -511,14 +511,14 @@
       "storefront": "consumer",
       "includedProducts": [
         {
-          "productId": "sololeveling",
+          "productId": "heldengang",
           "tier": "premium",
           "features": [
-            "sololeveling.ai_quest_generation",
-            "sololeveling.ai_coaching",
-            "sololeveling.hunter_reports",
-            "sololeveling.lifegraph_narration",
-            "sololeveling.goal_milestone_suggestions"
+            "heldengang.ai_quest_generation",
+            "heldengang.ai_coaching",
+            "heldengang.hunter_reports",
+            "heldengang.lifegraph_narration",
+            "heldengang.goal_milestone_suggestions"
           ]
         },
         {
@@ -773,12 +773,12 @@
       "displayPrice": null
     },
     {
-      "id": "business.architecture_health_platform.starter",
+      "id": "business.bauvisite.starter",
       "line": "software_engineering",
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "starter",
           "features": []
         }
@@ -806,16 +806,16 @@
       "displayPrice": null
     },
     {
-      "id": "business.architecture_health_platform.professional",
+      "id": "business.bauvisite.professional",
       "line": "software_engineering",
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "professional",
           "features": [
-            "architecture_health_platform.privacy",
-            "architecture_health_platform.automation"
+            "bauvisite.privacy",
+            "bauvisite.automation"
           ]
         }
       ],
@@ -842,16 +842,16 @@
       "displayPrice": null
     },
     {
-      "id": "business.architecture_health_platform.enterprise",
+      "id": "business.bauvisite.enterprise",
       "line": "software_engineering",
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "enterprise",
           "features": [
-            "architecture_health_platform.privacy",
-            "architecture_health_platform.automation"
+            "bauvisite.privacy",
+            "bauvisite.automation"
           ]
         }
       ],
@@ -888,7 +888,7 @@
           "features": []
         },
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "starter",
           "features": []
         }
@@ -928,11 +928,11 @@
           ]
         },
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "professional",
           "features": [
-            "architecture_health_platform.privacy",
-            "architecture_health_platform.automation"
+            "bauvisite.privacy",
+            "bauvisite.automation"
           ]
         }
       ],
@@ -972,11 +972,11 @@
           ]
         },
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "enterprise",
           "features": [
-            "architecture_health_platform.privacy",
-            "architecture_health_platform.automation"
+            "bauvisite.privacy",
+            "bauvisite.automation"
           ]
         }
       ],
@@ -1169,14 +1169,14 @@
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "sololeveling",
+          "productId": "heldengang",
           "tier": "premium",
           "features": [
-            "sololeveling.ai_quest_generation",
-            "sololeveling.ai_coaching",
-            "sololeveling.hunter_reports",
-            "sololeveling.lifegraph_narration",
-            "sololeveling.goal_milestone_suggestions"
+            "heldengang.ai_quest_generation",
+            "heldengang.ai_coaching",
+            "heldengang.hunter_reports",
+            "heldengang.lifegraph_narration",
+            "heldengang.goal_milestone_suggestions"
           ]
         },
         {
@@ -1304,7 +1304,7 @@
       "line": "self_improvement",
       "creditGrants": [
         {
-          "wallet": "sololeveling",
+          "wallet": "heldengang",
           "monthlyCredits": 100,
           "memberMonthlyCap": null,
           "perSeat": false

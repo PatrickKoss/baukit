@@ -26,10 +26,10 @@ keep selecting those stages.
 | Redemut | `backend_context`, `cargo_build_jobs`, `build_inputs`, `pre_build`, `runtime_files` |
 | Eigenruhe | `cargo_build_jobs` |
 | Tiefgang | `backend_context`, `cargo_build_jobs`, `build_inputs` |
-| Solo Leveling System | `backend_context`, `binaries`, `cargo_build_jobs`, `build_inputs` |
+| Heldengang | `backend_context`, `binaries`, `cargo_build_jobs`, `build_inputs` |
 | Runtime Analyzer | `binaries`, `cargo_build_jobs`, `build_inputs`, `runtime_binaries`, `writable_directories`, `downloads` |
 | Schlauzug | `cargo_build_jobs`, `build_inputs` |
-| AHP | `runtime_packages`, `variants` |
+| BV | `runtime_packages`, `variants` |
 
 These examples assume the current `capabilities.worker` declarations. Set it
 to true where a product uses worker and relies on the default binary list.
@@ -110,7 +110,7 @@ cargo_build_jobs = 6
 build_inputs = [{ source = "fixtures/suite-events", destination = "/fixtures/suite-events/" }]
 ```
 
-## Solo Leveling System
+## Heldengang
 
 ```toml
 [backend.image]
@@ -135,9 +135,9 @@ pre-install and pre-upgrade migration hook Job, and in Compose through a
 `condition: service_completed_successfully`. If the product still needs the dispatcher image,
 `runtime_binaries` can copy its companion commands into the entrypoint stage.
 
-Move `SOLO_LEVELING_SYSTEM__HTTP__BIND_ADDRESS`,
-`SOLO_LEVELING_SYSTEM__HTTP__PORT`, `SOLO_LEVELING_SYSTEM__OPS__BIND_ADDRESS`,
-`SOLO_LEVELING_SYSTEM__OPS__PORT` and `RUN_MIGRATIONS` into Helm or Compose.
+Move `HELDENGANG__HTTP__BIND_ADDRESS`,
+`HELDENGANG__HTTP__PORT`, `HELDENGANG__OPS__BIND_ADDRESS`,
+`HELDENGANG__OPS__PORT` and `RUN_MIGRATIONS` into Helm or Compose.
 Ports belong in their service declarations; `EXPOSE` is removed.
 
 ## Runtime Analyzer
@@ -186,7 +186,7 @@ build_inputs = [{ source = "fixtures", destination = "/fixtures/" }]
 This replaces the old `FIXTURES_CONTEXT` image arg. Set the manifest source to
 the fixtures directory relative to the chosen build context.
 
-## AHP
+## BV
 
 Keep `capabilities.worker = true` or include `worker` in `backend.image.binaries`.
 Add the proxy binary to the bin crate and the image's binary list when needed.
@@ -270,7 +270,7 @@ build-arg override takes precedence.
 
 Baukit always sets `SQLX_OFFLINE=true`. Generated products commit `.sqlx`
 metadata, so builds should use it rather than depend on database access.
-Hebkit and Solo Leveling System no longer need separate image settings for it.
+Hebkit and Heldengang no longer need separate image settings for it.
 Refresh `.sqlx` when queries change.
 
 Run `baukit generate dockerfile --check` in CI. Doctor also fails when the

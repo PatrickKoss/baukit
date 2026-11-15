@@ -200,7 +200,7 @@ fn credit_balance_needs_the_bucketed_shape() {
     assert!(serde_json::from_value::<CreditBalance>(before_c21).is_err());
     let expiring = json!({
         "suiteSubject": SUBJECT,
-        "wallet": "sololeveling",
+        "wallet": "heldengang",
         "revision": 3,
         "total": 160,
         "grant": {"available": 110, "expiresAt": 1_780_272_000},
