@@ -9,6 +9,7 @@
 - Breaking: the chart needs Kubernetes 1.30 for the native `preStop` sleep. The API sleeps `api.preStopSleepSeconds` (5) before SIGTERM, and `SHUTDOWN__DRAIN_TIMEOUT` is the grace period minus that sleep.
 - Add a release ServiceAccount with `automountServiceAccountToken: false`, used by every pod.
 - Add startup probes for the API and worker, a soft hostname topology spread for API, worker and web, `ttlSecondsAfterFinished` on the migration and seed Jobs, and an `emptyDir` `/tmp` mount for every application process.
+- The render fails when `<process>.volumes` names a volume `tmp` or `<process>.volumeMounts` mounts `tmp` or `/tmp`, since the chart already provides that mount. Drop those entries from your values.
 
 ## [0.25.2] - 2026-11-13
 

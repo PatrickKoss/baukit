@@ -4,7 +4,7 @@
 
 [images."curlimages/curl"]
 expires = 2026-12-12
-reason = "falcosidekick chart 0.14.1 hardcodes this untagged image in its helm test pod and offers no values key, so it cannot be pinned or bumped (see image-digest-exempt.toml); Flux runs the test pod (test.enable: true), recheck with SC1/VR chart work"
+reason = "falcosidekick chart 0.14.1 hardcodes this untagged image in its helm test pod and offers no values key, so it cannot be pinned or bumped (see image-digest-exempt.toml); the HelmRelease test filter excludes falco-falcosidekick-test-connection, so Flux never runs this image; recheck with SC1/VR chart work"
 ids = [
   "CVE-2026-107364",
   "CVE-2026-112315",

@@ -18,6 +18,9 @@ spec:
               cnpg.io/podRole: instance
         - podSelector:
             matchLabels:
+              cnpg.io/jobRole: full-recovery
+        - podSelector:
+            matchLabels:
               app.kubernetes.io/name: rustfs-create-bucket
         - namespaceSelector:
             matchLabels:
@@ -86,6 +89,29 @@ spec:
   podSelector:
     matchLabels:
       cnpg.io/podRole: instance
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rustfs
+      ports:
+        - protocol: TCP
+          port: 9000
+---
+# A recovery job reads the backup catalog from rustfs before any instance pod exists.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-recovery-to-rustfs
+  namespace: postgres
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/jobRole: full-recovery
   policyTypes:
     - Egress
   egress:

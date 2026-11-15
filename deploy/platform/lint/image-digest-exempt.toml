@@ -7,7 +7,7 @@
 
 [images."curlimages/curl"]
 source = "deploy/platform/falco/helm-release.yaml (falcosidekick 0.14.1 subchart, templates/tests/test-connection.yaml)"
-reason = "the falcosidekick chart hardcodes the untagged image in its helm test-success hook and offers no values key for it; the HelmRelease sets test.enable: true, so Flux runs this pod after each install and upgrade"
+reason = "the falcosidekick chart hardcodes the untagged image in its helm test-success hook and offers no values key for it; the chart still renders it, but the HelmRelease test filter excludes falco-falcosidekick-test-connection, so Flux never creates this pod"
 
 [embedded."rancher/klipper-lb:v0.4.17"]
 carrier = "rancher/k3s"

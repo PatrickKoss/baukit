@@ -217,6 +217,20 @@ topologySpreadConstraints:
   emptyDir: {}
 {{- end }}
 
+{{/* The chart owns the tmp volume and the /tmp mount; values that add either would collide. */}}
+{{- define "baukit-app.assertNoTmpOverride" -}}
+{{- range .volumes }}
+{{- if eq (toString .name) "tmp" }}
+{{- fail (printf "%s.volumes must not define a volume named tmp; the chart already mounts one at /tmp" $.process) }}
+{{- end }}
+{{- end }}
+{{- range .volumeMounts }}
+{{- if or (eq (toString .name) "tmp") (eq (trimSuffix "/" (toString .mountPath)) "/tmp") }}
+{{- fail (printf "%s.volumeMounts must not mount tmp or /tmp; the chart already mounts an emptyDir at /tmp" $.process) }}
+{{- end }}
+{{- end }}
+{{- end }}
+
 {{/* Drain timeout left after the preStop sleep. */}}
 {{- define "baukit-app.apiDrainSeconds" -}}
 {{- $grace := int .Values.api.terminationGracePeriodSeconds -}}

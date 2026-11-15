@@ -91,7 +91,7 @@ class RuntimeStorageCredentialsTest(unittest.TestCase):
                 RUSTFS_ACCESS_KEY=storage-access
                 RUSTFS_SECRET_KEY=storage-secret
                 kubectl() { cat >/dev/null; }
-                apply_secret() { printf '%s\\n' "$*"; }
+                platform_apply_secret() { printf '%s\\n' "$*"; }
                 apply_runtime_identity
             """,
             ).splitlines()

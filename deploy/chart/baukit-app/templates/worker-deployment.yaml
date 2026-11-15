@@ -91,6 +91,7 @@ spec:
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
           volumeMounts:
+            {{- include "baukit-app.assertNoTmpOverride" (dict "process" "worker" "volumes" .Values.worker.volumes "volumeMounts" .Values.worker.volumeMounts) }}
             {{- include "baukit-app.tmpVolumeMount" . | nindent 12 }}
             {{- with .Values.worker.volumeMounts }}
             {{- toYaml . | nindent 12 }}

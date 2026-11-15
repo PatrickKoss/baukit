@@ -474,6 +474,23 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_conventions.py"
   status=1
 fi
 
+printf '==> exclusive bases\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_exclusive_bases.py" \
+  "$platform_dir"/overlays/*/ "$platform_dir/e2e/overlay"; then
+  status=1
+fi
+
+printf '==> monitor CRD ordering\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_monitor_order.py" --rendered "$rendered_dir" \
+  "$platform_dir/overlays/local/reconciliation.yaml" "$platform_dir/e2e/overlay/reconciliation.yaml"; then
+  status=1
+fi
+
+printf '==> helm test network policies\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_helm_test_netpol.py" --rendered "$rendered_dir"; then
+  status=1
+fi
+
 printf '==> chart sources\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_chart_sources.py" --rendered "$rendered_dir"; then
   status=1
@@ -520,7 +537,8 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/sc
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/lint" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/lint/ci-policies" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/falco" -p 'test_*.py' ||
-  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/redis-ha" -p 'test_*.py'; then
+  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/redis-ha" -p 'test_*.py' ||
+  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/e2e" -p 'test_*.py'; then
   status=1
 fi
 
