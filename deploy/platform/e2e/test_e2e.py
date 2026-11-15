@@ -314,5 +314,32 @@ class FailedKustomizationTests(unittest.TestCase):
         self.assertEqual(output.split("|\n"), ["", "", "", "", "", "a\n", ""])
 
 
+class RegistryMirrorTests(unittest.TestCase):
+    def source(self, call):
+        script = f'source "{E2E.parent / "registry-mirrors.sh"}"\n{call}'
+        result = process_runner.run_process(["bash", "-c", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def test_every_upstream_routes_to_its_mirror(self):
+        config = self.source("registry_mirrors_k3s_config")
+        for host in ("docker.io", "reg.kyverno.io"):
+            mirror = f"http://k3d-baukit-mirror-{host.replace('.', '-')}:5000"
+            self.assertIn(f"  {host}:\n    endpoint:\n      - {mirror}\n", config)
+
+    def test_the_cluster_uses_every_mirror_it_routes_to(self):
+        config = self.source("registry_mirrors_k3s_config")
+        args = self.source("registry_mirrors_cluster_args").splitlines()
+        pairs = zip(args[::2], args[1::2], strict=True)
+        used = {f"http://{arg}" for flag, arg in pairs if flag == "--registry-use"}
+        lines = [line.strip() for line in config.splitlines()]
+        endpoints = {line[2:] for line in lines if line.startswith("- ")}
+        self.assertEqual(used, endpoints)
+
+    def test_the_mirror_image_is_pinned_by_digest(self):
+        image = self.source('printf %s "$registry_mirror_image"')
+        self.assertRegex(image, r"^docker\.io/library/registry:[0-9.]+@sha256:[0-9a-f]{64}$")
+
+
 if __name__ == "__main__":
     unittest.main()

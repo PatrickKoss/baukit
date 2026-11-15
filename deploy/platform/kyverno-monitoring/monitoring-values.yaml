@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kyverno-monitoring-values
+  labels:
+    # helm-controller upgrades the kyverno release when this ConfigMap changes.
+    reconcile.fluxcd.io/watch: Enabled
+data:
+  values.yaml: |
+    admissionController:
+      serviceMonitor:
+        enabled: true
+    backgroundController:
+      serviceMonitor:
+        enabled: true
+    cleanupController:
+      serviceMonitor:
+        enabled: true
+    reportsController:
+      serviceMonitor:
+        enabled: true

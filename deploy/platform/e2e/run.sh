@@ -11,6 +11,8 @@ source "$platform_dir/local-git-http.sh"
 source "$platform_dir/flux-lockdown.sh"
 # shellcheck source=deploy/platform/runtime-identity.sh
 source "$platform_dir/runtime-identity.sh"
+# shellcheck source=deploy/platform/registry-mirrors.sh
+source "$platform_dir/registry-mirrors.sh"
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"
 
@@ -27,6 +29,7 @@ test_dirs=("$e2e_dir/tests")
 without=()
 heavy_slot_dir=${BAUKIT_HEAVY_SLOT_DIR:-/tmp/claude-heavy-slots}
 ready_poll_seconds=30
+dependency_requeue=5s
 failed_poll_limit=3
 heavy_slot_poll_seconds=${BAUKIT_HEAVY_SLOT_POLL_SECONDS:-30}
 cluster_lock=${BAUKIT_E2E_CLUSTER_LOCK:-$HOME/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock}
@@ -191,8 +194,14 @@ create_cluster() {
   image=$(platform_k3s_image)
   printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$image"
   cluster_created=true
+  registry_mirrors_start
+  registry_mirrors_k3s_config >"$state_dir/registries.yaml"
+  local mirror_args=()
+  mapfile -t mirror_args < <(registry_mirrors_cluster_args)
   k3d_create_local_cluster "$cluster_name" "$image" "$(free_port)" "$(free_port)" "$(free_port)" \
     --subnet "$(free_subnet)" \
+    --registry-config "$state_dir/registries.yaml" \
+    "${mirror_args[@]}" \
     --kubeconfig-update-default=false \
     --kubeconfig-switch-context=false >/dev/null
   k3d kubeconfig get "$cluster_name" >"$kubeconfig"
@@ -237,6 +246,16 @@ apply_runtime_identity() {
     "$(openssl rand -hex 18)" admin "$(openssl rand -hex 18)"
 }
 
+# The platform is a dependsOn chain, and each hop otherwise waits the controllers' 30s default.
+shorten_dependency_requeue() {
+  local controller
+  for controller in kustomize-controller helm-controller; do
+    kubectl -n flux-system patch deployment "$controller" --type json -p \
+      "[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/args/-\",\"value\":\"--requeue-dependency=${dependency_requeue}\"}]" \
+      >/dev/null
+  done
+}
+
 install_flux() {
   printf 'Installing Flux %s with the multi-tenancy lockdown\n' "$flux_version"
   flux_lockdown_render "$platform_dir" "$flux_version" | kubectl apply --server-side -f - >/dev/null
@@ -245,6 +264,7 @@ install_flux() {
     pod-security.kubernetes.io/enforce-version=v1.34 \
     pod-security.kubernetes.io/audit=restricted \
     pod-security.kubernetes.io/warn=restricted >/dev/null
+  shorten_dependency_requeue
   flux_lockdown_wait
   flux_lockdown_verify "$platform_dir"
 }
