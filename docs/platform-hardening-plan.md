@@ -1107,3 +1107,13 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   clusters to embedded etcd (`--cluster-init`). Leader-election tuning was ruled out: single-server
   k3s already passes `--leader-elect=false`. Open for PI1: decide the production datastore
   (kine/SQLite vs embedded etcd) for single-node hosts; the same fatal applies under host starvation.
+- 2026-11-15 20:40: N5 run 13 failed in its first second with "Pool overlaps". FA45's falco run held
+  slot 2 but its network sat on slot 3's subnet, because `bin/k3d-slot` kept a caller's
+  BAUKIT_E2E_SUBNET. The wrapper now always sets the slot's subnet (10.89.151/152/153.0/24), and
+  COMMON.md forbids setting it by hand.
+- 2026-11-15 21:10: K6 run 8 failed on the Kyverno admission controller, stuck pulling kyvernopre for
+  11 minutes. The reg.kyverno.io pull-through mirror returned 401 for every Kyverno image, because
+  reg.kyverno.io answers /v2/ with 405 and the proxy never gets a ghcr token. 7e86c7e8 routes
+  reg.kyverno.io through the ghcr mirror (same digests). K6's RetryOnFailure worked as designed: the
+  release ended Failed but retryable, with no uninstall wedge. K6, N5, FA45, S5 and SC5a merge 7e86c7e8
+  before their next run.
