@@ -23,13 +23,17 @@ spec:
     remediation:
       retries: 3
   driftDetection:
-    mode: warn
+    mode: enabled
   values:
     image:
       digest: sha256:9acc2529bc1edb7f5b2bd801dd8334ebc80c158e3a9e5526ecd7c9a273d43189
       tag: v1.22.0
     crds:
       create: false
+    global:
+      podSecurityContext:
+        seccompProfile:
+          type: RuntimeDefault
     controller:
       priorityClassName: platform-standard
       type: daemonset
@@ -43,6 +47,10 @@ spec:
               key: environment
       mounts:
         varlog: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
       resources:
         requests:
           cpu: 50m

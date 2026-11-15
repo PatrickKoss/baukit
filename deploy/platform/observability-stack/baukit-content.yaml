@@ -29,7 +29,7 @@ spec:
     remediation:
       retries: 3
   driftDetection:
-    mode: warn
+    mode: enabled
   values:
     runbookBaseUrl: https://github.com/PatrickKoss/baukit/blob/main/docs/runbooks/app
     dashboardConfigMap:

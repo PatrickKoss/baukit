@@ -79,6 +79,18 @@ chart_field() {
     sed -n "s/^$2: //p" "$1/chart.yaml"
 }
 
+# Mirrors the Docker Hub short-name resolution in restrict-image-registries.
+resolved_image() {
+    local image=$1 host=${1%%/*}
+    if [[ $image == */* && ($host == *.* || $host == *:* || $host == localhost) ]]; then
+        printf '%s\n' "$image"
+    elif [[ $image == */* ]]; then
+        printf 'docker.io/%s\n' "$image"
+    else
+        printf 'docker.io/library/%s\n' "$image"
+    fi
+}
+
 install() {
     local work chart version digest archive
     work=$(mktemp -d)
@@ -107,7 +119,7 @@ install() {
         --wait \
         --timeout "$ready_timeout"
     kubectl -n "$kyverno_namespace" create configmap baukit-registry-allowlist \
-        --from-literal=registries="$(printf '%s\n' "$@")" \
+        --from-literal=registries="$(for image in "$@"; do resolved_image "$image"; done)" \
         --dry-run=client -o yaml | kubectl apply -f -
     echo "applying the Baukit policy library in Enforce mode"
     kubectl apply -f "$work/policies.yaml"

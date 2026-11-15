@@ -1,0 +1,34 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: policy-exceptions
+policies:
+  - ../../policies/require-container-resources.yaml
+  - ../../policies/restrict-wildcard-rbac.yaml
+exceptions:
+  - ../../exceptions/k3s-coredns.yaml
+  - ../../exceptions/k3s-servicelb-traefik.yaml
+  - ../../exceptions/prometheus-operator-rbac.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: require-container-resources
+    kind: Pod
+    resources: [coredns-abc-1, svclb-traefik-1]
+    result: skip
+  - isValidatingPolicy: true
+    policy: require-container-resources
+    kind: Pod
+    resources: [coredns-other-ns, coredns-wrong-hash, svclb-other-1]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-wildcard-rbac
+    kind: ClusterRole
+    resources: [kube-prometheus-stack-operator]
+    result: skip
+  - isValidatingPolicy: true
+    policy: restrict-wildcard-rbac
+    kind: ClusterRole
+    resources: [flagger-copy]
+    result: fail

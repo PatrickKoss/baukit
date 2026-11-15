@@ -1,0 +1,32 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: k3s-local-path-provisioner
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      k3s deploys local-path-provisioner from its embedded manifests in kube-system; the platform renders no values for it.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-capabilities-strict
+    - kind: ValidatingPolicy
+      name: disallow-privilege-escalation
+    - kind: ValidatingPolicy
+      name: require-container-resources
+    - kind: ValidatingPolicy
+      name: require-run-as-nonroot
+    - kind: ValidatingPolicy
+      name: restrict-seccomp-strict
+  matchConditions:
+    - name: workload
+      expression: >-
+        object.metadata.?namespace.orValue("") == "kube-system" && (
+          (object.kind == "Deployment" && object.metadata.name == "local-path-provisioner") ||
+          (object.kind == "ReplicaSet" && object.metadata.?ownerReferences.orValue([])
+            .exists(o, o.kind == "Deployment" && o.name == "local-path-provisioner")) ||
+          (object.kind == "Pod" && object.metadata.?ownerReferences.orValue([])
+            .exists(o, o.kind == "ReplicaSet" &&
+              o.name == "local-path-provisioner-" + object.metadata.?labels[?"pod-template-hash"].orValue(""))))

@@ -22,7 +22,7 @@ spec:
     remediation:
       retries: 3
   driftDetection:
-    mode: warn
+    mode: enabled
   values:
     crds:
       enabled: true
@@ -38,6 +38,11 @@ spec:
     kubeProxy:
       enabled: false
     defaultRules:
+      # The operator's mutating webhook adds this annotation to every PrometheusRule. On install the
+      # rules land before the operator serves that webhook (failurePolicy Ignore), so without it here
+      # every drift check reports one addition per rule.
+      annotations:
+        prometheus-operator-validated: "true"
       rules:
         etcd: false
         kubeControllerManager: false
@@ -310,6 +315,18 @@ spec:
     # privileged observability-agents namespace.
     prometheus-node-exporter:
       priorityClassName: platform-standard
+      securityContext:
+        fsGroup: 65534
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
       namespaceOverride: observability-agents
       image:
         digest: sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106

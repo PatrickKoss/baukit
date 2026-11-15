@@ -1,0 +1,35 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: kured
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      kured reboots the node: it joins the host PID namespace and runs nsenter as a privileged root container, and reads the reboot sentinel through a host path.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-capabilities-strict
+    - kind: ValidatingPolicy
+      name: disallow-host-namespaces
+    - kind: ValidatingPolicy
+      name: disallow-host-path
+    - kind: ValidatingPolicy
+      name: disallow-privilege-escalation
+    - kind: ValidatingPolicy
+      name: disallow-privileged-containers
+    - kind: ValidatingPolicy
+      name: require-run-as-nonroot
+    - kind: ValidatingPolicy
+      name: restrict-seccomp-strict
+    - kind: ValidatingPolicy
+      name: restrict-volume-types
+  matchConditions:
+    - name: workload
+      expression: >-
+        object.metadata.?namespace.orValue("") == "kured" && (
+          (object.kind == "DaemonSet" && object.metadata.name == "kured") ||
+          (object.kind == "Pod" && object.metadata.?ownerReferences.orValue([])
+            .exists(o, o.kind == "DaemonSet" && o.name == "kured")))

@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: admission-unprobed
+  namespace: e2e-tenant
+  labels:
+    app.kubernetes.io/name: admission
+    app.kubernetes.io/part-of: e2e-admission
+    baukit.dev/process: api
+spec:
+  selector:
+    matchLabels:
+      app: admission-unprobed
+  template:
+    metadata:
+      labels:
+        app: admission-unprobed
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: app
+          image: localhost/baukit-e2e/echo:local
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 50m, memory: 32Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]

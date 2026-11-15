@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: admission-cluster-ip
+  namespace: e2e-tenant
+spec:
+  type: ClusterIP
+  selector:
+    app: admission
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

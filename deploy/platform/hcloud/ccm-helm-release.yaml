@@ -23,7 +23,7 @@ spec:
     remediation:
       retries: 3
   driftDetection:
-    mode: warn
+    mode: enabled
   values:
     image:
       tag: "v1.39.3@sha256:9d739ba54a13f1de79d6dbb93cbda5a2ed4a5bdb9bf2936e2687e24fa9ccfaf7"

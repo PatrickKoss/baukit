@@ -35,6 +35,21 @@ platform_local_etcd_args() {
     --env CATTLE_ELECTION_RETRY_PERIOD=10s@server:0
 }
 
+# k3s creates these namespaces without Pod Security labels, which require-psa-labels reports.
+# kube-system matches its exemption in the admission config.
+platform_label_system_namespaces() {
+  local level namespace
+  for namespace in kube-system default kube-public kube-node-lease; do
+    level=restricted
+    [[ $namespace == kube-system ]] && level=privileged
+    kubectl label namespace "$namespace" --overwrite \
+      pod-security.kubernetes.io/enforce="$level" \
+      pod-security.kubernetes.io/enforce-version=v1.37 \
+      pod-security.kubernetes.io/audit="$level" \
+      pod-security.kubernetes.io/warn="$level" >/dev/null
+  done
+}
+
 platform_k3s_server_args() {
   printf '%s\n' \
     --disable=traefik \

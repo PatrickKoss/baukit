@@ -1,0 +1,11 @@
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: admission-own-source
+  namespace: e2e-tenant
+spec:
+  providerRef:
+    name: admission
+  eventSources:
+    - kind: Kustomization
+      name: platform

@@ -31,11 +31,15 @@ spec:
       expression: >-
         variables.allowlist.?data[?"registries"].orValue("")
         .split("\n").map(r, r.trim()).filter(r, r != "")
-    - name: denied
+    - name: images
       expression: >-
         (object.spec.containers + object.spec.?initContainers.orValue([]) + object.spec.?ephemeralContainers.orValue([]))
-        .filter(c, !variables.registries.exists(r, c.image.startsWith(r)))
         .map(c, c.image)
+    - name: denied
+      expression: >-
+        variables.images.filter(i, !variables.registries.exists(r,
+          (i.contains("/") && (i.split("/")[0].contains(".") || i.split("/")[0].contains(":") || i.split("/")[0] == "localhost")
+            ? i : (i.contains("/") ? "docker.io/" + i : "docker.io/library/" + i)).startsWith(r)))
   validations:
     - expression: size(variables.denied) == 0
       messageExpression: >-

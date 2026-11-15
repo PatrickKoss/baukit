@@ -364,6 +364,118 @@ class StatusSecretsTest(unittest.TestCase):
             self.assertIn(str(state / "secrets.env"), result.stdout)
 
 
+class RegistryMirrorClusterTest(unittest.TestCase):
+    CASES = (
+        ("platform-up.sh", "up", "down"),
+        ("platform-lifecycle.sh", "ensure_cluster", "nuke"),
+    )
+    STUBS = textwrap.dedent(
+        """
+        source "{mirrors}"
+        calls=$CALLS
+        docker() {{
+          printf 'docker %s\\n' "$*" >>"$calls"
+          if [[ $1 == container ]]; then
+            [[ $MIRRORS == running ]] && printf 'true\\n' && return 0
+            return 1
+          fi
+        }}
+        k3d() {{ printf 'k3d %s\\n' "$*" >>"$calls"; }}
+        k3d_create_local_cluster() {{ printf 'create %s\\n' "$*" >>"$calls"; }}
+        cluster_exists() {{ [[ $EXISTS == yes ]]; }}
+        require_tools() {{ :; }}
+        baukit_use_tools() {{ :; }}
+        platform_local_etcd_args() {{ printf -- "--k3s-arg\\n--cluster-init@server:0\\n"; }}
+        ensure_secret_state() {{ :; }}
+        validate_common_config() {{ :; }}
+        stop_git_daemon() {{ :; }}
+        remove_snapshot() {{ :; }}
+        use_context() {{ exit 0; }}
+        use_cluster() {{ exit 0; }}
+        cluster_name=demo k3s_image=k3s api_port=1 http_port=2 https_port=3
+        k3d_subnet=10.0.0.0/24 state_dir=/nonexistent snapshot_image=snap repo_root=/nonexistent
+        """
+    )
+
+    def run_function(self, script: str, function: str, *, mirrors: str, exists: str) -> str:
+        text = (PLATFORM / script).read_text()
+        match = re.search(rf"^{function}\(\) {{\n.*?^}}\n", text, re.MULTILINE | re.DOTALL)
+        assert match is not None
+        with tempfile.TemporaryDirectory() as directory:
+            calls = Path(directory) / "calls"
+            calls.touch()
+            stubs = self.STUBS.format(mirrors=PLATFORM / "registry-mirrors.sh")
+            result = bash(
+                f"{stubs}\n{match.group(0)}\n{function}",
+                env={"CALLS": str(calls), "MIRRORS": mirrors, "EXISTS": exists},
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return calls.read_text()
+
+    def created_with(self, calls: str) -> str:
+        return next(line for line in calls.splitlines() if line.startswith("create "))
+
+    def test_running_mirrors_are_passed_to_the_new_cluster(self) -> None:
+        for script, create, _ in self.CASES:
+            with self.subTest(script=script):
+                line = self.created_with(
+                    self.run_function(script, create, mirrors="running", exists="no")
+                )
+                self.assertIn("--registry-config", line)
+                self.assertIn("--registry-use k3d-baukit-mirror-ghcr-io:5000", line)
+
+    def test_cluster_is_created_without_mirrors_when_they_are_absent(self) -> None:
+        for script, create, _ in self.CASES:
+            with self.subTest(script=script):
+                line = self.created_with(
+                    self.run_function(script, create, mirrors="absent", exists="no")
+                )
+                self.assertNotIn("--registry-config", line)
+                self.assertNotIn("--registry-use", line)
+
+    def test_mirrors_are_detached_before_the_cluster_is_deleted(self) -> None:
+        for script, _, delete in self.CASES:
+            with self.subTest(script=script):
+                calls = self.run_function(
+                    script, delete, mirrors="running", exists="yes"
+                ).splitlines()
+                disconnect = next(
+                    i
+                    for i, c in enumerate(calls)
+                    if c.startswith("docker network disconnect k3d-demo ")
+                )
+                self.assertLess(disconnect, calls.index("k3d cluster delete demo"))
+
+
+class SystemNamespaceLabelTest(unittest.TestCase):
+    CALLERS = (*LIFECYCLE_SCRIPTS, PLATFORM / "e2e/run.sh")
+
+    def test_labels_all_system_namespaces(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            calls = Path(directory) / "calls"
+            result = bash(
+                f'source "{HELPER}"\n'
+                f'kubectl() {{ printf "%s\\n" "$*" >>"{calls}"; }}\n'
+                "platform_label_system_namespaces"
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lines = calls.read_text().splitlines()
+        levels = {line.split()[2]: line for line in lines}
+        self.assertEqual(set(levels), {"kube-system", "default", "kube-public", "kube-node-lease"})
+        for namespace, line in levels.items():
+            level = "privileged" if namespace == "kube-system" else "restricted"
+            with self.subTest(namespace=namespace):
+                self.assertIn("--overwrite", line)
+                self.assertIn("enforce-version=v1.37", line)
+                for mode in ("enforce", "audit", "warn"):
+                    self.assertIn(f"pod-security.kubernetes.io/{mode}={level}", line)
+
+    def test_every_cluster_entry_point_labels_them(self) -> None:
+        for script in self.CALLERS:
+            with self.subTest(script=script.name):
+                self.assertRegex(script.read_text(), r"(?m)^\s+platform_label_system_namespaces$")
+
+
 class RestoreTestScriptTest(unittest.TestCase):
     PRIMARY = "postgres-cluster-restore-test-1"
 

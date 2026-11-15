@@ -20,7 +20,7 @@ spec:
     remediation:
       retries: 3
   driftDetection:
-    mode: warn
+    mode: enabled
   values:
     podPriorityClassName: platform-standard
     image:

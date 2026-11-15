@@ -1,0 +1,18 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: kyverno-migrate-rbac
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      The Kyverno post-upgrade hook rewrites the stored version of every Kyverno CRD, so the chart grants get, list and update on all resources of the Kyverno API groups.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: restrict-wildcard-rbac
+  matchConditions:
+    - name: workload
+      expression: >-
+        object.kind == "ClusterRole" && object.metadata.name == "kyverno:migrate-resources"

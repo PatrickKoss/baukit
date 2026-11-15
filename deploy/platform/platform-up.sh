@@ -22,6 +22,8 @@ source "$platform_dir/local-git-http.sh"
 k3s_image=${BAUKIT_PLATFORM_K3S_IMAGE:-$(platform_k3s_image)}
 # shellcheck source=deploy/platform/flux-lockdown.sh
 source "$platform_dir/flux-lockdown.sh"
+# shellcheck source=deploy/platform/registry-mirrors.sh
+source "$platform_dir/registry-mirrors.sh"
 # shellcheck source=deploy/platform/runtime-identity.sh
 source "$platform_dir/runtime-identity.sh"
 # shellcheck source=deploy/lib/tools.sh
@@ -182,14 +184,21 @@ up() {
   ensure_secret_state
   if ! cluster_exists; then
     printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$k3s_image"
-    local etcd_args=()
+    local mirror_dir mirror_args=() etcd_args=()
     mapfile -t etcd_args < <(platform_local_etcd_args)
+    mirror_dir=$(mktemp -d)
+    if registry_mirrors_running; then
+      mapfile -t mirror_args < <(registry_mirrors_k3d_args "$mirror_dir/registries.yaml")
+      printf 'Using the running registry mirrors.\n'
+    fi
     k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port" \
-      --subnet "$k3d_subnet" "${etcd_args[@]}"
+      --subnet "$k3d_subnet" "${etcd_args[@]}" "${mirror_args[@]}"
+    rm -rf -- "$mirror_dir"
   else
     printf 'Cluster %s already exists; converging it.\n' "$cluster_name"
   fi
   use_context
+  platform_label_system_namespaces
   start_git_daemon
 
   printf 'Installing Flux %s controllers with the multi-tenancy lockdown\n' "$flux_version"
@@ -218,6 +227,7 @@ up() {
 down() {
   require_tools
   if cluster_exists; then
+    registry_mirrors_detach "k3d-$cluster_name"
     k3d cluster delete "$cluster_name"
   else
     printf 'Cluster %s is already absent.\n' "$cluster_name"

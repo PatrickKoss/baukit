@@ -102,6 +102,26 @@ registry_mirrors_cluster_args() {
   done
 }
 
+# Succeeds only when every mirror container is running.
+registry_mirrors_running() {
+  local entry mirror_host mirror_port mirror_url running
+  for entry in "${registry_mirror_upstreams[@]}"; do
+    registry_mirror_fields "$entry"
+    running=$(docker container inspect -f '{{.State.Running}}' "k3d-$(registry_mirror_name "$mirror_host")" 2>/dev/null) ||
+      return 1
+    [[ $running == true ]] || return 1
+  done
+}
+
+# Usage: registry_mirrors_k3d_args <registries.yaml path>. Writes the k3s registry config to the path
+# and prints one k3d cluster create argument per line. Delete the cluster with registry_mirrors_detach
+# first, or the cluster network stays behind.
+registry_mirrors_k3d_args() {
+  registry_mirrors_k3s_config >"$1"
+  printf -- '--registry-config\n%s\n' "$1"
+  registry_mirrors_cluster_args
+}
+
 # Prints the trivy config that routes each upstream to its mirror on 127.0.0.1.
 registry_mirrors_trivy_config() {
   local entry mirror_host mirror_port mirror_url

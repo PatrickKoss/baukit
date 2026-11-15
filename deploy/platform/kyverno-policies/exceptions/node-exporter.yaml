@@ -1,0 +1,27 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: node-exporter
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      node-exporter reports host metrics: it needs the host network and PID namespaces, the host's /proc, /sys and / as hostPath volumes, and with hostNetwork its port is a host port. It runs as nobody and drops every capability.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-host-namespaces
+    - kind: ValidatingPolicy
+      name: disallow-host-path
+    - kind: ValidatingPolicy
+      name: disallow-host-ports
+    - kind: ValidatingPolicy
+      name: restrict-volume-types
+  matchConditions:
+    - name: workload
+      expression: >-
+        object.metadata.?namespace.orValue("") == "observability-agents" && (
+          (object.kind == "DaemonSet" && object.metadata.name == "kube-prometheus-stack-prometheus-node-exporter") ||
+          (object.kind == "Pod" && object.metadata.?ownerReferences.orValue([])
+            .exists(o, o.kind == "DaemonSet" && o.name == "kube-prometheus-stack-prometheus-node-exporter")))

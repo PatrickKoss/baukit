@@ -24,3 +24,13 @@ results:
     kind: Pod
     resources: [foreign]
     result: skip
+  - isValidatingPolicy: true
+    policy: restrict-image-registries-tenants
+    kind: Pod
+    resources: [unqualified-allowed]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-image-registries-tenants
+    kind: Pod
+    resources: [unqualified-foreign]
+    result: fail

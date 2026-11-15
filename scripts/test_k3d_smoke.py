@@ -17,6 +17,7 @@ ENFORCE = ROOT / "deploy" / "smoke" / "kyverno-enforce.sh"
 KYVERNO_RELEASE = ROOT / "deploy" / "platform" / "kyverno" / "helm-release.yaml"
 KYVERNO_SOURCE = ROOT / "deploy" / "platform" / "kyverno" / "oci-repository.yaml"
 POLICY_DIR = ROOT / "deploy" / "platform" / "kyverno-policies" / "policies"
+EXCEPTION_DIR = ROOT / "deploy" / "platform" / "kyverno-policies" / "exceptions"
 ENFORCED_KINDS = {"ValidatingPolicy", "ImageValidatingPolicy"}
 
 
@@ -70,7 +71,20 @@ esac
 exit 0
 """
 STUB_OK = "#!/bin/sh\nexit 0\n"
-STUB_DOCKER = "#!/bin/sh\nprintf '%s\\n' \"${STUB_CGROUP_VERSION:-2}\"\n"
+STUB_DOCKER = """#!/bin/sh
+case "$1 $2" in
+"container inspect")
+    [ "${STUB_MIRRORS:-}" = running ] || exit 1
+    printf 'true\\n'
+    exit 0
+    ;;
+"network disconnect")
+    printf 'docker %s\\n' "$*" >>"$STUB_LOG"
+    exit 0
+    ;;
+esac
+printf '%s\\n' "${STUB_CGROUP_VERSION:-2}"
+"""
 TOKEN_COMMAND = "#!/bin/sh\nprintf 'stub-token\\n' >\"$BAUKIT_SMOKE_ACCESS_TOKEN_FILE\"\n"
 
 
@@ -113,9 +127,16 @@ class RenderTest(unittest.TestCase):
             result = render(out)
             self.assertEqual(result.returncode, 0, result.stderr)
             objects = parse(out / "policies.yaml")
-            names = {doc["metadata"]["name"] for doc in objects}
+            names = {doc["metadata"]["name"] for doc in objects if doc["kind"] != "PolicyException"}
             library = {path.stem for path in POLICY_DIR.glob("*.yaml")}
             self.assertEqual(names, library)
+            exceptions = {
+                doc["metadata"]["name"] for doc in objects if doc["kind"] == "PolicyException"
+            }
+            exception_files = {
+                p.stem for p in EXCEPTION_DIR.glob("*.yaml") if p.name != "kustomization.yaml"
+            }
+            self.assertEqual(exceptions, exception_files)
             self.assertFalse(
                 [d for d in objects if d["kind"].startswith("Helm") or d["kind"] == "OCIRepository"]
             )
@@ -274,7 +295,10 @@ class SmokeOrderTest(unittest.TestCase):
         self.assertLess(allowlist, policies)
         self.assertLess(policies, namespace)
         self.assertLess(namespace, product)
-        self.assertIn("registries=demo-api:1\npostgres:18 ", "\n".join(lines))
+        self.assertIn(
+            "registries=docker.io/library/demo-api:1\ndocker.io/library/postgres:18 ",
+            "\n".join(lines),
+        )
         applied = "\n".join(lines[policies:namespace])
         self.assertIn("kind: ValidatingPolicy", applied)
         self.assertNotIn("- Audit", applied)
@@ -306,6 +330,21 @@ class SmokeOrderTest(unittest.TestCase):
         self.assertIn("cgroup_no_v1=all", result.stderr)
         self.assertNotIn("k3d cluster create", calls)
 
+    def test_running_mirrors_are_attached_and_detached_before_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            lines = self.run_smoke(Path(tmp), extra_env={"STUB_MIRRORS": "running"})
+        args = self.cluster_create(lines)
+        self.assertIn("--registry-config", args)
+        self.assertIn("k3d-baukit-mirror-ghcr-io:5000", args)
+        detach = self.index(lines, "docker network disconnect k3d-demo-baukit-smoke ")
+        self.assertLess(detach, self.index(lines, "k3d cluster delete demo-baukit-smoke"))
+
+    def test_cluster_is_created_as_before_without_running_mirrors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.cluster_create(self.run_smoke(Path(tmp)))
+        self.assertNotIn("--registry-config", args)
+        self.assertNotIn("--registry-use", args)
+
     def test_a_chart_with_another_digest_is_not_installed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             self.run_smoke(Path(tmp), digest="sha256:" + "0" * 64)
@@ -315,3 +354,26 @@ class SmokeOrderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResolvedImageTest(unittest.TestCase):
+    def test_allowlist_uses_the_form_the_registry_policy_compares(self) -> None:
+        text = ENFORCE.read_text()
+        start = text.index("resolved_image() {")
+        function = text[start : text.index("\n}\n", start) + 3]
+        cases = {
+            "postgres:18": "docker.io/library/postgres:18",
+            "rancher/k3s:v1": "docker.io/rancher/k3s:v1",
+            "ghcr.io/org/app:1": "ghcr.io/org/app:1",
+            "localhost:5000/app:1": "localhost:5000/app:1",
+            "localhost/app:1": "localhost/app:1",
+        }
+        for image, expected in cases.items():
+            with self.subTest(image=image):
+                result = process_runner.run_process(
+                    ["bash", "-c", f'{function}resolved_image "$1"', "resolved_image", image],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.stdout.strip(), expected)

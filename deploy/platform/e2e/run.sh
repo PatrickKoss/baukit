@@ -255,6 +255,7 @@ create_cluster() {
   chmod 0600 "$kubeconfig"
   wait_for_node_registration "$cluster_name"
   kubectl wait node --all --for=condition=Ready --timeout=5m >/dev/null
+  platform_label_system_namespaces
 }
 
 # kubectl wait --all exits at once when no node has registered yet.

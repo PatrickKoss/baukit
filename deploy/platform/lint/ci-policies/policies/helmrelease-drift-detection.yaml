@@ -14,7 +14,7 @@ spec:
         operations: [CREATE, UPDATE]
         resources: [helmreleases]
   validations:
-    - expression: object.spec.?driftDetection.?mode.orValue("") in ["warn", "enabled"]
+    - expression: object.spec.?driftDetection.?mode.orValue("") == "enabled"
       messageExpression: >-
-        "HelmRelease " + object.metadata.name + " must set spec.driftDetection.mode to warn or " +
-        "enabled, so manual changes to its objects show up as drift."
+        "HelmRelease " + object.metadata.name + " must set spec.driftDetection.mode to enabled, so " +
+        "helm-controller reverts manual changes to its objects."
