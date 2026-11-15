@@ -5,6 +5,7 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 deploy_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 kyverno_dir=${BAUKIT_SMOKE_KYVERNO_DIR:-$deploy_root/platform/kyverno}
 policy_library=${BAUKIT_SMOKE_KYVERNO_POLICY_LIBRARY:-$deploy_root/platform/kyverno-policies}
+priority_classes=${BAUKIT_SMOKE_PRIORITY_CLASSES:-$deploy_root/platform/cluster-baseline/priority-classes.yaml}
 kyverno_namespace=kyverno
 ready_timeout=${BAUKIT_SMOKE_KYVERNO_TIMEOUT:-300s}
 webhook_configured='{.status.conditionStatus.conditions[?(@.type=="WebhookConfigured")].status}'
@@ -94,6 +95,7 @@ install() {
         return 1
     fi
     archive=$(find "$work/pull" -maxdepth 1 -name '*.tgz' -print -quit)
+    kubectl apply -f "$priority_classes"
     kubectl apply -f "$kyverno_dir/namespace.yaml"
     helm upgrade --install kyverno "$archive" \
         --namespace "$kyverno_namespace" \

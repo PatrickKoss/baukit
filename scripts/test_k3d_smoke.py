@@ -240,11 +240,13 @@ class SmokeOrderTest(unittest.TestCase):
         source = parse(KYVERNO_SOURCE)[0]["spec"]
         pull = self.index(lines, f"helm pull {source['url']} --version {source['ref']['tag']} ")
         kyverno = self.index(lines, "helm upgrade --install kyverno ")
+        priority = self.index(lines, "kubectl apply -f ", "/cluster-baseline/priority-classes.yaml")
         allowlist = self.index(lines, "kubectl -n kyverno create configmap baukit-registry-")
         policies = self.index(lines, "kubectl apply -f ", "/policies.yaml") + 1
         namespace = self.index(lines, "kubectl label --local -f - -o yaml baukit.dev/tenant=true")
         product = self.index(lines, "helm upgrade --install demo ")
         self.assertLess(pull, kyverno)
+        self.assertLess(priority, kyverno)
         self.assertIn("/kyverno-stub.tgz ", lines[kyverno])
         self.assertLess(kyverno, allowlist)
         self.assertLess(allowlist, policies)
