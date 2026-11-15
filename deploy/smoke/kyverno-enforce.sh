@@ -7,6 +7,7 @@ kyverno_dir=${BAUKIT_SMOKE_KYVERNO_DIR:-$deploy_root/platform/kyverno}
 policy_library=${BAUKIT_SMOKE_KYVERNO_POLICY_LIBRARY:-$deploy_root/platform/kyverno-policies}
 kyverno_namespace=kyverno
 ready_timeout=${BAUKIT_SMOKE_KYVERNO_TIMEOUT:-300s}
+webhook_configured='{.status.conditionStatus.conditions[?(@.type=="WebhookConfigured")].status}'
 
 usage() {
     echo "usage: $0 render <out-dir> | install <allowed-image>..." >&2
@@ -114,7 +115,8 @@ wait_for_policies() {
             GeneratingPolicy) resource=generatingpolicies.policies.kyverno.io ;;
             *) continue ;;
         esac
-        kubectl wait --for=jsonpath='{.status.conditionStatus.ready}'=true "$resource/$name" --timeout="$ready_timeout"
+        kubectl wait --for="jsonpath=$webhook_configured=True" "$resource/$name" \
+            --timeout="$ready_timeout"
     done < <(awk '/^kind: /{kind=$2} /^  name: /{if (kind != "") print kind, $2; kind=""}' "$1")
 }
 
