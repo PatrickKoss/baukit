@@ -81,6 +81,34 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+        - name: redis-exporter
+          image: docker.io/oliver006/redis_exporter:v1.97.0@sha256:f5f903fbe77571d455ede0453b084d6840bc62fc105efac001034421cab83b99
+          imagePullPolicy: IfNotPresent
+          args:
+            - --redis.addr=redis://127.0.0.1:6379
+          ports:
+            - name: metrics
+              containerPort: 9121
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            periodSeconds: 10
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 5m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
       volumes:
         - name: data
           emptyDir: {}
