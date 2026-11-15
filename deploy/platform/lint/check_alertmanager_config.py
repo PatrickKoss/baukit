@@ -5,8 +5,10 @@ The kube-prometheus-stack chart render must read its config from the routing Sec
 Secret, so a cluster without it never starts Alertmanager. The base must not ship the Secret. Every
 routing config (the base example and each overlay Secret) must route Watchdog first to a receiver
 with an integration, send nothing else to a receiver without one (InfoInhibitor excepted), and carry
-the critical-over-warning and InfoInhibitor inhibit rules. The Flux error Alert must cover every
-namespace that holds a Kustomization, HelmRelease or GitRepository.
+the critical-over-warning and InfoInhibitor inhibit rules. A receiver URL on a cluster Service must
+name a Service that the same overlay renders, so a local route never points at a missing host.
+The Flux error Alert must cover every namespace that holds a Kustomization, HelmRelease or
+GitRepository.
 """
 
 from __future__ import annotations
@@ -24,20 +26,26 @@ import helm_yaml
 
 PLATFORM_DIR = Path(__file__).resolve().parents[1]
 EXAMPLE = PLATFORM_DIR / "observability-stack/alertmanager/alertmanager.example.yaml"
-SECRET_NAME = "alertmanager-routing"
-SECRET_NAMESPACE = "observability"
+ROUTING_NAME = "alertmanager-routing"
+ROUTING_NAMESPACE = "observability"
 CONFIG_KEY = "alertmanager.yaml"
 CHART_RENDER = "chart-observability-stack-kube-prometheus-stack.yaml"
 BASE_RENDER = "base-observability-stack.yaml"
 REQUIRED_OVERLAYS = ("overlays/local/components/observability",)
 KUSTOMIZE = PLATFORM_DIR.parents[1] / ".tools/bin/kustomize"
-CHART_CONFIG_SECRET = "alertmanager-kube-prometheus-stack-alertmanager"
+CHART_ROUTING_NAME = "alertmanager-kube-prometheus-stack-alertmanager"
 FLUX_ALERT = ("flux-system", "flux-errors")
 FLUX_KINDS = ("Kustomization", "HelmRelease", "GitRepository")
 WATCHDOG = ("alertname", "=", "Watchdog")
 INFO_INHIBITOR = ("alertname", "=", "InfoInhibitor")
 MATCHER = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(=~|!~|!=|=)\s*"?(.*?)"?\s*$')
-RELEVANT_KINDS = re.compile(r"^kind: (Alertmanager|Secret|Alert|Kustomization|HelmRelease|GitRepository)$", re.M)
+RELEVANT_KINDS = re.compile(
+    r"^kind: (Alertmanager|Secret|Service|Alert|Kustomization|HelmRelease|GitRepository)$", re.M
+)
+
+CLUSTER_URL = re.compile(
+    r"^https?://([a-z0-9-]+)\.([a-z0-9-]+)\.svc(?:\.cluster\.local)?(?::\d+)?(?:/|$)"
+)
 
 Matcher = tuple[str, str, str]
 
@@ -63,7 +71,9 @@ def parse_matchers(entries: Iterable[str]) -> set[Matcher]:
 def route_matchers(route: dict) -> set[Matcher]:
     matchers = parse_matchers(route.get("matchers") or [])
     matchers.update((label, "=", str(value)) for label, value in (route.get("match") or {}).items())
-    matchers.update((label, "=~", str(value)) for label, value in (route.get("match_re") or {}).items())
+    matchers.update(
+        (label, "=~", str(value)) for label, value in (route.get("match_re") or {}).items()
+    )
     return matchers
 
 
@@ -115,7 +125,9 @@ def route_problems(config: dict, source: str) -> list[str]:
     if WATCHDOG not in route_matchers(first):
         problems.append(f'{source}: route.routes[0] must match alertname = "Watchdog"')
     elif watchdog_receiver not in delivering:
-        problems.append(f"{source}: Watchdog goes to {watchdog_receiver!r}, which has no integration")
+        problems.append(
+            f"{source}: Watchdog goes to {watchdog_receiver!r}, which has no integration"
+        )
     return problems
 
 
@@ -133,10 +145,18 @@ def inhibit_problems(config: dict, source: str) -> list[str]:
     rules = config.get("inhibit_rules") or []
     problems = []
     wanted = (
-        (("severity", "critical"), ("severity", "warning"), {"alertname", "namespace"},
-         "critical inhibits warning for the same alertname and namespace"),
-        (("alertname", "InfoInhibitor"), ("severity", "info"), {"namespace"},
-         "InfoInhibitor inhibits info for the same namespace"),
+        (
+            ("severity", "critical"),
+            ("severity", "warning"),
+            {"alertname", "namespace"},
+            "critical inhibits warning for the same alertname and namespace",
+        ),
+        (
+            ("alertname", "InfoInhibitor"),
+            ("severity", "info"),
+            {"namespace"},
+            "InfoInhibitor inhibits info for the same namespace",
+        ),
     )
     for source_label, target_label, equal, description in wanted:
         if not any(inhibits(rule, source_label, target_label, equal) for rule in rules):
@@ -171,7 +191,9 @@ def parse_objects(text: str) -> list[RenderedObject]:
     return objects
 
 
-def find(objects: list[RenderedObject], kind: str, namespace: str | None, name: str) -> RenderedObject | None:
+def find(
+    objects: list[RenderedObject], kind: str, namespace: str | None, name: str
+) -> RenderedObject | None:
     for item in objects:
         if item.kind == kind and item.name == name and namespace in (None, item.namespace):
             return item
@@ -184,7 +206,9 @@ def secret_config(secret: RenderedObject) -> str:
         return str(string_data[CONFIG_KEY])
     data = secret.body.get("data") or {}
     if CONFIG_KEY not in data:
-        raise ValueError(f"has no {CONFIG_KEY} key; the operator would fall back to a drop-all config")
+        raise ValueError(
+            f"has no {CONFIG_KEY} key; the operator would fall back to a drop-all config"
+        )
     try:
         return base64.b64decode("".join(str(data[CONFIG_KEY]).split()), validate=True).decode()
     except (binascii.Error, UnicodeDecodeError) as error:
@@ -203,28 +227,54 @@ def chart_problems(objects: list[RenderedObject], source: str) -> list[str]:
     problems = []
     for alertmanager in alertmanagers:
         spec = alertmanager.body.get("spec") or {}
-        if spec.get("configSecret") != SECRET_NAME:
-            problems.append(f"{source}: Alertmanager {alertmanager.name} configSecret is not {SECRET_NAME}")
-        if SECRET_NAME not in (spec.get("secrets") or []):
+        if spec.get("configSecret") != ROUTING_NAME:
             problems.append(
-                f"{source}: Alertmanager {alertmanager.name} does not mount Secret {SECRET_NAME}, "
+                f"{source}: Alertmanager {alertmanager.name} configSecret is not {ROUTING_NAME}"
+            )
+        if ROUTING_NAME not in (spec.get("secrets") or []):
+            problems.append(
+                f"{source}: Alertmanager {alertmanager.name} does not mount Secret {ROUTING_NAME}, "
                 "so it starts with the operator's drop-all config when the Secret is missing"
             )
-    for name in (SECRET_NAME, CHART_CONFIG_SECRET):
+    for name in (ROUTING_NAME, CHART_ROUTING_NAME):
         if find(objects, "Secret", None, name):
-            problems.append(f"{source}: renders Secret {name}; the overlay must own the routing config")
+            problems.append(
+                f"{source}: renders Secret {name}; the overlay must own the routing config"
+            )
     return problems
 
 
 def overlay_problems(objects: list[RenderedObject], source: str, required: bool) -> list[str]:
-    secret = find(objects, "Secret", SECRET_NAMESPACE, SECRET_NAME)
+    secret = find(objects, "Secret", ROUTING_NAMESPACE, ROUTING_NAME)
     if secret is None:
-        return [f"{source}: has no Secret {SECRET_NAMESPACE}/{SECRET_NAME}"] if required else []
+        return [f"{source}: has no Secret {ROUTING_NAMESPACE}/{ROUTING_NAME}"] if required else []
     try:
         config = parse_config(secret_config(secret))
     except ValueError as error:
-        return [f"{source}: Secret {SECRET_NAME} {error}"]
-    return config_problems(config, f"{source} Secret {SECRET_NAME}")
+        return [f"{source}: Secret {ROUTING_NAME} {error}"]
+    label = f"{source} Secret {ROUTING_NAME}"
+    return config_problems(config, label) + cluster_url_problems(config, objects, label)
+
+
+def receiver_urls(config: dict) -> Iterator[tuple[str, str]]:
+    for receiver in config.get("receivers") or []:
+        for key, integrations in receiver.items():
+            if not key.endswith("_configs"):
+                continue
+            for integration in integrations or []:
+                yield str(receiver.get("name", "")), str(integration.get("url", ""))
+
+
+def cluster_url_problems(config: dict, objects: list[RenderedObject], source: str) -> list[str]:
+    problems = []
+    for receiver, url in receiver_urls(config):
+        match = CLUSTER_URL.match(url)
+        if match and find(objects, "Service", match.group(2), match.group(1)) is None:
+            problems.append(
+                f"{source}: receiver '{receiver}' posts to {url}, "
+                f"but this overlay renders no Service {match.group(2)}/{match.group(1)}"
+            )
+    return problems
 
 
 def flux_alert_problems(objects: list[RenderedObject], alert: RenderedObject | None) -> list[str]:
@@ -241,7 +291,9 @@ def flux_alert_problems(objects: list[RenderedObject], alert: RenderedObject | N
     }
     wanted = {(item.kind, item.namespace) for item in objects if item.kind in FLUX_KINDS}
     for kind, namespace in sorted(wanted - covered):
-        problems.append(f"Flux Alert {alert.name} has no eventSource for {kind} in namespace {namespace}")
+        problems.append(
+            f"Flux Alert {alert.name} has no eventSource for {kind} in namespace {namespace}"
+        )
     return problems
 
 
@@ -251,8 +303,8 @@ def check(
     problems = config_problems(parse_config(example.read_text()), str(example))
     problems += chart_problems(rendered_objects(rendered_dir / CHART_RENDER), CHART_RENDER)
     base = rendered_objects(rendered_dir / BASE_RENDER)
-    if find(base, "Secret", None, SECRET_NAME):
-        problems.append(f"{BASE_RENDER}: renders Secret {SECRET_NAME}; the overlay must own it")
+    if find(base, "Secret", None, ROUTING_NAME):
+        problems.append(f"{BASE_RENDER}: renders Secret {ROUTING_NAME}; the overlay must own it")
     problems += [f"{name} was not rendered" for name in sorted(set(required) - set(overlays))]
     flux_objects = list(base)
     for name, text in sorted(overlays.items()):
@@ -269,7 +321,10 @@ def check(
 def overlay_directories(platform: Path) -> list[Path]:
     return sorted(
         path.parent
-        for pattern in ("overlays/*/kustomization.yaml", "overlays/*/components/*/kustomization.yaml")
+        for pattern in (
+            "overlays/*/kustomization.yaml",
+            "overlays/*/components/*/kustomization.yaml",
+        )
         for path in platform.glob(pattern)
     )
 
@@ -301,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
     for problem in problems:
         print(f"ERROR: {problem}", file=sys.stderr)
     if not problems:
-        print("alertmanager routing: Secret required, Watchdog, inhibit rules and Flux alerts in place")
+        print("alertmanager routing: Secret, Watchdog, inhibit rules and Flux alerts in place")
     return 1 if problems else 0
 
 

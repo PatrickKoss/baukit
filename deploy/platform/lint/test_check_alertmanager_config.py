@@ -40,7 +40,7 @@ receivers:
       - url: https://pager.test/
   - name: tickets
     webhook_configs:
-      - url: https://tickets.test/
+      - url: http://alert-sink.observability.svc.cluster.local:8080/alerts
 """
 
 CHART = """apiVersion: monitoring.coreos.com/v1
@@ -82,9 +82,18 @@ metadata:
 """
 
 
-def secret(config: str, key: str = "alertmanager.yaml") -> str:
+SINK_SERVICE = """apiVersion: v1
+kind: Service
+metadata:
+  name: alert-sink
+  namespace: observability
+"""
+
+
+def secret(config: str, key: str = "alertmanager.yaml", service: str = SINK_SERVICE) -> str:
     encoded = base64.b64encode(config.encode()).decode()
-    return f"""apiVersion: v1
+    return (
+        f"""apiVersion: v1
 kind: Secret
 metadata:
   name: alertmanager-routing
@@ -97,7 +106,10 @@ kind: Kustomization
 metadata:
   name: local-observability
   namespace: flux-system
+---
 """
+        + service
+    )
 
 
 class Case:
@@ -109,7 +121,7 @@ class Case:
         self.rendered.mkdir()
         self.example = self.root / "example.yaml"
         self.example.write_text(CONFIG)
-        self.chart(cac.SECRET_NAME, f"[{cac.SECRET_NAME}]")
+        self.chart(cac.ROUTING_NAME, f"[{cac.ROUTING_NAME}]")
         self.base(BASE)
         self.overlays = {"local": secret(CONFIG)}
 
@@ -140,7 +152,9 @@ class AlertmanagerConfigTest(unittest.TestCase):
 
     def test_root_route_to_null_fails(self) -> None:
         case = Case(self)
-        case.overlays["local"] = secret(CONFIG.replace("receiver: tickets", "receiver: blackhole", 1))
+        case.overlays["local"] = secret(
+            CONFIG.replace("receiver: tickets", "receiver: blackhole", 1)
+        )
         self.assert_one_problem(case, "local Secret alertmanager-routing: route sends alerts")
 
     def test_missing_watchdog_route_fails(self) -> None:
@@ -152,26 +166,34 @@ class AlertmanagerConfigTest(unittest.TestCase):
         case = Case(self)
         case.example.write_text(CONFIG.replace("receiver: heartbeat", "receiver: blackhole"))
         problems = case.problems()
-        self.assertTrue(any("Watchdog goes to 'blackhole'" in problem for problem in problems), problems)
+        self.assertTrue(
+            any("Watchdog goes to 'blackhole'" in problem for problem in problems), problems
+        )
 
     def test_missing_severity_inhibit_rule_fails(self) -> None:
         case = Case(self)
-        case.example.write_text(CONFIG.replace("equal: [namespace, alertname]", "equal: [namespace]"))
+        case.example.write_text(
+            CONFIG.replace("equal: [namespace, alertname]", "equal: [namespace]")
+        )
         self.assert_one_problem(case, "critical inhibits warning")
 
     def test_missing_info_inhibitor_rule_fails(self) -> None:
         case = Case(self)
-        case.example.write_text(CONFIG.replace('- alertname = "InfoInhibitor"\n    target', '- alertname = "X"\n    target'))
+        case.example.write_text(
+            CONFIG.replace(
+                '- alertname = "InfoInhibitor"\n    target', '- alertname = "X"\n    target'
+            )
+        )
         self.assert_one_problem(case, "InfoInhibitor inhibits info")
 
     def test_alertmanager_without_secret_mount_fails(self) -> None:
         case = Case(self)
-        case.chart(cac.SECRET_NAME, "[]")
+        case.chart(cac.ROUTING_NAME, "[]")
         self.assert_one_problem(case, "does not mount Secret alertmanager-routing")
 
     def test_alertmanager_with_other_config_secret_fails(self) -> None:
         case = Case(self)
-        case.chart("other", f"[{cac.SECRET_NAME}]")
+        case.chart("other", f"[{cac.ROUTING_NAME}]")
         self.assert_one_problem(case, "configSecret is not alertmanager-routing")
 
     def test_base_shipping_the_secret_fails(self) -> None:
@@ -188,6 +210,16 @@ class AlertmanagerConfigTest(unittest.TestCase):
         case = Case(self)
         case.overlays["local"] = secret(CONFIG, key="config.yaml")
         self.assert_one_problem(case, "has no alertmanager.yaml key")
+
+    def test_cluster_url_without_rendered_service_fails(self) -> None:
+        case = Case(self)
+        case.overlays["local"] = secret(CONFIG.replace("observability.svc", "e2e-receiver.svc"))
+        self.assert_one_problem(case, "renders no Service e2e-receiver/alert-sink")
+
+    def test_cluster_url_with_service_missing_from_overlay_fails(self) -> None:
+        case = Case(self)
+        case.overlays["local"] = secret(CONFIG, service="kind: ConfigMap\n")
+        self.assert_one_problem(case, "receiver 'tickets' posts to http://alert-sink")
 
     def test_optional_overlay_without_secret_passes(self) -> None:
         case = Case(self)

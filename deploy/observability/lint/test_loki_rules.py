@@ -10,16 +10,16 @@ import importlib.util
 import os
 import re
 import unittest
-from unittest import mock
 from pathlib import Path
 from types import ModuleType
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[3]
 LOKI_RULES = ROOT / "deploy/observability-platform/loki-rules"
 RUNBOOKS = ROOT / "docs/runbooks/platform"
 SEVERITIES = {"critical", "warning", "info"}
 LINE_FILTER = re.compile(r'\|=\s*"((?:[^"\\]|\\.)*)"')
-OTHER_FILTER = re.compile(r'!=|\|~|!~')
+OTHER_FILTER = re.compile(r"!=|\|~|!~")
 
 # Traefik v3.7.13 pkg/provider/kubernetes/crd/kubernetes.go:182 logs
 # Msgf("Provider error, retrying in %s", time) through zerolog's ConsoleWriter (no log.format set).
