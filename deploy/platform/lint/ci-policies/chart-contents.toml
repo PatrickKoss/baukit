@@ -40,7 +40,7 @@ tests = false
 
 ["kube-prometheus-stack@93.3.0"]
 crds = true
-tests = false
+tests = true
 
 ["kured@6.1.0"]
 crds = false

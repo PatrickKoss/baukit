@@ -10,6 +10,8 @@ spec:
     kind: OCIRepository
     name: kube-prometheus-stack
     namespace: observability
+  test:
+    enable: true
   install:
     crds: CreateReplace
     remediation:
@@ -87,7 +89,15 @@ spec:
       enabled: true
       replicas: 1
       testFramework:
-        enabled: false
+        image:
+          tag: "1.14.0@sha256:5322b877351fda0cc435de8c6116de7d0a2ec79d7c680132a0ef329a633bc66f"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
       # The overlay creates this Secret with admin-user and admin-password.
       admin:
         existingSecret: grafana-admin
@@ -419,3 +429,13 @@ spec:
 
     thanosRuler:
       enabled: false
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              version: v1
+              kind: Pod
+            patch: |-
+              - op: add
+                path: /spec/priorityClassName
+                value: platform-standard
