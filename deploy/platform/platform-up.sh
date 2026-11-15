@@ -21,6 +21,9 @@ source "$platform_dir/local-git-http.sh"
 k3s_image=${BAUKIT_PLATFORM_K3S_IMAGE:-$(platform_k3s_image)}
 # shellcheck source=deploy/platform/flux-lockdown.sh
 source "$platform_dir/flux-lockdown.sh"
+# shellcheck source=deploy/lib/tools.sh
+source "$repo_root/deploy/lib/tools.sh"
+flux_version=v$(baukit_tool_version "$repo_root" flux)
 
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -37,7 +40,7 @@ require_tools() {
   done
   if ((${#missing[@]} > 0)); then
     printf 'ERROR: missing required tools: %s\n' "${missing[*]}" >&2
-    printf 'Pinned local tools belong in ~/.local/bin (k3d 5.8.3, kubectl 1.36.3, Flux 2.9.4).\n' >&2
+    printf 'Pinned local tools belong in ~/.local/bin (versions in deploy/tools.toml).\n' >&2
     exit 2
   fi
 }
@@ -200,6 +203,7 @@ status() {
 }
 
 up() {
+  baukit_use_tools "$repo_root" flux
   require_tools
   ensure_secret_state
   if ! cluster_exists; then
@@ -212,8 +216,8 @@ up() {
   use_context
   start_git_daemon
 
-  printf 'Installing Flux v2.9.4 controllers with the multi-tenancy lockdown\n'
-  flux_lockdown_render "$platform_dir" v2.9.4 | kubectl apply --server-side -f - >/dev/null
+  printf 'Installing Flux %s controllers with the multi-tenancy lockdown\n' "$flux_version"
+  flux_lockdown_render "$platform_dir" "$flux_version" | kubectl apply --server-side -f - >/dev/null
   kubectl label namespace flux-system --overwrite \
     pod-security.kubernetes.io/enforce=restricted \
     pod-security.kubernetes.io/enforce-version=v1.34 \

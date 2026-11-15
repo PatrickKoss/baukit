@@ -12,7 +12,7 @@ PLATFORM = Path(__file__).resolve().parent.parent
 TOOLS = PLATFORM.parent.parent / ".tools/bin"
 TENANT = PLATFORM / "components/tenant"
 LOCKDOWN = PLATFORM / "components/flux-lockdown"
-FLUX_VERSION = "v2.9.4"
+FLUX_VERSION = "v2.10.0"
 FLUX_KINDS = {"Kustomization", "HelmRelease"}
 PARAMETERS = """\
 apiVersion: v1

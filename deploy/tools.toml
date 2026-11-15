@@ -80,11 +80,11 @@ sha256 = { linux-amd64 = "06d8f25bc3a971c4eb29e0ff08429b180402db0f4dec838c9eac42
 
 # validate.sh and platform-lifecycle.sh read the Flux version from here.
 [tools.flux]
-version = "2.9.4"
+version = "2.10.0"
 url = "https://github.com/fluxcd/flux2/releases/download/v{version}/flux_{version}_{os}_{arch}.tar.gz"
 member = "flux"
 version_args = ["version", "--client"]
-sha256 = { linux-amd64 = "c2c397a52930f52d2005c01d276116b059d062de379386d58e98115380a766a2", linux-arm64 = "dcab945f8d8658662fa1db93e150a602ba1f91da367a82e099bd65595fc7c62c", darwin-arm64 = "5350675411f1c8c20fb7fd827450933e939f7ab82a2cd92f8fa2abe497761911" }
+sha256 = { linux-amd64 = "208dd7012c04fedeed5b2d0b6e63df3b15b1c34a381527811685c098bc9f8659", linux-arm64 = "c3c435052e5e18156858bc73f26bcadb62821a6e30951b4b302beb4e65a532c2", darwin-arm64 = "339c5dba218e2b0a04a0841d1dace6c00d65736dc3286038463fa86754ff6c53" }
 
 # Matches the k3s v1.36 stable channel the infrastructure pins.
 [tools.kubectl]
