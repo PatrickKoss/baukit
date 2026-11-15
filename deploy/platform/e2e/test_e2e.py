@@ -6,6 +6,7 @@ import sys
 import tempfile
 import time
 import unittest
+from datetime import datetime
 from pathlib import Path
 
 E2E = Path(__file__).resolve().parent
@@ -455,6 +456,7 @@ class FalcoEventsTests(unittest.TestCase):
             kubectl = Path(tmp) / "kubectl"
             kubectl.write_text(
                 "#!/bin/sh\n"
+                'echo "$*" >>"$STUB/calls"\n'
                 'case "$*" in\n'
                 '  *"get pods"*) echo pod/falco-a ;;\n'
                 '  *logs*) cat "$STUB/falco.log" ;;\n'
@@ -471,6 +473,8 @@ class FalcoEventsTests(unittest.TestCase):
                 text=True,
                 check=False,
             )
+            calls = Path(tmp, "calls")
+            self.calls = calls.read_text() if calls.exists() else ""
         return result
 
     def rules(self, result):
@@ -492,6 +496,11 @@ class FalcoEventsTests(unittest.TestCase):
         loki = self.query("loki", "Debug").stdout
         self.assertEqual(falco, loki)
         self.assertEqual(len(loki.splitlines()), 4)
+
+    def test_loki_window_starts_before_since_for_kernel_clock_lag(self):
+        self.query("loki", "Debug")
+        since_s = int(datetime.fromisoformat(SINCE.replace("Z", "+00:00")).timestamp())
+        self.assertIn(f"start={(since_s - 120) * 1_000_000_000}&", self.calls)
 
     def test_process_filter_skips_the_runc_mount_read(self):
         filters = ("--rule", SHADOW_RULE, "--namespace", "chainsaw-a", "--process", "cat")
