@@ -3,7 +3,6 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: e2e-echo
-  namespace: flux-system
 spec:
   interval: 10m
   timeout: 5m
@@ -17,7 +16,6 @@ spec:
       sourceRef:
         kind: GitRepository
         name: baukit
-        namespace: flux-system
   install:
     remediation:
       retries: 3

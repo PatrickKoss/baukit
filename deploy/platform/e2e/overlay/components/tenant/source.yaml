@@ -1,0 +1,11 @@
+# The lockdown forbids cross-namespace sources, so the tenant reads the snapshot through its own.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: baukit
+spec:
+  interval: 1m
+  timeout: 1m
+  url: http://host.k3d.internal:9418/baukit.git
+  ref:
+    branch: main

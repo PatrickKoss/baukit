@@ -265,5 +265,54 @@ class StalledReleaseTests(unittest.TestCase):
         self.assertEqual(result.stdout, "falco/falco\n")
 
 
+class FailedKustomizationTests(unittest.TestCase):
+    def run_function(self, function, setup, call):
+        script = f'{setup}\nsource <(sed -n "/^{function}() {{/,/^}}/p" "{E2E / "run.sh"}")\n{call}'
+        result = process_runner.run_process(["bash", "-c", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def test_only_non_transient_failures_are_printed(self):
+        def item(name, reason):
+            condition = {"type": "Ready", "status": "False", "reason": reason}
+            return {
+                "metadata": {"namespace": "flux-system", "name": name},
+                "status": {"conditions": [condition]},
+            }
+
+        listing = {
+            "items": [
+                item("e2e-tenant", "ReconciliationFailed"),
+                item("e2e-broken", "BuildFailed"),
+                item("e2e-redis", "DependencyNotReady"),
+                item("e2e-postgres", "Progressing"),
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "ks.json"
+            path.write_text(json.dumps(listing))
+            output = self.run_function(
+                "failed_kustomizations", f'kubectl() {{ cat "{path}"; }}', "failed_kustomizations"
+            )
+        self.assertEqual(output, "flux-system/e2e-tenant\nflux-system/e2e-broken\n")
+
+    def test_a_failure_counts_only_after_three_polls_in_a_row(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            counts = Path(tmp) / "counts"
+            poll = f'persistent_failures "{counts}"'
+            calls = "\n".join(
+                [
+                    f'{poll} "a"; echo "|"',
+                    f'{poll} "a"; echo "|"',
+                    f'{poll} ""; echo "|"',
+                    f'{poll} "a"; echo "|"',
+                    f'{poll} "a"; echo "|"',
+                    f'{poll} "a"; echo "|"',
+                ]
+            )
+            output = self.run_function("persistent_failures", "failed_poll_limit=3", calls)
+        self.assertEqual(output.split("|\n"), ["", "", "", "", "", "a\n", ""])
+
+
 if __name__ == "__main__":
     unittest.main()

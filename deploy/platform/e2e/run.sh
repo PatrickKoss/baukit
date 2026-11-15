@@ -27,6 +27,7 @@ test_dirs=("$e2e_dir/tests")
 without=()
 heavy_slot_dir=${BAUKIT_HEAVY_SLOT_DIR:-/tmp/claude-heavy-slots}
 ready_poll_seconds=30
+failed_poll_limit=3
 heavy_slot_poll_seconds=${BAUKIT_HEAVY_SLOT_POLL_SECONDS:-30}
 cluster_lock=${BAUKIT_E2E_CLUSTER_LOCK:-$HOME/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock}
 artifacts_dir=${BAUKIT_E2E_ARTIFACTS:-$repo_root/.ci-gate/platform-e2e}
@@ -296,16 +297,47 @@ for item in json.load(sys.stdin)["items"]:
 '
 }
 
+# Prints the Kustomizations whose Ready=False reason will not clear on its own.
+failed_kustomizations() {
+  kubectl get kustomizations.kustomize.toolkit.fluxcd.io -A -o json | python3 -c '
+import json, sys
+for item in json.load(sys.stdin)["items"]:
+    for condition in item.get("status", {}).get("conditions", []):
+        if condition["type"] == "Ready" and condition["status"] == "False" and condition.get(
+            "reason"
+        ) in ("ReconciliationFailed", "BuildFailed"):
+            print(item["metadata"]["namespace"] + "/" + item["metadata"]["name"])
+'
+}
+
+# Usage: persistent_failures <count-file> <failed names>. Bumps each name's streak, drops names that
+# recovered, and prints the names failed for failed_poll_limit polls in a row.
+persistent_failures() {
+  local counts=$1 failed=$2 previous name streak
+  previous=$(cat -- "$counts" 2>/dev/null || true)
+  : >"$counts"
+  while read -r name; do
+    [[ -n $name ]] || continue
+    streak=$(awk -v n="$name" '$1 == n {print $2}' <<<"$previous")
+    streak=$((${streak:-0} + 1))
+    printf '%s %s\n' "$name" "$streak" >>"$counts"
+    ((streak >= failed_poll_limit)) && printf '%s\n' "$name"
+  done <<<"$failed"
+  return 0
+}
+
 wait_for_platform() {
   render_overlay | kubectl apply -f - >/dev/null
   flux reconcile source git baukit --namespace flux-system --timeout=2m >/dev/null
   printf 'Waiting up to %s for every Kustomization and HelmRelease\n' "$ready_timeout"
-  local deadline=$((SECONDS + ${ready_timeout%m} * 60)) stalled
+  local deadline=$((SECONDS + ${ready_timeout%m} * 60)) stalled failed counts=$state_dir/failed-polls
   until kubectl wait kustomizations.kustomize.toolkit.fluxcd.io -A --all \
     --for=condition=Ready --timeout="${ready_poll_seconds}s" >/dev/null 2>&1; do
     stalled=$(stalled_releases)
-    if [[ -n $stalled ]] || ((SECONDS >= deadline)); then
+    failed=$(persistent_failures "$counts" "$(failed_kustomizations)")
+    if [[ -n $stalled || -n $failed ]] || ((SECONDS >= deadline)); then
       [[ -n $stalled ]] && printf 'Stalled HelmReleases, retries exhausted:\n%s\n' "$stalled"
+      [[ -n $failed ]] && printf 'Kustomizations failing for %s polls:\n%s\n' "$failed_poll_limit" "$failed"
       report_not_ready
       return 1
     fi
