@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: admission-external-ip
+  namespace: e2e-tenant
+spec:
+  type: ClusterIP
+  selector:
+    app: admission
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+  externalIPs:
+    - 203.0.113.10
