@@ -27,12 +27,14 @@ cluster_name=baukit-platform-e2e
 keep_cluster=false
 test_dirs=("$e2e_dir/tests")
 without=()
-heavy_slot_dir=${BAUKIT_HEAVY_SLOT_DIR:-/tmp/claude-heavy-slots}
+heavy_slot_dir=${BAUKIT_HEAVY_SLOT_DIR:-}
 ready_poll_seconds=30
 dependency_requeue=5s
+node_registration_attempts=60
+node_registration_poll_seconds=${BAUKIT_E2E_NODE_POLL_SECONDS:-2}
 failed_poll_limit=3
 heavy_slot_poll_seconds=${BAUKIT_HEAVY_SLOT_POLL_SECONDS:-30}
-cluster_lock=${BAUKIT_E2E_CLUSTER_LOCK:-$HOME/.cache/baukit-orchestrator/platform-hardening/k3d-full.lock}
+cluster_lock=${BAUKIT_E2E_CLUSTER_LOCK:-${XDG_CACHE_HOME:-$HOME/.cache}/baukit/platform-e2e.lock}
 artifacts_dir=${BAUKIT_E2E_ARTIFACTS:-$repo_root/.ci-gate/platform-e2e}
 state_parent=${BAUKIT_E2E_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/baukit-platform-e2e}
 flux_version=
@@ -117,6 +119,7 @@ take_cluster_lock() {
 
 # Other projects on this host hold at most two heavy runs, one per slot directory.
 wait_for_heavy_slot() {
+  [[ -n $heavy_slot_dir ]] || return 0
   while [[ -e $heavy_slot_dir/slot-1 && -e $heavy_slot_dir/slot-2 ]]; do
     printf 'Waiting for a free heavy-run slot: %s/slot-1 and slot-2 both exist\n' "$heavy_slot_dir"
     sleep "$heavy_slot_poll_seconds"
@@ -209,7 +212,20 @@ create_cluster() {
     --kubeconfig-switch-context=false >/dev/null
   k3d kubeconfig get "$cluster_name" >"$kubeconfig"
   chmod 0600 "$kubeconfig"
+  wait_for_node_registration "$cluster_name"
   kubectl wait node --all --for=condition=Ready --timeout=5m >/dev/null
+}
+
+# kubectl wait --all exits at once when no node has registered yet.
+wait_for_node_registration() {
+  local attempt
+  for ((attempt = 0; attempt < node_registration_attempts; attempt++)); do
+    [[ -n $(kubectl get nodes -o name 2>/dev/null) ]] && return 0
+    sleep "$node_registration_poll_seconds"
+  done
+  printf 'ERROR: no node registered in cluster %s\n' "$1" >&2
+  docker logs --tail 30 "k3d-$1-server-0" >&2 || true
+  return 1
 }
 
 serve_snapshot() {

@@ -180,11 +180,74 @@ class HeavySlotTests(unittest.TestCase):
         self.assertIn("Waiting for a free heavy-run slot", output)
         self.assertTrue(output.endswith("proceeded\n"))
 
+    def test_no_slot_wait_without_a_slot_dir(self):
+        environment = {k: v for k, v in os.environ.items() if k != "BAUKIT_HEAVY_SLOT_DIR"}
+        environment["RUN_SH"] = str(E2E / "run.sh")
+        result = process_runner.run_process(
+            ["bash", "-c", 'source "$RUN_SH" && wait_for_heavy_slot && echo proceeded'],
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        self.assertEqual(result.stdout, "proceeded\n")
+
+    def test_lock_defaults_to_the_user_cache(self):
+        environment = {k: v for k, v in os.environ.items() if k != "BAUKIT_E2E_CLUSTER_LOCK"}
+        environment.update(XDG_CACHE_HOME="/xdg", RUN_SH=str(E2E / "run.sh"))
+        result = process_runner.run_process(
+            ["bash", "-c", 'source "$RUN_SH" && printf %s "$cluster_lock"'],
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        self.assertEqual(result.stdout, "/xdg/baukit/platform-e2e.lock")
+
     def test_proceeds_at_once_with_one_slot_free(self):
         with tempfile.TemporaryDirectory() as slot_dir:
             Path(slot_dir, "slot-1").mkdir()
             output, _ = self.start_wait(slot_dir).communicate(timeout=10)
         self.assertEqual(output, "proceeded\n")
+
+
+class NodeRegistrationTests(unittest.TestCase):
+    def wait(self, empty_calls):
+        with tempfile.TemporaryDirectory() as tmp:
+            count = Path(tmp) / "count"
+            count.write_text("0")
+            stubs = {
+                "kubectl": f'n=$(cat "{count}"); echo $((n + 1)) >"{count}"; '
+                f'[ "$n" -ge {empty_calls} ] && echo node/server-0; exit 0',
+                "docker": 'echo "docker $*"',
+            }
+            for name, body in stubs.items():
+                stub = Path(tmp) / name
+                stub.write_text(f"#!/bin/sh\n{body}\n")
+                stub.chmod(0o755)
+            environment = {
+                **os.environ,
+                "PATH": f"{tmp}:{os.environ['PATH']}",
+                "BAUKIT_E2E_NODE_POLL_SECONDS": "0",
+                "RUN_SH": str(E2E / "run.sh"),
+            }
+            result = process_runner.run_process(
+                ["bash", "-c", 'source "$RUN_SH" && wait_for_node_registration e2e'],
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+            return result, int(count.read_text())
+
+    def test_waits_until_a_node_registers(self):
+        result, calls = self.wait(empty_calls=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, 4)
+
+    def test_gives_up_and_prints_the_server_log(self):
+        result, calls = self.wait(empty_calls=1000)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, 60)
+        self.assertIn("no node registered in cluster e2e", result.stderr)
+        self.assertIn("docker logs --tail 30 k3d-e2e-server-0", result.stderr)
 
 
 class RuntimeIdentityTests(unittest.TestCase):
