@@ -239,10 +239,10 @@ class HeavySlotTests(unittest.TestCase):
 
 
 class DatastoreTests(unittest.TestCase):
-    def test_cluster_runs_on_embedded_etcd(self):
+    def test_cluster_uses_the_local_etcd_helper(self):
         text = (E2E / "run.sh").read_text()
-        self.assertIn("embedded_etcd_arg='--cluster-init@server:0'", text)
-        self.assertIn('--k3s-arg "$embedded_etcd_arg"', text)
+        self.assertIn("mapfile -t etcd_args < <(platform_local_etcd_args)", text)
+        self.assertIn('"${etcd_args[@]}" \\', text)
 
 
 class NodeRegistrationTests(unittest.TestCase):
