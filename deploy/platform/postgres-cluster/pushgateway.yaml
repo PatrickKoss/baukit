@@ -16,6 +16,7 @@ spec:
         app.kubernetes.io/name: restore-test-pushgateway
         app.kubernetes.io/part-of: baukit-platform
     spec:
+      priorityClassName: platform-standard
       securityContext:
         runAsNonRoot: true
         seccompProfile:

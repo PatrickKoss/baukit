@@ -17,6 +17,7 @@ spec:
         app.kubernetes.io/name: alert-sink
         app.kubernetes.io/part-of: baukit-platform
     spec:
+      priorityClassName: platform-standard
       automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
