@@ -125,6 +125,31 @@ class HelmTestNetpolTests(unittest.TestCase):
                 ["demo/app-test: no chart Service found in the test command"],
             )
 
+    def test_url_in_a_mounted_config_map_names_the_service(self):
+        tester = {
+            **CHART[2],
+            "spec": {
+                "containers": [{"command": ["bats", "/tests/run.sh"]}],
+                "volumes": [{"name": "tests", "configMap": {"name": "app-test"}}],
+            },
+        }
+        script = {
+            "kind": "ConfigMap",
+            "metadata": {"name": "app-test"},
+            "data": {"run.sh": 'url="http://app-svc/api/health"'},
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            rendered = Path(tmp)
+            (rendered / "base-app.yaml").write_text(dump_all([RELEASE, DEFAULT_DENY]))
+            (rendered / "chart-app-app.yaml").write_text(dump_all([*CHART[:2], tester, script]))
+            self.assertEqual(
+                check_helm_test_netpol.problems(rendered),
+                [
+                    "demo/app-test: egress to app-svc:8080 is not allowed",
+                    "demo/app-test: app-svc does not admit it on 8080",
+                ],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

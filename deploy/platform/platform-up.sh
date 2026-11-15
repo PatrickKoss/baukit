@@ -9,7 +9,8 @@ git_root=$state_dir/git
 git_pid_file=$state_dir/git-daemon.pid
 
 cluster_name=${BAUKIT_PLATFORM_CLUSTER:-baukit-local}
-git_port=${BAUKIT_PLATFORM_GIT_PORT:-9418}
+# overlays/local/source.yaml points Flux at this port.
+git_port=9418
 api_port=${BAUKIT_PLATFORM_API_PORT:-random}
 http_port=${BAUKIT_PLATFORM_HTTP_PORT:-80}
 https_port=${BAUKIT_PLATFORM_HTTPS_PORT:-443}
@@ -25,6 +26,9 @@ source "$platform_dir/flux-lockdown.sh"
 source "$platform_dir/registry-mirrors.sh"
 # shellcheck source=deploy/platform/runtime-identity.sh
 source "$platform_dir/runtime-identity.sh"
+# shellcheck source=deploy/lib/tools.sh
+source "$repo_root/deploy/lib/tools.sh"
+flux_version=v$(baukit_tool_version "$repo_root" flux)
 
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -41,7 +45,7 @@ require_tools() {
   done
   if ((${#missing[@]} > 0)); then
     printf 'ERROR: missing required tools: %s\n' "${missing[*]}" >&2
-    printf 'Pinned local tools belong in ~/.local/bin (k3d 5.8.3, kubectl 1.36.3, Flux 2.9.4).\n' >&2
+    printf 'Pinned local tools belong in ~/.local/bin (versions in deploy/tools.toml).\n' >&2
     exit 2
   fi
 }
@@ -175,18 +179,20 @@ status() {
 }
 
 up() {
+  baukit_use_tools "$repo_root" flux
   require_tools
   ensure_secret_state
   if ! cluster_exists; then
     printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$k3s_image"
-    local mirror_dir mirror_args=()
+    local mirror_dir mirror_args=() etcd_args=()
+    mapfile -t etcd_args < <(platform_local_etcd_args)
     mirror_dir=$(mktemp -d)
     if registry_mirrors_running; then
       mapfile -t mirror_args < <(registry_mirrors_k3d_args "$mirror_dir/registries.yaml")
       printf 'Using the running registry mirrors.\n'
     fi
     k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port" \
-      --subnet "$k3d_subnet" --k3s-arg "$(platform_local_etcd_arg)" "${mirror_args[@]}"
+      --subnet "$k3d_subnet" "${etcd_args[@]}" "${mirror_args[@]}"
     rm -rf -- "$mirror_dir"
   else
     printf 'Cluster %s already exists; converging it.\n' "$cluster_name"
@@ -195,8 +201,8 @@ up() {
   platform_label_system_namespaces
   start_git_daemon
 
-  printf 'Installing Flux v2.9.4 controllers with the multi-tenancy lockdown\n'
-  flux_lockdown_render "$platform_dir" v2.9.4 | kubectl apply --server-side -f - >/dev/null
+  printf 'Installing Flux %s controllers with the multi-tenancy lockdown\n' "$flux_version"
+  flux_lockdown_render "$platform_dir" "$flux_version" | kubectl apply --server-side -f - >/dev/null
   kubectl label namespace flux-system --overwrite \
     pod-security.kubernetes.io/enforce=restricted \
     pod-security.kubernetes.io/enforce-version=v1.37 \

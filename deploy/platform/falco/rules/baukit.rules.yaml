@@ -33,9 +33,10 @@
 # show up as container.id=host or as containers the CRI socket does not know, so they carry no
 # k8s.ns.name (FA0 spike, 2026-11-14: dockerd reading /etc/shadow, containerd PTRACE in another
 # k3d node, foreign coredns contacting its API server, k3d's docker exec into another node).
-# A host with a dedicated kernel overrides this macro to never_true in the falco-overlay-rules ConfigMap.
+# The base watches host processes. A shared-kernel cluster (k3d on WSL2, the e2e cluster) turns the
+# filter on with components/falco-shared-kernel, which overrides this macro in falco-overlay-rules.
 - macro: baukit_shared_kernel
-  condition: (evt.num >= 0)
+  condition: (never_true)
 
 - macro: baukit_foreign_host_event
   condition: (baukit_shared_kernel and not baukit_cluster_pod)
@@ -58,6 +59,12 @@
     condition: append
 
 - rule: PTRACE anti-debug attempt
+  condition: and not baukit_known_noise
+  override:
+    condition: append
+
+# A libFuzzer run on the host attaches to its own children (FA4 soak, 2026-11-15, container.id=host).
+- rule: PTRACE attached to process
   condition: and not baukit_known_noise
   override:
     condition: append
@@ -86,9 +93,37 @@
 - macro: baukit_migration_container
   condition: (container and k8s.pod.label[baukit.dev/process] = migrate)
 
+# runc re-executes itself as "<fd> init" inside the container before it starts the exec'd process,
+# which the rule sees on its own (FA4 soak, 2026-11-15: one "6 init" event per kubectl exec).
+- macro: baukit_runc_init
+  condition: (proc.exe = runc and proc.pname = runc and proc.args = init)
+
 # kubectl exec and attach start the process from the runtime, never as PID 1 of the container.
+# container_entrypoint also matches a process whose parent Falco never saw, which keeps an exec with a
+# lost parent detected.
 - macro: baukit_runtime_exec
-  condition: (spawned_process and container_entrypoint and proc.vpid != 1)
+  condition: (spawned_process and container_entrypoint and proc.vpid != 1 and not baukit_runc_init)
+
+# The CNPG operator starts backups with an exec of "manager backup <name>" in the postgres container,
+# and the Barman Cloud plugin sidecar has an exec startup probe "/manager healthcheck unix"
+# (FA4 soak, 2026-11-15, first scheduled backup after install).
+# After a rules reload Falco loses the parents of running processes, so the children the CNPG
+# instance manager keeps spawning look like execs: pg_isready every 10 seconds and the WAL archive
+# command (FA4 soak, 2026-11-15).
+- macro: baukit_cnpg_instance_manager_child
+  condition: >
+    (k8s.ns.name = postgres
+    and container.image.repository = ghcr.io/cloudnative-pg/postgresql
+    and (proc.name = pg_isready
+      or (proc.name = sh and proc.cmdline startswith "sh -c -- /controller/manager wal-archive ")
+      or (proc.name = barman-cloud-wa and proc.cmdline startswith "barman-cloud-wa /venv/bin/barman-cloud-wal-archive ")))
+
+- macro: baukit_cnpg_runtime_exec
+  condition: >
+    (baukit_cnpg_instance_manager_child
+    or (k8s.ns.name = postgres
+      and ((container.image.repository = ghcr.io/cloudnative-pg/postgresql and proc.cmdline startswith "manager backup ")
+        or (container.image.repository = ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar and proc.cmdline = "manager healthcheck unix"))))
 
 - rule: Baukit shell or package manager in app container
   desc: A shell or package manager started in a baukit app container. The app images run one binary and need neither.
@@ -152,6 +187,7 @@
   condition: >
     baukit_runtime_exec
     and k8s.ns.name in (baukit_exec_protected_namespaces)
+    and not baukit_cnpg_runtime_exec
   output: Process started by kubectl exec or attach in a protected platform namespace | process=%proc.name command=%proc.cmdline user=%user.name terminal=%proc.tty k8s_ns=%k8s.ns.name k8s_pod=%k8s.pod.name container=%container.name image=%container.image.repository:%container.image.tag
   priority: CRITICAL
   tags: [baukit, baukit_platform, container, process, mitre_execution, T1609]

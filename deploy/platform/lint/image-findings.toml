@@ -24,6 +24,23 @@ ids = [
   "CVE-2026-71200",
 ]
 
+[images."docker.io/bats/bats:1.14.0@sha256:5322b877351fda0cc435de8c6116de7d0a2ec79d7c680132a0ef329a633bc66f"]
+expires = 2026-12-12
+reason = "1.14.0 is the newest bats image; the findings are Alpine openssl, musl, perl and zlib packages in the short-lived Grafana Helm test pod, which runs only against the in-cluster Grafana service; Renovate (SC4) moves the pin once upstream rebuilds"
+ids = [
+  "CVE-2026-107891",
+  "CVE-2026-13221",
+  "CVE-2026-14456",
+  "CVE-2026-42496",
+  "CVE-2026-42497",
+  "CVE-2026-48962",
+  "CVE-2026-57432",
+  "CVE-2026-57433",
+  "CVE-2026-8376",
+  "CVE-2026-85091",
+  "CVE-2026-9538",
+]
+
 [images."docker.io/falcosecurity/falcosidekick:2.35.1@sha256:a9bb60d2c7742febd912315ca1155839abc0199bf322c58d3adbb8b0849fadb9"]
 expires = 2026-12-12
 reason = "2.35.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
@@ -33,9 +50,9 @@ ids = [
   "CVE-2026-78669",
 ]
 
-[images."docker.io/grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf"]
+[images."docker.io/grafana/grafana:13.3.1-distroless@sha256:54e297ac67e2b72572f926892f4e06074dc4f79f2a56ed9a9ca9a88a46f28733"]
 expires = 2026-12-12
-reason = "13.3.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+reason = "13.3.1 is the newest upstream release and still ships these in its bundled datasource plugin binaries; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-111943",
   "CVE-2026-21728",
@@ -46,9 +63,9 @@ ids = [
   "CVE-2026-97031",
 ]
 
-[images."docker.io/grafana/tempo:2.10.10@sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38"]
+[images."docker.io/grafana/tempo:3.1.1@sha256:64e2fbd56d9c2b3412a4b430a58ea59e91a670b1e75f920a0c702213ad145044"]
 expires = 2026-12-12
-reason = "2.10.10 is the newest 2.10 release; Tempo 3 needs the tempo chart 3.x major, a separate bump after SC2"
+reason = "3.1.1 is the newest upstream release and still ships go-jose v4.1.4 and golang.org/x/net v0.60.0; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
@@ -66,23 +83,6 @@ expires = 2026-12-12
 reason = "v2.24.2 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
   "CVE-2026-78661",
-]
-
-[images."docker.io/nginxinc/nginx-unprivileged@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e"]
-expires = 2026-12-12
-reason = "1.31.7-alpine is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
-ids = [
-  "CVE-2026-107891",
-  "CVE-2026-111497",
-  "CVE-2026-113351",
-  "CVE-2026-115506",
-  "CVE-2026-117610",
-  "CVE-2026-118370",
-  "CVE-2026-125350",
-  "CVE-2026-85091",
-  "CVE-2026-87636",
-  "CVE-2026-92392",
-  "CVE-2026-9947",
 ]
 
 [images."ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07"]
@@ -127,11 +127,40 @@ ids = [
   "CVE-2026-97031",
 ]
 
-[images."ghcr.io/jkroepke/access-log-exporter@sha256:a1448056c0081f067ecb48096a81cea9abc418b1405e49eac8a29d2b31302576"]
+[images."ghcr.io/fluxcd/helm-controller:v1.7.1@sha256:54526cc6ed1202d71d44c310676448065664f3255ad671d9a69ac26f904e617a"]
 expires = 2026-12-12
-reason = "0.5.2 is the newest 0.x release the loki 18 chart runs; 1.x is a major jump, a separate bump after SC2"
+reason = "Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-111943",
+  "CVE-2026-78661",
+]
+
+[images."ghcr.io/fluxcd/kustomize-controller:v1.10.1@sha256:37db29b25dae35b881a5e064acedb0cc954442da453a39eaa0eab7a90dbecc4e"]
+expires = 2026-12-12
+reason = "Flux v2.10.0 is the newest release; kustomize-controller v1.10.1 ships Alpine 3.24.3 git 2.54.0-r0, libexpat 2.9.0-r0 and openssh 10.3_p1-r1 plus golang.org/x/net v0.61.0; Renovate (SC4) moves the pin once upstream rebuilds"
+ids = [
+  "CVE-2026-105437",
+  "CVE-2026-111760",
+  "CVE-2026-113351",
+  "CVE-2026-114466",
+  "CVE-2026-115506",
+  "CVE-2026-117610",
+  "CVE-2026-118370",
+  "CVE-2026-123158",
+  "CVE-2026-78661",
+]
+
+[images."ghcr.io/fluxcd/notification-controller:v1.10.0@sha256:9f58b9532ec9d3ccf539cd3ccdf283477a5dcb7777b922db5477d8bbd4d3767c"]
+expires = 2026-12-12
+reason = "Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these; Renovate (SC4) moves the pin once upstream rebuilds"
+ids = [
+  "CVE-2026-78661",
+]
+
+[images."ghcr.io/fluxcd/source-controller:v1.10.1@sha256:611b6bca3eae95bcff471414d1fb14a4ab83d7f14e609cccef2bd389c121f37e"]
+expires = 2026-12-12
+reason = "Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these; Renovate (SC4) moves the pin once upstream rebuilds"
+ids = [
+  "CVE-2026-78661",
 ]
 
 [images."ghcr.io/jkroepke/kube-webhook-certgen:1.11.1@sha256:8009b04f9873f7279b5adee37fdd03b6a9aa7b6751d4f69fde2683010e41cd1f"]
@@ -1805,17 +1834,6 @@ ids = [
   "CVE-2026-78669",
 ]
 
-[images."python:3.13.18-alpine3.24@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e"]
-expires = 2026-12-12
-reason = "3.13.18-alpine3.24 is the newest 3.13 image; the findings sit in pip's vendored msgpack, setuptools and urllib3, which the stdlib-only alert sink never imports; Renovate (SC4) moves the pin once upstream rebuilds"
-ids = [
-  "CVE-2025-47273",
-  "CVE-2026-114613",
-  "CVE-2026-97687",
-  "CVE-2026-97689",
-  "GHSA-6v7p-g79w-8964",
-]
-
 [images."ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0@sha256:c669259e20ed1e11fad821f735c396c19d929985aa05b9544b13ecc8b5a386d0"]
 expires = 2026-12-12
 reason = "v0.16.0 is the newest plugin-barman-cloud release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
@@ -1827,161 +1845,15 @@ ids = [
   "CVE-2026-97031",
 ]
 
-[images."ghcr.io/fluxcd/helm-controller:v1.6.3@sha256:16ada99456385100698a5d7adf90aba8a2089d987ab541c9566b6d7b0e897038"]
+[images."python:3.15.2-alpine3.24@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd"]
 expires = 2026-12-12
-reason = "Flux v2.9.4 is the version deploy/tools.toml and flux-lockdown.sh install; Flux v2.10.0 drops the controllers' findings from 133 to 12, a CLI, CRD and lockdown upgrade for S4/SC4"
+reason = "3.15.2-alpine3.24 is the newest Python image; the findings sit in pip's vendored msgpack, setuptools and urllib3, which the stdlib-only alert sink never imports; Renovate (SC4) moves the pin once upstream rebuilds"
 ids = [
-  "CVE-2026-107891",
-  "CVE-2026-111943",
-  "CVE-2026-14456",
-  "CVE-2026-33818",
-  "CVE-2026-39821",
-  "CVE-2026-46600",
-  "CVE-2026-50163",
-  "CVE-2026-56851",
-  "CVE-2026-56853",
-  "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
-  "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
-  "CVE-2026-85091",
-  "CVE-2026-85731",
-  "CVE-2026-97031",
-  "GHSA-hrxh-6v49-42gf",
-]
-
-[images."ghcr.io/fluxcd/kustomize-controller:v1.9.4@sha256:2b8bec54ffb6caf421bd2a6c005d27f567d5dd4db7feb55794fb51fcabd69b8f"]
-expires = 2026-12-12
-reason = "Flux v2.9.4 is the version deploy/tools.toml and flux-lockdown.sh install; Flux v2.10.0 drops the controllers' findings from 133 to 12, a CLI, CRD and lockdown upgrade for S4/SC4"
-ids = [
-  "CVE-2026-103111",
-  "CVE-2026-105437",
-  "CVE-2026-107891",
-  "CVE-2026-111497",
-  "CVE-2026-111760",
-  "CVE-2026-111943",
-  "CVE-2026-113351",
-  "CVE-2026-11352",
-  "CVE-2026-114466",
-  "CVE-2026-115506",
-  "CVE-2026-11586",
-  "CVE-2026-116587",
-  "CVE-2026-117610",
-  "CVE-2026-11822",
-  "CVE-2026-11824",
-  "CVE-2026-118370",
-  "CVE-2026-12064",
-  "CVE-2026-123158",
-  "CVE-2026-14456",
-  "CVE-2026-33818",
-  "CVE-2026-39821",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
-  "CVE-2026-56852",
-  "CVE-2026-56853",
-  "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
-  "CVE-2026-66046",
-  "CVE-2026-76641",
-  "CVE-2026-76956",
-  "CVE-2026-76957",
-  "CVE-2026-77214",
-  "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-8286",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
-  "CVE-2026-8458",
-  "CVE-2026-85091",
-  "CVE-2026-86145",
-  "CVE-2026-89157",
-  "CVE-2026-89161",
-  "CVE-2026-8925",
-  "CVE-2026-8927",
-  "CVE-2026-92392",
-  "CVE-2026-93990",
-  "CVE-2026-9547",
-  "CVE-2026-97031",
-  "GHSA-hrxh-6v49-42gf",
-]
-
-[images."ghcr.io/fluxcd/notification-controller:v1.9.3@sha256:071c351a0fb163eeb6a2bb82f1e894f51b6b0734216d2e97d3d99c9ab9d710b9"]
-expires = 2026-12-12
-reason = "Flux v2.9.4 is the version deploy/tools.toml and flux-lockdown.sh install; Flux v2.10.0 drops the controllers' findings from 133 to 12, a CLI, CRD and lockdown upgrade for S4/SC4"
-ids = [
-  "CVE-2026-107891",
-  "CVE-2026-111943",
-  "CVE-2026-116587",
-  "CVE-2026-14456",
-  "CVE-2026-33818",
-  "CVE-2026-39821",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
-  "CVE-2026-56852",
-  "CVE-2026-56853",
-  "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
-  "CVE-2026-56864",
-  "CVE-2026-56865",
-  "CVE-2026-63209",
-  "CVE-2026-71556",
-  "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
-  "CVE-2026-85091",
-  "CVE-2026-97031",
-  "GHSA-hrxh-6v49-42gf",
-]
-
-[images."ghcr.io/fluxcd/source-controller:v1.9.4@sha256:8a8ed0a57b8b86f561d5a4309a69f65e62f0cebe4de8801593c5ff35a3bc3c23"]
-expires = 2026-12-12
-reason = "Flux v2.9.4 is the version deploy/tools.toml and flux-lockdown.sh install; Flux v2.10.0 drops the controllers' findings from 133 to 12, a CLI, CRD and lockdown upgrade for S4/SC4"
-ids = [
-  "CVE-2026-107891",
-  "CVE-2026-111943",
-  "CVE-2026-116587",
-  "CVE-2026-14456",
-  "CVE-2026-33818",
-  "CVE-2026-39821",
-  "CVE-2026-46600",
-  "CVE-2026-49478",
-  "CVE-2026-50163",
-  "CVE-2026-56851",
-  "CVE-2026-56852",
-  "CVE-2026-56853",
-  "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
-  "CVE-2026-56864",
-  "CVE-2026-56865",
-  "CVE-2026-63209",
-  "CVE-2026-71556",
-  "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
-  "CVE-2026-85091",
-  "CVE-2026-85731",
-  "CVE-2026-97031",
-  "GHSA-hrxh-6v49-42gf",
+  "CVE-2025-47273",
+  "CVE-2026-114613",
+  "CVE-2026-97687",
+  "CVE-2026-97689",
+  "GHSA-6v7p-g79w-8964",
 ]
 
 [images."quay.io/jetstack/cert-manager-cainjector:v1.21.3@sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f"]
@@ -2022,29 +1894,6 @@ ids = [
   "CVE-2026-97687",
   "CVE-2026-97689",
   "GHSA-6v7p-g79w-8964",
-]
-
-[images."quay.io/prometheus-operator/prometheus-operator:v0.93.1@sha256:e52bb28fd41c98dd407c7a8cba8bdcfe7eabd7447e250afaf1fe7bb816dedbff"]
-expires = 2026-12-12
-reason = "v0.95.2 fixes these but ships only with kube-prometheus-stack 93.x; the pinned 88.6.5 and every 88.x to 90.x release carry operator v0.93.1, and a chart major jump is out of scope for SC2"
-ids = [
-  "CVE-2026-111943",
-  "CVE-2026-33818",
-  "CVE-2026-39821",
-  "CVE-2026-46600",
-  "CVE-2026-56851",
-  "CVE-2026-56853",
-  "CVE-2026-56854",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
-  "CVE-2026-78661",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-84304",
-  "CVE-2026-84445",
-  "CVE-2026-97031",
 ]
 
 [images."quay.io/prometheus/alertmanager:v0.35.0@sha256:5f6e66c01bd610aef6dd671642a52eee775fd3a89bd8788ebada33efaf373d10"]

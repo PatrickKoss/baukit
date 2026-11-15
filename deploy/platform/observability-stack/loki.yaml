@@ -103,8 +103,8 @@ spec:
 
     gateway:
       image:
-        digest: sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
-        tag: 1.31.7-alpine
+        digest: sha256:0ec17b0dac55776357d46d882bed7f3d504b0e4a0bc7379c7dbb74bd12b9d4da
+        tag: 1.31.8-alpine
       enabled: true
       replicas: 1
       resources:
@@ -116,8 +116,8 @@ spec:
           memory: 128Mi
       metrics:
         image:
-          digest: sha256:a1448056c0081f067ecb48096a81cea9abc418b1405e49eac8a29d2b31302576
-          tag: "0.5.2"
+          digest: sha256:9709581d7e6693663fdcb70e67993679b1d116329c6fc62bf318bd461bd28b14
+          tag: "1.0.2"
         resources:
           requests:
             cpu: 10m
