@@ -1,0 +1,26 @@
+{{- $baseUrl := required "runbookBaseUrl is required" .Values.runbookBaseUrl | trimSuffix "/" -}}
+{{- $data := dict -}}
+{{- range $path, $_ := .Files.Glob "loki-rules/*.{yml,yaml}" }}
+{{- $file := dict "root" $ "path" $path }}
+{{- $component := include "baukit-platform-observability.component" $file }}
+{{- if index $.Values.components $component }}
+{{- $_ := set $data (base $path) ($.Files.Get $path | replace "RUNBOOK_BASE_URL" $baseUrl) }}
+{{- end }}
+{{- end }}
+---
+# Loki mounts this ConfigMap as its rule directory, so it renders even when it holds no rules.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "baukit-platform-observability.fullname" . }}-loki-rules
+  labels:
+    {{- include "baukit-platform-observability.labels" . | nindent 4 }}
+{{- if $data }}
+data:
+  {{- range $name, $content := $data }}
+  {{ $name }}: |
+    {{- $content | nindent 4 }}
+  {{- end }}
+{{- else }}
+data: {}
+{{- end }}
