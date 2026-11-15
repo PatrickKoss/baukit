@@ -1,0 +1,37 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: flux-tenant-alert-sources
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Flux tenant alert sources
+    policies.kyverno.io/severity: medium
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [notification.toolkit.fluxcd.io]
+        apiVersions: [v1beta3]
+        operations: [CREATE, UPDATE]
+        resources: [alerts]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  variables:
+    - name: namespace
+      expression: object.metadata.?namespace.orValue("")
+    - name: foreignSources
+      expression: >-
+        object.spec.?eventSources.orValue([])
+        .filter(s, s.?namespace.orValue(variables.namespace) != variables.namespace)
+        .map(s, s.kind + "/" + s.namespace + "/" + s.name)
+  validations:
+    - expression: size(variables.foreignSources) == 0
+      messageExpression: >-
+        "Alert event sources " + variables.foreignSources.join(", ") + " live in another namespace. " +
+        "Tenant Alerts watch objects in their own namespace only."
