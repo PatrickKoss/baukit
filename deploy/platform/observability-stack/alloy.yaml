@@ -35,6 +35,10 @@ spec:
       tag: v1.22.0
     crds:
       create: false
+    global:
+      podSecurityContext:
+        seccompProfile:
+          type: RuntimeDefault
     controller:
       priorityClassName: platform-standard
       type: daemonset
@@ -48,6 +52,10 @@ spec:
               key: environment
       mounts:
         varlog: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
       resources:
         requests:
           cpu: 50m

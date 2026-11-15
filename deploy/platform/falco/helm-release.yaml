@@ -41,6 +41,8 @@ spec:
         memory: 1Gi
     driver:
       kind: modern_ebpf
+      modernEbpf:
+        leastPrivileged: true
     collectors:
       containerEngine:
         engines:
@@ -97,6 +99,16 @@ spec:
         repository: falcosecurity/falcosidekick
         tag: "2.35.1@sha256:a9bb60d2c7742febd912315ca1155839abc0199bf322c58d3adbb8b0849fadb9"
       priorityClassName: platform-standard
+      podSecurityContext:
+        runAsUser: 1234
+        fsGroup: 1234
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
       resources:
         requests:
           cpu: 10m
