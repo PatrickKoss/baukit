@@ -226,6 +226,7 @@ spec:
                       revision: [status, history, "0", chartVersion]
                       chart_name: [status, history, "0", chartName]
                       chart_source_name: [spec, chart, spec, sourceRef, name]
+                      chart_ref_name: [spec, chartRef, name]
               - groupVersionKind:
                   group: source.toolkit.fluxcd.io
                   version: v1
