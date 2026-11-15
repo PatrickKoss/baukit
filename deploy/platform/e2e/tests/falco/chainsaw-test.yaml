@@ -142,9 +142,11 @@ spec:
               set -eu
               since=$(kubectl -n falco get pods -l app.kubernetes.io/name=falco -o jsonpath='{.items[0].status.startTime}')
               echo_pod=$(kubectl -n "$NAMESPACE" get configmap falco-triggers -o jsonpath='{.data.echo-pod}')
-              # The triggers above, and the e2e-backup-* clusters into which backup-restore execs psql.
+              # The triggers above, the e2e-backup-* clusters into which backup-restore execs psql, and the
+              # netpol-probe-* pods into which the netpol suite execs its probes in protected namespaces.
               events=$(./falco-events.sh --source falco --since "$since" --min-priority Warning \
-                --exclude-pod "$echo_pod" --exclude-pod shadow-reader --exclude-pod e2e-backup-)
+                --exclude-pod "$echo_pod" --exclude-pod shadow-reader --exclude-pod e2e-backup- \
+                --exclude-pod netpol-probe-)
               if [ -n "$events" ]; then
                 printf 'Falco raised Warning+ events outside the deliberate triggers since %s:\n%s\n' "$since" "$events" >&2
                 exit 1
