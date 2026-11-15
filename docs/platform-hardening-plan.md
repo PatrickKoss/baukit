@@ -1094,3 +1094,9 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   and run.sh defaults without orchestrator paths (lock under `${XDG_CACHE_HOME}/baukit`, heavy-slot
   wait only with `BAUKIT_HEAVY_SLOT_DIR`). All offline gates green on the merge. E3's timing runs are
   still open and need an idle host. e2e runs now go through three k3d slots in parallel.
+- 2026-11-15 1447cc0d: e2e clusters run kubelet with image-gc-high-threshold=100. The host disk sat
+  at 85-88%, kubelet's image GC deleted the imported echo image, and SC5a e2e4 and FA45 full-3 failed
+  with ErrImageNeverPull. Smoke-tested on k3s 1.37.2 (kubelet configz high 100, low 80); offline
+  gates green. Also found: parallel k3d clusters need fs.inotify.max_user_instances >= 512 (the host
+  now has 1024; S5 adds it to the sysctl preflight), and ph-k6-5 lost its k3s server mid-run with no
+  server log kept (E5 adds server logs to the artifacts and a wait loop that tolerates API errors).
