@@ -178,6 +178,15 @@ spec:
                   metadata:
                     name: ${backup}
                     namespace: ${POD_NAMESPACE}
+                    labels:
+                      baukit.dev/restore-test: "true"
+                    ownerReferences:
+                      - apiVersion: batch/v1
+                        kind: Job
+                        name: ${JOB_NAME}
+                        uid: ${JOB_UID}
+                        controller: false
+                        blockOwnerDeletion: false
                   spec:
                     method: plugin
                     cluster:
@@ -273,6 +282,14 @@ spec:
                 # so a restore test does not leave a retained volume behind.
                 - name: RESTORE_STORAGE_CLASS
                   value: ""
+                - name: JOB_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['batch.kubernetes.io/job-name']
+                - name: JOB_UID
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['batch.kubernetes.io/controller-uid']
                 - name: SENTINEL_FILE
                   value: /work/sentinel
                 - name: BACKUP_TIMEOUT_SECONDS

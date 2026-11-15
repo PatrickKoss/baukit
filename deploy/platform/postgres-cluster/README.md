@@ -102,6 +102,15 @@ that a restored cluster turns `Ready`:
    missing row or a different token (an old backup) fails the job.
 5. Only then it pushes `baukit_restore_test_last_success_timestamp_seconds` and
    deletes the restored cluster.
+6. Each Backup it creates carries `baukit.dev/restore-test: "true"` and a
+   non-controller ownerReference to the Job, whose name and uid come from the
+   pod labels `batch.kubernetes.io/job-name` and
+   `batch.kubernetes.io/controller-uid` through the downward API. Garbage
+   collection removes the Backup when the Job goes, so
+   `successfulJobsHistoryLimit: 1`, `failedJobsHistoryLimit: 2` and the Job's
+   `ttlSecondsAfterFinished` bound them. Deleting a CNPG Backup object does not
+   delete its data in the object store; the ObjectStore `retentionPolicy`
+   removes that.
 
 A small Pushgateway retains the metric in an `emptyDir` across container
 restarts; losing the pod intentionally makes the metric absent and therefore

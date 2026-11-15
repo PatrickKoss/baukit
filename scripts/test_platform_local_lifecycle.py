@@ -240,6 +240,8 @@ esac
         env = self.container_env(
             self.restorer,
             RESTORE_STORAGE_CLASS=storage_class,
+            JOB_NAME="postgres-restore-test-29000000",
+            JOB_UID="0b5c9a8e-1111-4222-8333-444455556666",
             BACKUP_TIMEOUT_SECONDS="5",
             POLL_SECONDS="0",
             PGDATABASE="product",
@@ -293,6 +295,44 @@ esac
         self.assertIn(f"exec -i {self.PRIMARY} -c postgres", exec_call)
         self.assertTrue(exec_call.endswith("secret\n"), "the password goes over stdin")
         self.assertIn("baukit_restore_test_last_success_timestamp_seconds", self.pushed.read_text())
+
+    def test_backup_is_owned_by_the_job_from_the_downward_api(self) -> None:
+        token = self.write_sentinel()
+        result = self.run_restore("", token)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        backup = next(doc for doc in self.applied_docs() if doc["kind"] == "Backup")
+        self.assertEqual(backup["metadata"]["labels"], {"baukit.dev/restore-test": "true"})
+        self.assertEqual(
+            backup["metadata"]["ownerReferences"],
+            [
+                {
+                    "apiVersion": "batch/v1",
+                    "kind": "Job",
+                    "name": "postgres-restore-test-29000000",
+                    "uid": "0b5c9a8e-1111-4222-8333-444455556666",
+                    "controller": False,
+                    "blockOwnerDeletion": False,
+                }
+            ],
+        )
+        env = {item["name"]: item for item in self.restorer["env"]}
+        self.assertEqual(
+            env["JOB_NAME"]["valueFrom"]["fieldRef"]["fieldPath"],
+            "metadata.labels['batch.kubernetes.io/job-name']",
+        )
+        self.assertEqual(
+            env["JOB_UID"]["valueFrom"]["fieldRef"]["fieldPath"],
+            "metadata.labels['batch.kubernetes.io/controller-uid']",
+        )
+        cronjob = next(
+            doc
+            for doc in yaml.safe_load_all(
+                (PLATFORM / "postgres-cluster/restore-test.yaml").read_text()
+            )
+            if doc["kind"] == "CronJob"
+        )
+        self.assertEqual(cronjob["spec"]["successfulJobsHistoryLimit"], 1)
+        self.assertEqual(cronjob["spec"]["failedJobsHistoryLimit"], 2)
 
     def test_missing_sentinel_fails_without_pushing(self) -> None:
         self.write_sentinel()
