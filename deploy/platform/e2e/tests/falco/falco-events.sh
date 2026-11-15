@@ -34,12 +34,9 @@ falco_lines() {
   done
 }
 
-# Loki stores Falco's kernel event time, which lagged the host clock by 10s on WSL2.
-event_clock_skew_seconds=120
-
 loki_lines() {
   local start_ns query
-  start_ns=$((($(date -d "$since" +%s) - event_clock_skew_seconds) * 1000000000))
+  start_ns=$(($(date -d "$since" +%s) * 1000000000))
   query='{source="syscall"}'
   kubectl get --raw "/api/v1/namespaces/observability/services/loki:3100/proxy/loki/api/v1/query_range?limit=5000&direction=forward&start=$start_ns&query=$(
     python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$query"

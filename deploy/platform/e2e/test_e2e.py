@@ -497,10 +497,16 @@ class FalcoEventsTests(unittest.TestCase):
         self.assertEqual(falco, loki)
         self.assertEqual(len(loki.splitlines()), 4)
 
-    def test_loki_window_starts_before_since_for_kernel_clock_lag(self):
+    def test_loki_window_starts_at_since(self):
         self.query("loki", "Debug")
         since_s = int(datetime.fromisoformat(SINCE.replace("Z", "+00:00")).timestamp())
-        self.assertIn(f"start={(since_s - 120) * 1_000_000_000}&", self.calls)
+        self.assertIn(f"start={since_s * 1_000_000_000}&", self.calls)
+
+    def test_loki_triggers_start_at_falco_pod_start(self):
+        chainsaw = (E2E / "tests/falco/chainsaw-test.yaml").read_text()
+        falco_start = "kubectl -n falco get pods -l app.kubernetes.io/name=falco"
+        self.assertNotIn("since=$(date", chainsaw)
+        self.assertEqual(chainsaw.count(f"since=$({falco_start}"), 3)
 
     def test_process_filter_skips_the_runc_mount_read(self):
         filters = ("--rule", SHADOW_RULE, "--namespace", "chainsaw-a", "--process", "cat")
