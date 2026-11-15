@@ -12,6 +12,7 @@ resources:
   - ../../hcloud
   - ../../kured
   - ../../kyverno
+  - ../../kyverno-monitoring
   - ../../kyverno-policies
   - ../../observability-stack
   - ../../postgres-cluster

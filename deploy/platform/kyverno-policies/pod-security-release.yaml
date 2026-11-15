@@ -23,7 +23,7 @@ spec:
     mode: enabled
   values:
     podSecurityStandard: restricted
-    podSecurityVersion: v1.34
+    podSecurityVersion: v1.37
     validationFailureAction: Audit
     failurePolicy: Ignore
     kyvernoVersion: "1.20.0"

@@ -48,7 +48,7 @@ namespaces that existed before the policy.
 ## Pod Security Standards
 
 `pod-security-release.yaml` installs the upstream `kyverno-policies` chart `3.10.0` with the
-`restricted` standard at `v1.34` in Audit mode cluster-wide, so PolicyReports show restricted gaps in
+`restricted` standard at `v1.37` in Audit mode cluster-wide, so PolicyReports show restricted gaps in
 every namespace. The chart renders each policy once with a fixed name and one action, and its values
 offer no namespace selector, so it cannot also Deny in tenants. Tenants get enforcement from Pod
 Security Admission instead: the tenant component sets `pod-security.kubernetes.io/enforce:

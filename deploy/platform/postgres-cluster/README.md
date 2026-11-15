@@ -15,6 +15,12 @@ only the catalog. CNPG manages its own data directory and PVC mounts; the
 Docker Official Image mount convention does not apply here. Recreate local
 clusters and PVCs when switching major versions.
 
+18.7 is the newest PostgreSQL release with a `system-trixie` image. PostgreSQL 19
+has only `19rc2` tags on `ghcr.io/cloudnative-pg/postgresql` (checked
+2026-11-15), so the major stays at 18. Moving to 19 once it is GA is a separate
+migration: add a `major: 19` catalog entry, then upgrade the cluster with CNPG's
+offline in-place major upgrade or a new cluster imported from the old one.
+
 The cluster uses only the Barman Cloud CNPG-I plugin path: `ObjectStore`,
 `Cluster.spec.plugins` with `isWALArchiver: true`, and a plugin-method
 `ScheduledBackup`. The removed-in-a-future-release in-tree backup integration is
@@ -124,7 +130,8 @@ kube-prometheus-stack base, and `BaukitPostgresRestoreTestStale` in the platform
 pack (`deploy/observability-platform/alerts/cnpg.rules.yml`) fires when the
 metric is absent or older than 35 days. The platform e2e suite
 `deploy/platform/e2e/tests/backup-restore` runs the same round trip on a
-throwaway cluster, deletes it, restores it, and then runs this CronJob once.
+throwaway cluster, deletes it and restores it. `restore-test-cronjob` runs this
+CronJob once, in parallel with it.
 
 If a product patches the initial database name away from `product`, patch the
 `PGDATABASE` env of both containers as well.

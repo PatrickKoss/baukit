@@ -27,6 +27,12 @@ spec:
     mode: enabled
   test:
     enable: true
+  # kyverno-monitoring turns the ServiceMonitors on once the monitoring CRDs exist. Until then the
+  # optional ConfigMap is absent and the chart default leaves them off.
+  valuesFrom:
+    - kind: ConfigMap
+      name: kyverno-monitoring-values
+      optional: true
   values:
     global:
       priorityClassName: platform-standard
@@ -67,8 +73,6 @@ spec:
         enabled: true
         minAvailable: null
         maxUnavailable: 1
-      serviceMonitor:
-        enabled: true
       initContainer:
         image:
           tag: "v1.20.0@sha256:339067e083430e0c97007541bef9cfdbac89bee13f7228772c77ae8aead14b8b"
@@ -99,8 +103,6 @@ spec:
         enabled: true
         minAvailable: null
         maxUnavailable: 1
-      serviceMonitor:
-        enabled: true
       resources:
         requests:
           cpu: 25m
@@ -116,8 +118,6 @@ spec:
         enabled: true
         minAvailable: null
         maxUnavailable: 1
-      serviceMonitor:
-        enabled: true
       resources:
         requests:
           cpu: 25m
@@ -133,8 +133,6 @@ spec:
         enabled: true
         minAvailable: null
         maxUnavailable: 1
-      serviceMonitor:
-        enabled: true
       resources:
         requests:
           cpu: 25m

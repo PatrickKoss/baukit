@@ -70,7 +70,7 @@ class SnapshotTreeTest(unittest.TestCase):
 
 class BindAddressTest(unittest.TestCase):
     def run_with_stubs(
-        self, script: str, docker_output: str = ""
+        self, script: str, docker_output: str = "2"
     ) -> tuple[subprocess.CompletedProcess[str], str]:
         with tempfile.TemporaryDirectory() as directory:
             bin_dir = Path(directory)
@@ -102,6 +102,35 @@ class BindAddressTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--wait --subnet 10.89.0.0/24", calls)
+
+    def test_cgroup_v1_host_fails_before_k3d(self) -> None:
+        result, calls = self.run_with_stubs(
+            "k3d_create_local_cluster ph img random 8080 8443", docker_output="1"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cgroup_no_v1=all", result.stderr)
+        self.assertNotIn("cluster create", calls)
+
+    def test_cgroup_v2_host_creates_the_cluster(self) -> None:
+        result, calls = self.run_with_stubs(
+            "k3d_create_local_cluster ph img random 8080 8443", docker_output="2"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("info --format {{.CgroupVersion}}", calls)
+        self.assertIn("cluster create ph", calls)
+
+    def test_unknown_cgroup_version_fails_before_k3d(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory)
+            calls = bin_dir / "calls"
+            write_stub(bin_dir, "docker", "exit 1\n")
+            write_stub(bin_dir, "k3d", f'printf "%s\\n" "$*" >> "{calls}"\n')
+            result = bash(
+                f'source "{HELPER}"\nk3d_create_local_cluster ph img random 8080 8443',
+                env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(calls.exists())
 
     def test_snapshot_container_publishes_on_the_gateway_only(self) -> None:
         result, calls = self.run_with_stubs("run_snapshot_container c img /srv 9418 172.30.0.1")

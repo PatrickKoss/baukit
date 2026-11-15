@@ -2,6 +2,7 @@
 # Shared runtime Secrets and ConfigMaps for platform-up.sh and e2e/run.sh. Callers source this file.
 
 platform_runtime_namespaces=(postgres observability observability-agents)
+platform_namespace_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Usage: platform_apply_secret <namespace> <name> <kubectl create secret generic args>...
 platform_apply_secret() {
@@ -11,10 +12,27 @@ platform_apply_secret() {
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
-# Usage: platform_ensure_namespace <namespace>. Creates it with the platform part-of label.
+# Usage: platform_namespace_manifest <namespace>. Prints the Namespace object from its base's
+# namespace.yaml, so a namespace created before Flux carries the same PSA labels as the base.
+platform_namespace_manifest() {
+  local manifest
+  for manifest in "$platform_namespace_dir"/*/namespace.yaml; do
+    awk -v name="$1" '
+      /^---/ { if (doc ~ "\nkind: Namespace\n" && doc ~ "\n  name: " name "\n") { printf "%s", doc; found = 1; exit }
+               doc = ""; next }
+      { doc = doc $0 "\n" }
+      END { if (!found && doc ~ "kind: Namespace\n" && doc ~ "\n  name: " name "\n") printf "%s", doc }
+    ' "$manifest" | grep . && return 0
+  done
+  printf 'ERROR: no base namespace.yaml defines Namespace %s\n' "$1" >&2
+  return 1
+}
+
+# Usage: platform_ensure_namespace <namespace>. Applies the base Namespace manifest.
 platform_ensure_namespace() {
-  kubectl create namespace "$1" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-  kubectl label namespace "$1" app.kubernetes.io/part-of=baukit-platform --overwrite >/dev/null
+  local manifest
+  manifest=$(platform_namespace_manifest "$1") || return 1
+  printf '%s\n' "$manifest" | kubectl apply -f - >/dev/null
 }
 
 # Usage: platform_runtime_identity <environment> <postgres-password> <object-access-key>

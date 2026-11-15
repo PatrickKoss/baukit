@@ -297,14 +297,14 @@ class MainTests(unittest.TestCase):
         self.allowlist = self.directory / "image-findings.toml"
         self.allowlist.write_text("")
 
-    def run_main(self, image: str, **environment: str) -> int:
+    def run_main(self, image: str, *extra: str, **environment: str) -> int:
         (self.rendered / "base.yaml").write_text(
             f"kind: Pod\nspec:\n  containers:\n    - image: {image}\n"
         )
         arguments = [
             "--rendered", str(self.rendered), "--repo-root", str(self.repo),
             "--cache", str(self.directory / "cache"), "--work", str(self.directory / "work"),
-            "--allowlist", str(self.allowlist), "--today", TODAY.isoformat(),
+            "--allowlist", str(self.allowlist), "--today", TODAY.isoformat(), *extra,
         ]  # fmt: skip
         with mock.patch.dict(os.environ, self.environment | environment):
             return platform_images.main(arguments)
@@ -334,6 +334,20 @@ class MainTests(unittest.TestCase):
             'expires = 2026-11-28\nreason = "USER pending in S6"\nids = ["DS-0002"]\n'
         )
         self.assertEqual(self.run_main("ghcr.io/example/clean:1.0", FAKE_DS="1"), 0)
+
+    def test_image_scans_read_the_mirror_config_when_given(self):
+        config = self.directory / "trivy.yaml"
+        self.assertEqual(
+            self.run_main("ghcr.io/example/clean:1.0", "--trivy-config", str(config)), 0
+        )
+        image_scan = next(
+            line for line in self.calls.read_text().splitlines() if "ghcr.io/example/clean" in line
+        )
+        self.assertIn(f"--config {config}", image_scan)
+
+    def test_image_scans_use_no_config_by_default(self):
+        self.assertEqual(self.run_main("ghcr.io/example/clean:1.0"), 0)
+        self.assertNotIn("--config", self.calls.read_text())
 
     def test_trivy_error_fails_the_step(self):
         self.assertEqual(self.run_main("ghcr.io/example/broken:1.0"), 1)

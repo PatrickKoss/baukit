@@ -176,6 +176,14 @@
       "groupSlug": "platform-kyverno"
     },
     {
+      "description": "One PR per platform base: kyverno-monitoring",
+      "matchFileNames": [
+        "deploy/platform/kyverno-monitoring/**"
+      ],
+      "groupName": "platform kyverno-monitoring",
+      "groupSlug": "platform-kyverno-monitoring"
+    },
+    {
       "description": "One PR per platform base: kyverno-policies",
       "matchFileNames": [
         "deploy/platform/kyverno-policies/**"
