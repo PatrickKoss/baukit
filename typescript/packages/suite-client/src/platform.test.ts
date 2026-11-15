@@ -74,7 +74,7 @@ it('matches recorded hub credit and organization responses', () => {
     organizationId: '018f1234-5678-7abc-8def-012345678901',
     name: 'Summary',
     status: 'active',
-    productId: 'runtime_analyzer',
+    productId: 'laufbefund',
     tier: 'professional',
     features: [],
     paidQuantity: 4,

@@ -549,7 +549,7 @@ mod tests {
             "leitbild",
             "lesezeichen",
             "redemut",
-            "finops",
+            "laufbefund",
             "schlauzug",
             "schluesselbund",
             "heldengang",

@@ -590,7 +590,7 @@ async fn hub_client_requires_exactly_one_credential_mode() -> TestResult {
 async fn organization_summary_reads_recorded_responses() -> TestResult {
     let hub = MockHub::start().await?;
     let id = Uuid::parse_str(ORGANIZATION)?;
-    let organizations = HubOrganizations::new(hub.client("runtime_analyzer")?);
+    let organizations = HubOrganizations::new(hub.client("laufbefund")?);
     hub.state.script(&[
         "organizationSummary",
         "organizationSummaryWithoutName",
@@ -604,7 +604,7 @@ async fn organization_summary_reads_recorded_responses() -> TestResult {
             organization_id: id,
             name: Some("Summary".into()),
             status: OrganizationStatus::Active,
-            product_id: "runtime_analyzer".into(),
+            product_id: "laufbefund".into(),
             tier: "professional".into(),
             features: Vec::new(),
             paid_quantity: Some(4),
@@ -659,7 +659,7 @@ async fn organization_summary_reads_recorded_responses() -> TestResult {
 async fn organization_members_page_through_recorded_responses() -> TestResult {
     let hub = MockHub::start().await?;
     let id = Uuid::parse_str(ORGANIZATION)?;
-    let organizations = HubOrganizations::new(hub.client("runtime_analyzer")?);
+    let organizations = HubOrganizations::new(hub.client("laufbefund")?);
     hub.state.script(&[
         "organizationMembersFirstPage",
         "organizationMembersLastPage",
@@ -695,11 +695,11 @@ async fn organization_members_page_through_recorded_responses() -> TestResult {
     assert_eq!(
         calls,
         vec![
-            ("GET", path.clone(), Some("product=runtime_analyzer")),
+            ("GET", path.clone(), Some("product=laufbefund")),
             (
                 "GET",
                 path,
-                Some("product=runtime_analyzer&cursor=c2VhdHMtcGFnZS0y")
+                Some("product=laufbefund&cursor=c2VhdHMtcGFnZS0y")
             ),
         ]
     );
@@ -716,7 +716,7 @@ async fn organization_members_page_through_recorded_responses() -> TestResult {
 async fn organization_members_map_hub_errors() -> TestResult {
     let hub = MockHub::start().await?;
     let id = Uuid::parse_str(ORGANIZATION)?;
-    let organizations = HubOrganizations::new(hub.client("runtime_analyzer")?);
+    let organizations = HubOrganizations::new(hub.client("laufbefund")?);
     hub.state.script(&[
         "organizationNotFound",
         "invalidPagination",
@@ -875,8 +875,8 @@ async fn subject_organizations_map_hub_errors() -> TestResult {
 #[tokio::test]
 async fn hub_client_refreshes_once_after_401_with_a_query() -> TestResult {
     let hub = MockHub::start().await?;
-    let client = hub.client("runtime_analyzer")?;
-    let query = [("product", "runtime_analyzer"), ("cursor", "a+b/c=")];
+    let client = hub.client("laufbefund")?;
+    let query = [("product", "laufbefund"), ("cursor", "a+b/c=")];
     hub.state
         .script(&["unauthenticated", "organizationMembersLastPage"]);
     let page: OrganizationMemberPage = client
@@ -888,7 +888,7 @@ async fn hub_client_refreshes_once_after_401_with_a_query() -> TestResult {
     for (request, token) in requests.iter().zip(["1", "2"]) {
         assert_eq!(
             request.query.as_deref(),
-            Some("product=runtime_analyzer&cursor=a%2Bb%2Fc%3D")
+            Some("product=laufbefund&cursor=a%2Bb%2Fc%3D")
         );
         assert_eq!(
             request.authorization.as_deref(),
@@ -909,7 +909,7 @@ async fn hub_client_refreshes_once_after_401_with_a_query() -> TestResult {
 #[tokio::test]
 async fn get_json_sends_no_query() -> TestResult {
     let hub = MockHub::start().await?;
-    let client = hub.client("runtime_analyzer")?;
+    let client = hub.client("laufbefund")?;
     hub.state
         .script(&["organizationSummary", "organizationSummary"]);
     let plain: Value = client.get_json(&["organizations", ORGANIZATION]).await?;

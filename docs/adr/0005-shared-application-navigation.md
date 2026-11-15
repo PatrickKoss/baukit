@@ -12,7 +12,7 @@ package boundaries and accessibility requirements still apply.
 
 The user asked all eight products to adopt one collapsible navigation pattern.
 Hebkit, Eigenruhe, Tiefgang and Heldengang use Expo Router and React Native
-Web. Leitbild, Redemut, Runtime Analyzer and Schlauzug also have DOM web apps.
+Web. Leitbild, Redemut, Laufbefund and Schlauzug also have DOM web apps.
 Products use Ionicons, Lucide, inline SVG and glyphs. Their routers include
 Expo Router, TanStack Router and pushState. Their styling includes StyleSheet,
 plain CSS and Tailwind.

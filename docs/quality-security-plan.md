@@ -8,7 +8,7 @@ Status markers: `[ ]` open, `[~]` in progress, `[x]` done and verified, `[-]` dr
 
 Scope: baukit and the products that consume it:
 eigenruhe, hebkit, leitbild, redemut, schlauzug, tiefgang, heldengang,
-lesezeichen, schluesselbund, kassensturz, runtime-analyzer, bauvisite.
+lesezeichen, schluesselbund, kassensturz, laufbefund, bauvisite.
 
 Raw exploration reports, with commands and `path:line` evidence: `docs/quality-security/E1..E4-*.md`.
 
@@ -197,7 +197,7 @@ tenancy and rate-limit audit of the products (S-08).
   egress, SHA-pin actions, write `docs/threat-model.md`, add fuzz targets for its own parsers, gate green.
   - [x] eigenruhe  - [x] hebkit  - [x] leitbild  - [x] redemut
   - [x] schlauzug  - [x] tiefgang  - [x] heldengang  - [x] lesezeichen
-  - [x] schluesselbund  - [x] kassensturz  - [x] runtime-analyzer  - [x] bauvisite
+  - [x] schluesselbund  - [x] kassensturz  - [x] laufbefund  - [x] bauvisite
   - Product-specific items gathered from baukit work packages:
     - `TombstoneTable.delete` binds owners as `$2` and deletes `(owner_id, id)` pairs (F5): eigenruhe,
       hebkit, tiefgang, kassensturz. Each product also gets its own push/pull owner-isolation test and a fuzz
@@ -214,7 +214,7 @@ tenancy and rate-limit audit of the products (S-08).
   - redemut: sync push takes `device_id` from the client (`redemut-services/src/lib.rs:1299`) and the FK is
     global (`migrations/20260901000000_storage_usage.sql:17`), so user B can attach events to A's device and
     block A's erasure. Composite FK `(user_id, device_id)` plus a check.
-  - runtime-analyzer: one global `anonymous:auth` bucket (`finops-api/src/lib.rs:278`) lets one client lock
+  - laufbefund: one global `anonymous:auth` bucket (`laufbefund-api/src/lib.rs:278`) lets one client lock
     out all sign-ins. Key it per client IP.
   - kassensturz (9 tables), hebkit (2): sync upserts need the owner in `ON CONFLICT ... WHERE`. Unverified.
   - heldengang (verified): `GET /guilds/{id}` and its members, progression, quests and competitions
@@ -251,7 +251,7 @@ tenancy and rate-limit audit of the products (S-08).
   | lesezeichen | 0.22.0 | 4 | 0 | 0 | 5 | | 0 |
   | schluesselbund | 0.22.0 | 3 | 0 | 0 | 2 | | 0 |
   | kassensturz | 0.22.0 | 7 | 0 | 0 | 6 | | 0 |
-  | runtime-analyzer | 0.22.0 | 1 | 0 | 0 | 1 | | 0 |
+  | laufbefund | 0.22.0 | 1 | 0 | 0 | 1 | | 0 |
   | bauvisite | 0.21.0 | 1 | 0 | 0 | 1 | | 0 |
 
   "Oversized files" counts allowlisted files over the 1000-line (Rust) or 500-line (TS) limit. They may not
@@ -283,7 +283,7 @@ tenancy and rate-limit audit of the products (S-08).
     runs 2 workers. Each one captures evidence on the next
     recurrence.
   - kassensturz: the askama_derive `[patch]` for RUSTSEC-2026-0374 goes away once UniFFI ships a fixed
-    askama. runtime-analyzer: the six typst osv ignores expire 2027-02-08; check typst releases then.
+    askama. laufbefund: the six typst osv ignores expire 2027-02-08; check typst releases then.
 
 ## Phase 5. Ownership and static dispatch (D8)
 
@@ -495,7 +495,7 @@ nanoseconds; those two are about readable ownership, not speed.
   - Main after the merge: fmt, clippy (all features and without features for auth, config and http), 475
     tests with Docker, and file-size, suppressions and agent-docs are all green.
   - Rollout impact: 10 of the 12 products ship Clerk as a provider option and a mobile app. All except
-    runtime-analyzer and bauvisite. The backend template wave adds
+    laufbefund and bauvisite. The backend template wave adds
     `auth.allow_missing_azp`, default on when `context.mobile`, and P4.2 wires it per product. Otherwise a
     Clerk deployment rejects Expo tokens.
 - 2026-11-07: W4-C merged (P2.9 baukit part).
@@ -637,7 +637,7 @@ from tiefgang: the suite 429 limit is 70 requests, not 10.
 - 2026-11-10: D7 rulings while the products converted. Crate-root `#![expect]` in test crates becomes
   `#![cfg(test)]`. S603 gets one subprocess helper per shipped scripts tree, and the budget is the real
   count. Gitleaks allowlists use paths, or commit plus path for docs and history, never fingerprints.
-  runtime-analyzer keeps typst behind a vendored citationberg on quick-xml 0.41, plus six time-boxed osv
+  laufbefund keeps typst behind a vendored citationberg on quick-xml 0.41, plus six time-boxed osv
   ignores. The user accepted that risk instead of a rewrite to krilla.
 - 2026-11-10: 0.20.0 (F1: rule and template fixes from the follow-up queue) and 0.21.0 (F3: issuer
   comparison, `process_runner.start_process`, the SQL splicing rule) released. The new rule for production

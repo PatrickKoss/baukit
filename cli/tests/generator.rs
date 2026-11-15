@@ -3338,7 +3338,7 @@ fn doctor_accepts_product_review_identity_layouts() -> anyhow::Result<()> {
         ("eigenruhe", "eigenruhe"),
         ("tiefgang", "tiefgang"),
         ("sl", "heldengang"),
-        ("finops", "finops"),
+        ("laufbefund", "laufbefund"),
     ] {
         assert_review_identity_layout(name, slug)?;
     }
@@ -3456,11 +3456,11 @@ fn doctor_rejects_backend_identity_and_admin_realm_mismatches() -> anyhow::Resul
         let parent = tempfile::tempdir()?;
         let root = oidc_product_with_agent(parent.path(), backend)?;
         doctor(&root)?;
-        let config_path = format!("{backend}/crates/finops-bin/src/config.rs");
+        let config_path = format!("{backend}/crates/laufbefund-bin/src/config.rs");
         let config = root.join(&config_path);
         let original = fs::read_to_string(&config)?;
         let changed = original.replace(
-            "const PRODUCT: &str = \"finops\";",
+            "const PRODUCT: &str = \"laufbefund\";",
             "const PRODUCT: &str = \"wrong-product\";",
         );
         assert_ne!(changed, original);
@@ -3470,7 +3470,7 @@ fn doctor_rejects_backend_identity_and_admin_realm_mismatches() -> anyhow::Resul
             .to_string();
         assert!(
             error.contains(&format!(
-                "product identity `PRODUCT` consumed by `{config_path}` does not match application name `finops`"
+                "product identity `PRODUCT` consumed by `{config_path}` does not match application name `laufbefund`"
             )),
             "{error}"
         );
@@ -3479,7 +3479,7 @@ fn doctor_rejects_backend_identity_and_admin_realm_mismatches() -> anyhow::Resul
             "{error}"
         );
         fs::write(config, original)?;
-        let library_path = format!("{backend}/crates/finops-bin/src/lib.rs");
+        let library_path = format!("{backend}/crates/laufbefund-bin/src/lib.rs");
         let library = root.join(&library_path);
         let original = fs::read_to_string(&library)?;
         let changed = original.replace(
@@ -3493,7 +3493,7 @@ fn doctor_rejects_backend_identity_and_admin_realm_mismatches() -> anyhow::Resul
             .to_string();
         assert!(
             error.contains(&format!(
-                "OIDC admin realm `\"wrong-realm\"` consumed by `{library_path}` does not match selected Keycloak realm `finops`"
+                "OIDC admin realm `\"wrong-realm\"` consumed by `{library_path}` does not match selected Keycloak realm `laufbefund`"
             )),
             "{error}"
         );
@@ -3502,7 +3502,7 @@ fn doctor_rejects_backend_identity_and_admin_realm_mismatches() -> anyhow::Resul
 }
 
 fn oidc_product_with_agent(parent: &Path, backend: &str) -> anyhow::Result<PathBuf> {
-    let mut local = options(parent, "finops");
+    let mut local = options(parent, "laufbefund");
     local.auth = Some(AuthProvider::Oidc);
     let root = generate_new(&local)?;
     let mut manifest = baukit_cli::read_manifest(&root)?;
@@ -3521,27 +3521,27 @@ fn oidc_product_with_agent(parent: &Path, backend: &str) -> anyhow::Result<PathB
     let baukit_cli::BaukitDependency::Registry { version } = manifest.dependencies.baukit else {
         anyhow::bail!("fixture must use registry dependencies");
     };
-    fs::create_dir_all(root.join("agent/crates/finops-agent/src"))?;
+    fs::create_dir_all(root.join("agent/crates/laufbefund-agent/src"))?;
     fs::write(
         root.join("agent/Cargo.toml"),
         "[workspace]\nresolver = \"2\"\nmembers = [\"crates/*\"]\n",
     )?;
     fs::write(
-        root.join("agent/crates/finops-agent/Cargo.toml"),
+        root.join("agent/crates/laufbefund-agent/Cargo.toml"),
         format!(
-            "[package]\nname = \"finops-agent\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[dependencies]\nbaukit-config = \"={version}\"\n"
+            "[package]\nname = \"laufbefund-agent\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[dependencies]\nbaukit-config = \"={version}\"\n"
         ),
     )?;
     fs::write(
-        root.join("agent/crates/finops-agent/src/lib.rs"),
+        root.join("agent/crates/laufbefund-agent/src/lib.rs"),
         "pub mod config;\n",
     )?;
     fs::write(
-        root.join("agent/crates/finops-agent/src/config.rs"),
+        root.join("agent/crates/laufbefund-agent/src/config.rs"),
         r#"use baukit_config::{ConfigLoader, Environment, LoadError};
 
 pub fn config_loader(environment: Environment) -> Result<ConfigLoader, LoadError> {
-    ConfigLoader::new("finops_agent", environment)
+    ConfigLoader::new("laufbefund_agent", environment)
 }
 
 pub struct AgentAuth {

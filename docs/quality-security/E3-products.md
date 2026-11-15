@@ -24,7 +24,7 @@ All 12 products pin baukit 0.18.2 (`baukit.toml` `version` and `baukit-core` in 
 | lesezeichen | strict | 70 | template | 2024 / 1.95 | none | no | no | mobile strictTypeChecked; extension strictTypeChecked without stylistic | strict 3, nUIA 2 | none | no / no | identical copies | 70 |
 | schluesselbund | strict | 70 | template | 2024 / 1.95 | none | no | no | web, mobile strictTypeChecked | strict 3, nUIA 2 | none | no / no | identical copies | 80 |
 | kassensturz | strict | 80 | template | 2024 / 1.95 | none | no | **yes** (backend/deny.toml, run in gate) | mobile strictTypeChecked | all six, 1 file | none | no / no | identical copies | 73 |
-| runtime-analyzer | strict | 70 | template in backend/; **agent/ workspace has no lints at all** | 2024 / 1.95 | none | no | **yes** | web strictTypeChecked | all six, 1 file | none | no / no | copies, **differ** (AGENTS 65 lines, stale template text) | 113 |
+| laufbefund | strict | 70 | template in backend/; **agent/ workspace has no lints at all** | 2024 / 1.95 | none | no | **yes** | web strictTypeChecked | all six, 1 file | none | no / no | copies, **differ** (AGENTS 65 lines, stale template text) | 113 |
 | bauvisite | strict | 65 | template | 2024 / 1.95 | none | no | **yes** | web strictTypeChecked | all six, 1 file | web | no / no | **CLAUDE.md -> AGENTS.md symlink** | 45 |
 
 nUIA = noUncheckedIndexedAccess, eOPT = exactOptionalPropertyTypes. Frontend coverage floors (jest/vitest `lines`/`statements`): 70 is the common value; outliers are leitbild/mobile 43/44, tiefgang/mobile 60, schlauzug/mobile none found, hebkit/mobile 77-90, redemut 78/81, SLS mobile 80.
@@ -64,7 +64,7 @@ rg -c '<pattern>' $r -g '*.{ts,tsx,mts,cts}' -g '!*.d.ts' -g '!*.gen.ts' "${X[@]
 | lesezeichen | 0 | 0 | 1783 | 145 | 1 | 0 | 0 | 62 | 3 | 0 | 0 | 0 | 0 |
 | schluesselbund | 0 | 0 | 884 | 18 | 2 | 0 | 0 | 25 | 0 | 0 | 0 | 0 | 0 |
 | kassensturz | 0 | 0 | 1811 | 30 | 2 | 0 | 0 | 81 | 0 | 0 | 0 | 1 | 0 |
-| runtime-analyzer | 1 | 726 | 3111 | 165 | 7 | 0 | 0 | 5 | 0 | 0 | 0 | 0 | 6 |
+| laufbefund | 1 | 726 | 3111 | 165 | 7 | 0 | 0 | 5 | 0 | 0 | 0 | 0 | 6 |
 | bauvisite | 2 | 1 | 6675 | 213 | 12 | 0 | 0 | 2 | 0 | 0 | 0 | 0 | 2 |
 
 Split, non-test/test occurrences (`python3 tmp/counts.py`, head of `counts.out`):
@@ -81,10 +81,10 @@ Split, non-test/test occurrences (`python3 tmp/counts.py`, head of `counts.out`)
 | lesezeichen | 0/0 | 0/0 | 125/1685 | 2/143 | 0/1 | 0/0 | 36/26 | 0/3 | 0/0 | 0/0 | 0/0 |
 | schluesselbund | 0/0 | 0/0 | 37/853 | 1/17 | 0/2 | 0/0 | 6/19 | 0/0 | 0/0 | 0/0 | 0/0 |
 | kassensturz | 0/0 | 0/0 | 110/1735 | 1/29 | 0/2 | 0/0 | 41/42 | 0/0 | 0/0 | 1/0 | 0/0 |
-| runtime-analyzer | 0/1 | 1/760 | 207/2952 | 1/164 | 1/6 | 0/0 | 3/2 | 0/0 | 0/0 | 0/0 | 6/0 |
+| laufbefund | 0/1 | 1/760 | 207/2952 | 1/164 | 1/6 | 0/0 | 3/2 | 0/0 | 0/0 | 0/0 | 6/0 |
 | bauvisite | 1/1 | 0/1 | 282/6468 | 2/211 | 1/11 | 0/0 | 1/1 | 0/0 | 0/0 | 0/0 | 0/2 |
 
-Limits: a test-only module declared as `#[cfg(test)] mod foo;` in the parent and stored in `foo.rs` counts as non-test. Most of schlauzug's 305 non-test `expect` calls fall in that bucket (`room_service.rs:6988-6991` gates `crypt_benchmark` and `crypt_fixtures`). `unsafe` matches also hit `unsafe_code` in attributes and strings. `todo!`/`unimplemented!` and `@ts-ignore` are zero everywhere, and TS `any` is close to zero (the only 75 hits were in `runtime-analyzer/web/src/routeTree.gen.ts`, which is generated and excluded).
+Limits: a test-only module declared as `#[cfg(test)] mod foo;` in the parent and stored in `foo.rs` counts as non-test. Most of schlauzug's 305 non-test `expect` calls fall in that bucket (`room_service.rs:6988-6991` gates `crypt_benchmark` and `crypt_fixtures`). `unsafe` matches also hit `unsafe_code` in attributes and strings. `todo!`/`unimplemented!` and `@ts-ignore` are zero everywhere, and TS `any` is close to zero (the only 75 hits were in `laufbefund/web/src/routeTree.gen.ts`, which is generated and excluded).
 
 What the numbers say: `unwrap` is under control because 11 of 12 workspaces set `clippy::unwrap_used = "warn"` with `-D warnings`. Nothing restricts `expect`, so production code uses it as the escape hatch instead (see E3-08). On the TS side, `as unknown as` is the escape hatch of choice, because `strictTypeChecked` bans `any` but has no rule against double casts.
 
@@ -104,7 +104,7 @@ From `counts.out`. Lines include blank and comment lines.
 | lesezeichen | 461 / 139.0k | integrations/src/pdf.rs 1995, tests/platform.rs 1795, postgres/tests/library.rs 1757, domain/src/limits.rs 1701, integrations/src/pdf/text.rs 1505 | 628 / 72.9k | mobile/src/features/reader/pdf/text-order.ts 2548, its test 938, local-data.test.tsx 782, pdf/reader-screen.tsx 765, selection-reader.tsx 762 | 124 / 46 |
 | schluesselbund | 312 / 129.1k | tests/billing.rs 4628, tests/conversations.rs 3542, tests/invitations.rs 2729, tests/receivers.rs 2663, tests/revenuecat.rs 2597 | 467 / 50.6k | mobile/src/features/kompass/screens.test.tsx 865, web/.../kompass/screens.test.tsx 701, web/e2e/qa.config.ts 661, mobile/.../kompass/copy.ts 626, web/src/features/plans/plans.test.tsx 607 | 160 / 22 |
 | kassensturz | 470 / 129.5k | tests/agent_tools.rs 2125, tests/platform_receiver.rs 1995, domain/src/recurring/model.rs 1862, tests/aggregator_regressions.rs 1845, tests/contracts_integration.rs 1744 | 1140 / 120.8k | mobile/src/domain/recurring/model.ts 1616, contract-tests/banking-regressions.test.ts 948, contracts.test.ts 900, holdings.test.ts 848, transactions/transaction-views.tsx 841 | 126 / 31 |
-| runtime-analyzer | 761 / 270.5k | tests/api_sboms.rs 3580, tests/report_catalog.rs 3101, tests/evidence_integrity.rs 2872, tests/incidents.rs 2835, tests/api_products.rs 2492 | 546 / 55.1k | web/e2e/tests/incident-schema-fixture.ts 1730, governance-pages.test.tsx 1387, web/e2e/qa.config.ts 733, compliance/evidence.tsx 712, e2e/tests/risk-runtime.spec.ts 641 | 393 / 134 |
+| laufbefund | 761 / 270.5k | tests/api_sboms.rs 3580, tests/report_catalog.rs 3101, tests/evidence_integrity.rs 2872, tests/incidents.rs 2835, tests/api_products.rs 2492 | 546 / 55.1k | web/e2e/tests/incident-schema-fixture.ts 1730, governance-pages.test.tsx 1387, web/e2e/qa.config.ts 733, compliance/evidence.tsx 712, e2e/tests/risk-runtime.spec.ts 641 | 393 / 134 |
 | bauvisite | 979 / 403.3k | domain/src/limits.rs 4370, tests/maintenance_api.rs 3271, tests/architecture_intent_postgres.rs 3268, tests/g9_pr_governance.rs 3177, tests/inventory_postgres.rs 3074 | 452 / 66.4k | web/src/api.ts 1217, AutomationView.tsx 1156, FindingsView.test.tsx 1086, App.test.tsx 1069, ContextSettings.tsx 1040 | 479 / 140 |
 
 The long-function counter is `fn_spans()` in `counts.py`. It first blanks out comments (`//`, `/* */`), string literals with escapes, raw strings (`r#"..."#`, any hash count) and char literals, keeping newlines. Then it finds every `fn name` with a regex and walks forward to the first `{` or `;`, skipping declarations that end in `;`. Finally it matches braces until depth returns to 0 and counts the lines from `fn` to the closing brace. Limits: nested fns and closures-in-fns are counted separately and also inside their parent. Macros that expand to fns (`#[tokio::test]` bodies are still plain fns, so those count) and `macro_rules!` bodies are not understood. A lifetime like `'a` next to a quote can rarely confuse char-literal blanking. "Non-test files" uses the path rule only, not `#[cfg(test)]`. A first naive version without string stripping reported 3740-line functions in `schluesselbund/backend/tests/billing.rs` because of JSON in raw strings, so treat any single value above ~1000 with suspicion. After the fix the largest are around 1000 lines.
@@ -127,11 +127,11 @@ Command: the `fn_spans` loop over `glob('*/backend/crates/*-bin/src/bin/api.rs')
 Prevention: enable `clippy::too_many_lines` (pedantic, default threshold 100) in the template's `[workspace.lints.clippy]`, with a `clippy.toml` `too-many-lines-threshold` the template itself passes. Split the template `run` into `build_state`, `build_router` and `serve` first. A product override then needs a visible `#[expect(clippy::too_many_lines, reason = "...")]`.
 
 ### E3-02 (high) Hand-written `limits.json` validation grows into 350 to 900 line functions
-Every product carries `backend/crates/*-domain/src/limits.rs` from the template (526 lines, `validate` at line 93). Products add one `match &self.section { Some(..) if .. => {}, _ => return Err(..) }` block per section. Sizes: BV 4369 lines, lesezeichen 1700, schlauzug 1610, runtime-analyzer 1236, kassensturz 1185, schluesselbund 1172 (`wc -l */backend/crates/*-domain/src/limits.rs`).
+Every product carries `backend/crates/*-domain/src/limits.rs` from the template (526 lines, `validate` at line 93). Products add one `match &self.section { Some(..) if .. => {}, _ => return Err(..) }` block per section. Sizes: BV 4369 lines, lesezeichen 1700, schlauzug 1610, laufbefund 1236, kassensturz 1185, schluesselbund 1172 (`wc -l */backend/crates/*-domain/src/limits.rs`).
 
 - `bauvisite/backend/crates/bauvisite-domain/src/limits.rs:1035` `validate`, 903 lines
 - `lesezeichen/backend/crates/lesezeichen-domain/src/limits.rs:436` (519)
-- `runtime-analyzer/backend/crates/finops-domain/src/limits.rs:224` (408)
+- `laufbefund/backend/crates/laufbefund-domain/src/limits.rs:224` (408)
 - `kassensturz/backend/crates/kassensturz-domain/src/limits.rs:338` (361), `schlauzug/backend/crates/schlauzug-domain/src/limits.rs:311` (353)
 
 They also lean on `expect("embedded ... limits")` in non-test code (`bauvisite-domain/src/limits.rs:37`, 30 occurrences in that file).
@@ -142,9 +142,9 @@ Prevention: custom check needed, plus a baukit feature. Move range, positive and
 - The template sets `unsafe_code=deny` and clippy `all`, `dbg_macro`, `todo`, `unwrap_used` (`baukit/templates/backend/backend/Cargo.toml.jinja`). 9 repos match it.
 - `redemut/backend/Cargo.toml:95-96` keeps only `all`, so `unwrap_used`, `todo` and `dbg_macro` are off. redemut has 911 `.unwrap()` lines, all in tests per the split.
 - `heldengang/backend/Cargo.toml:93-97` replaces the template with `warnings = "deny"` and `all = "deny"`, which drops `unwrap_used`, `todo` and `dbg_macro` (restriction lints are not in `all`). 1805 unwrap lines, 2 in non-test code.
-- `runtime-analyzer/agent/Cargo.toml` (a second Rust workspace, 4 crates: finops-agent, kube-inventory, finops-simulator, finops-scanner) has no `[workspace.lints]` and its crates have no `[lints]`. Check: `awk '/^\[lints\]/...' */backend/crates/*/Cargo.toml runtime-analyzer/agent/crates/*/Cargo.toml`, every other crate opts in.
+- `laufbefund/agent/Cargo.toml` (a second Rust workspace, 4 crates: laufbefund-agent, kube-inventory, laufbefund-simulator, laufbefund-scanner) has no `[workspace.lints]` and its crates have no `[lints]`. Check: `awk '/^\[lints\]/...' */backend/crates/*/Cargo.toml laufbefund/agent/crates/*/Cargo.toml`, every other crate opts in.
 - `hebkit/backend/Cargo.toml:16` is `edition = "2021"` with no `rust-version`; the other 11 use 2024 and 10 use `rust-version = "1.95"`. SLS uses 1.97.1. Toolchain pins differ too: leitbild, redemut and SLS pin 1.99.0, the other 9 have no pin.
-- Nothing bans `expect`. Non-test `expect` occurrences: BV 282, runtime-analyzer 207, lesezeichen 125, kassensturz 110. Examples: `bauvisite/backend/crates/bauvisite-api/src/privacy_map_routes.rs:37` (`expect("nonempty schema definition")` in an HTTP route module), `kassensturz/backend/crates/kassensturz-domain/src/recurring/model.rs:217`, `runtime-analyzer/backend/crates/finops-integrations/src/artifacts/conformance.rs:35` (61 in that file).
+- Nothing bans `expect`. Non-test `expect` occurrences: BV 282, laufbefund 207, lesezeichen 125, kassensturz 110. Examples: `bauvisite/backend/crates/bauvisite-api/src/privacy_map_routes.rs:37` (`expect("nonempty schema definition")` in an HTTP route module), `kassensturz/backend/crates/kassensturz-domain/src/recurring/model.rs:217`, `laufbefund/backend/crates/laufbefund-integrations/src/artifacts/conformance.rs:35` (61 in that file).
 
 Prevention: ship the lint table as baukit-owned config that products cannot silently fork. Add `clippy::expect_used = "warn"` with `allow-expect-in-tests = true` and `allow-unwrap-in-tests = true` in a template `clippy.toml`. Add `clippy::allow_attributes_without_reason` and `clippy::allow_attributes` (forcing `#[expect(..., reason)]`) and `clippy::indexing_slicing` for domain crates. Custom check needed: "every `Cargo.toml` with `[workspace]` under the repo has `[workspace.lints]` that is a superset of the baukit template table, and every member crate has `[lints] workspace = true`". The same check should cover `edition`, `rust-version` and `rust-toolchain.toml`.
 
@@ -210,7 +210,7 @@ Only hebkit (972) and SLS (575) use `sqlx::query!`/`query_as!`. The other 10 rep
 
 | repo | `format!` SQL (non-tests/) | `sqlx::query(` runtime | `query!` macro |
 |---|---|---|---|
-| runtime-analyzer | 95 | 1379 | 0 |
+| laufbefund | 95 | 1379 | 0 |
 | eigenruhe | 81 | 408 | 0 |
 | SLS | 79 | 699 | 575 |
 | tiefgang | 67 | 223 | 0 |
@@ -228,7 +228,7 @@ rg -c 'sqlx::query(_as|_scalar)?!\(' ...              # macro
 ```
 References:
 - `tiefgang/backend/crates/tiefgang-postgres/src/retention.rs:267` (`DELETE FROM {table} WHERE ctid IN (... {predicate} ...)`) and `tiefgang-postgres/src/guard.rs:739`
-- `runtime-analyzer/backend/crates/finops-postgres/src/security.rs:407,430,456` (single-line 300+ char statements with `{table}`, `{predicate}`, `{key}`)
+- `laufbefund/backend/crates/laufbefund-postgres/src/security.rs:407,430,456` (single-line 300+ char statements with `{table}`, `{predicate}`, `{key}`)
 - `eigenruhe/backend/crates/eigenruhe-postgres/src/studio_tracking.rs:27` (`WHERE owner_id={owner}`, a column expression passed as `&str`) and `coaching_request.rs:112`
 - `heldengang/backend/crates/heldengang-postgres/src/users.rs:435`
 - `kassensturz/backend/crates/kassensturz-postgres/src/sync.rs:251`
@@ -241,7 +241,7 @@ Prevention: custom check needed: "`format!` whose literal starts with a SQL keyw
 - 9 repos keep two identical regular files. `hebkit/scripts/check-agent-instructions.sh:4` enforces exactly that ("AGENTS.md must be a regular file identical to CLAUDE.md") and rejects symlinks.
 - `bauvisite/CLAUDE.md` is a symlink to AGENTS.md, and `AGENTS.md:3` says "`CLAUDE.md` must remain a symlink to this file". That is the opposite of hebkit's check.
 - `eigenruhe`: the copies disagree on behaviour. CLAUDE.md:200 says the suite catalog "accepts only `hebkit.sleep.recorded`", while AGENTS.md:200 says it "accepts no product event types" (`diff eigenruhe/CLAUDE.md eigenruhe/AGENTS.md`). The same split shows up at line 204.
-- `runtime-analyzer`: AGENTS.md (65 lines) is still the generic template text ("generated with the strict quality profile") while CLAUDE.md (113 lines) carries the real runtime map. Codex-style agents read the stale one.
+- `laufbefund`: AGENTS.md (65 lines) is still the generic template text ("generated with the strict quality profile") while CLAUDE.md (113 lines) carries the real runtime map. Codex-style agents read the stale one.
 - `redemut/CLAUDE.md:129-135` contains a "# This is NOT the Turborepo you know" block that `turbo` re-injects when it detects an agent. It is the only file with em dashes (7) and the only one with a second H1.
 
 Prevention: custom check needed: "AGENTS.md is the source; CLAUDE.md is a symlink to it (or a regular file byte-identical to it); `baukit doctor` fails otherwise". Pick one convention in the template (`baukit/templates/common/CLAUDE.md` is all that ships today). Set `"agentGuidance": false` in template `turbo.json`.
@@ -255,7 +255,7 @@ Totals per repo, Rust test files with `tokio::time::sleep|thread::sleep`, then P
 | lesezeichen | 58 | 0 | 4 |
 | hebkit | 48 | 0 | 5 |
 | schluesselbund | 47 | 0 | 6 |
-| runtime-analyzer | 40 | 1 | 1 |
+| laufbefund | 40 | 1 | 1 |
 | kassensturz | 33 | 0 | 4 |
 | schlauzug | 24 | 6 | 6 |
 | SLS | 14 | 0 | 0 |
@@ -275,7 +275,7 @@ Some of these are inside poll loops and fine. The fixed waits are the problem:
 - `redemut/backend/tests/it_ops.rs:74` (350 ms)
 - `heldengang/backend/crates/heldengang-bin/tests/daily_quest_worker.rs:157,271`
 - `bauvisite/.../runtime-collector/tests/http_sink.rs:375`
-- `runtime-analyzer/web/e2e/tests/sbom-upload.spec.ts:71` (`waitForTimeout(1200)`)
+- `laufbefund/web/e2e/tests/sbom-upload.spec.ts:71` (`waitForTimeout(1200)`)
 - `schlauzug/web/e2e/tests/deck-expedition-flow.spec.ts:127`
 
 Prevention: ESLint `playwright/no-wait-for-timeout` (eslint-plugin-playwright) in the shared config. Custom check needed for Rust: "a `sleep(` call in a test file must sit inside a loop or carry `// baukit-allow-sleep: reason`"; baukit-test should offer a `wait_until(timeout, || cond)` helper. Also enable `clippy::disallowed_methods` for `std::thread::sleep` in a `clippy.toml` with test-file allowances.
@@ -288,17 +288,17 @@ Lint kinds across all repos: `clippy::too_many_arguments` and `dead_code` domina
 Prevention: `clippy::allow_attributes_without_reason = "warn"` and `clippy::allow_attributes = "warn"` (forces `#[expect(..., reason = "...")]`, which also fails once the suppression is stale).
 
 ### E3-12 (low) Framework type in a domain crate
-`hebkit/backend/crates/hebkit-domain/Cargo.toml:21` has `utoipa.workspace = true` under `[dependencies]`, used in 15 domain source files (`rg -c utoipa hebkit/backend/crates/hebkit-domain/src | wc -l`). Every other domain crate has only dev-dependency tokio (`leitbild-domain/Cargo.toml:23`, `tiefgang-domain`). The rule exists in prose in several CLAUDE.md files ("Do not import Axum or SQLx into the domain crate", `lesezeichen/CLAUDE.md` Boundaries). Also `runtime-analyzer/backend/crates/finops-api/src/platform.rs:735-757` matches on `sqlx::Error` variants in the API crate (31 `sqlx::` references in finops-api; zero in the other 11 api crates).
+`hebkit/backend/crates/hebkit-domain/Cargo.toml:21` has `utoipa.workspace = true` under `[dependencies]`, used in 15 domain source files (`rg -c utoipa hebkit/backend/crates/hebkit-domain/src | wc -l`). Every other domain crate has only dev-dependency tokio (`leitbild-domain/Cargo.toml:23`, `tiefgang-domain`). The rule exists in prose in several CLAUDE.md files ("Do not import Axum or SQLx into the domain crate", `lesezeichen/CLAUDE.md` Boundaries). Also `laufbefund/backend/crates/laufbefund-api/src/platform.rs:735-757` matches on `sqlx::Error` variants in the API crate (31 `sqlx::` references in laufbefund-api; zero in the other 11 api crates).
 
 Prevention: lift `schluesselbund/scripts/check-crate-deps.py` (112 lines, "Check the backend crate boundaries recorded in ADR 0001") into baukit as `baukit doctor --layers`, driven by `cargo metadata`. Rule: "`*-domain` and `*-ports` may not depend on axum, sqlx, utoipa, reqwest, tower, hyper or tokio (non-dev); `*-api` may not depend on sqlx".
 
 ### E3-13 (low) Product code shared between two products by copy
-`tmp/dups.py` (sha1 of whitespace-normalised content after replacing product names, files of 40 lines or more, not matching any template file) finds 349 duplicate groups. Most are mobile QA scripts (see E3-05). The largest product-code cluster is the Blender animation pipeline, copied between `eigenruhe/animations/` and `hebkit/animations/`: about 30 identical Python files, for example `work_records.py` (344 lines), `authored_contracts.py`, `squat_equipment.py` and `prepare_surface.py`. `hebkit/mobile/src/tokens.ts` is identical in 5 repos. `scripts/reconcile_keycloak.py` is identical between runtime-analyzer and BV but differs from the template.
+`tmp/dups.py` (sha1 of whitespace-normalised content after replacing product names, files of 40 lines or more, not matching any template file) finds 349 duplicate groups. Most are mobile QA scripts (see E3-05). The largest product-code cluster is the Blender animation pipeline, copied between `eigenruhe/animations/` and `hebkit/animations/`: about 30 identical Python files, for example `work_records.py` (344 lines), `authored_contracts.py`, `squat_equipment.py` and `prepare_surface.py`. `hebkit/mobile/src/tokens.ts` is identical in 5 repos. `scripts/reconcile_keycloak.py` is identical between laufbefund and BV but differs from the template.
 
 Prevention: the animation pipeline should be one package (baukit or a shared animation repo); that is a product decision. The generic part is the same manifest-hash check as E3-05.
 
 ### E3-14 (low) Magic durations in production code
-Non-test `Duration::from_secs|millis(<2+ digit literal>)` counts, which also include inline `#[cfg(test)]` modules: runtime-analyzer 50, hebkit 48, schlauzug 48, redemut 42, SLS 42, BV 37, eigenruhe 29, schluesselbund 18, lesezeichen 17, kassensturz 15, tiefgang 13, leitbild 10. Command: `rg -c 'Duration::from_(secs|millis)\([0-9_]{2,}\)' $r -g '*.rs' -g '!**/target/**' -g '!**/vendor/**' -g '!**/tests/**' -g '!*tests.rs' -g '!*_test.rs'`.
+Non-test `Duration::from_secs|millis(<2+ digit literal>)` counts, which also include inline `#[cfg(test)]` modules: laufbefund 50, hebkit 48, schlauzug 48, redemut 42, SLS 42, BV 37, eigenruhe 29, schluesselbund 18, lesezeichen 17, kassensturz 15, tiefgang 13, leitbild 10. Command: `rg -c 'Duration::from_(secs|millis)\([0-9_]{2,}\)' $r -g '*.rs' -g '!**/target/**' -g '!**/vendor/**' -g '!**/tests/**' -g '!*tests.rs' -g '!*_test.rs'`.
 
 Examples:
 - `kassensturz/backend/crates/kassensturz-api/src/household.rs:93` and `kassensturz-mcp/src/quota.rs:22`, which repeat the same `Quota::new(.., Duration::from_secs(60), 0)`
@@ -314,10 +314,10 @@ Prevention: rate-limit and quota windows belong in `limits.json`/config. Custom 
 Line counts range from 45 (BV) to 255 (eigenruhe); the template is 78. Repos fall into three lineages:
 
 - **Fitness lineage** (eigenruhe, hebkit, tiefgang): "What this is / Commands / Verify before you push / Architecture rules / Conventions / Log hygiene / Local environment".
-- **Template lineage** (lesezeichen, schluesselbund, kassensturz, schlauzug, leitbild, runtime-analyzer): "Agent guide / Commands / Dependency and generated-file rules / Boundaries".
+- **Template lineage** (lesezeichen, schluesselbund, kassensturz, schlauzug, leitbild, laufbefund): "Agent guide / Commands / Dependency and generated-file rules / Boundaries".
 - **Own format** (SLS, redemut, BV).
 
-Keyword presence (`grep -ciE '<kw>' <repo>/CLAUDE.md`, order: eigenruhe hebkit leitbild redemut schlauzug tiefgang SLS lesezeichen schluesselbund kassensturz runtime-analyzer BV):
+Keyword presence (`grep -ciE '<kw>' <repo>/CLAUDE.md`, order: eigenruhe hebkit leitbild redemut schlauzug tiefgang SLS lesezeichen schluesselbund kassensturz laufbefund BV):
 
 | rule | counts | note |
 |---|---|---|
@@ -334,7 +334,7 @@ Keyword presence (`grep -ciE '<kw>' <repo>/CLAUDE.md`, order: eigenruhe hebkit l
 Contradictions:
 1. Symlink vs identical copy: `bauvisite/AGENTS.md:3` vs `hebkit/scripts/check-agent-instructions.sh:4` (E3-09).
 2. eigenruhe CLAUDE.md:200 vs AGENTS.md:200 on which suite events the catalog accepts (E3-09).
-3. runtime-analyzer: two different files under the two names (E3-09).
+3. laufbefund: two different files under the two names (E3-09).
 4. The baukit CLAUDE.md asks agents to mirror CI with `--include-ignored`; five product files list `cargo test` without it.
 
 Recommendation: the template should own a shared "Baukit rules" block, inserted between markers such as `<!-- baukit:begin -->` / `<!-- baukit:end -->` and refreshed by `baukit upgrade`. Product text lives outside the markers. A check verifies that the block matches the pinned version.
@@ -354,7 +354,7 @@ Recommendation: the template should own a shared "Baukit rules" block, inserted 
 | `check-durable-tables.py` | `bauvisite/scripts/` (95 lines) | rejects migration tables missing backup/restore evidence | generic, pairs with `baukit-erasure` / restore drills |
 | `check-fixture-dates.py` | `bauvisite/scripts/` (68 lines) | rejects fixture deadlines less than 90 days ahead (time-bomb tests) | generic, cheap, every product |
 | `security-audit.py` | `kassensturz/scripts/` (71 lines) | pnpm audit with reviewed reachability exceptions that expire every 6 months | generic JS advisory gate; only 3 repos run cargo-deny today |
-| `cargo deny` | kassensturz, runtime-analyzer, BV | advisories and licenses | template `deny.toml` + gate step for all 12 |
+| `cargo deny` | kassensturz, laufbefund, BV | advisories and licenses | template `deny.toml` + gate step for all 12 |
 | `observability-lint.py`, `check-observability.sh`, `check-observability-metrics.py`, `verify-observability.sh`, `check-alert-rules.sh` | eigenruhe, kassensturz, BV, leitbild+BV, schluesselbund | metric names, dashboard coverage, alert rules | five implementations of one idea; baukit already has `deploy/observability/lint/check-metric-names.py`, so ship one product-facing wrapper |
 | `check-openapi-compatibility.py` | `heldengang/scripts/` | copy of the baukit script | delete once `openapi_compatibility` covers it |
 | `check-tool-versions.sh` | `tiefgang/scripts/` (53 lines) | mise/rust/node pins agree | generic; would catch the rust-version/toolchain drift in E3-03 |

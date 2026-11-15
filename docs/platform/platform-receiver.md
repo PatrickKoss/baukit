@@ -355,7 +355,7 @@ For other routes with query parameters, call
 `hub.get_json_with_query(&segments, &[(name, value)])`. Names and values are
 form-encoded in the given order, path segments are percent-encoded as in
 `get_json`, and an empty slice sends no `?`. The call uses the same cached token,
-single 401 retry and `HubError` mapping. Runtime Analyzer and
+single 401 retry and `HubError` mapping. Laufbefund and
 bauvisite can drop their own client-credentials token fetch
 and page the seat directory through the shared `HubClient`.
 

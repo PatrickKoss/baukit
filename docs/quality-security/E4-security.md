@@ -67,7 +67,7 @@ Evidence: `rust/deny.toml` exists, `cli/deny.toml` does not; `scripts/ci-gate.sh
 `cargo-deny` step; no `pnpm audit`, osv-scanner, gitleaks, trufflehog, semgrep or CodeQL referenced in
 `.github`, `scripts`, `Makefile`. `rust/deny.toml` has `unknown-git = "deny"` and `wildcards = "deny"`
 (good) but `multiple-versions = "warn"` and no `[bans] deny` list.
-Products: only kassensturz, runtime-analyzer and bauvisite have a `backend/deny.toml`;
+Products: only kassensturz, laufbefund and bauvisite have a `backend/deny.toml`;
 eigenruhe, hebkit, leitbild, redemut, schlauzug, tiefgang, heldengang, lesezeichen,
 schluesselbund have none.
 Fix: run cargo-deny on `cli/` and on every product backend (template should emit `deny.toml` and a CI
@@ -125,7 +125,7 @@ and `reqwest::Client::builder` outside an allowlisted adapter module.
 
 ### E4-09 Committed key material and env files (test-only, but worth a scanner allowlist)
 Severity: low. `git ls-files` shows test PEMs (`baukit/fixtures/data-subject/v1/test-only-private.pem`,
-`baukit/rust/crates/baukit-test/src/jwt/fixtures/oidc-key-1.pem`, runtime-analyzer `fixtures/evidence/tsa/ec/*.key.pem`,
+`baukit/rust/crates/baukit-test/src/jwt/fixtures/oidc-key-1.pem`, laufbefund `fixtures/evidence/tsa/ec/*.key.pem`,
 BV `tests/fixtures/github-app-test-only.pem`) and `leitbild/web/.env.production` / `.env.testing`
 (key names only checked: `VITE_ANALYTICS_PROVIDER`, `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_POSTHOG_API_HOST`,
 all public by design). Nothing looks like a production secret, but without gitleaks nothing would catch one.
@@ -147,7 +147,7 @@ Fix: gitleaks with a `.gitleaks.toml` allowlisting these fixture paths.
 
 ### Security testing today
 - baukit: 0 fuzz targets, 0 files using proptest (rg over `rust/` and `cli/`).
-- Products: kassensturz has cargo-fuzz (`backend/fuzz`, `scripts/fuzz-statements.sh`, `.github/workflows/statement-fuzz.yml`) and proptest in 20 files: this is the prior art to copy. runtime-analyzer has a fuzz crate. BV 9 proptest files. eigenruhe, hebkit, schlauzug, tiefgang have no proptest.
+- Products: kassensturz has cargo-fuzz (`backend/fuzz`, `scripts/fuzz-statements.sh`, `.github/workflows/statement-fuzz.yml`) and proptest in 20 files: this is the prior art to copy. laufbefund has a fuzz crate. BV 9 proptest files. eigenruhe, hebkit, schlauzug, tiefgang have no proptest.
 
 ### Ranked new fuzz/property targets in baukit
 1. `baukit-auth` JWT path: `verifier.rs` header/claims decode and `validate_token_profile` (`:1020`). Untrusted bearer on every request. Property: never Ok without a valid signature; fuzz the decode path for panics.
