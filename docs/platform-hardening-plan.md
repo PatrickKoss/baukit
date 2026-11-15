@@ -528,7 +528,7 @@ behave. Later phases add test directories here.
   - PDBs for every multi-replica platform workload.
   - kured gets `prometheusUrl` (skip reboot while non-info alerts fire), a notify URL from the
     overlay, and a reboot window.
-- [ ] **R5 Backups that are known to work** (F-43): `immediate: true` on the ScheduledBackup. The restore
+- [~] **R5 Backups that are known to work** (F-43): `immediate: true` on the ScheduledBackup. The restore
   test checks a sentinel row, not just Ready. Document an off-node backup target for the local overlay
   (host bind mount or a second object store) in the base README. Add an e2e test that runs backup,
   deletes the cluster, restores and compares the sentinel.
@@ -871,3 +871,16 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   `lint/check_upstream_rules.py` fails when the rendered rule drifts from the copy. The retention budgets
   are arithmetic, not measured ingest, and are in the observability-stack README. O4 tuning must keep
   `kubernetesStorage` on, and must update the copy if it changes that rule's runbook URL.
+- 2026-11-15 R5 offline part merged; R5 stays [~] until an integration e2e run passes
+  `e2e/tests/backup-restore`.
+  - The ScheduledBackup sets `immediate: true`.
+  - The restore CronJob writes a sentinel row as the product owner (never superuser), takes its own plugin
+    Backup, restores, and reads the token back over `kubectl exec` with the password on stdin. A missing
+    or different token fails the job.
+  - Each Backup is owned by its Job through the downward-API Job name and uid, so Job history limits and
+    the TTL bound the Backup objects. CNPG v1.30.1 does not strip foreign ownerReferences.
+  - Review rejected a first version that pruned with `delete` on all backups and relaxed the
+    restore-role test. The Role is back to create and get, and the test is unchanged.
+  - The README documents that the local default keeps backups inside the k3d node, and gives two
+    off-node targets.
+  - The netpol matrix needs `postgres-restore-test -> postgres-cluster-rw:5432 allow` when E merges.
