@@ -172,7 +172,10 @@ spec:
 
     nodeExporter:
       enabled: true
+    # Node-exporter needs hostPID, hostNetwork and hostPath, so it runs in the
+    # privileged observability-agents namespace.
     prometheus-node-exporter:
+      namespaceOverride: observability-agents
       resources:
         requests:
           cpu: 20m

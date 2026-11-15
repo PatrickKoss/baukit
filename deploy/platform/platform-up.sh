@@ -145,7 +145,7 @@ apply_secret() {
 
 apply_runtime_identity() {
   local namespace
-  for namespace in postgres observability posthog; do
+  for namespace in postgres observability observability-agents posthog; do
     kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     kubectl label namespace "$namespace" app.kubernetes.io/part-of=baukit-platform --overwrite >/dev/null
   done
@@ -169,7 +169,7 @@ apply_runtime_identity() {
   apply_secret observability grafana-admin \
     --from-literal=admin-user="$GRAFANA_ADMIN_USER" \
     --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD"
-  kubectl -n observability create configmap observability-cluster \
+  kubectl -n observability-agents create configmap observability-cluster \
     --from-literal=environment=local --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
@@ -219,6 +219,11 @@ up() {
     --components=source-controller,kustomize-controller,helm-controller \
     --network-policy=false \
     --timeout=5m >/dev/null
+  kubectl label namespace flux-system --overwrite \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/enforce-version=v1.34 \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted >/dev/null
   kubectl -n flux-system rollout status deployment/source-controller --timeout=5m
   kubectl -n flux-system rollout status deployment/kustomize-controller --timeout=5m
   kubectl -n flux-system rollout status deployment/helm-controller --timeout=5m
