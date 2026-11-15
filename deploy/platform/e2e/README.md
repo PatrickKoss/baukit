@@ -34,7 +34,8 @@ The cluster runs on k3s's embedded etcd (`--cluster-init`). The default SQLite d
 exits fatally on a failed commit when a starved host cancels its request, which restarted servers
 mid-run. On etcd, k3s turns leader election on, and a missed lease renewal exits the server too. So
 the controller manager, cloud controller manager and scheduler run with `leader-elect=false`. k3s's
-own wrangler leases get 180s/150s/10s through the `CATTLE_ELECTION_*` env. It holds no product
+own wrangler leases get 180s/150s/10s through the `CATTLE_ELECTION_*` env. `platform_local_etcd_args`
+in `local-git-http.sh` prints these k3d args for this cluster and the local ones. It holds no product
 gate lock such as `android.lock` or `browser.lock`.
 
 `--without NAME` drops `e2e-NAME` from the rendered overlay and from every `dependsOn` list. It is for

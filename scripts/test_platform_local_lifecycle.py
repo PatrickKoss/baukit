@@ -288,8 +288,36 @@ class BindAddressTest(unittest.TestCase):
         self.assertNotIn(users[-1].split(":")[0], {"0", "root"})
 
 
+ETCD_ARGS = [
+    "--k3s-arg",
+    "--cluster-init@server:0",
+    "--k3s-arg",
+    "--kube-controller-manager-arg=leader-elect=false@server:0",
+    "--k3s-arg",
+    "--kube-cloud-controller-manager-arg=leader-elect=false@server:0",
+    "--k3s-arg",
+    "--kube-scheduler-arg=leader-elect=false@server:0",
+    "--env",
+    "CATTLE_ELECTION_LEASE_DURATION=180s@server:0",
+    "--env",
+    "CATTLE_ELECTION_RENEW_DEADLINE=150s@server:0",
+    "--env",
+    "CATTLE_ELECTION_RETRY_PERIOD=10s@server:0",
+]
+ETCD_CALLERS = (
+    PLATFORM / "platform-up.sh",
+    PLATFORM / "platform-lifecycle.sh",
+    PLATFORM / "e2e" / "run.sh",
+)
+
+
 class LocalDatastoreTest(unittest.TestCase):
-    def test_platform_up_creates_the_cluster_on_embedded_etcd(self) -> None:
+    def test_helper_prints_etcd_without_lease_loss_exits(self) -> None:
+        result = bash(f'source "{HELPER}"\nplatform_local_etcd_args')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), ETCD_ARGS)
+
+    def test_platform_up_creates_the_cluster_with_the_helper_args(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             result = bash(
                 f'source "{PLATFORM / "platform-up.sh"}"\n'
@@ -299,16 +327,21 @@ class LocalDatastoreTest(unittest.TestCase):
                 env={"BAUKIT_PLATFORM_STATE_DIR": directory},
             )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("--k3s-arg\n--cluster-init@server:0\n", result.stdout)
+        self.assertIn("\n".join(ETCD_ARGS) + "\n", result.stdout)
 
-    def test_lifecycle_creates_the_cluster_on_embedded_etcd(self) -> None:
-        source = (PLATFORM / "platform-lifecycle.sh").read_text()
-        self.assertIn('--k3s-arg "$(platform_local_etcd_arg)"', source)
+    def test_every_caller_uses_the_helper(self) -> None:
+        for caller in ETCD_CALLERS:
+            with self.subTest(caller=caller.name):
+                source = caller.read_text()
+                self.assertIn("mapfile -t etcd_args < <(platform_local_etcd_args)", source)
+                self.assertIn('"${etcd_args[@]}"', source)
+                self.assertNotIn("cluster-init", source)
 
     def test_shared_server_args_leave_the_datastore_alone(self) -> None:
         result = bash(f'source "{HELPER}"\nplatform_k3s_server_args')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("cluster-init", result.stdout)
+        self.assertNotIn("leader-elect", result.stdout)
 
 
 class StatusSecretsTest(unittest.TestCase):

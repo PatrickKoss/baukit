@@ -22,9 +22,18 @@ platform_k3s_config_dir() {
 platform_k3s_config_mount=/etc/baukit/k3s
 platform_k3s_create_timeout=${PLATFORM_K3S_CREATE_TIMEOUT:-5m}
 platform_k3s_audit_log=/var/log/kubernetes/audit/audit.log
-# Local clusters only: kine/SQLite dies under host starvation. Production keeps
-# platform_k3s_server_args, so its datastore stays a separate decision.
-platform_local_etcd_arg() { printf '%s\n' '--cluster-init@server:0'; }
+# Local and e2e clusters only, production datastore stays undecided. kine/SQLite dies under host
+# starvation; on etcd a lost lease exits the server, so leader election is off and wrangler's widened.
+platform_local_etcd_args() {
+  printf '%s\n' \
+    --k3s-arg --cluster-init@server:0 \
+    --k3s-arg --kube-controller-manager-arg=leader-elect=false@server:0 \
+    --k3s-arg --kube-cloud-controller-manager-arg=leader-elect=false@server:0 \
+    --k3s-arg --kube-scheduler-arg=leader-elect=false@server:0 \
+    --env CATTLE_ELECTION_LEASE_DURATION=180s@server:0 \
+    --env CATTLE_ELECTION_RENEW_DEADLINE=150s@server:0 \
+    --env CATTLE_ELECTION_RETRY_PERIOD=10s@server:0
+}
 
 platform_k3s_server_args() {
   printf '%s\n' \
