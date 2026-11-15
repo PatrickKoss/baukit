@@ -312,7 +312,7 @@ behave. Later phases add test directories here.
   D4 says so) creates `default-deny` NetworkPolicy, a LimitRange and the DNS egress allow in every
   namespace labelled `baukit.dev/tenant=true`, with `synchronize: true`. `components/tenant` labels the
   namespace. An overlay that forgets the component still gets a default deny.
-- [ ] **K6 Exceptions and enforcement.** Run the e2e cluster, collect PolicyReports, and for every
+- [x] **K6 Exceptions and enforcement.** Run the e2e cluster, collect PolicyReports, and for every
   remaining violation either fix the base values or add a `PolicyException` in
   `deploy/platform/kyverno-policies/exceptions/` with `baukit.dev/reason` naming the invariant (for
   example "node-exporter needs hostPID to read host metrics"). Record the count in `budget.toml`. Then
@@ -1145,3 +1145,11 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   k3s-hardening e2e on c92e3e4a passed (814s): encryption at rest, audit events reach Loki through
   Alloy 1.16. kube-bench k3s-cis-1.9 report-only: 41 PASS, 26 FAIL, 49 WARN; etcd 7/7 PASS. E3 still needs
   its 15 min timing on a quiet host.
+- 2026-11-15 22:50: K6 merged (3104990b). 11 scoped PolicyExceptions, each with a reason naming the
+  invariant; `budget.toml` sets `policy_exceptions = 11` and may only go down. No policy runs in Audit.
+  `platform_label_system_namespaces` labels kube-system privileged and default, kube-public and
+  kube-node-lease restricted in run.sh, platform-up and the lifecycle; production (PI) must apply the same
+  labels. Run ph-k6-11: admission suite PASS, PolicyReports 118 reports, 936 pass, 0 fail (recounted from
+  the artifact). C4 smoke good passes and bad is denied by require-container-resources. Smoke, platform-up
+  and the lifecycle attach the registry mirrors when all run. driftDetection is enabled on every HelmRelease;
+  the zero-drift proof (run 9) predates kps 93, so the next full integration run checks DriftDetected.
