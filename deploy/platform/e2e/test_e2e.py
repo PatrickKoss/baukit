@@ -151,6 +151,23 @@ class RunnerArgumentTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("no chainsaw-test.yaml", result.stderr)
 
+    def parsed_suites(self, *arguments):
+        script = (
+            f'source "{E2E / "run.sh"}"\n'
+            f"parse_args {' '.join(arguments)}\n"
+            'printf "%s\\n" "${test_dirs[@]}"'
+        )
+        result = process_runner.run_process(["bash", "-c", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return [Path(line).name for line in result.stdout.splitlines()]
+
+    def test_suite_repeats_and_replaces_the_default(self):
+        self.assertEqual(self.parsed_suites(), ["tests"])
+        self.assertEqual(self.parsed_suites("--suite", "netpol"), ["netpol"])
+        self.assertEqual(
+            self.parsed_suites("--suite", "netpol", "--suite", "ingress"), ["netpol", "ingress"]
+        )
+
 
 class HeavySlotTests(unittest.TestCase):
     def start_wait(self, slot_dir):

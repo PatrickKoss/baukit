@@ -24,6 +24,7 @@ e2e_subnet_last=199
 cluster_name=baukit-platform-e2e
 keep_cluster=false
 test_dirs=("$e2e_dir/tests")
+suites_given=false
 without=()
 heavy_slot_dir=${BAUKIT_HEAVY_SLOT_DIR:-/tmp/claude-heavy-slots}
 ready_poll_seconds=30
@@ -42,7 +43,7 @@ Creates a disposable k3d cluster with the composed platform, runs the chainsaw
 suites under deploy/platform/e2e/tests and deletes the cluster again.
 
   --keep               keep the cluster and snapshot server after the run
-  --suite DIR          run one test directory, for example tests/smoke
+  --suite DIR          run this test directory, for example tests/smoke; repeatable
   --cluster-name NAME  k3d cluster name (default: baukit-platform-e2e)
   --without NAME       leave out the Flux Kustomization e2e-NAME and drop it from
                        every dependsOn list; repeatable
@@ -56,7 +57,9 @@ parse_args() {
       --keep) keep_cluster=true ;;
       --suite)
         (($# >= 2)) || usage
-        test_dirs=("$(suite_path "$2")")
+        [[ $suites_given == true ]] || test_dirs=()
+        suites_given=true
+        test_dirs+=("$(suite_path "$2")")
         shift
         ;;
       --cluster-name)
@@ -92,7 +95,7 @@ suite_path() {
 }
 
 require_tools() {
-  baukit_use_tools "$repo_root" chainsaw flux k3d kubectl kustomize
+  baukit_use_tools "$repo_root" chainsaw flux helm k3d kubectl kustomize
   flux_version=v$(baukit_tool_version "$repo_root" flux)
   local missing=() tool
   for tool in docker flock git openssl python3 tar; do

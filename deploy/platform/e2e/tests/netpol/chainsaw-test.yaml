@@ -1,0 +1,113 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: netpol
+spec:
+  description: >-
+    Every row of matrix.yaml gets a probe pod in its source namespace with its labels, and the TCP
+    verdict to its destination must match. The three netpol-* tenant namespaces are created here and
+    get Kyverno's tenant defaults.
+  timeouts:
+    apply: 30s
+    assert: 2m
+    exec: 15m
+  steps:
+    - name: tenant-namespaces
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: netpol-tenant
+                labels:
+                  baukit.dev/tenant: "true"
+                  pod-security.kubernetes.io/enforce: restricted
+                  pod-security.kubernetes.io/enforce-version: v1.34
+                  pod-security.kubernetes.io/audit: restricted
+                  pod-security.kubernetes.io/warn: restricted
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: netpol-tenant-open
+                labels:
+                  baukit.dev/tenant: "true"
+                  pod-security.kubernetes.io/enforce: restricted
+                  pod-security.kubernetes.io/enforce-version: v1.34
+                  pod-security.kubernetes.io/audit: restricted
+                  pod-security.kubernetes.io/warn: restricted
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: netpol-tenant-pg
+                labels:
+                  baukit.dev/tenant: "true"
+                  baukit.dev/postgres-client: "true"
+                  pod-security.kubernetes.io/enforce: restricted
+                  pod-security.kubernetes.io/enforce-version: v1.34
+                  pod-security.kubernetes.io/audit: restricted
+                  pod-security.kubernetes.io/warn: restricted
+        - apply:
+            resource:
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: allow-all-egress
+                namespace: netpol-tenant-open
+              spec:
+                podSelector: {}
+                policyTypes: [Egress]
+                egress:
+                  - {}
+        - apply:
+            resource:
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: allow-all-egress
+                namespace: netpol-tenant-pg
+              spec:
+                podSelector: {}
+                policyTypes: [Egress]
+                egress:
+                  - {}
+        - assert:
+            resource:
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: default-deny
+                namespace: netpol-tenant
+        - assert:
+            resource:
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: allow-dns-egress
+                namespace: netpol-tenant
+        - assert:
+            resource:
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: default-deny
+                namespace: netpol-tenant-open
+        - assert:
+            resource:
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: default-deny
+                namespace: netpol-tenant-pg
+    - name: probe-matrix
+      try:
+        - script:
+            timeout: 15m
+            content: |
+              set -eu
+              PYTHONDONTWRITEBYTECODE=1 python3 probe.py --matrix matrix.yaml

@@ -7,6 +7,7 @@ also on Ctrl-C.
 ```bash
 deploy/platform/e2e/run.sh                     # every suite
 deploy/platform/e2e/run.sh --suite smoke       # one suite
+deploy/platform/e2e/run.sh --suite netpol --suite ingress # several suites
 deploy/platform/e2e/run.sh --keep              # keep the cluster; the KUBECONFIG path is printed
 deploy/platform/e2e/run.sh --cluster-name ph-x # another cluster name
 deploy/platform/e2e/run.sh --without kyverno-policies # leave out Flux Kustomization e2e-kyverno-policies
