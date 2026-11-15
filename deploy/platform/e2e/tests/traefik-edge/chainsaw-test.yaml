@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         baukit.dev/ingress-backend: "true"
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/enforce-version: v1.37
+        pod-security.kubernetes.io/audit: restricted
+        pod-security.kubernetes.io/warn: restricted
   timeouts:
     exec: 3m
   steps:

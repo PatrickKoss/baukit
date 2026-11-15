@@ -1,0 +1,43 @@
+# The image is built by e2e/run.sh from e2e/echo and imported into k3d.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: e2e-echo
+spec:
+  interval: 10m
+  timeout: 5m
+  targetNamespace: e2e-tenant
+  storageNamespace: e2e-tenant
+  releaseName: echo
+  chart:
+    spec:
+      chart: ./deploy/chart/baukit-app
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: baukit
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  values:
+    fullnameOverride: echo
+    product: e2e-echo
+    deploymentEnvironment: local
+    api:
+      image:
+        repository: localhost/baukit-e2e/echo
+        tag: local
+        pullPolicy: Never
+      command:
+        - nginx
+        - -g
+        - daemon off;
+    migration:
+      enabled: false
+    networkPolicy:
+      dns:
+        k3sCompatible: true

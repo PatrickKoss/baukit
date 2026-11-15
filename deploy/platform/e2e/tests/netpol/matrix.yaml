@@ -215,6 +215,10 @@
   to: {service: rustfs.postgres, port: 9000}
   expect: allow
 
+- from: {namespace: postgres, labels: {cnpg.io/jobRole: full-recovery}}
+  to: {service: rustfs.postgres, port: 9000}
+  expect: allow
+
 # PostgreSQL and the restore test
 - from: {namespace: cnpg-system, labels: {app.kubernetes.io/name: cloudnative-pg}}
   to: {pod: {namespace: postgres, labels: {cnpg.io/podRole: instance}}, port: 8000}
@@ -226,6 +230,9 @@
   to: {service: barman-cloud.cnpg-system, port: 9090}
   expect: allow
 - from: {namespace: postgres, labels: {cnpg.io/podRole: instance}}
+  to: {service: rustfs.postgres, port: 9000}
+  expect: allow
+- from: {namespace: postgres, labels: {app.kubernetes.io/name: rustfs-create-bucket}}
   to: {service: rustfs.postgres, port: 9000}
   expect: allow
 - from: {namespace: postgres, labels: {app.kubernetes.io/name: postgres-restore-test}}
@@ -290,6 +297,9 @@
   to: {pod: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}, port: 2801}
   expect: allow
 - from: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}
+  to: {service: falco-falcosidekick.falco, port: 2801}
+  expect: allow
+- from: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}
   to: {service: loki-gateway.observability, port: 80}
   expect: allow
 - from: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}
@@ -301,3 +311,12 @@
 - from: {namespace: falco, labels: {app.kubernetes.io/name: falco}}
   to: {service: loki-gateway.observability, port: 80}
   expect: deny
+- from: {namespace: flux-system, labels: {app: notification-controller}}
+  to: {service: kube-prometheus-stack-alertmanager.observability, port: 9093}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: loki, app.kubernetes.io/component: single-binary}}
+  to: {service: kube-prometheus-stack-alertmanager.observability, port: 9093}
+  expect: allow
+- from: {namespace: observability, labels: {app.kubernetes.io/name: alertmanager}}
+  to: {service: alert-sink.observability, port: 8080}
+  expect: allow

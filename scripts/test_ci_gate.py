@@ -1,6 +1,7 @@
 import importlib.util
 import re
 import sys
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -54,26 +55,53 @@ def step_body(name):
 
 def required_tools(script):
     text = (ROOT / script).read_text()
-    match = re.search(r'^baukit_use_tools "\$repo_root" (.+)$', text, re.MULTILINE)
+    match = re.search(r'^\s*baukit_use_tools "\$repo_root" (.+)$', text, re.MULTILINE)
     return set(match.group(1).split()) if match else set()
+
+
+def workflow_jobs():
+    text = CI_WORKFLOW.read_text().split("\njobs:\n", 1)[1]
+    parts = re.split(r"^  ([a-z0-9-]+):\n", text, flags=re.MULTILINE)
+    return dict(zip(parts[1::2], parts[2::2], strict=True))
+
+
+def job_steps(body):
+    return re.findall(r"^\s+(?:- )?run: scripts/ci-gate\.sh --step (\S+)$", body, re.MULTILINE)
+
+
+def path_filter(body, name):
+    block = re.search(rf"^ {{12}}{name}:\n((?: {{14}}- .+\n)+)", body, re.MULTILINE)
+    return re.findall(r"- '([^']+)'", block.group(1)) if block else []
+
+
+def deploy_tool_steps():
+    return {
+        step.name
+        for step in listed_steps()
+        if "scripts/install-deploy-tools.sh" in step_body(step.name.replace("-", "_"))
+    }
 
 
 class CiGateTests(unittest.TestCase):
     def test_deploy_steps_install_the_pinned_tools_their_scripts_use(self):
         cases = {
-            "platform_validate": "deploy/platform/validate.sh",
-            "observability_rules": "deploy/observability/lint/check-rules.sh",
-            "platform_images": "scripts/platform-images.sh",
+            "platform_validate": ("deploy/platform/validate.sh", "deploy/platform/e2e/run.sh"),
+            "observability_rules": ("deploy/observability/lint/check-rules.sh",),
+            "platform_images": ("scripts/platform-images.sh",),
         }
-        for step, script in cases.items():
+        for step, scripts in cases.items():
             with self.subTest(step=step):
                 body = step_body(step)
                 install = re.search(r"scripts/install-deploy-tools\.sh --only (\S+)", body)
                 self.assertIsNotNone(install, body)
-                self.assertLess(install.start(), body.index(script.removeprefix("./")))
-                tools = required_tools(script)
-                self.assertTrue(tools, script)
+                self.assertLess(install.start(), body.index(scripts[0].removeprefix("./")))
+                tools = set().union(*(required_tools(script) for script in scripts))
+                self.assertTrue(all(required_tools(script) for script in scripts), scripts)
                 self.assertEqual(set(install.group(1).split(",")), tools)
+
+    def test_platform_validate_runs_the_e2e_runner_tests(self):
+        text = (ROOT / "deploy/platform/validate.sh").read_text()
+        self.assertIn('unittest discover -s "$platform_dir/e2e"', text)
 
     def test_every_step_function_exists_for_each_listed_step(self):
         functions = set(re.findall(r"^step_(\w+)\(\)", GATE_SCRIPT.read_text(), re.MULTILINE))
@@ -104,9 +132,83 @@ class CiGateTests(unittest.TestCase):
         self.assertIn("step_generated_fixture()", text)
         self.assertIn("step_platform_fixture()", text)
 
+    def test_platform_e2e_is_its_own_selected_lane(self):
+        step = {step.name: step for step in listed_steps()}["platform-e2e"]
+        self.assertEqual((step.lane, step.after, step.mode), ("platform-e2e", (), "selected"))
+        text = GATE_SCRIPT.read_text()
+        self.assertIn("step_platform_e2e() {\n", text)
+        self.assertIn(
+            "--only chainsaw,flux,k3d,kubectl,kustomize\n  ./deploy/platform/e2e/run.sh\n}", text
+        )
+
+    def test_platform_e2e_runs_for_deploy_changes_but_not_for_rust_changes(self):
+        gate = load_gate()
+        settings = tomllib.loads((ROOT / "scripts/ci-gate.toml").read_text())
+        affected = settings["quality"]["affected"]
+        shared = gate.shared_paths(settings)
+
+        def planned(path):
+            selection = gate.select([path], affected, shared)
+            return {item.step.name for item in gate.plan(listed_steps(), selection)}
+
+        self.assertIn("platform-e2e", planned("deploy/platform/kyverno/policies.yaml"))
+        self.assertIn("platform-e2e", planned("deploy/chart/baukit-app/values.yaml"))
+        self.assertNotIn("platform-e2e", planned("rust/crates/baukit-core/src/lib.rs"))
+
     def test_ci_matrix_covers_the_same_flavors(self):
         matrix = re.findall(r"^\s+- flavor: (\S+)$", CI_WORKFLOW.read_text(), re.MULTILINE)
         self.assertCountEqual(matrix, fixture_script_flavors())
+
+    def test_platform_job_runs_every_deploy_tool_step_except_e2e(self):
+        steps = deploy_tool_steps()
+        self.assertTrue({"platform-validate", "observability-rules", "platform-e2e"} <= steps)
+        jobs = workflow_jobs()
+        self.assertCountEqual(job_steps(jobs["platform"]), steps - {"platform-e2e"})
+        self.assertEqual(job_steps(jobs["platform-e2e"]), ["platform-e2e"])
+
+    def test_deploy_tool_steps_run_in_no_other_job(self):
+        steps = deploy_tool_steps()
+        for name, body in workflow_jobs().items():
+            if name in ("platform", "platform-e2e"):
+                continue
+            with self.subTest(job=name):
+                self.assertFalse(steps & set(job_steps(body)))
+
+    def test_platform_jobs_cache_tools_on_the_manifest_hash(self):
+        key = (
+            "key: deploy-tools-${{ runner.os }}-${{ runner.arch }}-"
+            "${{ hashFiles('deploy/tools.toml') }}"
+        )
+        for name in ("platform", "platform-e2e"):
+            with self.subTest(job=name):
+                body = workflow_jobs()[name]
+                self.assertIn("path: .tools\n", body)
+                self.assertIn(key, body)
+                install = body.index("run: scripts/install-deploy-tools.sh\n")
+                self.assertLess(body.index(key), install)
+                self.assertLess(install, body.index("--step "))
+
+    def test_platform_e2e_job_runs_only_when_the_platform_filter_matches(self):
+        body = workflow_jobs()["platform-e2e"]
+        self.assertIn("needs: native-changes\n", body)
+        self.assertIn("if: needs.native-changes.outputs.platform == 'true'\n", body)
+        self.assertIn(
+            "platform: ${{ steps.filter.outputs.platform }}", workflow_jobs()["native-changes"]
+        )
+
+    def test_platform_filter_matches_the_paths_that_select_platform_e2e(self):
+        gate = load_gate()
+        settings = tomllib.loads((ROOT / "scripts/ci-gate.toml").read_text())
+        globs = path_filter(workflow_jobs()["native-changes"], "platform")
+        self.assertEqual(globs, gate.shared_paths(settings))
+
+    def test_path_filter_parser_reads_only_the_named_block(self):
+        body = (
+            "            mobile:\n              - 'cli/**'\n"
+            "            platform:\n              - 'deploy/**'\n              - 'scripts/**'\n"
+        )
+        self.assertEqual(path_filter(body, "platform"), ["deploy/**", "scripts/**"])
+        self.assertEqual(path_filter(body, "missing"), [])
 
 
 if __name__ == "__main__":

@@ -46,3 +46,56 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-helm-test-egress
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: test
+      app.kubernetes.io/instance: kyverno
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: kyverno
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 9443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-helm-test-ingress
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/component
+        operator: In
+        values:
+          - admission-controller
+          - cleanup-controller
+          - reports-controller
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: test
+              app.kubernetes.io/instance: kyverno
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 9443

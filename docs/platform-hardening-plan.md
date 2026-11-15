@@ -204,7 +204,7 @@ versions. This phase comes first so every later task has a place to put its test
   chart ships CRDs; HelmRepository `interval >= 1h`; Kustomization `prune: true` with `wait: true` and no
   dead `healthChecks` list (F-M3 in platform-infra). These run on Flux objects only, so they never load
   into the cluster.
-- [ ] **V6 CI parity.** Add a `platform` job to `.github/workflows/ci.yml` that installs tools through
+- [x] **V6 CI parity.** Add a `platform` job to `.github/workflows/ci.yml` that installs tools through
   `scripts/install-deploy-tools.sh` (cached by `tools.toml` hash) and runs `--step platform-validate`
   and `--step observability-rules`. Wire `platform-e2e` (phase E) as a separate job selected by path.
   Update the CI table in `CLAUDE.md`. Acceptance: `actionlint` clean, `scripts/test_ci_gate.py` covers the
@@ -215,7 +215,7 @@ versions. This phase comes first so every later task has a place to put its test
 Goal: one command builds a disposable cluster with the composed platform and proves the guardrails
 behave. Later phases add test directories here.
 
-- [~] **E1 Runner.** `deploy/platform/e2e/run.sh` creates the k3d cluster `baukit-platform-e2e` with the
+- [x] **E1 Runner.** `deploy/platform/e2e/run.sh` creates the k3d cluster `baukit-platform-e2e` with the
   same k3s image and hardening flags as the lifecycle (S5), binds everything to `127.0.0.1`, installs Flux
   at the pinned version (including notification-controller), serves the working tree through the
   local-snapshot source (with S6's file filtering), applies `e2e/overlay/`, waits for every Kustomization
@@ -224,7 +224,7 @@ behave. Later phases add test directories here.
   the cluster on exit (trap, also on SIGINT). Every run takes `flock` on `k3d-full.lock` and waits while both
   heavy-run slots are taken before creating the cluster. It does not take the android or browser locks,
   which belong to the slot holders.
-- [~] **E2 Overlay.** `deploy/platform/e2e/overlay/` composes every base except `hcloud` and `posthog`
+- [x] **E2 Overlay.** `deploy/platform/e2e/overlay/` composes every base except `hcloud` and `posthog`
   (posthog is checked separately in N4) plus a test tenant namespace built from `components/tenant`, a
   tiny echo app deployed with `baukit-app` (image built in the runner from a pinned `nginx-unprivileged`
   digest, so it needs no product), and a webhook sink (pinned image) that records Alertmanager
@@ -233,7 +233,7 @@ behave. Later phases add test directories here.
   `deploy/platform/**`, `deploy/chart/**` and `deploy/observability*/**`. Measure wall time over three
   runs and record it in the log. If the median exceeds 15 minutes, split the chainsaw suites into two
   lanes before adding it to the full gate (D9). Add a `make platform-e2e` target and a CLAUDE.md row.
-- [~] **E4 Baseline tests**, present from day one so every later phase has a pattern to copy:
+- [x] **E4 Baseline tests**, present from day one so every later phase has a pattern to copy:
   `smoke/` asserts all Flux objects are Ready and no pod restarted more than once;
   `alert-pipeline/` creates a PrometheusRule with an always-firing `BaukitE2eProbe` alert and asserts the
   webhook sink receives it within 3 minutes (this proves rule selection, Prometheus, Alertmanager
@@ -1042,3 +1042,34 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   `PLATFORM_K3S_IMAGE` and `BAUKIT_SMOKE_K3S_IMAGE`). This fixes the smoke hang under the repo's k3d
   5.9.0 on cgroup v1 hosts. The C4 smoke applies the platform priority classes before Kyverno. Renovate
   gives flux chart dependencies a 7-day minimum release age.
+- 2026-11-15 E merged (e8898b31). `run.sh` builds the e2e cluster through `k3d_create_local_cluster`,
+  installs Flux with the lockdown, and fails fast on a Stalled HelmRelease or a Kustomization stuck in
+  ReconciliationFailed or BuildFailed for three polls. Offline guards catch the failures that used to cost
+  a full run. `check_helm_test_netpol.py` checks that NetworkPolicies admit Helm test pods.
+  `test_flux_tenancy.py` fails on namespaced objects without a namespace. Chainsaw namespaces carry
+  restricted PSA labels through `e2e/chainsaw-config.yaml`. CNPG full-recovery jobs reach rustfs. Three
+  full runs passed all six suites (smoke, traefik-edge, flux-tenancy, redis-ha, alert-pipeline,
+  backup-restore). Cluster times were 1071, 1081 and 1079 s, median 18.0 min, docker stats peak 7.46 GiB.
+  Platform Ready takes about 14.3 min, of which e2e-kyverno and e2e-observability in series take
+  8.5-9.5 min. That misses E3's 15-minute rule, so E3 stays open: E5 shortens the critical path,
+  and the suite split is the fallback. S5 adds the hardening flags E1 names. The runs show a
+  `DriftDetected` event on kube-prometheus-stack, where every PrometheusRule gains one field after install,
+  so `driftDetection` stays `warn` until K6 finds the cause. C1's ingress suite is assigned to N5.
+- 2026-11-15 The user moved the WSL2 host to cgroup v2 (`kernelCommandLine = cgroup_no_v1=all` in
+  `.wslconfig`). Local, smoke and e2e clusters run k3s 1.35 and later without kubelet workarounds. SC5b
+  drops its `fail-cgroupv1=false` path in favour of a fail-fast check that names the fix.
+- 2026-11-15 Integration follow-ups to the E merge. The e2e echo Dockerfile sets `USER 101` (Trivy
+  DS-0002), and the restore-test script tests stub `pg_isready`, with new cases for the retry and the
+  give-up path. E5 found that platform workloads, observability included, are admitted before
+  kyverno-policies exists, so the enforce policies never see them at admission. E5 now orders kyverno
+  and kyverno-policies right after foundation and adds an offline guard for it. It also adds local
+  pull-through registry caches that the e2e cluster and trivy share, because each platform-images run
+  cost about 25 anonymous Docker Hub pulls.
+- 2026-11-15 V6 merged. ci.yml has a `platform` job: one `.tools` cache keyed on `deploy/tools.toml`,
+  then platform-validate, platform-images, observability-tests and observability-rules, each in exactly
+  one job. A `platform-e2e` job runs when the new `platform` paths-filter output is true; its globs equal
+  the local gate's shared paths, so a lockfile-only change triggers it too. The local gate also runs e2e
+  when no glob matches a changed path, which paths-filter cannot express. `step_platform_validate`
+  installs chainsaw, k3d and kubectl for the e2e unit tests. `test_ci_gate.py` pins the job mapping, cache
+  key, step order and filter. Not yet proven: whether a hosted 4 vCPU / 16 GB runner finishes the e2e
+  within the 90-minute timeout.

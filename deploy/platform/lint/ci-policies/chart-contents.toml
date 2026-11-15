@@ -70,6 +70,6 @@ tests = false
 crds = false
 tests = false
 
-["traefik@41.6.1"]
+["traefik@42.4.0"]
 crds = true
 tests = false

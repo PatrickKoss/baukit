@@ -22,6 +22,8 @@ source "$platform_dir/local-git-http.sh"
 k3s_image=${BAUKIT_PLATFORM_K3S_IMAGE:-$(platform_k3s_image)}
 # shellcheck source=deploy/platform/flux-lockdown.sh
 source "$platform_dir/flux-lockdown.sh"
+# shellcheck source=deploy/platform/runtime-identity.sh
+source "$platform_dir/runtime-identity.sh"
 # shellcheck source=deploy/lib/tools.sh
 source "$repo_root/deploy/lib/tools.sh"
 flux_version=v$(baukit_tool_version "$repo_root" flux)
@@ -138,42 +140,13 @@ start_git_daemon() {
   exit 1
 }
 
-apply_secret() {
-  local namespace=$1
-  local name=$2
-  shift 2
-  kubectl -n "$namespace" create secret generic "$name" "$@" \
-    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-}
-
 apply_runtime_identity() {
-  local namespace
-  for namespace in postgres observability observability-agents posthog; do
-    kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-    kubectl label namespace "$namespace" app.kubernetes.io/part-of=baukit-platform --overwrite >/dev/null
-  done
-
-  apply_secret postgres product-db-credentials \
-    --type=kubernetes.io/basic-auth \
-    --from-literal=username=product_owner \
-    --from-literal=password="$POSTGRES_PRODUCT_PASSWORD"
-  apply_secret postgres postgres-backup-credentials \
-    --from-literal=ACCESS_KEY_ID="$RUSTFS_ACCESS_KEY" \
-    --from-literal=ACCESS_SECRET_KEY="$RUSTFS_SECRET_KEY"
-  apply_secret postgres rustfs-root \
-    --from-literal=username="$RUSTFS_ACCESS_KEY" \
-    --from-literal=password="$RUSTFS_SECRET_KEY"
-  apply_secret observability rustfs-root \
-    --from-literal=username="$RUSTFS_ACCESS_KEY" \
-    --from-literal=password="$RUSTFS_SECRET_KEY"
-  apply_secret posthog posthog-object-storage \
+  platform_runtime_identity local "$POSTGRES_PRODUCT_PASSWORD" "$RUSTFS_ACCESS_KEY" \
+    "$RUSTFS_SECRET_KEY" "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD"
+  platform_ensure_namespace posthog
+  platform_apply_secret posthog posthog-object-storage \
     --from-literal=root-user="$RUSTFS_ACCESS_KEY" \
     --from-literal=root-password="$RUSTFS_SECRET_KEY"
-  apply_secret observability grafana-admin \
-    --from-literal=admin-user="$GRAFANA_ADMIN_USER" \
-    --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD"
-  kubectl -n observability-agents create configmap observability-cluster \
-    --from-literal=environment=local --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
 print_diagnostics() {
@@ -221,7 +194,7 @@ up() {
   flux_lockdown_render "$platform_dir" "$flux_version" | kubectl apply --server-side -f - >/dev/null
   kubectl label namespace flux-system --overwrite \
     pod-security.kubernetes.io/enforce=restricted \
-    pod-security.kubernetes.io/enforce-version=v1.34 \
+    pod-security.kubernetes.io/enforce-version=v1.37 \
     pod-security.kubernetes.io/audit=restricted \
     pod-security.kubernetes.io/warn=restricted >/dev/null
   flux_lockdown_wait

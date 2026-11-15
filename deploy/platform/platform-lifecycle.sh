@@ -46,7 +46,7 @@ github_owner_type=${PLATFORM_GITHUB_OWNER_TYPE:-organization}
 age_key_file=${PLATFORM_AGE_KEY_FILE:-}
 baukit_source_mode=${PLATFORM_BAUKIT_SOURCE_MODE:-github-tag}
 baukit_checkout=${PLATFORM_BAUKIT_CHECKOUT:-}
-psa_version=v1.34
+psa_version=v1.37
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"
 flux_version=${PLATFORM_FLUX_VERSION:-v$(baukit_tool_version "$repo_root" flux)}

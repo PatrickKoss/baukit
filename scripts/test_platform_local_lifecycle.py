@@ -70,7 +70,7 @@ class SnapshotTreeTest(unittest.TestCase):
 
 class BindAddressTest(unittest.TestCase):
     def run_with_stubs(
-        self, script: str, docker_output: str = ""
+        self, script: str, docker_output: str = "2"
     ) -> tuple[subprocess.CompletedProcess[str], str]:
         with tempfile.TemporaryDirectory() as directory:
             bin_dir = Path(directory)
@@ -102,6 +102,35 @@ class BindAddressTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--wait --subnet 10.89.0.0/24", calls)
+
+    def test_cgroup_v1_host_fails_before_k3d(self) -> None:
+        result, calls = self.run_with_stubs(
+            "k3d_create_local_cluster ph img random 8080 8443", docker_output="1"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cgroup_no_v1=all", result.stderr)
+        self.assertNotIn("cluster create", calls)
+
+    def test_cgroup_v2_host_creates_the_cluster(self) -> None:
+        result, calls = self.run_with_stubs(
+            "k3d_create_local_cluster ph img random 8080 8443", docker_output="2"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("info --format {{.CgroupVersion}}", calls)
+        self.assertIn("cluster create ph", calls)
+
+    def test_unknown_cgroup_version_fails_before_k3d(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory)
+            calls = bin_dir / "calls"
+            write_stub(bin_dir, "docker", "exit 1\n")
+            write_stub(bin_dir, "k3d", f'printf "%s\\n" "$*" >> "{calls}"\n')
+            result = bash(
+                f'source "{HELPER}"\nk3d_create_local_cluster ph img random 8080 8443',
+                env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(calls.exists())
 
     def test_snapshot_container_publishes_on_the_gateway_only(self) -> None:
         result, calls = self.run_with_stubs("run_snapshot_container c img /srv 9418 172.30.0.1")
@@ -200,11 +229,8 @@ class RestoreTestScriptTest(unittest.TestCase):
             stdin=subprocess.DEVNULL,
         )
 
-    def write_sentinel(self) -> str:
-        write_stub(
-            self.work, "psql", f'printf "%s\\n" "$*" > "{self.sql}.args"\ncat > "{self.sql}"\n'
-        )
-        env = self.container_env(
+    def writer_env(self) -> dict[str, str]:
+        return self.container_env(
             self.writer,
             POD_NAME="postgres-restore-test-abc",
             PGHOST="postgres-cluster-rw",
@@ -212,9 +238,44 @@ class RestoreTestScriptTest(unittest.TestCase):
             PGUSER="product_owner",
             PGPASSWORD="secret",
         )
-        result = self.run_script(self.writer, env)
+
+    def stub_pg_isready(self, failures: int) -> Path:
+        calls = self.work / "pg_isready.calls"
+        write_stub(
+            self.work,
+            "pg_isready",
+            f'echo x >> "{calls}"\n[ "$(wc -l < "{calls}")" -gt {failures} ]\n',
+        )
+        write_stub(self.work, "sleep", "")
+        return calls
+
+    def stub_psql(self) -> None:
+        write_stub(
+            self.work, "psql", f'printf "%s\\n" "$*" > "{self.sql}.args"\ncat > "{self.sql}"\n'
+        )
+
+    def write_sentinel(self) -> str:
+        self.stub_pg_isready(failures=0)
+        self.stub_psql()
+        result = self.run_script(self.writer, self.writer_env())
         self.assertEqual(result.returncode, 0, result.stderr)
         return self.sentinel_file.read_text().strip()
+
+    def test_writer_waits_until_postgres_accepts_connections(self):
+        calls = self.stub_pg_isready(failures=2)
+        self.stub_psql()
+        result = self.run_script(self.writer, self.writer_env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(calls.read_text().splitlines()), 3)
+        self.assertTrue(self.sql.exists())
+
+    def test_writer_gives_up_when_postgres_stays_unreachable(self):
+        self.stub_pg_isready(failures=1000)
+        self.stub_psql()
+        result = self.run_script(self.writer, self.writer_env())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("postgres unreachable after 30 tries", result.stderr)
+        self.assertFalse(self.sql.exists())
 
     def run_restore(
         self, storage_class: str, restored_token: str

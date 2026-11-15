@@ -98,7 +98,7 @@ Most CNIs can apply the pod-selected CoreDNS rule. K3s installations may enforce
 | `platform.receiverSecretRef.key` | `receiver-secret` | Secret key injected as `<APP>__PLATFORM__RECEIVER_SECRET`. |
 | `platform.receiverSecretRef.previousKey` | `""` | Optional previous secret key injected as `<APP>__PLATFORM__PREVIOUS_RECEIVER_SECRET`. |
 
-Every application pod also mounts an `emptyDir` at `/tmp`, so libraries that write temp files keep working with a read-only root filesystem.
+Every application pod also mounts an `emptyDir` at `/tmp`, so libraries that write temp files keep working with a read-only root filesystem. Do not add a `tmp` volume or a `/tmp` mount in values: the render fails, because it would duplicate the chart's own.
 
 The pod and container security-context maps can be replaced when an image needs a numeric `runAsUser`, writable volume mounts, or another seccomp policy; weakening them should be a deliberate product decision.
 
