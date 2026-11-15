@@ -147,6 +147,13 @@ before releases that create ServiceMonitor/PodMonitor objects, and reconcile
 cert-manager before applying Certificate or Issuer resources. Optional means
 the overlay omits a base; shared bases do not contain enable/disable switches.
 
+An overlay that composes `kyverno-policies` orders it right after the
+foundation, `kyverno` and then `kyverno-policies`, and makes every other
+Kustomization that creates workloads depend on it. Otherwise Kyverno never
+admits those workloads on a fresh cluster. `kyverno-monitoring` comes after
+both the policies and the observability stack. `lint/check_admission_order.py`
+checks this offline.
+
 For application namespaces, include
 `cluster-baseline/app-namespace-policy` as a Kustomize component, set the target
 namespace, patch its quota when needed, and supply explicit ingress/egress

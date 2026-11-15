@@ -298,6 +298,42 @@ def effective_values(release: Resource, context: Context) -> dict | None:
     return values
 
 
+def values_from_config_maps(release: Resource, resources: Iterable[Resource]) -> list[dict]:
+    """Return the values of the ConfigMaps in the universe that the release reads via valuesFrom."""
+    wanted = {
+        (str(ref.get("name")), str(ref.get("valuesKey") or "values.yaml"))
+        for ref in release.spec.get("valuesFrom") or []
+        if ref.get("kind") == "ConfigMap"
+    }
+    found = []
+    for config_map in by_kind(resources, "ConfigMap"):
+        if config_map.namespace != release.namespace:
+            continue
+        for name, key in wanted:
+            text = (config_map.obj.get("data") or {}).get(key)
+            if config_map.name == name and isinstance(text, str):
+                found.extend(helm_yaml.parse_documents(helm_yaml.split_documents(text)))
+    return found
+
+
+def enabled_by_values_from(release: Resource, resources: Iterable[Resource]) -> bool:
+    """A monitor turned on by a valuesFrom ConfigMap renders once that ConfigMap is applied."""
+    return any(
+        enabled_monitor_toggle(values) for values in values_from_config_maps(release, resources)
+    )
+
+
+def enabled_monitor_toggle(values: object) -> bool:
+    toggles = monitor_toggles(values)
+    for toggle in toggles:
+        node = values
+        for part in toggle.split("."):
+            node = node.get(part) if isinstance(node, dict) else None
+        if node is True:
+            return True
+    return False
+
+
 def rule_metrics_enabled(context: Context) -> Iterable[str]:
     for universe, resources in context.universes.items():
         monitored = {
@@ -312,7 +348,11 @@ def rule_metrics_enabled(context: Context) -> Iterable[str]:
                 yield f"{universe}: no chart values found for {release.ref()} ({key})"
                 continue
             toggles = monitor_toggles(values)
-            if toggles and release_identity(release) not in monitored:
+            if (
+                toggles
+                and release_identity(release) not in monitored
+                and not enabled_by_values_from(release, resources)
+            ):
                 yield (
                     f"{universe}: {release.ref()} chart has a metrics monitor toggle "
                     f"({', '.join(toggles)}), but its render has no ServiceMonitor or PodMonitor"
