@@ -68,7 +68,7 @@ Evidence: `rust/deny.toml` exists, `cli/deny.toml` does not; `scripts/ci-gate.sh
 `.github`, `scripts`, `Makefile`. `rust/deny.toml` has `unknown-git = "deny"` and `wildcards = "deny"`
 (good) but `multiple-versions = "warn"` and no `[bans] deny` list.
 Products: only kassensturz, runtime-analyzer and architecture-health-platform have a `backend/deny.toml`;
-eigenruhe, hebkit, leitbild, redemut, schlauzug, tiefgang, solo-leveling-system, lesezeichen,
+eigenruhe, hebkit, leitbild, redemut, schlauzug, tiefgang, heldengang, lesezeichen,
 schluesselbund have none.
 Fix: run cargo-deny on `cli/` and on every product backend (template should emit `deny.toml` and a CI
 step); add `osv-scanner` over all lockfiles (Cargo.lock + pnpm-lock.yaml) in one step.
@@ -79,13 +79,13 @@ Prevention: generated-fixture gate asserts `deny.toml` exists and passes.
 ### E4-05 Tenant scoping is per-query and per-service discipline, not enforced by type or RLS
 Severity: med (latent). Scenario: a new handler calls a by-id repository method and forgets the org
 filter, giving cross-tenant reads (IDOR).
-Evidence: `solo-leveling-system/backend/crates/solo-leveling-system-postgres/src/teams.rs:114`
+Evidence: `heldengang/backend/crates/heldengang-postgres/src/teams.rs:114`
 `SELECT {TEAM_COLUMNS} FROM teams WHERE id = $1` has no org filter; the check lives one layer up in
-`solo-leveling-system-services/src/orgs.rs:366-371` (`.filter(|team| team.organization_id == organization_id)`).
+`heldengang-services/src/orgs.rs:366-371` (`.filter(|team| team.organization_id == organization_id)`).
 Correct today, but nothing stops a second caller. Similar id-only lookups:
 `eigenruhe/backend/crates/eigenruhe-postgres/src/coaching.rs:169`, `.../sync.rs:924`,
 `tiefgang/backend/crates/tiefgang-postgres/src/guard.rs:739`,
-`solo-leveling-system-postgres/src/wellness.rs:239`, `onboarding.rs:149`.
+`heldengang-postgres/src/wellness.rs:239`, `onboarding.rs:149`.
 Rough count of files with cross-tenant style tests (rg `other_user|cross_tenant|another_org|foreign_org|other_org`):
 eigenruhe 0, tiefgang 0, lesezeichen 0, kassensturz 0, redemut 1, schluesselbund 1, AHP 33.
 Fix: make repository methods take `(OrgId, Id)` newtypes so an unscoped lookup does not compile;
@@ -117,7 +117,7 @@ Severity: low (URLs are config, not user input, in the cases checked). Evidence:
 `tiefgang/backend/crates/tiefgang-bin/src/adapters/integrations/github.rs:29`, `toggl.rs:31`,
 `redemut/backend/crates/redemut-llm-coach/src/lib.rs:37`, `redemut-elevenlabs/src/lib.rs:31`,
 `redemut-auth/src/lib.rs:186`, `kassensturz/backend/crates/kassensturz-api/src/adapters/push_sender.rs:43`,
-`kassensturz-fints/src/lib.rs:161`, `solo-leveling-system-ai/src/client.rs:71`.
+`kassensturz-fints/src/lib.rs:161`, `heldengang-ai/src/client.rs:71`.
 These skip egress allowlists, private-IP blocking and redirect policy. If any base URL ever becomes
 tenant-configurable (fitness_tracker takes a base URL), it becomes SSRF.
 Fix: route through baukit-egress `GuardedClient`; clippy `disallowed-methods` for `reqwest::Client::new`

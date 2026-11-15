@@ -552,7 +552,7 @@ mod tests {
             "finops",
             "schlauzug",
             "schluesselbund",
-            "solo-leveling-system",
+            "heldengang",
             "tiefgang",
         ]
         .iter()

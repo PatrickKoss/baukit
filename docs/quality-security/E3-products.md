@@ -20,7 +20,7 @@ All 12 products pin baukit 0.18.2 (`baukit.toml` `version` and `baukit-core` in 
 | redemut | standard | 80 | unsafe_code=deny / **all only (no unwrap_used, todo, dbg_macro)** | 2024 / 1.95 | 1.99.0 (root) | no | no | root+web+mobile strictTypeChecked; web turns off no-unnecessary-condition | strict 3, nUIA 2, eOPT 2 | root | no / no | identical copies (turbo-injected block) | 136 |
 | schlauzug | strict | 70 | template | 2024 / 1.95 | none | no | no | web, mobile, packages strictTypeChecked + eslint-plugin-react | all six flags in 3 files | packages | no / no | identical copies | 125 |
 | tiefgang | strict | 80 | template | 2024 / 1.95 | none | no | no | mobile, extension, focus-core strictTypeChecked | strict 4, nUIA 3, eOPT 2 | none | no / no | identical copies | 196 |
-| solo-leveling-system | strict | 80 | unsafe_code=deny, **warnings=deny** / **all=deny (no unwrap_used etc.)** | 2024 / **1.97.1** | 1.99.0 (backend/) | no | no | **root: eslint-config-expo + prettier only, `no-explicit-any: warn`**; mobile strictTypeChecked | strict 4, nUIA 1 | root `.prettierrc` | no / no | identical copies | 193 |
+| heldengang | strict | 80 | unsafe_code=deny, **warnings=deny** / **all=deny (no unwrap_used etc.)** | 2024 / **1.97.1** | 1.99.0 (backend/) | no | no | **root: eslint-config-expo + prettier only, `no-explicit-any: warn`**; mobile strictTypeChecked | strict 4, nUIA 1 | root `.prettierrc` | no / no | identical copies | 193 |
 | lesezeichen | strict | 70 | template | 2024 / 1.95 | none | no | no | mobile strictTypeChecked; extension strictTypeChecked without stylistic | strict 3, nUIA 2 | none | no / no | identical copies | 70 |
 | schluesselbund | strict | 70 | template | 2024 / 1.95 | none | no | no | web, mobile strictTypeChecked | strict 3, nUIA 2 | none | no / no | identical copies | 80 |
 | kassensturz | strict | 80 | template | 2024 / 1.95 | none | no | **yes** (backend/deny.toml, run in gate) | mobile strictTypeChecked | all six, 1 file | none | no / no | identical copies | 73 |
@@ -60,7 +60,7 @@ rg -c '<pattern>' $r -g '*.{ts,tsx,mts,cts}' -g '!*.d.ts' -g '!*.gen.ts' "${X[@]
 | redemut | 1 | 911 | 285 | 32 | 0 | 0 | 0 | 99 | 0 | 16 | 0 | 2 | 1 |
 | schlauzug | 4 | 0 | 3872 | 128 | 6 | 0 | 0 | 102 | 0 | 12 | 0 | 0 | 1 |
 | tiefgang | 5 | 3 | 439 | 13 | 0 | 0 | 0 | 47 | 0 | 0 | 0 | 0 | 0 |
-| solo-leveling-system | 4 | 1805 | 175 | 40 | 2 | 0 | 0 | 7 | 3 | 0 | 0 | 0 | 0 |
+| heldengang | 4 | 1805 | 175 | 40 | 2 | 0 | 0 | 7 | 3 | 0 | 0 | 0 | 0 |
 | lesezeichen | 0 | 0 | 1783 | 145 | 1 | 0 | 0 | 62 | 3 | 0 | 0 | 0 | 0 |
 | schluesselbund | 0 | 0 | 884 | 18 | 2 | 0 | 0 | 25 | 0 | 0 | 0 | 0 | 0 |
 | kassensturz | 0 | 0 | 1811 | 30 | 2 | 0 | 0 | 81 | 0 | 0 | 0 | 1 | 0 |
@@ -77,7 +77,7 @@ Split, non-test/test occurrences (`python3 tmp/counts.py`, head of `counts.out`)
 | redemut | 1/0 | 0/924 | 25/260 | 1/31 | 0/0 | 0/0 | 12/87 | 0/0 | 15/1 | 0/2 | 0/1 |
 | schlauzug | 3/1 | 0/0 | 305/3671 | 7/121 | 0/6 | 0/0 | 2/100 | 0/0 | 12/0 | 0/0 | 0/1 |
 | tiefgang | 5/0 | 0/3 | 30/414 | 1/12 | 0/0 | 0/0 | 31/16 | 0/0 | 0/0 | 0/0 | 0/0 |
-| solo-leveling-system | 4/0 | 2/1855 | 58/117 | 0/40 | 0/2 | 0/0 | 1/6 | 0/4 | 0/0 | 0/0 | 0/0 |
+| heldengang | 4/0 | 2/1855 | 58/117 | 0/40 | 0/2 | 0/0 | 1/6 | 0/4 | 0/0 | 0/0 | 0/0 |
 | lesezeichen | 0/0 | 0/0 | 125/1685 | 2/143 | 0/1 | 0/0 | 36/26 | 0/3 | 0/0 | 0/0 | 0/0 |
 | schluesselbund | 0/0 | 0/0 | 37/853 | 1/17 | 0/2 | 0/0 | 6/19 | 0/0 | 0/0 | 0/0 | 0/0 |
 | kassensturz | 0/0 | 0/0 | 110/1735 | 1/29 | 0/2 | 0/0 | 41/42 | 0/0 | 0/0 | 1/0 | 0/0 |
@@ -100,7 +100,7 @@ From `counts.out`. Lines include blank and comment lines.
 | redemut | 96 / 46.5k | redemut-api/src/lib.rs 8492, redemut-content-compiler/src/lib.rs 2729, redemut-postgres/src/lib.rs 2229, redemut-services/src/lib.rs 1802, services/src/user_content.rs 1755 | 658 / 159.8k | packages/api-client/src/generated.ts 9528, localization/src/catalogs/web.ts 5091, web/src/content-builder-screens.tsx 3708, catalogs/mobile.ts 3349, web/src/milestone-d-screens.tsx 3150 | 41 / 20 |
 | schlauzug | 318 / 201.5k | schlauzug-api/src/lib.rs 7421, schlauzug-services/src/room_service.rs 6992, schlauzug-bin/src/lib.rs 4488, services/src/run_service.rs 4473, domain/src/deck_expedition/mode.rs 4401 | 1278 / 244.2k | packages/game-content/src/crypt-descent.ts 4462, game-client/src/index.ts 3488, game-contracts/src/index.ts 3470, web/src/survivors-arena.tsx 2071, mobile/src/run-view.tsx 1973 | 172 / 91 |
 | tiefgang | 173 / 51.6k | tiefgang-postgres/src/sync.rs 3441, tests/postgres_integration.rs 3318, tests/suite_integration.rs 1603, tiefgang-bin/src/config.rs 1424, services/src/integrations/mod.rs 1312 | 614 / 59.7k | mobile/src/db/sqlite/repositories.ts 1392, dexie/repositories.web.ts 850, db/repository-contract.ts 826, focus/session-screen-body.tsx 734, e2e/tests/quotas.spec.ts 732 | 61 / 29 |
-| solo-leveling-system | 444 / 188.2k | api/tests/lifegraph_adaptive_quests.rs 2936, api/tests/notification_producers.rs 2763, services/src/quests.rs 2475, api/tests/lifegraph_trials.rs 2406, api/tests/lifegraph_guilds.rs 2301 | 709 / 107.4k | mobile/src/localization/messages-enterprise.ts 1698, oidc-auth.test.tsx 1299, attributes-screens.test.tsx 1001, journal-screens.test.tsx 977, messages-product.ts 961 | 195 / 75 |
+| heldengang | 444 / 188.2k | api/tests/lifegraph_adaptive_quests.rs 2936, api/tests/notification_producers.rs 2763, services/src/quests.rs 2475, api/tests/lifegraph_trials.rs 2406, api/tests/lifegraph_guilds.rs 2301 | 709 / 107.4k | mobile/src/localization/messages-enterprise.ts 1698, oidc-auth.test.tsx 1299, attributes-screens.test.tsx 1001, journal-screens.test.tsx 977, messages-product.ts 961 | 195 / 75 |
 | lesezeichen | 461 / 139.0k | integrations/src/pdf.rs 1995, tests/platform.rs 1795, postgres/tests/library.rs 1757, domain/src/limits.rs 1701, integrations/src/pdf/text.rs 1505 | 628 / 72.9k | mobile/src/features/reader/pdf/text-order.ts 2548, its test 938, local-data.test.tsx 782, pdf/reader-screen.tsx 765, selection-reader.tsx 762 | 124 / 46 |
 | schluesselbund | 312 / 129.1k | tests/billing.rs 4628, tests/conversations.rs 3542, tests/invitations.rs 2729, tests/receivers.rs 2663, tests/revenuecat.rs 2597 | 467 / 50.6k | mobile/src/features/kompass/screens.test.tsx 865, web/.../kompass/screens.test.tsx 701, web/e2e/qa.config.ts 661, mobile/.../kompass/copy.ts 626, web/src/features/plans/plans.test.tsx 607 | 160 / 22 |
 | kassensturz | 470 / 129.5k | tests/agent_tools.rs 2125, tests/platform_receiver.rs 1995, domain/src/recurring/model.rs 1862, tests/aggregator_regressions.rs 1845, tests/contracts_integration.rs 1744 | 1140 / 120.8k | mobile/src/domain/recurring/model.ts 1616, contract-tests/banking-regressions.test.ts 948, contracts.test.ts 900, holdings.test.ts 848, transactions/transaction-views.tsx 841 | 126 / 31 |
@@ -141,7 +141,7 @@ Prevention: custom check needed, plus a baukit feature. Move range, positive and
 ### E3-03 (high) Lint baseline drift: `expect` unrestricted, two repos off the template, one workspace with no lints
 - The template sets `unsafe_code=deny` and clippy `all`, `dbg_macro`, `todo`, `unwrap_used` (`baukit/templates/backend/backend/Cargo.toml.jinja`). 9 repos match it.
 - `redemut/backend/Cargo.toml:95-96` keeps only `all`, so `unwrap_used`, `todo` and `dbg_macro` are off. redemut has 911 `.unwrap()` lines, all in tests per the split.
-- `solo-leveling-system/backend/Cargo.toml:93-97` replaces the template with `warnings = "deny"` and `all = "deny"`, which drops `unwrap_used`, `todo` and `dbg_macro` (restriction lints are not in `all`). 1805 unwrap lines, 2 in non-test code.
+- `heldengang/backend/Cargo.toml:93-97` replaces the template with `warnings = "deny"` and `all = "deny"`, which drops `unwrap_used`, `todo` and `dbg_macro` (restriction lints are not in `all`). 1805 unwrap lines, 2 in non-test code.
 - `runtime-analyzer/agent/Cargo.toml` (a second Rust workspace, 4 crates: finops-agent, kube-inventory, finops-simulator, finops-scanner) has no `[workspace.lints]` and its crates have no `[lints]`. Check: `awk '/^\[lints\]/...' */backend/crates/*/Cargo.toml runtime-analyzer/agent/crates/*/Cargo.toml`, every other crate opts in.
 - `hebkit/backend/Cargo.toml:16` is `edition = "2021"` with no `rust-version`; the other 11 use 2024 and 10 use `rust-version = "1.95"`. SLS uses 1.97.1. Toolchain pins differ too: leitbild, redemut and SLS pin 1.99.0, the other 9 have no pin.
 - Nothing bans `expect`. Non-test `expect` occurrences: AHP 282, runtime-analyzer 207, lesezeichen 125, kassensturz 110. Examples: `architecture-health-platform/backend/crates/architecture-health-platform-api/src/privacy_map_routes.rs:37` (`expect("nonempty schema definition")` in an HTTP route module), `kassensturz/backend/crates/kassensturz-domain/src/recurring/model.rs:217`, `runtime-analyzer/backend/crates/finops-integrations/src/artifacts/conformance.rs:35` (61 in that file).
@@ -150,7 +150,7 @@ Prevention: ship the lint table as baukit-owned config that products cannot sile
 
 ### E3-04 (high) Mobile ESLint in two repos skips typescript-eslint entirely
 - `hebkit/mobile/eslint.config.js:7` is `...fixupConfigRules(expoConfig)` plus a11y and `react/jsx-no-literals`. No `strictTypeChecked`.
-- `solo-leveling-system/eslint.config.mjs:7` is expo + prettier, with `"@typescript-eslint/no-explicit-any": "warn"` at line 45.
+- `heldengang/eslint.config.mjs:7` is expo + prettier, with `"@typescript-eslint/no-explicit-any": "warn"` at line 45.
 - `hebkit/web/eslint.config.js:62` turns `@typescript-eslint/no-non-null-assertion` off (one of 4 rules disabled there).
 - Effect: hebkit has 152 non-null `!.` lines (rg), 34 non-test (`hebkit/mobile/src/features/today/today-weight-trend-card.tsx:133-134`), and 77 non-test `as unknown as` (`hebkit/mobile/src/db/dexie/sync-entities.web.ts`, 27 hits; `rg -c 'as unknown as' hebkit -g '*.{ts,tsx}' --glob '!node_modules'`). The other 10 repos have 0 to 4 non-null lines.
 - Across all repos, `as unknown as` totals 743 lines (section 2), 225 occurrences of them in non-test code. kassensturz has 41, lesezeichen 36, tiefgang 31.
@@ -230,7 +230,7 @@ References:
 - `tiefgang/backend/crates/tiefgang-postgres/src/retention.rs:267` (`DELETE FROM {table} WHERE ctid IN (... {predicate} ...)`) and `tiefgang-postgres/src/guard.rs:739`
 - `runtime-analyzer/backend/crates/finops-postgres/src/security.rs:407,430,456` (single-line 300+ char statements with `{table}`, `{predicate}`, `{key}`)
 - `eigenruhe/backend/crates/eigenruhe-postgres/src/studio_tracking.rs:27` (`WHERE owner_id={owner}`, a column expression passed as `&str`) and `coaching_request.rs:112`
-- `solo-leveling-system/backend/crates/solo-leveling-system-postgres/src/users.rs:435`
+- `heldengang/backend/crates/heldengang-postgres/src/users.rs:435`
 - `kassensturz/backend/crates/kassensturz-postgres/src/sync.rs:251`
 
 None of these takes user input in the sample; the identifiers come from code. Every one of them is invisible to `cargo sqlx prepare`, though, and a typo in a table name surfaces only in Docker-gated tests.
@@ -273,7 +273,7 @@ rg -c 'new Promise\(\(?\w*\)? *=> *setTimeout' $r -g '*.{test,spec}.{ts,tsx}' -g
 Some of these are inside poll loops and fine. The fixed waits are the problem:
 - `lesezeichen/backend/crates/lesezeichen-worker/tests/parse.rs:398` (`thread::sleep(1500ms)`)
 - `redemut/backend/tests/it_ops.rs:74` (350 ms)
-- `solo-leveling-system/backend/crates/solo-leveling-system-bin/tests/daily_quest_worker.rs:157,271`
+- `heldengang/backend/crates/heldengang-bin/tests/daily_quest_worker.rs:157,271`
 - `architecture-health-platform/.../runtime-collector/tests/http_sink.rs:375`
 - `runtime-analyzer/web/e2e/tests/sbom-upload.spec.ts:71` (`waitForTimeout(1200)`)
 - `schlauzug/web/e2e/tests/deck-expedition-flow.spec.ts:127`
@@ -346,8 +346,8 @@ Recommendation: the template should own a shared "Baukit rules" block, inserted 
 | `check-crate-deps.py` | `schluesselbund/scripts/` (112 lines) | enforces backend crate layering from ADR 0001 | `baukit doctor --layers` for all products (E3-12) |
 | `check-agent-instructions.sh` | `hebkit/scripts/` | CLAUDE.md == AGENTS.md | baukit check after picking one convention (E3-09) |
 | `check-egress.py` + `egress-allowlist.json` | `lesezeichen/scripts/` (122 lines) | outbound dependencies and source against reviewed exceptions | pairs with `baukit-egress`; generic version for every product |
-| `audit-theme.sh` + `theme-allowlist.txt` | `solo-leveling-system/scripts/` (85 lines) | reports raw colors outside tokens, `--check` makes it a gate | enforce the "ui-tokens only" rule in every product |
-| `audit-localization.mjs` + allowlist | `solo-leveling-system/scripts/` (322 lines) | catalog completeness | generic check on `@baukit/localization-core` catalogs |
+| `audit-theme.sh` + `theme-allowlist.txt` | `heldengang/scripts/` (85 lines) | reports raw colors outside tokens, `--check` makes it a gate | enforce the "ui-tokens only" rule in every product |
+| `audit-localization.mjs` + allowlist | `heldengang/scripts/` (322 lines) | catalog completeness | generic check on `@baukit/localization-core` catalogs |
 | `check-limits-coverage.cjs` | `kassensturz/scripts/` (154 lines) | every `limits.json` key has tests per ingress (rest, sync_push, sqlite, dexie, mcp...) | generic limits-coverage check, pairs with E3-02 |
 | `fuzz-statements.sh` + `backend/fuzz/` | `kassensturz` | cargo-fuzz targets for camt/mt940/csv parsers, time-boxed | baukit gate step `fuzz` that runs any `backend/fuzz` targets for N seconds when present |
 | `check-expand-contract.sh` | `leitbild/scripts/` (59 lines) | pins migration hashes, enforces expand/contract | merge with template `check-migrations-immutable.sh` (2 hashes across 10 repos already) |
@@ -356,7 +356,7 @@ Recommendation: the template should own a shared "Baukit rules" block, inserted 
 | `security-audit.py` | `kassensturz/scripts/` (71 lines) | pnpm audit with reviewed reachability exceptions that expire every 6 months | generic JS advisory gate; only 3 repos run cargo-deny today |
 | `cargo deny` | kassensturz, runtime-analyzer, AHP | advisories and licenses | template `deny.toml` + gate step for all 12 |
 | `observability-lint.py`, `check-observability.sh`, `check-observability-metrics.py`, `verify-observability.sh`, `check-alert-rules.sh` | eigenruhe, kassensturz, AHP, leitbild+AHP, schluesselbund | metric names, dashboard coverage, alert rules | five implementations of one idea; baukit already has `deploy/observability/lint/check-metric-names.py`, so ship one product-facing wrapper |
-| `check-openapi-compatibility.py` | `solo-leveling-system/scripts/` | copy of the baukit script | delete once `openapi_compatibility` covers it |
+| `check-openapi-compatibility.py` | `heldengang/scripts/` | copy of the baukit script | delete once `openapi_compatibility` covers it |
 | `check-tool-versions.sh` | `tiefgang/scripts/` (53 lines) | mise/rust/node pins agree | generic; would catch the rust-version/toolchain drift in E3-03 |
 | `check-eslint-compat.mjs` | `schlauzug/scripts/` | ESLint config loads for web and mobile | absorbed by `@baukit/eslint-config` (E3-04) |
 | `check-markdown-links.py`, `check-migrations-immutable.sh` | template, 10 to 11 repos | already shared | keep; `redemut` and `leitbild` do not wire migrations-immutable into the gate (grep count 0) |

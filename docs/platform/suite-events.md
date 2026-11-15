@@ -405,7 +405,7 @@ head and emit points in each product before adoption.
 
 | Product app id | Config prefix and API base | Product work |
 | --- | --- | --- |
-| `sololeveling` | `SOLO_LEVELING_SYSTEM`, `/api/v1` | Replace the copied suite module. Keep applied migrations `0056`, `0059` and `0061`, including their owner foreign keys. Keep typed payloads, LifeGraph mappings, rewards and the mapping route. Implement replay from existing domain history. |
+| `heldengang` | `HELDENGANG`, `/api/v1` | Replace the copied suite module. Keep applied migrations `0056`, `0059` and `0061`, including their owner foreign keys. Keep typed payloads, LifeGraph mappings, rewards and the mapping route. Implement replay from existing domain history. |
 | `eigenruhe` | `EIGENRUHE`, `/api/v1` | Replace hub publishing and its connection UI. Emit practice completion and check-ins from REST and sync transactions. Replay those rows. Keep the fitness-tracker connection. |
 | `hebkit` | `HEBKIT`, `/api/v1` | Replace the Tiefgang-specific sender and connection route. Emit first-party workouts and sleep, including imported sleep, at existing write points. Update closed job-type dispatch and replay both histories. |
 | `leitbild` | `LEITBILD`, `/api/v1` | Add a vault keyring. Run suite delivery independently of the AI worker. Emit new journal entries and completed program runs, excluding backfills. Supply replay and preserve the authorize query across login. |
@@ -435,7 +435,7 @@ also refuses framed pages, but the product owns these hosting headers.
 ## Extraction map
 
 The reference is the read-only SLS snapshot at `6a95ac2`. All paths below are
-relative to that snapshot; the `solo-leveling-system-` crate prefix is omitted.
+relative to that snapshot; the `heldengang-` crate prefix is omitted.
 
 | SLS file | Baukit file | Product retains |
 | --- | --- | --- |
@@ -460,25 +460,25 @@ second app. No suite capability is added to CLI templates in this extraction.
 
 The source paths below refer to snapshot `6a95ac2`.
 
-- `backend/crates/solo-leveling-system-api/src/v1/suite.rs:232` names the
+- `backend/crates/heldengang-api/src/v1/suite.rs:232` names the
   envelope property `source` in OpenAPI, although the wire envelope uses
   `sourceApp`. The shared schema uses `sourceApp` and has a regression test.
-- `backend/crates/solo-leveling-system-services/src/suite/link.rs:514` calls
+- `backend/crates/heldengang-services/src/suite/link.rs:514` calls
   replay while holding a transaction. The implementation at
-  `backend/crates/solo-leveling-system-postgres/src/suite/outbox.rs:425` acquires
+  `backend/crates/heldengang-postgres/src/suite/outbox.rs:425` acquires
   another pool connection. This blocks a pool of size one. Replay and identity
   queries now use the existing connection; an integration test uses a one-slot
   pool.
-- `backend/crates/solo-leveling-system-postgres/src/suite.rs:359` locks a code
+- `backend/crates/heldengang-postgres/src/suite.rs:359` locks a code
   before exchange locks its owner at line 441. Erasure locks the owner in
-  `backend/crates/solo-leveling-system-postgres/src/profile_erasure.rs:30` before
+  `backend/crates/heldengang-postgres/src/profile_erasure.rs:30` before
   deleting suite rows. These orders can deadlock. The adapter acquires
   the suite owner advisory lock before either a code or request row. A concurrent
   exchange, completion and erasure test verifies that erasure can delete those
   rows while the link operation waits.
-- `backend/crates/solo-leveling-system-postgres/src/profile_erasure.rs:125`
+- `backend/crates/heldengang-postgres/src/profile_erasure.rs:125`
   deletes suite jobs before deleting links. Replay and test enqueue methods lock
-  only the link at `backend/crates/solo-leveling-system-postgres/src/suite/outbox.rs:337`
+  only the link at `backend/crates/heldengang-postgres/src/suite/outbox.rs:337`
   and line 386; disconnect does the same through `suite.rs:427`. They can commit
   another job while erasure waits for that link, leaving an orphan after cleanup.
   Shared link operations take the owner advisory lock first. Router tests race

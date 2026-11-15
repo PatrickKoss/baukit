@@ -289,7 +289,7 @@ release calls do not emit one. On `PlatformEventKind::CreditsChanged`, call
 `CreditBalance` follows the bucketed balance of Schlüsselbund C21:
 
 ```json
-{"suiteSubject":"suite-dev|alice","wallet":"sololeveling","revision":3,"total":160,"grant":{"available":110,"expiresAt":1780272000},"packs":[{"available":50,"expiresAt":1804636800}]}
+{"suiteSubject":"suite-dev|alice","wallet":"heldengang","revision":3,"total":160,"grant":{"available":110,"expiresAt":1780272000},"packs":[{"available":50,"expiresAt":1804636800}]}
 ```
 
 `total` is what a reserve can take now: `grant.available` plus every pack.

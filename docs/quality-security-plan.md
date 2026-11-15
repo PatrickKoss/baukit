@@ -7,7 +7,7 @@ checks and new suppressions) before ticking a box. Weak results go back to the s
 Status markers: `[ ]` open, `[~]` in progress, `[x]` done and verified, `[-]` dropped (reason in the log).
 
 Scope: baukit and the products that consume it:
-eigenruhe, hebkit, leitbild, redemut, schlauzug, tiefgang, solo-leveling-system,
+eigenruhe, hebkit, leitbild, redemut, schlauzug, tiefgang, heldengang,
 lesezeichen, schluesselbund, kassensturz, runtime-analyzer, architecture-health-platform.
 
 Raw exploration reports, with commands and `path:line` evidence: `docs/quality-security/E1..E4-*.md`.
@@ -196,14 +196,14 @@ tenancy and rate-limit audit of the products (S-08).
   instruction block, fix every violation (shrinking allowlists only for size limits), migrate raw reqwest to
   egress, SHA-pin actions, write `docs/threat-model.md`, add fuzz targets for its own parsers, gate green.
   - [x] eigenruhe  - [x] hebkit  - [x] leitbild  - [x] redemut
-  - [x] schlauzug  - [x] tiefgang  - [x] solo-leveling-system  - [x] lesezeichen
+  - [x] schlauzug  - [x] tiefgang  - [x] heldengang  - [x] lesezeichen
   - [x] schluesselbund  - [x] kassensturz  - [x] runtime-analyzer  - [x] architecture-health-platform
   - Product-specific items gathered from baukit work packages:
     - `TombstoneTable.delete` binds owners as `$2` and deletes `(owner_id, id)` pairs (F5): eigenruhe,
       hebkit, tiefgang, kassensturz. Each product also gets its own push/pull owner-isolation test and a fuzz
       target for its push batch decode, since baukit-sync leaves the wire format to products.
     - Clerk products that sign in from mobile opt in to `allow_missing_azp` (W4-F).
-    - OAuth provider linking moves to `baukit_integrations::oauth_state` (F4): solo-leveling-system,
+    - OAuth provider linking moves to `baukit_integrations::oauth_state` (F4): heldengang,
       lesezeichen and every other product with an integration callback. Suite consumers mount public routes
       through `PostgresSuite::router` or `limited_router`; the plain `adapters::http::router` is gone.
     - Suite builder adoption (reports/suite-builder-adoption.md) and the per-product tenancy findings
@@ -217,7 +217,7 @@ tenancy and rate-limit audit of the products (S-08).
   - runtime-analyzer: one global `anonymous:auth` bucket (`finops-api/src/lib.rs:278`) lets one client lock
     out all sign-ins. Key it per client IP.
   - kassensturz (9 tables), hebkit (2): sync upserts need the owner in `ON CONFLICT ... WHERE`. Unverified.
-  - solo-leveling-system (verified): `GET /guilds/{id}` and its members, progression, quests and competitions
+  - heldengang (verified): `GET /guilds/{id}` and its members, progression, quests and competitions
     ignore private visibility (`services/src/groups.rs:1015` checks only `disbanded_at`); `GET /parties/{id}`
     returns any party with members (`services/src/groups.rs:1226`); cohort `add_member` enrols a foreign
     `userId` in the arc before the FK rejects the member row (`services/src/orgs.rs:1934-1956`); the
@@ -247,7 +247,7 @@ tenancy and rate-limit audit of the products (S-08).
   | redemut | 0.20.0 | 7 | 0 | 0 | 2 | | 0 |
   | schlauzug | 0.20.0 | 0 | 0 | 0 | 2 | | 0 |
   | tiefgang | 0.22.0 | 0 | 0 | 0 | 2 | | 0 |
-  | solo-leveling-system | 0.22.0 | 1 | 0 | 0 | 2 | | 0 |
+  | heldengang | 0.22.0 | 1 | 0 | 0 | 2 | | 0 |
   | lesezeichen | 0.22.0 | 4 | 0 | 0 | 5 | | 0 |
   | schluesselbund | 0.22.0 | 3 | 0 | 0 | 2 | | 0 |
   | kassensturz | 0.22.0 | 7 | 0 | 0 | 6 | | 0 |
@@ -609,7 +609,7 @@ nanoseconds; those two are about readable ownership, not speed.
 - 2026-11-08: D7 replaces rollout policy items 2 and 3 (budget via `--update`, `eslint --suppress-all`).
   Bulk entries found before the change: hebkit 8213, kassensturz 3644, redemut 486. All three, plus
   eigenruhe and schluesselbund (rust-allow 50), were re-briefed; prompts/P4.2/POLICY-no-workarounds.md.
-  solo-leveling-system landed before D7 and gets a D7 audit pass. Two runaway gates were stopped:
+  heldengang landed before D7 and gets a D7 audit pass. Two runaway gates were stopped:
   kassensturz ran six full gates in a fix loop, and schluesselbund's playwright step ran 4h50m through
   about 1500 failing tests with retries.
 

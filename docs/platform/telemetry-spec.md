@@ -34,11 +34,11 @@ Prometheus exposition on the operations listener at `/metrics`. The naming diver
 Rules:
 
 - The duration metric name is **singular** (`http_request_duration_seconds`). Fitness Tracker migrates from the plural name.
-- `status` is the raw numeric status code as a string (`"200"`, `"404"`). Status classes are derived in queries and recording rules, never stored as labels. Solo Leveling migrates from status classes.
+- `status` is the raw numeric status code as a string (`"200"`, `"404"`). Status classes are derived in queries and recording rules, never stored as labels. Heldengang migrates from status classes.
 - `route` is always the matched route template (`/users/{id}`), never the raw path. Requests that match no route use `route="unmatched"`.
 - `method` is uppercase and bounded to known HTTP methods; anything else becomes `OTHER`.
 - Histogram buckets (seconds): `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10`.
-- Application-prefixed HTTP metric names (for example `sl_http_*`) are forbidden. Solo Leveling migrates.
+- Application-prefixed HTTP metric names (for example `sl_http_*`) are forbidden. Heldengang migrates.
 
 ### 2.2 Build info
 
@@ -116,4 +116,4 @@ Metrics 30 days, logs 14 days, traces 7 days. Adjust from observed cost and inci
 |---|---|
 | Fitness Tracker | duration metric plural → singular; log label `service_name` → `service` |
 | OpenDialog | remove duplicate HTTP recording (custom RED middleware plus `axum-prometheus`); keep exactly one recorder |
-| Solo Leveling | drop app-prefixed HTTP metric names; status class → raw status code |
+| Heldengang | drop app-prefixed HTTP metric names; status class → raw status code |

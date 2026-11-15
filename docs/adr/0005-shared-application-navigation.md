@@ -11,7 +11,7 @@ package boundaries and accessibility requirements still apply.
 ## Context
 
 The user asked all eight products to adopt one collapsible navigation pattern.
-Hebkit, Eigenruhe, Tiefgang and Solo Leveling use Expo Router and React Native
+Hebkit, Eigenruhe, Tiefgang and Heldengang use Expo Router and React Native
 Web. Leitbild, Redemut, Runtime Analyzer and Schlauzug also have DOM web apps.
 Products use Ionicons, Lucide, inline SVG and glyphs. Their routers include
 Expo Router, TanStack Router and pushState. Their styling includes StyleSheet,

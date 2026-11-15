@@ -242,7 +242,7 @@ A product that keeps a recorded platform API responses fixture, such as a JSON f
 #### Mobile scripts, app-config tests and Maestro paths (mobile products)
 
 1. Copy `mobile/eslint.config.js`, or add the `preserve-caught-error` and `@typescript-eslint/no-dynamic-delete` rules and the `scripts/**/*.{js,mjs,cjs}` block with `tseslint.configs.disableTypeChecked`, and add `scripts` to the `lint` script in `mobile/package.json`.
-2. Clerk and WorkOS products copy `mobile/scripts/check-production-bundle.mjs`, which passes the caught error as `cause`, `mobile/scripts/sign-in-config.test.mjs`, which keeps only the Metro cases, and the new `mobile/src/app-config.test.ts`, which runs the app-config cases under Jest. A product that already moved those cases to its unit runner (Schlauzug, Hebkit, Solo Leveling, Redemut, Tiefgang) keeps its own test and drops the template's app-config file.
+2. Clerk and WorkOS products copy `mobile/scripts/check-production-bundle.mjs`, which passes the caught error as `cause`, `mobile/scripts/sign-in-config.test.mjs`, which keeps only the Metro cases, and the new `mobile/src/app-config.test.ts`, which runs the app-config cases under Jest. A product that already moved those cases to its unit runner (Schlauzug, Hebkit, Heldengang, Redemut, Tiefgang) keeps its own test and drops the template's app-config file.
 3. Strict products add `"mobile/.maestro/**" = ["mobile", "android-build", "android-e2e"]` to `[quality.affected]` in `baukit.toml`, with their own lane names when the Android steps run in another lane (KS.18), and copy `scripts/gate.test.py`.
 
 ## v0.18.2

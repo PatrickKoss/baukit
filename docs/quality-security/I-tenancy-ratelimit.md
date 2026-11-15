@@ -1,23 +1,23 @@
 # W1-I: tenancy scoping and rate limiting across 12 products
 
-This is a read-only audit. I wrote no repo files. Per-product sections follow, and every path:line in them still needs orchestrator verification. Five products got the full audit: solo-leveling-system, kassensturz, lesezeichen, eigenruhe and schluesselbund. The other seven got steps 1, 3 and 5 in full, with steps 2 and 4 sampled.
+This is a read-only audit. I wrote no repo files. Per-product sections follow, and every path:line in them still needs orchestrator verification. Five products got the full audit: heldengang, kassensturz, lesezeichen, eigenruhe and schluesselbund. The other seven got steps 1, 3 and 5 in full, with steps 2 and 4 sampled.
 
 ## Cross-product summary
 
 ### Confirmed missing scoping (full call path read)
 - kassensturz, lesezeichen and schluesselbund: `GET /items`, `GET/PUT/DELETE /items/{id}` is template CRUD on a global `items` table with no owner column. Any signed-in user can read, edit or delete every row. Fix this in templates/ as well.
-- solo-leveling-system: any authenticated user can read private guilds (`/guilds/{id}`, members, progression, quests, quest-templates, competitions) and `/parties/{id}` by id. Adding a cohort member enrolls any user id in the quest arc before the FK rejects the row (services/src/orgs.rs:1934-1956). The OAuth callback trusts the signed state for the user, which is a possible CSRF. I did not check whether the state is single-use.
+- heldengang: any authenticated user can read private guilds (`/guilds/{id}`, members, progression, quests, quest-templates, competitions) and `/parties/{id}` by id. Adding a cohort member enrolls any user id in the quest arc before the FK rejects the row (services/src/orgs.rs:1934-1956). The OAuth callback trusts the signed state for the user, which is a possible CSRF. I did not check whether the state is single-use.
 - redemut: sync push does not check a pushed event's device_id against the caller (services/src/lib.rs:1299), so another user's device can be referenced.
 
 ### Service-check only (latent)
 - baukit-suite `find_link_for_owner` (baukit-suite/src/adapters/postgres/mod.rs:539-548) loads by id and filters in Rust. `refresh_failures` writes before that check, and in kassensturz's case the revoke UPDATE also filters on id only. Every product that uses suite inherits this, so it is a baukit fix.
 - kassensturz sync push: 9 tables use `ON CONFLICT(id) DO UPDATE` without a user_id guard and rely on an unlocked EXISTS pre-check, so there is a race window. hebkit has the same pattern for meal_template_entries and recipe_ingredients.
-- solo-leveling-system: org teams, cohorts, metrics, guild and party invites, connections, reactions and categories. Org definitions and assignments are written with `WHERE id=$1`.
+- heldengang: org teams, cohorts, metrics, guild and party invites, connections, reactions and categories. Org definitions and assignments are written with `WHERE id=$1`.
 - schluesselbund: families (Rust organizer check) and org data queries behind a central authorize().
 - tiefgang: 5 handlers. schlauzug: runs and room host view. leitbild: reflection-jobs owner taken from the JSON payload, plus the catalog import upsert can rewrite owner.
 
 ### SQL-scoped (good)
-eigenruhe is SQL-scoped on all 64 id routes. lesezeichen is SQL-scoped on 29 of 32. architecture-health-platform uses require_member plus scoped SQL. runtime-analyzer uses Postgres FORCE RLS, but 39 direct pool calls and 62 SECURITY DEFINER uses bypass it. Most `/me` routes in kassensturz and solo-leveling-system are SQL-scoped too.
+eigenruhe is SQL-scoped on all 64 id routes. lesezeichen is SQL-scoped on 29 of 32. architecture-health-platform uses require_member plus scoped SQL. runtime-analyzer uses Postgres FORCE RLS, but 39 direct pool calls and 62 SECURITY DEFINER uses bypass it. Most `/me` routes in kassensturz and heldengang are SQL-scoped too.
 
 ### Cross-tenant tests (routes with an id / routes with a two-principal test)
 | Product | Routes with id | Routes with a two-principal test |
@@ -26,7 +26,7 @@ eigenruhe is SQL-scoped on all 64 id routes. lesezeichen is SQL-scoped on 29 of 
 | lesezeichen | 32 | 23 |
 | schluesselbund | 49 | 26 |
 | kassensturz | 29 | 6 |
-| solo-leveling-system | about 175 | about 20 |
+| heldengang | about 175 | about 20 |
 | leitbild | 18 | 4 |
 | tiefgang | 18 | about 2 |
 | redemut | 7 sampled | 3 |
@@ -36,7 +36,7 @@ hebkit and schlauzug have no counted tests; see their sections.
 
 ### Rate-limit gaps
 - `/suite/*` and `/platform/inbound` are merged after the limiter layers in eigenruhe and lesezeichen. kassensturz has no limiter on `/platform/inbound`.
-- solo-leveling-system uses its own 300/min Postgres quota, not baukit-ratelimit. Its OAuth callback and OG image route have no limit at all.
+- heldengang uses its own 300/min Postgres quota, not baukit-ratelimit. Its OAuth callback and OG image route have no limit at all.
 - runtime-analyzer: anonymous `/auth/*` traffic shares one global key, so one client can lock everyone out of sign-in.
 - schluesselbund: invalid `/platform/v1` tokens are unlimited.
 - lesezeichen: the limiter is optional in production.
@@ -46,14 +46,14 @@ hebkit and schlauzug have no counted tests; see their sections.
 - Holds (guarded upsert): eigenruhe, lesezeichen.
 - Latent: kassensturz and hebkit have tables that rely on an unlocked pre-check. In tiefgang a foreign id makes the whole batch fail with a 5xx.
 - Gap: redemut's device_id is not checked.
-- Not used: solo-leveling-system, schluesselbund, schlauzug, architecture-health-platform.
+- Not used: heldengang, schluesselbund, schlauzug, architecture-health-platform.
 
 
 ---
 
-# solo-leveling-system: tenancy and rate-limit audit
+# heldengang: tenancy and rate-limit audit
 
-Backend: `/home/patrick/projects/solo-leveling-system/backend`. Paths below are relative to `backend/crates/` unless they start with `migrations/` or `~/.cargo`. Read-only audit, 2026-11-07.
+Backend: `/home/patrick/projects/heldengang/backend`. Paths below are relative to `backend/crates/` unless they start with `migrations/` or `~/.cargo`. Read-only audit, 2026-11-07.
 
 ## 1. Ownership model
 
@@ -65,7 +65,7 @@ There are two scopes:
 Guilds and parties are a third kind of group. Membership lives in `guild_members` and party members.
 
 - **Principal type.** `AuthContext` (domain crate) is `User { id, role, org_context: Option<{org_id, role}>, suite_subject }`, `OrgApiKey` or `PublicApiKey`.
-- **Extractor.** `Authenticated(pub AuthContext)` in `solo-leveling-system-api/src/auth/mod.rs:405`, with `FromRequestParts` at `:423`. It reads the `AuthContext` that the `auth::authenticate` middleware put into the request extensions. Each `v1/*.rs` router adds that middleware with `route_layer`, for example `v1/groups.rs:1297`.
+- **Extractor.** `Authenticated(pub AuthContext)` in `heldengang-api/src/auth/mod.rs:405`, with `FromRequestParts` at `:423`. It reads the `AuthContext` that the `auth::authenticate` middleware put into the request extensions. Each `v1/*.rs` router adds that middleware with `route_layer`, for example `v1/groups.rs:1297`.
 - **User id helper.** `authenticated_user_id(&context)`, for example `v1/groups.rs:1303`.
 - **Org gate.** `scoped_user()` in `v1/orgs.rs:1251`. First, `token_scoped_user()` at `:1227` requires the selected `X-Organization-Id` context to equal the path `orgId`. Then `organizations.active_role(path_org_id, user_id)` checks the role persisted in SQL. Every `/organizations/{orgId}/*` handler calls it.
 - **Org API key gate.** `require_org_admin()` in `v1/api_keys.rs`.
@@ -154,7 +154,7 @@ Legend:
 
 These tests make a second user or org call an id route and expect 403/404 or empty data:
 
-- `/me/operations/{id}`: `solo-leveling-system-api/tests/integrations_endpoints.rs:221,256`
+- `/me/operations/{id}`: `heldengang-api/tests/integrations_endpoints.rs:221,256`
 - `/me/quests/{id}/reroll`: `tests/lifegraph_adaptive_quests.rs:700-707`
 - `/me/trials/{id}`: `tests/lifegraph_trials.rs:308,366-379`
 - observations seen/dismiss: `tests/lifegraph_observations.rs:497`
@@ -177,9 +177,9 @@ These tests make a second user or org call an id route and expect 403/404 or emp
 
 ## 4. Rate limiting
 
-- **Global per-user quota.** All bearer routes go through it. `auth::authenticate` calls `user_quota.consume_user_quota(user_id)` (`solo-leveling-system-api/src/auth/mod.rs:277-291`), with a Postgres fixed window in `postgres/src/api_keys.rs:114-142` and a default of 300/min (`solo-leveling-system-bin/src/settings.rs:240`). It is attached via `.with_user_quota(...)` on the v1 router, the suite protocol router and the plan router (`solo-leveling-system-api/src/lib.rs:84-105`). It is not baukit-ratelimit.
+- **Global per-user quota.** All bearer routes go through it. `auth::authenticate` calls `user_quota.consume_user_quota(user_id)` (`heldengang-api/src/auth/mod.rs:277-291`), with a Postgres fixed window in `postgres/src/api_keys.rs:114-142` and a default of 300/min (`heldengang-bin/src/settings.rs:240`). It is attached via `.with_user_quota(...)` on the v1 router, the suite protocol router and the plan router (`heldengang-api/src/lib.rs:84-105`). It is not baukit-ratelimit.
 - **API key quota.** `/public/*` and org keys use `api_key_quota_exceeded` (`auth/api_key.rs:111-118`).
-- **baukit-ratelimit.** MCP uses Redis when configured, in memory otherwise (`solo-leveling-system-bin/src/compose/mcp.rs:124-127`). Redis is required outside local (`settings.rs:867-870`). Suite protocol uses `InMemoryRateLimitStore` (`compose/suite.rs:49`). That limiter is per process, so it is not shared across replicas.
+- **baukit-ratelimit.** MCP uses Redis when configured, in memory otherwise (`heldengang-bin/src/compose/mcp.rs:124-127`). Redis is required outside local (`settings.rs:867-870`). Suite protocol uses `InMemoryRateLimitStore` (`compose/suite.rs:49`). That limiter is per process, so it is not shared across replicas.
 - **Route-specific limits.**
   - AI: a daily per-user call cap (`services/src/ai.rs:791-794`, returns 429 via `v1/ai.rs:402`) plus suite credits.
   - Competition score refresh returns 429 (`v1/contests.rs:817-818`).

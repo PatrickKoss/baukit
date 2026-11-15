@@ -107,7 +107,7 @@ The products' ranges at Baukit v0.17.1, from `baukit.toml` on each product's `ma
 | Redemut | 5620 | 2 | 5620 to 5623 | 5620 to 5627 | Baukit's old native lane |
 | Schlüsselbund | 5644 | 2 | 5644 to 5647 | 5644 to 5651 | Tiefgang |
 | Tiefgang | 5646 | 2 | 5646 to 5649 | 5644 to 5651 | Schlüsselbund |
-| Solo Leveling System | 5662 | 2 | 5662 to 5665 | 5660 to 5667 | |
+| Heldengang | 5662 | 2 | 5662 to 5665 | 5660 to 5667 | |
 | Lesezeichen | 5674 | 2 | 5674 to 5677 | 5668 to 5675 | past its block |
 | Leitbild | 5680 | 2 | 5680 to 5683 | 5676 to 5683 | |
 

@@ -305,7 +305,7 @@ fn generated_backend_is_rustfmt_clean_across_product_names() -> anyhow::Result<(
     let names = [
         "aaa",
         "zeta",
-        "solo-leveling-system-companion",
+        "heldengang-companion",
         &maximum_name,
     ];
     for (name, worker, auth, mcp) in names.into_iter().flat_map(|name| {
@@ -3173,7 +3173,7 @@ fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<(
     for auth in [None, Some(AuthProvider::Oidc)] {
         let parent = tempfile::tempdir()?;
         let mut baseline = None;
-        for name in ["fixture", "solo-leveling-system-companion", &maximum_name] {
+        for name in ["fixture", "heldengang-companion", &maximum_name] {
             let mut generated = options(parent.path(), name);
             generated.components.insert(Component::Web);
             generated.components.insert(Component::Mobile);
@@ -3342,7 +3342,7 @@ fn doctor_accepts_product_review_identity_layouts() -> anyhow::Result<()> {
     for (name, slug) in [
         ("eigenruhe", "eigenruhe"),
         ("tiefgang", "tiefgang"),
-        ("sl", "solo-leveling"),
+        ("sl", "heldengang"),
         ("finops", "finops"),
     ] {
         assert_review_identity_layout(name, slug)?;
@@ -3364,7 +3364,7 @@ fn assert_review_identity_layout(name: &str, slug: &str) -> anyhow::Result<()> {
             let path = root.join("backend/crates/sl-bin").join(path);
             fs::write(
                 &path,
-                fs::read_to_string(&path)?.replace("\"sl\"", "\"solo-leveling-system\""),
+                fs::read_to_string(&path)?.replace("\"sl\"", "\"heldengang\""),
             )?;
         }
     }
@@ -3385,7 +3385,7 @@ fn assert_review_identity_layout(name: &str, slug: &str) -> anyhow::Result<()> {
                 &format!(
                     "const ANALYTICS_APP = '{}';",
                     if name == "sl" {
-                        "solo-leveling-system"
+                        "heldengang"
                     } else {
                         name
                     }
@@ -3426,7 +3426,7 @@ fn assert_backend_identity_is_consumed(
             &format!(
                 "const APP_NAME: &str = \"{}\";",
                 if name == "sl" {
-                    "solo-leveling-system"
+                    "heldengang"
                 } else {
                     name
                 }
