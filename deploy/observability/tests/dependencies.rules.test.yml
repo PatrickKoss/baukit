@@ -1,0 +1,150 @@
+rule_files:
+  - ../alerts/baukit.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: a full database pool fires BaukitDatabasePoolSaturated after 10m
+    interval: 1m
+    input_series:
+      - series: 'db_pool_connections_in_use{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api"}'
+        values: '10x20'
+      - series: 'db_pool_connections_max{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api"}'
+        values: '10x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitDatabasePoolSaturated
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitDatabasePoolSaturated
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              namespace: fixture
+              instance: 10.0.0.1:9000
+              severity: warning
+            exp_annotations:
+              summary: Database pool is saturated
+              description: 'More than 90% of database pool connections are in use on 10.0.0.1:9000 of fixture-api in fixture.'
+              runbook_url: RUNBOOK_BASE_URL/database-pool-saturated
+
+  - name: a pool at exactly 90% stays quiet
+    interval: 1m
+    input_series:
+      - series: 'db_pool_connections_in_use{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api"}'
+        values: '9x20'
+      - series: 'db_pool_connections_max{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api"}'
+        values: '10x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BaukitDatabasePoolSaturated
+        exp_alerts: []
+
+  - name: rising acquire timeouts fire BaukitDatabaseAcquireTimeouts after 5m
+    interval: 1m
+    input_series:
+      - series: 'db_pool_acquire_timeouts_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BaukitDatabaseAcquireTimeouts
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: BaukitDatabaseAcquireTimeouts
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              namespace: fixture
+              instance: 10.0.0.1:9000
+              job: fixture-api
+              severity: critical
+            exp_annotations:
+              summary: Database connection acquisition is timing out
+              description: 'Database acquire timeouts increased during the last 10m on 10.0.0.1:9000 of fixture-api in fixture.'
+              runbook_url: RUNBOOK_BASE_URL/database-acquire-timeouts
+
+  - name: a flat acquire timeout counter stays quiet
+    interval: 1m
+    input_series:
+      - series: 'db_pool_acquire_timeouts_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api"}'
+        values: '3x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BaukitDatabaseAcquireTimeouts
+        exp_alerts: []
+
+  - name: sustained store errors fire BaukitRateLimitStoreErrors after 10m
+    interval: 1m
+    input_series:
+      - series: 'http_rate_limit_decisions_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",scope="api",outcome="error"}'
+        values: '0+6x30'
+      - series: 'http_rate_limit_decisions_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",scope="api",outcome="allowed"}'
+        values: '0+600x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitRateLimitStoreErrors
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitRateLimitStoreErrors
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              namespace: fixture
+              scope: api
+              severity: critical
+            exp_annotations:
+              summary: Rate-limit store errors are sustained
+              description: 'The rate limiter has reported store errors for ten minutes for scope api in fixture-api; verify Redis health and whether the configured fail mode is preserving enforcement.'
+              runbook_url: RUNBOOK_BASE_URL/rate-limit-store-errors
+
+  - name: limited and allowed decisions without errors stay quiet
+    interval: 1m
+    input_series:
+      - series: 'http_rate_limit_decisions_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",scope="api",outcome="error"}'
+        values: '2x30'
+      - series: 'http_rate_limit_decisions_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",scope="api",outcome="limited"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitRateLimitStoreErrors
+        exp_alerts: []
+
+  - name: a job queued for more than 300s fires BaukitWorkerQueueOldestAgeHigh after 10m
+    interval: 1m
+    input_series:
+      - series: 'worker_queue_oldest_age_seconds{product="fixture",service="fixture-worker",environment="test",namespace="fixture",instance="10.0.0.3:9000",job="fixture-worker",job_kind="email"}'
+        values: '301x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitWorkerQueueOldestAgeHigh
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitWorkerQueueOldestAgeHigh
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-worker
+              environment: test
+              namespace: fixture
+              instance: 10.0.0.3:9000
+              job: fixture-worker
+              job_kind: email
+              severity: warning
+            exp_annotations:
+              summary: Worker queue age is high
+              description: 'The oldest queued job is more than five minutes old for job kind email in fixture-worker.'
+              runbook_url: RUNBOOK_BASE_URL/worker-queue-oldest-age-high
+
+  - name: a queue age of exactly 300s stays quiet
+    interval: 1m
+    input_series:
+      - series: 'worker_queue_oldest_age_seconds{product="fixture",service="fixture-worker",environment="test",namespace="fixture",instance="10.0.0.3:9000",job="fixture-worker",job_kind="email"}'
+        values: '300x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BaukitWorkerQueueOldestAgeHigh
+        exp_alerts: []

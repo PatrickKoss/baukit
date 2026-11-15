@@ -11,6 +11,7 @@ scraped_images = { redis = "Redis", postgresql = "CNPG PostgreSQL" }
 active = [
   "alert-metadata",
   "alert-runbook",
+  "alert-tested",
   "dashboards-selected",
   "default-deny-network-policy",
   "exporters-scraped",
@@ -22,4 +23,3 @@ active = [
 ]
 
 [rules.pending]
-alert-tested = "O4"

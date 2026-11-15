@@ -115,7 +115,8 @@ that a restored cluster turns `Ready`:
 A small Pushgateway retains the metric in an `emptyDir` across container
 restarts; losing the pod intentionally makes the metric absent and therefore
 alerts until the proof runs again. The `ServiceMonitor` exposes it to the
-kube-prometheus-stack base, and `BaukitPostgresRestoreTestStale` fires when the
+kube-prometheus-stack base, and `BaukitPostgresRestoreTestStale` in the platform
+pack (`deploy/observability-platform/alerts/cnpg.rules.yml`) fires when the
 metric is absent or older than 35 days. The platform e2e suite
 `deploy/platform/e2e/tests/backup-restore` runs the same round trip on a
 throwaway cluster, deletes it, restores it, and then runs this CronJob once.

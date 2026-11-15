@@ -142,9 +142,15 @@ class ObservabilityDiscoveryTest(unittest.TestCase):
             for ns in objects("Namespace", path)
             if ns["metadata"]["labels"].get(PART_OF) == "baukit-platform"
         }
-        rules = objects("PrometheusRule", *BASES)
-        self.assertTrue(any(rule["metadata"]["namespace"] == "postgres" for rule in rules))
-        for rule in rules:
+        packs = [
+            release
+            for release in objects("HelmRelease", *BASES)
+            if release["metadata"]["name"] == "baukit-platform-observability"
+        ]
+        self.assertEqual(len(packs), 1)
+        for release in packs:
+            self.assertIn(release["spec"]["targetNamespace"], labelled)
+        for rule in objects("PrometheusRule", *BASES):
             with self.subTest(rule=rule["metadata"]["name"]):
                 self.assertIn(rule["metadata"]["namespace"], labelled)
 
