@@ -7,6 +7,7 @@ also on Ctrl-C.
 ```bash
 deploy/platform/e2e/run.sh                     # every suite
 deploy/platform/e2e/run.sh --suite smoke       # one suite
+deploy/platform/e2e/run.sh --suite netpol --suite ingress # several suites
 deploy/platform/e2e/run.sh --keep              # keep the cluster; the KUBECONFIG path is printed
 deploy/platform/e2e/run.sh --cluster-name ph-x # another cluster name
 deploy/platform/e2e/run.sh --without kyverno-policies # leave out Flux Kustomization e2e-kyverno-policies
@@ -54,6 +55,30 @@ The last line, `platform-e2e cluster time Ns, exit S`, counts from cluster creat
 
 Artifacts land in `.ci-gate/platform-e2e/`: the chainsaw JUnit report, events, policy reports, Flux
 status, NetworkPolicies, Jobs, pod logs and `docker-stats.log`, sampled every 15 seconds.
+
+## NetworkPolicy matrix
+
+`tests/netpol/probe.py` runs each row of `tests/netpol/matrix.yaml` from its own pod: the echo image with
+the row's labels, in the row's source namespace, 16 rows at a time. kube-router admits a new pod late,
+so a probe waits until the pod's firewall chain exists on its node (`iptables-save` through
+`docker exec`) and a DNS lookup from the pod works. Only then does it connect. A destination Service
+without a ready endpoint, a failed DNS lookup or a pod that never got that far is an ERROR line, not a
+verdict. An allow row gets three attempts and a deny row gets one.
+
+```bash
+python3 tests/netpol/probe.py --rows 5 12        # some rows, against the cluster in KUBECONFIG
+python3 tests/netpol/probe.py --matrix tests/netpol/posthog-matrix.yaml
+```
+
+`validate.sh` runs `tests/netpol/check_matrix.py`, which fails when a row names a namespace, label set,
+Service or port that the e2e overlay does not render. The PostHog fence rows sit in
+`posthog-matrix.yaml`, since the overlay leaves out posthog. They are checked against the posthog base
+and need a cluster that composes it.
+
+`tests/ingress` installs the echo app with `baukit-app` and the chart's default
+`networkPolicy.ingressController`, reaches it through the Traefik Service by Host header, and reuses
+the probe runner to show that Traefik's pods get in and a pod from another namespace does not, even
+with Traefik's labels.
 
 ## Adding a suite
 

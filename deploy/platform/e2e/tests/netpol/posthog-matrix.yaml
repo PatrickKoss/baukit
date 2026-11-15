@@ -1,0 +1,38 @@
+# The N4 PostHog fence rows, in the matrix.yaml format. The e2e overlay leaves out posthog, so these
+# run with probe.py --matrix posthog-matrix.yaml against a cluster that composes the posthog base.
+- from: {namespace: posthog, labels: {app: posthog, role: plugins}}
+  to: {host: 1.1.1.1, port: 443}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {host: 1.1.1.1, port: 443}
+  expect: deny
+- from: {namespace: traefik, labels: {app.kubernetes.io/name: traefik}}
+  to: {pod: {namespace: posthog, labels: {app: posthog, role: web}}, port: 8000}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: posthog-postgresql.posthog, port: 5432}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: posthog-clickhouse.posthog, port: 8123}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: posthog-kafka.posthog, port: 9092}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: posthog-redis.posthog, port: 6379}
+  expect: allow
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: rustfs.postgres, port: 9000}
+  expect: allow
+- from: {namespace: posthog, labels: {app.kubernetes.io/name: posthog-clickhouse}}
+  to: {service: posthog-zookeeper.posthog, port: 2181}
+  expect: allow
+- from: {namespace: posthog, labels: {app.kubernetes.io/name: posthog-redis}}
+  to: {service: posthog-postgresql.posthog, port: 5432}
+  expect: deny
+- from: {namespace: posthog, labels: {app: posthog, role: web}}
+  to: {service: posthog-zookeeper.posthog, port: 2181}
+  expect: deny
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: posthog-redis.posthog, port: 6379}
+  expect: deny

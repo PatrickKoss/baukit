@@ -113,6 +113,17 @@ class OverlayTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn(NODE_CIDR_PLACEHOLDER, result.stdout)
 
+    def test_a_base_with_a_local_component_is_composed_through_it(self):
+        local = PLATFORM / "overlays/local/components"
+        paths = set(re.findall(r"^  path: \./(\S+)$", RECONCILIATION.read_text(), re.M))
+        for component in sorted(path.parent for path in local.glob("*/kustomization.yaml")):
+            with self.subTest(base=component.name):
+                own = E2E / "overlay/components" / component.name / "kustomization.yaml"
+                via_local = str(component.relative_to(REPO)) in paths
+                reference = f"../../../../overlays/local/components/{component.name}\n"
+                via_own = own.is_file() and reference in own.read_text()
+                self.assertTrue(via_local or via_own, f"e2e composes {component.name} without it")
+
     def test_tenant_waits_for_the_policies(self):
         text = RECONCILIATION.read_text()
         tenant = next(doc for doc in text.split("\n---\n") if "name: e2e-tenant\n" in doc)
@@ -150,6 +161,23 @@ class RunnerArgumentTests(unittest.TestCase):
         result = self.run_runner("--suite", "no-such-suite")
         self.assertEqual(result.returncode, 2)
         self.assertIn("no chainsaw-test.yaml", result.stderr)
+
+    def parsed_suites(self, *arguments):
+        script = (
+            f'source "{E2E / "run.sh"}"\n'
+            f"parse_args {' '.join(arguments)}\n"
+            'printf "%s\\n" "${test_dirs[@]}"'
+        )
+        result = process_runner.run_process(["bash", "-c", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return [Path(line).name for line in result.stdout.splitlines()]
+
+    def test_suite_repeats_and_replaces_the_default(self):
+        self.assertEqual(self.parsed_suites(), ["tests"])
+        self.assertEqual(self.parsed_suites("--suite", "netpol"), ["netpol"])
+        self.assertEqual(
+            self.parsed_suites("--suite", "netpol", "--suite", "ingress"), ["netpol", "ingress"]
+        )
 
 
 class HeavySlotTests(unittest.TestCase):
@@ -493,6 +521,13 @@ class FailedKustomizationTests(unittest.TestCase):
             )
             output = self.run_function("persistent_failures", "failed_poll_limit=3", calls)
         self.assertEqual(output.split("|\n"), ["", "", "", "", "", "a\n", ""])
+
+
+class IngressSuiteTests(unittest.TestCase):
+    def test_echo_keeps_the_chart_default_ingress_controller_peer(self):
+        values = (E2E / "tests/ingress/values.yaml").read_text()
+        self.assertNotRegex(values, r"(?m)^\s*ingressController:")
+        self.assertRegex(values, r"(?m)^ingress:\n  enabled: true$")
 
 
 class RegistryMirrorTests(unittest.TestCase):
