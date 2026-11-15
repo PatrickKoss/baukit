@@ -1008,9 +1008,7 @@ subjects:
 ---
 apiVersion: v1
 data:
-  SIDECAR_IMAGE: |
-    Z2hjci5pby9jbG91ZG5hdGl2ZS1wZy9wbHVnaW4tYmFybWFuLWNsb3VkLXNpZGVjYXI6dj
-    AuMTYuMA==
+  SIDECAR_IMAGE: Z2hjci5pby9jbG91ZG5hdGl2ZS1wZy9wbHVnaW4tYmFybWFuLWNsb3VkLXNpZGVjYXI6djAuMTYuMEBzaGEyNTY6YzY2OTI1OWUyMGVkMWUxMWZhZDgyMWY3MzVjMzk2YzE5ZDkyOTk4NWFhMDViOTU0NGIxM2VjYzhiNWEzODZkMA==
 kind: Secret
 metadata:
   name: plugin-barman-cloud-5kkd8f288d

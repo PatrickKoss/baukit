@@ -30,8 +30,8 @@ An overlay must:
 ## Vendored Barman plugin
 
 `plugin-barman-cloud-v0.16.0.yaml` is the release asset published by
-CloudNativePG, with one change: the plugin image carries its multi-arch index
-digest. Vendoring makes reconciliation independent of GitHub availability
+CloudNativePG, with two changes: the plugin image and the `SIDECAR_IMAGE` Secret value it
+injects into instance pods carry their multi-arch index digests. Vendoring makes reconciliation independent of GitHub availability
 and keeps the base reviewable, but Renovate cannot see or update this manifest.
 The kustomize patch bounds the upstream deployment resources.
 
@@ -44,6 +44,16 @@ curl -fsSL "https://github.com/cloudnative-pg/plugin-barman-cloud/releases/downl
 digest=$(skopeo inspect --raw "docker://ghcr.io/cloudnative-pg/plugin-barman-cloud:$version" | sha256sum | cut -d' ' -f1)
 sed -i "s#plugin-barman-cloud:$version\$#plugin-barman-cloud:$version@sha256:$digest#" \
   "deploy/platform/cnpg/plugin-barman-cloud-$version.yaml"
+sidecar=ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:$version
+sidecar_digest=$(skopeo inspect --raw "docker://$sidecar" | sha256sum | cut -d' ' -f1)
+encoded=$(printf '%s@sha256:%s' "$sidecar" "$sidecar_digest" | base64 -w0)
+python3 - "deploy/platform/cnpg/plugin-barman-cloud-$version.yaml" "$encoded" <<'PY'
+import re, sys
+path, encoded = sys.argv[1:]
+text = open(path).read()
+text = re.sub(r"  SIDECAR_IMAGE: \|\n(    \S+\n)+", f"  SIDECAR_IMAGE: {encoded}\n", text)
+open(path, "w").write(text)
+PY
 ```
 
 For an upgrade, review the new release, change both version occurrences and the

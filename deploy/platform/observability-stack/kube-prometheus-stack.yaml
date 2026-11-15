@@ -94,13 +94,14 @@ spec:
         existingSecret: grafana-admin
         userKey: admin-user
         passwordKey: admin-password
+      # Grafana 13.3 idles near 350Mi before provisioning; 384Mi OOM-killed it.
       resources:
         requests:
           cpu: 50m
-          memory: 128Mi
+          memory: 256Mi
         limits:
           cpu: 300m
-          memory: 384Mi
+          memory: 768Mi
       sidecar:
         image:
           sha: 52d311dcedd587421a236c4d6c621f05614c40a51386e955e0699dca97ec0880
