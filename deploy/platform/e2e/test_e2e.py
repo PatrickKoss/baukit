@@ -314,6 +314,11 @@ class FailedKustomizationTests(unittest.TestCase):
         self.assertEqual(output.split("|\n"), ["", "", "", "", "", "a\n", ""])
 
 
+SINCE = "2026-11-15T16:00:00Z"
+SHELL_RULE = "Baukit shell or package manager in app container"
+SHADOW_RULE = "Read sensitive file untrusted"
+
+
 def falco_event(priority, rule, namespace, process):
     return {
         "time": "2026-11-15T16:00:00Z",
@@ -326,10 +331,12 @@ def falco_event(priority, rule, namespace, process):
 
 class FalcoEventsTests(unittest.TestCase):
     EVENTS = [
-        falco_event("Notice", "Redirect STDOUT/STDIN to Network Connection in Container", None, "sh"),
-        falco_event("Warning", "Read sensitive file untrusted", "chainsaw-a", "runc:[1:CHILD]"),
-        falco_event("Warning", "Read sensitive file untrusted", "chainsaw-a", "cat"),
-        falco_event("Critical", "Baukit shell or package manager in app container", "e2e-tenant", "sh"),
+        falco_event(
+            "Notice", "Redirect STDOUT/STDIN to Network Connection in Container", None, "sh"
+        ),
+        falco_event("Warning", SHADOW_RULE, "chainsaw-a", "runc:[1:CHILD]"),
+        falco_event("Warning", SHADOW_RULE, "chainsaw-a", "cat"),
+        falco_event("Critical", SHELL_RULE, "e2e-tenant", "sh"),
     ]
 
     def run_events(self, *args):
@@ -364,30 +371,26 @@ class FalcoEventsTests(unittest.TestCase):
         return [json.loads(line)["rule"] for line in result.stdout.splitlines()]
 
     def test_soak_floor_drops_notice_events(self):
-        rules = self.rules(self.run_events("falco", "2026-11-15T16:00:00Z", "Warning"))
+        rules = self.rules(self.run_events("falco", SINCE, "Warning"))
         self.assertEqual(len(rules), 3)
         self.assertNotIn("Redirect STDOUT/STDIN to Network Connection in Container", rules)
 
     def test_loki_and_falco_sources_agree(self):
-        falco = self.run_events("falco", "2026-11-15T16:00:00Z", "Debug").stdout
-        loki = self.run_events("loki", "2026-11-15T16:00:00Z", "Debug").stdout
+        falco = self.run_events("falco", SINCE, "Debug").stdout
+        loki = self.run_events("loki", SINCE, "Debug").stdout
         self.assertEqual(falco, loki)
         self.assertEqual(len(loki.splitlines()), 4)
 
     def test_process_filter_skips_the_runc_mount_read(self):
-        result = self.run_events(
-            "loki", "2026-11-15T16:00:00Z", "Warning", "Read sensitive file untrusted", "chainsaw-a", "cat"
-        )
+        result = self.run_events("loki", SINCE, "Warning", SHADOW_RULE, "chainsaw-a", "cat")
         self.assertEqual(len(self.rules(result)), 1)
 
     def test_namespace_filter(self):
-        result = self.run_events(
-            "loki", "2026-11-15T16:00:00Z", "Critical", "Baukit shell or package manager in app container", "other"
-        )
+        result = self.run_events("loki", SINCE, "Critical", SHELL_RULE, "other")
         self.assertEqual(self.rules(result), [])
 
     def test_unknown_source_exits_2(self):
-        self.assertEqual(self.run_events("journal", "2026-11-15T16:00:00Z", "Warning").returncode, 2)
+        self.assertEqual(self.run_events("journal", SINCE, "Warning").returncode, 2)
 
 
 if __name__ == "__main__":
