@@ -34,6 +34,14 @@ YAML
   return "$status"
 }
 
+# Usage: flux_lockdown_wait. Waits for every installed controller to roll out.
+flux_lockdown_wait() {
+  local controller
+  for controller in "${flux_lockdown_controllers[@]}"; do
+    kubectl -n flux-system rollout status "deployment/$controller" --timeout=5m
+  done
+}
+
 # Usage: flux_lockdown_missing. Prints one "<controller> <flag>" line per lockdown flag the live
 # controllers lack, and "flux-system serviceAccountName" when the bootstrap Kustomization exists
 # without spec.serviceAccountName=kustomize-controller.

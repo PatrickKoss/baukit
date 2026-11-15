@@ -222,10 +222,7 @@ up() {
     pod-security.kubernetes.io/enforce-version=v1.34 \
     pod-security.kubernetes.io/audit=restricted \
     pod-security.kubernetes.io/warn=restricted >/dev/null
-  local controller
-  for controller in "${flux_lockdown_controllers[@]}"; do
-    kubectl -n flux-system rollout status "deployment/$controller" --timeout=5m
-  done
+  flux_lockdown_wait
   flux_lockdown_verify "$platform_dir"
 
   apply_runtime_identity
