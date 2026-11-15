@@ -1,0 +1,24 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helmrelease-remediation-retries
+policies:
+  - ../../policies/helmrelease-remediation-retries.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: helmrelease-remediation-retries
+    kind: HelmRelease
+    resources: [retries]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-remediation-retries
+    kind: HelmRelease
+    resources: [no-install-retries]
+    result: fail
+  - isValidatingPolicy: true
+    policy: helmrelease-remediation-retries
+    kind: HelmRelease
+    resources: [no-upgrade-retries]
+    result: fail

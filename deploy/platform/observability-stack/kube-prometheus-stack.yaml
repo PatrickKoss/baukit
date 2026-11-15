@@ -5,7 +5,7 @@ metadata:
   namespace: observability
 spec:
   interval: 30m
-  timeout: 15m
+  timeout: 12m
   chart:
     spec:
       chart: kube-prometheus-stack
@@ -20,9 +20,12 @@ spec:
     remediation:
       retries: 3
   upgrade:
+    cleanupOnFail: true
     crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     crds:
       enabled: true
@@ -44,29 +47,22 @@ spec:
         kubeProxy: false
         kubeSchedulerAlerting: false
         kubeSchedulerRecording: false
+        windows: false
+      additionalRuleAnnotations:
+        Watchdog:
+          runbook_url: https://github.com/PatrickKoss/baukit/blob/main/docs/runbooks/platform/watchdog
 
     alertmanager:
       enabled: true
-      # The base drops every alert. An overlay replaces this config with its
-      # identity-bearing receiver and preserves a deliberate dead-man route.
-      config:
-        global:
-          resolve_timeout: 5m
-        route:
-          group_by:
-            - namespace
-            - alertname
-          group_wait: 30s
-          group_interval: 5m
-          repeat_interval: 12h
-          receiver: "null"
-          routes:
-            - receiver: "null"
-              matchers:
-                - alertname = "Watchdog"
-        receivers:
-          - name: "null"
       alertmanagerSpec:
+        # The overlay provides Secret alertmanager-routing with key alertmanager.yaml, see
+        # alertmanager/alertmanager.example.yaml. The operator falls back to a drop-all config when
+        # configSecret is missing, so the same Secret is also mounted: without it the pod never
+        # starts, Watchdog stops and the external heartbeat fires.
+        useExistingSecret: true
+        configSecret: alertmanager-routing
+        secrets:
+          - alertmanager-routing
         image:
           sha: 5f6e66c01bd610aef6dd671642a52eee775fd3a89bd8788ebada33efaf373d10
           tag: v0.35.0
@@ -181,7 +177,10 @@ spec:
 
     nodeExporter:
       enabled: true
+    # Node-exporter needs hostPID, hostNetwork and hostPath, so it runs in the
+    # privileged observability-agents namespace.
     prometheus-node-exporter:
+      namespaceOverride: observability-agents
       image:
         digest: sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106
         distroless: true
@@ -243,6 +242,8 @@ spec:
         shards: 1
         # Metrics retention budget (§8.5): the single source of truth.
         retention: 30d
+        # About 85% of the 30Gi PVC, in Prometheus base-2 units. Change both together.
+        retentionSize: 25GB
         resources:
           requests:
             cpu: 200m

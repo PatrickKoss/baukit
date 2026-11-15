@@ -1,0 +1,43 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: tag
+  namespace: demo
+spec:
+  interval: "1h"
+  url: "oci://ghcr.io/example/app"
+  ref:
+    tag: "0.25.2"
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: digest
+  namespace: demo
+spec:
+  interval: "1h"
+  url: "oci://ghcr.io/example/app"
+  ref:
+    digest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: semver
+  namespace: demo
+spec:
+  interval: "1h"
+  url: "oci://ghcr.io/example/app"
+  ref:
+    semver: ">=0.25.0"
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: latest
+  namespace: demo
+spec:
+  interval: "1h"
+  url: "oci://ghcr.io/example/app"
+  ref:
+    tag: latest

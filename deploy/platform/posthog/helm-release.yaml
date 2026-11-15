@@ -16,12 +16,16 @@ spec:
         namespace: posthog
       interval: 24h
   install:
+    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
     cleanupOnFail: true
+    crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     cloud: local
     env:
@@ -40,6 +44,8 @@ spec:
     posthogSecretKey:
       existingSecret: posthog-secrets
       existingSecretKey: posthog-secret
+    service:
+      type: ClusterIP
     ingress:
       enabled: false
       nginx:

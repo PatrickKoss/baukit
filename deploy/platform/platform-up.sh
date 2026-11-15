@@ -22,6 +22,8 @@ k3d_subnet=${BAUKIT_PLATFORM_SUBNET:-10.89.0.0/24}
 
 # shellcheck source=deploy/platform/local-git-http.sh
 source "$platform_dir/local-git-http.sh"
+# shellcheck source=deploy/platform/flux-lockdown.sh
+source "$platform_dir/flux-lockdown.sh"
 
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -145,7 +147,7 @@ apply_secret() {
 
 apply_runtime_identity() {
   local namespace
-  for namespace in postgres observability posthog; do
+  for namespace in postgres observability observability-agents posthog; do
     kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     kubectl label namespace "$namespace" app.kubernetes.io/part-of=baukit-platform --overwrite >/dev/null
   done
@@ -169,7 +171,7 @@ apply_runtime_identity() {
   apply_secret observability grafana-admin \
     --from-literal=admin-user="$GRAFANA_ADMIN_USER" \
     --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD"
-  kubectl -n observability create configmap observability-cluster \
+  kubectl -n observability-agents create configmap observability-cluster \
     --from-literal=environment=local --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
@@ -213,15 +215,15 @@ up() {
   use_context
   start_git_daemon
 
-  printf 'Installing Flux v2.9.4 controllers\n'
-  flux install \
-    --version=v2.9.4 \
-    --components=source-controller,kustomize-controller,helm-controller \
-    --network-policy=false \
-    --timeout=5m >/dev/null
-  kubectl -n flux-system rollout status deployment/source-controller --timeout=5m
-  kubectl -n flux-system rollout status deployment/kustomize-controller --timeout=5m
-  kubectl -n flux-system rollout status deployment/helm-controller --timeout=5m
+  printf 'Installing Flux v2.9.4 controllers with the multi-tenancy lockdown\n'
+  flux_lockdown_render "$platform_dir" v2.9.4 | kubectl apply --server-side -f - >/dev/null
+  kubectl label namespace flux-system --overwrite \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/enforce-version=v1.34 \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted >/dev/null
+  flux_lockdown_wait
+  flux_lockdown_verify "$platform_dir"
 
   apply_runtime_identity
   kubectl apply -k "$platform_dir/overlays/local" >/dev/null

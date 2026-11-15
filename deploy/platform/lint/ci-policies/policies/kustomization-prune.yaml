@@ -1,0 +1,20 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: kustomization-prune
+  annotations:
+    policies.kyverno.io/title: Kustomization prune
+spec:
+  validationActions:
+    - Deny
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [kustomize.toolkit.fluxcd.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [kustomizations]
+  validations:
+    - expression: object.spec.?prune.orValue(false) == true
+      messageExpression: >-
+        "Kustomization " + object.metadata.name + " must set spec.prune: true, so objects removed " +
+        "from Git are removed from the cluster."

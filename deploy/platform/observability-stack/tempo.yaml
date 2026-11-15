@@ -5,7 +5,7 @@ metadata:
   namespace: observability
 spec:
   interval: 30m
-  timeout: 10m
+  timeout: 5m
   dependsOn:
     - name: kube-prometheus-stack
       namespace: observability
@@ -22,13 +22,22 @@ spec:
     remediation:
       retries: 3
   upgrade:
+    cleanupOnFail: true
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     replicas: 1
     tempo:
       tag: "2.10.10@sha256:12b0820f13ffa10ce956b6e9acc3b03f3cffded99109be6cc09d106fe56e5d38"
       reportingEnabled: false
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
       memBallastSizeMbs: 128
       resources:
         requests:
@@ -39,6 +48,11 @@ spec:
           memory: 1Gi
       # Traces retention budget (§8.5): the single source of truth.
       retention: 168h
+      # Sized to the 10Gi PVC; see the README storage section.
+      ingester:
+        max_block_bytes: 268435456
+      extraArgs:
+        compactor.compaction.compaction.max-block-bytes: "1073741824"
       storage:
         trace:
           backend: local
@@ -53,6 +67,9 @@ spec:
               endpoint: 0.0.0.0:4317
             http:
               endpoint: 0.0.0.0:4318
+    securityContext:
+      seccompProfile:
+        type: RuntimeDefault
     persistence:
       enabled: true
       accessModes:

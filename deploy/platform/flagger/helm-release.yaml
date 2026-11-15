@@ -16,12 +16,16 @@ spec:
         namespace: flagger-system
       interval: 24h
   install:
+    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
     cleanupOnFail: true
+    crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     image:
       tag: "1.45.0@sha256:15b372d35012f9ae450f9030bc82217369c0aee082ed5a5225830010cf972b2b"
@@ -38,3 +42,15 @@ spec:
         cpu: 250m
         memory: 256Mi
 
+    securityContext:
+      enabled: true
+      context:
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault

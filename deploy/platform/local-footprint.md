@@ -22,11 +22,11 @@ idle period.
 | kube-system | local-path provisioner | 1m | 19 MiB |
 | kube-system | metrics server | 3m | 26 MiB |
 | observability | Alertmanager | 1m | 47 MiB |
-| observability | Alloy | 5m | 108 MiB |
+| observability-agents | Alloy | 5m | 108 MiB |
 | observability | Grafana | 5m | 353 MiB |
 | observability | kube-state-metrics | 1m | 31 MiB |
 | observability | Prometheus operator | 2m | 33 MiB |
-| observability | node exporter | 1m | 19 MiB |
+| observability-agents | node exporter | 1m | 19 MiB |
 | observability | Loki | 3m | 110 MiB |
 | observability | Loki gateway | 1m | 31 MiB |
 | observability | Prometheus | 10m | 694 MiB |

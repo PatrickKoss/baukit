@@ -9,4 +9,6 @@ resources:
   - alloy.yaml
   - baukit-content.yaml
   - network-policy/observability
+  - network-policy/agents
   - baukit-platform-observability.yaml
+  - flux-notifications.yaml

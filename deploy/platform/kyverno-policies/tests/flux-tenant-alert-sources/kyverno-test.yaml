@@ -1,0 +1,26 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: flux-tenant-alert-sources
+policies:
+  - ../../policies/flux-tenant-alert-sources.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: flux-tenant-alert-sources
+    kind: Alert
+    resources: [own-sources]
+    result: pass
+  - isValidatingPolicy: true
+    policy: flux-tenant-alert-sources
+    kind: Alert
+    resources: [platform-sources]
+    result: fail
+  - isValidatingPolicy: true
+    policy: flux-tenant-alert-sources
+    kind: Alert
+    resources: [platform-alert]
+    result: skip

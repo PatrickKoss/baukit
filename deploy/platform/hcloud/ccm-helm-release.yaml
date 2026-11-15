@@ -5,6 +5,7 @@ metadata:
   namespace: kube-system
 spec:
   interval: 30m
+  timeout: 5m
   chart:
     spec:
       chart: hcloud-cloud-controller-manager
@@ -21,6 +22,8 @@ spec:
     cleanupOnFail: true
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     image:
       tag: "v1.39.3@sha256:9d739ba54a13f1de79d6dbb93cbda5a2ed4a5bdb9bf2936e2687e24fa9ccfaf7"

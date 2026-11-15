@@ -11,7 +11,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   printf 'ERROR: required platform validation tool is missing: python3\n' >&2
   exit 2
 fi
-baukit_use_tools "$repo_root" kustomize kubeconform helm flux
+baukit_use_tools "$repo_root" kustomize kubeconform helm flux kyverno
 
 schema_dir="$cache_dir/crd-schemas"
 # The default kubernetes-json-schema location has no standalone CustomResourceDefinition
@@ -376,6 +376,34 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_conventions.py"
   status=1
 fi
 
+printf '==> flux convention policies\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/ci-policies/run_ci_policies.py" \
+  --rendered "$rendered_dir" --chart-cache "$cache_dir" \
+  --report "$repo_root/.ci-gate/platform-ci-policies.txt"; then
+  status=1
+fi
+
+printf '==> storage limits\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_retention_size.py" --kustomize "$(command -v kustomize)" ||
+  ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_upstream_rules.py" --rendered "$rendered_dir"; then
+  status=1
+fi
+
+printf '==> alertmanager routing\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_alertmanager_config.py" \
+  --rendered "$rendered_dir" --kustomize "$(command -v kustomize)"; then
+  status=1
+fi
+
+printf '==> in-cluster kyverno policies\n'
+policies_started=$SECONDS
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/ci-policies/run_cluster_policies.py" \
+  --rendered "$rendered_dir" --crds "$flux_manifest" \
+  --report "$repo_root/.ci-gate/platform-kyverno-policies.txt"; then
+  status=1
+fi
+printf 'In-cluster kyverno policies took %ds.\n' "$((SECONDS - policies_started))"
+
 printf '==> falco rules\n'
 if ! falco_output=$("$platform_dir/falco/validate-rules.sh" 2>&1); then
   printf '%s\n' "$falco_output" >&2
@@ -387,6 +415,7 @@ fi
 printf '==> schema and fixture tests\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/schemas" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/lint" -p 'test_*.py' ||
+  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/lint/ci-policies" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/falco" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/redis-ha" -p 'test_*.py'; then
   status=1

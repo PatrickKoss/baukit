@@ -5,6 +5,7 @@ metadata:
   namespace: kyverno
 spec:
   interval: 30m
+  timeout: 5m
   dependsOn:
     - name: kyverno
   chart:
@@ -23,6 +24,8 @@ spec:
     cleanupOnFail: true
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     image:
       tag: "3.11.2@sha256:2b33409d34be3195f16d9ed2c89f8b58001aeec986b254ba6bb45323d6d1e884"

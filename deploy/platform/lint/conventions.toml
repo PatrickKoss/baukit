@@ -12,10 +12,10 @@ active = [
   "default-deny-network-policy",
   "policy-exception-budget",
   "prune-disabled",
+  "psa-labels",
   "rules-selected",
 ]
 
 [rules.pending]
-psa-labels = "N1"
 metrics-enabled = "O3"
 alert-tested = "O4"

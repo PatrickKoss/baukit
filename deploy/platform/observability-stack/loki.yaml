@@ -5,7 +5,7 @@ metadata:
   namespace: observability
 spec:
   interval: 30m
-  timeout: 10m
+  timeout: 5m
   dependsOn:
     - name: kube-prometheus-stack
       namespace: observability
@@ -19,11 +19,16 @@ spec:
         namespace: observability
       interval: 24h
   install:
+    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     deploymentMode: Monolithic
 
@@ -51,10 +56,31 @@ spec:
       compactor:
         retention_enabled: true
         delete_request_store: filesystem
+        # /var/loki is the singleBinary PVC mount.
+        working_directory: /var/loki/compactor
+      # The ruler evaluates deploy/observability-platform/loki-rules, which the
+      # baukit-platform-observability release ships as a ConfigMap mounted below.
+      rulerConfig:
+        alertmanager_url: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093
+        rule_path: /var/loki/ruler-scratch
+        storage:
+          type: local
+          local:
+            directory: /etc/loki/rules
 
     singleBinary:
       replicas: 1
       sidecar: false
+      # The ConfigMap is required: Loki does not start until the pack has rendered it.
+      # "fake" is Loki's tenant when auth_enabled is false.
+      extraVolumes:
+        - name: platform-loki-rules
+          configMap:
+            name: baukit-platform-observability-loki-rules
+      extraVolumeMounts:
+        - name: platform-loki-rules
+          mountPath: /etc/loki/rules/fake
+          readOnly: true
       resources:
         requests:
           cpu: 100m

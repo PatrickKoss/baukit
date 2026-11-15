@@ -30,6 +30,7 @@ The conventional namespaces are:
 | shared database cluster | `postgres` |
 | shared Redis (direct or Sentinel HA) | `platform-redis` |
 | metrics, logs, and traces | `observability` |
+| node-level agents (node-exporter, Alloy) | `observability-agents` |
 
 `cluster-baseline` defines `platform-critical` and `platform-standard` as
 non-default PriorityClasses. Overlays may assign `platform-critical` to the
@@ -46,10 +47,46 @@ volumes or a database (`postgres`, `observability`, `platform-redis`,
 `kustomize.toolkit.fluxcd.io/prune: disabled`, so removing a base from a Flux
 Kustomization never deletes data.
 
+Every Flux object follows the rules in `lint/ci-policies/`, which
+`validate.sh` enforces on every rendered base and overlay:
+
+- A HelmRelease pins an exact chart version and sets `spec.timeout`,
+  `install.remediation.retries`, `upgrade.remediation.retries`,
+  `upgrade.cleanupOnFail: true` and `driftDetection.mode` (`warn` today).
+- A chart with a Helm `crds/` directory gets `install.crds` and `upgrade.crds:
+  CreateReplace`. A chart that renders Helm test hooks gets `test.enable: true`.
+  `lint/ci-policies/chart-contents.toml` records both facts per pinned chart.
+- A HelmRepository polls no more often than every hour.
+- A Flux Kustomization sets `prune: true` and `wait: true` and has no
+  `healthChecks` list, which Flux ignores once `wait` is on.
+
+Timeouts are about three times the install time measured on the local k3d
+cluster, rounded up to whole minutes, and at least 5m.
+
 Every base is secret-free and personal-data-free. Domains, e-mail addresses,
 cloud and DNS credentials, object-storage endpoints/credentials, alert
 receivers, issuer objects, identity configuration, and cluster inventory are
 overlay data. A base README lists its precise overlay contract.
+
+## Pod Security Admission
+
+Every Namespace manifest carries the four Pod Security Admission labels.
+`enforce` is the level below, `enforce-version` is pinned to the k3s minor in
+`platform-lifecycle.sh` (`v1.34`), and `audit` and `warn` are `restricted`
+everywhere, so a gap shows up as a warning even where `enforce` is looser.
+
+| Level | Namespaces |
+|---|---|
+| `restricted` | `cert-manager`, `cnpg-system`, `flagger-system`, `flux-system`, `kyverno`, `observability`, `platform-redis`, `platform-system`, `postgres`, `traefik`, tenants |
+| `baseline` | `posthog` |
+| `privileged` | `kube-system`, `kured`, `observability-agents`, `falco` |
+
+Node-exporter and Alloy need hostPID, hostNetwork or hostPath, so they run in
+`observability-agents` and `observability` stays `restricted`. The Kyverno
+policy `require-psa-labels` rejects a Namespace without an `enforce` label and
+allows `privileged` only for the four namespaces above.
+`lint/test_psa_labels.py` checks the manifests offline. The lifecycle labels
+`flux-system` before `flux bootstrap`.
 
 ## Consuming bases
 
@@ -81,7 +118,9 @@ deploy/platform/validate.sh
 
 The script discovers every first-level directory containing
 `kustomization.yaml`, renders it, validates known Kubernetes resources, and
-renders each Flux HelmRelease from its pinned chart. Charts and downloaded core
+renders each Flux HelmRelease from its pinned chart, then runs the Flux
+convention policies in `lint/ci-policies/` and prints a pass/fail table per
+policy. Charts and downloaded core
 Kubernetes schemas are cached in `deploy/platform/.helm-cache/`; a warm cache
 makes validation offline friendly. `make ci` runs the same validation.
 
@@ -203,6 +242,40 @@ The lifecycle also owns the `host.k3d.internal.server` entry in k3s's
 entry can disappear after a container/host restart on some releases; the
 custom server entry persists in the Kubernetes datastore so Flux can reacquire
 the smart-HTTP snapshot without a repair command.
+
+### Flux multi-tenancy lockdown
+
+Both `platform-up.sh` and the lifecycle run source-, kustomize-, helm- and notification-controller with
+the patches in `components/flux-lockdown`, then `flux_lockdown_verify` (`flux-lockdown.sh`) checks the
+live Deployments and fails `up` when a flag is missing:
+
+| Controller | Flags |
+|---|---|
+| kustomize-controller | `--no-cross-namespace-refs=true`, `--no-remote-bases=true`, `--default-service-account=default` |
+| helm-controller | `--no-cross-namespace-refs=true` |
+| notification-controller | none |
+
+`flux bootstrap` takes its manifests from the GitOps repository, so that repository's
+`<PLATFORM_GITOPS_PATH>/flux-system/kustomization.yaml` must carry the same patches inline. A remote
+component does not work there, because `--no-remote-bases` refuses it. The last patch gives the
+bootstrap Kustomization `serviceAccountName: kustomize-controller`; the verifier checks that too.
+
+With `--default-service-account=default`, a Kustomization without `serviceAccountName` runs as the
+`default` ServiceAccount of its namespace, which has no RBAC. Platform Kustomizations live in
+`flux-system` and set `serviceAccountName: kustomize-controller` (cluster-admin through Flux's
+`cluster-reconciler-flux-system` binding). Tenants use `components/tenant`.
+
+notification-controller runs without `--no-cross-namespace-refs`, although Flux documents the flag for
+it. The platform Alert in `flux-system` (`observability-stack/flux-notifications.yaml`) watches
+Kustomizations, HelmReleases and GitRepositories in every platform namespace, and the flag would make
+it ignore all of them. The Kyverno policy `flux-tenant-alert-sources` denies a tenant Alert whose
+`eventSources` name another namespace, so a tenant cannot subscribe to platform events.
+
+helm-controller keeps reconciling as itself. Platform HelmReleases live in their component namespaces,
+and `restrict-cluster-admin-binding` only lets cluster-admin go to service accounts in `flux-system`
+and `kube-system`, so a per-namespace reconciler account is not possible. Tenant HelmReleases get
+`serviceAccountName` from `components/tenant`, and Kyverno denies one without it. HelmReleases that
+use the `baukit` GitRepository live in `flux-system` with `targetNamespace` and `storageNamespace`.
 
 ### Adapting the contract to a remote cluster
 

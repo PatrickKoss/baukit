@@ -47,6 +47,7 @@ age_key_file=${PLATFORM_AGE_KEY_FILE:-}
 baukit_source_mode=${PLATFORM_BAUKIT_SOURCE_MODE:-github-tag}
 baukit_checkout=${PLATFORM_BAUKIT_CHECKOUT:-}
 k3s_image=${PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f}
+psa_version=v1.34
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"
 flux_version=${PLATFORM_FLUX_VERSION:-v$(baukit_tool_version "$repo_root" flux)}
@@ -62,6 +63,8 @@ git_root=$state_dir/git
 
 # shellcheck source=deploy/platform/local-git-http.sh
 source "$platform_dir/local-git-http.sh"
+# shellcheck source=deploy/platform/flux-lockdown.sh
+source "$platform_dir/flux-lockdown.sh"
 
 require_value() {
   local name=$1
@@ -269,6 +272,11 @@ ensure_snapshot_dns() {
 
 install_sops_key() {
   kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl label namespace flux-system --overwrite \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/enforce-version="$psa_version" \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted >/dev/null
   kubectl -n flux-system create secret generic sops-age \
     --from-file=age.agekey="$age_key_file" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -290,6 +298,7 @@ bootstrap_gitops() {
         --repository="$github_repository" \
         --branch="$gitops_branch" \
         --path="$gitops_path" \
+        --components="$flux_lockdown_components" \
         --version="$flux_version" \
         --reconcile \
         "${personal_flag[@]}"
@@ -300,6 +309,7 @@ bootstrap_gitops() {
         --branch="$gitops_branch" \
         --path="$gitops_path" \
         --private-key-file="$gitops_private_key_file" \
+        --components="$flux_lockdown_components" \
         --version="$flux_version" \
         --silent
       ;;
@@ -312,6 +322,7 @@ bootstrap_gitops() {
       "$reconciled_url" "$gitops_url" >&2
     exit 1
   fi
+  flux_lockdown_verify "$platform_dir" || exit 1
 }
 
 print_secret_locations() {

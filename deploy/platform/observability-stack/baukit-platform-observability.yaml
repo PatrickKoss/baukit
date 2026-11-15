@@ -2,8 +2,11 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: baukit-platform-observability
-  namespace: observability
+  namespace: flux-system
 spec:
+  releaseName: baukit-platform-observability
+  targetNamespace: observability
+  storageNamespace: observability
   interval: 30m
   timeout: 5m
   dependsOn:
@@ -22,7 +25,10 @@ spec:
     remediation:
       retries: 3
   upgrade:
+    cleanupOnFail: true
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     runbookBaseUrl: https://github.com/PatrickKoss/baukit/blob/main/docs/runbooks/platform

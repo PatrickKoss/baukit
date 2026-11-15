@@ -5,6 +5,7 @@ metadata:
   namespace: kured
 spec:
   interval: 30m
+  timeout: 5m
   chart:
     spec:
       chart: kured
@@ -21,6 +22,8 @@ spec:
     cleanupOnFail: true
     remediation:
       retries: 3
+  driftDetection:
+    mode: warn
   values:
     image:
       tag: "1.23.0@sha256:8dfd3c2e889337595731d801afc5c031b545876a29427897b3f711d2983f30c4"

@@ -185,6 +185,24 @@ class PlatformChartTests(unittest.TestCase):
         self.assertNotIn("app.kubernetes.io/component: platform", result.stdout)
         self.assertIn("app.kubernetes.io/component: falco", result.stdout)
 
+    def test_loki_rules_land_in_one_config_map(self) -> None:
+        result = self.render()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("name: pack-baukit-platform-observability-loki-rules", result.stdout)
+        for path in sorted((PLATFORM_PACK / "loki-rules").glob("*.yml")):
+            with self.subTest(path=path.name):
+                self.assertIn(f"{path.name}: |", result.stdout)
+        self.assertIn(
+            "runbook_url: https://runbooks.test/platform/traefik-config-reload-failing",
+            result.stdout,
+        )
+
+    def test_loki_rules_config_map_renders_without_rules(self) -> None:
+        result = self.render("--set", "components.traefik=false")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("name: pack-baukit-platform-observability-loki-rules", result.stdout)
+        self.assertNotIn("traefik.rules.yml: |", result.stdout)
+
     def test_runbook_base_url_is_required(self) -> None:
         result = helm_template(PLATFORM_PACK)
         self.assertNotEqual(result.returncode, 0)
