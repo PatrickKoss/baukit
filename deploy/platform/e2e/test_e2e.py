@@ -17,17 +17,17 @@ LEFT_OUT = {"hcloud", "posthog", "redis"}
 NODE_CIDR_PLACEHOLDER = "192.0.2.0/32"
 
 
-def load_process_runner():
-    path = REPO / "scripts/process_runner.py"
-    spec = importlib.util.spec_from_file_location("process_runner", path)
+def load_module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
     if spec is None or spec.loader is None:
-        raise ImportError("cannot load scripts/process_runner.py")
+        raise ImportError(f"cannot load {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-process_runner = load_process_runner()
+process_runner = load_module("process_runner", REPO / "scripts/process_runner.py")
+helm_yaml = load_module("helm_yaml", PLATFORM / "lint/helm_yaml.py")
 
 
 def kustomization(name, depends_on=()):
@@ -180,11 +180,74 @@ class HeavySlotTests(unittest.TestCase):
         self.assertIn("Waiting for a free heavy-run slot", output)
         self.assertTrue(output.endswith("proceeded\n"))
 
+    def test_no_slot_wait_without_a_slot_dir(self):
+        environment = {k: v for k, v in os.environ.items() if k != "BAUKIT_HEAVY_SLOT_DIR"}
+        environment["RUN_SH"] = str(E2E / "run.sh")
+        result = process_runner.run_process(
+            ["bash", "-c", 'source "$RUN_SH" && wait_for_heavy_slot && echo proceeded'],
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        self.assertEqual(result.stdout, "proceeded\n")
+
+    def test_lock_defaults_to_the_user_cache(self):
+        environment = {k: v for k, v in os.environ.items() if k != "BAUKIT_E2E_CLUSTER_LOCK"}
+        environment.update(XDG_CACHE_HOME="/xdg", RUN_SH=str(E2E / "run.sh"))
+        result = process_runner.run_process(
+            ["bash", "-c", 'source "$RUN_SH" && printf %s "$cluster_lock"'],
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        self.assertEqual(result.stdout, "/xdg/baukit/platform-e2e.lock")
+
     def test_proceeds_at_once_with_one_slot_free(self):
         with tempfile.TemporaryDirectory() as slot_dir:
             Path(slot_dir, "slot-1").mkdir()
             output, _ = self.start_wait(slot_dir).communicate(timeout=10)
         self.assertEqual(output, "proceeded\n")
+
+
+class NodeRegistrationTests(unittest.TestCase):
+    def wait(self, empty_calls):
+        with tempfile.TemporaryDirectory() as tmp:
+            count = Path(tmp) / "count"
+            count.write_text("0")
+            stubs = {
+                "kubectl": f'n=$(cat "{count}"); echo $((n + 1)) >"{count}"; '
+                f'[ "$n" -ge {empty_calls} ] && echo node/server-0; exit 0',
+                "docker": 'echo "docker $*"',
+            }
+            for name, body in stubs.items():
+                stub = Path(tmp) / name
+                stub.write_text(f"#!/bin/sh\n{body}\n")
+                stub.chmod(0o755)
+            environment = {
+                **os.environ,
+                "PATH": f"{tmp}:{os.environ['PATH']}",
+                "BAUKIT_E2E_NODE_POLL_SECONDS": "0",
+                "RUN_SH": str(E2E / "run.sh"),
+            }
+            result = process_runner.run_process(
+                ["bash", "-c", 'source "$RUN_SH" && wait_for_node_registration e2e'],
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+            return result, int(count.read_text())
+
+    def test_waits_until_a_node_registers(self):
+        result, calls = self.wait(empty_calls=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(calls, 4)
+
+    def test_gives_up_and_prints_the_server_log(self):
+        result, calls = self.wait(empty_calls=1000)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, 60)
+        self.assertIn("no node registered in cluster e2e", result.stderr)
+        self.assertIn("docker logs --tail 30 k3d-e2e-server-0", result.stderr)
 
 
 class RuntimeIdentityTests(unittest.TestCase):
@@ -227,6 +290,42 @@ class RuntimeIdentityTests(unittest.TestCase):
                 ("observability", "grafana-admin"),
             },
         )
+
+    def test_pre_created_namespaces_carry_their_base_psa_labels(self):
+        manifests = {
+            doc["metadata"]["name"]: doc["metadata"]["labels"]
+            for path in PLATFORM.glob("*/namespace.yaml")
+            for doc in helm_yaml.parse_documents(helm_yaml.split_documents(path.read_text()))
+            if doc.get("kind") == "Namespace"
+        }
+        names = self.source_identity('printf "%s\\n" "${platform_runtime_namespaces[@]}"').split()
+        for name in [*names, "posthog"]:
+            with self.subTest(namespace=name):
+                applied = helm_yaml.parse_documents(
+                    [self.source_identity(f"platform_namespace_manifest {name}")]
+                )[0]
+                labels = applied["metadata"]["labels"]
+                psa = {k: v for k, v in labels.items() if k.startswith("pod-security.")}
+                self.assertEqual(len(psa), 4)
+                self.assertEqual(labels, manifests[name])
+
+    def test_unknown_namespace_fails(self):
+        helper = PLATFORM / "runtime-identity.sh"
+        result = process_runner.run_process(
+            ["bash", "-c", f'source "{helper}"; platform_ensure_namespace nope'],
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Namespace nope", result.stderr)
+
+    def source_identity(self, call):
+        helper = PLATFORM / "runtime-identity.sh"
+        result = process_runner.run_process(
+            ["bash", "-c", f'source "{helper}"; {call}'], capture_output=True, text=True
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
 
     def test_both_entry_points_share_the_helper(self):
         for script in (PLATFORM / "platform-up.sh", E2E / "run.sh"):
@@ -405,6 +504,39 @@ class FalcoEventsTests(unittest.TestCase):
 
     def test_missing_since_exits_2(self):
         self.assertEqual(self.run_events("--source", "falco").returncode, 2)
+
+
+class RegistryMirrorTests(unittest.TestCase):
+    def source(self, call):
+        script = f'source "{E2E.parent / "registry-mirrors.sh"}"\n{call}'
+        result = process_runner.run_process(["bash", "-c", script], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def test_every_upstream_routes_to_its_mirror(self):
+        config = self.source("registry_mirrors_k3s_config")
+        for host in ("docker.io", "reg.kyverno.io"):
+            mirror = f"http://k3d-baukit-mirror-{host.replace('.', '-')}:5000"
+            self.assertIn(f"  {host}:\n    endpoint:\n      - {mirror}\n", config)
+
+    def test_the_cluster_uses_every_mirror_it_routes_to(self):
+        config = self.source("registry_mirrors_k3s_config")
+        args = self.source("registry_mirrors_cluster_args").splitlines()
+        pairs = zip(args[::2], args[1::2], strict=True)
+        used = {f"http://{arg}" for flag, arg in pairs if flag == "--registry-use"}
+        lines = [line.strip() for line in config.splitlines()]
+        endpoints = {line[2:] for line in lines if line.startswith("- ")}
+        self.assertEqual(used, endpoints)
+
+    def test_detach_disconnects_every_mirror_from_the_cluster_network(self):
+        stub = 'docker() { printf "%s\\n" "$*" >&3; }'
+        out = self.source(f"{stub}\nregistry_mirrors_detach k3d-x 3>&1")
+        self.assertIn("network disconnect k3d-x k3d-baukit-mirror-docker-io", out)
+        self.assertEqual(out.count("network disconnect k3d-x "), 5)
+
+    def test_the_mirror_image_is_pinned_by_digest(self):
+        image = self.source('printf %s "$registry_mirror_image"')
+        self.assertRegex(image, r"^docker\.io/library/registry:[0-9.]+@sha256:[0-9a-f]{64}$")
 
 
 if __name__ == "__main__":

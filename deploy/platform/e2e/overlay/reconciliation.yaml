@@ -82,6 +82,7 @@ spec:
   serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-foundation
+    - name: e2e-kyverno-policies
   interval: 10m
   retryInterval: 30s
   timeout: 20m
@@ -222,7 +223,6 @@ spec:
   serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-baseline
-    - name: e2e-observability
   interval: 10m
   retryInterval: 30s
   timeout: 15m
@@ -246,6 +246,27 @@ spec:
   retryInterval: 30s
   timeout: 5m
   path: ./deploy/platform/e2e/overlay/components/kyverno-policies
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+# The ServiceMonitors and Policy Reporter need the monitoring CRDs. Kyverno and its policies don't wait for them.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-kyverno-monitoring
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-kyverno-policies
+    - name: e2e-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/kyverno-monitoring
   prune: true
   wait: true
   sourceRef:
