@@ -1,0 +1,71 @@
+# Example for Secret observability/alertmanager-routing, key alertmanager.yaml. Not applied by the
+# base. Replace every example.invalid URL with a real receiver before production traffic.
+global:
+  resolve_timeout: 5m
+route:
+  receiver: platform-tickets
+  group_by:
+    - namespace
+    - alertname
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 12h
+  routes:
+    # Watchdog always fires. The heartbeat service alerts when these notifications stop.
+    - receiver: heartbeat
+      matchers:
+        - alertname = "Watchdog"
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 1m
+    # InfoInhibitor only feeds the inhibit rule below and is never sent.
+    - receiver: blackhole
+      matchers:
+        - alertname = "InfoInhibitor"
+    - receiver: security-pager
+      matchers:
+        - severity = "critical"
+        - component =~ "falco|kyverno"
+    - receiver: platform-pager
+      matchers:
+        - severity = "critical"
+    - receiver: security-tickets
+      matchers:
+        - component =~ "falco|kyverno"
+    # Flux notification-controller sends severity="error" with component="flux".
+    - receiver: platform-tickets
+      matchers:
+        - component = "flux"
+      repeat_interval: 1h
+inhibit_rules:
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity =~ "warning|info"
+    equal:
+      - namespace
+      - alertname
+  - source_matchers:
+      - alertname = "InfoInhibitor"
+    target_matchers:
+      - severity = "info"
+    equal:
+      - namespace
+receivers:
+  - name: heartbeat
+    webhook_configs:
+      - url: https://heartbeat.example.invalid/ping
+        send_resolved: false
+  - name: blackhole
+  - name: platform-pager
+    webhook_configs:
+      - url: https://pager.example.invalid/platform
+  - name: security-pager
+    webhook_configs:
+      - url: https://pager.example.invalid/security
+  - name: platform-tickets
+    webhook_configs:
+      - url: https://tickets.example.invalid/platform
+  - name: security-tickets
+    webhook_configs:
+      - url: https://tickets.example.invalid/security

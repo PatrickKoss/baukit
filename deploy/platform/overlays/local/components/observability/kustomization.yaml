@@ -10,3 +10,10 @@ patches:
   - path: resources.yaml
 
   - path: loki-storage.yaml
+generatorOptions:
+  disableNameSuffixHash: true
+secretGenerator:
+  - name: alertmanager-routing
+    namespace: observability
+    files:
+      - alertmanager.yaml

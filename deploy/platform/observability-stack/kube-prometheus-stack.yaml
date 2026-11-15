@@ -47,29 +47,22 @@ spec:
         kubeProxy: false
         kubeSchedulerAlerting: false
         kubeSchedulerRecording: false
+        windows: false
+      additionalRuleAnnotations:
+        Watchdog:
+          runbook_url: https://github.com/PatrickKoss/baukit/blob/main/docs/runbooks/platform/watchdog
 
     alertmanager:
       enabled: true
-      # The base drops every alert. An overlay replaces this config with its
-      # identity-bearing receiver and preserves a deliberate dead-man route.
-      config:
-        global:
-          resolve_timeout: 5m
-        route:
-          group_by:
-            - namespace
-            - alertname
-          group_wait: 30s
-          group_interval: 5m
-          repeat_interval: 12h
-          receiver: "null"
-          routes:
-            - receiver: "null"
-              matchers:
-                - alertname = "Watchdog"
-        receivers:
-          - name: "null"
       alertmanagerSpec:
+        # The overlay provides Secret alertmanager-routing with key alertmanager.yaml, see
+        # alertmanager/alertmanager.example.yaml. The operator falls back to a drop-all config when
+        # configSecret is missing, so the same Secret is also mounted: without it the pod never
+        # starts, Watchdog stops and the external heartbeat fires.
+        useExistingSecret: true
+        configSecret: alertmanager-routing
+        secrets:
+          - alertmanager-routing
         replicas: 1
         resources:
           requests:
