@@ -389,6 +389,15 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_retention_size.
   status=1
 fi
 
+printf '==> in-cluster kyverno policies\n'
+policies_started=$SECONDS
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/ci-policies/run_cluster_policies.py" \
+  --rendered "$rendered_dir" --crds "$flux_manifest" \
+  --report "$repo_root/.ci-gate/platform-kyverno-policies.txt"; then
+  status=1
+fi
+printf 'In-cluster kyverno policies took %ds.\n' "$((SECONDS - policies_started))"
+
 printf '==> falco rules\n'
 if ! falco_output=$("$platform_dir/falco/validate-rules.sh" 2>&1); then
   printf '%s\n' "$falco_output" >&2

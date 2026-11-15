@@ -1,0 +1,101 @@
+product: snapshot-app
+deploymentEnvironment: staging
+
+config:
+  existingSecretRefs:
+    - name: snapshot-app-runtime
+  overrides:
+    WORKER__CONCURRENCY: 5
+    WORKER__LEASE_DURATION_SECONDS: 900
+    WORKER__JOB_TIMEOUT_SECONDS: 600
+    WORKER__POLL_INTERVAL_MILLISECONDS: 250
+
+
+# Image tags are placeholders. The release pipeline replaces 0.0.0-unset with
+# the built tag, or sets image.digest (sha256:...), for example with
+# --set api.image.tag=$GIT_SHA. The chart rejects latest.
+api:
+  image:
+    repository: ghcr.io/patrickkoss/snapshot-app
+    tag: "0.0.0-unset"
+
+migration:
+  enabled: true
+  image:
+    repository: ghcr.io/patrickkoss/snapshot-app-migrate
+    tag: "0.0.0-unset"
+  command:
+    - /app/migrate
+
+worker:
+  enabled: true
+  image:
+    repository: ghcr.io/patrickkoss/snapshot-app-worker
+    tag: "0.0.0-unset"
+  command:
+    - /app/worker
+
+
+# The web client signs in through /auth/session (ADR 0006). The runtime Secret
+# above may not set CORS origins; browserSession.allowedOrigins owns them.
+browserSession:
+  enabled: true
+  allowedOrigins: [https://app.example.com]
+  redirectUris: [https://app.example.com/]
+  postLogoutRedirectUri: https://app.example.com/
+  publicApiOrigin: https://api.example.com
+  credentialKeysSecretRef:
+    name: snapshot-app-browser-session
+    key: keys
+
+platform:
+  receiverSecretRef:
+    name: ""
+    key: current
+    previousKey: ""
+
+# Hub mode: merge these keys into config.overrides above and enable the Secret.
+# config:
+#   overrides:
+#     PLATFORM__HUB_ISSUER: https://hub.example
+#     PLATFORM__JWKS_URL: https://hub.example/keys.json
+#     PLATFORM__PRODUCT_ID: snapshot_app
+#     PLATFORM__SOURCE_APP: identity_hub
+#     PLATFORM_HUB__TICKET_URL: https://hub.example/platform/v1/entitlements/tickets
+# platform:
+#   receiverSecretRef:
+#     name: snapshot-app-platform-receiver
+#     key: current
+#     previousKey: "" # Set to previous only while rotating.
+# migration:
+#   env:
+#     - name: SNAPSHOT_APP__PLATFORM__RECEIVER_SECRET
+#       valueFrom:
+#         secretKeyRef:
+#           name: snapshot-app-platform-receiver
+#           key: current
+# worker:
+#   env:
+#     - name: SNAPSHOT_APP__PLATFORM__RECEIVER_SECRET
+#       valueFrom:
+#         secretKeyRef:
+#           name: snapshot-app-platform-receiver
+#           key: current
+# Worker and migration commands validate the same hub configuration as the API.
+# Put PLATFORM_HUB__SERVICE_TOKEN in the runtime Secret with the product prefix.
+# A backend that embeds HubClientConfig as platform_client sets
+# PLATFORM_CLIENT__API_URL in config.overrides and reads the hub service token
+# from a Secret reference, never a value:
+# api:
+#   env:
+#     - name: SNAPSHOT_APP__PLATFORM_CLIENT__TOKEN
+#       valueFrom:
+#         secretKeyRef:
+#           name: snapshot-app-platform-client
+#           key: token
+
+ingress:
+  enabled: false
+
+serviceMonitor:
+  enabled: false
