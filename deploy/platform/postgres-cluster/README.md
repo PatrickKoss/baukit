@@ -130,7 +130,8 @@ kube-prometheus-stack base, and `BaukitPostgresRestoreTestStale` in the platform
 pack (`deploy/observability-platform/alerts/cnpg.rules.yml`) fires when the
 metric is absent or older than 35 days. The platform e2e suite
 `deploy/platform/e2e/tests/backup-restore` runs the same round trip on a
-throwaway cluster, deletes it, restores it, and then runs this CronJob once.
+throwaway cluster, deletes it and restores it. `restore-test-cronjob` runs this
+CronJob once, in parallel with it.
 
 If a product patches the initial database name away from `product`, patch the
 `PGDATABASE` env of both containers as well.
