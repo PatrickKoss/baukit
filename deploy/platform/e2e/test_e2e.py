@@ -14,6 +14,7 @@ REPO = PLATFORM.parent.parent
 RECONCILIATION = E2E / "overlay/reconciliation.yaml"
 NOT_BASES = {"components", "e2e", "lib", "lint", "overlays", "schemas"}
 LEFT_OUT = {"hcloud", "posthog", "redis"}
+NODE_CIDR_PLACEHOLDER = "192.0.2.0/32"
 
 
 def load_process_runner():
@@ -101,6 +102,16 @@ class OverlayTests(unittest.TestCase):
             if path.parent.name not in NOT_BASES
         }
         self.assertEqual(referenced_bases(), bases - LEFT_OUT)
+
+    def test_no_kustomization_keeps_the_node_cidr_placeholder(self):
+        paths = re.findall(r"^  path: (\./deploy/platform/\S+)$", RECONCILIATION.read_text(), re.M)
+        for path in sorted(set(paths)):
+            with self.subTest(path=path):
+                result = process_runner.run_process(
+                    ["kustomize", "build", path], capture_output=True, text=True, cwd=REPO
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn(NODE_CIDR_PLACEHOLDER, result.stdout)
 
     def test_tenant_waits_for_the_policies(self):
         text = RECONCILIATION.read_text()

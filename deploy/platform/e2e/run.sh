@@ -14,6 +14,8 @@ snapshot_port=9418
 echo_image=localhost/baukit-e2e/echo:local
 ready_timeout=30m
 stats_interval_seconds=15
+e2e_subnet_first=100
+e2e_subnet_last=199
 
 cluster_name=baukit-platform-e2e
 keep_cluster=false
@@ -151,6 +153,25 @@ cluster_exists() {
   k3d cluster list --no-headers 2>/dev/null | awk '{print $1}' | grep -Fqx -- "$cluster_name"
 }
 
+# The cluster network must sit inside nodeCIDR (10.89.0.0/16) from overlays/local/cluster-network, so
+# the node-cidr NetworkPolicies match the node. Picks the first /24 no Docker network uses.
+free_subnet() {
+  if [[ -n ${BAUKIT_E2E_SUBNET:-} ]]; then
+    printf '%s\n' "$BAUKIT_E2E_SUBNET"
+    return
+  fi
+  local used third
+  used=$(docker network ls -q | xargs -r docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}')
+  for ((third = e2e_subnet_first; third <= e2e_subnet_last; third++)); do
+    if [[ " $used " != *" 10.89.$third.0/24 "* ]]; then
+      printf '10.89.%s.0/24\n' "$third"
+      return
+    fi
+  done
+  printf 'ERROR: no free /24 in 10.89.%s-%s.0; set BAUKIT_E2E_SUBNET\n' "$e2e_subnet_first" "$e2e_subnet_last" >&2
+  exit 1
+}
+
 free_port() {
   python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'
 }
@@ -165,6 +186,7 @@ create_cluster() {
   printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$image"
   cluster_created=true
   k3d_create_local_cluster "$cluster_name" "$image" "$(free_port)" "$(free_port)" "$(free_port)" \
+    --subnet "$(free_subnet)" \
     --kubeconfig-update-default=false \
     --kubeconfig-switch-context=false >/dev/null
   k3d kubeconfig get "$cluster_name" >"$kubeconfig"
@@ -305,7 +327,7 @@ collect_artifacts() {
   kubectl get events -A --sort-by=.lastTimestamp >"$artifacts_dir/events.txt" 2>&1 || true
   kubectl get policyreports,clusterpolicyreports -A -o wide >"$artifacts_dir/policy-reports.txt" 2>&1 || true
   flux get all -A >"$artifacts_dir/flux-status.txt" 2>&1 || true
-  kubectl get pods -A -o wide >"$artifacts_dir/pods.txt" 2>&1 || true
+  kubectl get nodes,pods -A -o wide >"$artifacts_dir/pods.txt" 2>&1 || true
   kubectl get networkpolicies -A -o yaml >"$artifacts_dir/network-policies.yaml" 2>&1 || true
   kubectl get jobs -A -o yaml >"$artifacts_dir/jobs.yaml" 2>&1 || true
   mkdir -p "$artifacts_dir/logs"

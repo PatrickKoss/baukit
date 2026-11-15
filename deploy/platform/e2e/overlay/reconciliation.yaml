@@ -173,7 +173,7 @@ spec:
   interval: 10m
   retryInterval: 30s
   timeout: 10m
-  path: ./deploy/platform/kured
+  path: ./deploy/platform/e2e/overlay/components/kured
   prune: true
   wait: true
   sourceRef:
@@ -211,7 +211,7 @@ spec:
   interval: 10m
   retryInterval: 30s
   timeout: 15m
-  path: ./deploy/platform/kyverno
+  path: ./deploy/platform/e2e/overlay/components/kyverno
   prune: true
   wait: true
   sourceRef:
@@ -249,7 +249,7 @@ spec:
   interval: 10m
   retryInterval: 30s
   timeout: 15m
-  path: ./deploy/platform/flagger
+  path: ./deploy/platform/e2e/overlay/components/flagger
   prune: true
   wait: true
   sourceRef:
@@ -279,7 +279,7 @@ spec:
   interval: 10m
   retryInterval: 30s
   timeout: 5m
-  path: ./deploy/platform/flagger
+  path: ./deploy/platform/e2e/overlay/components/flagger
   prune: true
   wait: true
   sourceRef:

@@ -287,6 +287,9 @@
   to: {pod: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}, port: 2801}
   expect: allow
 - from: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}
+  to: {service: falco-falcosidekick.falco, port: 2801}
+  expect: allow
+- from: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}
   to: {service: loki-gateway.observability, port: 80}
   expect: allow
 - from: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}

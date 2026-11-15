@@ -13,7 +13,10 @@ deploy/platform/e2e/run.sh --without kyverno-policies # leave out Flux Kustomiza
 ```
 
 The cluster comes from `k3d_create_local_cluster` in `../local-git-http.sh`, the helper the lifecycle uses. The API
-and load balancer bind 127.0.0.1 and the snapshot server binds the k3d network gateway. Tools come from `.tools/bin` first
+and load balancer bind 127.0.0.1 and the snapshot server binds the k3d network gateway. The cluster network is the
+first free `/24` in `10.89.100-199` (override with `BAUKIT_E2E_SUBNET`), inside the `nodeCIDR` of
+`../overlays/local/cluster-network`, so the node-cidr NetworkPolicies admit the API server. Every base with
+such a policy is composed through a component that adds `node-cidr`. Tools come from `.tools/bin` first
 (`scripts/install-deploy-tools.sh`); a missing tool exits 2. The kubeconfig and snapshot live in a
 private directory under `BAUKIT_E2E_STATE_DIR` (default `~/.local/state/baukit-platform-e2e`); the
 default kubeconfig is never touched.
