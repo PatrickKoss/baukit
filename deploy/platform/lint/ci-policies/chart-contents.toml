@@ -14,7 +14,7 @@ tests = false
 crds = true
 tests = false
 
-["cert-manager@v1.21.2"]
+["cert-manager@v1.21.3"]
 crds = false
 tests = false
 
@@ -30,11 +30,11 @@ tests = true
 crds = true
 tests = false
 
-["hcloud-cloud-controller-manager@1.38.0"]
+["hcloud-cloud-controller-manager@1.39.3"]
 crds = false
 tests = false
 
-["hcloud-csi@2.23.0"]
+["hcloud-csi@2.24.2"]
 crds = false
 tests = false
 

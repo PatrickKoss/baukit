@@ -2065,6 +2065,17 @@ ids = [
   "CVE-2026-78669",
 ]
 
+[images."python:3.13.18-alpine3.24@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e"]
+expires = 2026-12-12
+reason = "3.13.18-alpine3.24 is the newest 3.13 image; the findings sit in pip's vendored msgpack, setuptools and urllib3, which the stdlib-only alert sink never imports; Renovate (SC4) moves the pin once upstream rebuilds"
+ids = [
+  "CVE-2025-47273",
+  "CVE-2026-114613",
+  "CVE-2026-97687",
+  "CVE-2026-97689",
+  "GHSA-6v7p-g79w-8964",
+]
+
 [images."quay.io/jetstack/cert-manager-cainjector:v1.21.3@sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f"]
 expires = 2026-12-12
 reason = "v1.21.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
