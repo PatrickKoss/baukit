@@ -331,5 +331,12 @@ class FailedKustomizationTests(unittest.TestCase):
         self.assertEqual(output.split("|\n"), ["", "", "", "", "", "a\n", ""])
 
 
+class IngressSuiteTests(unittest.TestCase):
+    def test_echo_keeps_the_chart_default_ingress_controller_peer(self):
+        values = (E2E / "tests/ingress/values.yaml").read_text()
+        self.assertNotRegex(values, r"(?m)^\s*ingressController:")
+        self.assertRegex(values, r"(?m)^ingress:\n  enabled: true$")
+
+
 if __name__ == "__main__":
     unittest.main()

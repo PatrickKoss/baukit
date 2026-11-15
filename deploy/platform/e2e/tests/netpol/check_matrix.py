@@ -142,9 +142,7 @@ def pod_template(obj: dict) -> tuple[dict, frozenset[int]] | None:
 
 
 def parse(text: str) -> list[dict]:
-    return [
-        obj for obj in helm_yaml.parse_documents(helm_yaml.split_documents(text)) if obj
-    ]
+    return [obj for obj in helm_yaml.parse_documents(helm_yaml.split_documents(text)) if obj]
 
 
 def overlay_paths(reconciliation: Path) -> list[Path]:
@@ -185,9 +183,7 @@ def build(kustomize: str, path: Path) -> str:
     return result.stdout
 
 
-def inventory(
-    rendered: Path, kustomize: str, paths: list[Path], chainsaw_test: Path
-) -> Inventory:
+def inventory(rendered: Path, kustomize: str, paths: list[Path], chainsaw_test: Path) -> Inventory:
     found = Inventory(namespaces={name: {NAME_LABEL: name} for name in K3S_NAMESPACES})
     for namespace, labels, ports in K3S_PODS:
         found.templates.append((namespace, labels, ports))
@@ -233,7 +229,9 @@ def row_problems(row: netpol_matrix.Row, found: Inventory) -> list[str]:
         if row.pod_namespace not in found.namespaces:
             problems.append(f"{where}: namespace {row.pod_namespace} is not in the e2e cluster")
         elif not found.labels_exist(row.pod_namespace, row.pod_labels):
-            problems.append(f"{where}: no pod in {row.pod_namespace} carries the destination labels")
+            problems.append(
+                f"{where}: no pod in {row.pod_namespace} carries the destination labels"
+            )
         elif row.port not in found.pod_ports(row.pod_namespace, row.pod_labels):
             problems.append(f"{where}: the destination pods expose no port {row.port}")
     return problems
@@ -267,8 +265,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reconciliation", type=Path, default=RECONCILIATION)
     parser.add_argument("--chainsaw-test", type=Path, default=CHAINSAW_TEST)
     parser.add_argument(
-        "--extra-path", type=Path, action="append", default=[],
-        help="another kustomization the matrix runs against, such as a base the e2e overlay leaves out",
+        "--extra-path",
+        type=Path,
+        action="append",
+        default=[],
+        help="another kustomization to inventory, such as a base the e2e overlay leaves out",
     )
     args = parser.parse_args(argv)
     paths = overlay_paths(args.reconciliation) + [path.resolve() for path in args.extra_path]

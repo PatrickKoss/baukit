@@ -12,6 +12,7 @@ REPO = Path(__file__).resolve().parents[5]
 VERDICTS = ("allow", "deny")
 DESTINATION_KINDS = ("service", "pod", "host")
 NODE_HOST = "node"
+MAX_PORT = 65535
 
 
 def load_module(name: str, path: Path) -> ModuleType:
@@ -83,7 +84,7 @@ def row_from(number: int, item: object) -> Row:
         raise MatrixError(f"row #{number}: from.namespace is missing")
     labels = string_map(number, "from.labels", source.get("labels") or {})
     port = destination.get("port")
-    if not isinstance(port, int) or not 0 < port < 65536:
+    if not isinstance(port, int) or not 0 < port <= MAX_PORT:
         raise MatrixError(f"row #{number}: to.port must be a TCP port, not {port!r}")
     kinds = [kind for kind in DESTINATION_KINDS if kind in destination]
     if len(kinds) != 1:

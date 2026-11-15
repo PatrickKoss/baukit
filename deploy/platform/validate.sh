@@ -491,6 +491,16 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_helm_test_netpo
   status=1
 fi
 
+printf '==> netpol probe matrix\n'
+netpol_suite="$platform_dir/e2e/tests/netpol"
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$netpol_suite/check_matrix.py" --rendered "$rendered_dir" \
+  --kustomize "$(command -v kustomize)" ||
+  ! PYTHONDONTWRITEBYTECODE=1 python3 "$netpol_suite/check_matrix.py" --rendered "$rendered_dir" \
+    --kustomize "$(command -v kustomize)" --matrix "$netpol_suite/posthog-matrix.yaml" \
+    --extra-path "$platform_dir/posthog"; then
+  status=1
+fi
+
 printf '==> chart sources\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_chart_sources.py" --rendered "$rendered_dir"; then
   status=1
@@ -538,7 +548,8 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/sc
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/lint/ci-policies" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/falco" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/redis-ha" -p 'test_*.py' ||
-  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/e2e" -p 'test_*.py'; then
+  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/e2e" -p 'test_*.py' ||
+  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/e2e/tests/netpol" -p 'test_*.py'; then
   status=1
 fi
 

@@ -100,7 +100,7 @@ class Cluster:
 
 
 def fenced(rules: str, namespace: str, pod: str, address: str) -> bool:
-    """kube-router writes one chain per pod; its reject rule names the pod and it matches the pod IP."""
+    """kube-router writes one chain per pod with a reject rule naming it and a match on its IP."""
     reject = f'"{namespace}/{pod} reject"'
     return reject in rules and f"-d {address}/32" in rules
 
@@ -176,7 +176,9 @@ def check_service_endpoints(cluster: Cluster, name: str, namespace: str, port: i
         "get", "endpointslices", "-n", namespace, "-l", f"kubernetes.io/service-name={name}"
     )
     for item in slices.get("items") or []:
-        if not any((entry.get("name") or None) == (port_name or None) for entry in item.get("ports") or []):
+        if not any(
+            (entry.get("name") or None) == (port_name or None) for entry in item.get("ports") or []
+        ):
             continue
         for endpoint in item.get("endpoints") or []:
             if (endpoint.get("conditions") or {}).get("ready"):
@@ -210,10 +212,18 @@ class Probe:
 
     def start(self) -> tuple[str, str]:
         namespace = self.row.namespace
-        self.cluster.kubectl("delete", "pod", "-n", namespace, self.name, "--ignore-not-found", "--wait=true")
-        self.cluster.kubectl("create", "-f", "-", stdin=json.dumps(pod_manifest(self.row, self.name)))
         self.cluster.kubectl(
-            "wait", "-n", namespace, f"pod/{self.name}", "--for=jsonpath={.status.phase}=Running",
+            "delete", "pod", "-n", namespace, self.name, "--ignore-not-found", "--wait=true"
+        )
+        self.cluster.kubectl(
+            "create", "-f", "-", stdin=json.dumps(pod_manifest(self.row, self.name))
+        )
+        self.cluster.kubectl(
+            "wait",
+            "-n",
+            namespace,
+            f"pod/{self.name}",
+            "--for=jsonpath={.status.phase}=Running",
             f"--timeout={START_TIMEOUT_SECONDS}s",
         )
         pod = self.cluster.json("get", "pod", "-n", namespace, self.name)
@@ -256,7 +266,16 @@ class Probe:
 
     def stop(self) -> None:
         self.cluster.run(
-            ["kubectl", "delete", "pod", "-n", self.row.namespace, self.name, "--wait=false", "--ignore-not-found"],
+            [
+                "kubectl",
+                "delete",
+                "pod",
+                "-n",
+                self.row.namespace,
+                self.name,
+                "--wait=false",
+                "--ignore-not-found",
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -277,7 +296,9 @@ def run_row(cluster: Cluster, row: Row) -> Outcome:
     tries = f", {attempts} attempts" if attempts > 1 else ""
     if verdict == row.expect:
         return Outcome(row, "PASS", f"{verdict} ({reason}{tries})")
-    return Outcome(row, "FAIL", f"expected {row.expect}, got {verdict} ({reason}{tries}) to {address}")
+    return Outcome(
+        row, "FAIL", f"expected {row.expect}, got {verdict} ({reason}{tries}) to {address}"
+    )
 
 
 def run_matrix(cluster: Cluster, rows: list[Row], workers: int) -> list[Outcome]:
@@ -292,10 +313,13 @@ def run_matrix(cluster: Cluster, rows: list[Row], workers: int) -> list[Outcome]
 
 
 def summary(outcomes: list[Outcome], seconds: float) -> str:
-    counts = {status: sum(item.status == status for item in outcomes) for status in ("PASS", "FAIL", "ERROR")}
+    counts = {
+        status: sum(item.status == status for item in outcomes)
+        for status in ("PASS", "FAIL", "ERROR")
+    }
     return (
-        f"netpol matrix: {len(outcomes)} rows, {counts['PASS']} passed, {counts['FAIL']} mismatched, "
-        f"{counts['ERROR']} errors in {seconds:.0f}s"
+        f"netpol matrix: {len(outcomes)} rows, {counts['PASS']} passed, "
+        f"{counts['FAIL']} mismatched, {counts['ERROR']} errors in {seconds:.0f}s"
     )
 
 
