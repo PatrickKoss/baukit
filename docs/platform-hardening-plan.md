@@ -204,7 +204,7 @@ versions. This phase comes first so every later task has a place to put its test
   chart ships CRDs; HelmRepository `interval >= 1h`; Kustomization `prune: true` with `wait: true` and no
   dead `healthChecks` list (F-M3 in platform-infra). These run on Flux objects only, so they never load
   into the cluster.
-- [ ] **V6 CI parity.** Add a `platform` job to `.github/workflows/ci.yml` that installs tools through
+- [x] **V6 CI parity.** Add a `platform` job to `.github/workflows/ci.yml` that installs tools through
   `scripts/install-deploy-tools.sh` (cached by `tools.toml` hash) and runs `--step platform-validate`
   and `--step observability-rules`. Wire `platform-e2e` (phase E) as a separate job selected by path.
   Update the CI table in `CLAUDE.md`. Acceptance: `actionlint` clean, `scripts/test_ci_gate.py` covers the
@@ -1065,3 +1065,11 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   and kyverno-policies right after foundation and adds an offline guard for it. It also adds local
   pull-through registry caches that the e2e cluster and trivy share, because each platform-images run
   cost about 25 anonymous Docker Hub pulls.
+- 2026-11-15 V6 merged. ci.yml has a `platform` job: one `.tools` cache keyed on `deploy/tools.toml`,
+  then platform-validate, platform-images, observability-tests and observability-rules, each in exactly
+  one job. A `platform-e2e` job runs when the new `platform` paths-filter output is true; its globs equal
+  the local gate's shared paths, so a lockfile-only change triggers it too. The local gate also runs e2e
+  when no glob matches a changed path, which paths-filter cannot express. `step_platform_validate`
+  installs chainsaw, k3d and kubectl for the e2e unit tests. `test_ci_gate.py` pins the job mapping, cache
+  key, step order and filter. Not yet proven: whether a hosted 4 vCPU / 16 GB runner finishes the e2e
+  within the 90-minute timeout.
