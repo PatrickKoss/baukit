@@ -8,8 +8,8 @@ spec:
     Alerts posted into Alertmanager reach the webhook sink through the routes of the local
     alertmanager-routing Secret: Watchdog to heartbeat, a critical falco alert to security-pager and a
     warning platform alert to platform-tickets. A critical alert inhibits a warning with the same
-    alertname and namespace, so only the critical one is delivered. Needs the e2e receiver sink
-    (alert-sink in e2e-receiver) and the local observability component.
+    alertname and namespace, so only the critical one is delivered. The sink is alert-sink in
+    observability from the local observability component; it also logs each notification to stdout.
   timeouts:
     exec: 5m
   steps:
@@ -60,9 +60,11 @@ spec:
             timeout: 4m
             content: |
               set -eu
+              pod=alertmanager-kube-prometheus-stack-alertmanager-0
               deadline=$(($(date +%s) + 180))
               while [ "$(date +%s)" -lt "$deadline" ]; do
-                notifications=$(kubectl get --raw /api/v1/namespaces/e2e-receiver/services/alert-sink:http/proxy/alerts)
+                notifications=$(kubectl -n observability exec "$pod" -c alertmanager -- \
+                  wget -qO- http://alert-sink.observability.svc.cluster.local:8080/alerts)
                 if printf '%s' "$notifications" | NAMESPACE=$NAMESPACE python3 -c '
               import json, os, sys
               seen = set()
@@ -93,3 +95,15 @@ spec:
               done
               printf 'the sink did not receive every expected route within 3 minutes\n' >&2
               exit 1
+    - name: sink-logs-each-notification
+      try:
+        - script:
+            content: |
+              set -eu
+              logs=$(kubectl -n observability logs deploy/alert-sink -c sink)
+              for alertname in BaukitE2eRouteCritical BaukitE2eRouteWarning; do
+                if ! printf '%s\n' "$logs" | grep -F "\"$alertname\"" | grep -qF "\"$NAMESPACE\""; then
+                  printf 'alert-sink logged no notification for %s in %s\n' "$alertname" "$NAMESPACE" >&2
+                  exit 1
+                fi
+              done

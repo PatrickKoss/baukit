@@ -4,6 +4,7 @@ resources:
   - ../../../../observability-stack
   - ../../cluster-network
   - network-policy.yaml
+  - alert-sink
 components:
   - ../../../../components/network-policy/node-cidr
 patches:

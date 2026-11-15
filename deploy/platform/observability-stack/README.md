@@ -48,7 +48,11 @@ An overlay **must** provide all of the following:
    missing config Secret: it logs `config secret not found, using default
    Alertmanager configuration` and starts with a config that drops every
    alert. `lint/check_alertmanager_config.py` checks the example and every
-   overlay Secret.
+   overlay Secret. A webhook URL on `*.svc.cluster.local` must name a Service
+   that the same overlay renders. The local overlay routes every receiver to
+   `alert-sink` in `observability`, which logs each notification as one JSON
+   line on stdout, so local alerts land in Loki, and serves the last 500 on
+   `GET /alerts`.
 4. Storage sizing and a StorageClass appropriate to the node. The defaults are
    30 Gi for Prometheus, 20 Gi for Loki, 10 Gi for Tempo, and 1 Gi for
    Alertmanager. The overlay owns backup/recovery expectations for these

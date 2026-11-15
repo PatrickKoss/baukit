@@ -1,5 +1,4 @@
-# The example routing tree with every receiver pointing at the in-cluster webhook sink that the
-# e2e receiver component deploys. Without that sink, deliveries fail and AlertmanagerFailedToSendAlerts fires.
+# The example routing tree with every receiver pointing at alert-sink, which this component deploys.
 global:
   resolve_timeout: 5m
 route:
@@ -54,18 +53,18 @@ inhibit_rules:
 receivers:
   - name: heartbeat
     webhook_configs:
-      - url: http://alert-sink.e2e-receiver.svc.cluster.local:8080/alerts
+      - url: http://alert-sink.observability.svc.cluster.local:8080/alerts
         send_resolved: false
   - name: blackhole
   - name: platform-pager
     webhook_configs:
-      - url: http://alert-sink.e2e-receiver.svc.cluster.local:8080/alerts
+      - url: http://alert-sink.observability.svc.cluster.local:8080/alerts
   - name: security-pager
     webhook_configs:
-      - url: http://alert-sink.e2e-receiver.svc.cluster.local:8080/alerts
+      - url: http://alert-sink.observability.svc.cluster.local:8080/alerts
   - name: platform-tickets
     webhook_configs:
-      - url: http://alert-sink.e2e-receiver.svc.cluster.local:8080/alerts
+      - url: http://alert-sink.observability.svc.cluster.local:8080/alerts
   - name: security-tickets
     webhook_configs:
-      - url: http://alert-sink.e2e-receiver.svc.cluster.local:8080/alerts
+      - url: http://alert-sink.observability.svc.cluster.local:8080/alerts

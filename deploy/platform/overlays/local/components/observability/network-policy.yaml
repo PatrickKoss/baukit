@@ -39,10 +39,7 @@ spec:
     - Egress
   egress:
     - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: e2e-receiver
-          podSelector:
+        - podSelector:
             matchLabels:
               app.kubernetes.io/name: alert-sink
       ports:
