@@ -1,0 +1,25 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: alloy
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      Alloy tails container logs from /var/log/pods on the host. The files belong to root with mode 0640, so it reads them as root through a hostPath volume; it drops every capability.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-host-path
+    - kind: ValidatingPolicy
+      name: require-run-as-nonroot
+    - kind: ValidatingPolicy
+      name: restrict-volume-types
+  matchConditions:
+    - name: workload
+      expression: >-
+        object.metadata.?namespace.orValue("") == "observability-agents" && (
+          (object.kind == "DaemonSet" && object.metadata.name == "alloy") ||
+          (object.kind == "Pod" && object.metadata.?ownerReferences.orValue([])
+            .exists(o, o.kind == "DaemonSet" && o.name == "alloy")))

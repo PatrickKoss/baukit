@@ -3,7 +3,9 @@
 The baukit policy library. It needs the `kyverno` base installed first (CRDs and controllers) and a
 ConfigMap `kyverno/baukit-registry-allowlist` that the overlay owns. Its `registries` key holds one
 image prefix per line, for example `ghcr.io/`. Without it every image fails the registry policies,
-so a tenant namespace admits no Pods.
+so a tenant namespace admits no Pods. An image without a registry host (`redis:8`, `rancher/klipper-lb`)
+is checked as `docker.io/library/redis:8` or `docker.io/rancher/klipper-lb`, the way the container
+runtime resolves it.
 
 All policies use the Kyverno 1.20 CEL types (`ValidatingPolicy`, `ImageValidatingPolicy`,
 `GeneratingPolicy`). Tenant namespaces are the ones labelled `baukit.dev/tenant=true`; include
@@ -55,7 +57,22 @@ restricted`, and `require-psa-labels` rejects a tenant namespace without it.
 ## Exceptions
 
 `exceptions/` holds `PolicyException` objects (`policies.kyverno.io`). They must live in the
-`kyverno` namespace and carry a `baukit.dev/reason` annotation naming the invariant.
+`kyverno` namespace and carry a `baukit.dev/reason` annotation naming the invariant. Each one names
+the policies it lifts in `policyRefs` and matches one workload in `matchConditions`: its namespace and
+controller name, the ReplicaSet `<deployment>-<pod-template-hash>` or the DaemonSet that owns the Pod,
+or a ClusterRole by name. `../lint/budget.toml` holds their count, which may only go down.
+
+| Exception | Workload | Why |
+|---|---|---|
+| `k3s-coredns`, `k3s-local-path-provisioner`, `k3s-metrics-server` | k3s add-ons in `kube-system` | k3s deploys them from its embedded manifests; the platform renders no values for them |
+| `k3s-servicelb-traefik` | ServiceLB pods for the `traefik` Service | they bind host ports and need `NET_ADMIN` and `ip_forward` |
+| `falco` | Falco DaemonSet | the eBPF probe needs `BPF`, `PERFMON`, `SYS_RESOURCE`, `SYS_PTRACE`, host paths and AppArmor unconfined |
+| `kured` | kured DaemonSet | it reboots the node through `nsenter` in the host PID namespace |
+| `alloy` | Alloy DaemonSet | it reads root-owned logs under `/var/log/pods` |
+| `node-exporter` | node-exporter DaemonSet | host metrics need the host network, PID namespace and filesystems |
+| `prometheus-operator-rbac`, `flagger-rbac`, `kyverno-migrate-rbac` | chart ClusterRoles | upstream RBAC with `*` verbs or resources, see each reason |
+
+`tests/policy-exceptions` proves that an exception lifts only its own workload.
 
 ## Tests
 
