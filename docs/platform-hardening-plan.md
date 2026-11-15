@@ -577,7 +577,7 @@ behave. Later phases add test directories here.
   notification-controller. `components/tenant` creates a tenant ServiceAccount with a namespace-scoped
   RoleBinding, which tenant Kustomizations must use (K4 policy). Tenant SOPS uses a per-tenant age
   recipient. e2e test: a tenant Kustomization that tries to write into `flux-system` fails.
-- [~] **S5 k3s hardening** for the lifecycle and the e2e cluster (and later the Terraform cloud-init):
+- [x] **S5 k3s hardening** for the lifecycle and the e2e cluster (and later the Terraform cloud-init):
   - `--secrets-encryption`;
   - an audit policy with a log file that Alloy ships to Loki;
   - `--pod-security-admission-config-file` with cluster default `enforce: baseline`,
@@ -1153,3 +1153,12 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   the artifact). C4 smoke good passes and bad is denied by require-container-resources. Smoke, platform-up
   and the lifecycle attach the registry mirrors when all run. driftDetection is enabled on every HelmRelease;
   the zero-drift proof (run 9) predates kps 93, so the next full integration run checks DriftDetected.
+- 2026-11-15 22:55: S5 done. platform-up on 3104990b passed in 565s with the registry mirrors: server
+  RestartCount 0, every Flux object Ready, no DriftDetected, system namespaces labelled, secrets encryption
+  enabled (AES-CBC, 179 `k8s:enc` rows, a fresh Secret's marker found 0 times in the datastore), audit log
+  written. The local overlay installs no Kyverno or Falco (those run in `everything` and e2e); F-21's local
+  gap is platform-infra's local cluster and moves to PI.
+- 2026-11-15 22:55: full e2e on 3104990b: 10/12 suites pass, 0 DriftDetected on kps 93.3.0. falco fails
+  because N5's netpol probe pods exec into protected namespaces while it runs; redis-ha fails with no
+  replica promoted (sentinel TILT, old master back first), only in the two full runs that include Falco.
+  FR owns both; the release waits for a green full run.
