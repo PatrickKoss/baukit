@@ -504,9 +504,18 @@ class RegistryMirrorTests(unittest.TestCase):
 
     def test_every_upstream_routes_to_its_mirror(self):
         config = self.source("registry_mirrors_k3s_config")
-        for host in ("docker.io", "reg.kyverno.io"):
+        for host in ("docker.io", "ghcr.io"):
             mirror = f"http://k3d-baukit-mirror-{host.replace('.', '-')}:5000"
             self.assertIn(f"  {host}:\n    endpoint:\n      - {mirror}\n", config)
+
+    def test_kyverno_images_go_through_the_ghcr_mirror(self):
+        k3s = self.source("registry_mirrors_k3s_config")
+        trivy = self.source("registry_mirrors_trivy_config")
+        ghcr_mirror = "http://k3d-baukit-mirror-ghcr-io:5000"
+        self.assertIn(f"  reg.kyverno.io:\n    endpoint:\n      - {ghcr_mirror}\n", k3s)
+        self.assertIn("    reg.kyverno.io:\n      - localhost:5702\n", trivy)
+        cluster_args = self.source("registry_mirrors_cluster_args")
+        self.assertNotIn("baukit-mirror-reg-kyverno-io", cluster_args)
 
     def test_the_cluster_uses_every_mirror_it_routes_to(self):
         config = self.source("registry_mirrors_k3s_config")
@@ -521,7 +530,7 @@ class RegistryMirrorTests(unittest.TestCase):
         stub = 'docker() { printf "%s\\n" "$*" >&3; }'
         out = self.source(f"{stub}\nregistry_mirrors_detach k3d-x 3>&1")
         self.assertIn("network disconnect k3d-x k3d-baukit-mirror-docker-io", out)
-        self.assertEqual(out.count("network disconnect k3d-x "), 5)
+        self.assertEqual(out.count("network disconnect k3d-x "), 4)
 
     def test_the_mirror_image_is_pinned_by_digest(self):
         image = self.source('printf %s "$registry_mirror_image"')
