@@ -9,6 +9,7 @@ does a pending rule that already passes.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import fnmatch
 import re
 import sys
@@ -43,6 +44,7 @@ MONITORING_GROUP = "monitoring.coreos.com/"
 DEFAULT_NAMESPACE = "default"
 NAMESPACE_NAME_LABEL = "kubernetes.io/metadata.name"
 SIDECAR_ALL_NAMESPACES = "ALL"
+CNPG_METRICS_PORT = "metrics"
 
 
 class ConventionError(Exception):
@@ -54,6 +56,7 @@ class Resource:
     obj: dict
     namespace: str
     managed_by_kustomize: bool
+    release: tuple[str, str] | None = None
 
     @property
     def kind(self) -> str:
@@ -107,6 +110,8 @@ class Context:
     fired_alerts: set[str] = field(default_factory=set)
     runbook_slugs: set[str] = field(default_factory=set)
     chart_values: dict[str, dict] = field(default_factory=dict)
+    chart_dependencies: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
+    scraped_images: dict[str, str] = field(default_factory=dict)
     privileged_namespaces: set[str] = field(default_factory=set)
     network_policy_exempt: set[str] = field(default_factory=set)
     policy_exception_budget: int = 0
@@ -242,20 +247,119 @@ def monitor_toggles(values: object, path: tuple[str, ...] = ()) -> list[str]:
     return found
 
 
+def merged(base: object, override: object) -> object:
+    if not isinstance(base, dict) or not isinstance(override, dict):
+        return override
+    result = dict(base)
+    for key, value in override.items():
+        result[key] = merged(base.get(key), value) if key in base else value
+    return result
+
+
+def condition_disabled(values: dict, condition: str) -> bool:
+    """Helm uses the first condition path that resolves to a boolean."""
+    for path in condition.split(","):
+        node: object = values
+        for part in path.strip().split("."):
+            node = node.get(part) if isinstance(node, dict) else None
+        if isinstance(node, bool):
+            return not node
+    return False
+
+
+def effective_values(release: Resource, context: Context) -> dict | None:
+    key = chart_key(release)
+    defaults = context.chart_values.get(key)
+    if defaults is None:
+        return None
+    values = merged(defaults, release.spec.get("values") or {})
+    if not isinstance(values, dict):
+        return None
+    for name, condition in context.chart_dependencies.get(key, []):
+        if condition and condition_disabled(values, condition):
+            values.pop(name, None)
+    return values
+
+
 def rule_metrics_enabled(context: Context) -> Iterable[str]:
     for universe, resources in context.universes.items():
-        monitored = {resource.namespace for resource in resources if resource.kind in MONITOR_KINDS}
+        monitored = {
+            resource.release
+            for resource in resources
+            if resource.kind in MONITOR_KINDS and resource.release
+        }
         for release in by_kind(resources, "HelmRelease"):
-            key = chart_key(release)
-            values = context.chart_values.get(key)
+            values = effective_values(release, context)
             if values is None:
-                yield f"{universe}: no chart values found for {release.ref()} ({key})"
+                yield f"{universe}: no chart values found for {release.ref()} ({chart_key(release)})"
                 continue
-            target = release.spec.get("targetNamespace") or release.namespace
-            if monitor_toggles(values) and target not in monitored:
+            toggles = monitor_toggles(values)
+            if toggles and release_identity(release) not in monitored:
                 yield (
-                    f"{universe}: {release.ref()} chart has a metrics monitor toggle, but nothing "
-                    f"renders a ServiceMonitor or PodMonitor in namespace {target}"
+                    f"{universe}: {release.ref()} chart has a metrics monitor toggle "
+                    f"({', '.join(toggles)}), but its render has no ServiceMonitor or PodMonitor"
+                )
+
+
+def pod_labels(resource: Resource) -> dict:
+    if resource.kind == "Cluster" and resource.api_version.startswith(CNPG_GROUP):
+        return {"cnpg.io/cluster": resource.name, "cnpg.io/podRole": "instance"}
+    return ((resource.spec.get("template") or {}).get("metadata") or {}).get("labels") or {}
+
+
+def container_images(resource: Resource) -> list[str]:
+    if resource.kind == "Cluster" and resource.api_version.startswith(CNPG_GROUP):
+        return [str(resource.spec.get("imageName", ""))]
+    return [str(c.get("image", "")) for c in pod_template(resource).get("containers") or []]
+
+
+def image_repository(image: str) -> str:
+    name = image.split("@", 1)[0]
+    if ":" in name.rsplit("/", 1)[-1]:
+        name = name.rsplit(":", 1)[0]
+    return name.rsplit("/", 1)[-1]
+
+
+def pod_port_names(resource: Resource) -> set[str]:
+    if resource.kind == "Cluster" and resource.api_version.startswith(CNPG_GROUP):
+        return {CNPG_METRICS_PORT}
+    return {
+        str(port.get("name"))
+        for container in pod_template(resource).get("containers") or []
+        for port in container.get("ports") or []
+        if port.get("name")
+    }
+
+
+def selects_pods(monitor: Resource, workload: Resource) -> bool:
+    if monitor.kind != "PodMonitor":
+        return False
+    namespaces = (monitor.spec.get("namespaceSelector") or {}).get("matchNames")
+    if workload.namespace not in (namespaces or [monitor.namespace]):
+        return False
+    ports = {str(e.get("port")) for e in monitor.spec.get("podMetricsEndpoints") or []}
+    return bool(ports & pod_port_names(workload)) and matches_selector(
+        monitor.spec.get("selector"), pod_labels(workload)
+    )
+
+
+def rule_exporters_scraped(context: Context) -> Iterable[str]:
+    for universe, resources in context.universes.items():
+        monitors = [resource for resource in resources if resource.kind in MONITOR_KINDS]
+        for workload in resources:
+            if not workload.managed_by_kustomize or not runs_pods(workload):
+                continue
+            exporters = {
+                context.scraped_images[repository]
+                for repository in map(image_repository, container_images(workload))
+                if repository in context.scraped_images
+            }
+            if not exporters:
+                continue
+            if not any(selects_pods(monitor, workload) for monitor in monitors):
+                yield (
+                    f"{universe}: {workload.ref()} runs {', '.join(sorted(exporters))}, "
+                    "but no PodMonitor scrapes a named port of its pods"
                 )
 
 
@@ -393,6 +497,7 @@ RULES: dict[str, Rule] = {
     "psa-labels": rule_psa_labels,
     "default-deny-network-policy": rule_default_deny,
     "metrics-enabled": rule_metrics_enabled,
+    "exporters-scraped": rule_exporters_scraped,
     "alert-metadata": rule_alert_metadata,
     "alert-runbook": rule_alert_runbook,
     "alert-tested": rule_alert_tested,
@@ -462,11 +567,17 @@ def parse_files(paths: list[Path]) -> dict[Path, list[dict]]:
     return parsed
 
 
-def resources_of(objects: list[dict], *, default_namespace: str, kustomize: bool) -> list[Resource]:
+def resources_of(
+    objects: list[dict],
+    *,
+    default_namespace: str,
+    kustomize: bool,
+    release: tuple[str, str] | None = None,
+) -> list[Resource]:
     resources = []
     for obj in objects:
         namespace = (obj.get("metadata") or {}).get("namespace") or default_namespace
-        resources.append(Resource(obj, namespace, kustomize))
+        resources.append(Resource(obj, namespace, kustomize, release))
     return resources
 
 
@@ -491,7 +602,10 @@ def build_universes(rendered: dict[Path, list[dict]]) -> dict[str, list[Resource
                 continue
             target = release.spec.get("targetNamespace") or release.namespace
             chart_resources[release_identity(release)] = resources_of(
-                charts.pop(chart_file), default_namespace=target, kustomize=False
+                charts.pop(chart_file),
+                default_namespace=target,
+                kustomize=False,
+                release=release_identity(release),
             )
     if charts:
         raise ConventionError(f"chart renders without a HelmRelease: {', '.join(sorted(charts))}")
@@ -509,21 +623,36 @@ def build_universes(rendered: dict[Path, list[dict]]) -> dict[str, list[Resource
     return universes
 
 
-def chart_values_text(release: Resource, chart_cache: Path, repo_root: Path) -> str | None:
+def chart_file_text(
+    release: Resource, chart_cache: Path, repo_root: Path, file: str = "values.yaml"
+) -> str | None:
     chart = (release.spec.get("chart") or {}).get("spec") or {}
     name = str(chart.get("chart", ""))
     if name.startswith("./"):
-        values = repo_root / name / "values.yaml"
-        return values.read_text() if values.is_file() else None
+        path = repo_root / name / file
+        return path.read_text() if path.is_file() else None
     version = str(chart.get("version", ""))
     for archive in sorted(chart_cache.glob("*.tgz")):
         if not fnmatch.fnmatchcase(archive.name, f"{name}-{version}-*.tgz"):
             continue
         with tarfile.open(archive) as bundle:
-            member = bundle.extractfile(f"{name}/values.yaml")
-            if member is not None:
-                return member.read().decode()
+            with contextlib.suppress(KeyError):
+                member = bundle.extractfile(f"{name}/{file}")
+                if member is not None:
+                    return member.read().decode()
     return None
+
+
+def chart_values_text(release: Resource, chart_cache: Path, repo_root: Path) -> str | None:
+    return chart_file_text(release, chart_cache, repo_root)
+
+
+def dependency_conditions(chart: dict) -> list[tuple[str, str]]:
+    return [
+        (str(dependency.get("alias") or dependency.get("name", "")), str(dependency["condition"]))
+        for dependency in chart.get("dependencies") or []
+        if dependency.get("condition")
+    ]
 
 
 def load_alerts(packs: dict[Path, list[dict]], universes: dict[str, list[Resource]]) -> list[Alert]:
@@ -598,21 +727,29 @@ def build_context(
     tests = promtool_test_files(repo_root)
     parsed = parse_files([*rendered_paths, *packs, *tests])
     universes = build_universes({path: parsed[path] for path in rendered_paths})
-    values_text = {}
+    values_text, chart_text = {}, {}
     for _, resource in all_resources(Context(universes)):
         if resource.kind == "HelmRelease":
             text = chart_values_text(resource, chart_cache, repo_root)
             if text is not None:
                 values_text[chart_key(resource)] = text
+                chart_text[chart_key(resource)] = (
+                    chart_file_text(resource, chart_cache, repo_root, "Chart.yaml") or "{}"
+                )
     keys = sorted(values_text)
-    parsed_values = helm_yaml.parse_documents([values_text[key] for key in keys])
-    chart_values = dict(zip(keys, parsed_values, strict=True))
+    chart_documents = helm_yaml.parse_documents(
+        [values_text[key] for key in keys] + [chart_text[key] for key in keys]
+    )
+    chart_values = dict(zip(keys, chart_documents[: len(keys)], strict=True))
+    charts = dict(zip(keys, chart_documents[len(keys) :], strict=True))
     return Context(
         universes=universes,
         alerts=load_alerts({path: parsed[path] for path in packs}, universes),
         fired_alerts=fired_alerts({path: parsed[path] for path in tests}),
         runbook_slugs=runbook_slugs(repo_root / "docs/runbooks"),
         chart_values=chart_values,
+        chart_dependencies={key: dependency_conditions(chart or {}) for key, chart in charts.items()},
+        scraped_images=dict(config.get("scraped_images") or {}),
         privileged_namespaces=set(config.get("privileged_namespaces") or []),
         network_policy_exempt=set(config.get("network_policy_exempt_namespaces") or []),
         policy_exception_budget=int(budget.get("policy_exceptions", 0)),
