@@ -1094,3 +1094,16 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   and run.sh defaults without orchestrator paths (lock under `${XDG_CACHE_HOME}/baukit`, heavy-slot
   wait only with `BAUKIT_HEAVY_SLOT_DIR`). All offline gates green on the merge. E3's timing runs are
   still open and need an idle host. e2e runs now go through three k3d slots in parallel.
+- 2026-11-15 1447cc0d: e2e clusters run kubelet with image-gc-high-threshold=100. The host disk sat
+  at 85-88%, kubelet's image GC deleted the imported echo image, and SC5a e2e4 and FA45 full-3 failed
+  with ErrImageNeverPull. Smoke-tested on k3s 1.37.2 (kubelet configz high 100, low 80); offline
+  gates green. Also found: parallel k3d clusters need fs.inotify.max_user_instances >= 512 (the host
+  now has 1024; S5 adds it to the sysctl preflight), and ph-k6-5 lost its k3s server mid-run with no
+  server log kept (E5 adds server logs to the artifacts and a wait loop that tolerates API errors).
+- 2026-11-15 k3s restarts in full e2e runs (K6-5, N5-9, E5 measure 4) found: the server log of
+  ph-s5-up shows kine compaction plus an apiserver handler timeout cancelling a SQLite transaction,
+  then `level=fatal msg="Transaction commit failed: sql: transaction has already been committed or
+  rolled back"`. The host ran at load 85-90 with the WSL clock stepping +3s every 35s. E5 moves e2e
+  clusters to embedded etcd (`--cluster-init`). Leader-election tuning was ruled out: single-server
+  k3s already passes `--leader-elect=false`. Open for PI1: decide the production datastore
+  (kine/SQLite vs embedded etcd) for single-node hosts; the same fatal applies under host starvation.

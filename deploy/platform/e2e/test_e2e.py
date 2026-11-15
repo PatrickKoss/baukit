@@ -210,6 +210,13 @@ class HeavySlotTests(unittest.TestCase):
         self.assertEqual(output, "proceeded\n")
 
 
+class DatastoreTests(unittest.TestCase):
+    def test_cluster_runs_on_embedded_etcd(self):
+        text = (E2E / "run.sh").read_text()
+        self.assertIn("embedded_etcd_arg='--cluster-init@server:0'", text)
+        self.assertIn('--k3s-arg "$embedded_etcd_arg"', text)
+
+
 class NodeRegistrationTests(unittest.TestCase):
     def wait(self, empty_calls):
         with tempfile.TemporaryDirectory() as tmp:
@@ -249,6 +256,68 @@ class NodeRegistrationTests(unittest.TestCase):
         self.assertEqual(calls, 60)
         self.assertIn("no node registered in cluster e2e", result.stderr)
         self.assertIn("docker logs --tail 30 k3d-e2e-server-0", result.stderr)
+
+
+def run_with_stubs(stubs, call, **extra):
+    with tempfile.TemporaryDirectory() as tmp:
+        for name, body in stubs.items():
+            stub = Path(tmp) / name
+            stub.write_text(f"#!/bin/sh\n{body}\n")
+            stub.chmod(0o755)
+        environment = {
+            **os.environ,
+            "PATH": f"{tmp}:{os.environ['PATH']}",
+            "RUN_SH": str(E2E / "run.sh"),
+            "TMP": tmp,
+            **extra,
+        }
+        result = process_runner.run_process(
+            ["bash", "-c", f'set -euo pipefail; source "$RUN_SH"; {call}'],
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        files = {
+            path.relative_to(tmp).as_posix(): path.read_text()
+            for path in Path(tmp).rglob("*")
+            if path.is_file() and path.name not in stubs
+        }
+        return result, files
+
+
+UNAVAILABLE = 'echo "Error from server (ServiceUnavailable)" >&2; exit 1'
+
+
+class UnavailableApiServerTests(unittest.TestCase):
+    def test_failed_kubectl_reads_as_not_ready(self):
+        for function in ("stalled_releases", "failed_kustomizations"):
+            with self.subTest(function=function):
+                result, _ = run_with_stubs({"kubectl": UNAVAILABLE}, f"{function}; echo polled")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "polled\n")
+                self.assertNotIn("JSONDecodeError", result.stderr)
+
+    def test_empty_output_reads_as_not_ready(self):
+        result, _ = run_with_stubs({"kubectl": "exit 0"}, "failed_kustomizations; echo polled")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "polled\n")
+
+    def test_artifacts_keep_the_server_log_and_restart_count(self):
+        stubs = {
+            "kubectl": UNAVAILABLE,
+            "flux": "exit 1",
+            "docker": 'case "$1" in logs) echo "2026-11-15T19:31:00Z k3s restarted";; '
+            "inspect) echo 2;; esac",
+        }
+        call = (
+            'artifacts_dir="$TMP/artifacts"; cluster_name=e2e; '
+            'mkdir -p "$artifacts_dir"; collect_artifacts'
+        )
+        result, files = run_with_stubs(stubs, call)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = files["artifacts/logs/k3d-e2e-server-0.log"]
+        self.assertIn("k3s restarted", log)
+        self.assertEqual(files["artifacts/logs/k3d-e2e-server-0.restart-count"], "2\n")
 
 
 class RuntimeIdentityTests(unittest.TestCase):
@@ -343,6 +412,11 @@ class KubeletImageGcTests(unittest.TestCase):
         self.assertIn('--k3s-arg "$kubelet_image_gc_arg"', text)
 
 
+def functions_of(*names):
+    ranges = "; ".join(f"/^{name}() {{/,/^}}/p" for name in names)
+    return f'source <(sed -n "{ranges}" "{E2E / "run.sh"}")'
+
+
 class StalledReleaseTests(unittest.TestCase):
     def test_only_stalled_releases_are_printed(self):
         releases = {
@@ -363,7 +437,7 @@ class StalledReleaseTests(unittest.TestCase):
             listing.write_text(json.dumps(releases))
             script = (
                 f'kubectl() {{ cat "{listing}"; }}\n'
-                f'source <(sed -n "/^stalled_releases() {{/,/^}}/p" "{E2E / "run.sh"}")\n'
+                f"{functions_of('flux_items_json', 'stalled_releases')}\n"
                 "stalled_releases"
             )
             result = process_runner.run_process(
@@ -375,7 +449,7 @@ class StalledReleaseTests(unittest.TestCase):
 
 class FailedKustomizationTests(unittest.TestCase):
     def run_function(self, function, setup, call):
-        script = f'{setup}\nsource <(sed -n "/^{function}() {{/,/^}}/p" "{E2E / "run.sh"}")\n{call}'
+        script = f"{setup}\n{functions_of('flux_items_json', function)}\n{call}"
         result = process_runner.run_process(["bash", "-c", script], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         return result.stdout
@@ -538,9 +612,18 @@ class RegistryMirrorTests(unittest.TestCase):
 
     def test_every_upstream_routes_to_its_mirror(self):
         config = self.source("registry_mirrors_k3s_config")
-        for host in ("docker.io", "reg.kyverno.io"):
+        for host in ("docker.io", "ghcr.io"):
             mirror = f"http://k3d-baukit-mirror-{host.replace('.', '-')}:5000"
             self.assertIn(f"  {host}:\n    endpoint:\n      - {mirror}\n", config)
+
+    def test_kyverno_images_go_through_the_ghcr_mirror(self):
+        k3s = self.source("registry_mirrors_k3s_config")
+        trivy = self.source("registry_mirrors_trivy_config")
+        ghcr_mirror = "http://k3d-baukit-mirror-ghcr-io:5000"
+        self.assertIn(f"  reg.kyverno.io:\n    endpoint:\n      - {ghcr_mirror}\n", k3s)
+        self.assertIn("    reg.kyverno.io:\n      - localhost:5702\n", trivy)
+        cluster_args = self.source("registry_mirrors_cluster_args")
+        self.assertNotIn("baukit-mirror-reg-kyverno-io", cluster_args)
 
     def test_the_cluster_uses_every_mirror_it_routes_to(self):
         config = self.source("registry_mirrors_k3s_config")
@@ -555,7 +638,7 @@ class RegistryMirrorTests(unittest.TestCase):
         stub = 'docker() { printf "%s\\n" "$*" >&3; }'
         out = self.source(f"{stub}\nregistry_mirrors_detach k3d-x 3>&1")
         self.assertIn("network disconnect k3d-x k3d-baukit-mirror-docker-io", out)
-        self.assertEqual(out.count("network disconnect k3d-x "), 5)
+        self.assertEqual(out.count("network disconnect k3d-x "), 4)
 
     def test_the_mirror_image_is_pinned_by_digest(self):
         image = self.source('printf %s "$registry_mirror_image"')
