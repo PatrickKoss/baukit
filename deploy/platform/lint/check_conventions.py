@@ -291,7 +291,8 @@ def rule_metrics_enabled(context: Context) -> Iterable[str]:
         for release in by_kind(resources, "HelmRelease"):
             values = effective_values(release, context)
             if values is None:
-                yield f"{universe}: no chart values found for {release.ref()} ({chart_key(release)})"
+                key = chart_key(release)
+                yield f"{universe}: no chart values found for {release.ref()} ({key})"
                 continue
             toggles = monitor_toggles(values)
             if toggles and release_identity(release) not in monitored:
@@ -635,11 +636,10 @@ def chart_file_text(
     for archive in sorted(chart_cache.glob("*.tgz")):
         if not fnmatch.fnmatchcase(archive.name, f"{name}-{version}-*.tgz"):
             continue
-        with tarfile.open(archive) as bundle:
-            with contextlib.suppress(KeyError):
-                member = bundle.extractfile(f"{name}/{file}")
-                if member is not None:
-                    return member.read().decode()
+        with tarfile.open(archive) as bundle, contextlib.suppress(KeyError):
+            member = bundle.extractfile(f"{name}/{file}")
+            if member is not None:
+                return member.read().decode()
     return None
 
 
@@ -748,7 +748,9 @@ def build_context(
         fired_alerts=fired_alerts({path: parsed[path] for path in tests}),
         runbook_slugs=runbook_slugs(repo_root / "docs/runbooks"),
         chart_values=chart_values,
-        chart_dependencies={key: dependency_conditions(chart or {}) for key, chart in charts.items()},
+        chart_dependencies={
+            key: dependency_conditions(chart or {}) for key, chart in charts.items()
+        },
         scraped_images=dict(config.get("scraped_images") or {}),
         privileged_namespaces=set(config.get("privileged_namespaces") or []),
         network_policy_exempt=set(config.get("network_policy_exempt_namespaces") or []),

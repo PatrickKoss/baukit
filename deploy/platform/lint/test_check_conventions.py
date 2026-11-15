@@ -223,7 +223,9 @@ def redis_deployment(ports: list[dict]) -> cc.Resource:
         "metadata": {"labels": {"app": "redis"}},
         "spec": {"containers": [container, {**sidecar, "ports": ports}]},
     }
-    return resource("Deployment", "redis", "cache", apiVersion="apps/v1", spec={"template": template})
+    return resource(
+        "Deployment", "redis", "cache", apiVersion="apps/v1", spec={"template": template}
+    )
 
 
 def pod_monitor(namespace_name: str, match: dict, port: str = "metrics", **spec) -> cc.Resource:
@@ -248,7 +250,9 @@ class ExportersScrapedTest(unittest.TestCase):
         self.assertEqual(self.check(workload, pod_monitor("cache", {"app": "redis"})), [])
 
     def test_pod_monitor_on_a_port_the_pod_lacks_fails(self) -> None:
-        self.assertEqual(len(self.check(redis_deployment([]), pod_monitor("cache", {"app": "redis"}))), 1)
+        self.assertEqual(
+            len(self.check(redis_deployment([]), pod_monitor("cache", {"app": "redis"}))), 1
+        )
 
     def test_pod_monitor_in_another_namespace_needs_match_names(self) -> None:
         workload = redis_deployment([{"name": "metrics", "containerPort": 9121}])
