@@ -27,3 +27,13 @@ results:
     kind: HelmRelease
     resources: [plain-chart]
     result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-crd-policy
+    kind: HelmRelease
+    resources: [oci-crd-chart]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-crd-policy
+    kind: HelmRelease
+    resources: [oci-crd-chart-default]
+    result: fail

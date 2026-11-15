@@ -26,6 +26,7 @@ spec:
     mode: warn
   values:
     controller:
+      priorityClassName: platform-critical
       image:
         hcloudCSIDriver:
           tag: "v2.24.2@sha256:c231060c9d24d485c8ac25eeb3dd445994ce1abb7417c5a49b88301931a9fe29"
@@ -81,6 +82,7 @@ spec:
             cpu: 200m
             memory: 128Mi
     node:
+      priorityClassName: platform-critical
       image:
         hcloudCSIDriver:
           tag: "v2.24.2@sha256:c231060c9d24d485c8ac25eeb3dd445994ce1abb7417c5a49b88301931a9fe29"

@@ -128,6 +128,67 @@ source_ref_field() {
   ' "$document"
 }
 
+spec_ref_field() {
+  local document=$1
+  local key=$2
+  awk -v wanted="$key" '
+    $0 == "  ref:" { in_ref = 1; next }
+    in_ref && index($0, "    " wanted ":") == 1 {
+      value = substr($0, length(wanted) + 7)
+      sub(/^[[:space:]]+/, "", value)
+      print value
+      exit
+    }
+    in_ref && $0 !~ /^    / { exit }
+  ' "$document"
+}
+
+chart_ref_field() {
+  local document=$1
+  local key=$2
+  awk -v wanted="$key" '
+    $0 == "  chartRef:" { in_chart_ref = 1; next }
+    in_chart_ref && index($0, "    " wanted ":") == 1 {
+      value = substr($0, length(wanted) + 7)
+      sub(/^[[:space:]]+/, "", value)
+      print value
+      exit
+    }
+    in_chart_ref && $0 !~ /^    / { exit }
+  ' "$document"
+}
+
+# Pulls one chart archive to $4 unless it is cached. An OCI pull must report the pinned digest $5.
+fetch_chart() {
+  local release_label=$1
+  local chart_reference=$2
+  local chart_version=$3
+  local chart_source=$4
+  local expected_digest=$5
+  local pull_dir pull_log pulled_chart
+  [[ -s $chart_source ]] && return 0
+  pull_dir="$work_dir/pull-${chart_source##*/}"
+  pull_log="$pull_dir.log"
+  mkdir -p "$pull_dir"
+  printf '==> %s: cache miss; fetching %s %s\n' "$release_label" "$chart_reference" "$chart_version"
+  if ! helm pull "$chart_reference" --version "$chart_version" --destination "$pull_dir" >"$pull_log" 2>&1; then
+    printf 'ERROR: %s chart %s %s is not cached and could not be fetched\n' \
+      "$release_label" "$chart_reference" "$chart_version" >&2
+    return 1
+  fi
+  if [[ -n $expected_digest ]] && ! grep -qx "Digest: $expected_digest" "$pull_log"; then
+    printf 'ERROR: %s pulled %s %s, but its digest is not the pinned %s\n' \
+      "$release_label" "$chart_reference" "$chart_version" "$expected_digest" >&2
+    return 1
+  fi
+  pulled_chart=$(find "$pull_dir" -maxdepth 1 -type f -name '*.tgz' -print -quit)
+  if [[ -z $pulled_chart ]]; then
+    printf 'ERROR: Helm reported success but produced no chart for %s\n' "$release_label" >&2
+    return 1
+  fi
+  mv -- "$pulled_chart" "$chart_source"
+}
+
 extract_values() {
   local document=$1
   local destination=$2
@@ -188,6 +249,7 @@ for base in "${bases[@]}"; do
 
   split_documents "$rendered" "$documents"
   declare -A repositories=()
+  declare -A oci_urls=() oci_tags=() oci_digests=()
 
   for document in "$documents"/*.yaml; do
     [[ -s $document ]] || continue
@@ -201,6 +263,11 @@ for base in "${bases[@]}"; do
         continue
       fi
       repositories["$repository_namespace/$repository_name"]=$repository_url
+    elif grep -qx 'kind: OCIRepository' "$document"; then
+      repository_key="$(strip_yaml_quotes "$(metadata_field "$document" namespace)")/$(strip_yaml_quotes "$(metadata_field "$document" name)")"
+      oci_urls["$repository_key"]=$(strip_yaml_quotes "$(spec_url "$document")")
+      oci_tags["$repository_key"]=$(strip_yaml_quotes "$(spec_ref_field "$document" tag)")
+      oci_digests["$repository_key"]=$(strip_yaml_quotes "$(spec_ref_field "$document" digest)")
     fi
   done
 
@@ -215,9 +282,21 @@ for base in "${bases[@]}"; do
     source_kind=$(strip_yaml_quotes "$(source_ref_field "$document" kind)")
     source_name=$(strip_yaml_quotes "$(source_ref_field "$document" name)")
     source_namespace=$(strip_yaml_quotes "$(source_ref_field "$document" namespace)")
+    if [[ -z $source_kind ]]; then
+      source_kind=$(strip_yaml_quotes "$(chart_ref_field "$document" kind)")
+      source_name=$(strip_yaml_quotes "$(chart_ref_field "$document" name)")
+      source_namespace=$(strip_yaml_quotes "$(chart_ref_field "$document" namespace)")
+    fi
     source_namespace=${source_namespace:-$release_namespace}
     values_file="$work_dir/$base_name-${document##*/}-values.yaml"
     extract_values "$document" "$values_file"
+
+    if [[ $source_kind == OCIRepository ]]; then
+      repository_key="$source_namespace/$source_name"
+      repository_url=${oci_urls[$repository_key]:-}
+      chart_name=${repository_url##*/}
+      chart_version=${oci_tags[$repository_key]:-}
+    fi
 
     if [[ -z $release_name || -z $chart_name || -z $source_kind ]]; then
       printf 'ERROR: %s contains an incomplete HelmRelease chart reference\n' "$base_name" >&2
@@ -245,28 +324,32 @@ for base in "${bases[@]}"; do
         repository_id=$(printf '%s' "$repository_url" | cksum | awk '{print $1}')
         cache_key=$(printf '%s-%s-%s' "$chart_name" "$chart_version" "$repository_id" | tr -c 'A-Za-z0-9._-' '_')
         chart_source="$cache_dir/$cache_key.tgz"
-
-        if [[ ! -s $chart_source ]]; then
-          repository_alias="baukit-$repository_id"
-          pull_dir="$work_dir/pull-$cache_key"
-          mkdir -p "$pull_dir"
-          printf '==> %s/%s: cache miss; fetching %s %s\n' \
-            "$base_name" "$release_name" "$chart_name" "$chart_version"
-          if ! helm repo add "$repository_alias" "$repository_url" --force-update >/dev/null 2>&1 ||
-            ! helm pull "$repository_alias/$chart_name" --version "$chart_version" --destination "$pull_dir" >/dev/null 2>&1; then
-            printf 'ERROR: %s/%s chart %s %s is not cached and could not be fetched\n' \
-              "$base_name" "$release_name" "$chart_name" "$chart_version" >&2
-            status=1
-            continue
-          fi
-          pulled_chart=$(find "$pull_dir" -maxdepth 1 -type f -name '*.tgz' -print -quit)
-          if [[ -z $pulled_chart ]]; then
-            printf 'ERROR: Helm reported success but produced no chart for %s/%s\n' \
-              "$base_name" "$release_name" >&2
-            status=1
-            continue
-          fi
-          mv -- "$pulled_chart" "$chart_source"
+        repository_alias="baukit-$repository_id"
+        if [[ ! -s $chart_source ]] &&
+          ! helm repo add "$repository_alias" "$repository_url" --force-update >/dev/null 2>&1; then
+          printf 'ERROR: %s/%s cannot reach HelmRepository %s\n' "$base_name" "$release_name" "$repository_url" >&2
+          status=1
+          continue
+        fi
+        if ! fetch_chart "$base_name/$release_name" "$repository_alias/$chart_name" "$chart_version" "$chart_source" ""; then
+          status=1
+          continue
+        fi
+        ;;
+      OCIRepository)
+        chart_digest=${oci_digests[$repository_key]:-}
+        if [[ -z $repository_url || $repository_url != oci://* || -z $chart_version || $chart_digest != sha256:* ]]; then
+          printf 'ERROR: %s/%s needs OCIRepository %s with an oci:// url, ref.tag and ref.digest\n' \
+            "$base_name" "$release_name" "$repository_key" >&2
+          status=1
+          continue
+        fi
+        repository_id=$(printf '%s@%s' "$repository_url" "$chart_digest" | cksum | awk '{print $1}')
+        cache_key=$(printf '%s-%s-%s' "$chart_name" "$chart_version" "$repository_id" | tr -c 'A-Za-z0-9._-' '_')
+        chart_source="$cache_dir/$cache_key.tgz"
+        if ! fetch_chart "$base_name/$release_name" "$repository_url" "$chart_version" "$chart_source" "$chart_digest"; then
+          status=1
+          continue
         fi
         ;;
       GitRepository)
@@ -305,10 +388,15 @@ for base in "${bases[@]}"; do
       status=1
       continue
     fi
+    if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/post_render.py" --release "$document" \
+      --rendered "$rendered_dir/chart-$base_name-$release_name.yaml" --kustomize "$(command -v kustomize)"; then
+      status=1
+      continue
+    fi
     ((rendered_charts += 1))
   done
 
-  unset repositories
+  unset repositories oci_urls oci_tags oci_digests
 done
 
 if [[ -d "$platform_dir/overlays" ]]; then
@@ -400,6 +488,11 @@ fi
 
 printf '==> helm test network policies\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_helm_test_netpol.py" --rendered "$rendered_dir"; then
+  status=1
+fi
+
+printf '==> chart sources\n'
+if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_chart_sources.py" --rendered "$rendered_dir"; then
   status=1
 fi
 

@@ -32,3 +32,25 @@ metadata:
   namespace: demo
 spec:
   url: "https://charts.example.com"
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: oci-daily
+  namespace: demo
+spec:
+  url: "oci://ghcr.io/example/charts/demo"
+  interval: "24h"
+  ref:
+    tag: "1.0.0"
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: oci-frequent
+  namespace: demo
+spec:
+  url: "oci://ghcr.io/example/charts/demo"
+  interval: "5m"
+  ref:
+    tag: "1.0.0"

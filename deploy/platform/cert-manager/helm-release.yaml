@@ -6,15 +6,10 @@ metadata:
 spec:
   interval: 30m
   timeout: 5m
-  chart:
-    spec:
-      chart: cert-manager
-      version: "v1.21.3"
-      sourceRef:
-        kind: HelmRepository
-        name: jetstack
-        namespace: cert-manager
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: cert-manager
+    namespace: cert-manager
   install:
     remediation:
       retries: 3
@@ -25,6 +20,8 @@ spec:
   driftDetection:
     mode: warn
   values:
+    global:
+      priorityClassName: platform-critical
     acmesolver:
       image:
         tag: v1.21.3

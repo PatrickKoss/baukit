@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import chart_source
 import helm_yaml
 import image_digests
 
@@ -121,6 +122,7 @@ class Context:
         default_factory=lambda: image_digests.Exemptions({}, {})
     )
     installs: dict[str, list[Resource]] = field(default_factory=dict)
+    chart_sources: dict[chart_source.SourceKey, dict] = field(default_factory=dict)
 
 
 Rule = Callable[[Context], Iterable[str]]
@@ -231,9 +233,18 @@ def rule_default_deny(context: Context) -> Iterable[str]:
                 )
 
 
-def chart_key(release: Resource) -> str:
-    chart = (release.spec.get("chart") or {}).get("spec") or {}
-    return f"{chart.get('chart', '')}@{chart.get('version', '')}"
+def release_chart(
+    release: Resource, sources: dict[chart_source.SourceKey, dict]
+) -> tuple[str, str]:
+    try:
+        return chart_source.release_chart(release.obj, sources, release.namespace)
+    except chart_source.ChartSourceError as error:
+        raise ConventionError(str(error)) from error
+
+
+def chart_key(release: Resource, sources: dict[chart_source.SourceKey, dict]) -> str:
+    name, version = release_chart(release, sources)
+    return f"{name}@{version}"
 
 
 def monitor_toggles(values: object, path: tuple[str, ...] = ()) -> list[str]:
@@ -274,7 +285,7 @@ def condition_disabled(values: dict, condition: str) -> bool:
 
 
 def effective_values(release: Resource, context: Context) -> dict | None:
-    key = chart_key(release)
+    key = chart_key(release, context.chart_sources)
     defaults = context.chart_values.get(key)
     if defaults is None:
         return None
@@ -297,7 +308,7 @@ def rule_metrics_enabled(context: Context) -> Iterable[str]:
         for release in by_kind(resources, "HelmRelease"):
             values = effective_values(release, context)
             if values is None:
-                key = chart_key(release)
+                key = chart_key(release, context.chart_sources)
                 yield f"{universe}: no chart values found for {release.ref()} ({key})"
                 continue
             toggles = monitor_toggles(values)
@@ -508,6 +519,176 @@ def rule_image_digest(context: Context) -> Iterable[str]:
     return image_digests.problems(sources, context.digest_exemptions)
 
 
+PRIORITY_CLASSES = {
+    "platform-critical",
+    "platform-standard",
+    "system-cluster-critical",
+    "system-node-critical",
+}
+OPERATOR_POD_NAMES = {
+    "Prometheus": "prometheus",
+    "Alertmanager": "alertmanager",
+    "ThanosRuler": "thanos-ruler",
+}
+REPLICATED_KINDS = {"Deployment", "StatefulSet", "ReplicaSet"}
+
+
+def is_cnpg_cluster(resource: Resource) -> bool:
+    return resource.kind == "Cluster" and resource.api_version.startswith(CNPG_GROUP)
+
+
+def is_operator_pod_owner(resource: Resource) -> bool:
+    return resource.kind in OPERATOR_POD_NAMES and resource.api_version.startswith(MONITORING_GROUP)
+
+
+def pod_spec(resource: Resource) -> dict | None:
+    if is_cnpg_cluster(resource) or is_operator_pod_owner(resource) or resource.kind == "Pod":
+        return resource.spec
+    if resource.kind == "CronJob":
+        job = (resource.spec.get("jobTemplate") or {}).get("spec") or {}
+        return (job.get("template") or {}).get("spec") or {}
+    if resource.kind in WORKLOAD_KINDS:
+        return pod_template(resource)
+    return None
+
+
+def rule_priority_class(context: Context) -> Iterable[str]:
+    for universe, resource in all_resources(context):
+        spec = pod_spec(resource)
+        if spec is None:
+            continue
+        priority = spec.get("priorityClassName")
+        if priority not in PRIORITY_CLASSES:
+            yield (
+                f"{universe}: {resource.ref()} has priorityClassName {priority!r}; "
+                "use platform-critical or platform-standard"
+            )
+
+
+def replica_count(resource: Resource) -> int:
+    if is_cnpg_cluster(resource):
+        value = resource.spec.get("instances", 1)
+    else:
+        value = resource.spec.get("replicas", 1)
+    return value if isinstance(value, int) else 1
+
+
+def disruption_target(resource: Resource) -> bool:
+    return resource.kind in REPLICATED_KINDS or is_operator_pod_owner(resource)
+
+
+def operator_pod_labels(resource: Resource) -> dict:
+    if is_operator_pod_owner(resource):
+        name = OPERATOR_POD_NAMES[resource.kind]
+        return {"app.kubernetes.io/name": name, name: resource.name}
+    return pod_labels(resource)
+
+
+def allowed_disruptions(budget: Resource, replicas: int) -> int:
+    spec = budget.spec
+    if "maxUnavailable" in spec:
+        return absolute(spec["maxUnavailable"], replicas)
+    if "minAvailable" in spec:
+        return replicas - absolute(spec["minAvailable"], replicas, round_up=True)
+    return replicas
+
+
+def absolute(value: object, replicas: int, *, round_up: bool = False) -> int:
+    if isinstance(value, int):
+        return value
+    text = str(value)
+    if not text.endswith("%") or not text[:-1].isdigit():
+        return 0
+    scaled = replicas * int(text[:-1])
+    return -(-scaled // 100) if round_up else scaled // 100
+
+
+def cnpg_pdb_problems(cluster: Resource) -> Iterable[str]:
+    instances = replica_count(cluster)
+    enabled = cluster.spec.get("enablePDB", True) is not False
+    if enabled and instances == 1:
+        yield f"{cluster.ref()} has 1 instance, so its default PDB blocks every drain"
+    elif not enabled and instances > 1:
+        yield f"{cluster.ref()} runs {instances} instances with enablePDB false"
+
+
+def budget_problems(workload: Resource, budgets: list[Resource]) -> Iterable[str]:
+    replicas = replica_count(workload)
+    labels = operator_pod_labels(workload)
+    matching = [
+        budget
+        for budget in budgets
+        if budget.namespace == workload.namespace
+        and matches_selector(budget.spec.get("selector"), labels)
+    ]
+    if replicas > 1 and not matching:
+        yield f"{workload.ref()} runs {replicas} replicas without a PodDisruptionBudget"
+    for budget in matching:
+        if replicas > 0 and allowed_disruptions(budget, replicas) < 1:
+            yield f"{budget.ref()} blocks every drain of {workload.ref()}"
+
+
+def rule_pdb_multi_replica(context: Context) -> Iterable[str]:
+    for universe, resources in context.universes.items():
+        budgets = by_kind(resources, "PodDisruptionBudget")
+        for resource in resources:
+            if is_cnpg_cluster(resource):
+                problems = cnpg_pdb_problems(resource)
+            elif disruption_target(resource):
+                problems = budget_problems(resource, budgets)
+            else:
+                continue
+            yield from (f"{universe}: {problem}" for problem in problems)
+
+
+QUIET_SEVERITIES = {"info", "none"}
+
+
+def chart_name(release: Resource) -> str:
+    return str(((release.spec.get("chart") or {}).get("spec") or {}).get("chart", ""))
+
+
+def rule_severities(resources: list[Resource]) -> set[tuple[str, str]]:
+    return {
+        (str(rule["alert"]), str((rule.get("labels") or {}).get("severity", "")))
+        for resource in by_kind(resources, "PrometheusRule")
+        for group in resource.spec.get("groups") or []
+        for rule in group.get("rules") or []
+        if "alert" in rule
+    }
+
+
+def kured_filter_problems(configuration: dict, alerts: set[tuple[str, str]]) -> Iterable[str]:
+    if not configuration.get("prometheusUrl"):
+        yield "sets no prometheusUrl, so firing alerts do not block reboots"
+        return
+    if configuration.get("alertFiringOnly") is not True:
+        yield "does not set alertFiringOnly, so pending alerts block reboots"
+    text = str(configuration.get("alertFilterRegexp") or "")
+    try:
+        pattern = re.compile(text) if text else None
+    except re.error as error:
+        yield f"alertFilterRegexp does not compile: {error}"
+        return
+    for name, severity in sorted(alerts):
+        filtered = pattern is not None and pattern.search(name) is not None
+        if severity in QUIET_SEVERITIES and not filtered:
+            yield f"alertFilterRegexp misses {severity} alert {name}, which blocks every reboot"
+        elif severity not in QUIET_SEVERITIES and filtered:
+            yield f"alertFilterRegexp ignores {severity} alert {name}"
+
+
+def rule_kured_alert_filter(context: Context) -> Iterable[str]:
+    for universe, resources in context.universes.items():
+        alerts = rule_severities(resources)
+        for release in by_kind(resources, "HelmRelease"):
+            if chart_name(release) != "kured":
+                continue
+            configuration = (release.spec.get("values") or {}).get("configuration") or {}
+            for problem in kured_filter_problems(configuration, alerts):
+                yield f"{universe}: {release.ref()} {problem}"
+
+
 RULES: dict[str, Rule] = {
     "psa-labels": rule_psa_labels,
     "default-deny-network-policy": rule_default_deny,
@@ -521,6 +702,9 @@ RULES: dict[str, Rule] = {
     "policy-exception-budget": rule_policy_exception_budget,
     "prune-disabled": rule_prune_disabled,
     "image-digest": rule_image_digest,
+    "priority-class": rule_priority_class,
+    "pdb-multi-replica": rule_pdb_multi_replica,
+    "kured-alert-filter": rule_kured_alert_filter,
 }
 
 
@@ -640,14 +824,12 @@ def build_universes(rendered: dict[Path, list[dict]]) -> dict[str, list[Resource
 
 
 def chart_file_text(
-    release: Resource, chart_cache: Path, repo_root: Path, file: str = "values.yaml"
+    chart: tuple[str, str], chart_cache: Path, repo_root: Path, file: str = "values.yaml"
 ) -> str | None:
-    chart = (release.spec.get("chart") or {}).get("spec") or {}
-    name = str(chart.get("chart", ""))
+    name, version = chart
     if name.startswith("./"):
         path = repo_root / name / file
         return path.read_text() if path.is_file() else None
-    version = str(chart.get("version", ""))
     for archive in sorted(chart_cache.glob("*.tgz")):
         if not fnmatch.fnmatchcase(archive.name, f"{name}-{version}-*.tgz"):
             continue
@@ -658,8 +840,8 @@ def chart_file_text(
     return None
 
 
-def chart_values_text(release: Resource, chart_cache: Path, repo_root: Path) -> str | None:
-    return chart_file_text(release, chart_cache, repo_root)
+def chart_values_text(chart: tuple[str, str], chart_cache: Path, repo_root: Path) -> str | None:
+    return chart_file_text(chart, chart_cache, repo_root)
 
 
 def dependency_conditions(chart: dict) -> list[tuple[str, str]]:
@@ -752,14 +934,22 @@ def build_context(
     tests = promtool_test_files(repo_root)
     parsed = parse_files([*rendered_paths, *packs, *tests])
     universes = build_universes({path: parsed[path] for path in rendered_paths})
+    sources = {
+        key: obj
+        for resources in universes.values()
+        for key, obj in chart_source.oci_sources(
+            [resource.obj for resource in resources if resource.managed_by_kustomize]
+        ).items()
+    }
     values_text, chart_text = {}, {}
     for _, resource in all_resources(Context(universes)):
         if resource.kind == "HelmRelease":
-            text = chart_values_text(resource, chart_cache, repo_root)
+            chart = release_chart(resource, sources)
+            text = chart_values_text(chart, chart_cache, repo_root)
             if text is not None:
-                values_text[chart_key(resource)] = text
-                chart_text[chart_key(resource)] = (
-                    chart_file_text(resource, chart_cache, repo_root, "Chart.yaml") or "{}"
+                values_text[chart_key(resource, sources)] = text
+                chart_text[chart_key(resource, sources)] = (
+                    chart_file_text(chart, chart_cache, repo_root, "Chart.yaml") or "{}"
                 )
     keys = sorted(values_text)
     chart_documents = helm_yaml.parse_documents(
@@ -781,6 +971,7 @@ def build_context(
         network_policy_exempt=set(config.get("network_policy_exempt_namespaces") or []),
         policy_exception_budget=int(budget.get("policy_exceptions", 0)),
         installs=build_installs({path: parsed[path] for path in rendered_paths}),
+        chart_sources=sources,
     )
 
 

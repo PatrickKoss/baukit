@@ -6,15 +6,10 @@ metadata:
 spec:
   interval: 30m
   timeout: 5m
-  chart:
-    spec:
-      chart: kured
-      version: "6.1.0"
-      sourceRef:
-        kind: HelmRepository
-        name: kured
-        namespace: kured
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: kured
+    namespace: kured
   install:
     remediation:
       retries: 3
@@ -25,6 +20,7 @@ spec:
   driftDetection:
     mode: warn
   values:
+    priorityClassName: platform-standard
     image:
       tag: "1.23.0@sha256:8dfd3c2e889337595731d801afc5c031b545876a29427897b3f711d2983f30c4"
     configuration:
@@ -39,6 +35,9 @@ spec:
       lockTtl: 2h
       metricsHost: 0.0.0.0
       metricsPort: 8080
+      prometheusUrl: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+      alertFiringOnly: true
+      alertFilterRegexp: ^(CPUThrottlingHigh|InfoInhibitor|KubeNodeEviction|KubeNodePressure|KubeQuotaAlmostFull|KubeQuotaFullyUsed|KubeletTooManyPods|NodeCPUHighUsage|Watchdog)$
       notifyUrl: ""
       slackHookUrl: ""
     metrics:

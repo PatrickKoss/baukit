@@ -22,3 +22,13 @@ results:
     kind: HelmRelease
     resources: [no-tests-chart]
     result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-helm-tests
+    kind: HelmRelease
+    resources: [oci-tests-enabled]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-helm-tests
+    kind: HelmRelease
+    resources: [oci-tests-missing]
+    result: fail

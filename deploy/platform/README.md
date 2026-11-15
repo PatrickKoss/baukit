@@ -7,12 +7,22 @@ and secrets in the private infrastructure repository.
 
 ## Conventions
 
-Each first-level base owns its namespace manifest and any HelmRepository it
-uses. HelmRelease chart versions are exact pins. Values favor one replica and
+Each first-level base owns its namespace manifest and the chart sources it
+uses (see [Chart sources](#chart-sources)). HelmRelease chart versions are exact pins. Values favor one replica and
 bounded requests/limits suitable for an initial single Hetzner node; overlays
-replace those values from measurements. Bases do not set `priorityClassName`,
-except Traefik, which runs as `platform-critical` so the edge survives
-resource pressure.
+replace those values from measurements.
+
+Every pod a base renders sets `priorityClassName`. `platform-critical` goes to
+the controllers needed to recover the cluster and serve traffic: Traefik, the
+CNPG operator and the PostgreSQL instance, Kyverno admission, cert-manager and
+the hcloud CSI driver. Every other platform pod runs as `platform-standard`.
+The hcloud CCM keeps its chart's `system-cluster-critical`. The Flux controllers run as `system-cluster-critical` too. `flux install` sets it
+on source-, kustomize- and helm-controller, and `components/flux-lockdown` adds it to
+notification-controller, which starts before cluster-baseline creates the platform classes. A chart without a
+values key gets the class from a `postRenderers` patch, which `validate.sh`
+applies to its render too. Every workload that can run more than one replica
+has a PodDisruptionBudget that allows at least one eviction. The convention
+rules `priority-class` and `pdb-multi-replica` enforce both.
 
 The conventional namespaces are:
 
@@ -33,9 +43,7 @@ The conventional namespaces are:
 | node-level agents (node-exporter, Alloy) | `observability-agents` |
 
 `cluster-baseline` defines `platform-critical` and `platform-standard` as
-non-default PriorityClasses. Overlays may assign `platform-critical` to the
-minimum controllers needed for recovery/ingress and `platform-standard` to
-other platform workloads. Application workloads normally use neither.
+non-default PriorityClasses. Application workloads normally use neither.
 
 Every Namespace a base manages carries `app.kubernetes.io/part-of:
 baukit-platform`. Prometheus reads PrometheusRules, ServiceMonitors and
@@ -56,7 +64,7 @@ Every Flux object follows the rules in `lint/ci-policies/`, which
 - A chart with a Helm `crds/` directory gets `install.crds` and `upgrade.crds:
   CreateReplace`. A chart that renders Helm test hooks gets `test.enable: true`.
   `lint/ci-policies/chart-contents.toml` records both facts per pinned chart.
-- A HelmRepository polls no more often than every hour.
+- A HelmRepository or OCIRepository polls no more often than every hour.
 - A Flux Kustomization sets `prune: true` and `wait: true` and has no
   `healthChecks` list, which Flux ignores once `wait` is on.
 
@@ -67,6 +75,43 @@ Every base is secret-free and personal-data-free. Domains, e-mail addresses,
 cloud and DNS credentials, object-storage endpoints/credentials, alert
 receivers, issuer objects, identity configuration, and cluster inventory are
 overlay data. A base README lists its precise overlay contract.
+
+## Chart sources
+
+A chart comes from an `OCIRepository` and the HelmRelease points at it with
+`spec.chartRef` whenever upstream publishes the pinned version as an OCI
+artifact. The OCIRepository lives in the HelmRelease namespace, is named after
+the chart, and pins `ref.tag` (the chart version) plus `ref.digest`, which
+Renovate updates together. When upstream signs the chart with cosign keyless,
+the OCIRepository sets `verify.provider: cosign` with the exact
+`matchOIDCIdentity` below, and source-controller refuses an artifact signed by
+anyone else. `lint/check_chart_sources.py` fails the validation when a
+HelmRelease disagrees with this table.
+
+| Chart | Source | Signed | Flux verify | Identity | Reason |
+|---|---|---|---|---|---|
+| `cert-manager` | OCI `oci://quay.io/jetstack/charts/cert-manager` | key, RSA over SHA-512 | none |  | Signed with the key in `cert-manager-pubkey-2021-09-20.pem`. openssl verifies the v1.21.3 signature only as RSA PKCS#1 v1.5 over SHA-512, and Flux 2.9.4 reports `no matching signatures` for it with that key, so no verify block. |
+| `cloudnative-pg` | OCI `oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg` | keyless | cosign | `^https://token\.actions\.githubusercontent\.com$` `^https://github\.com/cloudnative-pg/charts/\.github/workflows/release-publish\.yml@refs/heads/main$` |  |
+| `falco` | OCI `oci://ghcr.io/falcosecurity/charts/falco` | keyless | cosign | `^https://token\.actions\.githubusercontent\.com$` `^https://github\.com/falcosecurity/charts/\.github/workflows/release\.yml@refs/heads/master$` |  |
+| `flagger` | OCI `oci://ghcr.io/fluxcd/charts/flagger` | keyless | cosign | `^https://token\.actions\.githubusercontent\.com$` `^https://github\.com/fluxcd/flagger/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$` |  |
+| `hcloud-cloud-controller-manager` | HelmRepository `https://charts.hetzner.cloud` | no | none |  | Hetzner publishes no OCI chart. 1.39.3 is not on `ghcr.io/hetznercloud` or Docker Hub, and the release workflows run no `helm push`. |
+| `hcloud-csi` | HelmRepository `https://charts.hetzner.cloud` | no | none |  | Same as the cloud controller: 2.24.2 exists only in the HTTPS index. |
+| `kured` | OCI `oci://ghcr.io/kubereboot/charts/kured` | no | none |  | No cosign signature or Sigstore bundle exists for the 6.1.0 digest. |
+| `kyverno` | OCI `oci://ghcr.io/kyverno/charts/kyverno` | no | none |  | Kyverno signs its images, not the 3.10.0 chart: no signature tag or bundle for the digest. |
+| `kyverno-policies` | OCI `oci://ghcr.io/kyverno/charts/kyverno-policies` | no | none |  | Same as the kyverno chart. |
+| `policy-reporter` | OCI `oci://ghcr.io/kyverno/charts/policy-reporter` | keyless | cosign | `^https://token\.actions\.githubusercontent\.com$` `^https://github\.com/kyverno/policy-reporter/\.github/workflows/release-chart\.yaml@refs/tags/policy-reporter-chart-v[0-9]+\.[0-9]+\.[0-9]+$` |  |
+| `kube-prometheus-stack` | OCI `oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack` | no | none |  | No signature or bundle for the 88.6.5 digest. |
+| `loki` | OCI `oci://ghcr.io/grafana-community/helm-charts/loki` | no | none |  | grafana-community pushes charts unsigned. |
+| `tempo` | OCI `oci://ghcr.io/grafana-community/helm-charts/tempo` | no | none |  | grafana-community pushes charts unsigned. |
+| `alloy` | HelmRepository `https://grafana.github.io/helm-charts` | no | none |  | `ghcr.io/grafana/helm-charts/alloy` holds only 1.16.0, not the pinned 1.13.0. Move it to OCI with the next version bump. |
+| `traefik` | OCI `oci://ghcr.io/traefik/helm/traefik` | no | none |  | No signature or bundle for the 41.6.1 digest. |
+| `posthog` | HelmRepository `https://posthog.github.io/charts-clickhouse` | no | none |  | PostHog publishes the sunset chart only in the HTTPS index. |
+
+Every keyless identity uses the issuer and subject regexes shown. The subjects
+were read from the signing certificate of the pinned digest, not from docs.
+A cold `validate.sh` run pulls the OCI charts from `ghcr.io` and `quay.io`
+and the remaining charts from their HTTPS indexes. A warm
+`deploy/platform/.helm-cache` needs no network for charts.
 
 ## Pod Security Admission
 
@@ -126,8 +171,9 @@ makes validation offline friendly. `make ci` runs the same validation.
 
 ## Adding a base
 
-Create a first-level directory with `kustomization.yaml`, a Namespace, local
-HelmRepository and exact-version HelmRelease manifests (or reviewed plain
+Create a first-level directory with `kustomization.yaml`, a Namespace, a local
+OCIRepository (or a HelmRepository with a reason in the chart sources table) and
+HelmRelease manifests (or reviewed plain
 resources), bounded defaults, and a short README. Do not add identity, secret
 values, product-specific behavior, unpinned versions, internal ops exposure, or
 an in-base optionality flag. Run the platform validator plus direct `helm lint`
@@ -175,7 +221,7 @@ owned and contain assignments only.
 | `PLATFORM_AGE_KEY_FILE` | required for `up` | SOPS age identity installed as `flux-system/sops-age`. |
 | `PLATFORM_BAUKIT_SOURCE_MODE` | `github-tag` | `github-tag` or `local-snapshot`. The GitOps overlay owns the matching `GitRepository/baukit` manifest. |
 | `PLATFORM_BAUKIT_CHECKOUT` | snapshot mode | Baukit working-tree path copied into the disposable snapshot. |
-| `PLATFORM_K3S_IMAGE` | `rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f` | k3s image used when creating the cluster. |
+| `PLATFORM_K3S_IMAGE` | `rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f` | k3s image used when creating the cluster. The default is `platform_k3s_image` in `local-git-http.sh`, shared with `platform-up.sh` and the k3d smoke. |
 | `PLATFORM_FLUX_VERSION` | `flux` in `deploy/tools.toml` (`v2.9.4`) | Flux pin; override only as a reviewed platform upgrade. |
 | `PLATFORM_SNAPSHOT_PORT` | `9418` | Port for local smart HTTP, published on the k3d network gateway. |
 | `PLATFORM_API_PORT` | `random` | Host port of the Kubernetes API, bound to `127.0.0.1`. |

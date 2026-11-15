@@ -179,3 +179,19 @@ spec:
                     echo "waiting for PostgreSQL compatibility service"
                     sleep 1
                   done
+          - target:
+              group: apps
+              version: v1
+              kind: Deployment
+            patch: |-
+              - op: add
+                path: /spec/template/spec/priorityClassName
+                value: platform-standard
+          - target:
+              group: batch
+              version: v1
+              kind: Job
+            patch: |-
+              - op: add
+                path: /spec/template/spec/priorityClassName
+                value: platform-standard

@@ -9,15 +9,10 @@ spec:
   dependsOn:
     - name: kube-prometheus-stack
       namespace: observability
-  chart:
-    spec:
-      chart: loki
-      version: "18.13.7"
-      sourceRef:
-        kind: HelmRepository
-        name: grafana-community
-        namespace: observability
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: loki
+    namespace: observability
   install:
     crds: CreateReplace
     remediation:
@@ -31,6 +26,8 @@ spec:
     mode: warn
   values:
     deploymentMode: Monolithic
+    global:
+      priorityClassName: platform-standard
 
     loki:
       image:

@@ -1,6 +1,14 @@
 # shellcheck shell=bash
 # Helpers shared by platform-up.sh and platform-lifecycle.sh for the local Git
-# snapshot that Flux pulls from the host.
+# snapshot that Flux pulls from the host, plus the local k3s image that
+# deploy/smoke/k3d-smoke.sh uses too.
+
+# Kubernetes 1.35 removed cgroup-v1 support. The current development host is a
+# cgroup-v1 WSL2 Docker engine, so local clusters use the newest supported
+# k3s 1.34 patch while testing/production retain the I0 stable-channel pin.
+platform_k3s_image() {
+  printf '%s\n' rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f
+}
 
 # Prints the k3s image that local and e2e clusters run.
 platform_k3s_image() { printf '%s\n' rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f; }

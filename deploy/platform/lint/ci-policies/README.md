@@ -13,7 +13,7 @@ Cluster policies live in `../../kyverno-policies/`.
 | `helmrelease-drift-detection` | `driftDetection.mode` is `warn` or `enabled` |
 | `helmrelease-crd-policy` | charts with a Helm `crds/` directory use `CreateReplace` on install and upgrade |
 | `helmrelease-helm-tests` | charts that render Helm test hooks set `test.enable: true` |
-| `helmrepository-interval` | `spec.interval` is 1h or more |
+| `chart-source-interval` | HelmRepository and OCIRepository `spec.interval` is 1h or more |
 | `ocirepository-exact-ref` | `spec.ref` is a digest or an exact version tag |
 | `kustomization-prune` | `prune: true` |
 | `kustomization-wait` | `wait: true` |

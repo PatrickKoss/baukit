@@ -8,15 +8,10 @@ spec:
   timeout: 5m
   dependsOn:
     - name: kyverno
-  chart:
-    spec:
-      chart: policy-reporter
-      version: "3.11.2"
-      sourceRef:
-        kind: HelmRepository
-        name: policy-reporter
-        namespace: kyverno
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: policy-reporter
+    namespace: kyverno
   install:
     remediation:
       retries: 3
@@ -27,6 +22,7 @@ spec:
   driftDetection:
     mode: warn
   values:
+    priorityClassName: platform-standard
     image:
       tag: "3.11.2@sha256:2b33409d34be3195f16d9ed2c89f8b58001aeec986b254ba6bb45323d6d1e884"
     metrics:

@@ -2,7 +2,9 @@
 
 Runtime security for the platform: Falco 0.45.2 (chart `falcosecurity/falco` 9.2.2) as a DaemonSet
 with the `modern_ebpf` driver, plus one falcosidekick replica that forwards events to Loki and to
-Alertmanager (priority Warning and above). Images are pinned by digest.
+Alertmanager (priority Warning and above). Images are pinned by digest. Falco, falcosidekick and
+the falcosidekick Helm test Pod run as `platform-standard`; the test Pod gets it from a
+`postRenderers` patch because the subchart has no key for it.
 
 Falco reads container and pod metadata from the k3s containerd socket
 (`/run/k3s/containerd/containerd.sock`). The upstream rules and the container plugin come from the image,

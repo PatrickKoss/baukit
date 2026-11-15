@@ -99,6 +99,31 @@ tests:
                 has reported Ready=False for 10 minutes. Every object that uses this source stays on its
                 last fetched revision.
               runbook_url: RUNBOOK_BASE_URL/flux-source-fetch-failing
+  - name: an OCIRepository whose chart fails verification fires BaukitFluxSourceFetchFailing
+    interval: 1m
+    input_series:
+      - series: 'gotk_resource_info{customresource_group="source.toolkit.fluxcd.io",customresource_kind="OCIRepository",customresource_version="v1",exported_namespace="cnpg-system",name="cloudnative-pg",ready="False"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitFluxSourceFetchFailing
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitFluxSourceFetchFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: flux
+              customresource_kind: OCIRepository
+              exported_namespace: cnpg-system
+              name: cloudnative-pg
+            exp_annotations:
+              summary: Flux cannot fetch OCIRepository cnpg-system/cloudnative-pg
+              description: >-
+                The OCIRepository cnpg-system/cloudnative-pg
+                has reported Ready=False for 10 minutes. Every object that uses this source stays on its
+                last fetched revision.
+              runbook_url: RUNBOOK_BASE_URL/flux-source-fetch-failing
   - name: a Ready OCIRepository and a failing HelmRelease stay quiet for BaukitFluxSourceFetchFailing
     interval: 1m
     input_series:

@@ -6,6 +6,7 @@ metadata:
     kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   instances: 1
+  priorityClassName: platform-critical
   # A single instance cannot move during a drain. Its default primary PDB would
   # block every node drain, so it is off until the overlay runs 2+ instances.
   enablePDB: false

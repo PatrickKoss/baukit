@@ -54,6 +54,14 @@ they discover the current writable master. `redis-headless` exists only for
 stable peer DNS, and `redis-sentinel` exposes all Sentinel sidecars on port
 26379.
 
+## Disruption and priority
+
+The pods run as `platform-standard`. A PodDisruptionBudget with
+`maxUnavailable: 1` lets a drain evict one pod at a time, so Sentinel keeps its
+quorum of 2. On a single node the evicted pod has nowhere to go, so the budget
+stops the drain after the first eviction. Use the `redis` base on one-node
+clusters.
+
 ## Durability and sizing
 
 Persistence is intentionally disabled (`--save ""` and `--appendonly no`).

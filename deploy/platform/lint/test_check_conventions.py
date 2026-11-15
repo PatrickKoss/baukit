@@ -592,6 +592,178 @@ class ImageDigestTest(unittest.TestCase):
         self.assertEqual(set(exemptions.embedded.values()), {"rancher/k3s"})
 
 
+def workload(kind: str, name: str = "web", namespace_name: str = "app", **spec) -> cc.Resource:
+    api = {
+        "Pod": "v1",
+        "Cluster": "postgresql.cnpg.io/v1",
+        "Prometheus": "monitoring.coreos.com/v1",
+    }
+    return resource(kind, name, namespace_name, apiVersion=api.get(kind, "apps/v1"), spec=spec)
+
+
+def pod_template(priority: str | None = None, labels: dict | None = None) -> dict:
+    spec = {"containers": [{"name": "c"}]}
+    if priority:
+        spec["priorityClassName"] = priority
+    return {"metadata": {"labels": labels or {"app": "web"}}, "spec": spec}
+
+
+def budget(**spec) -> cc.Resource:
+    spec.setdefault("selector", {"matchLabels": {"app": "web"}})
+    return resource("PodDisruptionBudget", "web", "app", apiVersion="policy/v1", spec=spec)
+
+
+class PriorityClassTest(unittest.TestCase):
+    def test_pod_templates_without_a_platform_class_fail(self) -> None:
+        cron = {"jobTemplate": {"spec": {"template": pod_template()}}}
+        problems = violations(
+            "priority-class",
+            context(
+                workload("Deployment", template=pod_template()),
+                workload("StatefulSet", "db", template=pod_template("high")),
+                workload("CronJob", "nightly", **cron),
+                workload("Pod", "probe", containers=[]),
+                workload("Cluster", "pg", instances=1),
+                workload("Prometheus", "prom", replicas=1),
+            ),
+        )
+        self.assertEqual(len(problems), 6, problems)
+        self.assertIn("StatefulSet app/db has priorityClassName 'high'", problems[1])
+
+    def test_platform_and_system_classes_pass(self) -> None:
+        cron = {"jobTemplate": {"spec": {"template": pod_template("platform-standard")}}}
+        ctx = context(
+            workload("Deployment", template=pod_template("platform-critical")),
+            workload("DaemonSet", "node", template=pod_template("system-node-critical")),
+            workload("CronJob", "nightly", **cron),
+            workload("Pod", "probe", priorityClassName="platform-standard"),
+            workload("Cluster", "pg", priorityClassName="platform-critical"),
+            workload("Prometheus", "prom", priorityClassName="platform-standard"),
+            resource("Service", "web", "app"),
+        )
+        self.assertEqual(violations("priority-class", ctx), [])
+
+
+class PdbMultiReplicaTest(unittest.TestCase):
+    def test_replicated_workload_without_a_budget_fails(self) -> None:
+        problems = violations(
+            "pdb-multi-replica",
+            context(
+                workload("StatefulSet", replicas=3, template=pod_template()),
+                workload("Prometheus", "k8s", replicas=2),
+            ),
+        )
+        self.assertEqual(len(problems), 2, problems)
+        self.assertIn("runs 3 replicas without a PodDisruptionBudget", "\n".join(problems))
+
+    def test_budget_that_allows_no_eviction_fails(self) -> None:
+        for spec in (
+            {"minAvailable": 1},
+            {"minAvailable": "100%"},
+            {"maxUnavailable": 0},
+            {"maxUnavailable": "10%"},
+        ):
+            with self.subTest(spec=spec):
+                ctx = context(
+                    workload("Deployment", replicas=1, template=pod_template()), budget(**spec)
+                )
+                self.assertEqual(len(violations("pdb-multi-replica", ctx)), 1)
+
+    def test_budget_in_another_namespace_or_selector_does_not_count(self) -> None:
+        other = resource(
+            "PodDisruptionBudget",
+            "web",
+            "other",
+            apiVersion="policy/v1",
+            spec={"maxUnavailable": 1, "selector": {"matchLabels": {"app": "web"}}},
+        )
+        ctx = context(
+            workload("Deployment", replicas=2, template=pod_template()),
+            other,
+            budget(maxUnavailable=1, selector={"matchLabels": {"app": "api"}}),
+        )
+        self.assertEqual(len(violations("pdb-multi-replica", ctx)), 1)
+
+    def test_cnpg_pdb_follows_the_instance_count(self) -> None:
+        ctx = context(
+            workload("Cluster", "single", instances=1),
+            workload("Cluster", "unprotected", instances=3, enablePDB=False),
+        )
+        problems = violations("pdb-multi-replica", ctx)
+        self.assertEqual(len(problems), 2, problems)
+
+    def test_drainable_budgets_and_single_replicas_pass(self) -> None:
+        ctx = context(
+            workload("Deployment", replicas=3, template=pod_template()),
+            budget(maxUnavailable=1),
+            workload("Deployment", "api", template=pod_template(labels={"app": "api"})),
+            workload("StatefulSet", "db", replicas=2, template=pod_template(labels={"app": "db"})),
+            resource(
+                "PodDisruptionBudget",
+                "db",
+                "app",
+                apiVersion="policy/v1",
+                spec={"minAvailable": "50%", "selector": {"matchLabels": {"app": "db"}}},
+            ),
+            workload("Cluster", "single", instances=1, enablePDB=False),
+            workload("Cluster", "ha", instances=3),
+        )
+        self.assertEqual(violations("pdb-multi-replica", ctx), [])
+
+
+def kured(**configuration) -> cc.Resource:
+    chart = {"spec": {"chart": "kured", "version": "6.1.0"}}
+    spec = {"chart": chart, "values": {"configuration": configuration}}
+    return resource(
+        "HelmRelease", "kured", "kured", apiVersion="helm.toolkit.fluxcd.io/v2", spec=spec
+    )
+
+
+def rules(*alerts: tuple[str, str]) -> cc.Resource:
+    group = {"name": "g", "rules": [{"alert": a, "labels": {"severity": s}} for a, s in alerts]}
+    return resource(
+        "PrometheusRule",
+        "rules",
+        "observability",
+        apiVersion="monitoring.coreos.com/v1",
+        spec={"groups": [group]},
+    )
+
+
+class KuredAlertFilterTest(unittest.TestCase):
+    URL = "http://prometheus:9090"
+    ALERTS = rules(("Watchdog", "none"), ("NodeCPUHighUsage", "info"), ("NodeDown", "critical"))
+
+    def test_kured_without_prometheus_fails(self) -> None:
+        problems = violations("kured-alert-filter", context(kured(), self.ALERTS))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("sets no prometheusUrl", problems[0])
+
+    def test_unfiltered_quiet_and_filtered_loud_alerts_fail(self) -> None:
+        release = kured(
+            prometheusUrl=self.URL, alertFiringOnly=True, alertFilterRegexp="^(Watchdog|NodeDown)$"
+        )
+        problems = violations("kured-alert-filter", context(release, self.ALERTS))
+        self.assertEqual(len(problems), 2, problems)
+        self.assertIn("ignores critical alert NodeDown", "\n".join(problems))
+        self.assertIn("misses info alert NodeCPUHighUsage", "\n".join(problems))
+
+    def test_pending_alerts_and_broken_regex_fail(self) -> None:
+        release = kured(prometheusUrl=self.URL, alertFilterRegexp="(")
+        problems = violations("kured-alert-filter", context(release, self.ALERTS))
+        self.assertEqual(len(problems), 2, problems)
+        self.assertIn("alertFiringOnly", problems[0])
+        self.assertIn("does not compile", problems[1])
+
+    def test_filter_covering_exactly_the_quiet_alerts_passes(self) -> None:
+        release = kured(
+            prometheusUrl=self.URL,
+            alertFiringOnly=True,
+            alertFilterRegexp="^(NodeCPUHighUsage|Watchdog)$",
+        )
+        self.assertEqual(violations("kured-alert-filter", context(release, self.ALERTS)), [])
+
+
 class ActivationTest(unittest.TestCase):
     def config(self, active: list[str], pending: dict[str, str]) -> dict:
         return {"rules": {"active": active, "pending": pending}}
@@ -643,12 +815,25 @@ class ChartValuesTest(unittest.TestCase):
                 archive.addfile(info, io.BytesIO(payload))
             (root / "charts/local").mkdir(parents=True)
             (root / "charts/local/values.yaml").write_text("a: 1\n")
-            remote = cc.chart_values_text(helm_release("x", "x", "1.0.0"), root, root)
-            local = cc.chart_values_text(helm_release("l", "./charts/local", ""), root, root)
-            missing = cc.chart_values_text(helm_release("x", "x", "2.0.0"), root, root)
+            remote = cc.chart_values_text(("x", "1.0.0"), root, root)
+            local = cc.chart_values_text(("./charts/local", ""), root, root)
+            missing = cc.chart_values_text(("x", "2.0.0"), root, root)
         self.assertEqual(remote, payload.decode())
         self.assertEqual(local, "a: 1\n")
         self.assertIsNone(missing)
+
+    def test_chart_ref_resolves_through_its_oci_repository(self) -> None:
+        release = resource(
+            "HelmRelease",
+            "x",
+            "app",
+            apiVersion="helm.toolkit.fluxcd.io/v2",
+            spec={"chartRef": {"kind": "OCIRepository", "name": "x"}},
+        )
+        source = {"spec": {"url": "oci://ghcr.io/acme/charts/x", "ref": {"tag": "1.0.0"}}}
+        self.assertEqual(cc.chart_key(release, {("app", "x"): source}), "x@1.0.0")
+        with self.assertRaisesRegex(cc.ConventionError, "missing OCIRepository app/x"):
+            cc.chart_key(release, {})
 
 
 RENDERED_BASE = """\
@@ -679,6 +864,10 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: web
+spec:
+  template:
+    spec:
+      priorityClassName: platform-standard
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -690,7 +879,7 @@ CONFIG = """\
 [rules]
 active = ["policy-exception-budget", "dashboards-selected", "metrics-enabled", "alert-metadata",
   "alert-runbook", "alert-tested", "rules-selected", "prune-disabled", "exporters-scraped",
-  "image-digest"]
+  "image-digest", "priority-class", "pdb-multi-replica", "kured-alert-filter"]
 [rules.pending]
 psa-labels = "N1"
 default-deny-network-policy = "N2"
@@ -766,7 +955,7 @@ class MainTest(unittest.TestCase):
         code, stdout, stderr = self.run_main(budget=1)
         self.assertEqual(code, 0, stderr)
         self.assertIn(
-            "Conventions: 10 active, 2 pending "
+            "Conventions: 13 active, 2 pending "
             "[default-deny-network-policy (N2): 1; psa-labels (N1): 1]",
             stdout,
         )

@@ -6,15 +6,10 @@ metadata:
 spec:
   interval: 30m
   timeout: 12m
-  chart:
-    spec:
-      chart: kube-prometheus-stack
-      version: "88.6.5"
-      sourceRef:
-        kind: HelmRepository
-        name: prometheus-community
-        namespace: observability
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: kube-prometheus-stack
+    namespace: observability
   install:
     crds: CreateReplace
     remediation:
@@ -55,6 +50,7 @@ spec:
     alertmanager:
       enabled: true
       alertmanagerSpec:
+        priorityClassName: platform-standard
         # The overlay provides Secret alertmanager-routing with key alertmanager.yaml, see
         # alertmanager/alertmanager.example.yaml. The operator falls back to a drop-all config when
         # configSecret is missing, so the same Secret is also mounted: without it the pod never
@@ -84,6 +80,7 @@ spec:
                   storage: 1Gi
 
     grafana:
+      priorityClassName: platform-standard
       image:
         sha: 0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
         tag: "13.3.1"
@@ -162,6 +159,7 @@ spec:
     kubeStateMetrics:
       enabled: true
     kube-state-metrics:
+      priorityClassName: platform-standard
       image:
         sha: sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
         tag: v2.20.0
@@ -228,6 +226,7 @@ spec:
                       revision: [status, history, "0", chartVersion]
                       chart_name: [status, history, "0", chartName]
                       chart_source_name: [spec, chart, spec, sourceRef, name]
+                      chart_ref_name: [spec, chartRef, name]
               - groupVersionKind:
                   group: source.toolkit.fluxcd.io
                   version: v1
@@ -298,6 +297,7 @@ spec:
     # Node-exporter needs hostPID, hostNetwork and hostPath, so it runs in the
     # privileged observability-agents namespace.
     prometheus-node-exporter:
+      priorityClassName: platform-standard
       namespaceOverride: observability-agents
       image:
         digest: sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106
@@ -312,6 +312,7 @@ spec:
           memory: 96Mi
 
     prometheusOperator:
+      priorityClassName: platform-standard
       thanosImage:
         sha: b567818fe608067eb0f1d7c2c4fe361e7ad83c8a256234c97685f1d0bf670cc8
         tag: v0.42.4
@@ -321,6 +322,7 @@ spec:
       enabled: true
       admissionWebhooks:
         patch:
+          priorityClassName: platform-standard
           image:
             sha: 8009b04f9873f7279b5adee37fdd03b6a9aa7b6751d4f69fde2683010e41cd1f
             tag: 1.11.1
@@ -370,6 +372,7 @@ spec:
             - port: http-prom
       enabled: true
       prometheusSpec:
+        priorityClassName: platform-standard
         image:
           sha: 9764044e09eb2c9e1abdb12d0f0188d4efb7384b0262d3c080f0fc59045c89ba
           tag: v3.16.0-distroless

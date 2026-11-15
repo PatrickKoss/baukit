@@ -11,8 +11,10 @@ from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE = ROOT / "deploy" / "smoke" / "k3d-smoke.sh"
+PLATFORM_HELPERS = ROOT / "deploy" / "platform" / "local-git-http.sh"
 ENFORCE = ROOT / "deploy" / "smoke" / "kyverno-enforce.sh"
 KYVERNO_RELEASE = ROOT / "deploy" / "platform" / "kyverno" / "helm-release.yaml"
+KYVERNO_SOURCE = ROOT / "deploy" / "platform" / "kyverno" / "oci-repository.yaml"
 POLICY_DIR = ROOT / "deploy" / "platform" / "kyverno-policies" / "policies"
 ENFORCED_KINDS = {"ValidatingPolicy", "ImageValidatingPolicy"}
 
@@ -42,10 +44,21 @@ case "$*" in
 esac
 exit 0
 """
+STUB_K3D = """#!/bin/sh
+printf 'k3d %s\\n' "$*" >>"$STUB_LOG"
+exit 0
+"""
 STUB_HELM = """#!/bin/sh
 printf 'helm %s\\n' "$*" >>"$STUB_LOG"
 case "$1" in
     template) exec "$REAL_HELM" "$@" ;;
+    pull)
+        while [ $# -gt 0 ]; do
+            [ "$1" = --destination ] && touch "$2/kyverno-stub.tgz"
+            shift
+        done
+        printf 'Digest: %s\\n' "$STUB_CHART_DIGEST"
+        ;;
 esac
 exit 0
 """
@@ -101,7 +114,9 @@ class RenderTest(unittest.TestCase):
             names = {doc["metadata"]["name"] for doc in objects}
             library = {path.stem for path in POLICY_DIR.glob("*.yaml")}
             self.assertEqual(names, library)
-            self.assertFalse([d for d in objects if d["kind"].startswith("Helm")])
+            self.assertFalse(
+                [d for d in objects if d["kind"].startswith("Helm") or d["kind"] == "OCIRepository"]
+            )
             enforced = [doc for doc in objects if doc["kind"] in ENFORCED_KINDS]
             self.assertTrue(enforced)
             for doc in enforced:
@@ -110,14 +125,33 @@ class RenderTest(unittest.TestCase):
 
     def test_chart_pin_and_values_come_from_the_platform_release(self) -> None:
         release = parse(KYVERNO_RELEASE)[0]
+        source = parse(KYVERNO_SOURCE)[0]
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
             self.assertEqual(render(out).returncode, 0)
             chart = parse(out / "chart.yaml")[0]
             values = parse(out / "values.yaml")[0]
-        self.assertEqual(chart["version"], release["spec"]["chart"]["spec"]["version"])
-        self.assertEqual(chart["chart"], "kyverno")
+        self.assertEqual(release["spec"]["chartRef"]["name"], source["metadata"]["name"])
+        self.assertEqual(chart["version"], source["spec"]["ref"]["tag"])
+        self.assertEqual(chart["digest"], source["spec"]["ref"]["digest"])
+        self.assertEqual(chart["chart"], "oci://ghcr.io/kyverno/charts/kyverno")
         self.assertEqual(values, release["spec"]["values"])
+
+    def test_a_release_without_the_oci_source_fails_the_render(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            kyverno = Path(tmp) / "kyverno"
+            shutil.copytree(KYVERNO_SOURCE.parent, kyverno)
+            source = kyverno / "oci-repository.yaml"
+            source.write_text(source.read_text().replace("    digest: ", "    pinned: "))
+            env = dict(os.environ, BAUKIT_SMOKE_KYVERNO_DIR=str(kyverno))
+            result = process_runner.run_process(
+                [str(ENFORCE), "render", str(Path(tmp) / "out")],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not pin ref.digest", result.stderr)
 
     def test_smoke_install_pins_every_kyverno_image_by_digest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -160,13 +194,15 @@ class RenderTest(unittest.TestCase):
 
 
 class SmokeOrderTest(unittest.TestCase):
-    def run_smoke(self, tmp: Path) -> list[str]:
+    def run_smoke(
+        self, tmp: Path, digest: str | None = None, extra_env: dict[str, str] | None = None
+    ) -> list[str]:
         bin_dir = tmp / "bin"
         write_executable(bin_dir / "kubectl", STUB_KUBECTL)
         write_executable(bin_dir / "helm", STUB_HELM)
         write_executable(bin_dir / "curl", STUB_CURL)
-        for name in ("k3d", "docker"):
-            write_executable(bin_dir / name, STUB_OK)
+        write_executable(bin_dir / "k3d", STUB_K3D)
+        write_executable(bin_dir / "docker", STUB_OK)
         observability = tmp / "observability"
         observability.mkdir()
         (observability / "Chart.yaml").write_text("name: stub\n")
@@ -187,10 +223,16 @@ class SmokeOrderTest(unittest.TestCase):
             BAUKIT_SMOKE_TOKEN_COMMAND=str(tmp / "token.sh"),
             BAUKIT_SMOKE_OBSERVABILITY_CHART=str(observability),
             BAUKIT_SMOKE_K3D_API_PORT="127.0.0.1:6443",
+            STUB_CHART_DIGEST=digest or parse(KYVERNO_SOURCE)[0]["spec"]["ref"]["digest"],
         )
+        env.update(extra_env or {})
         result = process_runner.run_process(
             ["sh", str(SMOKE)], capture_output=True, text=True, env=env
         )
+        if digest is not None:
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("is not the pinned sha256:", result.stderr)
+            return []
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return log.read_text().splitlines()
 
@@ -203,22 +245,49 @@ class SmokeOrderTest(unittest.TestCase):
     def test_kyverno_and_enforced_policies_come_before_the_product_namespace(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             lines = self.run_smoke(Path(tmp))
-        kyverno = self.index(lines, "helm upgrade --install kyverno kyverno")
+        source = parse(KYVERNO_SOURCE)[0]["spec"]
+        pull = self.index(lines, f"helm pull {source['url']} --version {source['ref']['tag']} ")
+        kyverno = self.index(lines, "helm upgrade --install kyverno ")
+        priority = self.index(lines, "kubectl apply -f ", "/cluster-baseline/priority-classes.yaml")
         allowlist = self.index(lines, "kubectl -n kyverno create configmap baukit-registry-")
         policies = self.index(lines, "kubectl apply -f ", "/policies.yaml") + 1
         namespace = self.index(lines, "kubectl label --local -f - -o yaml baukit.dev/tenant=true")
         product = self.index(lines, "helm upgrade --install demo ")
+        self.assertLess(pull, kyverno)
+        self.assertLess(priority, kyverno)
+        self.assertIn("/kyverno-stub.tgz ", lines[kyverno])
         self.assertLess(kyverno, allowlist)
         self.assertLess(allowlist, policies)
         self.assertLess(policies, namespace)
         self.assertLess(namespace, product)
-        version = parse(KYVERNO_RELEASE)[0]["spec"]["chart"]["spec"]["version"]
-        self.assertIn(f"--version {version} ", lines[kyverno])
         self.assertIn("registries=demo-api:1\npostgres:18 ", "\n".join(lines))
         applied = "\n".join(lines[policies:namespace])
         self.assertIn("kind: ValidatingPolicy", applied)
         self.assertNotIn("- Audit", applied)
         self.assertIn("kubectl wait --for=jsonpath=", applied)
+
+    def cluster_create(self, lines: list[str]) -> list[str]:
+        return lines[self.index(lines, "k3d cluster create ")].split()
+
+    def test_cluster_uses_the_platform_k3s_image_pinned_by_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.cluster_create(self.run_smoke(Path(tmp)))
+        image = args[args.index("--image") + 1]
+        self.assertRegex(image, r"^rancher/k3s:v[0-9.]+-k3s[0-9]+@sha256:[0-9a-f]{64}$")
+        self.assertIn(f"printf '%s\\n' {image}\n", PLATFORM_HELPERS.read_text())
+
+    def test_cluster_image_can_be_overridden(self) -> None:
+        override = "rancher/k3s:v1.33.0-k3s1@sha256:" + "a" * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            lines = self.run_smoke(Path(tmp), extra_env={"BAUKIT_SMOKE_K3S_IMAGE": override})
+        args = self.cluster_create(lines)
+        self.assertEqual(args[args.index("--image") + 1], override)
+
+    def test_a_chart_with_another_digest_is_not_installed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            self.run_smoke(Path(tmp), digest="sha256:" + "0" * 64)
+            calls = (Path(tmp) / "calls.log").read_text()
+        self.assertNotIn("helm upgrade --install kyverno", calls)
 
 
 if __name__ == "__main__":

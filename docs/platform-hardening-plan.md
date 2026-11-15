@@ -521,7 +521,7 @@ behave. Later phases add test directories here.
 - [x] **R3 HelmRelease standards** (F-40): apply the V5 conventions to every base. `driftDetection` lands
   as `mode: warn` first, then `enabled` after one clean e2e run with no drift events. Set explicit
   `timeout`s from measured install times. Add `test.enable` where the chart ships tests.
-- [ ] **R4 Disruption and priority** (F-41, F-44):
+- [x] **R4 Disruption and priority** (F-41, F-44):
   - `platform-critical` for Traefik, CoreDNS (through the k3s manifest overlay if feasible), the CNPG
     operator, the postgres instance, Kyverno admission and cert-manager.
   - `platform-standard` for everything else in the bases.
@@ -545,7 +545,7 @@ behave. Later phases add test directories here.
 
 ## Phase S: supply chain and access
 
-- [ ] **SC1 OCI charts with verification:** move each HelmRepository to `OCIRepository` plus `chartRef`
+- [x] **SC1 OCI charts with verification:** move each HelmRepository to `OCIRepository` plus `chartRef`
   where upstream publishes OCI charts (flagger is cosign-signed on ghcr; check prometheus-community,
   cnpg, kured, traefik, kyverno, falcosecurity). Add `verify.provider: cosign` with
   `matchOIDCIdentity` wherever signatures exist. Record unsigned ones in the base README. Update
@@ -1005,3 +1005,33 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   prometheus-operator v0.93.1 (the fix needs the kps 93 major), local k3s v1.34.13 (cgroup v1 host),
   and the tempo, redpanda and access-log-exporter majors. The live run on the local overlay came up
   clean.
+- 2026-11-15 R4 merged. Every platform pod has a priority class, and the active `priority-class` rule
+  enforces it. `platform-critical` covers Traefik, the CNPG operator and the postgres instance, Kyverno
+  admission, cert-manager and the hcloud CSI driver (storage must attach before postgres can recover).
+  Everything else in the bases is `platform-standard`. The Flux controllers run as
+  `system-cluster-critical`, because the platform classes do not exist yet when Flux bootstraps.
+  CoreDNS keeps the k3s default (system-cluster-critical, re-applied by k3s), which is documented in
+  `cluster-baseline/README.md`. The active `pdb-multi-replica` rule requires a PDB for every workload
+  that can run more than one replica. redis-ha has a PDB now, and its README says to use the redis base
+  on one-node clusters. kured skips reboots while alerts outside an info allowlist fire (active
+  `kured-alert-filter` rule), reboots Sundays 03:00-05:00 UTC, and notifies the alert sink in the local
+  overlay. validate.sh now applies HelmRelease post-renderers, so renders match what Flux deploys. The
+  drain dry-run passed live with no pod lacking a class. Conventions now report 15 active, 0 pending.
+  Open: a kured line in `local-footprint.md` (goes to FA5), and the kured notification proven only as
+  far as the network path, because a real one needs a reboot inside the window.
+- 2026-11-15 SC1 merged (breaking). Every chart that upstream publishes as OCI now comes from an
+  `OCIRepository` (named after the chart, in the release namespace) through HelmRelease `chartRef`, with
+  `ref.tag` and `ref.digest`. cloudnative-pg, falco, flagger and policy-reporter verify keyless cosign
+  signatures with exact issuer and subject regexes. Flux showed SourceVerified live for cnpg and rejected
+  a wrong identity. cert-manager's legacy key signature verifies with openssl but not in Flux 2.9.4, so
+  it has no verify block. kured, kyverno, kyverno-policies, kube-prometheus-stack, loki, tempo and
+  traefik are OCI but unsigned. alloy stays on a HelmRepository (OCI has only 1.16.0, the pin is
+  1.13.0) until its next bump. The hcloud charts and posthog have no OCI chart. The README table lists
+  each chart. A new `chart sources` stage in validate.sh fails on an OCI-available chart taken from a
+  HelmRepository and on a signed chart without a matching verify block. HelmRelease metrics gained a
+  `chart_ref_name` label, and the Flux source alert has a firing OCIRepository case.
+  `platform_k3s_image` in `local-git-http.sh` is now the only copy of the digest-pinned k3s image, used by
+  platform-up.sh, the lifecycle and k3d-smoke.sh (overrides `BAUKIT_PLATFORM_K3S_IMAGE`,
+  `PLATFORM_K3S_IMAGE` and `BAUKIT_SMOKE_K3S_IMAGE`). This fixes the smoke hang under the repo's k3d
+  5.9.0 on cgroup v1 hosts. The C4 smoke applies the platform priority classes before Kyverno. Renovate
+  gives flux chart dependencies a 7-day minimum release age.

@@ -6,15 +6,10 @@ metadata:
 spec:
   interval: 30m
   timeout: 5m
-  chart:
-    spec:
-      chart: falco
-      version: "9.2.2"
-      sourceRef:
-        kind: HelmRepository
-        name: falcosecurity
-        namespace: falco
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: falco
+    namespace: falco
   install:
     remediation:
       retries: 3
@@ -127,3 +122,13 @@ spec:
           endpoint: /api/v2/alerts
           minimumpriority: warning
           extralabels: component:falco
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              version: v1
+              kind: Pod
+            patch: |-
+              - op: add
+                path: /spec/priorityClassName
+                value: platform-standard
