@@ -34,7 +34,7 @@ api_check_status=${BAUKIT_SMOKE_API_CHECK_STATUS:-200}
 known_gaps_file=${BAUKIT_SMOKE_KNOWN_GAPS_FILE:-}
 extra_forbidden_file=${BAUKIT_SMOKE_FORBIDDEN_VALUES_FILE:-}
 product_check=${BAUKIT_SMOKE_PRODUCT_CHECK:-}
-prometheus_image=${BAUKIT_SMOKE_PROMETHEUS_IMAGE:-prom/prometheus:v3.13.2}
+prometheus_image=${BAUKIT_SMOKE_PROMETHEUS_IMAGE:-prom/prometheus:v3.16.0}
 
 temporary_dir=$(mktemp -d)
 forward_dir=$temporary_dir/port-forward
@@ -107,6 +107,12 @@ set -- cluster create "$cluster_name" \
 for port_mapping in $k3d_ports; do
     set -- "$@" --port "$port_mapping"
 done
+k3s_cgroup_args=$(bash -c '. "$1" && platform_k3s_cgroup_args' platform_k3s_cgroup_args "$deploy_root/platform/local-git-http.sh")
+set -f
+for cgroup_arg in $k3s_cgroup_args; do
+    set -- "$@" "$cgroup_arg"
+done
+set +f
 created_cluster=true
 k3d "$@"
 k3d kubeconfig get "$cluster_name" >"$KUBECONFIG"

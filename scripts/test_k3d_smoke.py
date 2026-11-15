@@ -195,14 +195,19 @@ class RenderTest(unittest.TestCase):
 
 class SmokeOrderTest(unittest.TestCase):
     def run_smoke(
-        self, tmp: Path, digest: str | None = None, extra_env: dict[str, str] | None = None
+        self,
+        tmp: Path,
+        digest: str | None = None,
+        extra_env: dict[str, str] | None = None,
+        docker: bool = True,
     ) -> list[str]:
         bin_dir = tmp / "bin"
         write_executable(bin_dir / "kubectl", STUB_KUBECTL)
         write_executable(bin_dir / "helm", STUB_HELM)
         write_executable(bin_dir / "curl", STUB_CURL)
         write_executable(bin_dir / "k3d", STUB_K3D)
-        write_executable(bin_dir / "docker", STUB_OK)
+        if docker:
+            write_executable(bin_dir / "docker", STUB_OK)
         observability = tmp / "observability"
         observability.mkdir()
         (observability / "Chart.yaml").write_text("name: stub\n")
@@ -282,6 +287,21 @@ class SmokeOrderTest(unittest.TestCase):
             lines = self.run_smoke(Path(tmp), extra_env={"BAUKIT_SMOKE_K3S_IMAGE": override})
         args = self.cluster_create(lines)
         self.assertEqual(args[args.index("--image") + 1], override)
+
+    def test_cgroup_v1_host_turns_off_the_kubelet_cgroup_v1_check(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            write_executable(Path(tmp) / "bin" / "docker", "#!/bin/sh\nprintf '1\\n'\n")
+            lines = self.run_smoke(Path(tmp), docker=False)
+        args = self.cluster_create(lines)
+        self.assertEqual(
+            args[args.index("--kubelet-arg=fail-cgroupv1=false@server:*") - 1], "--k3s-arg"
+        )
+
+    def test_cgroup_v2_host_keeps_the_kubelet_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            write_executable(Path(tmp) / "bin" / "docker", "#!/bin/sh\nprintf '2\\n'\n")
+            lines = self.run_smoke(Path(tmp), docker=False)
+        self.assertNotIn("fail-cgroupv1", " ".join(self.cluster_create(lines)))
 
     def test_a_chart_with_another_digest_is_not_installed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

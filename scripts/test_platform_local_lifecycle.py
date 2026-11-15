@@ -103,6 +103,34 @@ class BindAddressTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--wait --subnet 10.89.0.0/24", calls)
 
+    def test_cgroup_v1_host_turns_off_the_kubelet_cgroup_v1_check(self) -> None:
+        result, calls = self.run_with_stubs(
+            "k3d_create_local_cluster ph img random 8080 8443", docker_output="1"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("info --format {{.CgroupVersion}}", calls)
+        self.assertIn("--wait --k3s-arg --kubelet-arg=fail-cgroupv1=false@server:*", calls)
+
+    def test_cgroup_v2_host_keeps_the_kubelet_default(self) -> None:
+        result, calls = self.run_with_stubs(
+            "k3d_create_local_cluster ph img random 8080 8443", docker_output="2"
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("fail-cgroupv1", calls)
+
+    def test_unknown_cgroup_version_fails_before_k3d(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory)
+            calls = bin_dir / "calls"
+            write_stub(bin_dir, "docker", "exit 1\n")
+            write_stub(bin_dir, "k3d", f'printf "%s\\n" "$*" >> "{calls}"\n')
+            result = bash(
+                f'source "{HELPER}"\nk3d_create_local_cluster ph img random 8080 8443',
+                env={"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertFalse(calls.exists())
+
     def test_snapshot_container_publishes_on_the_gateway_only(self) -> None:
         result, calls = self.run_with_stubs("run_snapshot_container c img /srv 9418 172.30.0.1")
         self.assertEqual(result.returncode, 0, result.stderr)

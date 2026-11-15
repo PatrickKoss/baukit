@@ -3,11 +3,19 @@
 # snapshot that Flux pulls from the host, plus the local k3s image that
 # deploy/smoke/k3d-smoke.sh uses too.
 
-# Kubernetes 1.35 removed cgroup-v1 support. The current development host is a
-# cgroup-v1 WSL2 Docker engine, so local clusters use the newest supported
-# k3s 1.34 patch while testing/production retain the I0 stable-channel pin.
+# Local clusters run the newest k3s release. Kubernetes 1.35 and later kubelets refuse
+# a cgroup v1 host unless fail-cgroupv1 is off, so platform_k3s_cgroup_args adds that
+# kubelet argument only when the Docker engine reports cgroup v1 (the WSL2 host).
 platform_k3s_image() {
-  printf '%s\n' rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f
+  printf '%s\n' rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332
+}
+
+platform_k3s_cgroup_args() {
+  local version
+  version=$(docker info --format '{{.CgroupVersion}}') || return 1
+  if [[ $version == 1 ]]; then
+    printf '%s\n' '--k3s-arg' '--kubelet-arg=fail-cgroupv1=false@server:*'
+  fi
 }
 
 # Copies the files Git would commit (tracked plus untracked, minus ignored)
@@ -52,6 +60,12 @@ k3d_create_local_cluster() {
   local api_port=$3
   local http_port=$4
   local https_port=$5
+  local cgroup_output
+  local cgroup_args=()
+  cgroup_output=$(platform_k3s_cgroup_args) || return 1
+  if [[ -n $cgroup_output ]]; then
+    mapfile -t cgroup_args <<<"$cgroup_output"
+  fi
   k3d cluster create "$cluster" \
     --image "$image" \
     --servers 1 \
@@ -61,6 +75,7 @@ k3d_create_local_cluster() {
     --port "127.0.0.1:$http_port:80@loadbalancer" \
     --port "127.0.0.1:$https_port:443@loadbalancer" \
     --wait \
+    "${cgroup_args[@]}" \
     "${@:6}"
 }
 
