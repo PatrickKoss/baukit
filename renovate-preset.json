@@ -83,6 +83,16 @@
       "minimumReleaseAge": "7 days"
     },
     {
+      "description": "OCI Helm charts in Flux OCIRepositories wait a week as well. Renovate updates ref.tag and ref.digest together",
+      "matchManagers": [
+        "flux"
+      ],
+      "matchDepTypes": [
+        "HelmChart"
+      ],
+      "minimumReleaseAge": "7 days"
+    },
+    {
       "description": "deploy/tools.toml lists one sha256 per platform. Hosted Renovate cannot run a post-upgrade task, so the PR must refresh them by hand",
       "matchFileNames": [
         "deploy/tools.toml"

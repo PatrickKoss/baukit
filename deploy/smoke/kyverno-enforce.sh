@@ -19,7 +19,7 @@ write_parser_chart() {
     mkdir -p "$chart/templates" "$chart/files"
     printf 'apiVersion: v2\nname: smoke-kyverno\nversion: 0.0.0\n' >"$chart/Chart.yaml"
     cp "$kyverno_dir/helm-release.yaml" "$chart/files/helm-release.yaml"
-    cp "$kyverno_dir/helm-repository.yaml" "$chart/files/helm-repository.yaml"
+    cp "$kyverno_dir/oci-repository.yaml" "$chart/files/oci-repository.yaml"
     kubectl kustomize "$policy_library" >"$chart/files/policies.yaml"
     cat >"$chart/templates/_release.tpl" <<'EOF'
 {{- define "release" -}}
@@ -30,20 +30,21 @@ write_parser_chart() {
 EOF
     cat >"$chart/templates/chart.yaml" <<'EOF'
 {{- $hr := include "release" . | fromJson }}
-{{- $repo := fromYaml (.Files.Get "files/helm-repository.yaml") }}
-{{- $spec := $hr.spec.chart.spec }}
-{{- if ne $spec.sourceRef.name $repo.metadata.name }}{{ fail (printf "HelmRelease uses repository %s, not %s" $spec.sourceRef.name $repo.metadata.name) }}{{ end }}
-{{- if not (regexMatch "^[0-9]+\\.[0-9]+\\.[0-9]+$" (toString $spec.version)) }}{{ fail (printf "chart version %v is not an exact pin" $spec.version) }}{{ end }}
-chart: {{ $spec.chart }}
-version: {{ $spec.version }}
-repository: {{ $repo.spec.url }}
+{{- $repo := fromYaml (.Files.Get "files/oci-repository.yaml") }}
+{{- $ref := $hr.spec.chartRef }}
+{{- if or (ne $ref.kind "OCIRepository") (ne $ref.name $repo.metadata.name) }}{{ fail (printf "HelmRelease uses %s %s, not OCIRepository %s" $ref.kind $ref.name $repo.metadata.name) }}{{ end }}
+{{- if not (regexMatch "^[0-9]+\\.[0-9]+\\.[0-9]+$" (toString $repo.spec.ref.tag)) }}{{ fail (printf "chart version %v is not an exact pin" $repo.spec.ref.tag) }}{{ end }}
+{{- if not (regexMatch "^sha256:[0-9a-f]{64}$" (toString $repo.spec.ref.digest)) }}{{ fail "the OCIRepository does not pin ref.digest" }}{{ end }}
+chart: {{ $repo.spec.url }}
+version: {{ $repo.spec.ref.tag }}
+digest: {{ $repo.spec.ref.digest }}
 EOF
     cat >"$chart/templates/values.yaml" <<'EOF'
 {{- $hr := include "release" . | fromJson }}
 {{ toYaml $hr.spec.values }}
 EOF
     cat >"$chart/templates/policies.yaml" <<'EOF'
-{{- $skipped := list "HelmRelease" "HelmRepository" }}
+{{- $skipped := list "HelmRelease" "OCIRepository" }}
 {{- $enforced := list "ValidatingPolicy" "ImageValidatingPolicy" }}
 {{- $known := list "GeneratingPolicy" "PolicyException" }}
 {{- range $doc := regexSplit "(?m)^---[ \\t]*$" (.Files.Get "files/policies.yaml") -1 }}
@@ -78,18 +79,23 @@ chart_field() {
 }
 
 install() {
-    local work chart version repository
+    local work chart version digest archive
     work=$(mktemp -d)
     trap 'rm -r -- "$work"' RETURN
     render "$work"
     chart=$(chart_field "$work" chart)
     version=$(chart_field "$work" version)
-    repository=$(chart_field "$work" repository)
-    echo "installing Kyverno chart $chart $version from $repository"
+    digest=$(chart_field "$work" digest)
+    echo "installing Kyverno chart $chart $version"
+    mkdir "$work/pull"
+    helm pull "$chart" --version "$version" --destination "$work/pull" 2>&1 | tee "$work/pull.log"
+    if ! grep -qx "Digest: $digest" "$work/pull.log"; then
+        echo "the pulled Kyverno chart is not the pinned $digest" >&2
+        return 1
+    fi
+    archive=$(find "$work/pull" -maxdepth 1 -name '*.tgz' -print -quit)
     kubectl apply -f "$kyverno_dir/namespace.yaml"
-    helm upgrade --install kyverno "$chart" \
-        --repo "$repository" \
-        --version "$version" \
+    helm upgrade --install kyverno "$archive" \
         --namespace "$kyverno_namespace" \
         --values "$work/values.yaml" \
         --set admissionController.serviceMonitor.enabled=false \

@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PRESET = json.loads((ROOT / "renovate-preset.json").read_text())
 PLATFORM = ROOT / "deploy/platform"
 PYTHON_GROUP = re.compile(r"\(\?<(?=[A-Za-z])")
+OCI_HELM_LAYER = "mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip"
+OCI_REF = re.compile(r'\n  ref:\n    tag: "[^"]+"\n    digest: sha256:[0-9a-f]{64}\n')
 UNSUPPORTED = re.compile(r"\(\?[a-z]+\)|\(\?<[=!]|\\[1-9]")
 
 
@@ -164,6 +166,31 @@ class RenovatePresetTests(unittest.TestCase):
             rule for rule in PRESET["packageRules"] if rule.get("matchDatasources") == ["helm"]
         )
         self.assertEqual(rule["minimumReleaseAge"], "7 days")
+
+    def test_oci_helm_charts_wait_before_they_update(self):
+        rule = next(
+            rule for rule in PRESET["packageRules"] if rule.get("matchDepTypes") == ["HelmChart"]
+        )
+        self.assertEqual(rule["matchManagers"], ["flux"])
+        self.assertEqual(rule["minimumReleaseAge"], "7 days")
+
+    def test_platform_oci_charts_are_shaped_for_the_flux_manager(self):
+        sources = [
+            name
+            for name in tracked_files()
+            if name.startswith("deploy/platform/")
+            and "/lint/" not in name
+            and "/tests/" not in name
+            and name.endswith(".yaml")
+            and "\nkind: OCIRepository\n" in (ROOT / name).read_text()
+        ]
+        self.assertGreaterEqual(len(sources), 10)
+        for name in sources:
+            for document in (ROOT / name).read_text().split("---\n"):
+                if "\nkind: OCIRepository\n" not in document:
+                    continue
+                self.assertIn(OCI_HELM_LAYER, document, name)
+                self.assertRegex(document, OCI_REF, name)
 
 
 if __name__ == "__main__":
