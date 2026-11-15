@@ -334,6 +334,14 @@ class RuntimeIdentityTests(unittest.TestCase):
             self.assertNotIn("create configmap observability-cluster", text, script)
 
 
+class KubeletImageGcTests(unittest.TestCase):
+    def test_e2e_cluster_never_garbage_collects_imported_images(self):
+        text = (E2E / "run.sh").read_text()
+        arg = "--kubelet-arg=image-gc-high-threshold=100@server:0"
+        self.assertIn(f"kubelet_image_gc_arg='{arg}'", text)
+        self.assertIn('--k3s-arg "$kubelet_image_gc_arg"', text)
+
+
 class StalledReleaseTests(unittest.TestCase):
     def test_only_stalled_releases_are_printed(self):
         releases = {

@@ -35,6 +35,9 @@ heavy_slot_dir=${BAUKIT_HEAVY_SLOT_DIR:-}
 ready_poll_seconds=30
 dependency_requeue=5s
 node_registration_attempts=60
+# The suites import the echo image long before a pod uses it. On a host disk above kubelet's 85%
+# default, image GC would delete it and the tenant pod fails with ErrImageNeverPull.
+kubelet_image_gc_arg='--kubelet-arg=image-gc-high-threshold=100@server:0'
 node_registration_poll_seconds=${BAUKIT_E2E_NODE_POLL_SECONDS:-2}
 failed_poll_limit=3
 heavy_slot_poll_seconds=${BAUKIT_HEAVY_SLOT_POLL_SECONDS:-30}
@@ -240,6 +243,7 @@ create_cluster() {
   mapfile -t mirror_args < <(registry_mirrors_cluster_args)
   create_k3d_cluster "$image" "$(free_port)" "$(free_port)" "$(free_port)" \
     --registry-config "$state_dir/registries.yaml" \
+    --k3s-arg "$kubelet_image_gc_arg" \
     "${mirror_args[@]}"
   k3d kubeconfig get "$cluster_name" >"$kubeconfig"
   chmod 0600 "$kubeconfig"
