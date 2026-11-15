@@ -33,6 +33,15 @@ rules:
     verbs:
       - create
       - get
+  # kubectl exec reads the pod before it opens the exec stream.
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    resourceNames:
+      - postgres-cluster-restore-test-1
+    verbs:
+      - get
   - apiGroups:
       - ""
     resources:
