@@ -314,5 +314,81 @@ class FailedKustomizationTests(unittest.TestCase):
         self.assertEqual(output.split("|\n"), ["", "", "", "", "", "a\n", ""])
 
 
+def falco_event(priority, rule, namespace, process):
+    return {
+        "time": "2026-11-15T16:00:00Z",
+        "priority": priority,
+        "rule": rule,
+        "output": f"{priority} {rule}",
+        "output_fields": {"k8s.ns.name": namespace, "proc.name": process},
+    }
+
+
+class FalcoEventsTests(unittest.TestCase):
+    EVENTS = [
+        falco_event("Notice", "Redirect STDOUT/STDIN to Network Connection in Container", None, "sh"),
+        falco_event("Warning", "Read sensitive file untrusted", "chainsaw-a", "runc:[1:CHILD]"),
+        falco_event("Warning", "Read sensitive file untrusted", "chainsaw-a", "cat"),
+        falco_event("Critical", "Baukit shell or package manager in app container", "e2e-tenant", "sh"),
+    ]
+
+    def run_events(self, *args):
+        lines = [json.dumps(event) for event in self.EVENTS]
+        loki = {"data": {"result": [{"values": [["1", line] for line in lines]}]}}
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "falco.log").write_text("Sun Nov 15 falco banner\n" + "\n".join(lines) + "\n")
+            Path(tmp, "loki.json").write_text(json.dumps(loki))
+            kubectl = Path(tmp) / "kubectl"
+            kubectl.write_text(
+                "#!/bin/sh\n"
+                'case "$*" in\n'
+                '  *"get pods"*) echo pod/falco-a ;;\n'
+                '  *logs*) cat "$STUB/falco.log" ;;\n'
+                '  *"get --raw"*) cat "$STUB/loki.json" ;;\n'
+                "  *) exit 9 ;;\n"
+                "esac\n"
+            )
+            kubectl.chmod(0o755)
+            env = {**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}", "STUB": tmp}
+            result = process_runner.run_process(
+                [str(E2E / "tests/falco/falco-events.sh"), *args],
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        return result
+
+    def rules(self, result):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return [json.loads(line)["rule"] for line in result.stdout.splitlines()]
+
+    def test_soak_floor_drops_notice_events(self):
+        rules = self.rules(self.run_events("falco", "2026-11-15T16:00:00Z", "Warning"))
+        self.assertEqual(len(rules), 3)
+        self.assertNotIn("Redirect STDOUT/STDIN to Network Connection in Container", rules)
+
+    def test_loki_and_falco_sources_agree(self):
+        falco = self.run_events("falco", "2026-11-15T16:00:00Z", "Debug").stdout
+        loki = self.run_events("loki", "2026-11-15T16:00:00Z", "Debug").stdout
+        self.assertEqual(falco, loki)
+        self.assertEqual(len(loki.splitlines()), 4)
+
+    def test_process_filter_skips_the_runc_mount_read(self):
+        result = self.run_events(
+            "loki", "2026-11-15T16:00:00Z", "Warning", "Read sensitive file untrusted", "chainsaw-a", "cat"
+        )
+        self.assertEqual(len(self.rules(result)), 1)
+
+    def test_namespace_filter(self):
+        result = self.run_events(
+            "loki", "2026-11-15T16:00:00Z", "Critical", "Baukit shell or package manager in app container", "other"
+        )
+        self.assertEqual(self.rules(result), [])
+
+    def test_unknown_source_exits_2(self):
+        self.assertEqual(self.run_events("journal", "2026-11-15T16:00:00Z", "Warning").returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
