@@ -24,6 +24,23 @@ ids = [
   "CVE-2026-71200",
 ]
 
+[images."docker.io/bats/bats:1.14.0@sha256:5322b877351fda0cc435de8c6116de7d0a2ec79d7c680132a0ef329a633bc66f"]
+expires = 2026-12-12
+reason = "1.14.0 is the newest bats image; the findings are Alpine openssl, musl, perl and zlib packages in the short-lived Grafana Helm test pod, which runs only against the in-cluster Grafana service; Renovate (SC4) moves the pin once upstream rebuilds"
+ids = [
+  "CVE-2026-107891",
+  "CVE-2026-13221",
+  "CVE-2026-14456",
+  "CVE-2026-42496",
+  "CVE-2026-42497",
+  "CVE-2026-48962",
+  "CVE-2026-57432",
+  "CVE-2026-57433",
+  "CVE-2026-8376",
+  "CVE-2026-85091",
+  "CVE-2026-9538",
+]
+
 [images."docker.io/falcosecurity/falcosidekick:2.35.1@sha256:a9bb60d2c7742febd912315ca1155839abc0199bf322c58d3adbb8b0849fadb9"]
 expires = 2026-12-12
 reason = "2.35.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
