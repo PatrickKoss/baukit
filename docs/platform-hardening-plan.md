@@ -528,11 +528,11 @@ behave. Later phases add test directories here.
   - PDBs for every multi-replica platform workload.
   - kured gets `prometheusUrl` (skip reboot while non-info alerts fire), a notify URL from the
     overlay, and a reboot window.
-- [ ] **R5 Backups that are known to work** (F-43): `immediate: true` on the ScheduledBackup. The restore
+- [~] **R5 Backups that are known to work** (F-43): `immediate: true` on the ScheduledBackup. The restore
   test checks a sentinel row, not just Ready. Document an off-node backup target for the local overlay
   (host bind mount or a second object store) in the base README. Add an e2e test that runs backup,
   deletes the cluster, restores and compares the sentinel.
-- [ ] **R6 Storage limits** (F-11): `retentionSize` for Prometheus at about 85% of the PVC; Loki
+- [x] **R6 Storage limits** (F-11): `retentionSize` for Prometheus at about 85% of the PVC; Loki
   `retention_period` plus compactor deletion; Tempo `max_block_bytes` / retention sized to its PVC;
   `BaukitPvcFillingUp` covered by kube-prometheus-stack defaults and tested in O4.
 - [x] **R7 redis-ha recovery** (F-12): an init step asks Sentinel for the current master and only
@@ -861,3 +861,26 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   never falls back to `defaultCertificate`). Local hosts are one label under `localhost`. The chainsaw
   test `e2e/tests/traefik-edge` passed on a one-node cluster and fails against the old values. When E
   merges, `e2e-traefik` needs `dependsOn: e2e-issuer`.
+- 2026-11-15 R6 merged. Prometheus `retentionSize` is 25GB on the 30Gi PVC and 1740MB on the local 2Gi PVC
+  (Prometheus counts base-2). `lint/check_retention_size.py` renders every base, overlay and local component,
+  and fails if the size is missing or above 90% of the PVC. Loki already had retention and the delete
+  store, and now names the compactor working directory on its PVC. Tempo sets ingester `max_block_bytes`
+  and the compactor flag through `extraArgs`, because the chart hardcodes that config section. A live
+  `/status/config` shows the flag value. kube-prometheus-stack 88.6.5 keeps `kubernetesStorage` on, so the
+  pack tests the upstream `KubePersistentVolumeFillingUp` from a verbatim copy in `upstream-rules/`.
+  `lint/check_upstream_rules.py` fails when the rendered rule drifts from the copy. The retention budgets
+  are arithmetic, not measured ingest, and are in the observability-stack README. O4 tuning must keep
+  `kubernetesStorage` on, and must update the copy if it changes that rule's runbook URL.
+- 2026-11-15 R5 offline part merged; R5 stays [~] until an integration e2e run passes
+  `e2e/tests/backup-restore`.
+  - The ScheduledBackup sets `immediate: true`.
+  - The restore CronJob writes a sentinel row as the product owner (never superuser), takes its own plugin
+    Backup, restores, and reads the token back over `kubectl exec` with the password on stdin. A missing
+    or different token fails the job.
+  - Each Backup is owned by its Job through the downward-API Job name and uid, so Job history limits and
+    the TTL bound the Backup objects. CNPG v1.30.1 does not strip foreign ownerReferences.
+  - Review rejected a first version that pruned with `delete` on all backups and relaxed the
+    restore-role test. The Role is back to create and get, and the test is unchanged.
+  - The README documents that the local default keeps backups inside the k3d node, and gives two
+    off-node targets.
+  - The netpol matrix needs `postgres-restore-test -> postgres-cluster-rw:5432 allow` when E merges.
