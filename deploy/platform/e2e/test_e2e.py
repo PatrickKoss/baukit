@@ -337,7 +337,8 @@ class RegistryMirrorTests(unittest.TestCase):
         self.assertEqual(used, endpoints)
 
     def test_detach_disconnects_every_mirror_from_the_cluster_network(self):
-        out = self.source('docker() { printf "%s\\n" "$*" >&3; }\nregistry_mirrors_detach k3d-x 3>&1')
+        stub = 'docker() { printf "%s\\n" "$*" >&3; }'
+        out = self.source(f"{stub}\nregistry_mirrors_detach k3d-x 3>&1")
         self.assertIn("network disconnect k3d-x k3d-baukit-mirror-docker-io", out)
         self.assertEqual(out.count("network disconnect k3d-x "), 5)
 
