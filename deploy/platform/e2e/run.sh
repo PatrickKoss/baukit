@@ -264,7 +264,7 @@ install_flux() {
   flux_lockdown_render "$platform_dir" "$flux_version" | kubectl apply --server-side -f - >/dev/null
   kubectl label namespace flux-system --overwrite \
     pod-security.kubernetes.io/enforce=restricted \
-    pod-security.kubernetes.io/enforce-version=v1.34 \
+    pod-security.kubernetes.io/enforce-version=v1.37 \
     pod-security.kubernetes.io/audit=restricted \
     pod-security.kubernetes.io/warn=restricted >/dev/null
   shorten_dependency_requeue

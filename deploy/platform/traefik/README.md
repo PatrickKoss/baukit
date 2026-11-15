@@ -1,6 +1,6 @@
 # Traefik
 
-This base installs Traefik chart `41.6.1` (Traefik `v3.7.13`) as a Deployment
+This base installs Traefik chart `42.4.0` (Traefik `v3.7.19`) as a Deployment
 in the `traefik` namespace behind a `LoadBalancer` Service. On k3s, ServiceLB
 (klipper-lb) answers that Service: its `svclb-traefik` pods in `kube-system`
 hold host ports 80 and 443 and forward to the Traefik pods. Traefik itself uses

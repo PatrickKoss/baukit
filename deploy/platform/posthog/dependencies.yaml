@@ -511,7 +511,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: redpanda
-          image: redpandadata/redpanda:v25.3.18@sha256:f932b4ebedf5711d4c19d3f38c428ee10208a162f232a313aa741e0271212f8a
+          image: redpandadata/redpanda:v26.2.7@sha256:43545ee03966431f5451e0b3c1e651b39fbe3eb383360220311021f50133b649
           imagePullPolicy: IfNotPresent
           args:
             - redpanda

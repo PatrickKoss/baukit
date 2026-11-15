@@ -61,4 +61,4 @@ patches:
         value: false
       - op: replace
         path: /spec/jobTemplate/spec/template/spec/containers/0/image
-        value: rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f
+        value: rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332
