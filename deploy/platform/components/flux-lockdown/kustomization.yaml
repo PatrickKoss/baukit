@@ -46,3 +46,10 @@ patches:
       - op: add
         path: /spec/serviceAccountName
         value: kustomize-controller
+  - target:
+      kind: Deployment
+      name: notification-controller
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: system-cluster-critical

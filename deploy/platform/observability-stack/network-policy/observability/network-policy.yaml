@@ -289,6 +289,12 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: flagger
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kured
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kured
       ports:
         - protocol: TCP
           port: 9090

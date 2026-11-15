@@ -388,6 +388,11 @@ for base in "${bases[@]}"; do
       status=1
       continue
     fi
+    if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/post_render.py" --release "$document" \
+      --rendered "$rendered_dir/chart-$base_name-$release_name.yaml" --kustomize "$(command -v kustomize)"; then
+      status=1
+      continue
+    fi
     ((rendered_charts += 1))
   done
 

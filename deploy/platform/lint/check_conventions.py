@@ -519,6 +519,176 @@ def rule_image_digest(context: Context) -> Iterable[str]:
     return image_digests.problems(sources, context.digest_exemptions)
 
 
+PRIORITY_CLASSES = {
+    "platform-critical",
+    "platform-standard",
+    "system-cluster-critical",
+    "system-node-critical",
+}
+OPERATOR_POD_NAMES = {
+    "Prometheus": "prometheus",
+    "Alertmanager": "alertmanager",
+    "ThanosRuler": "thanos-ruler",
+}
+REPLICATED_KINDS = {"Deployment", "StatefulSet", "ReplicaSet"}
+
+
+def is_cnpg_cluster(resource: Resource) -> bool:
+    return resource.kind == "Cluster" and resource.api_version.startswith(CNPG_GROUP)
+
+
+def is_operator_pod_owner(resource: Resource) -> bool:
+    return resource.kind in OPERATOR_POD_NAMES and resource.api_version.startswith(MONITORING_GROUP)
+
+
+def pod_spec(resource: Resource) -> dict | None:
+    if is_cnpg_cluster(resource) or is_operator_pod_owner(resource) or resource.kind == "Pod":
+        return resource.spec
+    if resource.kind == "CronJob":
+        job = (resource.spec.get("jobTemplate") or {}).get("spec") or {}
+        return (job.get("template") or {}).get("spec") or {}
+    if resource.kind in WORKLOAD_KINDS:
+        return pod_template(resource)
+    return None
+
+
+def rule_priority_class(context: Context) -> Iterable[str]:
+    for universe, resource in all_resources(context):
+        spec = pod_spec(resource)
+        if spec is None:
+            continue
+        priority = spec.get("priorityClassName")
+        if priority not in PRIORITY_CLASSES:
+            yield (
+                f"{universe}: {resource.ref()} has priorityClassName {priority!r}; "
+                "use platform-critical or platform-standard"
+            )
+
+
+def replica_count(resource: Resource) -> int:
+    if is_cnpg_cluster(resource):
+        value = resource.spec.get("instances", 1)
+    else:
+        value = resource.spec.get("replicas", 1)
+    return value if isinstance(value, int) else 1
+
+
+def disruption_target(resource: Resource) -> bool:
+    return resource.kind in REPLICATED_KINDS or is_operator_pod_owner(resource)
+
+
+def operator_pod_labels(resource: Resource) -> dict:
+    if is_operator_pod_owner(resource):
+        name = OPERATOR_POD_NAMES[resource.kind]
+        return {"app.kubernetes.io/name": name, name: resource.name}
+    return pod_labels(resource)
+
+
+def allowed_disruptions(budget: Resource, replicas: int) -> int:
+    spec = budget.spec
+    if "maxUnavailable" in spec:
+        return absolute(spec["maxUnavailable"], replicas)
+    if "minAvailable" in spec:
+        return replicas - absolute(spec["minAvailable"], replicas, round_up=True)
+    return replicas
+
+
+def absolute(value: object, replicas: int, *, round_up: bool = False) -> int:
+    if isinstance(value, int):
+        return value
+    text = str(value)
+    if not text.endswith("%") or not text[:-1].isdigit():
+        return 0
+    scaled = replicas * int(text[:-1])
+    return -(-scaled // 100) if round_up else scaled // 100
+
+
+def cnpg_pdb_problems(cluster: Resource) -> Iterable[str]:
+    instances = replica_count(cluster)
+    enabled = cluster.spec.get("enablePDB", True) is not False
+    if enabled and instances == 1:
+        yield f"{cluster.ref()} has 1 instance, so its default PDB blocks every drain"
+    elif not enabled and instances > 1:
+        yield f"{cluster.ref()} runs {instances} instances with enablePDB false"
+
+
+def budget_problems(workload: Resource, budgets: list[Resource]) -> Iterable[str]:
+    replicas = replica_count(workload)
+    labels = operator_pod_labels(workload)
+    matching = [
+        budget
+        for budget in budgets
+        if budget.namespace == workload.namespace
+        and matches_selector(budget.spec.get("selector"), labels)
+    ]
+    if replicas > 1 and not matching:
+        yield f"{workload.ref()} runs {replicas} replicas without a PodDisruptionBudget"
+    for budget in matching:
+        if replicas > 0 and allowed_disruptions(budget, replicas) < 1:
+            yield f"{budget.ref()} blocks every drain of {workload.ref()}"
+
+
+def rule_pdb_multi_replica(context: Context) -> Iterable[str]:
+    for universe, resources in context.universes.items():
+        budgets = by_kind(resources, "PodDisruptionBudget")
+        for resource in resources:
+            if is_cnpg_cluster(resource):
+                problems = cnpg_pdb_problems(resource)
+            elif disruption_target(resource):
+                problems = budget_problems(resource, budgets)
+            else:
+                continue
+            yield from (f"{universe}: {problem}" for problem in problems)
+
+
+QUIET_SEVERITIES = {"info", "none"}
+
+
+def chart_name(release: Resource) -> str:
+    return str(((release.spec.get("chart") or {}).get("spec") or {}).get("chart", ""))
+
+
+def rule_severities(resources: list[Resource]) -> set[tuple[str, str]]:
+    return {
+        (str(rule["alert"]), str((rule.get("labels") or {}).get("severity", "")))
+        for resource in by_kind(resources, "PrometheusRule")
+        for group in resource.spec.get("groups") or []
+        for rule in group.get("rules") or []
+        if "alert" in rule
+    }
+
+
+def kured_filter_problems(configuration: dict, alerts: set[tuple[str, str]]) -> Iterable[str]:
+    if not configuration.get("prometheusUrl"):
+        yield "sets no prometheusUrl, so firing alerts do not block reboots"
+        return
+    if configuration.get("alertFiringOnly") is not True:
+        yield "does not set alertFiringOnly, so pending alerts block reboots"
+    text = str(configuration.get("alertFilterRegexp") or "")
+    try:
+        pattern = re.compile(text) if text else None
+    except re.error as error:
+        yield f"alertFilterRegexp does not compile: {error}"
+        return
+    for name, severity in sorted(alerts):
+        filtered = pattern is not None and pattern.search(name) is not None
+        if severity in QUIET_SEVERITIES and not filtered:
+            yield f"alertFilterRegexp misses {severity} alert {name}, which blocks every reboot"
+        elif severity not in QUIET_SEVERITIES and filtered:
+            yield f"alertFilterRegexp ignores {severity} alert {name}"
+
+
+def rule_kured_alert_filter(context: Context) -> Iterable[str]:
+    for universe, resources in context.universes.items():
+        alerts = rule_severities(resources)
+        for release in by_kind(resources, "HelmRelease"):
+            if chart_name(release) != "kured":
+                continue
+            configuration = (release.spec.get("values") or {}).get("configuration") or {}
+            for problem in kured_filter_problems(configuration, alerts):
+                yield f"{universe}: {release.ref()} {problem}"
+
+
 RULES: dict[str, Rule] = {
     "psa-labels": rule_psa_labels,
     "default-deny-network-policy": rule_default_deny,
@@ -532,6 +702,9 @@ RULES: dict[str, Rule] = {
     "policy-exception-budget": rule_policy_exception_budget,
     "prune-disabled": rule_prune_disabled,
     "image-digest": rule_image_digest,
+    "priority-class": rule_priority_class,
+    "pdb-multi-replica": rule_pdb_multi_replica,
+    "kured-alert-filter": rule_kured_alert_filter,
 }
 
 

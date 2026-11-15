@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - statefulset.yaml
+  - pod-disruption-budget.yaml
   - services.yaml
   - network-policy.yaml
   - podmonitor.yaml

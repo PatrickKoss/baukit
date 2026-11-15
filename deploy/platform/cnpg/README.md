@@ -13,7 +13,8 @@ primary and restore-test manifests reference the same image through the
 
 The base is intentionally cluster-wide so reusable `postgres-cluster` instances
 can live in their own namespaces. It contains no PostgreSQL clusters, object
-storage configuration, credentials, or priority class.
+storage configuration or credentials. The operator runs as `platform-critical`
+and the Barman plugin as `platform-standard`.
 
 ## Overlay requirements
 
@@ -23,7 +24,6 @@ An overlay must:
   creates `Certificate` and `Issuer` resources;
 - arrange Flux ordering so this base is ready before any `postgres-cluster`
   instance, normally with `Kustomization.spec.dependsOn`;
-- add a priority class only if the cluster policy needs one;
 - reconcile this base after the one that installs the Prometheus Operator CRDs,
   because the operator chart renders a PodMonitor and the base ships a
   PodMonitor for the Barman plugin. The plugin serves its controller metrics

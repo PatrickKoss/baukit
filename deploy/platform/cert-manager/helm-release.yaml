@@ -20,6 +20,8 @@ spec:
   driftDetection:
     mode: warn
   values:
+    global:
+      priorityClassName: platform-critical
     acmesolver:
       image:
         tag: v1.21.3

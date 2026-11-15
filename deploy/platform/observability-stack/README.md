@@ -69,6 +69,13 @@ content release depends on the Prometheus stack.
 No domain, e-mail address, token, credential, bucket, endpoint, or user identity
 is stored in this base.
 
+## Priority
+
+Every pod in this base runs as `platform-standard`: Prometheus, Alertmanager,
+the operator and its admission Jobs, Grafana, kube-state-metrics,
+node-exporter, Alloy, Loki and Tempo. The base admits kured to Prometheus on
+9090 for its pre-reboot alert check.
+
 ## Alert routing
 
 Alertmanager is the single sink for three sources:

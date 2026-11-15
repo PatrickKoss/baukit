@@ -40,12 +40,15 @@ Before reconciliation, an overlay must:
   `PodMonitor`, `ServiceMonitor` and `PrometheusRule`, and configure Prometheus selectors to
   admit resources labeled `app.kubernetes.io/part-of: baukit-platform`;
 - review the restore schedule, then explicitly set the CronJob to
-  `spec.suspend: false`; add a priority class in the overlay if desired;
+  `spec.suspend: false`;
 - on a cluster whose default StorageClass retains volumes (Hetzner
   `hcloud-volumes`), set the CronJob's `RESTORE_STORAGE_CLASS` env to a
   Delete-policy class such as `hcloud-volumes-delete`.
 
 ## Node drains and PodDisruptionBudgets
+
+The instance runs as `platform-critical`. The pushgateway, the restore-test
+Job and the restore cluster it creates run as `platform-standard`.
 
 The base runs one instance with `enablePDB: false`. CNPG's default primary
 PodDisruptionBudget allows zero disruptions, so with one instance it blocks
@@ -54,7 +57,7 @@ a drain evicts the only instance and the database is down until the node is
 back. That is the honest trade-off of a single instance.
 
 An overlay that runs two or more instances must set `enablePDB: true` in the
-same patch, so the drain waits for a switchover instead of killing the primary.
+same patch (the `pdb-multi-replica` convention rule fails either mismatch), so the drain waits for a switchover instead of killing the primary.
 It should also set `spec.nodeMaintenanceWindow`
 (`inProgress: false, reusePVC: true`) as the default, and flip `inProgress` to
 `true` only for planned maintenance on single-node storage, where CNPG then

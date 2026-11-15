@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis
+  namespace: platform-redis
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: redis
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
