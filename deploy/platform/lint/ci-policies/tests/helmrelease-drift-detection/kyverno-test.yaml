@@ -11,7 +11,7 @@ results:
     policy: helmrelease-drift-detection
     kind: HelmRelease
     resources: [drift-warn]
-    result: pass
+    result: fail
   - isValidatingPolicy: true
     policy: helmrelease-drift-detection
     kind: HelmRelease

@@ -18,7 +18,7 @@ spec:
     remediation:
       retries: 3
   driftDetection:
-    mode: warn
+    mode: enabled
   test:
     enable: true
     filters:

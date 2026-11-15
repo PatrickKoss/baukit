@@ -10,7 +10,7 @@ Cluster policies live in `../../kyverno-policies/`.
 | `helmrelease-remediation-retries` | `install.remediation.retries` and `upgrade.remediation.retries` are set |
 | `helmrelease-cleanup-on-fail` | `upgrade.cleanupOnFail: true` |
 | `helmrelease-timeout` | `spec.timeout` is set |
-| `helmrelease-drift-detection` | `driftDetection.mode` is `warn` or `enabled` |
+| `helmrelease-drift-detection` | `driftDetection.mode` is `enabled` |
 | `helmrelease-crd-policy` | charts with a Helm `crds/` directory use `CreateReplace` on install and upgrade |
 | `helmrelease-helm-tests` | charts that render Helm test hooks set `test.enable: true` |
 | `chart-source-interval` | HelmRepository and OCIRepository `spec.interval` is 1h or more |
