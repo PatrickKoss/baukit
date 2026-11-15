@@ -207,6 +207,8 @@ bootstrap additionally reads `GITHUB_TOKEN` from the process environment. For
 example, a wrapper can export the result of `gh auth token`; the lifecycle
 never persists that token.
 
+When every pull-through mirror from `registry-mirrors.sh up` is running, `platform-up.sh up` and the lifecycle's cluster creation attach them to the new cluster. If any mirror is missing or stopped, they create the cluster without mirrors. `down` and `nuke` detach the mirrors from the cluster network before they delete the cluster, so Docker can remove the network.
+
 ### Configuration contract
 
 Pass settings as environment variables or as a trusted shell assignment file

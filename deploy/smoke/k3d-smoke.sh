@@ -4,6 +4,7 @@ set -eu
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 deploy_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 chart=${BAUKIT_SMOKE_CHART:-$deploy_root/chart/baukit-app}
+registry_mirrors=$deploy_root/platform/registry-mirrors.sh
 observability_chart=${BAUKIT_SMOKE_OBSERVABILITY_CHART:-$deploy_root/observability}
 k3s_image=${BAUKIT_SMOKE_K3S_IMAGE:-$(bash -c '. "$1" && platform_k3s_image' platform_k3s_image "$deploy_root/platform/local-git-http.sh")}
 
@@ -56,6 +57,8 @@ cleanup() {
         fi
     done
     if [ "$created_cluster" = true ]; then
+        bash -c '. "$1" && registry_mirrors_detach "$2"' registry_mirrors_detach \
+            "$registry_mirrors" "k3d-$cluster_name" || true
         k3d cluster delete "$cluster_name" >/dev/null 2>&1 || true
     fi
     rm -r -- "$temporary_dir"
@@ -107,6 +110,15 @@ set -- cluster create "$cluster_name" \
 for port_mapping in $k3d_ports; do
     set -- "$@" --port "$port_mapping"
 done
+# The shared pull-through mirrors are used when all of them run. Arguments hold no whitespace.
+if bash -c '. "$1" && registry_mirrors_running' registry_mirrors_running "$registry_mirrors"; then
+    mirror_args=$(bash -c '. "$1" && registry_mirrors_k3d_args "$2"' registry_mirrors_k3d_args \
+        "$registry_mirrors" "$temporary_dir/registries.yaml")
+    for mirror_arg in $mirror_args; do
+        set -- "$@" "$mirror_arg"
+    done
+    echo "using the registry mirrors from $registry_mirrors"
+fi
 bash -c '. "$1" && platform_require_cgroup_v2' platform_require_cgroup_v2 "$deploy_root/platform/local-git-http.sh"
 created_cluster=true
 k3d "$@"

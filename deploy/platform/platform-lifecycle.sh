@@ -65,6 +65,8 @@ source "$platform_dir/local-git-http.sh"
 k3s_image=${PLATFORM_K3S_IMAGE:-$(platform_k3s_image)}
 # shellcheck source=deploy/platform/flux-lockdown.sh
 source "$platform_dir/flux-lockdown.sh"
+# shellcheck source=deploy/platform/registry-mirrors.sh
+source "$platform_dir/registry-mirrors.sh"
 
 require_value() {
   local name=$1
@@ -240,7 +242,15 @@ ensure_cluster() {
     k3d cluster start "$cluster_name" >/dev/null
   else
     printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$k3s_image"
-    k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port"
+    local mirror_dir mirror_args=()
+    mirror_dir=$(mktemp -d)
+    if registry_mirrors_running; then
+      mapfile -t mirror_args < <(registry_mirrors_k3d_args "$mirror_dir/registries.yaml")
+      printf 'Using the running registry mirrors.\n'
+    fi
+    k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port" \
+      "${mirror_args[@]}"
+    rm -rf -- "$mirror_dir"
   fi
   local containers=()
   mapfile -t containers < <(docker ps -aq --filter "label=k3d.cluster=$cluster_name")
@@ -398,6 +408,7 @@ nuke() {
   require_tools
   validate_common_config
   if cluster_exists; then
+    registry_mirrors_detach "k3d-$cluster_name"
     k3d cluster delete "$cluster_name"
   fi
   remove_snapshot

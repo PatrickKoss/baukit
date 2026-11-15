@@ -71,7 +71,20 @@ esac
 exit 0
 """
 STUB_OK = "#!/bin/sh\nexit 0\n"
-STUB_DOCKER = "#!/bin/sh\nprintf '%s\\n' \"${STUB_CGROUP_VERSION:-2}\"\n"
+STUB_DOCKER = """#!/bin/sh
+case "$1 $2" in
+"container inspect")
+    [ "${STUB_MIRRORS:-}" = running ] || exit 1
+    printf 'true\\n'
+    exit 0
+    ;;
+"network disconnect")
+    printf 'docker %s\\n' "$*" >>"$STUB_LOG"
+    exit 0
+    ;;
+esac
+printf '%s\\n' "${STUB_CGROUP_VERSION:-2}"
+"""
 TOKEN_COMMAND = "#!/bin/sh\nprintf 'stub-token\\n' >\"$BAUKIT_SMOKE_ACCESS_TOKEN_FILE\"\n"
 
 
@@ -313,6 +326,21 @@ class SmokeOrderTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("cgroup_no_v1=all", result.stderr)
         self.assertNotIn("k3d cluster create", calls)
+
+    def test_running_mirrors_are_attached_and_detached_before_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            lines = self.run_smoke(Path(tmp), extra_env={"STUB_MIRRORS": "running"})
+        args = self.cluster_create(lines)
+        self.assertIn("--registry-config", args)
+        self.assertIn("k3d-baukit-mirror-ghcr-io:5000", args)
+        detach = self.index(lines, "docker network disconnect k3d-demo-baukit-smoke ")
+        self.assertLess(detach, self.index(lines, "k3d cluster delete demo-baukit-smoke"))
+
+    def test_cluster_is_created_as_before_without_running_mirrors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.cluster_create(self.run_smoke(Path(tmp)))
+        self.assertNotIn("--registry-config", args)
+        self.assertNotIn("--registry-use", args)
 
     def test_a_chart_with_another_digest_is_not_installed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
