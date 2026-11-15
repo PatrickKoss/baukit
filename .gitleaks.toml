@@ -33,3 +33,9 @@ paths = [
   '''^rust/crates/baukit-erasure/tests/postgres\.rs$''',
   '''^typescript/packages/api-runtime/src/erasure\.test\.ts$''',
 ]
+
+[[allowlists]]
+description = "flux-tenancy e2e fixture: a placeholder SOPS Secret whose age key is the empty string"
+condition = "AND"
+commits = ["036e31ddf997d2480e23b2006e5786b147ab420d"]
+paths = ['''^deploy/platform/e2e/tests/flux-tenancy/chainsaw-test\.yaml$''']
