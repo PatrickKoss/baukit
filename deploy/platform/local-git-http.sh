@@ -22,6 +22,9 @@ platform_k3s_config_dir() {
 platform_k3s_config_mount=/etc/baukit/k3s
 platform_k3s_create_timeout=${PLATFORM_K3S_CREATE_TIMEOUT:-5m}
 platform_k3s_audit_log=/var/log/kubernetes/audit/audit.log
+# Local clusters only: kine/SQLite dies under host starvation. Production keeps
+# platform_k3s_server_args, so its datastore stays a separate decision.
+platform_local_etcd_arg() { printf '%s\n' '--cluster-init@server:0'; }
 
 platform_k3s_server_args() {
   printf '%s\n' \

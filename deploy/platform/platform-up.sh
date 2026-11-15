@@ -178,7 +178,7 @@ up() {
   if ! cluster_exists; then
     printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$k3s_image"
     k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port" \
-      --subnet "$k3d_subnet"
+      --subnet "$k3d_subnet" --k3s-arg "$(platform_local_etcd_arg)"
   else
     printf 'Cluster %s already exists; converging it.\n' "$cluster_name"
   fi

@@ -288,6 +288,29 @@ class BindAddressTest(unittest.TestCase):
         self.assertNotIn(users[-1].split(":")[0], {"0", "root"})
 
 
+class LocalDatastoreTest(unittest.TestCase):
+    def test_platform_up_creates_the_cluster_on_embedded_etcd(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            result = bash(
+                f'source "{PLATFORM / "platform-up.sh"}"\n'
+                "require_tools() { :; }\nensure_secret_state() { :; }\n"
+                "cluster_exists() { return 1; }\n"
+                'k3d_create_local_cluster() { printf "%s\\n" "$@"; exit 0; }\nup',
+                env={"BAUKIT_PLATFORM_STATE_DIR": directory},
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--k3s-arg\n--cluster-init@server:0\n", result.stdout)
+
+    def test_lifecycle_creates_the_cluster_on_embedded_etcd(self) -> None:
+        source = (PLATFORM / "platform-lifecycle.sh").read_text()
+        self.assertIn('--k3s-arg "$(platform_local_etcd_arg)"', source)
+
+    def test_shared_server_args_leave_the_datastore_alone(self) -> None:
+        result = bash(f'source "{HELPER}"\nplatform_k3s_server_args')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("cluster-init", result.stdout)
+
+
 class StatusSecretsTest(unittest.TestCase):
     def test_status_prints_locations_not_values(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
