@@ -177,7 +177,7 @@ versions. This phase comes first so every later task has a place to put its test
   is piped through kubeconform as well, not just linted.
   Acceptance: a deliberately misspelled field in a HelmRelease, a ServiceMonitor and a CNPG Cluster each
   fails validation (unit test with fixtures under `deploy/platform/lint/fixtures/`).
-- [ ] **V3 Policies run offline.** `validate.sh` gains a stage that runs `kyverno test` over
+- [x] **V3 Policies run offline.** `validate.sh` gains a stage that runs `kyverno test` over
   `deploy/platform/kyverno-policies/tests/` and then `kyverno apply` with every in-cluster policy plus
   `lint/ci-policies/` against: each rendered base, each overlay, each HelmRelease's rendered chart
   output, and the `baukit-app` chart rendered with `tests/all-options-values.yaml` and the generated
@@ -321,7 +321,7 @@ behave. Later phases add test directories here.
 
 ## Phase N: Pod Security Admission and NetworkPolicies
 
-- [~] **N1 PSA labels on every base namespace.** Every Namespace gets `enforce`, `enforce-version`
+- [x] **N1 PSA labels on every base namespace.** Every Namespace gets `enforce`, `enforce-version`
   (pinned to the cluster minor), `audit: restricted` and `warn: restricted`. Target `enforce` levels:
 
   | Level | Namespaces | Work needed |
@@ -884,3 +884,26 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   - The README documents that the local default keeps backups inside the k3d node, and gives two
     off-node targets.
   - The netpol matrix needs `postgres-restore-test -> postgres-cluster-rw:5432 allow` when E merges.
+- 2026-11-15 N1 merged. Every base namespace carries enforce, enforce-version v1.34, audit and warn.
+  falco, kured and the new observability-agents namespace (alloy, node-exporter) are privileged. posthog
+  is baseline, and the rest are restricted. The live proof took five runs, because the first four had
+  harness gaps:
+  - missing secrets
+  - Helm test pods applied as workloads
+  - missing overlay NetworkPolicies
+  - the node outside the local nodeCIDR, which made N2's policies block API-server egress
+  
+  live5 rendered what the local overlay applies, on the 10.89.0.0/24 subnet. It had 0 PodSecurity
+  events and every workload Ready across 43 pods. Its probe rows #46 and #57 pass, and the 29 probe
+  mismatches are all in namespaces that live5 did not create.
+- 2026-11-15 V3 merged. It is merged after N1 because it denies the namespaces that lack N1's labels.
+  `lint/ci-policies/run_cluster_policies.py` runs `kyverno test` (78 cases), then applies the 20 baukit and
+  18 upstream Pod Security policies plus the CI policies. It runs them against every base, overlay and
+  chart render, and against `baukit-app` with all options and with the generated platform values (a
+  checked-in copy, pinned to the snapshot tree hash).
+  - Deny and CI fails break the gate, and Audit fails are only reported in `.ci-gate/`. That matches the
+    cluster.
+  - The stage takes about 44 s.
+  - posthog gets `service.type: ClusterIP`, because the NodePort default was a Deny violation.
+  - Open Audit findings for K6: restricted-profile gaps in falco, posthog, hcloud-csi and kured, images
+    without a registry prefix, wildcard RBAC, and 6 containers without resources.
