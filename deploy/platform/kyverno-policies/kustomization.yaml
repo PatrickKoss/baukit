@@ -6,6 +6,7 @@ resources:
   - policies/disallow-default-namespace.yaml
   - policies/disallow-latest-image-tag.yaml
   - policies/disallow-sa-token-automount.yaml
+  - policies/flux-tenant-alert-sources.yaml
   - policies/flux-tenant-service-account.yaml
   - policies/generate-tenant-defaults.yaml
   - policies/protect-operations-ports.yaml

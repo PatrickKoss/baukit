@@ -28,6 +28,7 @@ All policies use the Kyverno 1.20 CEL types (`ValidatingPolicy`, `ImageValidatin
 | `restrict-cluster-admin-binding` | all bindings to `cluster-admin` | Deny |
 | `require-psa-labels` | Namespaces | Deny |
 | `restrict-netpol-wildcards` | tenant NetworkPolicies | Deny |
+| `flux-tenant-alert-sources` | tenant Flux Alerts (notification-controller runs without `--no-cross-namespace-refs`) | Deny |
 | `flux-tenant-service-account` | tenant Flux Kustomizations and HelmReleases | Deny |
 | `verify-baukit-images` | tenant Pods with `ghcr.io/patrickkoss/*` images | Audit |
 | `generate-tenant-defaults` | tenant Namespaces | generates, synchronized |

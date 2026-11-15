@@ -63,6 +63,8 @@ git_root=$state_dir/git
 # shellcheck source=deploy/platform/local-git-http.sh
 source "$platform_dir/local-git-http.sh"
 k3s_image=${PLATFORM_K3S_IMAGE:-$(platform_k3s_image)}
+# shellcheck source=deploy/platform/flux-lockdown.sh
+source "$platform_dir/flux-lockdown.sh"
 
 require_value() {
   local name=$1
@@ -296,6 +298,7 @@ bootstrap_gitops() {
         --repository="$github_repository" \
         --branch="$gitops_branch" \
         --path="$gitops_path" \
+        --components="$flux_lockdown_components" \
         --version="$flux_version" \
         --reconcile \
         "${personal_flag[@]}"
@@ -306,6 +309,7 @@ bootstrap_gitops() {
         --branch="$gitops_branch" \
         --path="$gitops_path" \
         --private-key-file="$gitops_private_key_file" \
+        --components="$flux_lockdown_components" \
         --version="$flux_version" \
         --silent
       ;;
@@ -318,6 +322,7 @@ bootstrap_gitops() {
       "$reconciled_url" "$gitops_url" >&2
     exit 1
   fi
+  flux_lockdown_verify "$platform_dir" || exit 1
 }
 
 print_secret_locations() {
