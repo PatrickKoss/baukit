@@ -42,6 +42,18 @@ kubelet_image_gc_arg='--kubelet-arg=image-gc-high-threshold=100@server:0'
 # Under host starvation kine's SQLite commit fails after a cancelled request and k3s exits fatally.
 # Embedded etcd does not take that path, so e2e clusters run on it.
 embedded_etcd_arg='--cluster-init@server:0'
+# On etcd k3s turns leader election on, and a lease renewal missed under starvation exits the server.
+no_leader_election_args=(
+  --k3s-arg '--kube-controller-manager-arg=leader-elect=false@server:0'
+  --k3s-arg '--kube-cloud-controller-manager-arg=leader-elect=false@server:0'
+  --k3s-arg '--kube-scheduler-arg=leader-elect=false@server:0'
+)
+# k3s's own wrangler leases (k3s, k3s-etcd) also exit fatally on loss; widen their 45s/30s/2s defaults.
+wrangler_lease_args=(
+  --env 'CATTLE_ELECTION_LEASE_DURATION=180s@server:0'
+  --env 'CATTLE_ELECTION_RENEW_DEADLINE=150s@server:0'
+  --env 'CATTLE_ELECTION_RETRY_PERIOD=10s@server:0'
+)
 node_registration_poll_seconds=${BAUKIT_E2E_NODE_POLL_SECONDS:-2}
 failed_poll_limit=3
 heavy_slot_poll_seconds=${BAUKIT_HEAVY_SLOT_POLL_SECONDS:-30}
@@ -251,6 +263,8 @@ create_cluster() {
     --registry-config "$state_dir/registries.yaml" \
     --k3s-arg "$kubelet_image_gc_arg" \
     --k3s-arg "$embedded_etcd_arg" \
+    "${no_leader_election_args[@]}" \
+    "${wrangler_lease_args[@]}" \
     "${mirror_args[@]}"
   k3d kubeconfig get "$cluster_name" >"$kubeconfig"
   chmod 0600 "$kubeconfig"
