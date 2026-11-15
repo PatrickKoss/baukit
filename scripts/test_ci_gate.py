@@ -138,7 +138,8 @@ class CiGateTests(unittest.TestCase):
         text = GATE_SCRIPT.read_text()
         self.assertIn("step_platform_e2e() {\n", text)
         self.assertIn(
-            "--only chainsaw,flux,k3d,kubectl,kustomize\n  ./deploy/platform/e2e/run.sh\n}", text
+            "--only chainsaw,flux,helm,k3d,kubectl,kustomize\n  ./deploy/platform/e2e/run.sh\n}",
+            text,
         )
 
     def test_platform_e2e_runs_for_deploy_changes_but_not_for_rust_changes(self):

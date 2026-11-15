@@ -249,7 +249,7 @@ ensure_cluster() {
       printf 'Using the running registry mirrors.\n'
     fi
     k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port" \
-      "${mirror_args[@]}"
+      --k3s-arg "$(platform_local_etcd_arg)" "${mirror_args[@]}"
     rm -rf -- "$mirror_dir"
   fi
   local containers=()

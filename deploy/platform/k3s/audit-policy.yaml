@@ -1,0 +1,52 @@
+# Rules match top down; the first match wins.
+apiVersion: audit.k8s.io/v1
+kind: Policy
+omitStages:
+  - RequestReceived
+rules:
+  # Health probes and discovery carry no actor intent.
+  - level: None
+    nonResourceURLs:
+      - /healthz*
+      - /livez*
+      - /readyz*
+      - /version
+      - /openapi*
+      - /api
+      - /api/*
+      - /apis
+      - /apis/*
+  # Leader election leases and Events change every few seconds.
+  - level: None
+    resources:
+      - group: coordination.k8s.io
+        resources: [leases]
+      - group: ""
+        resources: [events]
+      - group: events.k8s.io
+        resources: [events]
+  # Reads by the control plane and the kubelet are constant background traffic.
+  - level: None
+    verbs: [get, list, watch]
+    users:
+      - system:apiserver
+      - system:kube-controller-manager
+      - system:kube-scheduler
+      - system:kube-proxy
+      - system:k3s-controller
+    userGroups:
+      - system:nodes
+      - system:serviceaccounts:kube-system
+  # Secret, ConfigMap and token payloads must never reach the log.
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: [secrets, configmaps, serviceaccounts/token]
+      - group: authentication.k8s.io
+        resources: [tokenreviews]
+  # RBAC writes keep the request body, so the log shows which rights changed.
+  - level: Request
+    verbs: [create, update, patch, delete, deletecollection]
+    resources:
+      - group: rbac.authorization.k8s.io
+  - level: Metadata

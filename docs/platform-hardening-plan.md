@@ -363,7 +363,7 @@ behave. Later phases add test directories here.
 - [x] **N4 Fence PostHog** (D8): replace the any-to-any internal policy with explicit pairs, deny egress
   except DNS and `internet-https` for the plugin server, bump `postgres:14.1` to the newest 14.x digest.
   Record the remaining `baseline` gaps as exceptions.
-- [ ] **N5 Probe matrix test.** `deploy/platform/e2e/tests/netpol/matrix.yaml` lists source, destination,
+- [x] **N5 Probe matrix test.** `deploy/platform/e2e/tests/netpol/matrix.yaml` lists source, destination,
   port and expected verdict, for example `tenant -> postgres:5432 allow (with label)`,
   `tenant -> postgres:5432 deny (without label)`, `tenant -> loki-gateway:80 deny`,
   `tenant -> pushgateway:9091 deny`, `tenant -> kube-apiserver deny`,
@@ -1107,3 +1107,24 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   clusters to embedded etcd (`--cluster-init`). Leader-election tuning was ruled out: single-server
   k3s already passes `--leader-elect=false`. Open for PI1: decide the production datastore
   (kine/SQLite vs embedded etcd) for single-node hosts; the same fatal applies under host starvation.
+- 2026-11-15 20:40: N5 run 13 failed in its first second with "Pool overlaps". FA45's falco run held
+  slot 2 but its network sat on slot 3's subnet, because `bin/k3d-slot` kept a caller's
+  BAUKIT_E2E_SUBNET. The wrapper now always sets the slot's subnet (10.89.151/152/153.0/24), and
+  COMMON.md forbids setting it by hand.
+- 2026-11-15 21:10: K6 run 8 failed on the Kyverno admission controller, stuck pulling kyvernopre for
+  11 minutes. The reg.kyverno.io pull-through mirror returned 401 for every Kyverno image, because
+  reg.kyverno.io answers /v2/ with 405 and the proxy never gets a ghcr token. 7e86c7e8 routes
+  reg.kyverno.io through the ghcr mirror (same digests). K6's RetryOnFailure worked as designed: the
+  release ended Failed but retryable, with no uninstall wedge. K6, N5, FA45, S5 and SC5a merge 7e86c7e8
+  before their next run.
+- 2026-11-15 21:25: N5 merged (37c17760). The full run ph-n5-14 on embedded etcd passed all nine
+  suites in 1033 s of cluster time: netpol 87/87 rows in 31 s, ingress 4/4 rows. The k3s server started
+  once and logged no fatal. Rows not covered live: PostHog (checked offline, live in N4 or D8) and the
+  metadata endpoint, where a deny looks like no listener (backed by the offline link-local check).
+- 2026-11-15 21:25: gitleaks over every ref flagged the empty age key in the flux-tenancy fixture
+  (036e31dd). 7c9e5115 allowlists that commit and path. A bare `k3d cluster delete` leaked the
+  k3d-ph-fa45-falco network with the mirrors attached, and its next same-name cluster reused slot 3's
+  subnet. bin/k3d-slot now removes orphaned networks on its subnet.
+- 2026-11-15 21:25: S5 platform-up failed twice at the 5 min Flux controller rollout under load 40-108.
+  platform-up pulls from upstream registries, while e2e uses the pull-through mirrors. The code is
+  reviewed; S5 merges after the N5 gate, and platform-up gets one more run at lower load before release.

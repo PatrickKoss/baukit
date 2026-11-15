@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: k3s-hardening
+spec:
+  description: >-
+    The k3s server flags from platform_k3s_server_args bite. A Secret is encrypted in the datastore
+    and its creation reaches Loki as a Metadata-level audit event shipped by Alloy. Reads the server
+    container k3d-$BAUKIT_E2E_CLUSTER-server-0 (default cluster baukit-platform-e2e) with docker. The
+    Pod Security default runs in run.sh before Kyverno, which denies unlabeled namespaces.
+  timeouts:
+    exec: 4m
+  steps:
+    - name: secret-encrypted-at-rest
+      try:
+        - script:
+            content: |
+              set -eu
+              server=k3d-${BAUKIT_E2E_CLUSTER:-baukit-platform-e2e}-server-0
+              marker=baukit-plaintext-$(openssl rand -hex 12)
+              kubectl -n "$NAMESPACE" create secret generic at-rest --from-literal=value="$marker" >/dev/null
+              status=$(docker exec "$server" k3s secrets-encrypt status)
+              printf '%s\n' "$status" | grep -q '^Encryption Status: Enabled' || { echo "$status" >&2; exit 1; }
+              key=/registry/secrets/$NAMESPACE/at-rest
+              found=$(docker exec "$server" sh -c 'find /var/lib/rancher/k3s/server/db -type f -exec cat {} + | grep -c "$1" || true' sh "$key")
+              [ "$found" -gt 0 ] || { echo "the datastore has no row for $key" >&2; exit 1; }
+              plain=$(docker exec "$server" sh -c 'find /var/lib/rancher/k3s/server/db -type f -exec cat {} + | grep -c "$1" || true' sh "$marker")
+              [ "$plain" -eq 0 ] || { echo "the datastore holds the Secret value in plaintext" >&2; exit 1; }
+              docker exec "$server" sh -c 'find /var/lib/rancher/k3s/server/db -type f -exec cat {} + | grep -q "k8s:enc:"' ||
+                { echo "the datastore has no k8s:enc: envelope" >&2; exit 1; }
+              echo "Secret $key is encrypted at rest"
+    - name: secret-write-reaches-loki-as-audit-event
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              dir=$(mktemp -d)
+              port=$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+              kubectl -n observability port-forward svc/loki-gateway "$port:80" >"$dir/pf.log" 2>&1 &
+              pf=$!
+              trap 'kill "$pf" 2>/dev/null; rm -rf "$dir"' EXIT
+              name=audit-probe-$(openssl rand -hex 4)
+              kubectl -n "$NAMESPACE" create secret generic "$name" --from-literal=value=x >/dev/null
+              query="{service=\"kube-audit\"} |= \"$name\" | json | verb=\"create\" | objectRef_resource=\"secrets\""
+              deadline=$(($(date +%s) + 240))
+              while :; do
+                if curl -fsS -G "http://127.0.0.1:$port/loki/api/v1/query_range" \
+                  --data-urlencode "query=$query" --data-urlencode 'since=15m' --data-urlencode 'limit=5' \
+                  -o "$dir/result.json" 2>"$dir/curl.err" &&
+                  python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1]))["data"]["result"] else 1)' "$dir/result.json"; then
+                  break
+                fi
+                [ "$(date +%s)" -lt "$deadline" ] || {
+                  echo "no audit event for secret $name in Loki" >&2
+                  cat "$dir/curl.err" "$dir/pf.log" >&2
+                  exit 1
+                }
+                sleep 5
+              done
+              python3 -c '
+              import json, sys
+              for stream in json.load(open(sys.argv[1]))["data"]["result"]:
+                  for _, line in stream["values"]:
+                      event = json.loads(line)
+                      if "requestObject" in event or "responseObject" in event:
+                          sys.exit("the audit event carries the Secret body")
+              ' "$dir/result.json"
+              echo "audit event for secret $name reached Loki at Metadata level"

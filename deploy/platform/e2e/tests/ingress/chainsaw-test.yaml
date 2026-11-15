@@ -1,0 +1,106 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: ingress
+spec:
+  description: >-
+    The baukit-app chart with its default networkPolicy.ingressController answers through the Traefik
+    base by Host header. Its NetworkPolicy admits Traefik's pods and refuses a pod in another namespace,
+    with or without Traefik's pod labels.
+  namespaceTemplate:
+    metadata:
+      labels:
+        baukit.dev/ingress-backend: "true"
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/enforce-version: v1.34
+        pod-security.kubernetes.io/audit: restricted
+        pod-security.kubernetes.io/warn: restricted
+  timeouts:
+    exec: 5m
+  steps:
+    - name: install-echo
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              helm install echo ../../../../chart/baukit-app --namespace "$NAMESPACE" \
+                --values values.yaml --wait --timeout 4m
+        - assert:
+            resource:
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: echo-api-ingress
+              spec:
+                ingress:
+                  - from:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: traefik
+                        podSelector:
+                          matchLabels:
+                            app.kubernetes.io/name: traefik
+                            app.kubernetes.io/instance: traefik-traefik
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: ingress-outsider
+                labels:
+                  pod-security.kubernetes.io/enforce: restricted
+                  pod-security.kubernetes.io/enforce-version: v1.34
+                  pod-security.kubernetes.io/audit: restricted
+                  pod-security.kubernetes.io/warn: restricted
+    - name: through-traefik
+      try:
+        - script:
+            timeout: 3m
+            content: |
+              set -eu
+              dir=$(mktemp -d)
+              kubectl -n traefik port-forward svc/traefik :443 >"$dir/pf.log" 2>&1 &
+              pf=$!
+              trap 'kill "$pf" 2>/dev/null; rm -rf "$dir"' EXIT
+              deadline=$(($(date +%s) + 30))
+              until port=$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$dir/pf.log" | head -n 1) && [ -n "$port" ]; do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo 'port-forward to traefik never started' >&2; cat "$dir/pf.log" >&2; exit 1; }
+                sleep 1
+              done
+              host=echo-ingress.localhost
+              deadline=$(($(date +%s) + 120))
+              until body=$(curl -ksSf --resolve "$host:$port:127.0.0.1" "https://$host:$port/" 2>"$dir/curl.err"); do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo "echo never answered through traefik for $host" >&2; cat "$dir/curl.err" >&2; exit 1; }
+                sleep 2
+              done
+              [ "$body" = 'baukit e2e echo' ] || { echo "unexpected body through traefik: $body" >&2; exit 1; }
+              echo "traefik routed $host to the echo app"
+              code=$(curl -ksS -o /dev/null -w '%{http_code}' --resolve "other.localhost:$port:127.0.0.1" "https://other.localhost:$port/")
+              [ "$code" = 404 ] || { echo "a host without a route got $code, not 404" >&2; exit 1; }
+              echo 'a host without a route gets 404'
+    - name: network-policy
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              matrix=$(mktemp)
+              trap 'rm -f "$matrix"' EXIT
+              traefik='{app.kubernetes.io/name: traefik, app.kubernetes.io/instance: traefik-traefik}'
+              cat >"$matrix" <<EOF
+              - from: {namespace: traefik, labels: $traefik}
+                to: {service: echo.$NAMESPACE, port: 80}
+                expect: allow
+              - from: {namespace: ingress-outsider, labels: {}}
+                to: {service: traefik.traefik, port: 80}
+                expect: allow
+              - from: {namespace: ingress-outsider, labels: {}}
+                to: {service: echo.$NAMESPACE, port: 80}
+                expect: deny
+              - from: {namespace: ingress-outsider, labels: $traefik}
+                to: {service: echo.$NAMESPACE, port: 80}
+                expect: deny
+              EOF
+              PYTHONDONTWRITEBYTECODE=1 python3 ../netpol/probe.py --matrix "$matrix" --pod-prefix ingress-probe

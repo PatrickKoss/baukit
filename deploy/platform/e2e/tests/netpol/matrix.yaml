@@ -8,7 +8,8 @@
 # netpol-tenant-open adds a NetworkPolicy that allows all egress, so its rows test the destination's
 # ingress rules. netpol-tenant-pg is netpol-tenant-open plus baukit.dev/postgres-client=true.
 # Probe pods in platform namespaces borrow the pod labels of the workload whose policy they exercise.
-# Every allow rule in the N3 per-base policies has at least one row here.
+# Every allow rule in the N3 per-base policies has at least one row here. The e2e overlay leaves out
+# posthog, so its N4 fence rows live in posthog-matrix.yaml.
 - from: {namespace: netpol-tenant-open, labels: {}}
   to: {service: postgres-cluster-rw.postgres, port: 5432}
   expect: deny
@@ -91,12 +92,6 @@
 - from: {namespace: postgres, labels: {cnpg.io/podRole: instance}}
   to: {host: 1.1.1.1, port: 443}
   expect: allow
-- from: {namespace: posthog, labels: {app: posthog, role: plugins}}
-  to: {host: 1.1.1.1, port: 443}
-  expect: allow
-- from: {namespace: posthog, labels: {app: posthog, role: web}}
-  to: {host: 1.1.1.1, port: 443}
-  expect: deny
 
 # cert-manager HTTP-01 self-check
 - from: {namespace: cert-manager, labels: {app.kubernetes.io/name: cert-manager, app.kubernetes.io/component: controller}}
@@ -238,6 +233,9 @@
 - from: {namespace: postgres, labels: {app.kubernetes.io/name: postgres-restore-test}}
   to: {service: restore-test-pushgateway.postgres, port: 9091}
   expect: allow
+- from: {namespace: postgres, labels: {app.kubernetes.io/name: postgres-restore-test}}
+  to: {service: postgres-cluster-rw.postgres, port: 5432}
+  expect: allow
 - from: {namespace: postgres, labels: {app.kubernetes.io/name: rustfs}}
   to: {service: restore-test-pushgateway.postgres, port: 9091}
   expect: deny
@@ -250,40 +248,9 @@
   to: {service: traefik.traefik, port: 80}
   expect: allow
 - from: {namespace: traefik, labels: {app.kubernetes.io/name: traefik}}
-  to: {pod: {namespace: posthog, labels: {app: posthog, role: web}}, port: 8000}
-  expect: allow
-- from: {namespace: traefik, labels: {app.kubernetes.io/name: traefik}}
   to: {service: kube-prometheus-stack-prometheus.observability, port: 9090}
   expect: deny
 
-# PostHog fence
-- from: {namespace: posthog, labels: {app: posthog, role: web}}
-  to: {service: posthog-postgresql.posthog, port: 5432}
-  expect: allow
-- from: {namespace: posthog, labels: {app: posthog, role: web}}
-  to: {service: posthog-clickhouse.posthog, port: 8123}
-  expect: allow
-- from: {namespace: posthog, labels: {app: posthog, role: web}}
-  to: {service: posthog-kafka.posthog, port: 9092}
-  expect: allow
-- from: {namespace: posthog, labels: {app: posthog, role: web}}
-  to: {service: posthog-redis.posthog, port: 6379}
-  expect: allow
-- from: {namespace: posthog, labels: {app: posthog, role: web}}
-  to: {service: rustfs.postgres, port: 9000}
-  expect: allow
-- from: {namespace: posthog, labels: {app.kubernetes.io/name: posthog-clickhouse}}
-  to: {service: posthog-zookeeper.posthog, port: 2181}
-  expect: allow
-- from: {namespace: posthog, labels: {app.kubernetes.io/name: posthog-redis}}
-  to: {service: posthog-postgresql.posthog, port: 5432}
-  expect: deny
-- from: {namespace: posthog, labels: {app: posthog, role: web}}
-  to: {service: posthog-zookeeper.posthog, port: 2181}
-  expect: deny
-- from: {namespace: netpol-tenant-open, labels: {}}
-  to: {service: posthog-redis.posthog, port: 6379}
-  expect: deny
 - from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
   to: {pod: {namespace: falco, labels: {app.kubernetes.io/name: falco}}, port: 8765}
   expect: allow

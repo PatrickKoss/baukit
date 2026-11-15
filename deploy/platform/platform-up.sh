@@ -186,7 +186,7 @@ up() {
       printf 'Using the running registry mirrors.\n'
     fi
     k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port" \
-      --subnet "$k3d_subnet" "${mirror_args[@]}"
+      --subnet "$k3d_subnet" --k3s-arg "$(platform_local_etcd_arg)" "${mirror_args[@]}"
     rm -rf -- "$mirror_dir"
   else
     printf 'Cluster %s already exists; converging it.\n' "$cluster_name"
