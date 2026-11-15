@@ -1,0 +1,13 @@
+# For clusters that share their kernel with Docker, other k3d clusters or gate containers (k3d on
+# WSL2, the e2e cluster). It drops events without Kubernetes metadata, which come from those hosts.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+configMapGenerator:
+  - name: falco-overlay-rules
+    namespace: falco
+    files:
+      - shared-kernel.rules.yaml
+    options:
+      disableNameSuffixHash: true
+      labels:
+        app.kubernetes.io/part-of: baukit-platform

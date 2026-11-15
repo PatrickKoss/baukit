@@ -319,13 +319,13 @@ SHELL_RULE = "Baukit shell or package manager in app container"
 SHADOW_RULE = "Read sensitive file untrusted"
 
 
-def falco_event(priority, rule, namespace, process):
+def falco_event(priority, rule, namespace, process, pod=None):
     return {
         "time": "2026-11-15T16:00:00Z",
         "priority": priority,
         "rule": rule,
         "output": f"{priority} {rule}",
-        "output_fields": {"k8s.ns.name": namespace, "proc.name": process},
+        "output_fields": {"k8s.ns.name": namespace, "proc.name": process, "k8s.pod.name": pod},
     }
 
 
@@ -334,9 +334,9 @@ class FalcoEventsTests(unittest.TestCase):
         falco_event(
             "Notice", "Redirect STDOUT/STDIN to Network Connection in Container", None, "sh"
         ),
-        falco_event("Warning", SHADOW_RULE, "chainsaw-a", "runc:[1:CHILD]"),
-        falco_event("Warning", SHADOW_RULE, "chainsaw-a", "cat"),
-        falco_event("Critical", SHELL_RULE, "e2e-tenant", "sh"),
+        falco_event("Warning", SHADOW_RULE, "chainsaw-a", "runc:[1:CHILD]", "shadow-reader"),
+        falco_event("Warning", SHADOW_RULE, "chainsaw-a", "cat", "shadow-reader"),
+        falco_event("Critical", SHELL_RULE, "e2e-tenant", "sh", "echo-api-7d9-x2"),
     ]
 
     def run_events(self, *args):
@@ -370,27 +370,41 @@ class FalcoEventsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return [json.loads(line)["rule"] for line in result.stdout.splitlines()]
 
+    def query(self, source, priority, *filters):
+        return self.run_events(
+            "--source", source, "--since", SINCE, "--min-priority", priority, *filters
+        )
+
     def test_soak_floor_drops_notice_events(self):
-        rules = self.rules(self.run_events("falco", SINCE, "Warning"))
+        rules = self.rules(self.query("falco", "Warning"))
         self.assertEqual(len(rules), 3)
         self.assertNotIn("Redirect STDOUT/STDIN to Network Connection in Container", rules)
 
     def test_loki_and_falco_sources_agree(self):
-        falco = self.run_events("falco", SINCE, "Debug").stdout
-        loki = self.run_events("loki", SINCE, "Debug").stdout
+        falco = self.query("falco", "Debug").stdout
+        loki = self.query("loki", "Debug").stdout
         self.assertEqual(falco, loki)
         self.assertEqual(len(loki.splitlines()), 4)
 
     def test_process_filter_skips_the_runc_mount_read(self):
-        result = self.run_events("loki", SINCE, "Warning", SHADOW_RULE, "chainsaw-a", "cat")
-        self.assertEqual(len(self.rules(result)), 1)
+        filters = ("--rule", SHADOW_RULE, "--namespace", "chainsaw-a", "--process", "cat")
+        self.assertEqual(len(self.rules(self.query("loki", "Warning", *filters))), 1)
 
     def test_namespace_filter(self):
-        result = self.run_events("loki", SINCE, "Critical", SHELL_RULE, "other")
-        self.assertEqual(self.rules(result), [])
+        filters = ("--rule", SHELL_RULE, "--namespace", "other")
+        self.assertEqual(self.rules(self.query("loki", "Critical", *filters)), [])
+
+    def test_excluded_trigger_pods_leave_other_events(self):
+        filters = ("--exclude-pod", "shadow-reader", "--exclude-pod", "echo-api-7d9-x2")
+        self.assertEqual(self.rules(self.query("falco", "Warning", *filters)), [])
+        only_echo = self.query("falco", "Warning", "--exclude-pod", "echo-api-7d9-x2")
+        self.assertEqual(self.rules(only_echo), [SHADOW_RULE, SHADOW_RULE])
 
     def test_unknown_source_exits_2(self):
-        self.assertEqual(self.run_events("journal", SINCE, "Warning").returncode, 2)
+        self.assertEqual(self.query("journal", "Warning").returncode, 2)
+
+    def test_missing_since_exits_2(self):
+        self.assertEqual(self.run_events("--source", "falco").returncode, 2)
 
 
 if __name__ == "__main__":

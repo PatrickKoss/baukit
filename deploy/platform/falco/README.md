@@ -34,21 +34,18 @@ overlay changes Falco through two things only:
 Do not patch `falco_rules.yaml` or the HelmRelease values in an overlay. A new rule that every product
 needs belongs in `baukit.rules.yaml`.
 
-A node with a dedicated kernel (no Docker or other clusters on the host) should override the
-shared-kernel filter in `falco-overlay-rules`, so host processes are watched again:
-
-```yaml
-- macro: baukit_shared_kernel
-  condition: (never_true)
-  override:
-    condition: replace
-```
+`baukit_shared_kernel` defaults to `never_true`, so the base watches host processes too. A cluster that
+shares its kernel with Docker, other k3d clusters or gate containers (k3d on WSL2, the e2e cluster)
+adds the component `../components/falco-shared-kernel`. Its `falco-overlay-rules` ConfigMap turns the
+macro on, and the baukit rules then drop events that carry no `k8s.ns.name`. A production overlay
+needs nothing.
 
 ## Noise tuning
 
 A rule that fires on normal operation trains people to ignore Falco, so every Warning+ event on an
-idle cluster is a bug. `e2e/tests/falco` soaks the idle e2e cluster for 10 minutes and fails on any
-Warning+ event. To tune a noisy rule:
+idle cluster is a bug. The last step of `e2e/tests/falco` fails on any Warning+ event since Falco
+started, covering platform install and the suites that run alongside it, except from the pods the
+tests trigger on purpose. To tune a noisy rule:
 
 1. Find the events and the fields that set them apart:
 
@@ -63,8 +60,8 @@ Warning+ event. To tune a noisy rule:
 3. Write the narrowest exception that matches it: one image repository, one process name, one path.
    Never exclude a whole namespace or a whole rule.
 4. Validate with `./validate-rules.sh`, then rerun the falco e2e suite
-   (`deploy/platform/e2e/run.sh --suite tests/falco`) and check that the soak passes and the
-   detection steps still fire.
+   (`deploy/platform/e2e/run.sh --suite tests/falco`) and check that the noise step passes and
+   the detection steps still fire.
 
 ## Adding an exception macro
 

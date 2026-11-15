@@ -3,12 +3,29 @@
 set -euo pipefail
 
 usage() {
-  printf 'usage: %s falco|loki SINCE_RFC3339 MIN_PRIORITY [RULE] [NAMESPACE] [PROCESS]\n' "${0##*/}" >&2
+  cat >&2 <<USAGE
+usage: ${0##*/} --source falco|loki --since RFC3339 --min-priority PRIORITY
+       [--rule RULE] [--namespace NAMESPACE] [--process NAME] [--exclude-pod PREFIX]...
+USAGE
   exit 2
 }
 
-[[ $# -ge 3 && $# -le 6 ]] || usage
-source_name=$1 since=$2 min_priority=$3 rule=${4:-} namespace=${5:-} process=${6:-}
+source_name="" since="" min_priority="" rule="" namespace="" process="" exclude_pods=""
+while (($# > 0)); do
+  [[ $# -ge 2 ]] || usage
+  case $1 in
+    --source) source_name=$2 ;;
+    --since) since=$2 ;;
+    --min-priority) min_priority=$2 ;;
+    --rule) rule=$2 ;;
+    --namespace) namespace=$2 ;;
+    --process) process=$2 ;;
+    --exclude-pod) exclude_pods+="$2"$'\n' ;;
+    *) usage ;;
+  esac
+  shift 2
+done
+[[ -n $since && -n $min_priority ]] || usage
 
 falco_lines() {
   local pod
@@ -38,11 +55,13 @@ case $source_name in
   *) usage ;;
 esac
 
-"$lines" | MIN_PRIORITY=$min_priority RULE=$rule NAMESPACE=$namespace PROCESS=$process python3 -c '
+"$lines" | MIN_PRIORITY=$min_priority RULE=$rule NAMESPACE=$namespace PROCESS=$process \
+  EXCLUDE_PODS=$exclude_pods python3 -c '
 import json, os, sys
 order = ["Debug", "Informational", "Notice", "Warning", "Error", "Critical", "Alert", "Emergency"]
 floor = order.index(os.environ["MIN_PRIORITY"])
 rule, namespace, process = os.environ["RULE"], os.environ["NAMESPACE"], os.environ["PROCESS"]
+excluded = tuple(prefix for prefix in os.environ["EXCLUDE_PODS"].splitlines() if prefix)
 for line in sys.stdin:
     try:
         event = json.loads(line)
@@ -58,6 +77,8 @@ for line in sys.stdin:
     if namespace and fields.get("k8s.ns.name") != namespace:
         continue
     if process and fields.get("proc.name") != process:
+        continue
+    if excluded and str(fields.get("k8s.pod.name")).startswith(excluded):
         continue
     print(json.dumps({"time": event.get("time"), "priority": event["priority"], "rule": event.get("rule"), "output": event.get("output")}))
 '
