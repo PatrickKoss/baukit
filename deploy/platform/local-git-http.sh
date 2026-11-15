@@ -17,8 +17,10 @@ platform_k3s_config_dir() {
 
 # k3s server arguments shared by every local cluster and the e2e cluster. The
 # files they name come from platform_k3s_config_dir, mounted at
-# platform_k3s_config_mount.
+# platform_k3s_config_mount. k3s/server-help-<tag>.txt holds `k3s server --help`
+# of the pinned image; a test checks every flag against it.
 platform_k3s_config_mount=/etc/baukit/k3s
+platform_k3s_create_timeout=${PLATFORM_K3S_CREATE_TIMEOUT:-5m}
 platform_k3s_audit_log=/var/log/kubernetes/audit/audit.log
 
 platform_k3s_server_args() {
@@ -26,7 +28,7 @@ platform_k3s_server_args() {
     --disable=traefik \
     --secrets-encryption \
     --protect-kernel-defaults \
-    "--pod-security-admission-config-file=$platform_k3s_config_mount/pod-security.yaml" \
+    "--kube-apiserver-arg=admission-control-config-file=$platform_k3s_config_mount/pod-security.yaml" \
     "--kube-apiserver-arg=audit-policy-file=$platform_k3s_config_mount/audit-policy.yaml" \
     "--kube-apiserver-arg=audit-log-path=$platform_k3s_audit_log" \
     --kube-apiserver-arg=audit-log-maxage=7 \
@@ -108,8 +110,9 @@ k3d_create_local_cluster() {
   while IFS= read -r arg; do
     k3s_args+=(--k3s-arg "$arg@server:0")
   done < <(platform_k3s_server_args)
-  k3d cluster create "$cluster" \
+  if ! k3d cluster create "$cluster" \
     --image "$image" \
+    --timeout "$platform_k3s_create_timeout" \
     --servers 1 \
     --agents 0 \
     --volume "$config_dir:$platform_k3s_config_mount:ro@server:0" \
@@ -118,7 +121,12 @@ k3d_create_local_cluster() {
     --port "127.0.0.1:$http_port:80@loadbalancer" \
     --port "127.0.0.1:$https_port:443@loadbalancer" \
     --wait \
-    "${@:6}"
+    "${@:6}"; then
+    printf 'ERROR: k3d cluster create %s failed or timed out after %s; last server log lines:\n' \
+      "$cluster" "$platform_k3s_create_timeout" >&2
+    docker logs --tail 30 "k3d-$cluster-server-0" >&2 2>&1 || true
+    return 1
+  fi
 }
 
 # Runs the snapshot image with the bare repositories mounted read-only. The

@@ -159,7 +159,7 @@ class BindAddressTest(unittest.TestCase):
             "--disable=traefik",
             "--secrets-encryption",
             "--protect-kernel-defaults",
-            "--pod-security-admission-config-file=/etc/baukit/k3s/pod-security.yaml",
+            "--kube-apiserver-arg=admission-control-config-file=/etc/baukit/k3s/pod-security.yaml",
             "--kube-apiserver-arg=audit-policy-file=/etc/baukit/k3s/audit-policy.yaml",
             "--kube-apiserver-arg=audit-log-path=/var/log/kubernetes/audit/audit.log",
         ):
@@ -183,6 +183,44 @@ class BindAddressTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("kernel.panic=10 (now unreadable)", result.stderr)
         self.assertNotIn("cluster create", calls)
+
+    def test_every_server_flag_exists_in_the_pinned_k3s(self) -> None:
+        result = bash(f'source "{HELPER}"\nplatform_k3s_image\nplatform_k3s_server_args')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        image, *args = result.stdout.splitlines()
+        tag = image.split(":", 1)[1].split("@", 1)[0]
+        help_file = PLATFORM / "k3s" / f"server-help-{tag}.txt"
+        self.assertTrue(
+            help_file.is_file(), f"run: docker run --rm {image} server --help > {help_file}"
+        )
+        known = set(re.findall(r"^\s+(--[a-z0-9-]+)", help_file.read_text(), re.M))
+        for arg in args:
+            with self.subTest(arg=arg):
+                self.assertIn(arg.split("=", 1)[0], known)
+
+    def test_create_times_out_and_prints_the_server_log(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory)
+            write_stub(bin_dir, "k3d", 'printf "%s\\n" "$*" >> "$CALLS"\nexit 1\n')
+            write_stub(
+                bin_dir,
+                "docker",
+                '[ "$1" = info ] && { echo 2; exit 0; }\necho "level=fatal msg=boom"\n',
+            )
+            sysctl_root = bin_dir / "sys"
+            write_sysctls(sysctl_root, KERNEL_DEFAULTS)
+            result = bash(
+                f'source "{HELPER}"\nplatform_sysctl_root="{sysctl_root}"\n'
+                "k3d_create_local_cluster ph img random 8080 8443",
+                env={
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                    "CALLS": str(bin_dir / "calls"),
+                },
+            )
+            calls = (bin_dir / "calls").read_text()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--timeout 5m", calls)
+        self.assertIn("level=fatal msg=boom", result.stderr)
 
     def test_config_files_named_by_the_args_exist(self) -> None:
         result = bash(f'source "{HELPER}"\nplatform_k3s_server_args')
