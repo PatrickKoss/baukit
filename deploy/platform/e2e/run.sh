@@ -329,11 +329,18 @@ report_not_ready() {
     awk '$4 != "True"' >&2 || true
 }
 
+# Usage: flux_items_json <resource>. Prints the list as JSON, or nothing while the API server is
+# unavailable, so a poll reads "not ready yet" and the overall deadline decides.
+flux_items_json() {
+  kubectl get "$1" -A -o json 2>/dev/null || true
+}
+
 # Prints the HelmReleases whose remediation retries are used up; Flux marks them Stalled.
 stalled_releases() {
-  kubectl get helmreleases.helm.toolkit.fluxcd.io -A -o json | python3 -c '
+  flux_items_json helmreleases.helm.toolkit.fluxcd.io | python3 -c '
 import json, sys
-for item in json.load(sys.stdin)["items"]:
+text = sys.stdin.read().strip()
+for item in json.loads(text)["items"] if text else []:
     conditions = item.get("status", {}).get("conditions", [])
     if any(c["type"] == "Stalled" and c["status"] == "True" for c in conditions):
         print(item["metadata"]["namespace"] + "/" + item["metadata"]["name"])
@@ -342,9 +349,10 @@ for item in json.load(sys.stdin)["items"]:
 
 # Prints the Kustomizations whose Ready=False reason will not clear on its own.
 failed_kustomizations() {
-  kubectl get kustomizations.kustomize.toolkit.fluxcd.io -A -o json | python3 -c '
+  flux_items_json kustomizations.kustomize.toolkit.fluxcd.io | python3 -c '
 import json, sys
-for item in json.load(sys.stdin)["items"]:
+text = sys.stdin.read().strip()
+for item in json.loads(text)["items"] if text else []:
     for condition in item.get("status", {}).get("conditions", []):
         if condition["type"] == "Ready" and condition["status"] == "False" and condition.get(
             "reason"
@@ -413,7 +421,9 @@ collect_artifacts() {
   kubectl get networkpolicies -A -o yaml >"$artifacts_dir/network-policies.yaml" 2>&1 || true
   kubectl get jobs -A -o yaml >"$artifacts_dir/jobs.yaml" 2>&1 || true
   mkdir -p "$artifacts_dir/logs"
-  local namespace pod
+  local server=k3d-$cluster_name-server-0 namespace pod
+  docker logs --timestamps "$server" >"$artifacts_dir/logs/$server.log" 2>&1 || true
+  docker inspect --format '{{.RestartCount}}' "$server" >"$artifacts_dir/logs/$server.restart-count" 2>&1 || true
   while read -r namespace pod; do
     kubectl -n "$namespace" logs "$pod" --all-containers --prefix --tail=2000 \
       >"$artifacts_dir/logs/$namespace.$pod.log" 2>&1 || true
