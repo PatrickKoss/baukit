@@ -11,6 +11,12 @@ spec:
     name: kyverno
     namespace: kyverno
   install:
+    # Retry a failed install in place. The default strategy uninstalls first, and the chart's
+    # pre-delete scale-to-zero hook then waits forever for the admission controller service
+    # account that a failed pre-install never created.
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 1m
     remediation:
       retries: 3
   upgrade:
@@ -36,6 +42,9 @@ spec:
           tag: "v1.20.0@sha256:bd2b8b7c9d550ecf04e0bacaf351adce2f82ce67fd3f291075edcee7f8ab4ab4"
     upgrade:
       legacyPolicyCheck:
+        # The deadline also counts the kyverno-cli image pull. It stays below spec.timeout so a
+        # stalled check fails the hook before Helm gives up on the release.
+        activeDeadlineSeconds: 420
         image:
           tag: "v1.20.0@sha256:bd2b8b7c9d550ecf04e0bacaf351adce2f82ce67fd3f291075edcee7f8ab4ab4"
     config:
