@@ -33,6 +33,9 @@ spec:
       namespace: flux-system
     - kind: HelmRelease
       name: "*"
+      namespace: flux-system
+    - kind: HelmRelease
+      name: "*"
       namespace: cert-manager
     - kind: HelmRelease
       name: "*"
