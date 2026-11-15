@@ -1,7 +1,9 @@
 # Observability stack base
 
 This Flux-native base installs a deliberately non-HA observability stack in the
-`observability` namespace:
+`observability` namespace, which enforces Pod Security `restricted`. Node-exporter
+and Alloy need host access, so they run in the privileged `observability-agents`
+namespace:
 
 - kube-prometheus-stack 88.6.5: Prometheus Operator, one Prometheus, one
   Alertmanager, Grafana, kube-state-metrics, and node-exporter;
@@ -48,7 +50,7 @@ The Loki and Tempo HelmReleases depend on `kube-prometheus-stack` because both
 emit ServiceMonitors. This ordering ensures the Prometheus Operator CRDs exist
 before Helm submits those resources; Alloy then depends on Loki, and the Baukit
 content release depends on the Prometheus stack.
-5. A ConfigMap named `observability-cluster` in `observability`, with an
+5. A ConfigMap named `observability-cluster` in `observability-agents`, with an
    `environment` key whose value is the cluster's bounded environment identity
    (`local`, `testing`, or `production`). Alloy applies it to every log stream.
 

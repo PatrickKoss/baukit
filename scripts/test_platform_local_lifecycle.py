@@ -7,6 +7,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from typing import Any
 
 import yaml
 from process_runner import run_process
@@ -158,44 +159,217 @@ class StatusSecretsTest(unittest.TestCase):
 
 
 class RestoreTestScriptTest(unittest.TestCase):
-    def run_restore(self, storage_class: str) -> str:
+    PRIMARY = "postgres-cluster-restore-test-1"
+
+    def setUp(self) -> None:
         manifest = yaml.safe_load_all((PLATFORM / "postgres-cluster/restore-test.yaml").read_text())
         cronjob = next(doc for doc in manifest if doc["kind"] == "CronJob")
-        container = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]
-        env_names = {item["name"] for item in container["env"]}
-        self.assertIn("RESTORE_STORAGE_CLASS", env_names)
-        with tempfile.TemporaryDirectory() as directory:
-            bin_dir = Path(directory)
-            applied = bin_dir / "applied.yaml"
-            write_stub(bin_dir, "kubectl", f'if [ "$1" = apply ]; then cat > "{applied}"; fi\n')
-            write_stub(bin_dir, "wget", "cat >/dev/null\n")
-            result = run_process(
-                ["sh", "-ec", textwrap.dedent(container["args"][0])],
-                env={
-                    **os.environ,
-                    "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-                    "POD_NAMESPACE": "postgres",
-                    "RESTORE_STORAGE_CLASS": storage_class,
-                },
-                check=False,
-                capture_output=True,
-                text=True,
-                stdin=subprocess.DEVNULL,
+        pod = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+        self.writer = pod["initContainers"][0]
+        self.restorer = pod["containers"][0]
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.work = Path(directory.name)
+        self.applied = self.work / "applied.yaml"
+        self.pushed = self.work / "pushed.txt"
+        self.exec_log = self.work / "exec.txt"
+        self.sql = self.work / "sentinel.sql"
+        self.sentinel_file = self.work / "sentinel"
+
+    def container_env(self, container: dict[str, Any], **values: str) -> dict[str, str]:
+        names = {item["name"] for item in container["env"]}
+        for name in values:
+            self.assertIn(name, names)
+        return {
+            **os.environ,
+            "PATH": f"{self.work}{os.pathsep}{os.environ['PATH']}",
+            "POD_NAMESPACE": "postgres",
+            "SENTINEL_FILE": str(self.sentinel_file),
+            **values,
+        }
+
+    def run_script(
+        self, container: dict[str, Any], env: dict[str, str]
+    ) -> subprocess.CompletedProcess[str]:
+        return run_process(
+            ["sh", "-ec", textwrap.dedent(container["args"][0])],
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
+
+    def write_sentinel(self) -> str:
+        write_stub(
+            self.work, "psql", f'printf "%s\\n" "$*" > "{self.sql}.args"\ncat > "{self.sql}"\n'
+        )
+        env = self.container_env(
+            self.writer,
+            POD_NAME="postgres-restore-test-abc",
+            PGHOST="postgres-cluster-rw",
+            PGDATABASE="product",
+            PGUSER="product_owner",
+            PGPASSWORD="secret",
+        )
+        result = self.run_script(self.writer, env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return self.sentinel_file.read_text().strip()
+
+    def run_restore(
+        self, storage_class: str, restored_token: str
+    ) -> subprocess.CompletedProcess[str]:
+        write_stub(
+            self.work,
+            "kubectl",
+            f"""case "$1 $2" in
+  "apply -f") cat >> "{self.applied}"; echo --- >> "{self.applied}" ;;
+  "-n postgres")
+    case "$3 $4" in
+      "get backup") printf completed ;;
+      "get cluster") printf {self.PRIMARY} ;;
+      "exec -i")
+        printf '%s ' "$@" > "{self.exec_log}"
+        cat >> "{self.exec_log}"
+        printf '%s' {restored_token!r} ;;
+    esac ;;
+esac
+""",
+        )
+        write_stub(self.work, "wget", f'cat > "{self.pushed}"\n')
+        env = self.container_env(
+            self.restorer,
+            RESTORE_STORAGE_CLASS=storage_class,
+            JOB_NAME="postgres-restore-test-29000000",
+            JOB_UID="0b5c9a8e-1111-4222-8333-444455556666",
+            BACKUP_TIMEOUT_SECONDS="5",
+            POLL_SECONDS="0",
+            PGDATABASE="product",
+            PGUSER="product_owner",
+            PGPASSWORD="secret",
+        )
+        return self.run_script(self.restorer, env)
+
+    def applied_docs(self) -> list[dict[str, Any]]:
+        return [doc for doc in yaml.safe_load_all(self.applied.read_text()) if doc]
+
+    def restored_cluster(self) -> dict[str, Any]:
+        return next(doc for doc in self.applied_docs() if doc["kind"] == "Cluster")
+
+    def test_scheduled_backup_runs_once_at_creation(self) -> None:
+        schedule = yaml.safe_load((PLATFORM / "postgres-cluster/scheduledbackup.yaml").read_text())
+        self.assertIs(schedule["spec"]["immediate"], True)
+
+    def test_writer_upserts_a_fresh_sentinel_row_with_product_credentials(self) -> None:
+        token = self.write_sentinel()
+        self.assertRegex(token, r"^\d{8}T\d{6}Z-postgres-restore-test-abc$")
+        self.assertIn(f"token={token}", (self.sql.parent / "sentinel.sql.args").read_text())
+        sql = self.sql.read_text()
+        self.assertIn("CREATE TABLE IF NOT EXISTS baukit_restore_sentinel", sql)
+        self.assertIn(
+            "ON CONFLICT (id) DO UPDATE SET token = EXCLUDED.token, written_at = now()", sql
+        )
+        env = {item["name"]: item for item in self.writer["env"]}
+        self.assertEqual(
+            env["PGUSER"]["valueFrom"]["secretKeyRef"]["name"], "product-db-credentials"
+        )
+        self.assertEqual(
+            env["PGPASSWORD"]["valueFrom"]["secretKeyRef"]["name"], "product-db-credentials"
+        )
+
+    def test_restored_sentinel_round_trip_pushes_the_metric(self) -> None:
+        token = self.write_sentinel()
+        result = self.run_restore("", token)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(f"restored sentinel {token} matches", result.stdout)
+        backup = next(doc for doc in self.applied_docs() if doc["kind"] == "Backup")
+        self.assertEqual(
+            backup["spec"],
+            {
+                "method": "plugin",
+                "cluster": {"name": "postgres-cluster"},
+                "pluginConfiguration": {"name": "barman-cloud.cloudnative-pg.io"},
+            },
+        )
+        exec_call = self.exec_log.read_text()
+        self.assertIn(f"exec -i {self.PRIMARY} -c postgres", exec_call)
+        self.assertTrue(exec_call.endswith("secret\n"), "the password goes over stdin")
+        self.assertIn("baukit_restore_test_last_success_timestamp_seconds", self.pushed.read_text())
+
+    def test_backup_is_owned_by_the_job_from_the_downward_api(self) -> None:
+        token = self.write_sentinel()
+        result = self.run_restore("", token)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        backup = next(doc for doc in self.applied_docs() if doc["kind"] == "Backup")
+        self.assertEqual(backup["metadata"]["labels"], {"baukit.dev/restore-test": "true"})
+        self.assertEqual(
+            backup["metadata"]["ownerReferences"],
+            [
+                {
+                    "apiVersion": "batch/v1",
+                    "kind": "Job",
+                    "name": "postgres-restore-test-29000000",
+                    "uid": "0b5c9a8e-1111-4222-8333-444455556666",
+                    "controller": False,
+                    "blockOwnerDeletion": False,
+                }
+            ],
+        )
+        env = {item["name"]: item for item in self.restorer["env"]}
+        self.assertEqual(
+            env["JOB_NAME"]["valueFrom"]["fieldRef"]["fieldPath"],
+            "metadata.labels['batch.kubernetes.io/job-name']",
+        )
+        self.assertEqual(
+            env["JOB_UID"]["valueFrom"]["fieldRef"]["fieldPath"],
+            "metadata.labels['batch.kubernetes.io/controller-uid']",
+        )
+        cronjob = next(
+            doc
+            for doc in yaml.safe_load_all(
+                (PLATFORM / "postgres-cluster/restore-test.yaml").read_text()
             )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            return applied.read_text()
+            if doc["kind"] == "CronJob"
+        )
+        self.assertEqual(cronjob["spec"]["successfulJobsHistoryLimit"], 1)
+        self.assertEqual(cronjob["spec"]["failedJobsHistoryLimit"], 2)
+
+    def test_missing_sentinel_fails_without_pushing(self) -> None:
+        self.write_sentinel()
+        result = self.run_restore("", "")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("sentinel missing in the restored cluster", result.stderr)
+        self.assertFalse(self.pushed.exists())
+
+    def test_old_sentinel_fails_without_pushing(self) -> None:
+        self.write_sentinel()
+        result = self.run_restore("", "20260101T000000Z-postgres-restore-test-old")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not match", result.stderr)
+        self.assertFalse(self.pushed.exists())
+
+    def test_unwritten_sentinel_fails_before_the_backup(self) -> None:
+        self.sentinel_file.write_text("")
+        result = self.run_restore("", "")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no sentinel was written", result.stderr)
+        self.assertFalse(self.applied.exists())
 
     def test_restore_cluster_uses_the_configured_storage_class(self) -> None:
-        cluster = yaml.safe_load(self.run_restore("hcloud-volumes-delete"))
+        token = self.write_sentinel()
+        self.assertEqual(self.run_restore("hcloud-volumes-delete", token).returncode, 0)
+        cluster = self.restored_cluster()
         self.assertEqual(cluster["metadata"]["name"], "postgres-cluster-restore-test")
         self.assertIs(cluster["spec"]["enablePDB"], False)
         self.assertEqual(
-            cluster["spec"]["storage"], {"size": "10Gi", "storageClass": "hcloud-volumes-delete"}
+            cluster["spec"]["storage"],
+            {"size": "10Gi", "storageClass": "hcloud-volumes-delete"},
         )
 
     def test_restore_cluster_defaults_to_the_default_storage_class(self) -> None:
-        cluster = yaml.safe_load(self.run_restore(""))
-        self.assertEqual(cluster["spec"]["storage"], {"size": "10Gi"})
+        token = self.write_sentinel()
+        self.assertEqual(self.run_restore("", token).returncode, 0)
+        self.assertEqual(self.restored_cluster()["spec"]["storage"], {"size": "10Gi"})
 
 
 if __name__ == "__main__":

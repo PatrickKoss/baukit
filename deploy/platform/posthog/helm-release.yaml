@@ -45,6 +45,8 @@ spec:
     posthogSecretKey:
       existingSecret: posthog-secrets
       existingSecretKey: posthog-secret
+    service:
+      type: ClusterIP
     ingress:
       enabled: false
       nginx:
