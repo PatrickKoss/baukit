@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -168,6 +169,29 @@ class FluxLockdownVerifyTest(unittest.TestCase):
         self.assertIn("flux_lockdown_render", up)
         self.assertNotIn("flux install", up)
         self.assertEqual(lifecycle.count('--components="$flux_lockdown_components"'), 2)
+
+    def test_platform_up_installs_the_tools_toml_flux_version(self) -> None:
+        up = (PLATFORM / "platform-up.sh").read_text()
+        self.assertIn('flux_version=v$(baukit_tool_version "$repo_root" flux)', up)
+        self.assertIn('flux_lockdown_render "$platform_dir" "$flux_version"', up)
+        self.assertIn('baukit_use_tools "$repo_root" flux', up)
+        self.assertIsNone(re.search(r"\bv?2\.\d+\.\d+\b", up))
+
+    def test_component_comment_names_the_tools_toml_flux_version(self) -> None:
+        tools = tomllib.loads((PLATFORM.parent / "tools.toml").read_text())
+        version = tools["tools"]["flux"]["version"]
+        self.assertIn(f"# Flux v{version} controller images", COMPONENT.read_text())
+
+
+class LocalGitPortTest(unittest.TestCase):
+    def test_platform_up_serves_the_port_the_local_source_names(self) -> None:
+        up = (PLATFORM / "platform-up.sh").read_text()
+        source = (PLATFORM / "overlays/local/source.yaml").read_text()
+        port = re.search(r"^git_port=(\d+)$", up, re.MULTILINE)
+        self.assertIsNotNone(port)
+        assert port is not None
+        self.assertIn(f"url: http://host.k3d.internal:{port.group(1)}/baukit.git", source)
+        self.assertNotIn("BAUKIT_PLATFORM_GIT_PORT", up)
 
 
 if __name__ == "__main__":

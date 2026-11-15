@@ -16,7 +16,7 @@ spec:
   matchConstraints:
     resourceRules:
       - apiGroups: [notification.toolkit.fluxcd.io]
-        apiVersions: [v1beta3]
+        apiVersions: [v1, v1beta3]
         operations: [CREATE, UPDATE]
         resources: [alerts]
     namespaceSelector:

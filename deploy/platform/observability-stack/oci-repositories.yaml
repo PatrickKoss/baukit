@@ -7,8 +7,8 @@ spec:
   interval: 24h
   url: oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack
   ref:
-    tag: "88.6.5"
-    digest: sha256:6d1ebbcdd48c63658a5da23bcf11a9f048d19b2909f22017cfa6a9cbf4d5aff9
+    tag: "93.3.0"
+    digest: sha256:12b96b769049bbac5021d1bf544476ed3b1f42df7216d8eb7a70e98007a655a1
   layerSelector:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
@@ -22,8 +22,8 @@ spec:
   interval: 24h
   url: oci://ghcr.io/grafana-community/helm-charts/loki
   ref:
-    tag: "18.13.7"
-    digest: sha256:e1895eab42130d19a574e1c7a19af84d7e03a8f7fbe2fc6da5fa7e878f15c2bd
+    tag: "21.2.3"
+    digest: sha256:bd02e2e55cdc0f0ac0cfbb2e01a01b7eba5316787a8ec38a35f315bbd405eed6
   layerSelector:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
@@ -37,8 +37,23 @@ spec:
   interval: 24h
   url: oci://ghcr.io/grafana-community/helm-charts/tempo
   ref:
-    tag: "2.4.0"
-    digest: sha256:276b42fdc8170df2e3eb5b510c193f9e62048af436caef9189abe46e587a548d
+    tag: "3.2.1"
+    digest: sha256:7cf66b47c9b6693900b8886d9accf296d57e5a226164d236f043ada17ff54844
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: alloy
+  namespace: observability-agents
+spec:
+  interval: 24h
+  url: oci://ghcr.io/grafana/helm-charts/alloy
+  ref:
+    tag: "1.16.0"
+    digest: sha256:b55a879497d59b66b65c9147d1e4fe3d25f93e18aff046bdf014fbcf8871ea87
   layerSelector:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy

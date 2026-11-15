@@ -1,4 +1,4 @@
-apiVersion: notification.toolkit.fluxcd.io/v1beta3
+apiVersion: notification.toolkit.fluxcd.io/v1
 kind: Alert
 metadata:
   name: own-sources
@@ -13,7 +13,7 @@ spec:
       name: shop
       namespace: shop
 ---
-apiVersion: notification.toolkit.fluxcd.io/v1beta3
+apiVersion: notification.toolkit.fluxcd.io/v1
 kind: Alert
 metadata:
   name: platform-sources
@@ -26,7 +26,7 @@ spec:
       name: "*"
       namespace: flux-system
 ---
-apiVersion: notification.toolkit.fluxcd.io/v1beta3
+apiVersion: notification.toolkit.fluxcd.io/v1
 kind: Alert
 metadata:
   name: platform-alert
@@ -38,3 +38,16 @@ spec:
     - kind: HelmRelease
       name: "*"
       namespace: observability
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: platform-sources-v1beta3
+  namespace: shop
+spec:
+  providerRef:
+    name: shop
+  eventSources:
+    - kind: Kustomization
+      name: "*"
+      namespace: flux-system

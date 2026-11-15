@@ -15,7 +15,7 @@ spec:
         resources: [helmreleases]
   variables:
     - name: chartsWithTests
-      expression: '["falco", "kyverno"]'
+      expression: '["falco", "kube-prometheus-stack", "kyverno"]'
     - name: chart
       expression: >-
         object.spec.?chart.?spec.?chart.orValue(object.spec.?chartRef.?name.orValue(""))

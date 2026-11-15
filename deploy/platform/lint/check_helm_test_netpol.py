@@ -3,7 +3,8 @@
 
 For each HelmRelease with spec.test.enable in a rendered base, the chart's helm.sh/hook test pods
 are read from validate.sh's chart render. A test pod connects to each chart Service whose name and
-port appear in its command line. The pod's egress and the Service backends' ingress must both be
+port appear in its command line or in a chart ConfigMap it mounts; `http://<service>` with no port
+means port 80. The pod's egress and the Service backends' ingress must both be
 admitted by the NetworkPolicies of the base, or by no policy at all for that direction.
 """
 
@@ -18,6 +19,7 @@ import helm_yaml
 
 WORKLOAD_KINDS = {"Deployment", "StatefulSet", "DaemonSet"}
 TEST_HOOKS = {"test", "test-success"}
+HTTP_PORT = 80
 
 
 def documents(path: Path) -> list[dict]:
@@ -58,6 +60,25 @@ def command_line(pod: dict) -> str:
     return " ".join(str(part) for part in parts)
 
 
+def mounted_scripts(pod: dict, chart: list[dict]) -> str:
+    names = {
+        (volume.get("configMap") or {}).get("name") for volume in pod["spec"].get("volumes") or []
+    }
+    return " ".join(
+        str(value)
+        for doc in chart
+        if doc.get("kind") == "ConfigMap" and doc["metadata"].get("name") in names
+        for value in (doc.get("data") or {}).values()
+    )
+
+
+def names_port(line: str, service: str, port: int) -> bool:
+    if mentions(line, str(port)):
+        return True
+    url = re.search(rf"http://{re.escape(service)}(?![\w.:-])", line)
+    return port == HTTP_PORT and url is not None
+
+
 def backends(service: dict, chart: list[dict]) -> list[tuple[dict, dict]]:
     selector = service["spec"].get("selector") or {}
     found = []
@@ -87,14 +108,14 @@ def mentions(line: str, token: str) -> bool:
 
 
 def destinations(pod: dict, chart: list[dict]) -> list[tuple[str, dict, int]]:
-    line = command_line(pod)
+    line = f"{command_line(pod)} {mounted_scripts(pod, chart)}"
     found = []
     for service in (doc for doc in chart if doc.get("kind") == "Service"):
         name = service["metadata"]["name"]
         if not mentions(line, name):
             continue
         for port in service["spec"].get("ports", []):
-            if not mentions(line, str(port["port"])):
+            if not names_port(line, name, port["port"]):
                 continue
             for labels, pod_spec in backends(service, chart):
                 number = target_port(port, pod_spec)

@@ -17,7 +17,7 @@ results:
   - isValidatingPolicy: true
     policy: flux-tenant-alert-sources
     kind: Alert
-    resources: [platform-sources]
+    resources: [platform-sources, platform-sources-v1beta3]
     result: fail
   - isValidatingPolicy: true
     policy: flux-tenant-alert-sources

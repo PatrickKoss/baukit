@@ -5,12 +5,12 @@ This Flux-native base installs a deliberately non-HA observability stack in the
 and Alloy need host access, so they run in the privileged `observability-agents`
 namespace:
 
-- kube-prometheus-stack 88.6.5: Prometheus Operator, one Prometheus, one
+- kube-prometheus-stack 93.3.0: Prometheus Operator, one Prometheus, one
   Alertmanager, Grafana, kube-state-metrics, and node-exporter;
-- Loki 18.13.7 in monolithic mode with one filesystem-backed replica;
-- Tempo 2.4.0 in monolithic mode with one filesystem-backed replica and OTLP
+- Loki 21.2.3 in monolithic mode with one filesystem-backed replica;
+- Tempo 3.2.1 (Tempo 3.1.1) in monolithic mode with one filesystem-backed replica and OTLP
   gRPC/HTTP receivers;
-- Alloy 1.13.0 as a DaemonSet that sends Kubernetes pod logs and the k3s API server
+- Alloy 1.16.0 as a DaemonSet that sends Kubernetes pod logs and the k3s API server
   audit log (`{service="kube-audit"}`, written by `deploy/platform/k3s/audit-policy.yaml`) to Loki;
 - the existing `deploy/observability` chart as dashboards, recording rules, and
   alert content; and
@@ -45,7 +45,7 @@ An overlay **must** provide all of the following:
    mounts this Secret into the Alertmanager pod, so without it the pod stays
    in `ContainerCreating` with `secret "alertmanager-routing" not found`, no
    Watchdog reaches the heartbeat, and the external dead man's switch fires.
-   The mount matters because Prometheus Operator v0.93.1 does not fail on a
+   The mount matters because Prometheus Operator (seen with v0.93.1) does not fail on a
    missing config Secret: it logs `config secret not found, using default
    Alertmanager configuration` and starts with a config that drops every
    alert. `lint/check_alertmanager_config.py` checks the example and every
@@ -123,9 +123,9 @@ and the compactor working directory. Its 48 hours of chunks share the RustFS
 PVC with the Barman backups.
 
 Tempo deletes blocks older than `block_retention` (168h base, 48h local). The
-ingester cuts a block at `ingester.max_block_bytes` (256 MiB base, 64 MiB local)
-and the compactor stops growing a block at
-`compactor.compaction.max_block_bytes` (1 GiB base, 200 MiB local), so a
+live-store cuts a block at `live_store.max_block_bytes` (256 MiB base, 64 MiB
+local) and the backend worker stops growing a block at
+`backend_worker.compaction.max_block_bytes` (1 GiB base, 200 MiB local), so a
 compaction needs at most twice that as transient space. On the 10 Gi base that
 leaves 10 GiB - 2 x 1 GiB - 2 x 256 MiB = 7.5 GiB for blocks, which fits 7 days
 below 1.07 GiB per day (about 12.7 KiB/s). On the 2 Gi local PVC it leaves

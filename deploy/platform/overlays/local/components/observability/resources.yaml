@@ -78,12 +78,12 @@ metadata:
 spec:
   values:
     tempo:
-      memBallastSizeMbs: 32
       retention: 48h
-      ingester:
+      liveStore:
         max_block_bytes: 67108864
-      extraArgs:
-        compactor.compaction.compaction.max-block-bytes: "209715200"
+      backendWorker:
+        compaction:
+          max_block_bytes: 209715200
       resources:
         requests:
           cpu: 75m

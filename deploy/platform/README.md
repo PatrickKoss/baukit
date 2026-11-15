@@ -100,10 +100,10 @@ HelmRelease disagrees with this table.
 | `kyverno` | OCI `oci://ghcr.io/kyverno/charts/kyverno` | no | none |  | Kyverno signs its images, not the 3.10.0 chart: no signature tag or bundle for the digest. |
 | `kyverno-policies` | OCI `oci://ghcr.io/kyverno/charts/kyverno-policies` | no | none |  | Same as the kyverno chart. |
 | `policy-reporter` | OCI `oci://ghcr.io/kyverno/charts/policy-reporter` | keyless | cosign | `^https://token\.actions\.githubusercontent\.com$` `^https://github\.com/kyverno/policy-reporter/\.github/workflows/release-chart\.yaml@refs/tags/policy-reporter-chart-v[0-9]+\.[0-9]+\.[0-9]+$` |  |
-| `kube-prometheus-stack` | OCI `oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack` | no | none |  | No signature or bundle for the 88.6.5 digest. |
+| `kube-prometheus-stack` | OCI `oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack` | no | none |  | No signature or bundle for the 93.3.0 digest. |
 | `loki` | OCI `oci://ghcr.io/grafana-community/helm-charts/loki` | no | none |  | grafana-community pushes charts unsigned. |
 | `tempo` | OCI `oci://ghcr.io/grafana-community/helm-charts/tempo` | no | none |  | grafana-community pushes charts unsigned. |
-| `alloy` | HelmRepository `https://grafana.github.io/helm-charts` | no | none |  | `ghcr.io/grafana/helm-charts/alloy` holds only 1.16.0, not the pinned 1.13.0. Move it to OCI with the next version bump. |
+| `alloy` | OCI `oci://ghcr.io/grafana/helm-charts/alloy` | no | none |  | No signature or bundle for the 1.16.0 digest. |
 | `traefik` | OCI `oci://ghcr.io/traefik/helm/traefik` | no | none |  | No signature or bundle for the 42.4.0 digest. |
 | `posthog` | HelmRepository `https://posthog.github.io/charts-clickhouse` | no | none |  | PostHog publishes the sunset chart only in the HTTPS index. |
 
@@ -201,7 +201,7 @@ available through `make platform-{up,down,nuke,recreate,status}`.
 ### Prerequisites
 
 Install Docker, k3d, Flux, kubectl, SOPS, age, Git, and tar. The lifecycle pins
-Flux `v2.9.4` and defaults to
+Flux `v2.10.0` and defaults to
 `rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332`. The GitOps repository must already contain the
 Flux entrypoint at the configured cluster path. Its committed sync manifests
 may exist already; bootstrap reuses and reconciles them idempotently.
@@ -234,7 +234,7 @@ owned and contain assignments only.
 | `PLATFORM_BAUKIT_SOURCE_MODE` | `github-tag` | `github-tag` or `local-snapshot`. The GitOps overlay owns the matching `GitRepository/baukit` manifest. |
 | `PLATFORM_BAUKIT_CHECKOUT` | snapshot mode | Baukit working-tree path copied into the disposable snapshot. |
 | `PLATFORM_K3S_IMAGE` | `rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332` | k3s image used when creating the cluster. The default is `platform_k3s_image` in `local-git-http.sh`, shared with `platform-up.sh` and the k3d smoke. |
-| `PLATFORM_FLUX_VERSION` | `flux` in `deploy/tools.toml` (`v2.9.4`) | Flux pin; override only as a reviewed platform upgrade. |
+| `PLATFORM_FLUX_VERSION` | `flux` in `deploy/tools.toml` (`v2.10.0`) | Flux pin; override only as a reviewed platform upgrade. |
 | `PLATFORM_SNAPSHOT_PORT` | `9418` | Port for local smart HTTP, published on the k3d network gateway. |
 | `PLATFORM_API_PORT` | `random` | Host port of the Kubernetes API, bound to `127.0.0.1`. |
 | `PLATFORM_HTTP_PORT` | `80` | Host port for HTTP ingress, bound to `127.0.0.1`. |
@@ -318,7 +318,7 @@ live Deployments and fails `up` when a flag is missing:
 component does not work there, because `--no-remote-bases` refuses it. The last patch gives the
 bootstrap Kustomization `serviceAccountName: kustomize-controller`; the verifier checks that too.
 
-The component's `images:` list pins each controller of Flux v2.9.4 by multi-arch index digest, and
+The component's `images:` list pins each controller of Flux v2.10.0 by multi-arch index digest, and
 `flux_lockdown_images` in `flux-lockdown.sh` lists the same references. The GitOps repository's
 `flux-system/kustomization.yaml` needs that `images:` list as well: the verifier fails `up` and the
 lifecycle bootstrap with `<controller> image <ref>` when a live controller runs another image. A Flux
@@ -395,7 +395,6 @@ directory is mode 0700 and its `secrets.env` is mode 0600.
 |---|---|---|
 | `BAUKIT_PLATFORM_CLUSTER` | `baukit-local` | k3d cluster name. |
 | `BAUKIT_PLATFORM_STATE_DIR` | `deploy/platform/.local-state` | Generated credentials and snapshot state. |
-| `BAUKIT_PLATFORM_GIT_PORT` | `9418` | Snapshot server port on the k3d network gateway. |
 | `BAUKIT_PLATFORM_API_PORT` | `random` | Kubernetes API port on `127.0.0.1`. |
 | `BAUKIT_PLATFORM_HTTP_PORT` | `80` | HTTP ingress port on `127.0.0.1`. |
 | `BAUKIT_PLATFORM_HTTPS_PORT` | `443` | HTTPS ingress port on `127.0.0.1`. | No Secret manifest or credential value is stored in

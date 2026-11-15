@@ -53,7 +53,7 @@ spec:
   secrets: {secrets}
 """
 
-BASE = """apiVersion: notification.toolkit.fluxcd.io/v1beta3
+BASE = """apiVersion: notification.toolkit.fluxcd.io/v1
 kind: Alert
 metadata:
   name: flux-errors

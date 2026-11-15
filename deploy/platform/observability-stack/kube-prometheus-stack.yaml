@@ -10,6 +10,8 @@ spec:
     kind: OCIRepository
     name: kube-prometheus-stack
     namespace: observability
+  test:
+    enable: true
   install:
     crds: CreateReplace
     remediation:
@@ -82,10 +84,20 @@ spec:
     grafana:
       priorityClassName: platform-standard
       image:
-        sha: 0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
-        tag: "13.3.1"
+        sha: 54e297ac67e2b72572f926892f4e06074dc4f79f2a56ed9a9ca9a88a46f28733
+        tag: "13.3.1-distroless"
       enabled: true
       replicas: 1
+      testFramework:
+        image:
+          tag: "1.14.0@sha256:5322b877351fda0cc435de8c6116de7d0a2ec79d7c680132a0ef329a633bc66f"
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 100m
+            memory: 64Mi
       # The overlay creates this Secret with admin-user and admin-password.
       admin:
         existingSecret: grafana-admin
@@ -314,11 +326,11 @@ spec:
     prometheusOperator:
       priorityClassName: platform-standard
       thanosImage:
-        sha: b567818fe608067eb0f1d7c2c4fe361e7ad83c8a256234c97685f1d0bf670cc8
-        tag: v0.42.4
+        sha: 0a546b98a8dd47735456ab389983675ee363d68127e334937a9fceeea10da5e7
+        tag: v0.42.5
       image:
-        sha: e52bb28fd41c98dd407c7a8cba8bdcfe7eabd7447e250afaf1fe7bb816dedbff
-        tag: v0.93.1
+        sha: 7986c2afa118c9dea07d01c5e1a29555824582e92f6ee8607591d1a7178acf29
+        tag: v0.95.2
       enabled: true
       admissionWebhooks:
         patch:
@@ -335,8 +347,8 @@ spec:
               memory: 64Mi
       prometheusConfigReloader:
         image:
-          sha: 428f088fe6fe07ab138bda92113664b04848a1dc408e4d3680a60ecdb55d1a65
-          tag: v0.93.1
+          sha: cc74ddedad4ab1c49446971f6d51302ad4303d8660a2018af925c7f62c114304
+          tag: v0.95.2
         resources:
           requests:
             cpu: 10m
@@ -417,3 +429,13 @@ spec:
 
     thanosRuler:
       enabled: false
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              version: v1
+              kind: Pod
+            patch: |-
+              - op: add
+                path: /spec/priorityClassName
+                value: platform-standard
