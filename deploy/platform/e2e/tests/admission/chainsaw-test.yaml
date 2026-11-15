@@ -27,7 +27,7 @@ spec:
                 if output=$(kubectl apply --dry-run=server -f "$dir/deny.yaml" 2>&1); then
                   echo "$policy: violating manifest was admitted"
                   failed=1
-                elif ! printf '%s\n' "$output" | grep -Fq "policy $policy"; then
+                elif ! printf '%s\n' "$output" | grep -Fq "Policy $policy failed:"; then
                   echo "$policy: rejected, but not by this policy: $output"
                   failed=1
                 fi
