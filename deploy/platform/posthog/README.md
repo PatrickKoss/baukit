@@ -6,7 +6,8 @@ overlay explicitly composes `deploy/platform/posthog/`; no other Baukit base or
 chart references it.
 
 The application renderer is the final published PostHog Kubernetes chart,
-`30.46.0` (PostHog `1.43.0`). PostHog ended Kubernetes support in 2023, so the
+`30.46.0` (app version `1.43.0`), running the `release-1.43.1` image, the newest
+PostHog release. PostHog ended Kubernetes support in 2023, so the
 chart is treated as a pinned renderer rather than an upgrade stream. The
 PostHog, ClickHouse 22.8.21.38, PostgreSQL 14.25, and Redis 6.2.24,
 Redpanda, ZooKeeper, and BusyBox images
@@ -46,13 +47,26 @@ gap during an upgrade cannot hang the hook.
 The chart uses external S3 storage at
 `http://rustfs.postgres.svc.cluster.local:9000`, bucket `posthog`, region
 `us-east-1`. The local foundation creates the bucket. The pinned chart disables
-its bundled object store by default. PostHog 1.43.0's plugin client forces
+its bundled object store by default. PostHog 1.43.1's plugin client forces
 path-style addressing, and its Python client uses the custom endpoint with
 Boto's automatic path-style selection. Session recording remains disabled.
 
-PostHog 1.43.0 refuses PostgreSQL above 14.1.0. 14.25 only adds patch releases
-on the same major, so the release sets `SKIP_SERVICE_VERSION_REQUIREMENTS=1`.
-ClickHouse and Redis sit inside its ranges.
+PostHog 1.43.1 checks its services against fixed ranges in
+`posthog/settings/service_requirements.py`: PostgreSQL `>=11.0.0,<=14.1.0`,
+Redis `>=5.0.0,<=6.3.0` and ClickHouse `>=21.6.0,<22.9.0`. 14.25 only adds
+patch releases on the same PostgreSQL major, so the release sets
+`SKIP_SERVICE_VERSION_REQUIREMENTS=1`. The newest images inside the other two
+ranges are Redis 6.2.24 and ClickHouse 22.8.21.38, so neither moves to a newer
+line. The chart's own ClickHouse default, 23.9.2.56, is outside the range as
+well. PostgreSQL stays on 14.25, the newest 14 patch; a new major would need a
+dump and restore for a release that refuses anything above 14.1.
+
+Redpanda runs v26.2.7. PostHog only uses its Kafka API, and the 26.1 and 26.2
+notes list no change to the Kafka API, `--mode=dev-container`, `--smp`,
+`--memory`, `--reserve-memory` or `--overprovisioned`. Redpanda upgrades one
+feature release at a time, so a running cluster with a 25.3 data volume must
+start once on v26.1.17 before it moves to v26.2.7. A fresh install starts on
+v26.2.7 directly.
 
 ## Network fence
 

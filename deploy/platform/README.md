@@ -104,7 +104,7 @@ HelmRelease disagrees with this table.
 | `loki` | OCI `oci://ghcr.io/grafana-community/helm-charts/loki` | no | none |  | grafana-community pushes charts unsigned. |
 | `tempo` | OCI `oci://ghcr.io/grafana-community/helm-charts/tempo` | no | none |  | grafana-community pushes charts unsigned. |
 | `alloy` | HelmRepository `https://grafana.github.io/helm-charts` | no | none |  | `ghcr.io/grafana/helm-charts/alloy` holds only 1.16.0, not the pinned 1.13.0. Move it to OCI with the next version bump. |
-| `traefik` | OCI `oci://ghcr.io/traefik/helm/traefik` | no | none |  | No signature or bundle for the 41.6.1 digest. |
+| `traefik` | OCI `oci://ghcr.io/traefik/helm/traefik` | no | none |  | No signature or bundle for the 42.4.0 digest. |
 | `posthog` | HelmRepository `https://posthog.github.io/charts-clickhouse` | no | none |  | PostHog publishes the sunset chart only in the HTTPS index. |
 
 Every keyless identity uses the issuer and subject regexes shown. The subjects
@@ -117,7 +117,7 @@ and the remaining charts from their HTTPS indexes. A warm
 
 Every Namespace manifest carries the four Pod Security Admission labels.
 `enforce` is the level below, `enforce-version` is pinned to the k3s minor in
-`platform-lifecycle.sh` (`v1.34`), and `audit` and `warn` are `restricted`
+`platform-lifecycle.sh` (`v1.37`), and `audit` and `warn` are `restricted`
 everywhere, so a gap shows up as a warning even where `enforce` is looser.
 
 | Level | Namespaces |
@@ -189,8 +189,8 @@ available through `make platform-{up,down,nuke,recreate,status}`.
 ### Prerequisites
 
 Install Docker, k3d, Flux, kubectl, SOPS, age, Git, and tar. The lifecycle pins
-Flux `v2.9.4` and defaults to the WSL2/cgroup-v1-safe
-`rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f`. The GitOps repository must already contain the
+Flux `v2.9.4` and defaults to
+`rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332`. The GitOps repository must already contain the
 Flux entrypoint at the configured cluster path. Its committed sync manifests
 may exist already; bootstrap reuses and reconciles them idempotently.
 
@@ -221,7 +221,7 @@ owned and contain assignments only.
 | `PLATFORM_AGE_KEY_FILE` | required for `up` | SOPS age identity installed as `flux-system/sops-age`. |
 | `PLATFORM_BAUKIT_SOURCE_MODE` | `github-tag` | `github-tag` or `local-snapshot`. The GitOps overlay owns the matching `GitRepository/baukit` manifest. |
 | `PLATFORM_BAUKIT_CHECKOUT` | snapshot mode | Baukit working-tree path copied into the disposable snapshot. |
-| `PLATFORM_K3S_IMAGE` | `rancher/k3s:v1.34.13-k3s1@sha256:fb940fd33b04fe6894e5c09ca1d976e25a5eb378e2ee49144401d660dd1d306f` | k3s image used when creating the cluster. The default is `platform_k3s_image` in `local-git-http.sh`, shared with `platform-up.sh` and the k3d smoke. |
+| `PLATFORM_K3S_IMAGE` | `rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332` | k3s image used when creating the cluster. The default is `platform_k3s_image` in `local-git-http.sh`, shared with `platform-up.sh` and the k3d smoke. |
 | `PLATFORM_FLUX_VERSION` | `flux` in `deploy/tools.toml` (`v2.9.4`) | Flux pin; override only as a reviewed platform upgrade. |
 | `PLATFORM_SNAPSHOT_PORT` | `9418` | Port for local smart HTTP, published on the k3d network gateway. |
 | `PLATFORM_API_PORT` | `random` | Host port of the Kubernetes API, bound to `127.0.0.1`. |
@@ -453,11 +453,13 @@ for the measured complete-stack footprint.
 
 ### Local k3s compatibility and troubleshooting
 
-The infrastructure pin is the stable k3s v1.36 channel. k3s v1.36 rejects
-cgroup v1 hosts, including the WSL2 Docker environment used for this proof, so
-the k3d flavor uses the newest k3s release that still supports that host:
-`v1.34.13-k3s1`. Real nodes must use the I0 v1.36 stable pin. Upgrade the local
-exception once the development Docker host exposes cgroup v2.
+Local clusters run k3s `v1.37.2-k3s1`, the newest release. The infrastructure
+pin is the stable k3s v1.36 channel. Kubernetes 1.35 and later do not support
+cgroup v1, so `k3d_create_local_cluster` and the k3d smoke stop before k3d when
+`docker info --format '{{.CgroupVersion}}'` is not `2`. On WSL2, add
+`kernelCommandLine = cgroup_no_v1=all` under `[wsl2]` in `%UserProfile%\.wslconfig`,
+run `wsl --shutdown`, and check that `stat -fc %T /sys/fs/cgroup` prints
+`cgroup2fs`.
 
 - If `GitRepository/baukit` reports an EOF or connection failure, inspect
   `.local-state/git-http.log`, verify the PID recorded in
