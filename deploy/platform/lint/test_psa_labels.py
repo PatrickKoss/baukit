@@ -6,6 +6,7 @@ from pathlib import Path
 
 PLATFORM = Path(__file__).resolve().parent.parent
 LIFECYCLE = PLATFORM / "platform-lifecycle.sh"
+K3S_IMAGE_SOURCE = PLATFORM / "local-git-http.sh"
 SKIPPED_DIRS = {".helm-cache", "tests", "lint"}
 PSA_POLICY = PLATFORM / "kyverno-policies/policies/require-psa-labels.yaml"
 ALLOWLIST_EXPRESSION = re.compile(r"name: privilegedAllowlist\n\s+expression: '\[(.*)\]'")
@@ -67,9 +68,9 @@ PRIVILEGED_ALLOWLIST = privileged_allowlist()
 
 
 def cluster_minor() -> str:
-    match = K3S_IMAGE.search(LIFECYCLE.read_text(encoding="utf-8"))
+    match = K3S_IMAGE.search(K3S_IMAGE_SOURCE.read_text(encoding="utf-8"))
     if match is None:
-        raise AssertionError(f"no rancher/k3s image in {LIFECYCLE}")
+        raise AssertionError(f"no rancher/k3s image in {K3S_IMAGE_SOURCE}")
     return match.group(1)
 
 

@@ -5,6 +5,7 @@ script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 deploy_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 chart=${BAUKIT_SMOKE_CHART:-$deploy_root/chart/baukit-app}
 observability_chart=${BAUKIT_SMOKE_OBSERVABILITY_CHART:-$deploy_root/observability}
+k3s_image=${BAUKIT_SMOKE_K3S_IMAGE:-$(bash -c '. "$1" && platform_k3s_image' platform_k3s_image "$deploy_root/platform/local-git-http.sh")}
 
 product=${BAUKIT_SMOKE_PRODUCT:?BAUKIT_SMOKE_PRODUCT is required}
 values_file=${BAUKIT_SMOKE_VALUES_FILE:?BAUKIT_SMOKE_VALUES_FILE is required}
@@ -97,6 +98,7 @@ fi
 set -- cluster create "$cluster_name" \
     --servers 1 \
     --agents 0 \
+    --image "$k3s_image" \
     --api-port "$k3d_api_port" \
     --kubeconfig-update-default=false \
     --kubeconfig-switch-context=false \

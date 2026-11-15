@@ -11,6 +11,7 @@ from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[1]
 SMOKE = ROOT / "deploy" / "smoke" / "k3d-smoke.sh"
+PLATFORM_HELPERS = ROOT / "deploy" / "platform" / "local-git-http.sh"
 ENFORCE = ROOT / "deploy" / "smoke" / "kyverno-enforce.sh"
 KYVERNO_RELEASE = ROOT / "deploy" / "platform" / "kyverno" / "helm-release.yaml"
 KYVERNO_SOURCE = ROOT / "deploy" / "platform" / "kyverno" / "oci-repository.yaml"
@@ -41,6 +42,10 @@ case "$*" in
     "create -f -"|"apply -f -") cat >>"$STUB_LOG" ;;
     "apply -f "*) cat "$3" >>"$STUB_LOG" ;;
 esac
+exit 0
+"""
+STUB_K3D = """#!/bin/sh
+printf 'k3d %s\\n' "$*" >>"$STUB_LOG"
 exit 0
 """
 STUB_HELM = """#!/bin/sh
@@ -189,13 +194,15 @@ class RenderTest(unittest.TestCase):
 
 
 class SmokeOrderTest(unittest.TestCase):
-    def run_smoke(self, tmp: Path, digest: str | None = None) -> list[str]:
+    def run_smoke(
+        self, tmp: Path, digest: str | None = None, extra_env: dict[str, str] | None = None
+    ) -> list[str]:
         bin_dir = tmp / "bin"
         write_executable(bin_dir / "kubectl", STUB_KUBECTL)
         write_executable(bin_dir / "helm", STUB_HELM)
         write_executable(bin_dir / "curl", STUB_CURL)
-        for name in ("k3d", "docker"):
-            write_executable(bin_dir / name, STUB_OK)
+        write_executable(bin_dir / "k3d", STUB_K3D)
+        write_executable(bin_dir / "docker", STUB_OK)
         observability = tmp / "observability"
         observability.mkdir()
         (observability / "Chart.yaml").write_text("name: stub\n")
@@ -218,6 +225,7 @@ class SmokeOrderTest(unittest.TestCase):
             BAUKIT_SMOKE_K3D_API_PORT="127.0.0.1:6443",
             STUB_CHART_DIGEST=digest or parse(KYVERNO_SOURCE)[0]["spec"]["ref"]["digest"],
         )
+        env.update(extra_env or {})
         result = process_runner.run_process(
             ["sh", str(SMOKE)], capture_output=True, text=True, env=env
         )
@@ -257,6 +265,23 @@ class SmokeOrderTest(unittest.TestCase):
         self.assertIn("kind: ValidatingPolicy", applied)
         self.assertNotIn("- Audit", applied)
         self.assertIn("kubectl wait --for=jsonpath=", applied)
+
+    def cluster_create(self, lines: list[str]) -> list[str]:
+        return lines[self.index(lines, "k3d cluster create ")].split()
+
+    def test_cluster_uses_the_platform_k3s_image_pinned_by_digest(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.cluster_create(self.run_smoke(Path(tmp)))
+        image = args[args.index("--image") + 1]
+        self.assertRegex(image, r"^rancher/k3s:v[0-9.]+-k3s[0-9]+@sha256:[0-9a-f]{64}$")
+        self.assertIn(f"printf '%s\\n' {image}\n", PLATFORM_HELPERS.read_text())
+
+    def test_cluster_image_can_be_overridden(self) -> None:
+        override = "rancher/k3s:v1.33.0-k3s1@sha256:" + "a" * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            lines = self.run_smoke(Path(tmp), extra_env={"BAUKIT_SMOKE_K3S_IMAGE": override})
+        args = self.cluster_create(lines)
+        self.assertEqual(args[args.index("--image") + 1], override)
 
     def test_a_chart_with_another_digest_is_not_installed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
