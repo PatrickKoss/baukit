@@ -9,6 +9,62 @@ platform_k3s_image() {
   printf '%s\n' rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332
 }
 
+platform_k3s_config_dir() {
+  local here
+  here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd) || return 1
+  printf '%s/k3s\n' "$here"
+}
+
+# k3s server arguments shared by every local cluster and the e2e cluster. The
+# files they name come from platform_k3s_config_dir, mounted at
+# platform_k3s_config_mount. k3s/server-help-<tag>.txt holds `k3s server --help`
+# of the pinned image; a test checks every flag against it.
+platform_k3s_config_mount=/etc/baukit/k3s
+platform_k3s_create_timeout=${PLATFORM_K3S_CREATE_TIMEOUT:-5m}
+platform_k3s_audit_log=/var/log/kubernetes/audit/audit.log
+# Local clusters only: kine/SQLite dies under host starvation. Production keeps
+# platform_k3s_server_args, so its datastore stays a separate decision.
+platform_local_etcd_arg() { printf '%s\n' '--cluster-init@server:0'; }
+
+platform_k3s_server_args() {
+  printf '%s\n' \
+    --disable=traefik \
+    --secrets-encryption \
+    --protect-kernel-defaults \
+    "--kube-apiserver-arg=admission-control-config-file=$platform_k3s_config_mount/pod-security.yaml" \
+    "--kube-apiserver-arg=audit-policy-file=$platform_k3s_config_mount/audit-policy.yaml" \
+    "--kube-apiserver-arg=audit-log-path=$platform_k3s_audit_log" \
+    --kube-apiserver-arg=audit-log-maxage=7 \
+    --kube-apiserver-arg=audit-log-maxbackup=3 \
+    --kube-apiserver-arg=audit-log-maxsize=100
+}
+
+# The kubelet refuses to start under --protect-kernel-defaults unless the exact
+# sysctls already hold the values it would set. The inotify minimums are shared
+# by every container of the host user, so parallel clusters exhaust the default
+# 128 instances and a k3s server never registers its node. Containers share the
+# host values.
+platform_require_kernel_defaults() {
+  local sysctl_root=${platform_sysctl_root:-/proc/sys}
+  local check setting want actual wrong=()
+  for check in vm/overcommit_memory=1 vm/panic_on_oom=0 kernel/panic=10 kernel/panic_on_oops=1 \
+    'fs/inotify/max_user_instances>=512' 'fs/inotify/max_user_watches>=524288'; do
+    setting=${check%%[=>]*}
+    want=${check#"$setting"}
+    actual=$(cat -- "$sysctl_root/$setting" 2>/dev/null) || actual=unreadable
+    if [[ $want == '>='* ]]; then
+      [[ $actual =~ ^[0-9]+$ ]] && ((actual >= ${want#>=})) && continue
+    elif [[ $actual == "${want#=}" ]]; then
+      continue
+    fi
+    wrong+=("${setting//\//.}$want (now $actual)")
+  done
+  if ((${#wrong[@]})); then
+    printf 'ERROR: local k3s needs these host sysctls (set them with sysctl -w): %s\n' "${wrong[*]}" >&2
+    return 1
+  fi
+}
+
 platform_require_cgroup_v2() {
   local version
   version=$(docker info --format '{{.CgroupVersion}}') || return 1
@@ -52,7 +108,7 @@ k3d_gateway() {
   return 1
 }
 
-# Creates a single-node k3d cluster without the packaged Traefik. The API and
+# Creates a single-node k3d cluster with platform_k3s_server_args. The API and
 # the load balancer ports bind 127.0.0.1 only. Arguments after the fifth go to k3d.
 k3d_create_local_cluster() {
   local cluster=$1
@@ -61,16 +117,29 @@ k3d_create_local_cluster() {
   local http_port=$4
   local https_port=$5
   platform_require_cgroup_v2 || return 1
-  k3d cluster create "$cluster" \
+  platform_require_kernel_defaults || return 1
+  local config_dir arg k3s_args=()
+  config_dir=$(platform_k3s_config_dir) || return 1
+  while IFS= read -r arg; do
+    k3s_args+=(--k3s-arg "$arg@server:0")
+  done < <(platform_k3s_server_args)
+  if ! k3d cluster create "$cluster" \
     --image "$image" \
+    --timeout "$platform_k3s_create_timeout" \
     --servers 1 \
     --agents 0 \
-    --k3s-arg '--disable=traefik@server:0' \
+    --volume "$config_dir:$platform_k3s_config_mount:ro@server:0" \
+    "${k3s_args[@]}" \
     --api-port "127.0.0.1:$api_port" \
     --port "127.0.0.1:$http_port:80@loadbalancer" \
     --port "127.0.0.1:$https_port:443@loadbalancer" \
     --wait \
-    "${@:6}"
+    "${@:6}"; then
+    printf 'ERROR: k3d cluster create %s failed or timed out after %s; last server log lines:\n' \
+      "$cluster" "$platform_k3s_create_timeout" >&2
+    docker logs --tail 30 "k3d-$cluster-server-0" >&2 2>&1 || true
+    return 1
+  fi
 }
 
 # Runs the snapshot image with the bare repositories mounted read-only. The

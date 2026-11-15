@@ -15,6 +15,8 @@ source "$platform_dir/runtime-identity.sh"
 source "$platform_dir/registry-mirrors.sh"
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"
+# shellcheck source=deploy/platform/e2e/k3s-checks.sh
+source "$e2e_dir/k3s-checks.sh"
 
 snapshot_port=9418
 echo_image=localhost/baukit-e2e/echo:local
@@ -22,6 +24,8 @@ ready_timeout=30m
 stats_interval_seconds=15
 e2e_subnet_first=100
 e2e_subnet_last=199
+subnet_attempts=5
+tried_subnets=()
 
 cluster_name=baukit-platform-e2e
 keep_cluster=false
@@ -178,22 +182,52 @@ cluster_exists() {
 }
 
 # The cluster network must sit inside nodeCIDR (10.89.0.0/16) from overlays/local/cluster-network, so
-# the node-cidr NetworkPolicies match the node. Picks the first /24 no Docker network uses.
+# the node-cidr NetworkPolicies match the node. Picks the first /24 that overlaps no IPv4 subnet of a
+# Docker network, whose gateway .1 no running container publishes a port on (a leaked container can
+# outlive its network), and is not in $tried_subnets.
 free_subnet() {
   if [[ -n ${BAUKIT_E2E_SUBNET:-} ]]; then
     printf '%s\n' "$BAUKIT_E2E_SUBNET"
     return
   fi
-  local used third
+  local used bound
   used=$(docker network ls -q | xargs -r docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}')
-  for ((third = e2e_subnet_first; third <= e2e_subnet_last; third++)); do
-    if [[ " $used " != *" 10.89.$third.0/24 "* ]]; then
-      printf '10.89.%s.0/24\n' "$third"
-      return
-    fi
-  done
+  bound=$(docker ps --format '{{.Ports}}' | grep -oE '10\.89\.[0-9]+\.1:' | sed 's#:$#/32#' || true)
+  python3 -c '
+import ipaddress, sys
+first, last, used = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3].split()
+taken = [ipaddress.ip_network(s, strict=False) for s in used + sys.argv[4:]]
+taken = [n for n in taken if n.version == 4]
+for third in range(first, last + 1):
+    candidate = ipaddress.ip_network(f"10.89.{third}.0/24")
+    if not any(candidate.overlaps(n) for n in taken):
+        print(candidate)
+        sys.exit(0)
+sys.exit(1)
+' "$e2e_subnet_first" "$e2e_subnet_last" "$used $bound" "${tried_subnets[@]}" && return
   printf 'ERROR: no free /24 in 10.89.%s-%s.0; set BAUKIT_E2E_SUBNET\n' "$e2e_subnet_first" "$e2e_subnet_last" >&2
   exit 1
+}
+
+# Docker can still refuse the subnet when a network appears between free_subnet and the create, so a
+# "Pool overlaps" failure retries with the next free /24. An explicit BAUKIT_E2E_SUBNET never retries.
+create_k3d_cluster() {
+  local attempt subnet errors=$state_dir/k3d-create.err
+  for ((attempt = 1; ; attempt++)); do
+    subnet=$(free_subnet)
+    if k3d_create_local_cluster "$cluster_name" "$@" --subnet "$subnet" \
+      --kubeconfig-update-default=false \
+      --kubeconfig-switch-context=false >/dev/null 2>"$errors"; then
+      return
+    fi
+    cat -- "$errors" >&2
+    if [[ -n ${BAUKIT_E2E_SUBNET:-} ]] || ! grep -Fq 'Pool overlaps' "$errors" || ((attempt >= subnet_attempts)); then
+      return 1
+    fi
+    printf 'Subnet %s overlaps another Docker network; retrying with the next one\n' "$subnet" >&2
+    tried_subnets+=("$subnet")
+    k3d cluster delete "$cluster_name" >/dev/null 2>&1 || true
+  done
 }
 
 free_port() {
@@ -213,14 +247,11 @@ create_cluster() {
   registry_mirrors_k3s_config >"$state_dir/registries.yaml"
   local mirror_args=()
   mapfile -t mirror_args < <(registry_mirrors_cluster_args)
-  k3d_create_local_cluster "$cluster_name" "$image" "$(free_port)" "$(free_port)" "$(free_port)" \
-    --subnet "$(free_subnet)" \
+  create_k3d_cluster "$image" "$(free_port)" "$(free_port)" "$(free_port)" \
     --registry-config "$state_dir/registries.yaml" \
     --k3s-arg "$kubelet_image_gc_arg" \
     --k3s-arg "$embedded_etcd_arg" \
-    "${mirror_args[@]}" \
-    --kubeconfig-update-default=false \
-    --kubeconfig-switch-context=false >/dev/null
+    "${mirror_args[@]}"
   k3d kubeconfig get "$cluster_name" >"$kubeconfig"
   chmod 0600 "$kubeconfig"
   wait_for_node_registration "$cluster_name"
@@ -449,6 +480,7 @@ main() {
   state_dir=$(mktemp -d "$state_parent/run.XXXXXX")
   kubeconfig=$state_dir/kubeconfig
   export KUBECONFIG=$kubeconfig
+  export BAUKIT_E2E_CLUSTER=$cluster_name
   trap cleanup EXIT
   trap interrupted INT TERM
 
@@ -458,11 +490,13 @@ main() {
   stats_pid=$!
   serve_snapshot
   import_echo_image
+  check_pod_security_default
   install_flux
   apply_runtime_identity
   wait_for_platform
   printf 'Platform Ready after %ss\n' "$((SECONDS - started))"
   run_tests
+  kube_bench_report "$artifacts_dir"
   printf 'platform-e2e passed in %ss\n' "$((SECONDS - started))"
 }
 
