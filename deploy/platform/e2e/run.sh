@@ -143,7 +143,10 @@ cleanup() {
   if [[ $keep_cluster == true ]]; then
     printf 'Kept cluster %s. KUBECONFIG=%s\n' "$cluster_name" "$kubeconfig"
   else
-    [[ $cluster_created == true ]] && k3d cluster delete "$cluster_name" >/dev/null
+    if [[ $cluster_created == true ]]; then
+      registry_mirrors_detach "k3d-$cluster_name"
+      k3d cluster delete "$cluster_name" >/dev/null
+    fi
     [[ -n $snapshot_container ]] && docker rm -f -v "$snapshot_container" >/dev/null 2>&1
     [[ -n $state_dir ]] && rm -rf -- "$state_dir"
   fi

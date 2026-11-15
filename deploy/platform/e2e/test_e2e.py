@@ -336,6 +336,11 @@ class RegistryMirrorTests(unittest.TestCase):
         endpoints = {line[2:] for line in lines if line.startswith("- ")}
         self.assertEqual(used, endpoints)
 
+    def test_detach_disconnects_every_mirror_from_the_cluster_network(self):
+        out = self.source('docker() { printf "%s\\n" "$*" >&3; }\nregistry_mirrors_detach k3d-x 3>&1')
+        self.assertIn("network disconnect k3d-x k3d-baukit-mirror-docker-io", out)
+        self.assertEqual(out.count("network disconnect k3d-x "), 5)
+
     def test_the_mirror_image_is_pinned_by_digest(self):
         image = self.source('printf %s "$registry_mirror_image"')
         self.assertRegex(image, r"^docker\.io/library/registry:[0-9.]+@sha256:[0-9a-f]{64}$")

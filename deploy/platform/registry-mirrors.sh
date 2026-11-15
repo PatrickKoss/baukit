@@ -58,6 +58,14 @@ registry_mirrors_stop() {
   done
 }
 
+registry_mirrors_detach() {
+  local network=$1 entry mirror_host mirror_port mirror_url
+  for entry in "${registry_mirror_upstreams[@]}"; do
+    registry_mirror_fields "$entry"
+    docker network disconnect "$network" "k3d-$(registry_mirror_name "$mirror_host")" >/dev/null 2>&1 || true
+  done
+}
+
 registry_mirrors_status() {
   local entry mirror_host mirror_port mirror_url name state
   for entry in "${registry_mirror_upstreams[@]}"; do
