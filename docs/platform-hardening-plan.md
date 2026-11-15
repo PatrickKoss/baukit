@@ -560,13 +560,13 @@ behave. Later phases add test directories here.
 - [x] **SC4 Renovate:** custom managers for `tools.toml`, digests in raw manifests and the k3s image
   strings. Set `minimumReleaseAge` for charts and grouping per base. Configure the same in platform-infra
   (its `v*` tag pattern fix lands in PI1).
-- [ ] **SC5 Latest stable pins** (user request 2026-11-15): move every pinnable platform component to
+- [~] **SC5 Latest stable pins** (user request 2026-11-15): move every pinnable platform component to
   its newest stable release (no `latest`, no pre-releases), pinned by version and digest. That covers
   charts, images, the Flux controllers and CLI, `tools.toml`, and k3s where the host allows it. Read
   the upgrade notes for every major, migrate CRDs and values, and record anything that cannot move
   with a concrete reason (for example the cgroup v1 host and k3s 1.35). Prove it with the offline
   gates, the local overlay and a full e2e run. Split into SC5a (observability stack and Flux) and
-  SC5b (everything else).
+  SC5b (everything else). SC5b merged (d6b60463); SC5a open.
 - [x] **S3 Traefik edge** (F-27, F-26): a default `TLSOption` (min TLS 1.2, `sniStrict`, curve
   preferences), a web to websecure redirect, a security-headers Middleware (HSTS, nosniff, frame deny,
   referrer policy) attached on websecure, rate limits keyed on `X-Forwarded-For` depth when behind a
@@ -1073,3 +1073,15 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   installs chainsaw, k3d and kubectl for the e2e unit tests. `test_ci_gate.py` pins the job mapping, cache
   key, step order and filter. Not yet proven: whether a hosted 4 vCPU / 16 GB runner finishes the e2e
   within the 90-minute timeout.
+
+- 2026-11-15 SC5b merged (d6b60463). k3s v1.37.2-k3s1 by digest with Pod Security v1.37 everywhere,
+  Traefik chart 42.4.0, PostHog release-1.43.1, Redpanda v26.2.7, and helm 4.3.2, kubectl 1.37.2,
+  promtool 3.16.0, pint 0.90.0 and trivy 0.76.2 in `tools.toml`. `platform_require_cgroup_v2` stops
+  local k3d and the k3d smoke before cluster creation on a cgroup v1 Docker host; the
+  `fail-cgroupv1=false` path is gone. Evidence: full e2e on 687636d8 passed 6/6 suites (cluster time
+  1616s, traefik-edge asserts the server refuses TLS 1.1), no cgroup or PodSecurity Warning events;
+  all offline gates green on the merge. E5's measure run found that `runtime-identity.sh` pre-created
+  postgres, observability and observability-agents without PSA labels, which require-psa-labels
+  correctly denies once Kyverno is admitted first; E5 now applies the base Namespace manifests.
+  ph-k6-2 failed on "Pool overlaps" during k3d network creation; S5 makes `free_subnet` overlap-aware
+  with a bounded retry.
