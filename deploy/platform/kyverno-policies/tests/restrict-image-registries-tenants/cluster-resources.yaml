@@ -22,5 +22,6 @@ spec:
         namespace: kyverno
       data:
         registries: |
+          docker.io/library/
           ghcr.io/example/
           registry.k8s.io/

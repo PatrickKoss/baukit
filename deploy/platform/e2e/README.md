@@ -38,8 +38,8 @@ with its condition message.
 - `components/observability`: the local observability component, which brings the `alertmanager-routing`
   Secret and `alert-sink` in `observability`. The sink stores each notification and serves them on
   `GET /alerts`;
-- `components/kyverno-policies`: the policy library plus the registry allowlist, which admits only
-  `localhost/baukit-e2e/` images in tenants;
+- `components/kyverno-policies`: the policy library plus the registry allowlist, which admits the
+  public registries the platform pulls from and `localhost/baukit-e2e/`;
 - `components/tenant`: the `e2e-tenant` namespace built from `../components/tenant` and the echo
   app, deployed with `deploy/chart/baukit-app` from the image the runner builds in `echo/`.
 

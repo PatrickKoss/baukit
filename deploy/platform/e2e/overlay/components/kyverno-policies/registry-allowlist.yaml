@@ -1,4 +1,5 @@
-# Tenant pods in the e2e cluster run only the echo image that e2e/run.sh builds and imports.
+# The platform pulls from the public registries below; e2e/run.sh builds the echo image and imports it
+# under localhost/baukit-e2e/. Images without a registry host count as docker.io.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -8,4 +9,9 @@ metadata:
     app.kubernetes.io/part-of: baukit-platform
 data:
   registries: |
+    docker.io/
+    ghcr.io/
     localhost/baukit-e2e/
+    quay.io/
+    reg.kyverno.io/
+    registry.k8s.io/
