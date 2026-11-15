@@ -38,7 +38,8 @@ rule with `override: {condition: append}`, and keep it as narrow as one image or
 ## Network
 
 Default deny in the namespace. Prometheus may scrape 8765 (Falco) and 2801 (falcosidekick). Falco may
-reach falcosidekick on 2801. Falcosidekick may reach `loki-gateway` (8080) and Alertmanager (9093) in
+reach falcosidekick on 2801, and so may pods with the falcosidekick labels, which the chart's Helm test
+pod carries. Falcosidekick may reach itself on 2801, `loki-gateway` (8080) and Alertmanager (9093) in
 `observability`, plus DNS.
 
 Alerts, the dashboard and the runbooks live in `deploy/observability-platform` (component `falco`).

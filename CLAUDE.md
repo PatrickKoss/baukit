@@ -59,6 +59,7 @@ change:
 | Cargo deny | `cargo deny --manifest-path rust/Cargo.toml --config rust/deny.toml check advisories licenses` (after dependency changes) |
 | MSRV (Rust 1.95) | `cargo +1.95 check --manifest-path rust/Cargo.toml --workspace --all-targets` (after using new language/std features) |
 | Observability metric names | `python3 deploy/observability/lint/check-metric-names.py` (after touching deploy/observability or metric names) |
+| Platform e2e | `make platform-e2e` (after touching deploy/platform, deploy/chart or deploy/observability*; needs Docker, takes the k3d-full lock and waits for a free heavy-run slot) |
 | Dexie real-browser conformance | `make ts-browser-test` |
 | Generated mobile Android compile | `make native-android-gate` (after touching mobile templates, CLI generation, or their native dependencies) |
 | Real Expo SQLite on Android | `make expo-sqlite-conformance` (after touching data contracts, the Expo SQLite adapter, or `scripts/expo-android-conformance.sh`) |

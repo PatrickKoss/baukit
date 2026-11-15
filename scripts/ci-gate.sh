@@ -55,6 +55,7 @@ native-android android ts-check selected -
 expo-sqlite android native-android selected -
 expo-notifications android expo-sqlite selected -
 fuzz fuzz - selected -
+platform-e2e platform-e2e - selected -
 STEPS
 }
 
@@ -118,6 +119,10 @@ step_observability_rules() {
 step_platform_validate() {
   scripts/install-deploy-tools.sh --only kustomize,kubeconform,helm,flux,kyverno
   ./deploy/platform/validate.sh
+}
+step_platform_e2e() {
+  scripts/install-deploy-tools.sh --only chainsaw,flux,k3d,kubectl,kustomize
+  ./deploy/platform/e2e/run.sh
 }
 step_platform_images() {
   scripts/install-deploy-tools.sh --only kustomize,kubeconform,helm,flux,kyverno,trivy

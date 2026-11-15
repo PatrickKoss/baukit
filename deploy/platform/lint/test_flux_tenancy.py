@@ -267,6 +267,54 @@ PLATFORM_KUSTOMIZATION = {
 }
 
 
+CLUSTER_SCOPED = {
+    "APIService",
+    "ClusterIssuer",
+    "ClusterPolicy",
+    "ClusterRole",
+    "ClusterRoleBinding",
+    "ClusterCleanupPolicy",
+    "CustomResourceDefinition",
+    "DeletingPolicy",
+    "GeneratingPolicy",
+    "ImageValidatingPolicy",
+    "GatewayClass",
+    "IngressClass",
+    "MutatingAdmissionPolicy",
+    "MutatingAdmissionPolicyBinding",
+    "MutatingPolicy",
+    "MutatingWebhookConfiguration",
+    "Namespace",
+    "PersistentVolume",
+    "PriorityClass",
+    "RuntimeClass",
+    "StorageClass",
+    "ValidatingAdmissionPolicy",
+    "ValidatingAdmissionPolicyBinding",
+    "ValidatingPolicy",
+    "ValidatingWebhookConfiguration",
+}
+
+
+def namespace_findings(kustomization: dict, docs: list[dict]) -> list[str]:
+    if kustomization["spec"].get("targetNamespace"):
+        return []
+    return [
+        f"{doc['kind']}/{doc['metadata']['name']}"
+        for doc in docs
+        if doc.get("kind") not in CLUSTER_SCOPED and not doc["metadata"].get("namespace")
+    ]
+
+
+def platform_kustomizations() -> list[tuple[str, dict]]:
+    found = []
+    for root in kustomization_roots():
+        for doc in rendered(root):
+            if is_flux_object(doc) and doc["kind"] == "Kustomization":
+                found.append((root.relative_to(PLATFORM).as_posix(), doc))
+    return found
+
+
 class PlatformUnderLockdownTest(unittest.TestCase):
     def test_every_overlay_is_covered(self) -> None:
         roots = {path.relative_to(PLATFORM).as_posix() for path in kustomization_roots()}
@@ -327,6 +375,33 @@ class PlatformUnderLockdownTest(unittest.TestCase):
         self.assertEqual(source_findings([doc]), ["HelmRelease/observability/x"])
         own = {**doc, "metadata": {"name": "x", "namespace": "flux-system"}}
         self.assertEqual(source_findings([own]), [])
+
+    def test_every_namespaced_object_of_a_platform_kustomization_has_a_namespace(self) -> None:
+        checked = 0
+        for root, kustomization in platform_kustomizations():
+            path = kustomization["spec"].get("path", "")
+            if not path.startswith("./deploy/platform/"):
+                continue
+            checked += 1
+            docs = rendered(PLATFORM.parent.parent / path)
+            with self.subTest(root=root, kustomization=kustomization["metadata"]["name"]):
+                self.assertEqual(namespace_findings(kustomization, docs), [])
+        self.assertGreater(checked, 0)
+
+    def test_object_without_a_namespace_is_found(self) -> None:
+        binding = {"kind": "RoleBinding", "metadata": {"name": "flux-reconciler"}}
+        role = {"kind": "ClusterRole", "metadata": {"name": "reader"}}
+        self.assertEqual(
+            namespace_findings(PLATFORM_KUSTOMIZATION, [binding, role]),
+            ["RoleBinding/flux-reconciler"],
+        )
+        placed = {**binding, "metadata": {"name": "flux-reconciler", "namespace": "acme"}}
+        self.assertEqual(namespace_findings(PLATFORM_KUSTOMIZATION, [placed, role]), [])
+        targeted = {
+            **PLATFORM_KUSTOMIZATION,
+            "spec": {**PLATFORM_KUSTOMIZATION["spec"], "targetNamespace": "acme"},
+        }
+        self.assertEqual(namespace_findings(targeted, [binding]), [])
 
 
 if __name__ == "__main__":

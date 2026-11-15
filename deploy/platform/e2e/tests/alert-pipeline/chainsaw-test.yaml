@@ -5,7 +5,7 @@ metadata:
   name: alert-pipeline
 spec:
   description: >-
-    Alerts posted into Alertmanager reach the webhook sink through the routes of the local
+    A PrometheusRule selected and evaluated by Prometheus reaches the sink first. Then alerts posted into Alertmanager reach the webhook sink through the routes of the local
     alertmanager-routing Secret: Watchdog to heartbeat, a critical falco alert to security-pager and a
     warning platform alert to platform-tickets. A critical alert inhibits a warning with the same
     alertname and namespace, so only the critical one is delivered. The sink is alert-sink in
@@ -13,6 +13,50 @@ spec:
   timeouts:
     exec: 5m
   steps:
+    - name: prometheus-rule-reaches-the-sink
+      try:
+        - apply:
+            resource:
+              apiVersion: monitoring.coreos.com/v1
+              kind: PrometheusRule
+              metadata:
+                name: baukit-e2e-probe
+                namespace: observability
+              spec:
+                groups:
+                  - name: baukit-e2e
+                    interval: 10s
+                    rules:
+                      - alert: BaukitE2eProbe
+                        expr: vector(1)
+                        labels:
+                          severity: warning
+                          component: platform
+                        annotations:
+                          summary: Always fires so the e2e suite can trace rule selection and evaluation.
+        - script:
+            timeout: 4m
+            content: |
+              set -eu
+              pod=alertmanager-kube-prometheus-stack-alertmanager-0
+              kubectl -n observability wait pod "$pod" --for=condition=Ready --timeout=3m
+              deadline=$(($(date +%s) + 180))
+              while [ "$(date +%s)" -lt "$deadline" ]; do
+                if kubectl -n observability exec "$pod" -c alertmanager -- \
+                  wget -qO- http://alert-sink.observability.svc.cluster.local:8080/alerts |
+                  grep -q '"BaukitE2eProbe"'; then
+                  exit 0
+                fi
+                sleep 5
+              done
+              printf 'BaukitE2eProbe from a PrometheusRule did not reach the sink within 3 minutes\n' >&2
+              exit 1
+        - delete:
+            ref:
+              apiVersion: monitoring.coreos.com/v1
+              kind: PrometheusRule
+              name: baukit-e2e-probe
+              namespace: observability
     - name: post-test-alerts
       try:
         - script:

@@ -37,10 +37,21 @@ spec:
     - podSelector:
         matchLabels:
           app.kubernetes.io/name: falco
+    # The chart's Helm test pod carries the falcosidekick labels and curls the Service.
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: falcosidekick
     ports:
     - protocol: TCP
       port: 2801
   egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: falcosidekick
+    ports:
+    - protocol: TCP
+      port: 2801
   - to:
     - namespaceSelector:
         matchLabels:

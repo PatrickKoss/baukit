@@ -157,6 +157,11 @@ spec:
                 exit 1
               fi
               printf 'restored sentinel matches: %s\n' "$got"
+      catch:
+        - script:
+            content: |
+              kubectl -n postgres get pods -l cnpg.io/jobRole=full-recovery -o name |
+                xargs -r -n1 kubectl -n postgres logs --all-containers --prefix --tail=60
       finally:
         - script:
             timeout: 5m
