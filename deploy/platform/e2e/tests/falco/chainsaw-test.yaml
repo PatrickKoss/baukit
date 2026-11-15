@@ -1,0 +1,145 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: falco
+spec:
+  description: >-
+    Not concurrent, so it runs before the concurrent suites while the cluster is idle. A 10-minute soak
+    must produce no Falco event at Warning or above. Then a shell in the echo app must reach Loki under the
+    baukit rule and raise BaukitFalcoCriticalEvent at the alert sink, and reading /etc/shadow in a test pod
+    must fire the upstream "Read sensitive file untrusted" rule.
+  concurrent: false
+  timeouts:
+    exec: 15m
+  steps:
+    - name: idle-soak-has-no-warning-events
+      try:
+        - script:
+            content: |
+              set -eu
+              kubectl -n falco rollout status daemonset/falco --timeout=3m
+              since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+              sleep 600
+              events=$(./falco-events.sh falco "$since" Warning)
+              if [ -n "$events" ]; then
+                printf 'Falco raised Warning+ events on the idle cluster since %s:\n%s\n' "$since" "$events" >&2
+                exit 1
+              fi
+              printf 'no Warning+ Falco events in the 10-minute soak since %s\n' "$since"
+    - name: shell-in-echo-app-reaches-loki-and-the-sink
+      try:
+        - script:
+            content: |
+              set -eu
+              since=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+              kubectl -n e2e-tenant exec deploy/echo-api -c api -- sh -c 'echo falco-e2e'
+              rule='Baukit shell or package manager in app container'
+              deadline=$(($(date +%s) + 180))
+              until events=$(./falco-events.sh loki "$since" Critical "$rule" e2e-tenant) && [ -n "$events" ]; do
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  printf 'no "%s" event in Loki within 3 minutes\n' "$rule" >&2
+                  exit 1
+                fi
+                sleep 5
+              done
+              printf 'Loki: %s\n' "$events"
+        - script:
+            timeout: 8m
+            content: |
+              set -eu
+              rule='Baukit shell or package manager in app container'
+              pod=alertmanager-kube-prometheus-stack-alertmanager-0
+              deadline=$(($(date +%s) + 420))
+              while [ "$(date +%s)" -lt "$deadline" ]; do
+                if kubectl -n observability exec "$pod" -c alertmanager -- \
+                  wget -qO- http://alert-sink.observability.svc.cluster.local:8080/alerts |
+                  RULE=$rule python3 -c '
+              import json, os, sys
+              for notification in json.load(sys.stdin):
+                  for alert in notification.get("alerts", []):
+                      labels = alert["labels"]
+                      if labels.get("alertname") == "BaukitFalcoCriticalEvent" and labels.get("rule_name") == os.environ["RULE"]:
+                          print(json.dumps({"receiver": notification["receiver"], "status": alert["status"], "labels": labels}))
+                          sys.exit(0)
+              sys.exit(1)
+              '; then
+                  exit 0
+                fi
+                sleep 10
+              done
+              printf 'BaukitFalcoCriticalEvent for "%s" did not reach the sink within 7 minutes\n' "$rule" >&2
+              exit 1
+    - name: shadow-read-fires-the-upstream-rule
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: fake-shadow
+              data:
+                shadow: "root:*:20000:0:99999:7:::\n"
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: shadow-reader
+              spec:
+                restartPolicy: Never
+                automountServiceAccountToken: false
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 101
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: reader
+                    image: localhost/baukit-e2e/echo:local
+                    imagePullPolicy: Never
+                    command: [cat, /etc/shadow]
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                        drop: [ALL]
+                    resources:
+                      requests:
+                        cpu: 10m
+                        memory: 16Mi
+                      limits:
+                        cpu: 100m
+                        memory: 32Mi
+                    volumeMounts:
+                      - name: shadow
+                        mountPath: /etc/shadow
+                        subPath: shadow
+                volumes:
+                  - name: shadow
+                    configMap:
+                      name: fake-shadow
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: shadow-reader
+              status:
+                phase: Succeeded
+        - script:
+            content: |
+              set -eu
+              SINCE=$(kubectl -n "$NAMESPACE" get pod shadow-reader -o jsonpath='{.status.startTime}')
+              rule='Read sensitive file untrusted'
+              deadline=$(($(date +%s) + 180))
+              until events=$(./falco-events.sh loki "$SINCE" Warning "$rule" "$NAMESPACE") && [ -n "$events" ]; do
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  printf 'no "%s" event for namespace %s in Loki within 3 minutes\n' "$rule" "$NAMESPACE" >&2
+                  printf 'Falco events since %s:\n' "$SINCE" >&2
+                  ./falco-events.sh falco "$SINCE" Debug >&2
+                  exit 1
+                fi
+                sleep 5
+              done
+              printf 'Loki: %s\n' "$events"
