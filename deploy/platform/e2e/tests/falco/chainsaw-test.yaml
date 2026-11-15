@@ -98,6 +98,7 @@ spec:
                   - name: reader
                     image: localhost/baukit-e2e/echo:local
                     imagePullPolicy: Never
+                    # runc also opens the mount target while it starts the container, so the assertion keys on cat.
                     command: [cat, /etc/shadow]
                     securityContext:
                       allowPrivilegeEscalation: false
@@ -133,9 +134,9 @@ spec:
               SINCE=$(kubectl -n "$NAMESPACE" get pod shadow-reader -o jsonpath='{.status.startTime}')
               rule='Read sensitive file untrusted'
               deadline=$(($(date +%s) + 180))
-              until events=$(./falco-events.sh loki "$SINCE" Warning "$rule" "$NAMESPACE") && [ -n "$events" ]; do
+              until events=$(./falco-events.sh loki "$SINCE" Warning "$rule" "$NAMESPACE" cat) && [ -n "$events" ]; do
                 if [ "$(date +%s)" -ge "$deadline" ]; then
-                  printf 'no "%s" event for namespace %s in Loki within 3 minutes\n' "$rule" "$NAMESPACE" >&2
+                  printf 'no "%s" event from cat in namespace %s in Loki within 3 minutes\n' "$rule" "$NAMESPACE" >&2
                   printf 'Falco events since %s:\n' "$SINCE" >&2
                   ./falco-events.sh falco "$SINCE" Debug >&2
                   exit 1

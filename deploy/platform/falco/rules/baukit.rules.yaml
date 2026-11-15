@@ -62,6 +62,12 @@
   override:
     condition: append
 
+# A libFuzzer run on the host attaches to its own children (FA4 soak, 2026-11-15, container.id=host).
+- rule: PTRACE attached to process
+  condition: and not baukit_known_noise
+  override:
+    condition: append
+
 - rule: Contact K8S API Server From Container
   condition: and not baukit_known_noise
   override:
@@ -86,9 +92,28 @@
 - macro: baukit_migration_container
   condition: (container and k8s.pod.label[baukit.dev/process] = migrate)
 
+# runc re-executes itself as "<fd> init" inside the container before it starts the exec'd process,
+# which the rule sees on its own (FA4 soak, 2026-11-15: one "6 init" event per kubectl exec).
+- macro: baukit_runc_init
+  condition: (proc.exe = runc and proc.pname = runc and proc.args = init)
+
 # kubectl exec and attach start the process from the runtime, never as PID 1 of the container.
+# container_entrypoint also matches a process whose parent Falco never saw. After a rules reload Falco
+# loses the parents of running processes, and every pg_isready the CNPG instance manager spawned
+# matched (FA4 soak, 2026-11-15), so the parent must be known.
 - macro: baukit_runtime_exec
-  condition: (spawned_process and container_entrypoint and proc.vpid != 1)
+  condition: >
+    (spawned_process and proc.pname exists and container_entrypoint and proc.vpid != 1
+    and not baukit_runc_init)
+
+# The CNPG operator starts backups with an exec of "manager backup <name>" in the postgres container,
+# and the Barman Cloud plugin sidecar has an exec startup probe "/manager healthcheck unix"
+# (FA4 soak, 2026-11-15, first scheduled backup after install).
+- macro: baukit_cnpg_runtime_exec
+  condition: >
+    (k8s.ns.name = postgres
+    and ((container.image.repository = ghcr.io/cloudnative-pg/postgresql and proc.cmdline startswith "manager backup ")
+      or (container.image.repository = ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar and proc.cmdline = "manager healthcheck unix")))
 
 - rule: Baukit shell or package manager in app container
   desc: A shell or package manager started in a baukit app container. The app images run one binary and need neither.
@@ -152,6 +177,7 @@
   condition: >
     baukit_runtime_exec
     and k8s.ns.name in (baukit_exec_protected_namespaces)
+    and not baukit_cnpg_runtime_exec
   output: Process started by kubectl exec or attach in a protected platform namespace | process=%proc.name command=%proc.cmdline user=%user.name terminal=%proc.tty k8s_ns=%k8s.ns.name k8s_pod=%k8s.pod.name container=%container.name image=%container.image.repository:%container.image.tag
   priority: CRITICAL
   tags: [baukit, baukit_platform, container, process, mitre_execution, T1609]

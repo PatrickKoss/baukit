@@ -3,12 +3,12 @@
 set -euo pipefail
 
 usage() {
-  printf 'usage: %s falco|loki SINCE_RFC3339 MIN_PRIORITY [RULE] [NAMESPACE]\n' "${0##*/}" >&2
+  printf 'usage: %s falco|loki SINCE_RFC3339 MIN_PRIORITY [RULE] [NAMESPACE] [PROCESS]\n' "${0##*/}" >&2
   exit 2
 }
 
-[[ $# -ge 3 && $# -le 5 ]] || usage
-source_name=$1 since=$2 min_priority=$3 rule=${4:-} namespace=${5:-}
+[[ $# -ge 3 && $# -le 6 ]] || usage
+source_name=$1 since=$2 min_priority=$3 rule=${4:-} namespace=${5:-} process=${6:-}
 
 falco_lines() {
   local pod
@@ -21,10 +21,9 @@ loki_lines() {
   local start_ns query
   start_ns=$(($(date -d "$since" +%s) * 1000000000))
   query='{source="syscall"}'
-  kubectl -n observability exec prometheus-kube-prometheus-stack-prometheus-0 -c prometheus -- \
-    wget -qO- "http://loki.observability.svc.cluster.local:3100/loki/api/v1/query_range?limit=5000&direction=forward&start=$start_ns&query=$(
-      python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$query"
-    )" |
+  kubectl get --raw "/api/v1/namespaces/observability/services/loki:3100/proxy/loki/api/v1/query_range?limit=5000&direction=forward&start=$start_ns&query=$(
+    python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$query"
+  )" |
     python3 -c '
 import json, sys
 for stream in json.load(sys.stdin)["data"]["result"]:
@@ -39,11 +38,11 @@ case $source_name in
   *) usage ;;
 esac
 
-"$lines" | MIN_PRIORITY=$min_priority RULE=$rule NAMESPACE=$namespace python3 -c '
+"$lines" | MIN_PRIORITY=$min_priority RULE=$rule NAMESPACE=$namespace PROCESS=$process python3 -c '
 import json, os, sys
 order = ["Debug", "Informational", "Notice", "Warning", "Error", "Critical", "Alert", "Emergency"]
 floor = order.index(os.environ["MIN_PRIORITY"])
-rule, namespace = os.environ["RULE"], os.environ["NAMESPACE"]
+rule, namespace, process = os.environ["RULE"], os.environ["NAMESPACE"], os.environ["PROCESS"]
 for line in sys.stdin:
     try:
         event = json.loads(line)
@@ -57,6 +56,8 @@ for line in sys.stdin:
         continue
     fields = event.get("output_fields") or {}
     if namespace and fields.get("k8s.ns.name") != namespace:
+        continue
+    if process and fields.get("proc.name") != process:
         continue
     print(json.dumps({"time": event.get("time"), "priority": event["priority"], "rule": event.get("rule"), "output": event.get("output")}))
 '
