@@ -7,6 +7,8 @@ repo_root=$(cd -- "$platform_dir/../.." && pwd)
 
 # shellcheck source=deploy/platform/local-git-http.sh
 source "$platform_dir/local-git-http.sh"
+# shellcheck source=deploy/platform/flux-lockdown.sh
+source "$platform_dir/flux-lockdown.sh"
 # shellcheck source=deploy/lib/tools.sh
 . "$repo_root/deploy/lib/tools.sh"
 
@@ -86,7 +88,7 @@ suite_path() {
 }
 
 require_tools() {
-  baukit_use_tools "$repo_root" chainsaw flux k3d kubectl
+  baukit_use_tools "$repo_root" chainsaw flux k3d kubectl kustomize
   flux_version=v$(baukit_tool_version "$repo_root" flux)
   local missing=() tool
   for tool in docker flock git openssl python3 tar; do
@@ -257,8 +259,15 @@ apply_runtime_identity() {
 }
 
 install_flux() {
-  printf 'Installing Flux %s\n' "$flux_version"
-  flux install --version="$flux_version" --network-policy=false --timeout=5m >/dev/null
+  printf 'Installing Flux %s with the multi-tenancy lockdown\n' "$flux_version"
+  flux_lockdown_render "$platform_dir" "$flux_version" | kubectl apply --server-side -f - >/dev/null
+  kubectl label namespace flux-system --overwrite \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/enforce-version=v1.34 \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted >/dev/null
+  flux_lockdown_wait
+  flux_lockdown_verify "$platform_dir"
 }
 
 sample_stats() {

@@ -4,6 +4,7 @@ metadata:
   name: e2e-baseline
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   interval: 10m
   retryInterval: 30s
   timeout: 5m
@@ -20,6 +21,7 @@ metadata:
   name: e2e-foundation
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-baseline
   interval: 10m
@@ -38,6 +40,7 @@ metadata:
   name: e2e-cert-manager
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-baseline
   interval: 10m
@@ -56,6 +59,7 @@ metadata:
   name: e2e-issuer
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-cert-manager
   interval: 10m
@@ -74,6 +78,7 @@ metadata:
   name: e2e-observability
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-foundation
   interval: 10m
@@ -92,6 +97,7 @@ metadata:
   name: e2e-cnpg
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-cert-manager
   interval: 10m
@@ -110,6 +116,7 @@ metadata:
   name: e2e-postgres
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-cnpg
     - name: e2e-foundation
@@ -130,6 +137,7 @@ metadata:
   name: e2e-traefik
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-observability
     - name: e2e-issuer
@@ -149,6 +157,7 @@ metadata:
   name: e2e-redis
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-baseline
   interval: 10m
@@ -167,6 +176,7 @@ metadata:
   name: e2e-kured
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-baseline
     - name: e2e-observability
@@ -186,6 +196,7 @@ metadata:
   name: e2e-falco
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-baseline
     - name: e2e-observability
@@ -205,6 +216,7 @@ metadata:
   name: e2e-kyverno
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-baseline
     - name: e2e-observability
@@ -224,6 +236,7 @@ metadata:
   name: e2e-kyverno-policies
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-kyverno
   interval: 10m
@@ -243,6 +256,7 @@ metadata:
   name: e2e-flagger
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-observability
     - name: e2e-traefik
@@ -274,6 +288,7 @@ metadata:
   name: e2e-flagger-metrics
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-flagger
   interval: 10m
@@ -329,6 +344,7 @@ metadata:
   name: e2e-receiver
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-baseline
   interval: 10m
@@ -347,6 +363,7 @@ metadata:
   name: e2e-tenant
   namespace: flux-system
 spec:
+  serviceAccountName: kustomize-controller
   dependsOn:
     - name: e2e-baseline
     - name: e2e-kyverno-policies

@@ -121,7 +121,7 @@ step_platform_validate() {
   ./deploy/platform/validate.sh
 }
 step_platform_e2e() {
-  scripts/install-deploy-tools.sh --only chainsaw,flux,k3d,kubectl
+  scripts/install-deploy-tools.sh --only chainsaw,flux,k3d,kubectl,kustomize
   ./deploy/platform/e2e/run.sh
 }
 step_platform_images() {
