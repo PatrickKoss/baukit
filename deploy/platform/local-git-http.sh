@@ -3,18 +3,18 @@
 # snapshot that Flux pulls from the host, plus the local k3s image that
 # deploy/smoke/k3d-smoke.sh uses too.
 
-# Local clusters run the newest k3s release. Kubernetes 1.35 and later kubelets refuse
-# a cgroup v1 host unless fail-cgroupv1 is off, so platform_k3s_cgroup_args adds that
-# kubelet argument only when the Docker engine reports cgroup v1 (the WSL2 host).
+# Local clusters run the newest k3s release. Kubernetes 1.35 and later do not
+# support cgroup v1, so platform_require_cgroup_v2 stops on a cgroup v1 Docker engine.
 platform_k3s_image() {
   printf '%s\n' rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332
 }
 
-platform_k3s_cgroup_args() {
+platform_require_cgroup_v2() {
   local version
   version=$(docker info --format '{{.CgroupVersion}}') || return 1
-  if [[ $version == 1 ]]; then
-    printf '%s\n' '--k3s-arg' '--kubelet-arg=fail-cgroupv1=false@server:*'
+  if [[ $version != 2 ]]; then
+    printf 'ERROR: Docker reports cgroup v%s; k3s v1.35 and later need cgroup v2. On WSL2 set kernelCommandLine = cgroup_no_v1=all under [wsl2] in .wslconfig and run wsl --shutdown.\n' "$version" >&2
+    return 1
   fi
 }
 
@@ -60,12 +60,7 @@ k3d_create_local_cluster() {
   local api_port=$3
   local http_port=$4
   local https_port=$5
-  local cgroup_output
-  local cgroup_args=()
-  cgroup_output=$(platform_k3s_cgroup_args) || return 1
-  if [[ -n $cgroup_output ]]; then
-    mapfile -t cgroup_args <<<"$cgroup_output"
-  fi
+  platform_require_cgroup_v2 || return 1
   k3d cluster create "$cluster" \
     --image "$image" \
     --servers 1 \
@@ -75,7 +70,6 @@ k3d_create_local_cluster() {
     --port "127.0.0.1:$http_port:80@loadbalancer" \
     --port "127.0.0.1:$https_port:443@loadbalancer" \
     --wait \
-    "${cgroup_args[@]}" \
     "${@:6}"
 }
 

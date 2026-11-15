@@ -107,12 +107,7 @@ set -- cluster create "$cluster_name" \
 for port_mapping in $k3d_ports; do
     set -- "$@" --port "$port_mapping"
 done
-k3s_cgroup_args=$(bash -c '. "$1" && platform_k3s_cgroup_args' platform_k3s_cgroup_args "$deploy_root/platform/local-git-http.sh")
-set -f
-for cgroup_arg in $k3s_cgroup_args; do
-    set -- "$@" "$cgroup_arg"
-done
-set +f
+bash -c '. "$1" && platform_require_cgroup_v2' platform_require_cgroup_v2 "$deploy_root/platform/local-git-http.sh"
 created_cluster=true
 k3d "$@"
 k3d kubeconfig get "$cluster_name" >"$KUBECONFIG"

@@ -454,20 +454,12 @@ for the measured complete-stack footprint.
 ### Local k3s compatibility and troubleshooting
 
 Local clusters run k3s `v1.37.2-k3s1`, the newest release. The infrastructure
-pin is the stable k3s v1.36 channel. Kubernetes 1.35 and later kubelets refuse a
-cgroup v1 host by default:
-
-```text
-kubelet is configured to not run on a host using cgroup v1. cgroup v1 support is unsupported and will be removed in a future release
-```
-
-The WSL2 Docker engine used for local runs reports cgroup v1. On such a host,
-`k3d_create_local_cluster` and the k3d smoke pass
-`--kubelet-arg=fail-cgroupv1=false` to the server. They read the version from
-`docker info --format '{{.CgroupVersion}}'` and leave the kubelet default alone
-on cgroup v2. Real Hetzner nodes run cgroup v2 and never take the argument. A
-kubelet release that drops cgroup v1 code entirely ends this exception; local
-runs then need a cgroup v2 Docker host.
+pin is the stable k3s v1.36 channel. Kubernetes 1.35 and later do not support
+cgroup v1, so `k3d_create_local_cluster` and the k3d smoke stop before k3d when
+`docker info --format '{{.CgroupVersion}}'` is not `2`. On WSL2, add
+`kernelCommandLine = cgroup_no_v1=all` under `[wsl2]` in `%UserProfile%\.wslconfig`,
+run `wsl --shutdown`, and check that `stat -fc %T /sys/fs/cgroup` prints
+`cgroup2fs`.
 
 - If `GitRepository/baukit` reports an EOF or connection failure, inspect
   `.local-state/git-http.log`, verify the PID recorded in

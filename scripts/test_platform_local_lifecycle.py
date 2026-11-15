@@ -70,7 +70,7 @@ class SnapshotTreeTest(unittest.TestCase):
 
 class BindAddressTest(unittest.TestCase):
     def run_with_stubs(
-        self, script: str, docker_output: str = ""
+        self, script: str, docker_output: str = "2"
     ) -> tuple[subprocess.CompletedProcess[str], str]:
         with tempfile.TemporaryDirectory() as directory:
             bin_dir = Path(directory)
@@ -103,20 +103,21 @@ class BindAddressTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--wait --subnet 10.89.0.0/24", calls)
 
-    def test_cgroup_v1_host_turns_off_the_kubelet_cgroup_v1_check(self) -> None:
+    def test_cgroup_v1_host_fails_before_k3d(self) -> None:
         result, calls = self.run_with_stubs(
             "k3d_create_local_cluster ph img random 8080 8443", docker_output="1"
         )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("info --format {{.CgroupVersion}}", calls)
-        self.assertIn("--wait --k3s-arg --kubelet-arg=fail-cgroupv1=false@server:*", calls)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cgroup_no_v1=all", result.stderr)
+        self.assertNotIn("cluster create", calls)
 
-    def test_cgroup_v2_host_keeps_the_kubelet_default(self) -> None:
+    def test_cgroup_v2_host_creates_the_cluster(self) -> None:
         result, calls = self.run_with_stubs(
             "k3d_create_local_cluster ph img random 8080 8443", docker_output="2"
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotIn("fail-cgroupv1", calls)
+        self.assertIn("info --format {{.CgroupVersion}}", calls)
+        self.assertIn("cluster create ph", calls)
 
     def test_unknown_cgroup_version_fails_before_k3d(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -232,6 +233,7 @@ class RestoreTestScriptTest(unittest.TestCase):
         write_stub(
             self.work, "psql", f'printf "%s\\n" "$*" > "{self.sql}.args"\ncat > "{self.sql}"\n'
         )
+        write_stub(self.work, "pg_isready", "exit 0\n")
         env = self.container_env(
             self.writer,
             POD_NAME="postgres-restore-test-abc",
