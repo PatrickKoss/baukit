@@ -287,8 +287,13 @@ report_not_ready() {
 
 # Prints the HelmReleases whose remediation retries are used up; Flux marks them Stalled.
 stalled_releases() {
-  kubectl get helmreleases.helm.toolkit.fluxcd.io -A -o \
-    jsonpath='{range .items[?(@.status.conditions[?(@.type=="Stalled")].status=="True")]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}'
+  kubectl get helmreleases.helm.toolkit.fluxcd.io -A -o json | python3 -c '
+import json, sys
+for item in json.load(sys.stdin)["items"]:
+    conditions = item.get("status", {}).get("conditions", [])
+    if any(c["type"] == "Stalled" and c["status"] == "True" for c in conditions):
+        print(item["metadata"]["namespace"] + "/" + item["metadata"]["name"])
+'
 }
 
 wait_for_platform() {

@@ -235,5 +235,35 @@ class RuntimeIdentityTests(unittest.TestCase):
             self.assertNotIn("create configmap observability-cluster", text, script)
 
 
+class StalledReleaseTests(unittest.TestCase):
+    def test_only_stalled_releases_are_printed(self):
+        releases = {
+            "items": [
+                {
+                    "metadata": {"namespace": "falco", "name": "falco"},
+                    "status": {"conditions": [{"type": "Stalled", "status": "True"}]},
+                },
+                {
+                    "metadata": {"namespace": "kyverno", "name": "kyverno"},
+                    "status": {"conditions": [{"type": "Ready", "status": "True"}]},
+                },
+                {"metadata": {"namespace": "new", "name": "new"}},
+            ]
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            listing = Path(tmp) / "releases.json"
+            listing.write_text(json.dumps(releases))
+            script = (
+                f'kubectl() {{ cat "{listing}"; }}\n'
+                f'source <(sed -n "/^stalled_releases() {{/,/^}}/p" "{E2E / "run.sh"}")\n'
+                "stalled_releases"
+            )
+            result = process_runner.run_process(
+                ["bash", "-c", script], capture_output=True, text=True
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "falco/falco\n")
+
+
 if __name__ == "__main__":
     unittest.main()
