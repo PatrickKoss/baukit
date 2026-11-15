@@ -97,6 +97,13 @@ spec:
                 - -ec
               args:
                 - |
+                  # kube-router rejects a new pod's traffic until it programs the pod IP.
+                  attempts=0
+                  until pg_isready -q -t 2; do
+                    attempts=$((attempts + 1))
+                    [ "${attempts}" -lt 30 ] || { printf 'postgres unreachable after %s tries\n' "${attempts}" >&2; exit 1; }
+                    sleep 1
+                  done
                   token="$(date -u +%Y%m%dT%H%M%SZ)-${POD_NAME}"
                   psql -v ON_ERROR_STOP=1 -v token="${token}" <<'SQL'
                   CREATE TABLE IF NOT EXISTS baukit_restore_sentinel (
