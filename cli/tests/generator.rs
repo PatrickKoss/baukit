@@ -302,12 +302,7 @@ fn worker_generation_matches_golden_tree_and_records_capability() -> anyhow::Res
 #[test]
 fn generated_backend_is_rustfmt_clean_across_product_names() -> anyhow::Result<()> {
     let maximum_name = "a".repeat(41);
-    let names = [
-        "aaa",
-        "zeta",
-        "heldengang-companion",
-        &maximum_name,
-    ];
+    let names = ["aaa", "zeta", "heldengang-companion", &maximum_name];
     for (name, worker, auth, mcp) in names.into_iter().flat_map(|name| {
         [
             (name, false, AuthProvider::Oidc, true),
@@ -3384,11 +3379,7 @@ fn assert_review_identity_layout(name: &str, slug: &str) -> anyhow::Result<()> {
                 "import { PRODUCT_NAME } from './product';",
                 &format!(
                     "const ANALYTICS_APP = '{}';",
-                    if name == "sl" {
-                        "heldengang"
-                    } else {
-                        name
-                    }
+                    if name == "sl" { "heldengang" } else { name }
                 ),
             )
             .replace("PRODUCT_NAME", "ANALYTICS_APP"),
@@ -3425,11 +3416,7 @@ fn assert_backend_identity_is_consumed(
         source.replace(
             &format!(
                 "const APP_NAME: &str = \"{}\";",
-                if name == "sl" {
-                    "heldengang"
-                } else {
-                    name
-                }
+                if name == "sl" { "heldengang" } else { name }
             ),
             "",
         ),

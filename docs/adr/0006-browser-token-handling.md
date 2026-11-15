@@ -21,7 +21,7 @@ Other relevant facts:
   with `offlineAccess` on by default, so Keycloak issues offline tokens.
 - Products run web and API on different origins: `VITE_API_URL` points at
   `http://localhost:<api_port>` in `templates/web/__auth__/web/.env.example`,
-  schluesselbund and architecture-health-platform do the same. Different ports
+  schluesselbund and bauvisite do the same. Different ports
   on one host are the same site, so cookies with `SameSite=Strict` still flow.
 - `baukit-http` builds CORS from `HttpOptions.allowed_origins` and
   `allow_credentials` (`rust/crates/baukit-http/src/middleware.rs:166`). It sets

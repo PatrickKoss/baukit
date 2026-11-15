@@ -356,7 +356,7 @@ For other routes with query parameters, call
 form-encoded in the given order, path segments are percent-encoded as in
 `get_json`, and an empty slice sends no `?`. The call uses the same cached token,
 single 401 retry and `HubError` mapping. Runtime Analyzer and
-architecture-health-platform can drop their own client-credentials token fetch
+bauvisite can drop their own client-credentials token fetch
 and page the seat directory through the shared `HubClient`.
 
 The contract tests in `tests/platform_hub.rs` serve the recorded hub bodies from

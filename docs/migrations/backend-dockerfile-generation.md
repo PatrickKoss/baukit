@@ -29,7 +29,7 @@ keep selecting those stages.
 | Heldengang | `backend_context`, `binaries`, `cargo_build_jobs`, `build_inputs` |
 | Runtime Analyzer | `binaries`, `cargo_build_jobs`, `build_inputs`, `runtime_binaries`, `writable_directories`, `downloads` |
 | Schlauzug | `cargo_build_jobs`, `build_inputs` |
-| AHP | `runtime_packages`, `variants` |
+| BV | `runtime_packages`, `variants` |
 
 These examples assume the current `capabilities.worker` declarations. Set it
 to true where a product uses worker and relies on the default binary list.
@@ -186,7 +186,7 @@ build_inputs = [{ source = "fixtures", destination = "/fixtures/" }]
 This replaces the old `FIXTURES_CONTEXT` image arg. Set the manifest source to
 the fixtures directory relative to the chosen build context.
 
-## AHP
+## BV
 
 Keep `capabilities.worker = true` or include `worker` in `backend.image.binaries`.
 Add the proxy binary to the bin crate and the image's binary list when needed.

@@ -8,7 +8,7 @@ Status markers: `[ ]` open, `[~]` in progress, `[x]` done and verified, `[-]` dr
 
 Scope: baukit and the products that consume it:
 eigenruhe, hebkit, leitbild, redemut, schlauzug, tiefgang, heldengang,
-lesezeichen, schluesselbund, kassensturz, runtime-analyzer, architecture-health-platform.
+lesezeichen, schluesselbund, kassensturz, runtime-analyzer, bauvisite.
 
 Raw exploration reports, with commands and `path:line` evidence: `docs/quality-security/E1..E4-*.md`.
 
@@ -39,19 +39,19 @@ Verified findings only. IDs point into the reports.
 
 | ID | Finding | Evidence | Prevention |
 |---|---|---|---|
-| Q-01 | Lint baseline lacks panic, indexing, cast, size and suppression rules | E1 totals: 42 `expect`, 42 indexing, 15 lossy casts, 11 bare `#[allow]` in baukit prod code; AHP 282 and RA 207 non-test `expect` (E3-03) | clippy lints (E1 "Recommended lint set") + shared `clippy.toml` |
+| Q-01 | Lint baseline lacks panic, indexing, cast, size and suppression rules | E1 totals: 42 `expect`, 42 indexing, 15 lossy casts, 11 bare `#[allow]` in baukit prod code; BV 282 and RA 207 non-test `expect` (E3-03) | clippy lints (E1 "Recommended lint set") + shared `clippy.toml` |
 | Q-02 | Three copies of the Rust lint table, products drifted | redemut has only `clippy::all`; SLS has only `all = "deny"`; RA `agent/` has none; hebkit is on edition 2021 | `baukit check lints`: product table must contain the baseline |
-| Q-03 | God modules and functions | `cli/src/lib.rs` 3572 lines; `redemut-api/src/lib.rs` 8491; `schlauzug-api/src/lib.rs` 7420; AHP `limits.rs` 4369; template `api.rs::run` 205 lines, product copies 229 to 666 | `clippy::too_many_lines` (threshold 80) + `baukit check file-size` with shrinking allowlist; ESLint `max-lines-per-function`, `max-lines` |
+| Q-03 | God modules and functions | `cli/src/lib.rs` 3572 lines; `redemut-api/src/lib.rs` 8491; `schlauzug-api/src/lib.rs` 7420; BV `limits.rs` 4369; template `api.rs::run` 205 lines, product copies 229 to 666 | `clippy::too_many_lines` (threshold 80) + `baukit check file-size` with shrinking allowlist; ESLint `max-lines-per-function`, `max-lines` |
 | Q-04 | React hooks in baukit packages not linted | no `eslint-plugin-react-hooks` in `typescript/`; 5 violations in navigation and purchases-core (E2-02) | add the plugin to the shared config |
 | Q-05 | Weak frontend lint configs in products | hebkit/mobile and SLS root use eslint-config-expo without typescript-eslint; hebkit has 152 `!.` and 77 non-test `as unknown as` (E3-04) | new `@baukit/eslint-config` package used by `typescript/`, templates and every product |
 | Q-06 | Validators that end in casts, duplicated guards | 17 `as unknown as` in baukit src, `isRecord` copied in 10 packages (E2-03/04); 225 non-test `as unknown as` across products | one shared guard module; `consistent-type-assertions` with `objectLiteralTypeAssertions: never` + an ast-grep rule for `as unknown as` outside tests |
 | Q-07 | Template-owned scripts forked in every product | 12 distinct `quality-gate.sh` hashes, 12 `openapi.sh`, 11 `reconcile_keycloak.py` (E3-05) | `baukit check template-files` against a hash manifest, with product extension hooks instead of edits |
 | Q-08 | Copy-pasted wiring | `SuiteComposition` wiring copied into 8 products (E3-06) | builder in `baukit-suite`, template uses it |
-| Q-09 | Agent instructions drift and contradict each other | AHP symlink rule vs hebkit `check-agent-instructions.sh:4`; eigenruhe CLAUDE.md:200 vs AGENTS.md:200; RA AGENTS.md is stale template text; 5 repos never mention `--include-ignored` | baukit-managed instruction block between markers, checked by `baukit check agent-docs` |
+| Q-09 | Agent instructions drift and contradict each other | BV symlink rule vs hebkit `check-agent-instructions.sh:4`; eigenruhe CLAUDE.md:200 vs AGENTS.md:200; RA AGENTS.md is stale template text; 5 repos never mention `--include-ignored` | baukit-managed instruction block between markers, checked by `baukit check agent-docs` |
 | Q-10 | No linter for scripts | baukit: 33 `.py`, 15 `.sh`, no ruff or shellcheck; products the same (only leitbild runs shellcheck) | ruff + shellcheck in baukit gate and template gate |
 | Q-11 | cargo-deny half on | `bans`/`sources` configured but never run, fail today (12 wildcard errors); no deny for `cli/`; 9 products have no `deny.toml` | full `cargo deny check` everywhere, `allow-wildcard-paths = true` |
 | Q-12 | Timing-based tests | 30 `sleep(` in baukit crates, 20 in tests (E1-13); products similar (E3-10) | `disallowed-methods` for sleeps, allowed with `#[expect]` only where a hang is simulated |
-| Q-13 | Five product observability linters reimplement one idea | eigenruhe, kassensturz, AHP, leitbild, schluesselbund (E3 §6) | one `baukit check observability` wrapping `check-metric-names.py` |
+| Q-13 | Five product observability linters reimplement one idea | eigenruhe, kassensturz, BV, leitbild, schluesselbund (E3 §6) | one `baukit check observability` wrapping `check-metric-names.py` |
 
 ### Security
 
@@ -59,7 +59,7 @@ Verified findings only. IDs point into the reports.
 |---|---|---|---|
 | S-01 | Access and refresh tokens in localStorage, no CSP | `auth-web/src/index.ts:428` | design change (decision D2) + test that no storage write holds a refresh token |
 | S-02 | No security headers anywhere | nothing in `baukit-http`, templates or chart sets CSP, nosniff, frame-ancestors, HSTS | default `SecurityHeadersLayer` in baukit-http, CSP at the web edge, header test in the fixture gate |
-| S-03 | Actions pinned by tag | baukit 0 of 80 SHA pins; release jobs hold `contents: write` + `id-token: write`; AHP fixture workflow has no `permissions:` | SHA pins via renovate `helpers:pinGitHubActionDigests`; zizmor + actionlint in every gate |
+| S-03 | Actions pinned by tag | baukit 0 of 80 SHA pins; release jobs hold `contents: write` + `id-token: write`; BV fixture workflow has no `permissions:` | SHA pins via renovate `helpers:pinGitHubActionDigests`; zizmor + actionlint in every gate |
 | S-04 | No secret scanning, no JS advisory gate | no gitleaks, osv-scanner, pnpm audit in baukit or 11 products (kassensturz has `security-audit.py`) | gitleaks + osv-scanner step in baukit gate and template gate |
 | S-05 | Secret-bearing types derive Debug | `baukit-auth/src/api_token.rs:79` `IssuedApiToken` | redacting Debug or `secrecy::SecretString`; ast-grep rule on `derive(Debug)` + secret-named fields |
 | S-06 | Clerk profile accepts tokens without `azp` | `baukit-auth/src/verifier.rs:1033` | make missing-azp acceptance opt-in; negative tests per profile |
@@ -197,7 +197,7 @@ tenancy and rate-limit audit of the products (S-08).
   egress, SHA-pin actions, write `docs/threat-model.md`, add fuzz targets for its own parsers, gate green.
   - [x] eigenruhe  - [x] hebkit  - [x] leitbild  - [x] redemut
   - [x] schlauzug  - [x] tiefgang  - [x] heldengang  - [x] lesezeichen
-  - [x] schluesselbund  - [x] kassensturz  - [x] runtime-analyzer  - [x] architecture-health-platform
+  - [x] schluesselbund  - [x] kassensturz  - [x] runtime-analyzer  - [x] bauvisite
   - Product-specific items gathered from baukit work packages:
     - `TombstoneTable.delete` binds owners as `$2` and deletes `(owner_id, id)` pairs (F5): eigenruhe,
       hebkit, tiefgang, kassensturz. Each product also gets its own push/pull owner-isolation test and a fuzz
@@ -252,7 +252,7 @@ tenancy and rate-limit audit of the products (S-08).
   | schluesselbund | 0.22.0 | 3 | 0 | 0 | 2 | | 0 |
   | kassensturz | 0.22.0 | 7 | 0 | 0 | 6 | | 0 |
   | runtime-analyzer | 0.22.0 | 1 | 0 | 0 | 1 | | 0 |
-  | architecture-health-platform | 0.21.0 | 1 | 0 | 0 | 1 | | 0 |
+  | bauvisite | 0.21.0 | 1 | 0 | 0 | 1 | | 0 |
 
   "Oversized files" counts allowlisted files over the 1000-line (Rust) or 500-line (TS) limit. They may not
   grow. Before the rollout, bulk entries alone ran to hebkit 8213, kassensturz 3644 and redemut 486, and
@@ -276,7 +276,7 @@ tenancy and rate-limit audit of the products (S-08).
     selects only F and E9), and flag unused `noqa` (RUF100). The 83 dead E402 comments in eigenruhe
     counted against its budget. Also reject a gitleaks allowlist with a pattern regex and no `paths` or
     `commits` (eigenruhe allowed every lowercase slug repo-wide until f21e5292).
-  - Bump redemut and schlauzug from 0.20.0, and architecture-health-platform from 0.21.0, to 0.22.0.
+  - Bump redemut and schlauzug from 0.20.0, and bauvisite from 0.21.0, to 0.22.0.
   - Open product intermittents without a root cause: tiefgang webkit focus-session (1/36), the hebkit
     trainer flow ending on sign-in, redemut's Maestro username paste, and eigenruhe's root layout remounting
     under API 429 pressure. At 20 WebKit workers, 43 plan tests still land on Mixer instead of Today; the gate
@@ -355,8 +355,8 @@ nanoseconds; those two are about readable ownership, not speed.
   typescript/ eslint config (templates have it), purchases-core without node_modules (stale install, ignored).
   Navigation's own lint script passes, so TSX files are covered by per-package configs.
 - 2026-11-07: E3 report verified. Confirmed lint drift (redemut only `clippy::all`, SLS only `all = "deny"`,
-  hebkit edition 2021), god files (redemut-api 8491, schlauzug-api 7420, AHP limits.rs 4369), template
-  `run` 205 lines, 12 distinct `quality-gate.sh` hashes, AHP symlink vs hebkit check, eigenruhe CLAUDE.md/AGENTS.md
+  hebkit edition 2021), god files (redemut-api 8491, schlauzug-api 7420, BV limits.rs 4369), template
+  `run` 205 lines, 12 distinct `quality-gate.sh` hashes, BV symlink vs hebkit check, eigenruhe CLAUDE.md/AGENTS.md
   line 200 contradiction. Its function-length counter is a heuristic; P1.1 re-measures with clippy.
 - 2026-11-07: wave 1 started: W1-A..D, then W1-E..I after the cap went to 10.
 - 2026-11-07: W1-E merged (a509243b). Checked every helper the skills cite (baukit_test::jwt, egress
@@ -495,7 +495,7 @@ nanoseconds; those two are about readable ownership, not speed.
   - Main after the merge: fmt, clippy (all features and without features for auth, config and http), 475
     tests with Docker, and file-size, suppressions and agent-docs are all green.
   - Rollout impact: 10 of the 12 products ship Clerk as a provider option and a mobile app. All except
-    runtime-analyzer and architecture-health-platform. The backend template wave adds
+    runtime-analyzer and bauvisite. The backend template wave adds
     `auth.allow_missing_azp`, default on when `context.mobile`, and P4.2 wires it per product. Otherwise a
     Clerk deployment rejects Expo tokens.
 - 2026-11-07: W4-C merged (P2.9 baukit part).
@@ -568,7 +568,7 @@ nanoseconds; those two are about readable ownership, not speed.
   traced rework fixed 48 of 161 sections. `missing_errors_doc` is now on in rust/ and cli/. rustdoc runs with
   `-D warnings` in the rust-check and cli-check steps.
 - F2: `baukit check observability` and `template-files`. Product findings (none reported by the old linters):
-  eigenruhe 20 datasource (fixed uid `prometheus`), kassensturz 6 metrics on no dashboard, AHP 81 coverage +
+  eigenruhe 20 datasource (fixed uid `prometheus`), kassensturz 6 metrics on no dashboard, BV 81 coverage +
   9 undeclared `DS_PROMETHEUS`, lesezeichen 14, leitbild 4, schluesselbund 16 coverage gaps. promtool stays a
   separate step. Generated products get `.baukit/template-files.toml` and a `.gitleaks.toml` that allowlists it.
 - F3: baukit-code-conformance skill and the skills index.
@@ -592,7 +592,7 @@ nanoseconds; those two are about readable ownership, not speed.
   npm sets up trusted publishing only for existing packages. The user publishes 0.19.0 once by hand, then
   configures trusted publishers. Follow-up: the baukit-upgrade skill still describes git-tag pins; products
   pin registry versions.
-- Product rollout brief: prompts/P4.2-rollout.md. architecture-health-platform's main checkout has 4 deleted
+- Product rollout brief: prompts/P4.2-rollout.md. bauvisite's main checkout has 4 deleted
   tracked fixtures under `node_modules/` and `target/` paths, probably from a broad cleanup. The brief allows only
   `git clean -ffdX`.
 - 2026-11-08: hosted CI on main had been red since T4. The seven generated-fixture jobs hit the AppArmor userns

@@ -1011,7 +1011,7 @@ mod tests {
 
     #[test]
     fn generated_secrets_use_a_custom_marker_and_a_base62_body() {
-        let format = ApiTokenFormat::new("ahpAgent_").expect("custom marker");
+        let format = ApiTokenFormat::new("bvAgent_").expect("custom marker");
         let generated = format.generate_secret().expect("generate secret");
 
         assert!(format.is_well_formed(generated.secret()));
@@ -1027,7 +1027,7 @@ mod tests {
     async fn generated_metadata_matches_the_hash_and_prefix_stored_by_issue() {
         for format in [
             ApiTokenFormat::default(),
-            ApiTokenFormat::new("ahpAgent_").expect("custom marker"),
+            ApiTokenFormat::new("bvAgent_").expect("custom marker"),
         ] {
             let generated = format.generate_secret().expect("generate secret");
             let prefix_length = format.marker().len() + DISPLAY_PREFIX_LENGTH;

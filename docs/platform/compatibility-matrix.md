@@ -225,7 +225,7 @@ Follow the sections in this order, starting from a product on 0.18.2. Render a f
 
 #### Recorded platform responses
 
-A product that keeps a recorded platform API responses fixture, such as a JSON file of hub `GET /platform/v1/organizations/{id}` bodies, adds the two required `OrganizationSummary` booleans `sso_connection_active` and `directory_sync_active` to every organization summary in it (AHP.ID). The 0.18.2 client rejects a summary without them.
+A product that keeps a recorded platform API responses fixture, such as a JSON file of hub `GET /platform/v1/organizations/{id}` bodies, adds the two required `OrganizationSummary` booleans `sso_connection_active` and `directory_sync_active` to every organization summary in it (BV.ID). The 0.18.2 client rejects a summary without them.
 
 #### Web env keys read statically (web products)
 
@@ -237,7 +237,7 @@ A product that keeps a recorded platform API responses fixture, such as a JSON f
 
 #### Organization header and plan retry
 
-`baukit-http` exports `X_ORGANIZATION_ID` and allows it in the default CORS request headers. A product that added `x-organization-id` through `with_additional_allowed_headers` (AHP) may drop it. `useOrganizationPlan` returns `OrganizationPlan`, the old state plus `retry()`, which reads the plan again. It still passes to `useFeature` and `LockedFeature` as `organization`. A product that rebuilt its backend object to retry calls `retry()` from its `unavailable` view instead.
+`baukit-http` exports `X_ORGANIZATION_ID` and allows it in the default CORS request headers. A product that added `x-organization-id` through `with_additional_allowed_headers` (BV) may drop it. `useOrganizationPlan` returns `OrganizationPlan`, the old state plus `retry()`, which reads the plan again. It still passes to `useFeature` and `LockedFeature` as `organization`. A product that rebuilt its backend object to retry calls `retry()` from its `unavailable` view instead.
 
 #### Mobile scripts, app-config tests and Maestro paths (mobile products)
 
@@ -344,7 +344,7 @@ Follow the sections in this order.
 BK21 drops Baukit's production Keycloak. Breaking for platform overlays and the k3d smoke: `deploy/platform/keycloak/` (the Keycloak operator 26.8.0 base with its vendored CRDs, the realm import example and the realm migration Job example) is gone, as are the local cluster's `local-keycloak` and `local-realm` Flux Kustomizations and their components. Production signs in with Clerk or WorkOS; Keycloak runs only in each product's compose stack, its E2E and the QA Keycloak on 18081.
 
 - A private overlay that lists `deploy/platform/keycloak` removes that entry, its `keycloak` namespace, the `keycloak-db-credentials` and `keycloak-bootstrap-admin` Secrets and the `keycloak` database and role before it pins `v0.18.0`.
-- `deploy/smoke/headless-pkce-login.py` is gone. `deploy/smoke/k3d-smoke.sh` drops `BAUKIT_SMOKE_ISSUER`, `BAUKIT_SMOKE_OIDC_CLIENT_ID`, `BAUKIT_SMOKE_OIDC_USERNAME`, `BAUKIT_SMOKE_OIDC_PASSWORD` and `BAUKIT_SMOKE_RESOLVE_HOST` and requires `BAUKIT_SMOKE_TOKEN_COMMAND`, an executable that writes one access token to `$BAUKIT_SMOKE_ACCESS_TOKEN_FILE`. The harness sends it to `BAUKIT_SMOKE_API_CHECK_PATH` and adds it to the log leak scan. Architecture Health Platform's `scripts/k3d-smoke.sh` is the one known caller.
+- `deploy/smoke/headless-pkce-login.py` is gone. `deploy/smoke/k3d-smoke.sh` drops `BAUKIT_SMOKE_ISSUER`, `BAUKIT_SMOKE_OIDC_CLIENT_ID`, `BAUKIT_SMOKE_OIDC_USERNAME`, `BAUKIT_SMOKE_OIDC_PASSWORD` and `BAUKIT_SMOKE_RESOLVE_HOST` and requires `BAUKIT_SMOKE_TOKEN_COMMAND`, an executable that writes one access token to `$BAUKIT_SMOKE_ACCESS_TOKEN_FILE`. The harness sends it to `BAUKIT_SMOKE_API_CHECK_PATH` and adds it to the log leak scan. Bauvisite's `scripts/k3d-smoke.sh` is the one known caller.
 - `scripts/keycloak_policy.py` accepts only `--environment-class development`. Re-render it with `scripts/tests/test_keycloak_policy.py`, delete `scripts/tests/fixtures/production-realm.json` and `production-policy.json`, and drop any `--environment-class production` call.
 - The `oidc` flavor stays. It verifies any OIDC issuer; its bundled realm is for development, and a deployed `oidc` product supplies the `IdentityAccountDeleter` for its own issuer. Re-render `docs/auth-providers.md`.
 - The local platform fixture verifies tokens from its compose Keycloak on the host (`AUTH__JWKS_URI` through `host.k3d.internal:8091`). Recreate a running `baukit-local` cluster; `platform-up.sh` no longer writes Keycloak credentials.
@@ -382,7 +382,7 @@ Organizations are plan kit subjects (BK25). Breaking for `baukit-suite` `platfor
 
 What a product deletes when it moves to the kit's subject:
 
-- Architecture Health Platform (AHP.ORG): `PlanEntitlements` and its `EntitlementPort` (`privacy_entitled`, `automation_entitled`), `PlanFeature` and the `OrganizationPlans` port with its `PostgresHubOrganizations::effective_plan` adapter and `organization_plans` in `suite_platform`, the organization entitlement that `suite_account.rs` builds from `effective_plan` (the kit's `GET /me/entitlement` with `X-Organization-Id` serves it), and the `billing: null` the web passes in `web/src/suite-account.ts`. Its gate tests move to `require_feature` with `FeatureSubject::Member` and `FeatureSubject::Organization`. Organization sync, seats and memberships stay, because AHP uses them for tenancy, not for gating.
+- Bauvisite (BV.ORG): `PlanEntitlements` and its `EntitlementPort` (`privacy_entitled`, `automation_entitled`), `PlanFeature` and the `OrganizationPlans` port with its `PostgresHubOrganizations::effective_plan` adapter and `organization_plans` in `suite_platform`, the organization entitlement that `suite_account.rs` builds from `effective_plan` (the kit's `GET /me/entitlement` with `X-Organization-Id` serves it), and the `billing: null` the web passes in `web/src/suite-account.ts`. Its gate tests move to `require_feature` with `FeatureSubject::Member` and `FeatureSubject::Organization`. Organization sync, seats and memberships stay, because BV uses them for tenancy, not for gating.
 - Runtime Analyzer (RA.ORG): `OrganizationPlan` and `tenant_plan` as a plan source (`finops-ports` `organizations.rs`, `finops-postgres` `organizations.rs`, `HubPlatform::tenant_plan`), the plan field on `FinopsPrincipal`, and the product's `feature_not_entitled` helper and `AccessDenial::FeatureNotEntitled` in `routes/plan.rs`, whose callers move to `require_feature`. The `tenant_entitlements` capability checks in `finops-postgres` are product data, not plan gates, and stay. Its `X-Organization-Id` header stays and becomes the kit's `ORGANIZATION_HEADER`; tenant selection, seat and suspension checks stay.
 
 A BK24 `SignInSession.organization.id` is the sign-in provider's organization ID, not the hub organization UUID that `X-Organization-Id` takes, so a client passes the hub ID it got from the product backend to `useOrganizationPlan`.

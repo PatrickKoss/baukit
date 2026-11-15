@@ -17,7 +17,7 @@ This is a read-only audit. I wrote no repo files. Per-product sections follow, a
 - tiefgang: 5 handlers. schlauzug: runs and room host view. leitbild: reflection-jobs owner taken from the JSON payload, plus the catalog import upsert can rewrite owner.
 
 ### SQL-scoped (good)
-eigenruhe is SQL-scoped on all 64 id routes. lesezeichen is SQL-scoped on 29 of 32. architecture-health-platform uses require_member plus scoped SQL. runtime-analyzer uses Postgres FORCE RLS, but 39 direct pool calls and 62 SECURITY DEFINER uses bypass it. Most `/me` routes in kassensturz and heldengang are SQL-scoped too.
+eigenruhe is SQL-scoped on all 64 id routes. lesezeichen is SQL-scoped on 29 of 32. bauvisite uses require_member plus scoped SQL. runtime-analyzer uses Postgres FORCE RLS, but 39 direct pool calls and 62 SECURITY DEFINER uses bypass it. Most `/me` routes in kassensturz and heldengang are SQL-scoped too.
 
 ### Cross-tenant tests (routes with an id / routes with a two-principal test)
 | Product | Routes with id | Routes with a two-principal test |
@@ -30,7 +30,7 @@ eigenruhe is SQL-scoped on all 64 id routes. lesezeichen is SQL-scoped on 29 of 
 | leitbild | 18 | 4 |
 | tiefgang | 18 | about 2 |
 | redemut | 7 sampled | 3 |
-| architecture-health-platform | not counted | 23 test files |
+| bauvisite | not counted | 23 test files |
 
 hebkit and schlauzug have no counted tests; see their sections.
 
@@ -46,7 +46,7 @@ hebkit and schlauzug have no counted tests; see their sections.
 - Holds (guarded upsert): eigenruhe, lesezeichen.
 - Latent: kassensturz and hebkit have tables that rely on an unlocked pre-check. In tiefgang a foreign id makes the whole batch fail with a 5xx.
 - Gap: redemut's device_id is not checked.
-- Not used: heldengang, schluesselbund, schlauzug, architecture-health-platform.
+- Not used: heldengang, schluesselbund, schlauzug, bauvisite.
 
 
 ---
@@ -1334,22 +1334,22 @@ baukit-sync is not a dependency of this backend. The `ticket_sync`, `grc_sync` a
 
 ---
 
-# architecture-health-platform (reduced depth)
+# bauvisite (reduced depth)
 
-Backend: /home/patrick/projects/architecture-health-platform/backend. Steps 1, 3, 5 full; steps 2 and 4 spot checks.
+Backend: /home/patrick/projects/bauvisite/backend. Steps 1, 3, 5 full; steps 2 and 4 spot checks.
 
 ## 1. Ownership model
 
 - Tenant key is the organization (`organization_id: Uuid`). Nearly every authenticated route is nested under `/organizations/{organizationId}/...` (145 of 148 templated paths in `openapi.json`). Repositories are the second level, keyed `(organization_id, id)`.
-- Principal: `baukit_auth::Principal` extractor in handlers (e.g. `crates/architecture-health-platform-api/src/privacy_routes.rs:152`). It maps to an internal user id via `actor()` at `crates/architecture-health-platform-api/src/lib.rs:1326`, which calls `users.resolve_session`.
-- Membership gate: `AuthorizationService::require_member` / `require_manager` at `crates/architecture-health-platform-services/src/lib.rs:270` and `:281`, backed by `member_role(organization_id, user_id)`. Ids are plain `Uuid`; no tenant-scoped newtype.
-- Typical service pattern: `require_member(user, org)` then repository lookup with org in SQL, e.g. `crates/architecture-health-platform-services/src/maintenance.rs:38-62` and `crates/architecture-health-platform-services/src/external_dependency_reads.rs:68-80`.
+- Principal: `baukit_auth::Principal` extractor in handlers (e.g. `crates/bauvisite-api/src/privacy_routes.rs:152`). It maps to an internal user id via `actor()` at `crates/bauvisite-api/src/lib.rs:1326`, which calls `users.resolve_session`.
+- Membership gate: `AuthorizationService::require_member` / `require_manager` at `crates/bauvisite-services/src/lib.rs:270` and `:281`, backed by `member_role(organization_id, user_id)`. Ids are plain `Uuid`; no tenant-scoped newtype.
+- Typical service pattern: `require_member(user, org)` then repository lookup with org in SQL, e.g. `crates/bauvisite-services/src/maintenance.rs:38-62` and `crates/bauvisite-services/src/external_dependency_reads.rs:68-80`.
 
 ## 2. Route spot checks
 
 | Route | Path | Classification |
 |---|---|---|
-| repository lookup used by most repo routes | `crates/architecture-health-platform-postgres/src/lib.rs:323-330`, `WHERE organization_id=$1 AND id=$2` | SQL-scoped |
+| repository lookup used by most repo routes | `crates/bauvisite-postgres/src/lib.rs:323-330`, `WHERE organization_id=$1 AND id=$2` | SQL-scoped |
 | GET maintenance policy | `services/src/maintenance.rs:63-73` -> `current_policy(organization, repository)` | SQL-scoped after membership check |
 | GET external dependencies | `services/src/external_dependency_reads.rs:68-90` | SQL-scoped after membership check |
 | POST `/privacy/suppressions/{id}/decision` | `api/src/privacy_routes.rs:150-172` builds the decision with `organization_id: org` from the path and `decided_by: user`, then `decide(user, ...)` | org carried into the write; not traced to SQL |
@@ -1363,13 +1363,13 @@ Numbers: 148 templated routes with ids. I did not map tests per route at this de
 
 ## 4. Rate limiting (spot check)
 
-- `crates/architecture-health-platform-api/src/rate_limit.rs:14-64`: `baukit_ratelimit::layers` wraps all `authenticated_routes`. Per-subject groups add `management_writes` (30/min), `analysis_triggers` (10/min) and `governance_writes` (30/min), classified in `classify_route` (`rate_limit.rs:72` onward). Webhook routes get a separate IP-only limit of 120/min.
+- `crates/bauvisite-api/src/rate_limit.rs:14-64`: `baukit_ratelimit::layers` wraps all `authenticated_routes`. Per-subject groups add `management_writes` (30/min), `analysis_triggers` (10/min) and `governance_writes` (30/min), classified in `classify_route` (`rate_limit.rs:72` onward). Webhook routes get a separate IP-only limit of 120/min.
 - Extra amount budgets exist for context batches (`api/src/context_batch_routes.rs:17-25`) and inventory ingest (`api/src/inventory_routes.rs:27-50`).
 - Abuse-prone routes `/privacy/data-map/exports`, `/privacy/subprocessor-register/uploads`, `/privacy/data-map/push` and `/subprocessor-register/pull` (`api/src/lib.rs:200-204`) get the default layer plus whatever write group they match. None has a dedicated tighter quota. Outbound refreshes are in `analysis_triggers`.
 
 ## 5. Sync
 
-No baukit-sync. No `baukit_sync` reference in any crate and no dependency in `crates/architecture-health-platform-bin/Cargo.toml`. `postgres/src/privacy_sync.rs` is a job-outbox sync for the privacy register, not baukit-sync push/pull. Not applicable.
+No baukit-sync. No `baukit_sync` reference in any crate and no dependency in `crates/bauvisite-bin/Cargo.toml`. `postgres/src/privacy_sync.rs` is a job-outbox sync for the privacy register, not baukit-sync push/pull. Not applicable.
 
 ## Findings
 

@@ -35,7 +35,7 @@
       "professional",
       "enterprise"
     ],
-    "architecture_health_platform": [
+    "bauvisite": [
       "starter",
       "professional",
       "enterprise"
@@ -773,12 +773,12 @@
       "displayPrice": null
     },
     {
-      "id": "business.architecture_health_platform.starter",
+      "id": "business.bauvisite.starter",
       "line": "software_engineering",
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "starter",
           "features": []
         }
@@ -806,16 +806,16 @@
       "displayPrice": null
     },
     {
-      "id": "business.architecture_health_platform.professional",
+      "id": "business.bauvisite.professional",
       "line": "software_engineering",
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "professional",
           "features": [
-            "architecture_health_platform.privacy",
-            "architecture_health_platform.automation"
+            "bauvisite.privacy",
+            "bauvisite.automation"
           ]
         }
       ],
@@ -842,16 +842,16 @@
       "displayPrice": null
     },
     {
-      "id": "business.architecture_health_platform.enterprise",
+      "id": "business.bauvisite.enterprise",
       "line": "software_engineering",
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "enterprise",
           "features": [
-            "architecture_health_platform.privacy",
-            "architecture_health_platform.automation"
+            "bauvisite.privacy",
+            "bauvisite.automation"
           ]
         }
       ],
@@ -888,7 +888,7 @@
           "features": []
         },
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "starter",
           "features": []
         }
@@ -928,11 +928,11 @@
           ]
         },
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "professional",
           "features": [
-            "architecture_health_platform.privacy",
-            "architecture_health_platform.automation"
+            "bauvisite.privacy",
+            "bauvisite.automation"
           ]
         }
       ],
@@ -972,11 +972,11 @@
           ]
         },
         {
-          "productId": "architecture_health_platform",
+          "productId": "bauvisite",
           "tier": "enterprise",
           "features": [
-            "architecture_health_platform.privacy",
-            "architecture_health_platform.automation"
+            "bauvisite.privacy",
+            "bauvisite.automation"
           ]
         }
       ],

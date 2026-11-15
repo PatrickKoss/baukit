@@ -55,9 +55,9 @@ actions such as `actions/checkout@v7.0.1`, `peter-evans/create-pull-request@v8.1
 `dtolnay/rust-toolchain@stable` (ci.yml:94), `taiki-e/install-action@cargo-deny` (ci.yml:150) are
 tag or branch refs. Counts of 40-hex SHA pins: baukit 0/80, hebkit 1/52, lesezeichen 1/20, all other
 products 0. No repo uses `pull_request_target` (good). Top-level `permissions:` is present everywhere
-except `architecture-health-platform/.github/workflows/architecture-health-fixture.yml`.
+except `bauvisite/.github/workflows/bauvisite-fixture.yml`.
 Fix: pin all actions to SHAs with the tag in a comment; renovate (`renovate.json` exists in baukit)
-can keep them current via `helpers:pinGitHubActionDigests`. Add `permissions:` to the AHP workflow.
+can keep them current via `helpers:pinGitHubActionDigests`. Add `permissions:` to the BV workflow.
 Prevention: zizmor in CI (catches unpinned uses, excessive permissions, template injection).
 
 ### E4-04 Supply chain checks cover only `rust/`: no cargo-deny for `cli/`, no JS audit
@@ -67,7 +67,7 @@ Evidence: `rust/deny.toml` exists, `cli/deny.toml` does not; `scripts/ci-gate.sh
 `cargo-deny` step; no `pnpm audit`, osv-scanner, gitleaks, trufflehog, semgrep or CodeQL referenced in
 `.github`, `scripts`, `Makefile`. `rust/deny.toml` has `unknown-git = "deny"` and `wildcards = "deny"`
 (good) but `multiple-versions = "warn"` and no `[bans] deny` list.
-Products: only kassensturz, runtime-analyzer and architecture-health-platform have a `backend/deny.toml`;
+Products: only kassensturz, runtime-analyzer and bauvisite have a `backend/deny.toml`;
 eigenruhe, hebkit, leitbild, redemut, schlauzug, tiefgang, heldengang, lesezeichen,
 schluesselbund have none.
 Fix: run cargo-deny on `cli/` and on every product backend (template should emit `deny.toml` and a CI
@@ -87,7 +87,7 @@ Correct today, but nothing stops a second caller. Similar id-only lookups:
 `tiefgang/backend/crates/tiefgang-postgres/src/guard.rs:739`,
 `heldengang-postgres/src/wellness.rs:239`, `onboarding.rs:149`.
 Rough count of files with cross-tenant style tests (rg `other_user|cross_tenant|another_org|foreign_org|other_org`):
-eigenruhe 0, tiefgang 0, lesezeichen 0, kassensturz 0, redemut 1, schluesselbund 1, AHP 33.
+eigenruhe 0, tiefgang 0, lesezeichen 0, kassensturz 0, redemut 1, schluesselbund 1, BV 33.
 Fix: make repository methods take `(OrgId, Id)` newtypes so an unscoped lookup does not compile;
 consider Postgres RLS with `SET LOCAL app.org_id` for the highest-value tables.
 Prevention: a baukit-test helper `assert_cross_tenant_denied(router, route, user_a, user_b)` run over
@@ -126,7 +126,7 @@ and `reqwest::Client::builder` outside an allowlisted adapter module.
 ### E4-09 Committed key material and env files (test-only, but worth a scanner allowlist)
 Severity: low. `git ls-files` shows test PEMs (`baukit/fixtures/data-subject/v1/test-only-private.pem`,
 `baukit/rust/crates/baukit-test/src/jwt/fixtures/oidc-key-1.pem`, runtime-analyzer `fixtures/evidence/tsa/ec/*.key.pem`,
-AHP `tests/fixtures/github-app-test-only.pem`) and `leitbild/web/.env.production` / `.env.testing`
+BV `tests/fixtures/github-app-test-only.pem`) and `leitbild/web/.env.production` / `.env.testing`
 (key names only checked: `VITE_ANALYTICS_PROVIDER`, `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_POSTHOG_API_HOST`,
 all public by design). Nothing looks like a production secret, but without gitleaks nothing would catch one.
 Fix: gitleaks with a `.gitleaks.toml` allowlisting these fixture paths.
@@ -147,7 +147,7 @@ Fix: gitleaks with a `.gitleaks.toml` allowlisting these fixture paths.
 
 ### Security testing today
 - baukit: 0 fuzz targets, 0 files using proptest (rg over `rust/` and `cli/`).
-- Products: kassensturz has cargo-fuzz (`backend/fuzz`, `scripts/fuzz-statements.sh`, `.github/workflows/statement-fuzz.yml`) and proptest in 20 files: this is the prior art to copy. runtime-analyzer has a fuzz crate. AHP 9 proptest files. eigenruhe, hebkit, schlauzug, tiefgang have no proptest.
+- Products: kassensturz has cargo-fuzz (`backend/fuzz`, `scripts/fuzz-statements.sh`, `.github/workflows/statement-fuzz.yml`) and proptest in 20 files: this is the prior art to copy. runtime-analyzer has a fuzz crate. BV 9 proptest files. eigenruhe, hebkit, schlauzug, tiefgang have no proptest.
 
 ### Ranked new fuzz/property targets in baukit
 1. `baukit-auth` JWT path: `verifier.rs` header/claims decode and `validate_token_profile` (`:1020`). Untrusted bearer on every request. Property: never Ok without a valid signature; fuzz the decode path for panics.
@@ -164,7 +164,7 @@ Fix: gitleaks with a `.gitleaks.toml` allowlisting these fixture paths.
 Add a reusable `baukit-test` suite: expired, wrong iss, wrong aud, alg=none, HS256 with public key as secret, unknown kid, tampered payload, cross-tenant read/write per route. Generate it into every product via the template.
 
 ### Threat modeling
-No threat model doc in baukit. Found mentions only in hebkit (1 md), kassensturz (3), AHP (2). A reusable
+No threat model doc in baukit. Found mentions only in hebkit (1 md), kassensturz (3), BV (2). A reusable
 agent skill (in `agent-skills/`) should ask for: data classes and where they live, trust boundaries
 (browser, mobile, backend, MCP, njs edge, third-party webhooks, egress targets), identity providers and token
 types, tenant model, STRIDE per boundary, and output a `docs/threat-model.md` with a table mapping each threat
