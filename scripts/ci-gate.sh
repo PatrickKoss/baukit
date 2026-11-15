@@ -117,7 +117,7 @@ step_observability_rules() {
   deploy/observability/lint/check-rules.sh deploy/observability deploy/observability-platform
 }
 step_platform_validate() {
-  scripts/install-deploy-tools.sh --only kustomize,kubeconform,helm,flux,kyverno
+  scripts/install-deploy-tools.sh --only kustomize,kubeconform,helm,flux,kyverno,chainsaw,k3d,kubectl
   ./deploy/platform/validate.sh
 }
 step_platform_e2e() {
