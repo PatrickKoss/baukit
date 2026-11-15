@@ -1139,3 +1139,9 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   moves these args into one helper shared by run.sh, platform-up and the lifecycle. K6 is ready apart from
   require-psa-labels on default, kube-public, kube-system and kube-node-lease. Decision: label them in the
   bring-up scripts (kube-system privileged, the rest restricted), not a 12th exception.
+- 2026-11-15 22:40: E5 merged (0f276e16), gate green. `platform_local_etcd_args` in local-git-http.sh is the
+  one source for single-node etcd k3d args (cluster-init, leader-elect=false for kcm/ccm/scheduler, wrangler
+  leases 180s/150s/10s) used by run.sh, platform-up and the lifecycle; production args stay undecided.
+  k3s-hardening e2e on c92e3e4a passed (814s): encryption at rest, audit events reach Loki through
+  Alloy 1.16. kube-bench k3s-cis-1.9 report-only: 41 PASS, 26 FAIL, 49 WARN; etcd 7/7 PASS. E3 still needs
+  its 15 min timing on a quiet host.
