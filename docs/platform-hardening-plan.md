@@ -565,7 +565,7 @@ behave. Later phases add test directories here.
   referrer policy) attached on websecure, rate limits keyed on `X-Forwarded-For` depth when behind a
   trusted LB, `global.checkNewVersion: false`, and access logs that drop query strings. e2e asserts
   TLS 1.1 handshakes fail and headers are present.
-- [ ] **S4 Flux multi-tenancy:** the lifecycle patches the Flux controllers with
+- [x] **S4 Flux multi-tenancy:** the lifecycle patches the Flux controllers with
   `--no-cross-namespace-refs`, `--no-remote-bases` and `--default-service-account=default`, and enables
   notification-controller. `components/tenant` creates a tenant ServiceAccount with a namespace-scoped
   RoleBinding, which tenant Kustomizations must use (K4 policy). Tenant SOPS uses a per-tenant age
@@ -907,3 +907,23 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   - posthog gets `service.type: ClusterIP`, because the NodePort default was a Deny violation.
   - Open Audit findings for K6: restricted-profile gaps in falco, posthog, hcloud-csi and kured, images
     without a registry prefix, wildcard RBAC, and 6 containers without resources.
+- 2026-11-15 S4 merged. `components/flux-lockdown` adds three flags to kustomize-controller:
+  `--no-cross-namespace-refs`, `--no-remote-bases` and `--default-service-account=default`. It adds
+  `--no-cross-namespace-refs` to helm-controller and sets `serviceAccountName` on the flux-system sync.
+  `platform-up.sh` renders the patched install and `flux_lockdown_verify` fails `up` when a flag is
+  missing. The lifecycle bootstrap runs the same verifier, so platform-infra fails `up` until its GitOps
+  repo carries the patches inline (PI4).
+  - Every platform Kustomization names `kustomize-controller`.
+  - The two observability HelmReleases sourced from `flux-system/baukit` moved to `flux-system` with
+    `targetNamespace`.
+  - A cross-namespace `dependsOn` stays allowed. In helm-controller v1.6.3 the ACL guards only chart
+    sources, as the report quotes. Shown live.
+  - helm-controller has no `--default-service-account` flag. Tenant HelmReleases get their account from
+    `components/tenant` plus K4, and threat model P-05 is partial.
+  - notification-controller keeps cross-namespace refs for O5's platform Alert. The new Deny policy
+    `flux-tenant-alert-sources` stops tenant Alerts from reading other namespaces (P-06).
+  - `components/tenant` adds the `flux-reconciler` SA, an `admin` RoleBinding in the namespace, and a
+    per-tenant SOPS secret ref and age recipient from a `baukit-tenant` ConfigMap.
+  - `lint/test_flux_tenancy.py` checks every overlay, the e2e overlay included.
+  - The e2e `flux-tenancy` suite passed on a small cluster. Its full-e2e run lands with the integration
+    proof.
