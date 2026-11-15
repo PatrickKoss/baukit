@@ -16,6 +16,7 @@ ENFORCE = ROOT / "deploy" / "smoke" / "kyverno-enforce.sh"
 KYVERNO_RELEASE = ROOT / "deploy" / "platform" / "kyverno" / "helm-release.yaml"
 KYVERNO_SOURCE = ROOT / "deploy" / "platform" / "kyverno" / "oci-repository.yaml"
 POLICY_DIR = ROOT / "deploy" / "platform" / "kyverno-policies" / "policies"
+EXCEPTION_DIR = ROOT / "deploy" / "platform" / "kyverno-policies" / "exceptions"
 ENFORCED_KINDS = {"ValidatingPolicy", "ImageValidatingPolicy"}
 
 
@@ -111,9 +112,16 @@ class RenderTest(unittest.TestCase):
             result = render(out)
             self.assertEqual(result.returncode, 0, result.stderr)
             objects = parse(out / "policies.yaml")
-            names = {doc["metadata"]["name"] for doc in objects}
+            names = {doc["metadata"]["name"] for doc in objects if doc["kind"] != "PolicyException"}
             library = {path.stem for path in POLICY_DIR.glob("*.yaml")}
             self.assertEqual(names, library)
+            exceptions = {
+                doc["metadata"]["name"] for doc in objects if doc["kind"] == "PolicyException"
+            }
+            exception_files = {
+                p.stem for p in EXCEPTION_DIR.glob("*.yaml") if p.name != "kustomization.yaml"
+            }
+            self.assertEqual(exceptions, exception_files)
             self.assertFalse(
                 [d for d in objects if d["kind"].startswith("Helm") or d["kind"] == "OCIRepository"]
             )
