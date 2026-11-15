@@ -1085,3 +1085,12 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   correctly denies once Kyverno is admitted first; E5 now applies the base Namespace manifests.
   ph-k6-2 failed on "Pool overlaps" during k3d network creation; S5 makes `free_subnet` overlap-aware
   with a bounded retry.
+
+- 2026-11-15 E5 branch merged early (26b63e5d) to unblock the other runs: `wait_for_node_registration`
+  in run.sh waits up to 2 minutes for a registered node before `kubectl wait node --all`, which had
+  failed ph-k6-4, N5 e2e-3 and E5 measure 3 with "no matching resources found". The merge also lands
+  the kyverno-monitoring base (ServiceMonitors via an optional valuesFrom ConfigMap), the registry
+  pull-through mirrors, `check_admission_order.py`, base Namespace manifests in runtime-identity.sh,
+  and run.sh defaults without orchestrator paths (lock under `${XDG_CACHE_HOME}/baukit`, heavy-slot
+  wait only with `BAUKIT_HEAVY_SLOT_DIR`). All offline gates green on the merge. E3's timing runs are
+  still open and need an idle host. e2e runs now go through three k3d slots in parallel.
