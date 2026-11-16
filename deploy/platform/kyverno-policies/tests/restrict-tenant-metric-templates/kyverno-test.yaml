@@ -1,0 +1,26 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-tenant-metric-templates
+policies:
+  - ../../policies/restrict-tenant-metric-templates.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: restrict-tenant-metric-templates
+    kind: MetricTemplate
+    resources: [platform-address, default-address]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-tenant-metric-templates
+    kind: MetricTemplate
+    resources: [foreign-address, foreign-provider]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-tenant-metric-templates
+    kind: MetricTemplate
+    resources: [platform-foreign]
+    result: skip

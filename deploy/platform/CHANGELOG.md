@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Tenant `flux-reconciler` accounts can manage the kinds baukit-app products ship. The flagger base adds ClusterRoles `baukit-tenant-flagger-edit` and `-view` (canaries, metrictemplates), the traefik base `baukit-tenant-traefik-*` (ingressroutes, middlewares, traefikservices) and the observability-stack base `baukit-tenant-monitoring-*` (servicemonitors). The edit roles aggregate into `admin` and `edit`, the view roles into `admin`, `edit` and `view`. Before, a tenant reconcile failed with `cannot patch resource "canaries"` and the same for the other kinds. A cluster without one of these bases carries none of its roles.
+- New Kyverno policies for tenant namespaces, because those objects run with a platform controller's identity: `restrict-tenant-servicemonitors` denies a `namespaceSelector` beyond the own namespace, `bearerTokenFile`, `tlsConfig` file paths, `proxyUrl` and relabelings that write `__address__`; `restrict-tenant-metric-templates` allows only the `prometheus` provider at the platform Prometheus address or no address; `restrict-tenant-traefik-routes` allows forwardAuth only to a Service in the own namespace, denies `plugin` middlewares, and denies an IngressRoute `Host()` that an IngressRoute or Ingress in another namespace already serves. Tenants that use any of these need to move them into their namespace before upgrading.
+- e2e `flux-tenancy` checks every verb on the six kinds for `e2e-tenant:flux-reconciler`, applies one object of each kind as the test tenant's reconciler, and expects each new policy to deny an escape.
+
 ## [0.26.2] - 2026-11-16
 
 - `flux-errors` now covers OCIRepository sources in cert-manager, cnpg-system, falco, flagger-system, kured, kyverno, observability, observability-agents and traefik, and HelmRepository sources in kube-system and posthog. A failing chart pull raised no alert before. notification-controller runs without `--no-cross-namespace-refs`, so the one Alert in flux-system receives these events. Consumers that copied platform-infra's `flux-source-errors` Alert can drop it.

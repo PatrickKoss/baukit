@@ -1,0 +1,26 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-tenant-servicemonitors
+policies:
+  - ../../policies/restrict-tenant-servicemonitors.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: restrict-tenant-servicemonitors
+    kind: ServiceMonitor
+    resources: [chart-like, own-namespace]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-tenant-servicemonitors
+    kind: ServiceMonitor
+    resources: [any-namespace, other-namespace, token-file, tls-file, proxy, address-rewrite]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-tenant-servicemonitors
+    kind: ServiceMonitor
+    resources: [platform-any]
+    result: skip

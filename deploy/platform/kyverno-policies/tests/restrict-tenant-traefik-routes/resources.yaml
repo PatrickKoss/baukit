@@ -1,0 +1,129 @@
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: own-host
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - kind: Rule
+      match: Host(`shop.example.test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: taken-route-host
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - kind: Rule
+      match: Host(`shop.example.test`) || Host(`other.example.test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: taken-ingress-host
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - kind: Rule
+      match: Host(`legacy.example.test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: same-namespace-host
+  namespace: other
+spec:
+  entryPoints: [websecure]
+  routes:
+    - kind: Rule
+      match: Host(`solo.example.test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit
+  namespace: shop
+spec:
+  rateLimit:
+    average: 200
+    burst: 400
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: own-auth
+  namespace: shop
+spec:
+  forwardAuth:
+    address: http://auth.shop.svc.cluster.local:8080/verify
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: short-auth
+  namespace: shop
+spec:
+  forwardAuth:
+    address: http://auth.shop.svc:8080
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: foreign-auth
+  namespace: shop
+spec:
+  forwardAuth:
+    address: http://api.other.svc.cluster.local:8080/verify
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: external-auth
+  namespace: shop
+spec:
+  forwardAuth:
+    address: https://auth.example.com/verify
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: lookalike-auth
+  namespace: shop
+spec:
+  forwardAuth:
+    address: http://auth.shop.svc.evil.example/verify
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: plugin
+  namespace: shop
+spec:
+  plugin:
+    anything:
+      key: value
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: platform-auth
+  namespace: platform
+spec:
+  forwardAuth:
+    address: https://auth.example.com/verify

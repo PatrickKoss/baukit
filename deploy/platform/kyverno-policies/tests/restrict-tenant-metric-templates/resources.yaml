@@ -1,0 +1,53 @@
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: platform-address
+  namespace: shop
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+  query: sum(rate(http_requests_total[1m]))
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: default-address
+  namespace: shop
+spec:
+  provider:
+    type: prometheus
+  query: sum(rate(http_requests_total[1m]))
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: foreign-address
+  namespace: shop
+spec:
+  provider:
+    type: prometheus
+    address: http://api.other.svc:9090
+  query: sum(rate(http_requests_total[1m]))
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: foreign-provider
+  namespace: shop
+spec:
+  provider:
+    type: datadog
+    address: https://api.datadoghq.eu
+  query: sum(rate(http_requests_total[1m]))
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: platform-foreign
+  namespace: platform
+spec:
+  provider:
+    type: prometheus
+    address: http://anywhere.example:9090
+  query: sum(rate(http_requests_total[1m]))

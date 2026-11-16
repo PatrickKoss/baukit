@@ -12,3 +12,4 @@ resources:
   - network-policy/agents
   - baukit-platform-observability.yaml
   - flux-notifications.yaml
+  - tenant-rbac.yaml
