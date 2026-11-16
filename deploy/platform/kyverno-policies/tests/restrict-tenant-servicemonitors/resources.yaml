@@ -9,7 +9,6 @@ spec:
       app: api
   endpoints:
     - port: metrics
-      honorLabels: true
       relabelings:
         - action: replace
           targetLabel: product
@@ -28,7 +27,6 @@ spec:
       app: api
   endpoints:
     - port: metrics
-      honorLabels: true
 
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -44,7 +42,6 @@ spec:
       app: api
   endpoints:
     - port: metrics
-      honorLabels: true
 
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -60,7 +57,6 @@ spec:
       app: api
   endpoints:
     - port: metrics
-      honorLabels: true
 
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -74,7 +70,6 @@ spec:
       app: api
   endpoints:
     - port: metrics
-      honorLabels: true
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -88,7 +83,6 @@ spec:
       app: api
   endpoints:
     - port: metrics
-      honorLabels: true
       tlsConfig:
         caFile: /etc/prometheus/secrets/ca.crt
 ---
@@ -103,7 +97,6 @@ spec:
       app: api
   endpoints:
     - port: metrics
-      honorLabels: true
       proxyUrl: http://proxy.other.svc:3128
 ---
 apiVersion: monitoring.coreos.com/v1
@@ -117,7 +110,6 @@ spec:
       app: api
   endpoints:
     - port: metrics
-      honorLabels: true
       relabelings:
         - action: replace
           targetLabel: __address__
@@ -136,5 +128,112 @@ spec:
       app: api
   endpoints:
     - port: metrics
-      honorLabels: true
 
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: honor-labels
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: true
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: honor-labels-false
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: false
+      metricRelabelings:
+        - action: labeldrop
+          regex: debug_.*
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: namespace-relabel
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      relabelings:
+        - action: replace
+          targetLabel: namespace
+          replacement: other
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: namespace-metric-relabel
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      metricRelabelings:
+        - sourceLabels: [exported_namespace]
+          targetLabel: namespace
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: templated-target
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      metricRelabelings:
+        - sourceLabels: [kind]
+          regex: (.+)
+          targetLabel: ${1}
+          replacement: other
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: label-map
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      relabelings:
+        - action: LabelMap
+          regex: __meta_kubernetes_pod_label_(.+)
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: platform-honor
+  namespace: platform
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: true
+      relabelings:
+        - targetLabel: namespace
+          replacement: other

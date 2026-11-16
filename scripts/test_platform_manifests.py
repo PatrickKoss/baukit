@@ -127,13 +127,12 @@ class ObservabilityDiscoveryTest(unittest.TestCase):
         spec = helm_values("kube-prometheus-stack", "observability-stack")["prometheus"][
             "prometheusSpec"
         ]
-        for key in (
-            "ruleNamespaceSelector",
-            "serviceMonitorNamespaceSelector",
-            "podMonitorNamespaceSelector",
-        ):
+        platform = {"matchLabels": {PART_OF: "baukit-platform"}}
+        self.assertEqual(spec["ruleNamespaceSelector"], platform)
+        for key in ("serviceMonitorNamespaceSelector", "podMonitorNamespaceSelector"):
             with self.subTest(selector=key):
-                self.assertEqual(spec[key], {"matchLabels": {PART_OF: "baukit-platform"}})
+                self.assertEqual(spec[key], {})
+        self.assertEqual(spec["enforcedNamespaceLabel"], "namespace")
 
     def test_prometheus_rules_live_in_selected_namespaces(self) -> None:
         labelled = {

@@ -7,4 +7,4 @@ spec:
   provider:
     type: prometheus
     address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-  query: vector(0)
+  query: sum(rate(http_requests_total{namespace="{{ namespace }}"}[{{ interval }}]))

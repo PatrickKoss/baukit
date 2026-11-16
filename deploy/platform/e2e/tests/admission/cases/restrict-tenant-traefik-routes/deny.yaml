@@ -1,8 +1,13 @@
 apiVersion: traefik.io/v1alpha1
-kind: Middleware
+kind: IngressRoute
 metadata:
-  name: admission-foreign-auth
+  name: admission-host-regexp
   namespace: e2e-tenant
 spec:
-  forwardAuth:
-    address: http://grafana.observability.svc.cluster.local/api
+  entryPoints: [websecure]
+  routes:
+    - kind: Rule
+      match: HostRegexp(`^.+\.example\.test$`)
+      services:
+        - name: echo
+          port: 80

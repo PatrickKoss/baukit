@@ -16,7 +16,7 @@ spec:
   endpoints:
     - port: metrics
       path: /metrics
-      honorLabels: true
+      honorLabels: false
       interval: {{ .Values.serviceMonitor.interval }}
       scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
       relabelings:
@@ -51,7 +51,7 @@ spec:
   endpoints:
     - port: metrics
       path: /metrics
-      honorLabels: true
+      honorLabels: false
       interval: {{ .Values.serviceMonitor.interval }}
       scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
       relabelings:

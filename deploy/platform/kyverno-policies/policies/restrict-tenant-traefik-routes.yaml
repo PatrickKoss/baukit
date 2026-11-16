@@ -10,8 +10,10 @@ metadata:
     policies.kyverno.io/description: >-
       Traefik sends forwardAuth requests from its own pod, which reaches every tenant namespace.
       A tenant forwardAuth must target a Service in its own namespace, and plugin middlewares are
-      refused. An IngressRoute may not claim a Host that an IngressRoute or Ingress in another
-      namespace already serves.
+      refused. An IngressRoute or IngressRouteTCP may not claim a Host, HostHeader or HostSNI that a
+      route or Ingress in another namespace already serves, compared without case, surrounding
+      whitespace or a trailing dot, and may not use HostRegexp, HostSNIRegexp or HostSNI(`*`),
+      because a pattern's overlap with other hosts is not decidable here.
 spec:
   validationActions:
     - Deny
@@ -23,7 +25,7 @@ spec:
       - apiGroups: [traefik.io]
         apiVersions: [v1alpha1]
         operations: [CREATE, UPDATE]
-        resources: [middlewares, ingressroutes]
+        resources: [middlewares, ingressroutes, ingressroutetcps]
     namespaceSelector:
       matchLabels:
         baukit.dev/tenant: "true"
@@ -38,33 +40,50 @@ spec:
       expression: >-
         '^https?://[a-z0-9]([-a-z0-9]*[a-z0-9])?\\.' + variables.namespace +
         '\\.svc(\\.cluster\\.local)?(:[0-9]+)?(/.*)?$'
-    - name: hostPattern
-      expression: "'Host\\\\(`[^`]+`\\\\)'"
+    - name: hostCall
+      expression: "'(?i)\\\\bHost(SNI|Header)?\\\\s*\\\\([^)]*\\\\)'"
+    - name: hostArg
+      expression: "'`[^`]*`|\"[^\"]*\"'"
     - name: hosts
       expression: >-
         variables.isMiddleware ? [] :
         object.spec.?routes.orValue([])
-          .map(r, r.?match.orValue("").findAll(variables.hostPattern)).flatten()
-          .map(h, h.substring(6, size(h) - 2))
-    - name: routeHosts
+          .map(r, r.?match.orValue("").findAll(variables.hostCall)).flatten()
+          .map(c, c.findAll(variables.hostArg)).flatten()
+          .map(h, h.substring(1, size(h) - 1).trim().lowerAscii())
+          .map(h, h.endsWith(".") ? h.substring(0, size(h) - 1) : h)
+    - name: regexpRoutes
       expression: >-
         variables.isMiddleware ? [] :
-        dyn(resource.List("traefik.io/v1alpha1", "ingressroutes", "").items)
+        object.spec.?routes.orValue([])
+          .map(r, r.?match.orValue(""))
+          .filter(m, m.matches('(?i)Host(SNI)?Regexp\\s*\\('))
+    - name: foreignRoutes
+      expression: >-
+        variables.isMiddleware ? [] :
+        dyn(resource.List("traefik.io/v1alpha1", "ingressroutes", "").items) +
+        dyn(resource.List("traefik.io/v1alpha1", "ingressroutetcps", "").items)
+    - name: routeHosts
+      expression: >-
+        variables.foreignRoutes
           .filter(i, i.metadata.namespace != variables.namespace)
           .map(i, i.spec.?routes.orValue([])
-            .map(r, r.?match.orValue("").findAll(variables.hostPattern)).flatten()
-            .map(h, h.substring(6, size(h) - 2)))
+            .map(r, r.?match.orValue("").findAll(variables.hostCall)).flatten()
+            .map(c, c.findAll(variables.hostArg)).flatten())
           .flatten()
+          .map(h, h.substring(1, size(h) - 1).trim().lowerAscii())
+          .map(h, h.endsWith(".") ? h.substring(0, size(h) - 1) : h)
     - name: ingressHosts
       expression: >-
         variables.isMiddleware ? [] :
         dyn(resource.List("networking.k8s.io/v1", "ingresses", "").items)
           .filter(i, i.metadata.namespace != variables.namespace)
-          .map(i, i.spec.?rules.orValue([]).map(r, r.?host.orValue("")))
+          .map(i, i.spec.?rules.orValue([]).map(r, r.?host.orValue("").lowerAscii()))
           .flatten()
     - name: clashes
       expression: >-
-        variables.hosts.filter(h, h in variables.routeHosts || h in variables.ingressHosts)
+        variables.hosts.filter(h,
+          h == "*" || h in variables.routeHosts || h in variables.ingressHosts)
   validations:
     - expression: variables.forwardAuth == "" || variables.forwardAuth.matches(variables.ownService)
       messageExpression: >-
@@ -75,4 +94,8 @@ spec:
     - expression: size(variables.clashes) == 0
       messageExpression: >-
         "Hosts " + variables.clashes.join(", ") +
-        " already belong to another namespace. Pick a different host."
+        " already belong to another namespace or match every host. Pick a different host."
+    - expression: size(variables.regexpRoutes) == 0
+      messageExpression: >-
+        "HostRegexp and HostSNIRegexp can match hosts of other namespaces. List each host with " +
+        "Host(`...`) instead: " + variables.regexpRoutes.join(", ")
