@@ -3,7 +3,8 @@
 
 A Kustomization whose bases render a ServiceMonitor, PodMonitor or PrometheusRule (in validate.sh's
 rendered output) must depend, directly or through dependsOn, on the Kustomization that composes
-observability-stack, which installs those CRDs.
+observability-stack, which installs those CRDs. Paths resolve through flux_sources, so a consumer
+passes --source-root for its own GitRepository.
 """
 
 from __future__ import annotations
@@ -11,15 +12,16 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 import helm_yaml
 from check_exclusive_bases import PLATFORM, composed_bases
+from flux_sources import SourceError, add_source_root_argument, kustomization_dirs
 
 CRD_BASE = "observability-stack"
 MONITOR_KIND = re.compile(r"^kind: (ServiceMonitor|PodMonitor|PrometheusRule)\s*$", re.M)
 FLUX_KUSTOMIZATION = "kustomize.toolkit.fluxcd.io/"
-PLATFORM_PREFIX = "./deploy/platform/"
 
 
 def monitor_bases(rendered: Path, bases: set[str]) -> set[str]:
@@ -66,12 +68,18 @@ def reaches(name: str, targets: set[str], specs: dict[str, dict]) -> bool:
     return False
 
 
-def violations(reconciliation: Path, monitors: set[str], platform: Path = PLATFORM) -> list[str]:
+def violations(
+    reconciliation: Path,
+    monitors: set[str],
+    platform: Path = PLATFORM,
+    roots: Mapping[str, Path] | None = None,
+) -> list[str]:
     specs = kustomizations(reconciliation)
-    bases = {
-        name: composed_bases(platform / spec["path"].removeprefix(PLATFORM_PREFIX), platform)
-        for name, spec in specs.items()
-    }
+    try:
+        paths = kustomization_dirs(specs, roots or {}, platform)
+    except SourceError as error:
+        return [f"{reconciliation}: {error}"]
+    bases = {name: composed_bases(path, platform) for name, path in paths.items()}
     providers = {name for name, composed in bases.items() if CRD_BASE in composed}
     return [
         f"{reconciliation}: {name} renders Prometheus Operator objects but does not depend on "
@@ -85,10 +93,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rendered", type=Path, required=True)
     parser.add_argument("reconciliations", nargs="+", type=Path)
+    add_source_root_argument(parser)
     args = parser.parse_args(argv)
+    roots = dict(args.source_roots)
     platform_bases = {path.parent.name for path in PLATFORM.glob("*/kustomization.yaml")}
     monitors = monitor_bases(args.rendered, platform_bases)
-    found = [m for file in args.reconciliations for m in violations(file, monitors)]
+    found = [
+        m for file in args.reconciliations for m in violations(file, monitors, PLATFORM, roots)
+    ]
     for message in found:
         print(f"ERROR: {message}", file=sys.stderr)
     return 1 if found else 0

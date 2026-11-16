@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - `platform-lifecycle.sh` creates the cluster on `--subnet $PLATFORM_SUBNET`, default `10.89.1.0/24`, inside the `10.89.0.0/16` nodeCIDR and clear of `platform-up.sh`'s `10.89.0.0/24` and the e2e range `10.89.100-199.0/24`. Before, Docker picked a default network outside the nodeCIDR and the API server could not reach the Kyverno, cert-manager and CNPG webhooks. `up` fails before k3d when the subnet lies outside the nodeCIDR or a Docker network overlaps it, and fails on an existing cluster whose network lies outside the nodeCIDR, pointing at `recreate`. Consumers that pin the k3d arguments now see `--subnet 10.89.1.0/24`.
+- `check_admission_order.py` and `check_monitor_order.py` resolve each Kustomization through its `sourceRef`: `GitRepository/baukit` maps to the baukit checkout, any other source needs `--source-root NAME=DIR`. A Kustomization whose source or path does not resolve fails. `validate.sh --target REPO_ROOT --rendered DIR OVERLAY_DIR...` runs the exclusive-base check on the overlays and both ordering checks on their `reconciliation.yaml`, with `GitRepository/flux-system` mapped to `REPO_ROOT`, so consumers can lint Kustomizations from their own repository.
 
 ## [0.26.0] - 2026-11-16
 

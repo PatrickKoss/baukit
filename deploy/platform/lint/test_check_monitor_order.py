@@ -13,6 +13,9 @@ metadata:
   name: {name}
 spec:
   path: ./deploy/platform/{path}
+  sourceRef:
+    kind: GitRepository
+    name: baukit
 {depends}"""
 
 

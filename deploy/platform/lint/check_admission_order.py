@@ -4,7 +4,8 @@
 Each Kustomization path is rendered with kustomize. One that renders Pods, a Pod controller, a
 HelmRelease or a CNPG Cluster must depend, directly or through dependsOn, on the Kustomization
 composing kyverno-policies. Otherwise the API server admits its Pods without the Deny policies.
-A reconciliation file without kyverno-policies has nothing to order against and passes.
+A reconciliation file without kyverno-policies has nothing to order against and passes. Paths
+resolve through flux_sources, so a consumer passes --source-root for its own GitRepository.
 """
 
 from __future__ import annotations
@@ -12,12 +13,13 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 import helm_yaml
 from check_exclusive_bases import PLATFORM, composed_bases
-from check_monitor_order import PLATFORM_PREFIX, kustomizations, reaches
+from check_monitor_order import kustomizations, reaches
+from flux_sources import SourceError, add_source_root_argument, kustomization_dirs
 
 POLICY_BASE = "kyverno-policies"
 WORKLOAD_KIND = re.compile(
@@ -56,11 +58,17 @@ def kustomize_render(kustomize: str) -> Render:
     return render
 
 
-def violations(reconciliation: Path, render: Render, platform: Path = PLATFORM) -> list[str]:
+def violations(
+    reconciliation: Path,
+    render: Render,
+    platform: Path = PLATFORM,
+    roots: Mapping[str, Path] | None = None,
+) -> list[str]:
     specs = kustomizations(reconciliation)
-    paths = {
-        name: platform / spec["path"].removeprefix(PLATFORM_PREFIX) for name, spec in specs.items()
-    }
+    try:
+        paths = kustomization_dirs(specs, roots or {}, platform)
+    except SourceError as error:
+        return [f"{reconciliation}: {error}"]
     providers = {
         name for name, path in paths.items() if POLICY_BASE in composed_bases(path, platform)
     }
@@ -81,10 +89,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kustomize", default="kustomize")
     parser.add_argument("reconciliations", nargs="+", type=Path)
+    add_source_root_argument(parser)
     args = parser.parse_args(argv)
+    roots = dict(args.source_roots)
     render = kustomize_render(args.kustomize)
     try:
-        found = [m for file in args.reconciliations for m in violations(file, render)]
+        found = [
+            m for file in args.reconciliations for m in violations(file, render, PLATFORM, roots)
+        ]
     except RenderError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
