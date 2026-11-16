@@ -20,8 +20,13 @@ other pods for the current master:
 - No answer after three tries 5 seconds apart: `redis-0` starts as master and
   the other pods replicate from it. This is the cold-start path.
 - This pod reported as master: the pod was master and restarted before the
-  failover finished. Redis waits up to 60 seconds for the Sentinels to promote
-  another pod and starts as master only if they still agree on this pod.
+  failover finished. Redis waits up to 95 seconds for the Sentinels to promote
+  another pod and starts as master only if they still agree on this pod. When
+  two Sentinels start the failover at the same moment, each votes for itself
+  and the election fails. Sentinel retries twice the failover timeout (60
+  seconds) after the first try, so the wait covers detection (5 seconds), that
+  retry and one more failover timeout for the election and promotion. Starting
+  as master earlier would make the replicas resync to the empty data set.
 - Different masters reported: Redis keeps retrying, then exits so the kubelet
   restarts it.
 

@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import re
 import subprocess
 import tempfile
 import textwrap
@@ -39,6 +40,13 @@ def fqdn(ordinal: int) -> str:
     return f"redis-{ordinal}{SUFFIX}"
 
 
+def sentinel_setting(conf: str, name: str) -> int:
+    match = re.search(rf"^sentinel {name} mymaster (\d+)$", conf, re.MULTILINE)
+    if match is None:
+        raise AssertionError(f"sentinel {name} missing from:\n{conf}")
+    return int(match.group(1))
+
+
 class RedisHaScript:
     def decide(
         self,
@@ -65,7 +73,7 @@ class RedisHaScript:
                 "PATH": f"{stub_dir}:{os.environ['PATH']}",
                 "STUB_DIR": str(stub_dir),
                 "POD_NAME": pod,
-                "SELF_WAIT_ATTEMPTS": "2",
+                "SELF_WAIT_SECONDS": "2",
                 "RETRY_SECONDS": "0",
                 "NO_ANSWER_ATTEMPTS": "2",
                 "LOCAL_WAIT_ATTEMPTS": "1",
@@ -110,6 +118,17 @@ class DecideMasterTest(RedisHaScript, unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "self")
         self.assertIn("waiting for Sentinels", result.stderr)
 
+    def test_restarted_master_waits_for_the_failover_retry_after_a_split_vote(self) -> None:
+        answers = {1: f"{fqdn(0)}\n6379\n", 2: f"{fqdn(0)}\n6379\n"}
+        result = self.decide("redis-0", answers, extra_env={"SELF_WAIT_SECONDS": ""})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        waited_seconds = result.stderr.count("waiting for Sentinels")
+        conf = self.decide("redis-1", {0: f"{fqdn(0)}\n6379\n"}, mode="sentinel").stdout
+        down_after_ms = sentinel_setting(conf, "down-after-milliseconds")
+        failover_ms = sentinel_setting(conf, "failover-timeout")
+        retry_after_split_vote_ms = down_after_ms + 2 * failover_ms
+        self.assertGreaterEqual(waited_seconds * 1000, retry_after_split_vote_ms + failover_ms)
+
     def test_disagreeing_sentinels_fail_the_start(self) -> None:
         answers = {1: f"{fqdn(1)}\n6379\n", 2: f"{fqdn(2)}\n6379\n"}
         result = self.decide("redis-0", answers)
@@ -128,7 +147,7 @@ class SentinelConfigTest(RedisHaScript, unittest.TestCase):
 
     def test_sentinel_does_not_wait_when_peers_report_this_pod(self) -> None:
         answers = {1: f"{fqdn(0)}\n6379\n"}
-        extra = {"SELF_WAIT_ATTEMPTS": "1000", "RETRY_SECONDS": "5"}
+        extra = {"SELF_WAIT_SECONDS": "5000", "RETRY_SECONDS": "5"}
         result = self.decide("redis-0", answers, mode="sentinel", extra_env=extra)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"sentinel monitor mymaster {fqdn(0)} 6379 2", result.stdout)

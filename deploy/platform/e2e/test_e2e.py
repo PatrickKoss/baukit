@@ -702,9 +702,24 @@ class KubeBenchScoreTests(unittest.TestCase):
         self.assertIn("--benchmark, k3s-cis-", result.stdout)
 
 
+class PostgresReadinessTests(unittest.TestCase):
+    def test_postgres_kustomizations_wait_for_a_ready_cnpg_cluster(self):
+        local = E2E.parent / "overlays/local/reconciliation.yaml"
+        for path in (RECONCILIATION, local):
+            documents = path.read_text().split("\n---\n")
+            postgres = [d for d in documents if "components/postgres\n" in d]
+            self.assertEqual(len(postgres), 1, path)
+            self.assertRegex(
+                postgres[0],
+                r"kind: Cluster\n\s+current: has\(status\.conditions\) && "
+                r"status\.conditions\.exists\(e, e\.type == 'Ready' && e\.status == 'True'\)",
+            )
+
+
 SINCE = "2026-11-15T16:00:00Z"
 SHELL_RULE = "Baukit shell or package manager in app container"
 SHADOW_RULE = "Read sensitive file untrusted"
+EXEC_RULE = "Baukit exec into protected platform namespace"
 
 
 def falco_event(priority, rule, namespace, process, pod=None):
@@ -801,6 +816,23 @@ class FalcoEventsTests(unittest.TestCase):
         self.assertEqual(self.rules(self.query("falco", "Warning", *filters)), [])
         only_echo = self.query("falco", "Warning", "--exclude-pod", "echo-api-7d9-x2")
         self.assertEqual(self.rules(only_echo), [SHADOW_RULE, SHADOW_RULE])
+
+    def test_noise_check_excludes_the_concurrent_suites_exec_pods(self):
+        chainsaw = (E2E / "tests/falco/chainsaw-test.yaml").read_text()
+        step = chainsaw.split("name: no-warning-events-outside-the-triggers", 1)[1]
+        excluded = re.findall(r"--exclude-pod ([^\s)]+)", step.split("if [", 1)[0])
+        probe = (E2E / "tests/netpol/probe.py").read_text()
+        prefix = re.search(r'^POD_PREFIX = "([^"]+)"$', probe, re.MULTILINE)
+        self.assertIsNotNone(prefix)
+        self.assertIn(f"{prefix.group(1)}-", excluded)
+        self.assertIn("e2e-backup-", excluded)
+
+    def test_excluded_prefix_drops_netpol_probe_execs(self):
+        probe_exec = falco_event("Critical", EXEC_RULE, "postgres", "sh", "netpol-probe-19")
+        self.EVENTS = [*FalcoEventsTests.EVENTS, probe_exec]
+        filtered = self.query("falco", "Warning", "--exclude-pod", "netpol-probe-")
+        self.assertNotIn(EXEC_RULE, self.rules(filtered))
+        self.assertIn(EXEC_RULE, self.rules(self.query("falco", "Warning")))
 
     def test_unknown_source_exits_2(self):
         self.assertEqual(self.query("journal", "Warning").returncode, 2)

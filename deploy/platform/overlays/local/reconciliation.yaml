@@ -129,6 +129,12 @@ spec:
   path: ./deploy/platform/overlays/local/components/postgres
   prune: true
   wait: true
+  # kstatus counts a CNPG Cluster without conditions as current, so the wait ended before the primary
+  # ran (FR e2e run, 2026-11-16: netpol probes found no ready postgres-cluster-rw endpoint).
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      current: has(status.conditions) && status.conditions.exists(e, e.type == 'Ready' && e.status == 'True')
   sourceRef:
     kind: GitRepository
     name: baukit
