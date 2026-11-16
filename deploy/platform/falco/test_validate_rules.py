@@ -126,8 +126,8 @@ class SharedKernelFilterTest(unittest.TestCase):
         self.assertIn("baukit_shared_kernel\n      condition: (never_true)", base)
         self.assertNotIn("falco-overlay-rules", maps)
 
-    def test_e2e_turns_the_filter_on(self) -> None:
-        rendered = kustomize_build(PLATFORM_DIR / "e2e/overlay/components/falco")
+    def test_local_component_turns_the_filter_on(self) -> None:
+        rendered = kustomize_build(PLATFORM_DIR / "overlays/local/components/falco")
 
         overlay = config_maps(rendered)["falco-overlay-rules"]
         self.assertIn("  namespace: falco", overlay)

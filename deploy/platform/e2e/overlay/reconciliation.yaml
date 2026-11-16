@@ -213,7 +213,7 @@ spec:
   interval: 10m
   retryInterval: 30s
   timeout: 10m
-  path: ./deploy/platform/e2e/overlay/components/falco
+  path: ./deploy/platform/overlays/local/components/falco
   prune: true
   wait: true
   sourceRef:
@@ -232,7 +232,7 @@ spec:
   interval: 10m
   retryInterval: 30s
   timeout: 15m
-  path: ./deploy/platform/e2e/overlay/components/kyverno
+  path: ./deploy/platform/overlays/local/components/kyverno
   prune: true
   wait: true
   sourceRef:
