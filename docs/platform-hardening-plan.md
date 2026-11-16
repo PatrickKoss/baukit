@@ -685,10 +685,10 @@ by then ride along).
 - [x] **RF12 traefik-edge uses fixed port-forward ports.** 18080/18443 collide when several local e2e
   clusters run at once and the curl reaches another cluster's Traefik (404 instead of a redirect). Let
   kubectl pick free ports.
-- [ ] **RF13 flux-errors leaves out OCIRepository and HelmRepository.** baukit pulls charts from
+- [x] **RF13 flux-errors leaves out OCIRepository and HelmRepository.** baukit pulls charts from
   OCIRepositories in eight platform namespaces and a HelmRepository in posthog; a failing pull raises
   no alert. platform-infra adds `flux-source-errors` until baukit covers them.
-- [ ] **RF14 check_alertmanager_config rejects tenant Alerts.** It credits only flux-system/flux-errors,
+- [x] **RF14 check_alertmanager_config rejects tenant Alerts.** It credits only flux-system/flux-errors,
   and tenant namespaces cannot be listed there, so consumers with tenants need their own coverage check
   (platform-infra `scripts/check_flux_alerts.py`). Accept same-namespace tenant Alerts.
 - [x] **RF15 Release train leaves the golden snapshot trees stale.** `release-train.sh` bumps
@@ -698,7 +698,7 @@ by then ride along).
   the train when the bless changes a path outside the version-bearing files.
   Done: the train blesses before any edit and fails if a tree changes, so only its own version and
   changelog edits reach the second bless after the bump; covered in `scripts/test_release_train.py`.
-- [ ] **RF3 Gate budget under a shared host.** The 0.26.0 full gate took 2225 s, 425 s over budget,
+- [x] **RF3 Gate budget under a shared host.** The 0.26.0 full gate took 2225 s, 425 s over budget,
   because `native-android` started on 2 cores while another product's gate held the second heavy
   slot. Look at the android lane's minimum core share in the pool.
 
