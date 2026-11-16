@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-11-16
+
 {% if context.mobile %}- `mobile/scripts/qa/test_android.py` starts its fake worker with the absolute path of the running interpreter. It used `exec -a "$0" python3`, and when mise shims are on `PATH` the `python3` shim dispatches on `argv[0]`, saw `worker`, exited with "worker is not a valid shim" and printed nothing, so `test_stop_pid_file_stops_the_expected_binary_for_workers` failed. Copy the file from the template.
 {% endif %}
 ## [0.26.0] - 2026-11-16

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-11-16
+
 ## [0.26.0] - 2026-11-16
 
 - Breaking: images have no default tag. Each image needs `image.tag` or `image.digest`, and `latest` fails the schema and the render. A digest renders `repository@sha256:...`.

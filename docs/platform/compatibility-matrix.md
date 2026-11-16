@@ -5,6 +5,15 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.26.1
+
+Last verified release train: `v0.26.1` (patch train on top of `v0.26.0`). No component versions change.
+- `platform-lifecycle.sh` creates k3d clusters on `--subnet $PLATFORM_SUBNET` (default `10.89.1.0/24`) and fails before k3d when a Docker network overlaps it. Consumers that pin the k3d arguments now see `--subnet 10.89.1.0/24`.
+- `e2e/overlay/components/{kyverno,falco}` moved to `overlays/local/components/{kyverno,falco}`. Consumers that composed the e2e paths switch to the local ones.
+- `validate.sh` takes `--target` and `--kubernetes-definitions`, and the admission and monitor order checks resolve Kustomizations through their `sourceRef`, so consumer repos can list their own Kustomizations next to Baukit's.
+- Redis Sentinel's CPU limit rises from 50m to 250m.
+- Generated mobile apps' `test_android.py` starts its fake worker with the running interpreter, so it passes under mise shims.
+
 ## v0.26.0
 
 Last verified release train: `v0.26.0` (minor train on top of `v0.25.2`, platform hardening). The platform changes are breaking; `deploy/platform/CHANGELOG.md` lists each one with its upgrade step.
