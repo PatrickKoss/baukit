@@ -2,6 +2,10 @@
 # Emulator block 5780 to 5787 for native-android, outside every product block.
 android_emulator_port = 5780
 android_emulators = 2
+# native-android compiles Gradle and boots both emulators: on 2 or 3 cores it took
+# 1477 to 2029 s and hit a SystemUI ANR, on 10 cores 947 s.
+emulator_steps = ["native-android", "expo-sqlite", "expo-notifications"]
+emulator_cores = 8
 shared = ["deploy/**", "fixtures/**", "rust/deny.toml", "rust/Cargo.toml", "renovate*.json"]
 
 [quality.gate_budget_minutes]
