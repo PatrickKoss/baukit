@@ -16,6 +16,13 @@ from release_packages import cut_package_changelog
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/release-train.sh"
+LOGGING_CARGO = '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_REPO_ROOT/cargo.calls"\n'
+STALE_TREE_CARGO = (
+    "#!/bin/sh\n"
+    'case "$*" in *bless_snapshots*)\n'
+    '  printf "1111  src/unblessed.rs\\n" >> "$TEST_REPO_ROOT/cli/tests/snapshots/backend.tree";;\n'
+    "esac\n"
+)
 
 
 def shell_order(script: str) -> list[str]:
@@ -136,6 +143,7 @@ class ReleaseTrainCorepackTest(unittest.TestCase):
             '#!/bin/sh\nprintf "%s\\n" "$PWD" "$@" > "$TEST_COREPACK_LOG"\nexit 17\n',
         )
         self.executable(binaries / "pnpm", "#!/bin/sh\nexit 99\n")
+        self.executable(binaries / "cargo", "#!/bin/sh\nexit 0\n")
         log = root / "corepack.log"
         environment = {
             **os.environ,
@@ -351,9 +359,28 @@ class ReleaseTrainFilesTest(unittest.TestCase):
     def test_patch_train_rejects_uncut_template_entries(self):
         self.check_patch_train("## [Unreleased]\n- Pending template fix.\n", False)
 
+    def test_patch_train_blesses_snapshot_trees_before_and_after_the_bump(self):
+        calls = self.check_patch_train("## [Unreleased]\n\n- Pending template fix.\n", True)
+        bless = "run --manifest-path cli/Cargo.toml --example bless_snapshots"
+        clean = "clean --manifest-path cli/Cargo.toml -p baukit-cli"
+        self.assertEqual([call for call in calls if call in (bless, clean)], [clean, bless] * 2)
+
+    def test_patch_train_rejects_snapshot_trees_stale_before_the_bump(self):
+        self.check_patch_train(
+            "## [Unreleased]\n\n- Pending template fix.\n",
+            False,
+            cargo_script=STALE_TREE_CARGO,
+            failure_message="golden snapshot trees are stale before the version bump",
+        )
+
     def check_patch_train(
-        self, changelog: str, succeeds: bool, changelog_overrides: dict[str, str] | None = None
-    ):
+        self,
+        changelog: str,
+        succeeds: bool,
+        changelog_overrides: dict[str, str] | None = None,
+        cargo_script: str = LOGGING_CARGO,
+        failure_message: str = "still has uncut Unreleased entries",
+    ) -> list[str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for relative in [
@@ -387,6 +414,7 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 "deploy/observability/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
                 "deploy/observability-platform/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
                 "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.0\n",
+                "cli/tests/snapshots/backend.tree": "0000  baukit.toml\n",
             }
             for relative, source in files.items():
                 path = root / relative
@@ -431,7 +459,7 @@ path.write_text(source)
 PYTHON
 """,
             )
-            executable(binaries / "cargo", "#!/bin/sh\nexit 0\n")
+            executable(binaries / "cargo", cargo_script)
             executable(binaries / "node", "#!/bin/sh\nprintf '0.7.1\\n'\n")
             executable(root / "scripts/check-version-coherence.py", "#!/bin/sh\nexit 0\n")
             environment = {
@@ -450,11 +478,11 @@ PYTHON
             )
             if not succeeds:
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn("still has uncut Unreleased entries", result.stderr)
+                self.assertIn(failure_message, result.stderr)
                 self.assertNotIn("Prepared v", result.stdout)
                 for relative in changelog_overrides or {}:
                     self.assertIn(relative, result.stderr)
-                return
+                return []
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertEqual(
                 (root / "corepack.calls").read_text().splitlines(),
@@ -499,6 +527,7 @@ PYTHON
             self.assertEqual(after.count("## [0.6.0]"), 1)
             self.assertIn("--tag v0.7.1 --locked baukit-cli", (root / "README.md").read_text())
             self.assertEqual((root / "templates/VERSION").read_text(), "0.7.1\n")
+            return (root / "cargo.calls").read_text().splitlines()
 
 
 class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
@@ -660,6 +689,7 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
                 '[package]\nname = "baukit-cli"\nversion = "0.7.1"\nedition = "2021"\n'
             ),
             "cli/src/main.rs": "fn main() {}\n",
+            "cli/examples/bless_snapshots.rs": "fn main() {}\n",
             "cli/CHANGELOG.md": "## [Unreleased]\n\n- Pending CLI fix.\n",
             "templates/common/CHANGELOG.md": "## [Unreleased]\n\n- Pending fix.\n",
             "templates/VERSION": "0.7.1\n",
