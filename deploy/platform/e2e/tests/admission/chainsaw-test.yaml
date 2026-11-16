@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: admission
+spec:
+  description: >-
+    Every Kyverno policy in Deny mode rejects its violating manifest with an error that names the policy
+    and admits its compliant one. Each cases/<policy>/ holds deny.yaml, admit.yaml and an optional
+    setup.yaml that is created first. Manifests go through server-side dry run, so only setup objects
+    persist, and those are deleted at the end. test_admission_cases.py checks that the case
+    directories match the Deny policies.
+  timeouts:
+    exec: 5m
+  steps:
+    - name: deny-and-admit
+      try:
+        - script:
+            content: |
+              set -eu
+              failed=0
+              for dir in cases/*/; do
+                policy=$(basename "$dir")
+                if [ -f "$dir/setup.yaml" ]; then
+                  kubectl apply -f "$dir/setup.yaml" >/dev/null
+                fi
+                if output=$(kubectl apply --dry-run=server -f "$dir/deny.yaml" 2>&1); then
+                  echo "$policy: violating manifest was admitted"
+                  failed=1
+                elif ! printf '%s\n' "$output" | grep -Fq "Policy $policy failed:"; then
+                  echo "$policy: rejected, but not by this policy: $output"
+                  failed=1
+                fi
+                if ! output=$(kubectl apply --dry-run=server -f "$dir/admit.yaml" 2>&1); then
+                  echo "$policy: compliant manifest was rejected: $output"
+                  failed=1
+                fi
+              done
+              exit "$failed"
+      finally:
+        - script:
+            content: |
+              set -eu
+              for setup in cases/*/setup.yaml; do
+                kubectl delete --ignore-not-found -f "$setup"
+              done

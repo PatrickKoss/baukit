@@ -1,0 +1,17 @@
+# The platform pulls from the public registries below; e2e/run.sh builds the echo image and imports it
+# under localhost/baukit-e2e/. Images without a registry host count as docker.io.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: baukit-registry-allowlist
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+data:
+  registries: |
+    docker.io/
+    ghcr.io/
+    localhost/baukit-e2e/
+    quay.io/
+    reg.kyverno.io/
+    registry.k8s.io/

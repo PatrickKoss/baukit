@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-alert-sink
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: alert-sink
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: alertmanager
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kured
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: kured
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress: []

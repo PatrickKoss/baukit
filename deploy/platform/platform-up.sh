@@ -9,11 +9,26 @@ git_root=$state_dir/git
 git_pid_file=$state_dir/git-daemon.pid
 
 cluster_name=${BAUKIT_PLATFORM_CLUSTER:-baukit-local}
-# Kubernetes 1.35 removed cgroup-v1 support. The current development host is a
-# cgroup-v1 WSL2 Docker engine, so the local flavor uses the newest supported
-# k3s 1.34 patch while testing/production retain the I0 stable-channel pin.
-k3s_image=${BAUKIT_PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.8-k3s1}
-git_port=${BAUKIT_PLATFORM_GIT_PORT:-9418}
+# overlays/local/source.yaml points Flux at this port.
+git_port=9418
+api_port=${BAUKIT_PLATFORM_API_PORT:-random}
+http_port=${BAUKIT_PLATFORM_HTTP_PORT:-80}
+https_port=${BAUKIT_PLATFORM_HTTPS_PORT:-443}
+# Must sit inside nodeCIDR in overlays/local/cluster-network/cluster-network.yaml.
+k3d_subnet=${BAUKIT_PLATFORM_SUBNET:-10.89.0.0/24}
+
+# shellcheck source=deploy/platform/local-git-http.sh
+source "$platform_dir/local-git-http.sh"
+k3s_image=${BAUKIT_PLATFORM_K3S_IMAGE:-$(platform_k3s_image)}
+# shellcheck source=deploy/platform/flux-lockdown.sh
+source "$platform_dir/flux-lockdown.sh"
+# shellcheck source=deploy/platform/registry-mirrors.sh
+source "$platform_dir/registry-mirrors.sh"
+# shellcheck source=deploy/platform/runtime-identity.sh
+source "$platform_dir/runtime-identity.sh"
+# shellcheck source=deploy/lib/tools.sh
+source "$repo_root/deploy/lib/tools.sh"
+flux_version=v$(baukit_tool_version "$repo_root" flux)
 
 export PATH="$HOME/.local/bin:$PATH"
 
@@ -30,7 +45,7 @@ require_tools() {
   done
   if ((${#missing[@]} > 0)); then
     printf 'ERROR: missing required tools: %s\n' "${missing[*]}" >&2
-    printf 'Pinned local tools belong in ~/.local/bin (k3d 5.8.3, kubectl 1.36.3, Flux 2.9.4).\n' >&2
+    printf 'Pinned local tools belong in ~/.local/bin (versions in deploy/tools.toml).\n' >&2
     exit 2
   fi
 }
@@ -97,17 +112,7 @@ start_git_daemon() {
   stop_git_daemon
   rm -rf -- "$snapshot_tmp" "$git_tmp"
   mkdir -p "$snapshot_tmp" "$git_tmp"
-  (
-    cd "$repo_root"
-    tar \
-      --exclude=.git \
-      --exclude=.generated-fixture \
-      --exclude=deploy/platform/.local-state \
-      --exclude='*/target' \
-      --exclude='*/node_modules' \
-      --exclude='*/.turbo' \
-      -cf - .
-  ) | tar -xf - -C "$snapshot_tmp"
+  snapshot_tree "$repo_root" "$snapshot_tmp"
   (
     cd "$snapshot_tmp"
     git init -q -b main
@@ -122,55 +127,28 @@ start_git_daemon() {
   mv -- "$snapshot_tmp" "$snapshot"
   mv -- "$git_tmp" "$git_root"
 
+  local gateway
+  gateway=$(k3d_gateway "$cluster_name")
   nohup python3 "$platform_dir/local-git-http.py" \
-    --host 0.0.0.0 --root "$git_root" --port "$git_port" \
+    --host "$gateway" --root "$git_root" --port "$git_port" \
     >"$state_dir/git-http.log" 2>&1 &
   printf '%s\n' "$!" >"$git_pid_file"
 
   for _ in {1..50}; do
-    git ls-remote "http://127.0.0.1:$git_port/baukit.git" HEAD >/dev/null 2>&1 && return
+    git ls-remote "http://$gateway:$git_port/baukit.git" HEAD >/dev/null 2>&1 && return
     sleep 0.1
   done
   printf 'ERROR: local git daemon did not become reachable on port %s\n' "$git_port" >&2
   exit 1
 }
 
-apply_secret() {
-  local namespace=$1
-  local name=$2
-  shift 2
-  kubectl -n "$namespace" create secret generic "$name" "$@" \
-    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-}
-
 apply_runtime_identity() {
-  local namespace
-  for namespace in postgres observability posthog; do
-    kubectl create namespace "$namespace" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-    kubectl label namespace "$namespace" app.kubernetes.io/part-of=baukit-platform --overwrite >/dev/null
-  done
-
-  apply_secret postgres product-db-credentials \
-    --type=kubernetes.io/basic-auth \
-    --from-literal=username=product_owner \
-    --from-literal=password="$POSTGRES_PRODUCT_PASSWORD"
-  apply_secret postgres postgres-backup-credentials \
-    --from-literal=ACCESS_KEY_ID="$RUSTFS_ACCESS_KEY" \
-    --from-literal=ACCESS_SECRET_KEY="$RUSTFS_SECRET_KEY"
-  apply_secret postgres rustfs-root \
-    --from-literal=username="$RUSTFS_ACCESS_KEY" \
-    --from-literal=password="$RUSTFS_SECRET_KEY"
-  apply_secret observability rustfs-root \
-    --from-literal=username="$RUSTFS_ACCESS_KEY" \
-    --from-literal=password="$RUSTFS_SECRET_KEY"
-  apply_secret posthog posthog-object-storage \
+  platform_runtime_identity local "$POSTGRES_PRODUCT_PASSWORD" "$RUSTFS_ACCESS_KEY" \
+    "$RUSTFS_SECRET_KEY" "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD"
+  platform_ensure_namespace posthog
+  platform_apply_secret posthog posthog-object-storage \
     --from-literal=root-user="$RUSTFS_ACCESS_KEY" \
     --from-literal=root-password="$RUSTFS_SECRET_KEY"
-  apply_secret observability grafana-admin \
-    --from-literal=admin-user="$GRAFANA_ADMIN_USER" \
-    --from-literal=admin-password="$GRAFANA_ADMIN_PASSWORD"
-  kubectl -n observability create configmap observability-cluster \
-    --from-literal=environment=local --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 }
 
 print_diagnostics() {
@@ -193,40 +171,45 @@ status() {
     kubectl get nodes -o wide
     print_diagnostics
   fi
-  printf '\nLocal credentials (stored mode 0600 in %s):\n' "$secrets_file"
-  printf '  Grafana:            %s / %s\n' "$GRAFANA_ADMIN_USER" "$GRAFANA_ADMIN_PASSWORD"
-  printf '  RustFS:             %s / %s\n' "$RUSTFS_ACCESS_KEY" "$RUSTFS_SECRET_KEY"
+  printf '\nLocal credentials (values are not printed):\n'
+  printf '  All generated values: %s (mode 0600)\n' "$secrets_file"
+  printf '  Grafana:              Secret observability/grafana-admin (admin-user, admin-password)\n'
+  printf '  RustFS:               Secret postgres/rustfs-root (username, password)\n'
+  printf '  Product database:     Secret postgres/product-db-credentials (username, password)\n'
 }
 
 up() {
+  baukit_use_tools "$repo_root" flux
   require_tools
   ensure_secret_state
-  start_git_daemon
-
   if ! cluster_exists; then
     printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$k3s_image"
-    k3d cluster create "$cluster_name" \
-      --image "$k3s_image" \
-      --servers 1 \
-      --agents 0 \
-      --k3s-arg '--disable=traefik@server:0' \
-      --port '80:80@loadbalancer' \
-      --port '443:443@loadbalancer' \
-      --wait
+    local mirror_dir mirror_args=() etcd_args=()
+    mapfile -t etcd_args < <(platform_local_etcd_args)
+    mirror_dir=$(mktemp -d)
+    if registry_mirrors_running; then
+      mapfile -t mirror_args < <(registry_mirrors_k3d_args "$mirror_dir/registries.yaml")
+      printf 'Using the running registry mirrors.\n'
+    fi
+    k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port" \
+      --subnet "$k3d_subnet" "${etcd_args[@]}" "${mirror_args[@]}"
+    rm -rf -- "$mirror_dir"
   else
     printf 'Cluster %s already exists; converging it.\n' "$cluster_name"
   fi
   use_context
+  platform_label_system_namespaces
+  start_git_daemon
 
-  printf 'Installing Flux v2.9.4 controllers\n'
-  flux install \
-    --version=v2.9.4 \
-    --components=source-controller,kustomize-controller,helm-controller \
-    --network-policy=false \
-    --timeout=5m >/dev/null
-  kubectl -n flux-system rollout status deployment/source-controller --timeout=5m
-  kubectl -n flux-system rollout status deployment/kustomize-controller --timeout=5m
-  kubectl -n flux-system rollout status deployment/helm-controller --timeout=5m
+  printf 'Installing Flux %s controllers with the multi-tenancy lockdown\n' "$flux_version"
+  flux_lockdown_render "$platform_dir" "$flux_version" | kubectl apply --server-side -f - >/dev/null
+  kubectl label namespace flux-system --overwrite \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/enforce-version=v1.37 \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted >/dev/null
+  flux_lockdown_wait
+  flux_lockdown_verify "$platform_dir"
 
   apply_runtime_identity
   kubectl apply -k "$platform_dir/overlays/local" >/dev/null
@@ -244,6 +227,7 @@ up() {
 down() {
   require_tools
   if cluster_exists; then
+    registry_mirrors_detach "k3d-$cluster_name"
     k3d cluster delete "$cluster_name"
   else
     printf 'Cluster %s is already absent.\n' "$cluster_name"

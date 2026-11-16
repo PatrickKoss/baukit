@@ -1,36 +1,17 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: posthog-default-deny-ingress
-  namespace: posthog
-spec:
-  podSelector: {}
-  policyTypes: [Ingress]
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: posthog-internal-ingress
-  namespace: posthog
-spec:
-  podSelector: {}
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-        - podSelector: {}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: posthog-traefik-ingress
-  namespace: posthog
+  name: allow-traefik-to-web
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
 spec:
   podSelector:
     matchExpressions:
       - key: role
         operator: In
         values: [web, events]
-  policyTypes: [Ingress]
+  policyTypes:
+    - Ingress
   ingress:
     - from:
         - namespaceSelector:
@@ -42,3 +23,220 @@ spec:
       ports:
         - protocol: TCP
           port: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-app-egress
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: posthog
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: posthog-postgresql
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: posthog-redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: posthog-kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: posthog-clickhouse
+      ports:
+        - protocol: TCP
+          port: 8123
+        - protocol: TCP
+          port: 9000
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: postgres
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rustfs
+      ports:
+        - protocol: TCP
+          port: 9000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-plugins-internet-https
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: posthog
+      role: plugins
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgresql
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: posthog-postgresql
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: posthog
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-redis
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: posthog-redis
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: posthog
+      ports:
+        - protocol: TCP
+          port: 6379
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9121
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kafka
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: posthog-kafka
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: posthog
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: posthog-clickhouse
+      ports:
+        - protocol: TCP
+          port: 9092
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-zookeeper
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: posthog-zookeeper
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: posthog-clickhouse
+      ports:
+        - protocol: TCP
+          port: 2181
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-clickhouse
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: posthog-clickhouse
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: posthog
+      ports:
+        - protocol: TCP
+          port: 8123
+        - protocol: TCP
+          port: 9000
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: posthog-kafka
+      ports:
+        - protocol: TCP
+          port: 9092
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: posthog-zookeeper
+      ports:
+        - protocol: TCP
+          port: 2181

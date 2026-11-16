@@ -1,0 +1,22 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: kustomization-dead-health-checks
+  annotations:
+    policies.kyverno.io/title: Kustomization dead health checks
+spec:
+  validationActions:
+    - Deny
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [kustomize.toolkit.fluxcd.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [kustomizations]
+  validations:
+    - expression: >-
+        !(object.spec.?wait.orValue(false) == true &&
+        size(object.spec.?healthChecks.orValue([])) > 0)
+      messageExpression: >-
+        "Kustomization " + object.metadata.name + " sets spec.wait: true, which makes Flux ignore " +
+        "spec.healthChecks. Remove the healthChecks list."

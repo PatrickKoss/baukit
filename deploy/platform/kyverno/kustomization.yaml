@@ -2,6 +2,38 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - namespace.yaml
-  - helm-repository.yaml
+  - oci-repository.yaml
   - helm-release.yaml
-  - policies.yaml
+  - network-policy.yaml
+namespace: kyverno
+components:
+  - ../components/network-policy/default-deny
+  - ../components/network-policy/dns-egress
+  - ../components/network-policy/apiserver-egress
+  - ../components/network-policy/prometheus-scrape
+  - ../components/network-policy/internet-https
+patches:
+  - target:
+      kind: NetworkPolicy
+      name: allow-prometheus-scrape
+    patch: |-
+      - op: replace
+        path: /spec/podSelector
+        value:
+          matchLabels:
+            app.kubernetes.io/part-of: kyverno
+      - op: replace
+        path: /spec/ingress/0/ports
+        value:
+          - protocol: TCP
+            port: 8000
+  - target:
+      kind: NetworkPolicy
+      name: allow-internet-https
+    patch: |-
+      - op: replace
+        path: /spec/podSelector
+        value:
+          matchLabels:
+            app.kubernetes.io/component: admission-controller
+            app.kubernetes.io/instance: kyverno

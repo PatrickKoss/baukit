@@ -1,0 +1,19 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helmrelease-timeout
+policies:
+  - ../../policies/helmrelease-timeout.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: helmrelease-timeout
+    kind: HelmRelease
+    resources: [timeout]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-timeout
+    kind: HelmRelease
+    resources: [no-timeout]
+    result: fail

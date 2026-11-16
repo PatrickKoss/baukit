@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-16
+
+- Breaking: images have no default tag. Each image needs `image.tag` or `image.digest`, and `latest` fails the schema and the render. A digest renders `repository@sha256:...`.
+- Breaking: `values.schema.json` rejects unknown keys and wrong types.
+- Breaking: the default ingress-controller peer is the Traefik base (namespace `traefik`, `app.kubernetes.io/instance: traefik-traefik`) instead of `kube-system`.
+- Breaking: PodDisruptionBudgets are on by default and render when a process runs more than one replica or the API autoscales. Without `minAvailable` or `maxUnavailable` they use `maxUnavailable: 1`.
+- Breaking: the chart needs Kubernetes 1.30 for the native `preStop` sleep. The API sleeps `api.preStopSleepSeconds` (5) before SIGTERM, and `SHUTDOWN__DRAIN_TIMEOUT` is the grace period minus that sleep.
+- Add a release ServiceAccount with `automountServiceAccountToken: false`, used by every pod.
+- Add startup probes for the API and worker, a soft hostname topology spread for API, worker and web, `ttlSecondsAfterFinished` on the migration and seed Jobs, and an `emptyDir` `/tmp` mount for every application process.
+- The render fails when `<process>.volumes` names a volume `tmp` or `<process>.volumeMounts` mounts `tmp` or `/tmp`, since the chart already provides that mount. Drop those entries from your values.
+
 ## [0.25.2] - 2026-11-13
 
 ## [0.25.1] - 2026-11-13

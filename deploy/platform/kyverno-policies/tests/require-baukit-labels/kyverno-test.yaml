@@ -1,0 +1,26 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-baukit-labels
+policies:
+  - ../../policies/require-baukit-labels.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: require-baukit-labels
+    kind: Deployment
+    resources: [labelled]
+    result: pass
+  - isValidatingPolicy: true
+    policy: require-baukit-labels
+    kind: Deployment
+    resources: [unlabelled]
+    result: fail
+  - isValidatingPolicy: true
+    policy: require-baukit-labels
+    kind: Deployment
+    resources: [platform-unlabelled]
+    result: skip

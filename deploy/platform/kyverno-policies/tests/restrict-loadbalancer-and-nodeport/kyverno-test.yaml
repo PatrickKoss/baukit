@@ -1,0 +1,19 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-loadbalancer-and-nodeport
+policies:
+  - ../../policies/restrict-loadbalancer-and-nodeport.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: restrict-loadbalancer-and-nodeport
+    kind: Service
+    resources: [cluster-ip, traefik, svclb]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-loadbalancer-and-nodeport
+    kind: Service
+    resources: [tenant-lb, tenant-nodeport]
+    result: fail

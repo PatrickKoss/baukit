@@ -1,0 +1,28 @@
+# The echo app with the chart's default networkPolicy.ingressController. Keep that key out of this file.
+fullnameOverride: echo
+product: e2e-ingress
+deploymentEnvironment: local
+api:
+  image:
+    repository: localhost/baukit-e2e/echo
+    tag: local
+    pullPolicy: Never
+  command:
+    - nginx
+    - -g
+    - daemon off;
+  # The namespace controller rechecks a deleting namespace only after the pod's grace period, not when
+  # the container exits. nginx exits 0 about 8 s after deletion (5 s preStop), so 30 s ran into chainsaw's 30 s cleanup.
+  terminationGracePeriodSeconds: 10
+migration:
+  enabled: false
+networkPolicy:
+  dns:
+    k3sCompatible: true
+ingress:
+  enabled: true
+  hosts:
+    - host: echo-ingress.localhost
+      paths:
+        - path: /
+          pathType: Prefix

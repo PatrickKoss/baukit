@@ -5,35 +5,47 @@ metadata:
   namespace: traefik
 spec:
   interval: 30m
-  chart:
-    spec:
-      chart: traefik
-      version: "41.6.1"
-      sourceRef:
-        kind: HelmRepository
-        name: traefik
-        namespace: traefik
-      interval: 24h
+  timeout: 5m
+  chartRef:
+    kind: OCIRepository
+    name: traefik
+    namespace: traefik
   install:
+    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
     cleanupOnFail: true
+    crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: enabled
   values:
+    versionOverride: "v3.7.19"
+    image:
+      digest: "sha256:aa942a00bce033c909bf1f7e861d93761be4b31a035f10d2410d33e38a8f41cf"
+      tag: "v3.7.19"
     deployment:
-      kind: DaemonSet
+      kind: Deployment
+      replicas: 1
+    podDisruptionBudget:
+      enabled: true
+      maxUnavailable: 1
+    priorityClassName: platform-critical
     updateStrategy:
       type: RollingUpdate
       rollingUpdate:
         maxUnavailable: 0
         maxSurge: 1
     hostNetwork: false
+    global:
+      checkNewVersion: false
+      sendAnonymousUsage: false
     service:
       enabled: true
       spec:
-        type: ClusterIP
+        type: LoadBalancer
     api:
       dashboard: false
       insecure: false
@@ -48,21 +60,25 @@ spec:
         expose:
           default: false
       web:
-        hostPort: 80
         expose:
           default: true
         http:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+              permanent: true
           middlewares:
             - traefik-default-rate-limit@kubernetescrd
             - traefik-default-connection-limit@kubernetescrd
       websecure:
-        hostPort: 443
         expose:
           default: true
         http:
           middlewares:
             - traefik-default-rate-limit@kubernetescrd
             - traefik-default-connection-limit@kubernetescrd
+            - traefik-default-security-headers@kubernetescrd
       metrics:
         port: 9100
         expose:
@@ -83,11 +99,28 @@ spec:
         allowExternalNameServices: false
       kubernetesIngress:
         allowExternalNameServices: false
+    tlsOptions:
+      default:
+        minVersion: VersionTLS12
+        sniStrict: true
+        curvePreferences:
+          - X25519
+          - CurveP256
+          - CurveP384
+        cipherSuites:
+          - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+          - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+          - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+          - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+          - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+          - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
     accessLog:
       enabled: true
       format: json
       fields:
         headers:
+          defaultMode: drop
+        queryParameters:
           defaultMode: drop
     resources:
       requests:
@@ -106,6 +139,9 @@ spec:
             average: 100
             burst: 200
             period: 1s
+            sourceCriterion:
+              ipStrategy:
+                depth: 0
       - apiVersion: traefik.io/v1alpha1
         kind: Middleware
         metadata:
@@ -113,3 +149,17 @@ spec:
         spec:
           inFlightReq:
             amount: 100
+            sourceCriterion:
+              ipStrategy:
+                depth: 0
+      - apiVersion: traefik.io/v1alpha1
+        kind: Middleware
+        metadata:
+          name: default-security-headers
+        spec:
+          headers:
+            stsSeconds: 31536000
+            stsIncludeSubdomains: true
+            contentTypeNosniff: true
+            frameDeny: true
+            referrerPolicy: strict-origin-when-cross-origin

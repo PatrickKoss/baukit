@@ -1,0 +1,186 @@
+rule_files:
+  - ../recording-rules/baukit-red.rules.yml
+  - ../alerts/baukit.rules.yml
+evaluation_interval: 1m
+group_eval_order:
+  - baukit-red-recording
+  - baukit-error-budget-recording
+  - baukit-slo-alerts
+tests:
+  - name: a 2% 5xx ratio burns the budget 20x and fires the fast burn alert
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="200"}'
+        values: '0+490x90'
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="500"}'
+        values: '0+10x90'
+    promql_expr_test:
+      - expr: baukit:http_requests_5xx:error_budget_burn_rate5m{service!=""}
+        eval_time: 70m
+        exp_samples:
+          - labels: 'baukit:http_requests_5xx:error_budget_burn_rate5m{product="fixture",service="fixture-api",environment="test"}'
+            value: 20
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: BaukitHighErrorBudgetBurnFast
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: BaukitHighErrorBudgetBurnFast
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              severity: critical
+            exp_annotations:
+              summary: Fast 5xx error-budget burn
+              description: 'The 5m and 1h windows exceed 14.4x budget for fixture-api in test.'
+              runbook_url: RUNBOOK_BASE_URL/high-error-budget-burn-fast
+
+  - name: a 1.4% 5xx ratio burns 14x and stays under the fast burn threshold
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="200"}'
+        values: '0+493x90'
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="500"}'
+        values: '0+7x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: BaukitHighErrorBudgetBurnFast
+        exp_alerts: []
+
+  - name: a 1% 5xx ratio burns the budget 10x and fires the slow burn alert after 15m
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="200"}'
+        values: '0+495x60'
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="500"}'
+        values: '0+5x60'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: BaukitHighErrorBudgetBurnSlow
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: BaukitHighErrorBudgetBurnSlow
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              severity: warning
+            exp_annotations:
+              summary: Sustained 5xx error-budget burn
+              description: 'The 30m and 6h windows exceed 6x budget for fixture-api in test.'
+              runbook_url: RUNBOOK_BASE_URL/high-error-budget-burn-slow
+      - eval_time: 40m
+        alertname: BaukitHighErrorBudgetBurnFast
+        exp_alerts: []
+
+  - name: a 0.5% 5xx ratio burns 5x and stays under the slow burn threshold
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="200"}'
+        values: '0+995x60'
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="500"}'
+        values: '0+5x60'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: BaukitHighErrorBudgetBurnSlow
+        exp_alerts: []
+
+  - name: requests between 0.5s and 1s put p95 above 0.5s and p99 under 1s
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="0.5"}'
+        values: '0x30'
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="1"}'
+        values: '0+100x30'
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="+Inf"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitHttpP95LatencyHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitHttpP95LatencyHigh
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              route: /items
+              severity: warning
+            exp_annotations:
+              summary: HTTP p95 latency is high
+              description: 'HTTP p95 latency has exceeded 0.5s for route /items of fixture-api in test.'
+              runbook_url: RUNBOOK_BASE_URL/http-p95-latency-high
+      - eval_time: 20m
+        alertname: BaukitHttpP99LatencyHigh
+        exp_alerts: []
+
+  - name: requests at or under 0.5s keep p95 at 0.475s and quiet
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="0"}'
+        values: '0x30'
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="0.5"}'
+        values: '0+100x30'
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="+Inf"}'
+        values: '0+100x30'
+    promql_expr_test:
+      - expr: baukit:http_request_duration_seconds:p95_5m
+        eval_time: 20m
+        exp_samples:
+          - labels: 'baukit:http_request_duration_seconds:p95_5m{product="fixture",service="fixture-api",environment="test",route="/items"}'
+            value: 0.475
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitHttpP95LatencyHigh
+        exp_alerts: []
+
+  - name: requests between 1s and 2s put p99 above 1s
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="1"}'
+        values: '0x30'
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="2"}'
+        values: '0+100x30'
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="+Inf"}'
+        values: '0+100x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitHttpP99LatencyHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitHttpP99LatencyHigh
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              route: /items
+              severity: critical
+            exp_annotations:
+              summary: HTTP p99 latency is high
+              description: 'HTTP p99 latency has exceeded 1s for route /items of fixture-api in test.'
+              runbook_url: RUNBOOK_BASE_URL/http-p99-latency-high
+
+  - name: requests at or under 1s keep p99 at 0.995s and quiet
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="0.5"}'
+        values: '0x30'
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="1"}'
+        values: '0+100x30'
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",le="+Inf"}'
+        values: '0+100x30'
+    promql_expr_test:
+      - expr: baukit:http_request_duration_seconds:p99_5m
+        eval_time: 20m
+        exp_samples:
+          - labels: 'baukit:http_request_duration_seconds:p99_5m{product="fixture",service="fixture-api",environment="test",route="/items"}'
+            value: 0.995
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitHttpP99LatencyHigh
+        exp_alerts: []

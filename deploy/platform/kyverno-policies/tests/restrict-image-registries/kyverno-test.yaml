@@ -1,0 +1,36 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-image-registries
+policies:
+  - ../../policies/restrict-image-registries.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: restrict-image-registries
+    kind: Pod
+    resources: [allowed]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-image-registries
+    kind: Pod
+    resources: [foreign]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-image-registries
+    kind: Pod
+    resources: [tenant-foreign]
+    result: skip
+  - isValidatingPolicy: true
+    policy: restrict-image-registries
+    kind: Pod
+    resources: [unqualified-allowed]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-image-registries
+    kind: Pod
+    resources: [unqualified-foreign]
+    result: fail

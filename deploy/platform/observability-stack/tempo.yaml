@@ -5,30 +5,35 @@ metadata:
   namespace: observability
 spec:
   interval: 30m
-  timeout: 10m
+  timeout: 5m
   dependsOn:
     - name: kube-prometheus-stack
       namespace: observability
-  chart:
-    spec:
-      chart: tempo
-      version: "2.4.0"
-      sourceRef:
-        kind: HelmRepository
-        name: grafana-community
-        namespace: observability
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: tempo
+    namespace: observability
   install:
     remediation:
       retries: 3
   upgrade:
+    cleanupOnFail: true
     remediation:
       retries: 3
+  driftDetection:
+    mode: enabled
   values:
+    priorityClassName: platform-standard
     replicas: 1
     tempo:
+      tag: "3.1.1@sha256:64e2fbd56d9c2b3412a4b430a58ea59e91a670b1e75f920a0c702213ad145044"
       reportingEnabled: false
-      memBallastSizeMbs: 128
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
       resources:
         requests:
           cpu: 100m
@@ -38,6 +43,12 @@ spec:
           memory: 1Gi
       # Traces retention budget (§8.5): the single source of truth.
       retention: 168h
+      # Sized to the 10Gi PVC; see the README storage section.
+      liveStore:
+        max_block_bytes: 268435456
+      backendWorker:
+        compaction:
+          max_block_bytes: 1073741824
       storage:
         trace:
           backend: local
@@ -52,6 +63,9 @@ spec:
               endpoint: 0.0.0.0:4317
             http:
               endpoint: 0.0.0.0:4318
+    securityContext:
+      seccompProfile:
+        type: RuntimeDefault
     persistence:
       enabled: true
       accessModes:

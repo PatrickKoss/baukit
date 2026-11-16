@@ -1,0 +1,29 @@
+# Rules that today's bases still violate stay pending on the plan task that fixes them.
+# A pending rule that passes must move to active.
+privileged_namespaces = ["kube-system", "observability-agents", "kured", "falco"]
+# k3s runs CoreDNS, metrics-server and the cloud controllers here; N3 gives them no policies.
+network_policy_exempt_namespaces = ["kube-system"]
+# exporters-scraped: a base workload running one of these image repositories needs a PodMonitor
+# that selects its pods on a port the pod declares (the exporter sidecar, or CNPG's "metrics").
+scraped_images = { redis = "Redis", postgresql = "CNPG PostgreSQL" }
+
+[rules]
+active = [
+  "alert-metadata",
+  "alert-runbook",
+  "alert-tested",
+  "dashboards-selected",
+  "default-deny-network-policy",
+  "exporters-scraped",
+  "image-digest",
+  "kured-alert-filter",
+  "metrics-enabled",
+  "pdb-multi-replica",
+  "policy-exception-budget",
+  "priority-class",
+  "prune-disabled",
+  "psa-labels",
+  "rules-selected",
+]
+
+[rules.pending]

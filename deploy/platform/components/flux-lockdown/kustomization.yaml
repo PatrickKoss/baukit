@@ -1,0 +1,55 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+# Flux v2.10.0 controller images by multi-arch index digest. flux_lockdown_images in
+# flux-lockdown.sh lists the same references.
+images:
+  - name: ghcr.io/fluxcd/source-controller
+    newTag: v1.10.1
+    digest: sha256:611b6bca3eae95bcff471414d1fb14a4ab83d7f14e609cccef2bd389c121f37e
+  - name: ghcr.io/fluxcd/kustomize-controller
+    newTag: v1.10.1
+    digest: sha256:37db29b25dae35b881a5e064acedb0cc954442da453a39eaa0eab7a90dbecc4e
+  - name: ghcr.io/fluxcd/helm-controller
+    newTag: v1.7.1
+    digest: sha256:54526cc6ed1202d71d44c310676448065664f3255ad671d9a69ac26f904e617a
+  - name: ghcr.io/fluxcd/notification-controller
+    newTag: v1.10.0
+    digest: sha256:9f58b9532ec9d3ccf539cd3ccdf283477a5dcb7777b922db5477d8bbd4d3767c
+patches:
+  - target:
+      kind: Deployment
+      name: (kustomize-controller|helm-controller)
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --no-cross-namespace-refs=true
+  - target:
+      kind: Deployment
+      name: kustomize-controller
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --no-remote-bases=true
+  - target:
+      kind: Deployment
+      name: kustomize-controller
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: --default-service-account=default
+  - target:
+      group: kustomize.toolkit.fluxcd.io
+      kind: Kustomization
+      name: flux-system
+      namespace: flux-system
+    patch: |-
+      - op: add
+        path: /spec/serviceAccountName
+        value: kustomize-controller
+  - target:
+      kind: Deployment
+      name: notification-controller
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: system-cluster-critical

@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: admission-free
+  namespace: e2e-tenant
+spec:
+  rules:
+    - host: admission.e2e.test
+      http:
+        paths:
+          - path: /free
+            pathType: Prefix
+            backend:
+              service:
+                name: echo
+                port:
+                  number: 80

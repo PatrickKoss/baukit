@@ -2,6 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../../../postgres-cluster
+  - ../../cluster-network
+components:
+  - ../../../../components/network-policy/node-cidr
 patches:
   - target:
       group: barmancloud.cnpg.io
@@ -58,4 +61,4 @@ patches:
         value: false
       - op: replace
         path: /spec/jobTemplate/spec/template/spec/containers/0/image
-        value: rancher/k3s:v1.34.8-k3s1
+        value: rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332

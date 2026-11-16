@@ -3,10 +3,26 @@ kind: Kustomization
 namespace: postgres
 resources:
   - namespace.yaml
+  - image-catalog.yaml
   - cluster.yaml
   - objectstore.yaml
   - scheduledbackup.yaml
   - pushgateway.yaml
   - restore-test.yaml
-  - prometheusrule.yaml
-
+  - podmonitor.yaml
+  - network-policy.yaml
+components:
+  - ../components/network-policy/default-deny
+  - ../components/network-policy/dns-egress
+  - ../components/network-policy/apiserver-egress
+  - ../components/network-policy/internet-https
+patches:
+  - target:
+      kind: NetworkPolicy
+      name: allow-internet-https
+    patch: |-
+      - op: replace
+        path: /spec/podSelector
+        value:
+          matchLabels:
+            cnpg.io/podRole: instance

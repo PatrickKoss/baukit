@@ -62,7 +62,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      {{- include "baukit-app.podIdentity" (dict "root" . "process" "web") | nindent 6 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- with .Values.imagePullSecrets }}
@@ -71,7 +71,7 @@ spec:
       {{- end }}
       containers:
         - name: web
-          image: {{ include "baukit-app.image" .Values.web.image | quote }}
+          image: {{ include "baukit-app.image" (dict "image" .Values.web.image "name" "web") | quote }}
           imagePullPolicy: {{ .Values.web.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
@@ -98,6 +98,9 @@ spec:
               mountPath: /tmp
             - name: cache
               mountPath: /var/cache/nginx
+      {{- if .Values.topologySpread.enabled }}
+      {{- include "baukit-app.topologySpread" (dict "root" . "process" "web") | nindent 6 }}
+      {{- end }}
       volumes:
         - name: config
           configMap:

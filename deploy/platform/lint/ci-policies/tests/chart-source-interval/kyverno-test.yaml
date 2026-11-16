@@ -1,0 +1,39 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: chart-source-interval
+policies:
+  - ../../policies/chart-source-interval.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: chart-source-interval
+    kind: HelmRepository
+    resources: [daily]
+    result: pass
+  - isValidatingPolicy: true
+    policy: chart-source-interval
+    kind: HelmRepository
+    resources: [hourly]
+    result: pass
+  - isValidatingPolicy: true
+    policy: chart-source-interval
+    kind: HelmRepository
+    resources: [frequent]
+    result: fail
+  - isValidatingPolicy: true
+    policy: chart-source-interval
+    kind: HelmRepository
+    resources: [no-interval]
+    result: fail
+  - isValidatingPolicy: true
+    policy: chart-source-interval
+    kind: OCIRepository
+    resources: [oci-daily]
+    result: pass
+  - isValidatingPolicy: true
+    policy: chart-source-interval
+    kind: OCIRepository
+    resources: [oci-frequent]
+    result: fail

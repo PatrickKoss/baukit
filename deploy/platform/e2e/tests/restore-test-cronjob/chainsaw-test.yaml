@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restore-test-cronjob
+spec:
+  description: >-
+    The postgres-restore-test CronJob backs up postgres-cluster, restores it into a scratch Cluster and
+    finds its sentinel row. It shares no objects with backup-restore, so the two run in parallel.
+  timeouts:
+    exec: 45m
+  steps:
+    - name: restore-test-cronjob
+      try:
+        - script:
+            timeout: 40m
+            content: |
+              set -eu
+              ns=postgres
+              job="restore-test-e2e-$(date +%s)"
+              kubectl -n "$ns" create job "$job" --from=cronjob/postgres-restore-test
+              deadline=$(($(date +%s) + 2340))
+              while :; do
+                succeeded="$(kubectl -n "$ns" get job "$job" -o jsonpath='{.status.succeeded}')"
+                failed="$(kubectl -n "$ns" get job "$job" -o jsonpath='{.status.failed}')"
+                [ "$succeeded" != 1 ] || break
+                if [ -n "$failed" ] || [ "$(date +%s)" -ge "$deadline" ]; then
+                  kubectl -n "$ns" logs job/"$job" --all-containers >&2 || true
+                  kubectl -n "$ns" describe job "$job" >&2 || true
+                  exit 1
+                fi
+                sleep 10
+              done
+              kubectl -n "$ns" logs job/"$job" -c restore-test | grep 'restored sentinel .* matches'

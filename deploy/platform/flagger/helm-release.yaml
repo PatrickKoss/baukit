@@ -6,23 +6,25 @@ metadata:
 spec:
   interval: 30m
   timeout: 5m
-  chart:
-    spec:
-      chart: flagger
-      version: "1.45.0"
-      sourceRef:
-        kind: HelmRepository
-        name: flagger
-        namespace: flagger-system
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: flagger
+    namespace: flagger-system
   install:
+    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
     cleanupOnFail: true
+    crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: enabled
   values:
+    podPriorityClassName: platform-standard
+    image:
+      tag: "1.45.0@sha256:15b372d35012f9ae450f9030bc82217369c0aee082ed5a5225830010cf972b2b"
     meshProvider: traefik
     metricsServer: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
     selectorLabels: baukit.dev/workload
@@ -36,3 +38,15 @@ spec:
         cpu: 250m
         memory: 256Mi
 
+    securityContext:
+      enabled: true
+      context:
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        runAsUser: 10001
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+        seccompProfile:
+          type: RuntimeDefault

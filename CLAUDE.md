@@ -59,6 +59,8 @@ change:
 | Cargo deny | `cargo deny --manifest-path rust/Cargo.toml --config rust/deny.toml check advisories licenses` (after dependency changes) |
 | MSRV (Rust 1.95) | `cargo +1.95 check --manifest-path rust/Cargo.toml --workspace --all-targets` (after using new language/std features) |
 | Observability metric names | `python3 deploy/observability/lint/check-metric-names.py` (after touching deploy/observability or metric names) |
+| Platform validation | `scripts/ci-gate.sh --step NAME` for `platform-validate`, `platform-images`, `observability-tests` and `observability-rules` (after touching deploy/; each step installs its pinned tools from `deploy/tools.toml` into `.tools/`) |
+| Platform e2e | `make platform-e2e` (after touching deploy/platform, deploy/chart or deploy/observability*; CI runs it when a changed path matches a `scripts/ci-gate.toml` shared path; needs Docker, takes a flock lock under `$XDG_CACHE_HOME/baukit` and, with `BAUKIT_HEAVY_SLOT_DIR` set, waits for a free heavy-run slot) |
 | Dexie real-browser conformance | `make ts-browser-test` |
 | Generated mobile Android compile | `make native-android-gate` (after touching mobile templates, CLI generation, or their native dependencies) |
 | Real Expo SQLite on Android | `make expo-sqlite-conformance` (after touching data contracts, the Expo SQLite adapter, or `scripts/expo-android-conformance.sh`) |

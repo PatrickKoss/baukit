@@ -1,0 +1,8 @@
+# Collides with the chart's own /tmp mount; test_chart_tmp_volume.py expects the render to fail.
+api:
+  volumes:
+    - name: scratch
+      emptyDir: {}
+  volumeMounts:
+    - name: scratch
+      mountPath: /tmp/

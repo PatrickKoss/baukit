@@ -1,0 +1,187 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: exact
+  namespace: demo
+spec:
+  interval: "30m"
+  timeout: "5m"
+  chart:
+    spec:
+      chart: traefik
+      version: "41.6.1"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+  driftDetection:
+    mode: warn
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: prerelease
+  namespace: demo
+spec:
+  interval: "30m"
+  timeout: "5m"
+  chart:
+    spec:
+      chart: traefik
+      version: v1.2.3-rc.1
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+  driftDetection:
+    mode: warn
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: range
+  namespace: demo
+spec:
+  interval: "30m"
+  timeout: "5m"
+  chart:
+    spec:
+      chart: traefik
+      version: ">=41.0.0 <42.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+  driftDetection:
+    mode: warn
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: wildcard
+  namespace: demo
+spec:
+  interval: "30m"
+  timeout: "5m"
+  chart:
+    spec:
+      chart: traefik
+      version: "41.x"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+  driftDetection:
+    mode: warn
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: star
+  namespace: demo
+spec:
+  interval: "30m"
+  timeout: "5m"
+  chart:
+    spec:
+      chart: traefik
+      version: "*"
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+  driftDetection:
+    mode: warn
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: no-version
+  namespace: demo
+spec:
+  interval: "30m"
+  timeout: "5m"
+  chart:
+    spec:
+      chart: traefik
+      sourceRef:
+        kind: HelmRepository
+        name: traefik
+  driftDetection:
+    mode: warn
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: git-chart
+  namespace: demo
+spec:
+  interval: "30m"
+  timeout: "5m"
+  chart:
+    spec:
+      chart: traefik
+      version: "41.6.1"
+      sourceRef:
+        kind: GitRepository
+        name: baukit
+  driftDetection:
+    mode: warn
+  install:
+    crds: CreateReplace
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
+    remediation:
+      retries: 3

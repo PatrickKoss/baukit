@@ -383,7 +383,9 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 "templates/web/__auth__/web/CHANGELOG.md": "## Unreleased\n\n- Pending web fix.\n",
                 "deploy/chart/baukit-app/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
                 "deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n\n- Pending chart fix.\n",
+                "deploy/platform/CHANGELOG.md": "## [Unreleased]\n\n- Pending platform fix.\n",
                 "deploy/observability/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
+                "deploy/observability-platform/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
                 "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.0\n",
             }
             for relative, source in files.items():
@@ -475,6 +477,10 @@ PYTHON
             self.assertEqual(
                 chart_changelog,
                 "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- Pending chart fix.\n",
+            )
+            self.assertEqual(
+                (root / "deploy/platform/CHANGELOG.md").read_text(),
+                "## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- Pending platform fix.\n",
             )
             package_changelog = (
                 root / "typescript/packages/analytics-core/CHANGELOG.md"
@@ -659,7 +665,9 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             "templates/VERSION": "0.7.1\n",
             "deploy/chart/baukit-app/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
             "deploy/chart/baukit-app/CHANGELOG.md": "## [Unreleased]\n\n- Pending chart fix.\n",
+            "deploy/platform/CHANGELOG.md": "## [Unreleased]\n\n- Pending platform fix.\n",
             "deploy/observability/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
+            "deploy/observability-platform/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
             "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.1\n",
             "typescript/pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
             "examples/unrelated/package.json": json.dumps(
@@ -754,3 +762,40 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AggregateReleaseNotesTest(unittest.TestCase):
+    def test_notes_include_the_deployment_changelogs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            script = root / "scripts/aggregate-release-notes.sh"
+            script.parent.mkdir(parents=True)
+            shutil.copyfile(ROOT / "scripts/aggregate-release-notes.sh", script)
+            for relative, note in {
+                "deploy/chart/baukit-app/CHANGELOG.md": "Chart fix.",
+                "deploy/platform/CHANGELOG.md": "Breaking: platform change.",
+            }.items():
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f"## [Unreleased]\n\n## [0.7.1] - 2026-10-05\n\n- {note}\n")
+            git = shutil.which("git")
+            bash = shutil.which("bash")
+            self.assertIsNotNone(git)
+            self.assertIsNotNone(bash)
+            identity = ["-c", "user.name=t", "-c", "user.email=t@example.invalid"]
+            for arguments in (
+                ["init", "--quiet"],
+                ["add", "."],
+                [*identity, "commit", "--quiet", "-m", "release"],
+                ["tag", "v0.7.1"],
+            ):
+                run_process([git, *arguments], cwd=root, check=True)
+            notes = run_process(
+                [bash, str(script), "0.7.1"],
+                cwd=root,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+        self.assertIn("## Deployment\n\n### baukit-app\n\n- Chart fix.\n", notes)
+        self.assertIn("### platform\n\n- Breaking: platform change.\n", notes)

@@ -1,0 +1,18 @@
+groups:
+  - name: baukit-platform-targets
+    rules:
+      - alert: BaukitPlatformTargetDown
+        expr: |
+          up == 0
+          and on (namespace)
+          kube_namespace_labels{label_app_kubernetes_io_part_of="baukit-platform"}
+        for: 10m
+        labels:
+          severity: warning
+          component: platform
+        annotations:
+          summary: Platform scrape target {{ $labels.job }} is down
+          description: >-
+            Prometheus has failed to scrape {{ $labels.instance }} of job {{ $labels.job }}
+            in namespace {{ $labels.namespace }} for 10 minutes.
+          runbook_url: RUNBOOK_BASE_URL/platform-target-down

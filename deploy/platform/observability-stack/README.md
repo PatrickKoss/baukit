@@ -1,16 +1,22 @@
 # Observability stack base
 
 This Flux-native base installs a deliberately non-HA observability stack in the
-`observability` namespace:
+`observability` namespace, which enforces Pod Security `restricted`. Node-exporter
+and Alloy need host access, so they run in the privileged `observability-agents`
+namespace:
 
-- kube-prometheus-stack 88.6.5: Prometheus Operator, one Prometheus, one
+- kube-prometheus-stack 93.3.0: Prometheus Operator, one Prometheus, one
   Alertmanager, Grafana, kube-state-metrics, and node-exporter;
-- Loki 18.13.7 in monolithic mode with one filesystem-backed replica;
-- Tempo 2.4.0 in monolithic mode with one filesystem-backed replica and OTLP
+- Loki 21.2.3 in monolithic mode with one filesystem-backed replica;
+- Tempo 3.2.1 (Tempo 3.1.1) in monolithic mode with one filesystem-backed replica and OTLP
   gRPC/HTTP receivers;
-- Alloy 1.13.0 as a DaemonSet that sends Kubernetes pod logs to Loki; and
+- Alloy 1.16.0 as a DaemonSet that sends Kubernetes pod logs and the k3s API server
+  audit log (`{service="kube-audit"}`, written by `deploy/platform/k3s/audit-policy.yaml`) to Loki;
 - the existing `deploy/observability` chart as dashboards, recording rules, and
-  alert content.
+  alert content; and
+- the `deploy/observability-platform` chart with alerts, recording rules and
+  dashboards for the platform components. Its `runbookBaseUrl` value sets the
+  prefix of every alert's `runbook_url`.
 
 The starting retention budgets are visible once in each component's
 HelmRelease: 30 days for metrics, 14 days for logs, and 7 days for traces. PVCs
@@ -25,16 +31,29 @@ An overlay **must** provide all of the following:
 
 1. A `source.toolkit.fluxcd.io/v1` `GitRepository` named `baukit` in
    `flux-system`. It must point at this repository at the release-train tag the
-   cluster has selected. The `baukit-observability` HelmRelease resolves
-   `./deploy/observability` from that source.
+   cluster has selected. The `baukit-observability` and
+   `baukit-platform-observability` HelmReleases resolve `./deploy/observability`
+   and `./deploy/observability-platform` from that source.
 2. A Secret named `grafana-admin` in `observability`, with `admin-user` and
    `admin-password` keys. Grafana anonymous access, ingress, TLS, and any
    external URL are also overlay decisions; this base enables no ingress.
-3. A real Alertmanager receiver before production traffic is served. Patch
-   `kube-prometheus-stack.spec.values.alertmanager.config`: add an
-   identity-bearing receiver, route actionable alerts to it, and route
-   `BaukitDeadMansSwitch` to the external heartbeat integration. The base's
-   `null` receiver intentionally drops every notification.
+3. A Secret named `alertmanager-routing` in `observability` with an
+   `alertmanager.yaml` key. Start from `alertmanager/alertmanager.example.yaml`:
+   routes by `severity` and `component`, Watchdog first to an external
+   heartbeat receiver, and the two inhibit rules (critical inhibits warning
+   for the same `alertname` and `namespace`, and `InfoInhibitor`). The base
+   mounts this Secret into the Alertmanager pod, so without it the pod stays
+   in `ContainerCreating` with `secret "alertmanager-routing" not found`, no
+   Watchdog reaches the heartbeat, and the external dead man's switch fires.
+   The mount matters because Prometheus Operator (seen with v0.93.1) does not fail on a
+   missing config Secret: it logs `config secret not found, using default
+   Alertmanager configuration` and starts with a config that drops every
+   alert. `lint/check_alertmanager_config.py` checks the example and every
+   overlay Secret. A webhook URL on `*.svc.cluster.local` must name a Service
+   that the same overlay renders. The local overlay routes every receiver to
+   `alert-sink` in `observability`, which logs each notification as one JSON
+   line on stdout, so local alerts land in Loki, and serves the last 500 on
+   `GET /alerts`.
 4. Storage sizing and a StorageClass appropriate to the node. The defaults are
    30 Gi for Prometheus, 20 Gi for Loki, 10 Gi for Tempo, and 1 Gi for
    Alertmanager. The overlay owns backup/recovery expectations for these
@@ -44,12 +63,75 @@ The Loki and Tempo HelmReleases depend on `kube-prometheus-stack` because both
 emit ServiceMonitors. This ordering ensures the Prometheus Operator CRDs exist
 before Helm submits those resources; Alloy then depends on Loki, and the Baukit
 content release depends on the Prometheus stack.
-5. A ConfigMap named `observability-cluster` in `observability`, with an
+5. A ConfigMap named `observability-cluster` in `observability-agents`, with an
    `environment` key whose value is the cluster's bounded environment identity
    (`local`, `testing`, or `production`). Alloy applies it to every log stream.
 
 No domain, e-mail address, token, credential, bucket, endpoint, or user identity
 is stored in this base.
+
+## Priority
+
+Every pod in this base runs as `platform-standard`: Prometheus, Alertmanager,
+the operator and its admission Jobs, Grafana, kube-state-metrics,
+node-exporter, Alloy, Loki and Tempo. The base admits kured to Prometheus on
+9090 for its pre-reboot alert check.
+
+## Alert routing
+
+Alertmanager is the single sink for three sources:
+
+- Prometheus rules from kube-prometheus-stack and both baukit packs.
+- Loki ruler rules from `deploy/observability-platform/loki-rules/`. The pack
+  renders them into ConfigMap `baukit-platform-observability-loki-rules`, which
+  Loki mounts as the rule directory of tenant `fake`. Loki does not start until
+  that ConfigMap exists.
+- Flux events. `flux-notifications.yaml` holds a `Provider` of type
+  `alertmanager` and an `Alert` for error events from every Kustomization,
+  GitRepository and HelmRelease namespace. Flux sends them with
+  `severity="error"` and `component="flux"`. The lifecycle installs Flux's
+  notification-controller (`platform-up.sh` adds it to `--components`;
+  `flux bootstrap` installs it by default).
+
+## Storage limits
+
+Every store has a time retention and a cap sized to its PVC. An overlay that
+changes a PVC size changes the matching cap in the same patch.
+
+Prometheus deletes blocks by size once `retentionSize` is reached, so it never
+fills its PVC. `retentionSize` is about 85% of the PVC in Prometheus base-2
+units: `25GB` for the 30 Gi base, `1740MB` for the 2 Gi local overlay.
+`deploy/platform/lint/check_retention_size.py` builds every base and overlay in
+`validate.sh` and fails when `retentionSize` is missing or above 90% of the PVC.
+`BaukitPrometheusStorageNearRetentionSize` fires at 90% of `retentionSize`.
+
+Loki and Tempo have no size-based retention. Their caps are time retention plus
+bounded working space. `KubePersistentVolumeFillingUp` from the
+kube-prometheus-stack defaults fires as a warning above 85% used when the volume
+will fill within four days, and as critical above 97% used.
+`deploy/observability-platform/tests/kubernetes-storage.test.yml` tests that
+upstream rule, and `deploy/platform/lint/check_upstream_rules.py` fails when the
+rendered chart's rule drifts from the copy the test loads.
+
+Loki deletes chunks older than `retention_period` (336h base, 48h local)
+through the compactor: `retention_enabled: true`, delete requests in the object
+store, and the working directory `/var/loki/compactor` on the PVC. The 20 Gi
+base fits 14 days while stored chunks and index average below 17 GiB / 14 days
+= 1.2 GiB per day, about 14 KiB/s after compression. The local overlay writes
+chunks to RustFS, so its 2 Gi Loki PVC holds only the WAL, the TSDB index cache
+and the compactor working directory. Its 48 hours of chunks share the RustFS
+PVC with the Barman backups.
+
+Tempo deletes blocks older than `block_retention` (168h base, 48h local). The
+live-store cuts a block at `live_store.max_block_bytes` (256 MiB base, 64 MiB
+local) and the backend worker stops growing a block at
+`backend_worker.compaction.max_block_bytes` (1 GiB base, 200 MiB local), so a
+compaction needs at most twice that as transient space. On the 10 Gi base that
+leaves 10 GiB - 2 x 1 GiB - 2 x 256 MiB = 7.5 GiB for blocks, which fits 7 days
+below 1.07 GiB per day (about 12.7 KiB/s). On the 2 Gi local PVC it leaves
+2048 - 400 - 128 = 1520 MiB, which fits 48 hours below 760 MiB per day (about
+9 KiB/s). `local-footprint.md` records no log or trace ingest rates, so these
+are budgets, not measurements.
 
 ## Signal ownership
 

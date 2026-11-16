@@ -1,0 +1,109 @@
+groups:
+  - name: baukit-cnpg
+    rules:
+      - alert: BaukitCnpgInstanceNotReady
+        expr: |
+          cnpg_collector_up == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: cnpg
+        annotations:
+          summary: PostgreSQL instance {{ $labels.namespace }}/{{ $labels.pod }} is down
+          description: >-
+            The CNPG instance manager in {{ $labels.namespace }}/{{ $labels.pod }} of cluster
+            {{ $labels.cluster }} has not reached PostgreSQL for 5 minutes.
+          runbook_url: RUNBOOK_BASE_URL/cnpg-instance-not-ready
+      - alert: BaukitCnpgWalArchivingFailing
+        expr: |
+          sum by (namespace, pod) (increase(cnpg_pg_stat_archiver_failed_count[10m])) > 0
+        for: 10m
+        labels:
+          severity: critical
+          component: cnpg
+        annotations:
+          summary: WAL archiving fails on {{ $labels.namespace }}/{{ $labels.pod }}
+          description: >-
+            PostgreSQL in {{ $labels.namespace }}/{{ $labels.pod }} failed to archive WAL
+            {{ $value }} times in 10 minutes. Point-in-time recovery stops at the last archived
+            segment and WAL piles up on the volume.
+          runbook_url: RUNBOOK_BASE_URL/cnpg-wal-archiving-failing
+      - alert: BaukitCnpgWalArchiveStale
+        expr: |
+          cnpg_pg_stat_archiver_seconds_since_last_archival > 900
+        for: 5m
+        labels:
+          severity: warning
+          component: cnpg
+        annotations:
+          summary: The last archived WAL on {{ $labels.namespace }}/{{ $labels.pod }} is older than 15 minutes
+          description: >-
+            PostgreSQL in {{ $labels.namespace }}/{{ $labels.pod }} last archived a WAL segment
+            {{ $value | humanizeDuration }} ago. CNPG switches WAL every 5 minutes, so recovery
+            would lose more data than the platform promises.
+          runbook_url: RUNBOOK_BASE_URL/cnpg-wal-archive-stale
+      - alert: BaukitCnpgBackupStale
+        expr: |
+          (
+            time() - max by (namespace) (barman_cloud_cloudnative_pg_io_last_available_backup_timestamp)
+          ) > 26 * 3600
+        for: 15m
+        labels:
+          severity: critical
+          component: cnpg
+        annotations:
+          summary: The last PostgreSQL backup in {{ $labels.namespace }} is older than 26 hours
+          description: >-
+            The newest base backup in the object store for namespace {{ $labels.namespace }} is
+            {{ $value | humanizeDuration }} old. The daily ScheduledBackup has missed a run.
+          runbook_url: RUNBOOK_BASE_URL/cnpg-backup-stale
+      - alert: BaukitCnpgConnectionsSaturated
+        expr: |
+          sum by (namespace, pod) (cnpg_backends_total)
+          / on (namespace, pod)
+          max by (namespace, pod) (cnpg_pg_settings_setting{name="max_connections"})
+          > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          component: cnpg
+        annotations:
+          summary: PostgreSQL {{ $labels.namespace }}/{{ $labels.pod }} uses over 85% of max_connections
+          description: >-
+            PostgreSQL in {{ $labels.namespace }}/{{ $labels.pod }} has used
+            {{ $value | humanizePercentage }} of max_connections for 10 minutes. New clients get
+            "too many clients" errors once it reaches 100%.
+          runbook_url: RUNBOOK_BASE_URL/cnpg-connections-saturated
+      - alert: BaukitCnpgVolumeFilling
+        expr: |
+          (
+            label_replace(
+              kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes,
+              "pod", "$1", "persistentvolumeclaim", "(.+?)(-wal)?"
+            ) > 0.8
+          )
+          and on (namespace, pod) cnpg_collector_up
+        for: 15m
+        labels:
+          severity: warning
+          component: cnpg
+        annotations:
+          summary: PostgreSQL volume {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is over 80% full
+          description: >-
+            The CNPG volume {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is
+            {{ $value | humanizePercentage }} full. PostgreSQL stops accepting writes when it fills.
+          runbook_url: RUNBOOK_BASE_URL/cnpg-volume-filling
+      - alert: BaukitPostgresRestoreTestStale
+        expr: |
+          (time() - baukit_restore_test_last_success_timestamp_seconds > 3024000)
+          or absent(baukit_restore_test_last_success_timestamp_seconds)
+        for: 1h
+        labels:
+          severity: critical
+          component: cnpg
+        annotations:
+          summary: The PostgreSQL restore test has not succeeded in 35 days
+          description: >-
+            The monthly recovery proof is absent or older than 35 days. Check
+            the postgres-restore-test CronJob and the CNPG backup object store.
+          runbook_url: RUNBOOK_BASE_URL/postgres-restore-test-stale

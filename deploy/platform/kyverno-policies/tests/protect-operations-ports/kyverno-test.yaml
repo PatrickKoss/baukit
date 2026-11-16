@@ -1,0 +1,29 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: protect-operations-ports
+policies:
+  - ../../policies/protect-operations-ports.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: protect-operations-ports
+    kind: Service
+    resources: [internal-ops, public-http]
+    result: pass
+  - isValidatingPolicy: true
+    policy: protect-operations-ports
+    kind: Service
+    resources: [public-ops-port, public-ops-target, public-metrics-name]
+    result: fail
+  - isValidatingPolicy: true
+    policy: protect-operations-ports
+    kind: Ingress
+    resources: [app]
+    result: pass
+  - isValidatingPolicy: true
+    policy: protect-operations-ports
+    kind: Ingress
+    resources: [ops-number, ops-name]
+    result: fail

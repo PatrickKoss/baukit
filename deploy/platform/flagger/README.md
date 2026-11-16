@@ -36,8 +36,10 @@ The loadtester intentionally is not installed by this cluster-scoped base.
 The blocking command is product code and its NetworkPolicy trust boundary is
 the app namespace, so each app installs the pinned Flagger loadtester chart
 `0.38.0` in its own environment namespace. Name the HelmRelease
-`flagger-loadtester`, reuse this base's `HelmRepository/flagger` by creating a
-namespaced repository or reference an allowed shared source, and set:
+`flagger-loadtester` and give it a namespaced `HelmRepository` for
+`https://flagger.app`. This base installs Flagger from the signed OCI chart,
+but upstream publishes the loadtester chart only in that HTTPS index (no
+`ghcr.io/fluxcd/charts/loadtester`). Then set:
 
 ```yaml
 values:

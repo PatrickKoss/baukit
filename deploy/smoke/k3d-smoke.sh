@@ -4,7 +4,9 @@ set -eu
 script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 deploy_root=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 chart=${BAUKIT_SMOKE_CHART:-$deploy_root/chart/baukit-app}
+registry_mirrors=$deploy_root/platform/registry-mirrors.sh
 observability_chart=${BAUKIT_SMOKE_OBSERVABILITY_CHART:-$deploy_root/observability}
+k3s_image=${BAUKIT_SMOKE_K3S_IMAGE:-$(bash -c '. "$1" && platform_k3s_image' platform_k3s_image "$deploy_root/platform/local-git-http.sh")}
 
 product=${BAUKIT_SMOKE_PRODUCT:?BAUKIT_SMOKE_PRODUCT is required}
 values_file=${BAUKIT_SMOKE_VALUES_FILE:?BAUKIT_SMOKE_VALUES_FILE is required}
@@ -16,21 +18,29 @@ namespace=${BAUKIT_SMOKE_NAMESPACE:-$product}
 release=${BAUKIT_SMOKE_RELEASE:-$product}
 resource_name=${BAUKIT_SMOKE_RESOURCE_NAME:-$release}
 observability_namespace=${BAUKIT_SMOKE_OBSERVABILITY_NAMESPACE:-observability}
+runbook_base_url=${BAUKIT_SMOKE_RUNBOOK_BASE_URL:-https://github.com/PatrickKoss/baukit/blob/main/docs/runbooks/app}
 dependencies_file=${BAUKIT_SMOKE_DEPENDENCIES_FILE:-}
+dependencies_namespace=${BAUKIT_SMOKE_DEPENDENCIES_NAMESPACE:-$namespace-deps}
+dependencies_pod_security_level=${BAUKIT_SMOKE_DEPENDENCIES_POD_SECURITY_LEVEL:-baseline}
 dependency_deployments=${BAUKIT_SMOKE_DEPENDENCY_DEPLOYMENTS:-}
 secret_manifests=${BAUKIT_SMOKE_SECRET_MANIFESTS:-}
 worker_enabled=${BAUKIT_SMOKE_WORKER_ENABLED:-false}
 k3s_dns_enabled=${BAUKIT_SMOKE_K3S_DNS_ENABLED:-true}
-k3d_ports=${BAUKIT_SMOKE_K3D_PORTS:-8081:30081@server:0}
+k3d_ports=${BAUKIT_SMOKE_K3D_PORTS:-127.0.0.1:8081:30081@server:0}
+k3d_api_port=${BAUKIT_SMOKE_K3D_API_PORT:-}
+pod_security_level=${BAUKIT_SMOKE_POD_SECURITY_LEVEL:-restricted}
+policy_dir=${BAUKIT_SMOKE_POLICY_DIR:-}
 api_check_path=${BAUKIT_SMOKE_API_CHECK_PATH:-/me}
 api_check_status=${BAUKIT_SMOKE_API_CHECK_STATUS:-200}
 known_gaps_file=${BAUKIT_SMOKE_KNOWN_GAPS_FILE:-}
 extra_forbidden_file=${BAUKIT_SMOKE_FORBIDDEN_VALUES_FILE:-}
 product_check=${BAUKIT_SMOKE_PRODUCT_CHECK:-}
-prometheus_image=${BAUKIT_SMOKE_PROMETHEUS_IMAGE:-prom/prometheus:v3.13.2}
+prometheus_image=${BAUKIT_SMOKE_PROMETHEUS_IMAGE:-prom/prometheus:v3.16.0}
 
 temporary_dir=$(mktemp -d)
 forward_dir=$temporary_dir/port-forward
+KUBECONFIG=$temporary_dir/kubeconfig
+export KUBECONFIG
 forbidden_file=$temporary_dir/forbidden-values
 created_cluster=false
 api_forward_pid=""
@@ -47,6 +57,8 @@ cleanup() {
         fi
     done
     if [ "$created_cluster" = true ]; then
+        bash -c '. "$1" && registry_mirrors_detach "$2"' registry_mirrors_detach \
+            "$registry_mirrors" "k3d-$cluster_name" || true
         k3d cluster delete "$cluster_name" >/dev/null 2>&1 || true
     fi
     rm -r -- "$temporary_dir"
@@ -83,16 +95,34 @@ for image in $images; do
     }
 done
 
+if [ -z "$k3d_api_port" ]; then
+    k3d_api_port=127.0.0.1:$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')
+fi
 set -- cluster create "$cluster_name" \
     --servers 1 \
     --agents 0 \
+    --image "$k3s_image" \
+    --api-port "$k3d_api_port" \
+    --kubeconfig-update-default=false \
+    --kubeconfig-switch-context=false \
     --k3s-arg '--disable=traefik@server:0' \
     --wait
 for port_mapping in $k3d_ports; do
     set -- "$@" --port "$port_mapping"
 done
+# The shared pull-through mirrors are used when all of them run. Arguments hold no whitespace.
+if bash -c '. "$1" && registry_mirrors_running' registry_mirrors_running "$registry_mirrors"; then
+    mirror_args=$(bash -c '. "$1" && registry_mirrors_k3d_args "$2"' registry_mirrors_k3d_args \
+        "$registry_mirrors" "$temporary_dir/registries.yaml")
+    for mirror_arg in $mirror_args; do
+        set -- "$@" "$mirror_arg"
+    done
+    echo "using the registry mirrors from $registry_mirrors"
+fi
+bash -c '. "$1" && platform_require_cgroup_v2' platform_require_cgroup_v2 "$deploy_root/platform/local-git-http.sh"
 created_cluster=true
 k3d "$@"
+k3d kubeconfig get "$cluster_name" >"$KUBECONFIG"
 # Image references cannot contain whitespace, so the list splits on spaces.
 set -- image import --cluster "$cluster_name"
 for image in $images; do
@@ -100,9 +130,41 @@ for image in $images; do
 done
 k3d "$@"
 
-kubectl create namespace "$namespace"
+install_admission_policies() {
+    [ -n "$policy_dir" ] || return 0
+    [ -d "$policy_dir" ] || {
+        echo "admission policy directory not found: $policy_dir" >&2
+        exit 2
+    }
+    echo "installing admission policies from $policy_dir"
+    kubectl apply --recursive -f "$policy_dir"
+}
+
+create_namespace() {
+    target=$1
+    level=$2
+    shift 2
+    kubectl create namespace "$target" --dry-run=client -o yaml |
+        kubectl label --local -f - -o yaml "$@" \
+            "pod-security.kubernetes.io/enforce=$level" \
+            pod-security.kubernetes.io/enforce-version=latest \
+            "pod-security.kubernetes.io/audit=$level" \
+            pod-security.kubernetes.io/audit-version=latest \
+            "pod-security.kubernetes.io/warn=$level" \
+            pod-security.kubernetes.io/warn-version=latest |
+        kubectl create -f -
+}
+
+set -- install
+for image in $images; do
+    set -- "$@" "$image"
+done
+"$script_dir/kyverno-enforce.sh" "$@"
+install_admission_policies
+create_namespace "$namespace" "$pod_security_level" baukit.dev/tenant=true
+create_namespace "$dependencies_namespace" "$dependencies_pod_security_level"
 if [ "$observability_namespace" != "$namespace" ]; then
-    kubectl create namespace "$observability_namespace"
+    create_namespace "$observability_namespace" restricted
 fi
 
 if [ -n "$secret_manifests" ]; then
@@ -114,11 +176,12 @@ if [ -n "$secret_manifests" ]; then
     IFS=$old_ifs
 fi
 if [ -n "$dependencies_file" ]; then
-    kubectl -n "$namespace" apply -f "$dependencies_file"
+    kubectl -n "$dependencies_namespace" apply -f "$dependencies_file"
 fi
 for deployment in $dependency_deployments; do
-    kubectl -n "$namespace" rollout status "deployment/$deployment" --timeout=240s
+    kubectl -n "$dependencies_namespace" rollout status "deployment/$deployment" --timeout=240s
 done
+
 
 echo "installing $product with the Baukit application chart"
 set -- upgrade --install "$release" "$chart" \
@@ -131,7 +194,11 @@ if [ "$k3s_dns_enabled" = true ]; then
 fi
 if ! helm "$@"; then
     kubectl -n "$namespace" get pods,jobs >&2 || true
+    kubectl -n "$namespace" get events --field-selector type=Warning \
+        -o jsonpath='{range .items[*]}{.involvedObject.kind}/{.involvedObject.name}: {.message}{"\n"}{end}' >&2 || true
     kubectl -n "$namespace" logs -l baukit.dev/process=migrate \
+        --all-containers --tail=100 >&2 || true
+    kubectl -n "$namespace" logs -l baukit.dev/process=api \
         --all-containers --tail=100 >&2 || true
     exit 1
 fi
@@ -144,6 +211,7 @@ echo "installing the Baukit observability ConfigMaps"
 helm upgrade --install "$release-observability" "$observability_chart" \
     --namespace "$observability_namespace" \
     --set fullnameOverride=baukit-observability-pack \
+    --set runbookBaseUrl="$runbook_base_url" \
     --wait
 for suffix in dashboard recording-rules alert-rules; do
     kubectl -n "$observability_namespace" get configmap \
@@ -251,4 +319,12 @@ env \
     "$observability_chart/verify/verify-observability.sh" BAUKIT_SMOKE
 
 kubectl -n "$namespace" get pods,services,networkpolicies
+kubectl get namespace "$namespace" \
+    -o jsonpath='{.metadata.labels.pod-security\.kubernetes\.io/enforce}' |
+    grep -qx "$pod_security_level"
+if kubectl -n "$namespace" get events -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' |
+    grep -i 'podsecurity\|violates'; then
+    echo "namespace $namespace recorded Pod Security violations" >&2
+    exit 1
+fi
 echo "k3d smoke passed for $product; teardown follows"

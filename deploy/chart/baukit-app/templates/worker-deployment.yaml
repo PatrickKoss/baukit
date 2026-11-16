@@ -22,7 +22,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
-      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      {{- include "baukit-app.podIdentity" (dict "root" . "process" "worker") | nindent 6 }}
       terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -32,7 +32,7 @@ spec:
       {{- end }}
       containers:
         - name: worker
-          image: {{ include "baukit-app.image" .Values.worker.image | quote }}
+          image: {{ include "baukit-app.image" (dict "image" .Values.worker.image "name" "worker") | quote }}
           imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
@@ -59,6 +59,15 @@ spec:
           envFrom:
             {{- include "baukit-app.envFrom" $ | nindent 12 }}
           {{- end }}
+          {{- if and .Values.worker.ops.enabled .Values.worker.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: ops
+            periodSeconds: {{ .Values.worker.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.worker.startupProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.worker.startupProbe.failureThreshold }}
+          {{- end }}
           {{- if and .Values.worker.ops.enabled .Values.worker.livenessProbe.enabled }}
           livenessProbe:
             httpGet:
@@ -81,13 +90,19 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.worker.resources | nindent 12 }}
-          {{- with .Values.worker.volumeMounts }}
           volumeMounts:
+            {{- include "baukit-app.assertNoTmpOverride" (dict "process" "worker" "volumes" .Values.worker.volumes "volumeMounts" .Values.worker.volumeMounts) }}
+            {{- include "baukit-app.tmpVolumeMount" . | nindent 12 }}
+            {{- with .Values.worker.volumeMounts }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
-      {{- with .Values.worker.volumes }}
+            {{- end }}
       volumes:
+        {{- include "baukit-app.tmpVolume" . | nindent 8 }}
+        {{- with .Values.worker.volumes }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if .Values.topologySpread.enabled }}
+      {{- include "baukit-app.topologySpread" (dict "root" . "process" "worker") | nindent 6 }}
       {{- end }}
       {{- with .Values.worker.nodeSelector }}
       nodeSelector:

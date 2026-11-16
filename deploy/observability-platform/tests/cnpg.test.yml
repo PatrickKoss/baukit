@@ -1,0 +1,211 @@
+rule_files:
+  - ../alerts/cnpg.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: an instance whose PostgreSQL is down fires BaukitCnpgInstanceNotReady
+    interval: 1m
+    input_series:
+      - series: 'cnpg_collector_up{cluster="postgres-cluster",namespace="postgres",pod="postgres-cluster-1"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BaukitCnpgInstanceNotReady
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: BaukitCnpgInstanceNotReady
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: cnpg
+              cluster: postgres-cluster
+              namespace: postgres
+              pod: postgres-cluster-1
+            exp_annotations:
+              summary: PostgreSQL instance postgres/postgres-cluster-1 is down
+              description: >-
+                The CNPG instance manager in postgres/postgres-cluster-1 of cluster
+                postgres-cluster has not reached PostgreSQL for 5 minutes.
+              runbook_url: RUNBOOK_BASE_URL/cnpg-instance-not-ready
+  - name: a running instance stays quiet
+    interval: 1m
+    input_series:
+      - series: 'cnpg_collector_up{cluster="postgres-cluster",namespace="postgres",pod="postgres-cluster-1"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitCnpgInstanceNotReady
+        exp_alerts: []
+
+  - name: a rising archiver failure count fires BaukitCnpgWalArchivingFailing
+    interval: 1m
+    input_series:
+      - series: 'cnpg_pg_stat_archiver_failed_count{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitCnpgWalArchivingFailing
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: cnpg
+              namespace: postgres
+              pod: postgres-cluster-1
+            exp_annotations:
+              summary: WAL archiving fails on postgres/postgres-cluster-1
+              description: >-
+                PostgreSQL in postgres/postgres-cluster-1 failed to archive WAL
+                10 times in 10 minutes. Point-in-time recovery stops at the last archived
+                segment and WAL piles up on the volume.
+              runbook_url: RUNBOOK_BASE_URL/cnpg-wal-archiving-failing
+  - name: old archiver failures stay quiet
+    interval: 1m
+    input_series:
+      - series: 'cnpg_pg_stat_archiver_failed_count{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '3x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitCnpgWalArchivingFailing
+        exp_alerts: []
+
+  - name: no archived WAL for over 15 minutes fires BaukitCnpgWalArchiveStale
+    interval: 1m
+    input_series:
+      - series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '1000x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BaukitCnpgWalArchiveStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: cnpg
+              namespace: postgres
+              pod: postgres-cluster-1
+            exp_annotations:
+              summary: The last archived WAL on postgres/postgres-cluster-1 is older than 15 minutes
+              description: >-
+                PostgreSQL in postgres/postgres-cluster-1 last archived a WAL segment
+                16m 40s ago. CNPG switches WAL every 5 minutes, so recovery
+                would lose more data than the platform promises.
+              runbook_url: RUNBOOK_BASE_URL/cnpg-wal-archive-stale
+  - name: a recently archived WAL stays quiet
+    interval: 1m
+    input_series:
+      - series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '120x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitCnpgWalArchiveStale
+        exp_alerts: []
+
+  - name: a backup older than 26 hours fires BaukitCnpgBackupStale
+    interval: 4m
+    input_series:
+      - series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '0x500'
+    alert_rule_test:
+      - eval_time: 26h
+        alertname: BaukitCnpgBackupStale
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: BaukitCnpgBackupStale
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: cnpg
+              namespace: postgres
+            exp_annotations:
+              summary: The last PostgreSQL backup in postgres is older than 26 hours
+              description: >-
+                The newest base backup in the object store for namespace postgres is
+                1d 3h 0m 0s old. The daily ScheduledBackup has missed a run.
+              runbook_url: RUNBOOK_BASE_URL/cnpg-backup-stale
+  - name: a backup that keeps up stays quiet
+    interval: 4m
+    input_series:
+      - series: 'barman_cloud_cloudnative_pg_io_last_available_backup_timestamp{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '0+240x500'
+    alert_rule_test:
+      - eval_time: 27h
+        alertname: BaukitCnpgBackupStale
+        exp_alerts: []
+
+  - name: 90 of 100 connections fire BaukitCnpgConnectionsSaturated
+    interval: 1m
+    input_series:
+      - series: 'cnpg_backends_total{namespace="postgres",pod="postgres-cluster-1",datname="product",usename="product_app",application_name="api",state="active"}'
+        values: '60x20'
+      - series: 'cnpg_backends_total{namespace="postgres",pod="postgres-cluster-1",datname="product",usename="product_app",application_name="api",state="idle"}'
+        values: '30x20'
+      - series: 'cnpg_pg_settings_setting{namespace="postgres",pod="postgres-cluster-1",name="max_connections"}'
+        values: '100x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BaukitCnpgConnectionsSaturated
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: cnpg
+              namespace: postgres
+              pod: postgres-cluster-1
+            exp_annotations:
+              summary: PostgreSQL postgres/postgres-cluster-1 uses over 85% of max_connections
+              description: >-
+                PostgreSQL in postgres/postgres-cluster-1 has used
+                90% of max_connections for 10 minutes. New clients get
+                "too many clients" errors once it reaches 100%.
+              runbook_url: RUNBOOK_BASE_URL/cnpg-connections-saturated
+  - name: 50 of 100 connections stay quiet
+    interval: 1m
+    input_series:
+      - series: 'cnpg_backends_total{namespace="postgres",pod="postgres-cluster-1",datname="product",usename="product_app",application_name="api",state="active"}'
+        values: '50x20'
+      - series: 'cnpg_pg_settings_setting{namespace="postgres",pod="postgres-cluster-1",name="max_connections"}'
+        values: '100x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitCnpgConnectionsSaturated
+        exp_alerts: []
+
+  - name: a full WAL volume of a CNPG instance fires BaukitCnpgVolumeFilling
+    interval: 1m
+    input_series:
+      - series: 'kubelet_volume_stats_used_bytes{namespace="postgres",persistentvolumeclaim="postgres-cluster-1-wal"}'
+        values: '90x30'
+      - series: 'kubelet_volume_stats_capacity_bytes{namespace="postgres",persistentvolumeclaim="postgres-cluster-1-wal"}'
+        values: '100x30'
+      - series: 'cnpg_collector_up{cluster="postgres-cluster",namespace="postgres",pod="postgres-cluster-1"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitCnpgVolumeFilling
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: cnpg
+              namespace: postgres
+              persistentvolumeclaim: postgres-cluster-1-wal
+              pod: postgres-cluster-1
+            exp_annotations:
+              summary: PostgreSQL volume postgres/postgres-cluster-1-wal is over 80% full
+              description: >-
+                The CNPG volume postgres/postgres-cluster-1-wal is
+                90% full. PostgreSQL stops accepting writes when it fills.
+              runbook_url: RUNBOOK_BASE_URL/cnpg-volume-filling
+  - name: a half-full CNPG volume and a full non-CNPG volume stay quiet
+    interval: 1m
+    input_series:
+      - series: 'kubelet_volume_stats_used_bytes{namespace="postgres",persistentvolumeclaim="postgres-cluster-1"}'
+        values: '50x30'
+      - series: 'kubelet_volume_stats_capacity_bytes{namespace="postgres",persistentvolumeclaim="postgres-cluster-1"}'
+        values: '100x30'
+      - series: 'kubelet_volume_stats_used_bytes{namespace="redis",persistentvolumeclaim="redis-data-0"}'
+        values: '95x30'
+      - series: 'kubelet_volume_stats_capacity_bytes{namespace="redis",persistentvolumeclaim="redis-data-0"}'
+        values: '100x30'
+      - series: 'cnpg_collector_up{cluster="postgres-cluster",namespace="postgres",pod="postgres-cluster-1"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitCnpgVolumeFilling
+        exp_alerts: []

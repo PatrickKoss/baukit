@@ -1,0 +1,34 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: helmrelease-crd-policy
+  annotations:
+    policies.kyverno.io/title: HelmRelease CRD install and upgrade
+spec:
+  validationActions:
+    - Deny
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [helm.toolkit.fluxcd.io]
+        apiVersions: [v2]
+        operations: [CREATE, UPDATE]
+        resources: [helmreleases]
+  variables:
+    - name: chartsWithCrds
+      expression: '["alloy", "flagger", "kube-prometheus-stack", "loki", "posthog", "traefik"]'
+    - name: chart
+      expression: >-
+        object.spec.?chart.?spec.?chart.orValue(object.spec.?chartRef.?name.orValue(""))
+  validations:
+    - expression: >-
+        !(variables.chart in variables.chartsWithCrds) ||
+        object.spec.?install.?crds.orValue("") == "CreateReplace"
+      messageExpression: >-
+        "HelmRelease " + object.metadata.name + " installs chart " + variables.chart + ", which ships " +
+        "CRDs in a crds/ directory. Set spec.install.crds: CreateReplace."
+    - expression: >-
+        !(variables.chart in variables.chartsWithCrds) ||
+        object.spec.?upgrade.?crds.orValue("") == "CreateReplace"
+      messageExpression: >-
+        "HelmRelease " + object.metadata.name + " installs chart " + variables.chart + ", which ships " +
+        "CRDs in a crds/ directory. Set spec.upgrade.crds: CreateReplace, or its CRDs never upgrade."

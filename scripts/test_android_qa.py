@@ -10,6 +10,7 @@ from pathlib import Path
 from process_runner import run_process, start_process
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates/mobile/mobile"
+HANG_WATCHDOG_SECONDS = 120
 
 
 def render(source: str, backend: bool) -> str:
@@ -62,7 +63,7 @@ class AndroidQaTests(unittest.TestCase):
             "EVENTS": str(self.events),
             "ATTACHED": str(self.attached),
             "FAILURE": "",
-            "BAUKIT_QA_ADB_TIMEOUT_SECONDS": "0.15",
+            "BAUKIT_QA_ADB_TIMEOUT_SECONDS": "10",
             "BAUKIT_QA_STOP_TIMEOUT_SECONDS": "0.5",
             "BAUKIT_QA_SKIP_BUILD": "1",
             "BAUKIT_QA_POLL_SECONDS": "0",
@@ -149,7 +150,7 @@ RENDERER
             env={**self.environment, **environment},
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=HANG_WATCHDOG_SECONDS,
             check=False,
         )
 
@@ -564,7 +565,7 @@ RENDERER
             },
             capture_output=True,
             text=True,
-            timeout=20,
+            timeout=HANG_WATCHDOG_SECONDS,
             check=False,
         )
 
@@ -713,7 +714,7 @@ esac
                     capture_output=True,
                     text=True,
                     check=False,
-                    timeout=5,
+                    timeout=HANG_WATCHDOG_SECONDS,
                 )
                 self.assertEqual(result.returncode, 0 if expected == 0 else 2, result.stderr)
                 if expected:

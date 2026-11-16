@@ -11,6 +11,30 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
+MAX_REQUEST_BYTES = 16 * 1024 * 1024
+
+
+class RequestLengthError(Exception):
+    def __init__(self, status: int, reason: str) -> None:
+        super().__init__(reason)
+        self.status = status
+        self.reason = reason
+
+
+def request_length(method: str, content_length: str | None, transfer_encoding: str | None) -> int:
+    if transfer_encoding is not None:
+        raise RequestLengthError(411, "Transfer-Encoding is not supported; send Content-Length")
+    if content_length is None:
+        if method == "POST":
+            raise RequestLengthError(411, "Content-Length is required")
+        return 0
+    if not content_length.isascii() or not content_length.isdigit():
+        raise RequestLengthError(400, "Content-Length must be a non-negative integer")
+    length = int(content_length)
+    if length > MAX_REQUEST_BYTES:
+        raise RequestLengthError(413, f"Content-Length exceeds {MAX_REQUEST_BYTES} bytes")
+    return length
+
 
 class GitHandler(BaseHTTPRequestHandler):
     server_version = "baukit-local-git/1"
@@ -23,8 +47,21 @@ class GitHandler(BaseHTTPRequestHandler):
 
     def _serve(self) -> None:
         parsed = urlsplit(self.path)
-        length = int(self.headers.get("Content-Length", "0"))
+        try:
+            length = request_length(
+                self.command,
+                self.headers.get("Content-Length"),
+                self.headers.get("Transfer-Encoding"),
+            )
+        except RequestLengthError as error:
+            self.close_connection = True
+            self.send_error(error.status, error.reason)
+            return
         body = self.rfile.read(length) if length else b""
+        if len(body) != length:
+            self.close_connection = True
+            self.send_error(400, "request body is shorter than Content-Length")
+            return
         environment = os.environ.copy()
         environment.update(
             {

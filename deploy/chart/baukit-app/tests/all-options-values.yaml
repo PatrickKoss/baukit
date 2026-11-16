@@ -18,6 +18,9 @@ platform:
     previousKey: previous
 
 api:
+  replicas: 2
+  image:
+    tag: 1.4.2
   podDisruptionBudget:
     enabled: true
     minAvailable: 1
@@ -50,6 +53,9 @@ api:
 
 worker:
   enabled: true
+  replicas: 2
+  image:
+    digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
   podDisruptionBudget:
     enabled: true
     maxUnavailable: 50%
@@ -83,6 +89,8 @@ worker:
             port: 9418
 
 migration:
+  image:
+    tag: 1.4.2
   env:
     - name: MIGRATION_LOCK_TIMEOUT_SECONDS
       value: "30"
@@ -104,6 +112,8 @@ migration:
 
 seed:
   enabled: true
+  image:
+    tag: 1.4.2
   env:
     - name: SEED_FIXTURE_SET
       value: smoke
@@ -142,6 +152,8 @@ networkPolicy:
           port: 4317
 web:
   enabled: true
+  image:
+    tag: 1.4.2
   contentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'"
   ingress:
     enabled: true

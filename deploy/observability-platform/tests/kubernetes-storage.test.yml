@@ -1,0 +1,77 @@
+rule_files:
+  - ../upstream-rules/kubernetes-storage.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: a PVC at 97.5% used fires the critical KubePersistentVolumeFillingUp
+    interval: 1m
+    input_series:
+      - series: 'kubelet_volume_stats_capacity_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-loki-0"}'
+        values: '1000x10'
+      - series: 'kubelet_volume_stats_available_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-loki-0"}'
+        values: '25x10'
+      - series: 'kubelet_volume_stats_used_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-loki-0"}'
+        values: '975x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: KubePersistentVolumeFillingUp
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: kubelet
+              metrics_path: /metrics
+              namespace: observability
+              persistentvolumeclaim: storage-loki-0
+            exp_annotations:
+              summary: PersistentVolume is filling up.
+              description: The PersistentVolume claimed by storage-loki-0 in Namespace observability  is only 2.5% free.
+              runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubepersistentvolumefillingup
+  - name: a PVC at 50% used stays quiet
+    interval: 1m
+    input_series:
+      - series: 'kubelet_volume_stats_capacity_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-loki-0"}'
+        values: '1000x120'
+      - series: 'kubelet_volume_stats_available_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-loki-0"}'
+        values: '500x120'
+      - series: 'kubelet_volume_stats_used_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-loki-0"}'
+        values: '500x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: KubePersistentVolumeFillingUp
+        exp_alerts: []
+  - name: a PVC above 85% used and growing fires the warning KubePersistentVolumeFillingUp
+    interval: 1m
+    input_series:
+      - series: 'kubelet_volume_stats_capacity_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-tempo-0"}'
+        values: '1000x600'
+      # Free space drops 0.1 byte per minute, so the 6h trend runs out within four days.
+      - series: 'kubelet_volume_stats_available_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-tempo-0"}'
+        values: '130-0.1x600'
+      - series: 'kubelet_volume_stats_used_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-tempo-0"}'
+        values: '870+0.1x600'
+    alert_rule_test:
+      - eval_time: 9h
+        alertname: KubePersistentVolumeFillingUp
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: kubelet
+              metrics_path: /metrics
+              namespace: observability
+              persistentvolumeclaim: storage-tempo-0
+            exp_annotations:
+              summary: PersistentVolume is filling up.
+              description: Based on recent sampling, the PersistentVolume claimed by storage-tempo-0 in Namespace observability  is expected to fill up within four days. Currently 7.6% is available.
+              runbook_url: https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubepersistentvolumefillingup
+  - name: a PVC at 90% used that does not grow stays quiet
+    interval: 1m
+    input_series:
+      - series: 'kubelet_volume_stats_capacity_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-tempo-0"}'
+        values: '1000x600'
+      - series: 'kubelet_volume_stats_available_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-tempo-0"}'
+        values: '100x600'
+      - series: 'kubelet_volume_stats_used_bytes{job="kubelet",metrics_path="/metrics",namespace="observability",persistentvolumeclaim="storage-tempo-0"}'
+        values: '900x600'
+    alert_rule_test:
+      - eval_time: 9h
+        alertname: KubePersistentVolumeFillingUp
+        exp_alerts: []

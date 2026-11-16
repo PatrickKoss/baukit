@@ -125,5 +125,51 @@ class ReleasePlzCoverageTest(unittest.TestCase):
         self.assertEqual(check.release_plz_problems(release_plz, crates), [])
 
 
+class ChartTest(unittest.TestCase):
+    TRAIN = (
+        "for chart in deploy/chart/app/Chart.yaml\n  deploy/observability-platform/Chart.yaml; do\n"
+    )
+
+    def repo(self, charts: dict[str, str], train: str = TRAIN) -> Path:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        (root / "scripts").mkdir()
+        (root / "scripts/release-train.sh").write_text(train)
+        for relative, version in charts.items():
+            path = root / relative / "Chart.yaml"
+            path.parent.mkdir(parents=True)
+            path.write_text(f'version: {version}\nappVersion: "{version}"\n')
+        return root
+
+    def test_charts_on_the_train_pass(self) -> None:
+        root = self.repo({"deploy/chart/app": "1.2.3", "deploy/observability-platform": "1.2.3"})
+        self.assertEqual(check.chart_problems(root, "1.2.3"), (2, []))
+
+    def test_a_chart_off_the_train_is_reported(self) -> None:
+        root = self.repo({"deploy/chart/app": "1.2.3", "deploy/observability-platform": "1.2.2"})
+        _, problems = check.chart_problems(root, "1.2.3")
+        self.assertEqual(len(problems), 1)
+        self.assertIn("deploy/observability-platform/Chart.yaml has version '1.2.2'", problems[0])
+
+    def test_a_chart_the_release_train_does_not_bump_is_reported(self) -> None:
+        root = self.repo(
+            {"deploy/chart/app": "1.2.3", "deploy/observability-platform": "1.2.3"},
+            train="for chart in deploy/chart/app/Chart.yaml; do\n",
+        )
+        self.assertEqual(
+            check.chart_problems(root, "1.2.3"),
+            (
+                2,
+                ["scripts/release-train.sh does not bump deploy/observability-platform/Chart.yaml"],
+            ),
+        )
+
+    def test_the_repository_charts_pass(self) -> None:
+        version = check.check_rust_workspace()
+        _, problems = check.chart_problems(check.ROOT, version)
+        self.assertEqual(problems, [])
+
+
 if __name__ == "__main__":
     unittest.main()

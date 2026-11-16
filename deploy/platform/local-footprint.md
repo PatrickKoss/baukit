@@ -22,11 +22,11 @@ idle period.
 | kube-system | local-path provisioner | 1m | 19 MiB |
 | kube-system | metrics server | 3m | 26 MiB |
 | observability | Alertmanager | 1m | 47 MiB |
-| observability | Alloy | 5m | 108 MiB |
+| observability-agents | Alloy | 5m | 108 MiB |
 | observability | Grafana | 5m | 353 MiB |
 | observability | kube-state-metrics | 1m | 31 MiB |
 | observability | Prometheus operator | 2m | 33 MiB |
-| observability | node exporter | 1m | 19 MiB |
+| observability-agents | node exporter | 1m | 19 MiB |
 | observability | Loki | 3m | 110 MiB |
 | observability | Loki gateway | 1m | 31 MiB |
 | observability | Prometheus | 10m | 694 MiB |
@@ -53,6 +53,24 @@ against 24 allocatable CPUs and 48,954,860 KiB (46.69 GiB) allocatable memory.
 That node sample includes the retired storage pod. The difference from the pod
 subtotal includes k3s/containerd, the Kubernetes node processes, kernel working
 set, and other node-level accounting.
+
+## Falco, falcosidekick and kured
+
+Measured on 2026-11-15 between 16:42 and 16:45 UTC on the e2e cluster (`deploy/platform/e2e/run.sh`,
+k3s on cgroup v2, every base except `hcloud` and `posthog`), about 20 minutes after the platform was
+Ready and 2 minutes after the last Falco rules reload. Three `kubectl top pods` samples one minute apart:
+
+| Namespace | Component | CPU | Memory working set |
+|---|---|---:|---:|
+| falco | Falco (`modern_ebpf`, one node) | 24-58m | 189-205 MiB |
+| falco | falcosidekick | 1m | 17-19 MiB |
+| kured | kured | 0-1m | 11-12 MiB |
+
+Falco's CPU follows the syscall rate of everything on the shared WSL2 kernel, not only the cluster, so
+it moves with other load on the host. The FA0 spike saw 22-85m and 254-321 MiB for Falco on its own
+cluster. Falco requests 100m and 384 MiB and is limited to 1 CPU and 1 GiB; falcosidekick requests
+10m/32 MiB with a 100m/64 MiB limit, which leaves both well inside their limits. The whole e2e node
+reported 310m CPU and 6,005 MiB in the same minute.
 
 ## Testing-node sizing implication
 

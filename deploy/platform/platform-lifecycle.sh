@@ -46,14 +46,27 @@ github_owner_type=${PLATFORM_GITHUB_OWNER_TYPE:-organization}
 age_key_file=${PLATFORM_AGE_KEY_FILE:-}
 baukit_source_mode=${PLATFORM_BAUKIT_SOURCE_MODE:-github-tag}
 baukit_checkout=${PLATFORM_BAUKIT_CHECKOUT:-}
-k3s_image=${PLATFORM_K3S_IMAGE:-rancher/k3s:v1.34.8-k3s1}
-flux_version=${PLATFORM_FLUX_VERSION:-v2.9.4}
+psa_version=v1.37
+# shellcheck source=deploy/lib/tools.sh
+. "$repo_root/deploy/lib/tools.sh"
+flux_version=${PLATFORM_FLUX_VERSION:-v$(baukit_tool_version "$repo_root" flux)}
 git_port=${PLATFORM_SNAPSHOT_PORT:-9418}
+api_port=${PLATFORM_API_PORT:-random}
+http_port=${PLATFORM_HTTP_PORT:-80}
+https_port=${PLATFORM_HTTPS_PORT:-443}
 state_root=${XDG_STATE_HOME:-${HOME}/.local/state}
 state_dir=${PLATFORM_STATE_DIR:-$state_root/baukit-platform/$cluster_name}
 snapshot_container=${PLATFORM_SNAPSHOT_CONTAINER:-${cluster_name}-baukit-git}
 snapshot_image=${PLATFORM_SNAPSHOT_IMAGE:-${cluster_name}-baukit-git-http}
 git_root=$state_dir/git
+
+# shellcheck source=deploy/platform/local-git-http.sh
+source "$platform_dir/local-git-http.sh"
+k3s_image=${PLATFORM_K3S_IMAGE:-$(platform_k3s_image)}
+# shellcheck source=deploy/platform/flux-lockdown.sh
+source "$platform_dir/flux-lockdown.sh"
+# shellcheck source=deploy/platform/registry-mirrors.sh
+source "$platform_dir/registry-mirrors.sh"
 
 require_value() {
   local name=$1
@@ -166,7 +179,7 @@ remove_snapshot() {
 }
 
 wait_for_snapshot() {
-  local snapshot_url="http://127.0.0.1:$git_port/baukit.git"
+  local snapshot_url="http://$1:$git_port/baukit.git"
   local attempt
   for ((attempt = 0; attempt < 100; attempt++)); do
     if git ls-remote "$snapshot_url" HEAD >/dev/null 2>&1; then
@@ -191,17 +204,7 @@ build_snapshot() {
   remove_snapshot
   rm -rf -- "$snapshot_tmp" "$git_tmp"
   mkdir -p "$snapshot_tmp" "$git_tmp"
-  (
-    cd "$baukit_checkout"
-    tar \
-      --exclude=.git \
-      --exclude=.generated-fixture \
-      --exclude=deploy/platform/.local-state \
-      --exclude='*/target' \
-      --exclude='*/node_modules' \
-      --exclude='*/.turbo' \
-      -cf - .
-  ) | tar -xf - -C "$snapshot_tmp"
+  snapshot_tree "$baukit_checkout" "$snapshot_tmp"
   (
     cd "$snapshot_tmp"
     git init -q -b main
@@ -219,13 +222,10 @@ build_snapshot() {
 
   docker build -q -f "$platform_dir/local-git-http.Dockerfile" \
     -t "$snapshot_image" "$platform_dir" >/dev/null
-  docker run -d \
-    --name "$snapshot_container" \
-    --restart unless-stopped \
-    -p "$git_port:$git_port" \
-    -v "$git_root:/srv/git:ro" \
-    "$snapshot_image" --host 0.0.0.0 --root /srv/git --port "$git_port" >/dev/null
-  wait_for_snapshot
+  local gateway
+  gateway=$(k3d_gateway "$cluster_name")
+  run_snapshot_container "$snapshot_container" "$snapshot_image" "$git_root" "$git_port" "$gateway" >/dev/null
+  wait_for_snapshot "$gateway"
 }
 
 ensure_snapshot() {
@@ -242,14 +242,16 @@ ensure_cluster() {
     k3d cluster start "$cluster_name" >/dev/null
   else
     printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$k3s_image"
-    k3d cluster create "$cluster_name" \
-      --image "$k3s_image" \
-      --servers 1 \
-      --agents 0 \
-      --k3s-arg '--disable=traefik@server:0' \
-      --port '80:80@loadbalancer' \
-      --port '443:443@loadbalancer' \
-      --wait
+    local mirror_dir mirror_args=() etcd_args=()
+    mapfile -t etcd_args < <(platform_local_etcd_args)
+    mirror_dir=$(mktemp -d)
+    if registry_mirrors_running; then
+      mapfile -t mirror_args < <(registry_mirrors_k3d_args "$mirror_dir/registries.yaml")
+      printf 'Using the running registry mirrors.\n'
+    fi
+    k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port" \
+      "${etcd_args[@]}" "${mirror_args[@]}"
+    rm -rf -- "$mirror_dir"
   fi
   local containers=()
   mapfile -t containers < <(docker ps -aq --filter "label=k3d.cluster=$cluster_name")
@@ -258,6 +260,7 @@ ensure_cluster() {
   fi
   use_cluster
   kubectl wait node --all --for=condition=Ready --timeout=5m
+  platform_label_system_namespaces
 }
 
 ensure_snapshot_dns() {
@@ -281,6 +284,11 @@ ensure_snapshot_dns() {
 
 install_sops_key() {
   kubectl create namespace flux-system --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl label namespace flux-system --overwrite \
+    pod-security.kubernetes.io/enforce=restricted \
+    pod-security.kubernetes.io/enforce-version="$psa_version" \
+    pod-security.kubernetes.io/audit=restricted \
+    pod-security.kubernetes.io/warn=restricted >/dev/null
   kubectl -n flux-system create secret generic sops-age \
     --from-file=age.agekey="$age_key_file" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
@@ -302,6 +310,7 @@ bootstrap_gitops() {
         --repository="$github_repository" \
         --branch="$gitops_branch" \
         --path="$gitops_path" \
+        --components="$flux_lockdown_components" \
         --version="$flux_version" \
         --reconcile \
         "${personal_flag[@]}"
@@ -312,6 +321,7 @@ bootstrap_gitops() {
         --branch="$gitops_branch" \
         --path="$gitops_path" \
         --private-key-file="$gitops_private_key_file" \
+        --components="$flux_lockdown_components" \
         --version="$flux_version" \
         --silent
       ;;
@@ -324,6 +334,14 @@ bootstrap_gitops() {
       "$reconciled_url" "$gitops_url" >&2
     exit 1
   fi
+  flux_lockdown_verify "$platform_dir" || exit 1
+}
+
+print_secret_locations() {
+  printf '\nSecrets (values are not printed):\n'
+  printf '  SOPS age identity: Secret flux-system/sops-age, from PLATFORM_AGE_KEY_FILE\n'
+  printf '  Flux Git credentials: Secret flux-system/flux-system\n'
+  printf '  Platform secrets: SOPS-encrypted under PLATFORM_GITOPS_PATH in the GitOps repository\n'
 }
 
 print_health() {
@@ -365,8 +383,8 @@ wait_for_reconciliation() {
 up() {
   require_tools
   validate_up_config
-  ensure_snapshot
   ensure_cluster
+  ensure_snapshot
   ensure_snapshot_dns
   if [[ $baukit_source_mode == local-snapshot ]]; then
     docker update --restart unless-stopped "$snapshot_container" >/dev/null
@@ -392,6 +410,7 @@ nuke() {
   require_tools
   validate_common_config
   if cluster_exists; then
+    registry_mirrors_detach "k3d-$cluster_name"
     k3d cluster delete "$cluster_name"
   fi
   remove_snapshot
@@ -434,6 +453,7 @@ status() {
   fi
   use_cluster
   print_health
+  print_secret_locations
 }
 
 case $command in

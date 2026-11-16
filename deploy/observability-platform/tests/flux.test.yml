@@ -1,0 +1,137 @@
+rule_files:
+  - ../alerts/flux.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: a Kustomization that stays not Ready fires BaukitFluxReconcileNotReady
+    interval: 1m
+    input_series:
+      - series: 'gotk_resource_info{customresource_group="kustomize.toolkit.fluxcd.io",customresource_kind="Kustomization",customresource_version="v1",exported_namespace="flux-system",name="apps",ready="False",suspended="false"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: BaukitFluxReconcileNotReady
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitFluxReconcileNotReady
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: flux
+              customresource_kind: Kustomization
+              exported_namespace: flux-system
+              name: apps
+            exp_annotations:
+              summary: Flux Kustomization flux-system/apps is not Ready
+              description: >-
+                The Kustomization flux-system/apps
+                has reported Ready=False for 15 minutes. Changes from Git do not reach the cluster.
+              runbook_url: RUNBOOK_BASE_URL/flux-reconcile-not-ready
+  - name: a Ready HelmRelease and a failing source stay quiet for BaukitFluxReconcileNotReady
+    interval: 1m
+    input_series:
+      - series: 'gotk_resource_info{customresource_group="helm.toolkit.fluxcd.io",customresource_kind="HelmRelease",customresource_version="v2",exported_namespace="traefik",name="traefik",ready="True",suspended="false"}'
+        values: '1x30'
+      - series: 'gotk_resource_info{customresource_group="source.toolkit.fluxcd.io",customresource_kind="GitRepository",customresource_version="v1",exported_namespace="flux-system",name="baukit",ready="False"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitFluxReconcileNotReady
+        exp_alerts: []
+
+  - name: a Kustomization suspended for over a day fires BaukitFluxResourceSuspended
+    interval: 4m
+    input_series:
+      - series: 'gotk_resource_info{customresource_group="kustomize.toolkit.fluxcd.io",customresource_kind="Kustomization",customresource_version="v1",exported_namespace="flux-system",name="apps",ready="True",suspended="true"}'
+        values: '1x400'
+    alert_rule_test:
+      - eval_time: 23h
+        alertname: BaukitFluxResourceSuspended
+        exp_alerts: []
+      - eval_time: 25h
+        alertname: BaukitFluxResourceSuspended
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: flux
+              customresource_kind: Kustomization
+              exported_namespace: flux-system
+              name: apps
+            exp_annotations:
+              summary: Flux Kustomization flux-system/apps has been suspended for 24h
+              description: >-
+                The Kustomization flux-system/apps
+                has had spec.suspend=true for 24 hours. Flux ignores Git for it until someone resumes it.
+              runbook_url: RUNBOOK_BASE_URL/flux-resource-suspended
+  - name: a suspension resumed after 20h stays quiet
+    interval: 4m
+    input_series:
+      - series: 'gotk_resource_info{customresource_group="kustomize.toolkit.fluxcd.io",customresource_kind="Kustomization",customresource_version="v1",exported_namespace="flux-system",name="apps",ready="True",suspended="true"}'
+        values: '1x300'
+      - series: 'gotk_resource_info{customresource_group="kustomize.toolkit.fluxcd.io",customresource_kind="Kustomization",customresource_version="v1",exported_namespace="flux-system",name="apps",ready="True",suspended="false"}'
+        values: '_x300 1x100'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: BaukitFluxResourceSuspended
+        exp_alerts: []
+
+  - name: a GitRepository that cannot fetch fires BaukitFluxSourceFetchFailing
+    interval: 1m
+    input_series:
+      - series: 'gotk_resource_info{customresource_group="source.toolkit.fluxcd.io",customresource_kind="GitRepository",customresource_version="v1",exported_namespace="flux-system",name="baukit",ready="False"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitFluxSourceFetchFailing
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitFluxSourceFetchFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: flux
+              customresource_kind: GitRepository
+              exported_namespace: flux-system
+              name: baukit
+            exp_annotations:
+              summary: Flux cannot fetch GitRepository flux-system/baukit
+              description: >-
+                The GitRepository flux-system/baukit
+                has reported Ready=False for 10 minutes. Every object that uses this source stays on its
+                last fetched revision.
+              runbook_url: RUNBOOK_BASE_URL/flux-source-fetch-failing
+  - name: an OCIRepository whose chart fails verification fires BaukitFluxSourceFetchFailing
+    interval: 1m
+    input_series:
+      - series: 'gotk_resource_info{customresource_group="source.toolkit.fluxcd.io",customresource_kind="OCIRepository",customresource_version="v1",exported_namespace="cnpg-system",name="cloudnative-pg",ready="False"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitFluxSourceFetchFailing
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitFluxSourceFetchFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: flux
+              customresource_kind: OCIRepository
+              exported_namespace: cnpg-system
+              name: cloudnative-pg
+            exp_annotations:
+              summary: Flux cannot fetch OCIRepository cnpg-system/cloudnative-pg
+              description: >-
+                The OCIRepository cnpg-system/cloudnative-pg
+                has reported Ready=False for 10 minutes. Every object that uses this source stays on its
+                last fetched revision.
+              runbook_url: RUNBOOK_BASE_URL/flux-source-fetch-failing
+  - name: a Ready OCIRepository and a failing HelmRelease stay quiet for BaukitFluxSourceFetchFailing
+    interval: 1m
+    input_series:
+      - series: 'gotk_resource_info{customresource_group="source.toolkit.fluxcd.io",customresource_kind="OCIRepository",customresource_version="v1",exported_namespace="flux-system",name="charts",ready="True"}'
+        values: '1x30'
+      - series: 'gotk_resource_info{customresource_group="helm.toolkit.fluxcd.io",customresource_kind="HelmRelease",customresource_version="v2",exported_namespace="traefik",name="traefik",ready="False",suspended="false"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitFluxSourceFetchFailing
+        exp_alerts: []

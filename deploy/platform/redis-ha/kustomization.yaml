@@ -3,5 +3,16 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - statefulset.yaml
+  - pod-disruption-budget.yaml
   - services.yaml
   - network-policy.yaml
+  - podmonitor.yaml
+configMapGenerator:
+  - name: redis-ha-scripts
+    namespace: platform-redis
+    files:
+      - redis-ha.sh
+generatorOptions:
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: redis

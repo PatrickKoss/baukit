@@ -1,0 +1,71 @@
+rule_files:
+  - ../alerts/kured.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: a reboot pending for two days fires BaukitKuredRebootPending
+    interval: 4m
+    input_series:
+      - series: 'kured_reboot_required{namespace="kured",pod="kured-abcde",node="node-1"}'
+        values: '1x800'
+    alert_rule_test:
+      - eval_time: 47h
+        alertname: BaukitKuredRebootPending
+        exp_alerts: []
+      - eval_time: 49h
+        alertname: BaukitKuredRebootPending
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: kured
+              node: node-1
+            exp_annotations:
+              summary: Node node-1 has needed a reboot for 48 hours
+              description: >-
+                kured has reported a pending reboot on node-1 for 48 hours. Kernel and
+                library updates are installed but not running.
+              runbook_url: RUNBOOK_BASE_URL/kured-reboot-pending
+  - name: a node that needs no reboot stays quiet
+    interval: 4m
+    input_series:
+      - series: 'kured_reboot_required{namespace="kured",pod="kured-abcde",node="node-1"}'
+        values: '0x800'
+    alert_rule_test:
+      - eval_time: 49h
+        alertname: BaukitKuredRebootPending
+        exp_alerts: []
+
+  - name: a cordoned node with a pending reboot fires BaukitKuredRebootBlocked
+    interval: 1m
+    input_series:
+      - series: 'kured_reboot_required{namespace="kured",pod="kured-abcde",node="node-1"}'
+        values: '1x120'
+      - series: 'kube_node_spec_unschedulable{node="node-1"}'
+        values: '1x120'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: BaukitKuredRebootBlocked
+        exp_alerts: []
+      - eval_time: 90m
+        alertname: BaukitKuredRebootBlocked
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: kured
+              node: node-1
+            exp_annotations:
+              summary: Node node-1 is cordoned with a reboot still pending
+              description: >-
+                node-1 has been cordoned for an hour and still needs a reboot. kured drained
+                it but did not reboot or uncordon it, so the node takes no new pods.
+              runbook_url: RUNBOOK_BASE_URL/kured-reboot-blocked
+  - name: a cordoned node without a pending reboot stays quiet
+    interval: 1m
+    input_series:
+      - series: 'kured_reboot_required{namespace="kured",pod="kured-abcde",node="node-1"}'
+        values: '0x120'
+      - series: 'kube_node_spec_unschedulable{node="node-1"}'
+        values: '1x120'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: BaukitKuredRebootBlocked
+        exp_alerts: []

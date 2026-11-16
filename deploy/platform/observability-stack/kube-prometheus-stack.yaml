@@ -5,24 +5,24 @@ metadata:
   namespace: observability
 spec:
   interval: 30m
-  timeout: 15m
-  chart:
-    spec:
-      chart: kube-prometheus-stack
-      version: "88.6.5"
-      sourceRef:
-        kind: HelmRepository
-        name: prometheus-community
-        namespace: observability
-      interval: 24h
+  timeout: 12m
+  chartRef:
+    kind: OCIRepository
+    name: kube-prometheus-stack
+    namespace: observability
+  test:
+    enable: true
   install:
     crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
+    cleanupOnFail: true
     crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: enabled
   values:
     crds:
       enabled: true
@@ -38,38 +38,37 @@ spec:
     kubeProxy:
       enabled: false
     defaultRules:
+      # The operator's mutating webhook adds this annotation to every PrometheusRule. On install the
+      # rules land before the operator serves that webhook (failurePolicy Ignore), so without it here
+      # every drift check reports one addition per rule.
+      annotations:
+        prometheus-operator-validated: "true"
       rules:
         etcd: false
         kubeControllerManager: false
         kubeProxy: false
         kubeSchedulerAlerting: false
         kubeSchedulerRecording: false
+        windows: false
+      additionalRuleAnnotations:
+        Watchdog:
+          runbook_url: https://github.com/PatrickKoss/baukit/blob/main/docs/runbooks/platform/watchdog
 
     alertmanager:
       enabled: true
-      # The base drops every alert. An overlay replaces this config with its
-      # identity-bearing receiver and preserves a deliberate dead-man route.
-      config:
-        global:
-          resolve_timeout: 5m
-        route:
-          group_by:
-            - namespace
-            - alertname
-          group_wait: 30s
-          group_interval: 5m
-          repeat_interval: 12h
-          receiver: "null"
-          routes:
-            - receiver: "null"
-              matchers:
-                - alertname = "Watchdog"
-            - receiver: "null"
-              matchers:
-                - alertname = "BaukitDeadMansSwitch"
-        receivers:
-          - name: "null"
       alertmanagerSpec:
+        priorityClassName: platform-standard
+        # The overlay provides Secret alertmanager-routing with key alertmanager.yaml, see
+        # alertmanager/alertmanager.example.yaml. The operator falls back to a drop-all config when
+        # configSecret is missing, so the same Secret is also mounted: without it the pod never
+        # starts, Watchdog stops and the external heartbeat fires.
+        useExistingSecret: true
+        configSecret: alertmanager-routing
+        secrets:
+          - alertmanager-routing
+        image:
+          sha: 5f6e66c01bd610aef6dd671642a52eee775fd3a89bd8788ebada33efaf373d10
+          tag: v0.35.0
         replicas: 1
         resources:
           requests:
@@ -88,33 +87,57 @@ spec:
                   storage: 1Gi
 
     grafana:
+      priorityClassName: platform-standard
+      image:
+        sha: 54e297ac67e2b72572f926892f4e06074dc4f79f2a56ed9a9ca9a88a46f28733
+        tag: "13.3.1-distroless"
       enabled: true
       replicas: 1
-      # The overlay creates this Secret with admin-user and admin-password.
-      admin:
-        existingSecret: grafana-admin
-        userKey: admin-user
-        passwordKey: admin-password
-      resources:
-        requests:
-          cpu: 50m
-          memory: 128Mi
-        limits:
-          cpu: 300m
-          memory: 384Mi
-      sidecar:
+      testFramework:
+        image:
+          tag: "1.14.0@sha256:5322b877351fda0cc435de8c6116de7d0a2ec79d7c680132a0ef329a633bc66f"
         resources:
           requests:
             cpu: 10m
             memory: 32Mi
           limits:
             cpu: 100m
-            memory: 96Mi
+            memory: 64Mi
+      # The overlay creates this Secret with admin-user and admin-password.
+      admin:
+        existingSecret: grafana-admin
+        userKey: admin-user
+        passwordKey: admin-password
+      # Grafana 13.3 idles near 350Mi before provisioning; 384Mi OOM-killed it.
+      resources:
+        requests:
+          cpu: 50m
+          memory: 256Mi
+        limits:
+          cpu: 300m
+          memory: 768Mi
+      sidecar:
+        image:
+          sha: 52d311dcedd587421a236c4d6c621f05614c40a51386e955e0699dca97ec0880
+          tag: 2.14.3
+        # k8s-sidecar 2.14 OOM-killed at 96Mi while listing ConfigMaps.
+        resources:
+          requests:
+            cpu: 10m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 256Mi
         dashboards:
           enabled: true
           label: grafana_dashboard
           labelValue: "1"
-          searchNamespace: observability
+          searchNamespace: ALL
+          folderAnnotation: grafana_folder
+          annotations:
+            grafana_folder: Kubernetes
+          provider:
+            foldersFromFilesStructure: true
         datasources:
           enabled: true
           defaultDatasourceEnabled: true
@@ -153,7 +176,131 @@ spec:
     kubeStateMetrics:
       enabled: true
     kube-state-metrics:
+      priorityClassName: platform-standard
+      image:
+        sha: sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b
+        tag: v2.20.0
       replicas: 1
+      # Platform alerts select namespaces by this label through kube_namespace_labels.
+      metricLabelsAllowlist:
+        - namespaces=[app.kubernetes.io/part-of]
+      # Flux object state as gotk_resource_info, after fluxcd/flux2-monitoring-example
+      # (kube-state-metrics-config.yaml at 7ab65dc), limited to the kinds the platform uses.
+      rbac:
+        extraRules:
+          - apiGroups:
+              - helm.toolkit.fluxcd.io
+              - kustomize.toolkit.fluxcd.io
+              - source.toolkit.fluxcd.io
+            resources:
+              - kustomizations
+              - helmreleases
+              - gitrepositories
+              - ocirepositories
+              - helmrepositories
+            verbs: ["list", "watch"]
+      customResourceState:
+        enabled: true
+        config:
+          spec:
+            resources:
+              - groupVersionKind:
+                  group: kustomize.toolkit.fluxcd.io
+                  version: v1
+                  kind: Kustomization
+                metricNamePrefix: gotk
+                metrics:
+                  - name: resource_info
+                    help: The current state of a Flux Kustomization resource.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      suspended: [spec, suspend]
+                      revision: [status, lastAppliedRevision]
+                      source_name: [spec, sourceRef, name]
+              - groupVersionKind:
+                  group: helm.toolkit.fluxcd.io
+                  version: v2
+                  kind: HelmRelease
+                metricNamePrefix: gotk
+                metrics:
+                  - name: resource_info
+                    help: The current state of a Flux HelmRelease resource.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      suspended: [spec, suspend]
+                      revision: [status, history, "0", chartVersion]
+                      chart_name: [status, history, "0", chartName]
+                      chart_source_name: [spec, chart, spec, sourceRef, name]
+                      chart_ref_name: [spec, chartRef, name]
+              - groupVersionKind:
+                  group: source.toolkit.fluxcd.io
+                  version: v1
+                  kind: GitRepository
+                metricNamePrefix: gotk
+                metrics:
+                  - name: resource_info
+                    help: The current state of a Flux GitRepository resource.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      suspended: [spec, suspend]
+                      revision: [status, artifact, revision]
+                      url: [spec, url]
+              - groupVersionKind:
+                  group: source.toolkit.fluxcd.io
+                  version: v1
+                  kind: OCIRepository
+                metricNamePrefix: gotk
+                metrics:
+                  - name: resource_info
+                    help: The current state of a Flux OCIRepository resource.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      suspended: [spec, suspend]
+                      revision: [status, artifact, revision]
+                      url: [spec, url]
+              - groupVersionKind:
+                  group: source.toolkit.fluxcd.io
+                  version: v1
+                  kind: HelmRepository
+                metricNamePrefix: gotk
+                metrics:
+                  - name: resource_info
+                    help: The current state of a Flux HelmRepository resource.
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          name: [metadata, name]
+                    labelsFromPath:
+                      exported_namespace: [metadata, namespace]
+                      ready: [status, conditions, "[type=Ready]", status]
+                      suspended: [spec, suspend]
+                      revision: [status, artifact, revision]
+                      url: [spec, url]
       resources:
         requests:
           cpu: 20m
@@ -164,7 +311,27 @@ spec:
 
     nodeExporter:
       enabled: true
+    # Node-exporter needs hostPID, hostNetwork and hostPath, so it runs in the
+    # privileged observability-agents namespace.
     prometheus-node-exporter:
+      priorityClassName: platform-standard
+      securityContext:
+        fsGroup: 65534
+        runAsGroup: 65534
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containerSecurityContext:
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+      namespaceOverride: observability-agents
+      image:
+        digest: sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106
+        distroless: true
+        tag: v1.12.1
       resources:
         requests:
           cpu: 20m
@@ -174,9 +341,20 @@ spec:
           memory: 96Mi
 
     prometheusOperator:
+      priorityClassName: platform-standard
+      thanosImage:
+        sha: 0a546b98a8dd47735456ab389983675ee363d68127e334937a9fceeea10da5e7
+        tag: v0.42.5
+      image:
+        sha: 7986c2afa118c9dea07d01c5e1a29555824582e92f6ee8607591d1a7178acf29
+        tag: v0.95.2
       enabled: true
       admissionWebhooks:
         patch:
+          priorityClassName: platform-standard
+          image:
+            sha: 8009b04f9873f7279b5adee37fdd03b6a9aa7b6751d4f69fde2683010e41cd1f
+            tag: 1.11.1
           resources:
             requests:
               cpu: 10m
@@ -185,6 +363,9 @@ spec:
               cpu: 100m
               memory: 64Mi
       prometheusConfigReloader:
+        image:
+          sha: cc74ddedad4ab1c49446971f6d51302ad4303d8660a2018af925c7f62c114304
+          tag: v0.95.2
         resources:
           requests:
             cpu: 10m
@@ -201,12 +382,35 @@ spec:
           memory: 384Mi
 
     prometheus:
+      # Flux controllers, as in fluxcd/flux2-monitoring-example.
+      additionalPodMonitors:
+        - name: flux-system
+          namespaceSelector:
+            matchNames:
+              - flux-system
+          selector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - helm-controller
+                  - kustomize-controller
+                  - notification-controller
+                  - source-controller
+          podMetricsEndpoints:
+            - port: http-prom
       enabled: true
       prometheusSpec:
+        priorityClassName: platform-standard
+        image:
+          sha: 9764044e09eb2c9e1abdb12d0f0188d4efb7384b0262d3c080f0fc59045c89ba
+          tag: v3.16.0-distroless
         replicas: 1
         shards: 1
         # Metrics retention budget (§8.5): the single source of truth.
         retention: 30d
+        # About 85% of the 30Gi PVC, in Prometheus base-2 units. Change both together.
+        retentionSize: 25GB
         resources:
           requests:
             cpu: 200m
@@ -223,18 +427,32 @@ spec:
                 requests:
                   storage: 30Gi
         ruleSelectorNilUsesHelmValues: false
-        # Select both kube-prometheus-stack's rules and the Baukit content
-        # chart's rules, constrained to the observability namespace below.
+        # Rules, ServiceMonitors and PodMonitors are read from every namespace
+        # labelled app.kubernetes.io/part-of=baukit-platform.
         ruleSelector: {}
         ruleNamespaceSelector:
           matchLabels:
-            kubernetes.io/metadata.name: observability
+            app.kubernetes.io/part-of: baukit-platform
         serviceMonitorSelectorNilUsesHelmValues: false
         serviceMonitorSelector: {}
-        serviceMonitorNamespaceSelector: {}
+        serviceMonitorNamespaceSelector:
+          matchLabels:
+            app.kubernetes.io/part-of: baukit-platform
         podMonitorSelectorNilUsesHelmValues: false
         podMonitorSelector: {}
-        podMonitorNamespaceSelector: {}
+        podMonitorNamespaceSelector:
+          matchLabels:
+            app.kubernetes.io/part-of: baukit-platform
 
     thanosRuler:
       enabled: false
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              version: v1
+              kind: Pod
+            patch: |-
+              - op: add
+                path: /spec/priorityClassName
+                value: platform-standard

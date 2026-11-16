@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: redis-ha
+spec:
+  description: >-
+    Killing the Redis master triggers a Sentinel failover. The restarted old master rejoins as a replica of
+    the promoted pod instead of coming back as an empty master, and a key written before the kill survives on
+    both.
+  timeouts:
+    exec: 5m
+  steps:
+    - name: failover-and-rejoin
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              ns=platform-redis
+              key=baukit-e2e-redis-ha
+              value="written-$(date +%s)"
+              cli() { pod="$1"; shift; kubectl -n "$ns" exec "$pod" -c redis -- redis-cli "$@"; }
+              sentinel_master() {
+                kubectl -n "$ns" exec "$1" -c sentinel -- \
+                  redis-cli -p 26379 --raw SENTINEL get-master-addr-by-name mymaster | head -n 1
+              }
+              pod_of() { printf '%s' "${1%%.*}"; }
+              role() { kubectl -n "$ns" exec "$1" -c redis -- redis-cli --raw ROLE | head -n 1; }
+              wait_until() {
+                deadline=$(($(date +%s) + $1)); shift
+                while [ "$(date +%s)" -lt "$deadline" ]; do
+                  if "$@"; then return 0; fi
+                  sleep 2
+                done
+                return 1
+              }
+
+              kubectl -n "$ns" rollout status statefulset/redis --timeout=180s
+              old_master="$(pod_of "$(sentinel_master redis-1)")"
+              printf 'master before kill: %s\n' "$old_master"
+              [ "$(role "$old_master")" = master ]
+              survivor=redis-0
+              [ "$old_master" != redis-0 ] || survivor=redis-1
+
+              kubectl -n "$ns" exec "$old_master" -c redis -- redis-cli SET "$key" "$value"
+              kubectl -n "$ns" exec "$old_master" -c redis -- redis-cli WAIT 2 5000
+
+              kubectl -n "$ns" delete pod "$old_master" --grace-period=0 --force --wait=false
+
+              promoted() {
+                m="$(pod_of "$(sentinel_master "$survivor" 2>/dev/null || true)")"
+                [ -n "$m" ] && [ "$m" != "$old_master" ] && [ "$(role "$m" 2>/dev/null)" = master ]
+              }
+              wait_until 120 promoted || { printf 'no replica was promoted within 120s\n' >&2; exit 1; }
+              new_master="$(pod_of "$(sentinel_master "$survivor")")"
+              printf 'promoted master: %s\n' "$new_master"
+
+              kubectl -n "$ns" wait pod "$old_master" --for=condition=Ready --timeout=180s
+              rejoined() {
+                [ "$(role "$old_master" 2>/dev/null)" = slave ] &&
+                  kubectl -n "$ns" exec "$old_master" -c redis -- redis-cli INFO replication |
+                  grep -q '^master_link_status:up'
+              }
+              wait_until 120 rejoined || { printf '%s did not rejoin as a replica\n' "$old_master" >&2; exit 1; }
+              printf '%s rejoined as a replica\n' "$old_master"
+
+              [ "$(cli "$new_master" --raw GET "$key")" = "$value" ]
+              [ "$(cli "$old_master" --raw GET "$key")" = "$value" ]
+              printf 'key intact on %s and %s\n' "$new_master" "$old_master"

@@ -1,8 +1,11 @@
 # Cluster baseline
 
 This base creates the `platform-system` namespace and the non-default
-`platform-critical` and `platform-standard` PriorityClasses. Workloads opt in
-with `priorityClassName`; the base does not assign priorities to other bases.
+`platform-critical` and `platform-standard` PriorityClasses. Every other base
+sets one of them on each pod it renders, and the `priority-class` convention
+rule fails a pod without one. k3s runs CoreDNS, local-path-provisioner and
+metrics-server in `kube-system` with its own `system-cluster-critical` class,
+which ranks above both.
 
 `app-namespace-policy/` is a Kustomize component for an application namespace.
 An overlay must include it from a Kustomization that sets `namespace`, then add

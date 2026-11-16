@@ -1,0 +1,75 @@
+# Written by chart_contents.py --write from the pinned charts and their renders.
+# crds: the chart or a subchart has a Helm crds/ directory.
+# tests: the rendered chart contains a helm.sh/hook: test object.
+
+["./deploy/observability"]
+crds = false
+tests = false
+
+["./deploy/observability-platform"]
+crds = false
+tests = false
+
+["alloy@1.16.0"]
+crds = true
+tests = false
+
+["cert-manager@v1.21.3"]
+crds = false
+tests = false
+
+["cloudnative-pg@0.29.1"]
+crds = false
+tests = false
+
+["falco@9.2.2"]
+crds = false
+tests = true
+
+["flagger@1.45.0"]
+crds = true
+tests = false
+
+["hcloud-cloud-controller-manager@1.39.3"]
+crds = false
+tests = false
+
+["hcloud-csi@2.24.2"]
+crds = false
+tests = false
+
+["kube-prometheus-stack@93.3.0"]
+crds = true
+tests = true
+
+["kured@6.1.0"]
+crds = false
+tests = false
+
+["kyverno-policies@3.10.0"]
+crds = false
+tests = false
+
+["kyverno@3.10.0"]
+crds = false
+tests = true
+
+["loki@21.2.3"]
+crds = true
+tests = false
+
+["policy-reporter@3.11.2"]
+crds = false
+tests = false
+
+["posthog@30.46.0"]
+crds = true
+tests = false
+
+["tempo@3.2.1"]
+crds = false
+tests = false
+
+["traefik@42.4.0"]
+crds = true
+tests = false

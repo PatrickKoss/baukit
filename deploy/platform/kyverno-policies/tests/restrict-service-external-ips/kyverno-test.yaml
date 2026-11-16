@@ -1,0 +1,19 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-service-external-ips
+policies:
+  - ../../policies/restrict-service-external-ips.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: restrict-service-external-ips
+    kind: Service
+    resources: [plain]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-service-external-ips
+    kind: Service
+    resources: [external]
+    result: fail

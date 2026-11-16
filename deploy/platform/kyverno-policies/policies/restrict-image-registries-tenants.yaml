@@ -1,0 +1,45 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-image-registries-tenants
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Restrict image registries in tenant namespaces
+    policies.kyverno.io/severity: high
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  variables:
+    - name: allowlist
+      expression: resource.Get("v1", "configmaps", "kyverno", "baukit-registry-allowlist")
+    - name: registries
+      expression: >-
+        variables.allowlist.?data[?"registries"].orValue("")
+        .split("\n").map(r, r.trim()).filter(r, r != "")
+    - name: images
+      expression: >-
+        (object.spec.containers + object.spec.?initContainers.orValue([]) + object.spec.?ephemeralContainers.orValue([]))
+        .map(c, c.image)
+    - name: denied
+      expression: >-
+        variables.images.filter(i, !variables.registries.exists(r,
+          (i.contains("/") && (i.split("/")[0].contains(".") || i.split("/")[0].contains(":") || i.split("/")[0] == "localhost")
+            ? i : (i.contains("/") ? "docker.io/" + i : "docker.io/library/" + i)).startsWith(r)))
+  validations:
+    - expression: size(variables.denied) == 0
+      messageExpression: >-
+        "Images " + variables.denied.join(", ") + " come from a registry outside the allowlist. " +
+        "Use an allowed registry or add its prefix to ConfigMap kyverno/baukit-registry-allowlist (key registries) in the overlay."

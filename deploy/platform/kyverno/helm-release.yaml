@@ -5,26 +5,77 @@ metadata:
   namespace: kyverno
 spec:
   interval: 30m
-  chart:
-    spec:
-      chart: kyverno
-      version: "3.9.1"
-      sourceRef:
-        kind: HelmRepository
-        name: kyverno
-        namespace: kyverno
-      interval: 24h
+  timeout: 9m
+  chartRef:
+    kind: OCIRepository
+    name: kyverno
+    namespace: kyverno
   install:
+    # Retry a failed install in place. The default strategy uninstalls first, and the chart's
+    # pre-delete scale-to-zero hook then waits forever for the admission controller service
+    # account that a failed pre-install never created.
+    strategy:
+      name: RetryOnFailure
+      retryInterval: 1m
     remediation:
       retries: 3
   upgrade:
     cleanupOnFail: true
     remediation:
       retries: 3
+  driftDetection:
+    mode: enabled
+  test:
+    enable: true
+  # kyverno-monitoring turns the ServiceMonitors on once the monitoring CRDs exist. Until then the
+  # optional ConfigMap is absent and the chart default leaves them off.
+  valuesFrom:
+    - kind: ConfigMap
+      name: kyverno-monitoring-values
+      optional: true
   values:
+    global:
+      priorityClassName: platform-standard
+    webhooksCleanup:
+      image:
+        tag: "v1.20.0@sha256:6079a30d75fe7ba868a5a7e5dfa71ee92a3a8bae97adcea1c8cfb1009280ee6c"
+    test:
+      image:
+        tag: "v1.20.0@sha256:6079a30d75fe7ba868a5a7e5dfa71ee92a3a8bae97adcea1c8cfb1009280ee6c"
+    crds:
+      migration:
+        image:
+          tag: "v1.20.0@sha256:bd2b8b7c9d550ecf04e0bacaf351adce2f82ce67fd3f291075edcee7f8ab4ab4"
+    upgrade:
+      legacyPolicyCheck:
+        # The deadline also counts the kyverno-cli image pull. It stays below spec.timeout so a
+        # stalled check fails the hook before Helm gives up on the release.
+        activeDeadlineSeconds: 420
+        image:
+          tag: "v1.20.0@sha256:bd2b8b7c9d550ecf04e0bacaf351adce2f82ce67fd3f291075edcee7f8ab4ab4"
+    config:
+      webhooks:
+        namespaceSelector:
+          matchExpressions:
+            - key: kubernetes.io/metadata.name
+              operator: NotIn
+              values:
+                - kube-system
+                - flux-system
+    features:
+      policyExceptions:
+        enabled: true
+        namespace: kyverno
     admissionController:
+      priorityClassName: platform-critical
       replicas: 1
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: null
+        maxUnavailable: 1
       initContainer:
+        image:
+          tag: "v1.20.0@sha256:339067e083430e0c97007541bef9cfdbac89bee13f7228772c77ae8aead14b8b"
         resources:
           requests:
             cpu: 10m
@@ -33,6 +84,10 @@ spec:
             cpu: 50m
             memory: 64Mi
       container:
+        image:
+          tag: "v1.20.0@sha256:9de49c5416ea536f00a205527197ac048abdf32c5a75d633cd9afff8928f359d"
+        extraArgs:
+          webhookTimeout: "5"
         resources:
           requests:
             cpu: 50m
@@ -41,7 +96,13 @@ spec:
             cpu: 500m
             memory: 384Mi
     backgroundController:
+      image:
+        tag: "v1.20.0@sha256:c72df38320a48fc9de10f9d23d087a117853bb08207b7f60f6d1e8457fb3ddb7"
       replicas: 1
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: null
+        maxUnavailable: 1
       resources:
         requests:
           cpu: 25m
@@ -50,7 +111,13 @@ spec:
           cpu: 200m
           memory: 128Mi
     cleanupController:
+      image:
+        tag: "v1.20.0@sha256:0f9ce0c203561c52499e871a987ff987371f57385fcafe7af1a01dfd6db1feee"
       replicas: 1
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: null
+        maxUnavailable: 1
       resources:
         requests:
           cpu: 25m
@@ -59,7 +126,13 @@ spec:
           cpu: 200m
           memory: 128Mi
     reportsController:
+      image:
+        tag: "v1.20.0@sha256:f54e3cc106fadb1a615d0ec11c42f741f51d3580a5f70dfbe7bd7ec58864ef03"
       replicas: 1
+      podDisruptionBudget:
+        enabled: true
+        minAvailable: null
+        maxUnavailable: 1
       resources:
         requests:
           cpu: 25m
@@ -67,3 +140,21 @@ spec:
         limits:
           cpu: 200m
           memory: 128Mi
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              group: batch
+              version: v1
+              kind: Job
+            patch: |-
+              - op: add
+                path: /spec/template/spec/priorityClassName
+                value: platform-standard
+          - target:
+              version: v1
+              kind: Pod
+            patch: |-
+              - op: add
+                path: /spec/priorityClassName
+                value: platform-standard

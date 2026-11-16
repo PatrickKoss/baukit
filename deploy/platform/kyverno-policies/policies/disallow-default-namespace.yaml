@@ -1,0 +1,38 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: disallow-default-namespace
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Disallow the default namespace
+    policies.kyverno.io/severity: medium
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets, daemonsets, replicasets]
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [jobs, cronjobs]
+      - apiGroups: [networking.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [ingresses]
+  validations:
+    - expression: object.metadata.?namespace.orValue("") != "default"
+      message: >-
+        Workloads and Ingresses must not live in the default namespace. Create a namespace for the
+        component and set metadata.namespace.

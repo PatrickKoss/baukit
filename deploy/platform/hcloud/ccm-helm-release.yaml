@@ -5,10 +5,11 @@ metadata:
   namespace: kube-system
 spec:
   interval: 30m
+  timeout: 5m
   chart:
     spec:
       chart: hcloud-cloud-controller-manager
-      version: "1.38.0"
+      version: "1.39.3"
       sourceRef:
         kind: HelmRepository
         name: hetzner
@@ -21,15 +22,22 @@ spec:
     cleanupOnFail: true
     remediation:
       retries: 3
+  driftDetection:
+    mode: enabled
   values:
+    image:
+      tag: "v1.39.3@sha256:9d739ba54a13f1de79d6dbb93cbda5a2ed4a5bdb9bf2936e2687e24fa9ccfaf7"
     kind: Deployment
     replicaCount: 1
     networking:
       enabled: false
+    env:
+      HCLOUD_LOAD_BALANCERS_ENABLED:
+        value: "false"
     monitoring:
       enabled: true
       podMonitor:
-        enabled: false
+        enabled: true
     resources:
       requests:
         cpu: 25m

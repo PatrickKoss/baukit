@@ -50,10 +50,18 @@ Requiring the label at both levels follows the sibling PostHog base's combined
 through the product's desired-state manifests; labeling only a namespace or
 only a pod does not grant access.
 
+## Metrics
+
+A `redis_exporter` sidecar (v1.97.0, pinned by digest) reads the local Redis on
+127.0.0.1 and serves `redis_*` metrics on port 9121 (`metrics`). The base ships a
+PodMonitor for it, and Prometheus in `observability` is the only allowed client
+of that port. Order this base after the Kustomization that installs the
+Prometheus Operator CRDs.
+
 ## Overlay composition
 
 Compose this base with its own Flux `Kustomization`, ordered after the cluster
-baseline. For example:
+baseline and the observability stack. For example:
 
 ```yaml
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -64,6 +72,7 @@ metadata:
 spec:
   dependsOn:
     - name: cluster-baseline
+    - name: observability
   interval: 10m
   retryInterval: 30s
   timeout: 10m

@@ -1,0 +1,35 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: falco
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      Falco loads its modern eBPF probe and reads /proc, /etc and the containerd socket of the host. It runs as root with BPF, PERFMON, SYS_RESOURCE and SYS_PTRACE (leastPrivileged, not privileged), host paths, and AppArmor unconfined so the probe can attach.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-capabilities
+    - kind: ValidatingPolicy
+      name: disallow-capabilities-strict
+    - kind: ValidatingPolicy
+      name: disallow-host-path
+    - kind: ValidatingPolicy
+      name: disallow-privilege-escalation
+    - kind: ValidatingPolicy
+      name: require-run-as-nonroot
+    - kind: ValidatingPolicy
+      name: restrict-apparmor-profiles
+    - kind: ValidatingPolicy
+      name: restrict-seccomp-strict
+    - kind: ValidatingPolicy
+      name: restrict-volume-types
+  matchConditions:
+    - name: workload
+      expression: >-
+        object.metadata.?namespace.orValue("") == "falco" && (
+          (object.kind == "DaemonSet" && object.metadata.name == "falco") ||
+          (object.kind == "Pod" && object.metadata.?ownerReferences.orValue([])
+            .exists(o, o.kind == "DaemonSet" && o.name == "falco")))

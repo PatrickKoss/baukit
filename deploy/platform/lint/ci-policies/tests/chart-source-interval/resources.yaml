@@ -1,0 +1,56 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: daily
+  namespace: demo
+spec:
+  url: "https://charts.example.com"
+  interval: "24h"
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: hourly
+  namespace: demo
+spec:
+  url: "https://charts.example.com"
+  interval: "1h"
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: frequent
+  namespace: demo
+spec:
+  url: "https://charts.example.com"
+  interval: "10m"
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: no-interval
+  namespace: demo
+spec:
+  url: "https://charts.example.com"
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: oci-daily
+  namespace: demo
+spec:
+  url: "oci://ghcr.io/example/charts/demo"
+  interval: "24h"
+  ref:
+    tag: "1.0.0"
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: oci-frequent
+  namespace: demo
+spec:
+  url: "oci://ghcr.io/example/charts/demo"
+  interval: "5m"
+  ref:
+    tag: "1.0.0"

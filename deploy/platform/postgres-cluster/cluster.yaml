@@ -2,9 +2,19 @@ apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
   name: postgres-cluster
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
 spec:
   instances: 1
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+  priorityClassName: platform-critical
+  # A single instance cannot move during a drain. Its default primary PDB would
+  # block every node drain, so it is off until the overlay runs 2+ instances.
+  enablePDB: false
+  imageCatalogRef:
+    apiGroup: postgresql.cnpg.io
+    kind: ImageCatalog
+    name: postgresql
+    major: 18
   enableSuperuserAccess: false
   bootstrap:
     initdb:

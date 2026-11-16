@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - pod-security-oci-repository.yaml
+  - pod-security-release.yaml
+  - policies/disallow-default-namespace.yaml
+  - policies/disallow-latest-image-tag.yaml
+  - policies/disallow-sa-token-automount.yaml
+  - policies/flux-tenant-alert-sources.yaml
+  - policies/flux-tenant-service-account.yaml
+  - policies/generate-tenant-defaults.yaml
+  - policies/protect-operations-ports.yaml
+  - policies/require-baukit-labels.yaml
+  - policies/require-container-resources.yaml
+  - policies/require-image-digest.yaml
+  - policies/require-probes.yaml
+  - policies/require-psa-labels.yaml
+  - policies/restrict-cluster-admin-binding.yaml
+  - policies/restrict-image-registries-tenants.yaml
+  - policies/restrict-image-registries.yaml
+  - policies/restrict-loadbalancer-and-nodeport.yaml
+  - policies/restrict-netpol-wildcards.yaml
+  - policies/restrict-service-external-ips.yaml
+  - policies/restrict-wildcard-rbac.yaml
+  - policies/unique-ingress-host-and-path.yaml
+  - policies/verify-baukit-images.yaml
+  - exceptions

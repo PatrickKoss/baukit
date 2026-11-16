@@ -1,0 +1,35 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: k3s-servicelb-traefik
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      k3s ServiceLB runs one klipper-lb pod per node for the traefik LoadBalancer Service. It binds the host ports and needs NET_ADMIN and ip_forward to forward them; k3s names the DaemonSet after the Service UID, so it is matched by its svccontroller labels.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-capabilities
+    - kind: ValidatingPolicy
+      name: disallow-capabilities-strict
+    - kind: ValidatingPolicy
+      name: disallow-host-ports
+    - kind: ValidatingPolicy
+      name: disallow-privilege-escalation
+    - kind: ValidatingPolicy
+      name: require-container-resources
+    - kind: ValidatingPolicy
+      name: require-run-as-nonroot
+    - kind: ValidatingPolicy
+      name: restrict-seccomp-strict
+    - kind: ValidatingPolicy
+      name: restrict-sysctls
+  matchConditions:
+    - name: workload
+      expression: >-
+        object.metadata.?namespace.orValue("") == "kube-system" &&
+        object.kind in ["DaemonSet", "Pod"] &&
+        object.metadata.?labels[?"svccontroller.k3s.cattle.io/svcname"].orValue("") == "traefik" &&
+        object.metadata.?labels[?"svccontroller.k3s.cattle.io/svcnamespace"].orValue("") == "traefik"

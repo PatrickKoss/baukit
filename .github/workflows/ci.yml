@@ -27,6 +27,7 @@ jobs:
       mobile: ${{ steps.filter.outputs.mobile }}
       sqlite: ${{ steps.filter.outputs.sqlite }}
       notifications: ${{ steps.filter.outputs.notifications }}
+      platform: ${{ steps.filter.outputs.platform }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -83,6 +84,28 @@ jobs:
               - 'typescript/packages/localization-core/**'
               - 'typescript/packages/notifications-core/**'
               - 'typescript/packages/notifications-expo/**'
+            platform:
+              - '**/Cargo.lock'
+              - '**/pnpm-lock.yaml'
+              - '**/package-lock.json'
+              - '**/package.json'
+              - '**/pnpm-workspace.yaml'
+              - '**/rust-toolchain'
+              - '**/rust-toolchain.toml'
+              - '**/.cargo/**'
+              - '**/migrations/**'
+              - 'baukit.toml'
+              - 'limits.json'
+              - 'scripts/**'
+              - 'Makefile'
+              - 'mise.toml'
+              - '.github/**'
+              - 'compose.yaml'
+              - 'deploy/**'
+              - 'fixtures/**'
+              - 'rust/deny.toml'
+              - 'rust/Cargo.toml'
+              - 'renovate*.json'
 
   version-coherence:
     name: Release version coherence
@@ -270,8 +293,42 @@ jobs:
         with:
           persist-credentials: false
       - run: scripts/ci-gate.sh --step metric-names
+
+  platform:
+    name: Platform validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools
+          key: deploy-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('deploy/tools.toml') }}
+      - run: scripts/install-deploy-tools.sh
+      - run: scripts/ci-gate.sh --step platform-validate
+      - run: scripts/ci-gate.sh --step platform-images
       - run: scripts/ci-gate.sh --step observability-tests
       - run: scripts/ci-gate.sh --step observability-rules
+
+  platform-e2e:
+    name: Platform e2e
+    needs: native-changes
+    if: needs.native-changes.outputs.platform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools
+          key: deploy-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('deploy/tools.toml') }}
+      - run: scripts/install-deploy-tools.sh
+      - name: Host sysctls for local k3s
+        run: sudo sysctl -w vm.overcommit_memory=1 vm.panic_on_oom=0 kernel.panic=10 kernel.panic_on_oops=1 fs.inotify.max_user_instances=1024 fs.inotify.max_user_watches=1048576
+      - run: scripts/ci-gate.sh --step platform-e2e
 
   openapi-compatibility:
     name: OpenAPI compatibility check

@@ -1,0 +1,124 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-rustfs
+  namespace: postgres
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rustfs
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/podRole: instance
+        - podSelector:
+            matchLabels:
+              cnpg.io/jobRole: full-recovery
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rustfs-create-bucket
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loki
+              app.kubernetes.io/component: single-binary
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: posthog
+          podSelector:
+            matchLabels:
+              app: posthog
+      ports:
+        - protocol: TCP
+          port: 9000
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-rustfs-clients
+  namespace: postgres
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - rustfs-create-bucket
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rustfs
+      ports:
+        - protocol: TCP
+          port: 9000
+    # The job resolves the rustfs Service name. It runs before postgres-cluster adds its namespace-wide
+    # DNS egress, and this policy alone isolates its egress.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-instances-to-rustfs
+  namespace: postgres
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/podRole: instance
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rustfs
+      ports:
+        - protocol: TCP
+          port: 9000
+---
+# A recovery job reads the backup catalog from rustfs before any instance pod exists.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-recovery-to-rustfs
+  namespace: postgres
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/jobRole: full-recovery
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rustfs
+      ports:
+        - protocol: TCP
+          port: 9000

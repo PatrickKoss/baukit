@@ -1,0 +1,28 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: k3s-metrics-server
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      k3s deploys metrics-server from its embedded manifests in kube-system; the platform renders no values for it.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-capabilities-strict
+    - kind: ValidatingPolicy
+      name: require-container-resources
+    - kind: ValidatingPolicy
+      name: restrict-seccomp-strict
+  matchConditions:
+    - name: workload
+      expression: >-
+        object.metadata.?namespace.orValue("") == "kube-system" && (
+          (object.kind == "Deployment" && object.metadata.name == "metrics-server") ||
+          (object.kind == "ReplicaSet" && object.metadata.?ownerReferences.orValue([])
+            .exists(o, o.kind == "Deployment" && o.name == "metrics-server")) ||
+          (object.kind == "Pod" && object.metadata.?ownerReferences.orValue([])
+            .exists(o, o.kind == "ReplicaSet" &&
+              o.name == "metrics-server-" + object.metadata.?labels[?"pod-template-hash"].orValue(""))))

@@ -26,3 +26,8 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/part-of: baukit-observability
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
+
+{{/* Base URL that replaces the RUNBOOK_BASE_URL token in alert rule files. */}}
+{{- define "baukit-observability.runbookBaseUrl" -}}
+{{- required "runbookBaseUrl is required" .Values.runbookBaseUrl | trimSuffix "/" -}}
+{{- end }}

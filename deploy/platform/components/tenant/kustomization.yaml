@@ -1,0 +1,76 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - service-account.yaml
+  - role-binding.yaml
+patches:
+  - target:
+      kind: Namespace
+    patch: |-
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: tenant
+        labels:
+          baukit.dev/tenant: "true"
+          pod-security.kubernetes.io/enforce: restricted
+          pod-security.kubernetes.io/enforce-version: v1.37
+          pod-security.kubernetes.io/audit: restricted
+          pod-security.kubernetes.io/warn: restricted
+  - target:
+      group: kustomize.toolkit.fluxcd.io
+      kind: Kustomization
+    patch: |-
+      apiVersion: kustomize.toolkit.fluxcd.io/v1
+      kind: Kustomization
+      metadata:
+        name: tenant
+      spec:
+        serviceAccountName: flux-reconciler
+        decryption:
+          provider: sops
+          secretRef:
+            name: placeholder
+  - target:
+      group: helm.toolkit.fluxcd.io
+      kind: HelmRelease
+    patch: |-
+      apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      metadata:
+        name: tenant
+      spec:
+        serviceAccountName: flux-reconciler
+replacements:
+  - source:
+      kind: ConfigMap
+      name: baukit-tenant
+      fieldPath: data.sopsSecretName
+    targets:
+      - select:
+          group: kustomize.toolkit.fluxcd.io
+          kind: Kustomization
+        fieldPaths:
+          - spec.decryption.secretRef.name
+  - source:
+      kind: ConfigMap
+      name: baukit-tenant
+      fieldPath: data.sopsAgeRecipient
+    targets:
+      - select:
+          kind: Namespace
+        fieldPaths:
+          - metadata.annotations.[baukit.dev/sops-age-recipient]
+        options:
+          create: true
+  - source:
+      kind: Namespace
+      fieldPath: metadata.name
+    targets:
+      - select:
+          group: kustomize.toolkit.fluxcd.io
+          kind: Kustomization
+        fieldPaths:
+          - spec.targetNamespace
+        options:
+          create: true

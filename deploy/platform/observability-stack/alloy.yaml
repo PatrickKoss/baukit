@@ -2,32 +2,40 @@ apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
 metadata:
   name: alloy
-  namespace: observability
+  namespace: observability-agents
 spec:
   interval: 30m
-  timeout: 10m
+  timeout: 5m
   dependsOn:
     - name: loki
       namespace: observability
-  chart:
-    spec:
-      chart: alloy
-      version: "1.13.0"
-      sourceRef:
-        kind: HelmRepository
-        name: grafana
-        namespace: observability
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: alloy
+    namespace: observability-agents
   install:
+    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: enabled
   values:
+    image:
+      digest: sha256:9acc2529bc1edb7f5b2bd801dd8334ebc80c158e3a9e5526ecd7c9a273d43189
+      tag: v1.22.0
     crds:
       create: false
+    global:
+      podSecurityContext:
+        seccompProfile:
+          type: RuntimeDefault
     controller:
+      priorityClassName: platform-standard
       type: daemonset
     alloy:
       enableReporting: false
@@ -39,6 +47,10 @@ spec:
               key: environment
       mounts:
         varlog: true
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
       resources:
         requests:
           cpu: 50m
@@ -123,12 +135,38 @@ spec:
             forward_to = [loki.write.default.receiver]
           }
 
+          // k3s writes the API server audit log on server nodes only
+          // (deploy/platform/k3s/audit-policy.yaml); agents match no file.
+          local.file_match "kube_audit" {
+            path_targets = [{
+              __path__    = "/var/log/kubernetes/audit/audit.log",
+              service     = "kube-audit",
+              environment = sys.env("DEPLOYMENT_ENVIRONMENT"),
+            }]
+          }
+
+          loki.source.file "kube_audit" {
+            targets    = local.file_match.kube_audit.targets
+            forward_to = [loki.process.kube_audit.receiver]
+          }
+
+          loki.process "kube_audit" {
+            stage.label_drop {
+              values = ["filename"]
+            }
+
+            forward_to = [loki.write.default.receiver]
+          }
+
           loki.write "default" {
             endpoint {
               url = "http://loki-gateway.observability.svc.cluster.local/loki/api/v1/push"
             }
           }
     configReloader:
+      image:
+        digest: sha256:cc74ddedad4ab1c49446971f6d51302ad4303d8660a2018af925c7f62c114304
+        tag: v0.95.2
       resources:
         requests:
           cpu: 10m

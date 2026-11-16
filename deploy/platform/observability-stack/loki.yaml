@@ -5,29 +5,34 @@ metadata:
   namespace: observability
 spec:
   interval: 30m
-  timeout: 10m
+  timeout: 5m
   dependsOn:
     - name: kube-prometheus-stack
       namespace: observability
-  chart:
-    spec:
-      chart: loki
-      version: "18.13.7"
-      sourceRef:
-        kind: HelmRepository
-        name: grafana-community
-        namespace: observability
-      interval: 24h
+  chartRef:
+    kind: OCIRepository
+    name: loki
+    namespace: observability
   install:
+    crds: CreateReplace
     remediation:
       retries: 3
   upgrade:
+    cleanupOnFail: true
+    crds: CreateReplace
     remediation:
       retries: 3
+  driftDetection:
+    mode: enabled
   values:
     deploymentMode: Monolithic
+    global:
+      priorityClassName: platform-standard
 
     loki:
+      image:
+        digest: sha256:b43c257ccfc925d4a50b8717cac61a3b51df8c48d01847936057e5c4075a24a7
+        tag: "3.7.10"
       auth_enabled: false
       commonConfig:
         replication_factor: 1
@@ -48,10 +53,31 @@ spec:
       compactor:
         retention_enabled: true
         delete_request_store: filesystem
+        # /var/loki is the singleBinary PVC mount.
+        working_directory: /var/loki/compactor
+      # The ruler evaluates deploy/observability-platform/loki-rules, which the
+      # baukit-platform-observability release ships as a ConfigMap mounted below.
+      rulerConfig:
+        alertmanager_url: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093
+        rule_path: /var/loki/ruler-scratch
+        storage:
+          type: local
+          local:
+            directory: /etc/loki/rules
 
     singleBinary:
       replicas: 1
       sidecar: false
+      # The ConfigMap is required: Loki does not start until the pack has rendered it.
+      # "fake" is Loki's tenant when auth_enabled is false.
+      extraVolumes:
+        - name: platform-loki-rules
+          configMap:
+            name: baukit-platform-observability-loki-rules
+      extraVolumeMounts:
+        - name: platform-loki-rules
+          mountPath: /etc/loki/rules/fake
+          readOnly: true
       resources:
         requests:
           cpu: 100m
@@ -76,6 +102,9 @@ spec:
       replicas: 0
 
     gateway:
+      image:
+        digest: sha256:0ec17b0dac55776357d46d882bed7f3d504b0e4a0bc7379c7dbb74bd12b9d4da
+        tag: 1.31.8-alpine
       enabled: true
       replicas: 1
       resources:
@@ -86,6 +115,9 @@ spec:
           cpu: 150m
           memory: 128Mi
       metrics:
+        image:
+          digest: sha256:9709581d7e6693663fdcb70e67993679b1d116329c6fc62bf318bd461bd28b14
+          tag: "1.0.2"
         resources:
           requests:
             cpu: 10m

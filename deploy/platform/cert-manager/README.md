@@ -3,7 +3,9 @@
 This base installs the Jetstack `cert-manager` chart at `v1.21.1` in the
 `cert-manager` namespace. The chart installs and retains its CRDs. Controller,
 webhook, CA injector, and startup-check resources are bounded for a small
-single-node cluster; Prometheus-format metrics remain enabled.
+single-node cluster; Prometheus-format metrics remain enabled. All of them run
+as `platform-critical` through `global.priorityClassName`, since ingress TLS
+and the CNPG plugin certificates depend on the webhook.
 
 An overlay must create the ClusterIssuers and supply their identity-bearing
 configuration. The conventional names are `letsencrypt-staging` and

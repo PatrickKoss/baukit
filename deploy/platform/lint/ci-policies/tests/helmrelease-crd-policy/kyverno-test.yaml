@@ -1,0 +1,39 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: helmrelease-crd-policy
+policies:
+  - ../../policies/helmrelease-crd-policy.yaml
+resources:
+  - resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: helmrelease-crd-policy
+    kind: HelmRelease
+    resources: [crd-chart]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-crd-policy
+    kind: HelmRelease
+    resources: [crd-chart-skip]
+    result: fail
+  - isValidatingPolicy: true
+    policy: helmrelease-crd-policy
+    kind: HelmRelease
+    resources: [crd-chart-default]
+    result: fail
+  - isValidatingPolicy: true
+    policy: helmrelease-crd-policy
+    kind: HelmRelease
+    resources: [plain-chart]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-crd-policy
+    kind: HelmRelease
+    resources: [oci-crd-chart]
+    result: pass
+  - isValidatingPolicy: true
+    policy: helmrelease-crd-policy
+    kind: HelmRelease
+    resources: [oci-crd-chart-default]
+    result: fail

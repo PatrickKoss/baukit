@@ -7,10 +7,22 @@ and secrets in the private infrastructure repository.
 
 ## Conventions
 
-Each first-level base owns its namespace manifest and any HelmRepository it
-uses. HelmRelease chart versions are exact pins. Values favor one replica and
+Each first-level base owns its namespace manifest and the chart sources it
+uses (see [Chart sources](#chart-sources)). HelmRelease chart versions are exact pins. Values favor one replica and
 bounded requests/limits suitable for an initial single Hetzner node; overlays
-replace those values from measurements. Bases do not set `priorityClassName`.
+replace those values from measurements.
+
+Every pod a base renders sets `priorityClassName`. `platform-critical` goes to
+the controllers needed to recover the cluster and serve traffic: Traefik, the
+CNPG operator and the PostgreSQL instance, Kyverno admission, cert-manager and
+the hcloud CSI driver. Every other platform pod runs as `platform-standard`.
+The hcloud CCM keeps its chart's `system-cluster-critical`. The Flux controllers run as `system-cluster-critical` too. `flux install` sets it
+on source-, kustomize- and helm-controller, and `components/flux-lockdown` adds it to
+notification-controller, which starts before cluster-baseline creates the platform classes. A chart without a
+values key gets the class from a `postRenderers` patch, which `validate.sh`
+applies to its render too. Every workload that can run more than one replica
+has a PodDisruptionBudget that allows at least one eviction. The convention
+rules `priority-class` and `pdb-multi-replica` enforce both.
 
 The conventional namespaces are:
 
@@ -23,21 +35,108 @@ The conventional namespaces are:
 | product analytics | `posthog` |
 | admission policy | `kyverno` |
 | coordinated reboot | `kured` |
-| cloud provider drivers | `kube-system` |
+| cloud provider drivers | `kube-system` (owned by k3s, not managed by a base) |
 | database operator | `cnpg-system` |
 | shared database cluster | `postgres` |
 | shared Redis (direct or Sentinel HA) | `platform-redis` |
 | metrics, logs, and traces | `observability` |
+| node-level agents (node-exporter, Alloy) | `observability-agents` |
 
 `cluster-baseline` defines `platform-critical` and `platform-standard` as
-non-default PriorityClasses. Overlays may assign `platform-critical` to the
-minimum controllers needed for recovery/ingress and `platform-standard` to
-other platform workloads. Application workloads normally use neither.
+non-default PriorityClasses. Application workloads normally use neither.
+
+Every Namespace a base manages carries `app.kubernetes.io/part-of:
+baukit-platform`. Prometheus reads PrometheusRules, ServiceMonitors and
+PodMonitors only from namespaces with that label, and Grafana loads dashboard
+ConfigMaps labelled `grafana_dashboard: "1"` from every namespace, filed into
+the folder named by their `grafana_folder` annotation. Namespaces that hold
+volumes or a database (`postgres`, `observability`, `platform-redis`,
+`posthog`), the CNPG `Cluster` and Flux-applied PVCs carry
+`kustomize.toolkit.fluxcd.io/prune: disabled`, so removing a base from a Flux
+Kustomization never deletes data.
+
+Every Flux object follows the rules in `lint/ci-policies/`, which
+`validate.sh` enforces on every rendered base and overlay:
+
+- A HelmRelease pins an exact chart version and sets `spec.timeout`,
+  `install.remediation.retries`, `upgrade.remediation.retries`,
+  `upgrade.cleanupOnFail: true` and `driftDetection.mode` (`warn` today).
+- A chart with a Helm `crds/` directory gets `install.crds` and `upgrade.crds:
+  CreateReplace`. A chart that renders Helm test hooks gets `test.enable: true`.
+  `lint/ci-policies/chart-contents.toml` records both facts per pinned chart.
+- A HelmRepository or OCIRepository polls no more often than every hour.
+- A Flux Kustomization sets `prune: true` and `wait: true` and has no
+  `healthChecks` list, which Flux ignores once `wait` is on.
+
+Timeouts are about three times the install time measured on the local k3d
+cluster, rounded up to whole minutes, and at least 5m.
 
 Every base is secret-free and personal-data-free. Domains, e-mail addresses,
 cloud and DNS credentials, object-storage endpoints/credentials, alert
 receivers, issuer objects, identity configuration, and cluster inventory are
 overlay data. A base README lists its precise overlay contract.
+
+## Chart sources
+
+A chart comes from an `OCIRepository` and the HelmRelease points at it with
+`spec.chartRef` whenever upstream publishes the pinned version as an OCI
+artifact. The OCIRepository lives in the HelmRelease namespace, is named after
+the chart, and pins `ref.tag` (the chart version) plus `ref.digest`, which
+Renovate updates together. When upstream signs the chart with cosign keyless,
+the OCIRepository sets `verify.provider: cosign` with the exact
+`matchOIDCIdentity` below, and source-controller refuses an artifact signed by
+anyone else. `lint/check_chart_sources.py` fails the validation when a
+HelmRelease disagrees with this table.
+
+| Chart | Source | Signed | Flux verify | Identity | Reason |
+|---|---|---|---|---|---|
+| `cert-manager` | OCI `oci://quay.io/jetstack/charts/cert-manager` | key, RSA over SHA-512 | none |  | Signed with the key in `cert-manager-pubkey-2021-09-20.pem`. openssl verifies the v1.21.3 signature only as RSA PKCS#1 v1.5 over SHA-512, and Flux 2.9.4 reports `no matching signatures` for it with that key, so no verify block. |
+| `cloudnative-pg` | OCI `oci://ghcr.io/cloudnative-pg/charts/cloudnative-pg` | keyless | cosign | `^https://token\.actions\.githubusercontent\.com$` `^https://github\.com/cloudnative-pg/charts/\.github/workflows/release-publish\.yml@refs/heads/main$` |  |
+| `falco` | OCI `oci://ghcr.io/falcosecurity/charts/falco` | keyless | cosign | `^https://token\.actions\.githubusercontent\.com$` `^https://github\.com/falcosecurity/charts/\.github/workflows/release\.yml@refs/heads/master$` |  |
+| `flagger` | OCI `oci://ghcr.io/fluxcd/charts/flagger` | keyless | cosign | `^https://token\.actions\.githubusercontent\.com$` `^https://github\.com/fluxcd/flagger/\.github/workflows/release\.yml@refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$` |  |
+| `hcloud-cloud-controller-manager` | HelmRepository `https://charts.hetzner.cloud` | no | none |  | Hetzner publishes no OCI chart. 1.39.3 is not on `ghcr.io/hetznercloud` or Docker Hub, and the release workflows run no `helm push`. |
+| `hcloud-csi` | HelmRepository `https://charts.hetzner.cloud` | no | none |  | Same as the cloud controller: 2.24.2 exists only in the HTTPS index. |
+| `kured` | OCI `oci://ghcr.io/kubereboot/charts/kured` | no | none |  | No cosign signature or Sigstore bundle exists for the 6.1.0 digest. |
+| `kyverno` | OCI `oci://ghcr.io/kyverno/charts/kyverno` | no | none |  | Kyverno signs its images, not the 3.10.0 chart: no signature tag or bundle for the digest. |
+| `kyverno-policies` | OCI `oci://ghcr.io/kyverno/charts/kyverno-policies` | no | none |  | Same as the kyverno chart. |
+| `policy-reporter` | OCI `oci://ghcr.io/kyverno/charts/policy-reporter` | keyless | cosign | `^https://token\.actions\.githubusercontent\.com$` `^https://github\.com/kyverno/policy-reporter/\.github/workflows/release-chart\.yaml@refs/tags/policy-reporter-chart-v[0-9]+\.[0-9]+\.[0-9]+$` |  |
+| `kube-prometheus-stack` | OCI `oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack` | no | none |  | No signature or bundle for the 93.3.0 digest. |
+| `loki` | OCI `oci://ghcr.io/grafana-community/helm-charts/loki` | no | none |  | grafana-community pushes charts unsigned. |
+| `tempo` | OCI `oci://ghcr.io/grafana-community/helm-charts/tempo` | no | none |  | grafana-community pushes charts unsigned. |
+| `alloy` | OCI `oci://ghcr.io/grafana/helm-charts/alloy` | no | none |  | No signature or bundle for the 1.16.0 digest. |
+| `traefik` | OCI `oci://ghcr.io/traefik/helm/traefik` | no | none |  | No signature or bundle for the 42.4.0 digest. |
+| `posthog` | HelmRepository `https://posthog.github.io/charts-clickhouse` | no | none |  | PostHog publishes the sunset chart only in the HTTPS index. |
+
+Every keyless identity uses the issuer and subject regexes shown. The subjects
+were read from the signing certificate of the pinned digest, not from docs.
+A cold `validate.sh` run pulls the OCI charts from `ghcr.io` and `quay.io`
+and the remaining charts from their HTTPS indexes. A warm
+`deploy/platform/.helm-cache` needs no network for charts.
+
+## Pod Security Admission
+
+Every Namespace manifest carries the four Pod Security Admission labels.
+`enforce` is the level below, `enforce-version` is pinned to the k3s minor in
+`platform-lifecycle.sh` (`v1.37`), and `audit` and `warn` are `restricted`
+everywhere, so a gap shows up as a warning even where `enforce` is looser.
+
+| Level | Namespaces |
+|---|---|
+| `restricted` | `cert-manager`, `cnpg-system`, `flagger-system`, `flux-system`, `kyverno`, `observability`, `platform-redis`, `platform-system`, `postgres`, `traefik`, tenants |
+| `baseline` | `posthog` |
+| `privileged` | `kube-system`, `kured`, `observability-agents`, `falco` |
+
+A namespace without labels gets the cluster default from `k3s/pod-security.yaml`:
+`enforce: baseline`, `audit` and `warn` `restricted`, with only `kube-system`
+exempt. The Kyverno `require-psa-labels` policy denies such a namespace anyway;
+the default covers the time before Kyverno runs or when its webhook fails open.
+
+Node-exporter and Alloy need hostPID, hostNetwork or hostPath, so they run in
+`observability-agents` and `observability` stays `restricted`. The Kyverno
+policy `require-psa-labels` rejects a Namespace without an `enforce` label and
+allows `privileged` only for the four namespaces above.
+`lint/test_psa_labels.py` checks the manifests offline. The lifecycle labels
+`flux-system` before `flux bootstrap`.
 
 ## Consuming bases
 
@@ -48,10 +147,23 @@ before releases that create ServiceMonitor/PodMonitor objects, and reconcile
 cert-manager before applying Certificate or Issuer resources. Optional means
 the overlay omits a base; shared bases do not contain enable/disable switches.
 
+An overlay that composes `kyverno-policies` orders it right after the
+foundation, `kyverno` and then `kyverno-policies`, and makes every other
+Kustomization that creates workloads depend on it. Otherwise Kyverno never
+admits those workloads on a fresh cluster. `kyverno-monitoring` comes after
+both the policies and the observability stack. `lint/check_admission_order.py`
+checks this offline.
+
 For application namespaces, include
 `cluster-baseline/app-namespace-policy` as a Kustomize component, set the target
 namespace, patch its quota when needed, and supply explicit ingress/egress
 allows in the same overlay. The component is not applied globally.
+
+An application namespace whose ServiceMonitor, PodMonitor or PrometheusRule
+should be scraped or loaded must carry `app.kubernetes.io/part-of:
+baukit-platform`. Without that label Prometheus ignores the namespace. The
+shared `deploy/observability` rule and dashboard pack installs into
+`observability` and needs nothing extra.
 
 ## Validation
 
@@ -63,14 +175,17 @@ deploy/platform/validate.sh
 
 The script discovers every first-level directory containing
 `kustomization.yaml`, renders it, validates known Kubernetes resources, and
-renders each Flux HelmRelease from its pinned chart. Charts and downloaded core
+renders each Flux HelmRelease from its pinned chart, then runs the Flux
+convention policies in `lint/ci-policies/` and prints a pass/fail table per
+policy. Charts and downloaded core
 Kubernetes schemas are cached in `deploy/platform/.helm-cache/`; a warm cache
 makes validation offline friendly. `make ci` runs the same validation.
 
 ## Adding a base
 
-Create a first-level directory with `kustomization.yaml`, a Namespace, local
-HelmRepository and exact-version HelmRelease manifests (or reviewed plain
+Create a first-level directory with `kustomization.yaml`, a Namespace, a local
+OCIRepository (or a HelmRepository with a reason in the chart sources table) and
+HelmRelease manifests (or reviewed plain
 resources), bounded defaults, and a short README. Do not add identity, secret
 values, product-specific behavior, unpinned versions, internal ops exposure, or
 an in-base optionality flag. Run the platform validator plus direct `helm lint`
@@ -86,8 +201,8 @@ available through `make platform-{up,down,nuke,recreate,status}`.
 ### Prerequisites
 
 Install Docker, k3d, Flux, kubectl, SOPS, age, Git, and tar. The lifecycle pins
-Flux `v2.9.4` and defaults to the WSL2/cgroup-v1-safe
-`rancher/k3s:v1.34.8-k3s1`. The GitOps repository must already contain the
+Flux `v2.10.0` and defaults to
+`rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332`. The GitOps repository must already contain the
 Flux entrypoint at the configured cluster path. Its committed sync manifests
 may exist already; bootstrap reuses and reconciles them idempotently.
 
@@ -96,6 +211,8 @@ up separately, and never put it in the lifecycle configuration file. GitHub
 bootstrap additionally reads `GITHUB_TOKEN` from the process environment. For
 example, a wrapper can export the result of `gh auth token`; the lifecycle
 never persists that token.
+
+When every pull-through mirror from `registry-mirrors.sh up` is running, `platform-up.sh up` and the lifecycle's cluster creation attach them to the new cluster. If any mirror is missing or stopped, they create the cluster without mirrors. `down` and `nuke` detach the mirrors from the cluster network before they delete the cluster, so Docker can remove the network.
 
 ### Configuration contract
 
@@ -118,9 +235,12 @@ owned and contain assignments only.
 | `PLATFORM_AGE_KEY_FILE` | required for `up` | SOPS age identity installed as `flux-system/sops-age`. |
 | `PLATFORM_BAUKIT_SOURCE_MODE` | `github-tag` | `github-tag` or `local-snapshot`. The GitOps overlay owns the matching `GitRepository/baukit` manifest. |
 | `PLATFORM_BAUKIT_CHECKOUT` | snapshot mode | Baukit working-tree path copied into the disposable snapshot. |
-| `PLATFORM_K3S_IMAGE` | `rancher/k3s:v1.34.8-k3s1` | k3s image used when creating the cluster. |
-| `PLATFORM_FLUX_VERSION` | `v2.9.4` | Flux pin; override only as a reviewed platform upgrade. |
-| `PLATFORM_SNAPSHOT_PORT` | `9418` | Host port for local smart HTTP. |
+| `PLATFORM_K3S_IMAGE` | `rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332` | k3s image used when creating the cluster. The default is `platform_k3s_image` in `local-git-http.sh`, shared with `platform-up.sh` and the k3d smoke. |
+| `PLATFORM_FLUX_VERSION` | `flux` in `deploy/tools.toml` (`v2.10.0`) | Flux pin; override only as a reviewed platform upgrade. |
+| `PLATFORM_SNAPSHOT_PORT` | `9418` | Port for local smart HTTP, published on the k3d network gateway. |
+| `PLATFORM_API_PORT` | `random` | Host port of the Kubernetes API, bound to `127.0.0.1`. |
+| `PLATFORM_HTTP_PORT` | `80` | Host port for HTTP ingress, bound to `127.0.0.1`. |
+| `PLATFORM_HTTPS_PORT` | `443` | Host port for HTTPS ingress, bound to `127.0.0.1`. |
 | `PLATFORM_STATE_DIR` | XDG state path | Disposable snapshot repository state. |
 
 GitHub mode uses the owner/repository fields to bootstrap and verifies desired
@@ -129,10 +249,14 @@ SSH URL used by the committed `GitRepository`, such as
 `ssh://git@github.com/ORGANIZATION/REPOSITORY`. SSH-key mode passes the generic
 URL and key directly to `flux bootstrap git`.
 
-In `local-snapshot` mode, the script copies the Baukit working tree without
-`.git`, build outputs, or local runtime state, makes a disposable commit, and
-serves its bare repository through `git http-backend` in a named Docker
-container. Commit metadata is fixed so identical working-tree content retains
+In `local-snapshot` mode, the script copies the files Git would commit (from
+`git ls-files --cached --others --exclude-standard`, so gitignored files such
+as `.env` never enter the snapshot), makes a disposable commit, and serves its
+bare repository through `git http-backend` in a named Docker container. The
+container runs as uid 65532 with a read-only root filesystem and no
+capabilities, and publishes its port only on the k3d network gateway, the
+address pods reach as `host.k3d.internal`. The Kubernetes API and ports 80 and
+443 bind `127.0.0.1`. Commit metadata is fixed so identical working-tree content retains
 the same snapshot revision across repeated `up` calls. The GitOps overlay
 should point `GitRepository/baukit` at
 `http://host.k3d.internal:9418/baukit.git` on branch `main`. Dumb HTTP is not
@@ -165,7 +289,8 @@ deploy/platform/platform-lifecycle.sh --config /path/to/local.env up
   external age identity are untouched.
 - `recreate` runs `nuke` followed by `up`; this is the reproducibility proof.
 - `status` shows the cluster, container restart policies, Git sources,
-  Kustomizations, HelmReleases, and non-ready pods.
+  Kustomizations, HelmReleases, non-ready pods, and where the secrets live.
+  It never prints secret values.
 
 Because `unless-stopped` is enforced after both create and start, Docker or
 host restarts bring the cluster and snapshot service back without a lifecycle
@@ -177,6 +302,46 @@ The lifecycle also owns the `host.k3d.internal.server` entry in k3s's
 entry can disappear after a container/host restart on some releases; the
 custom server entry persists in the Kubernetes datastore so Flux can reacquire
 the smart-HTTP snapshot without a repair command.
+
+### Flux multi-tenancy lockdown
+
+Both `platform-up.sh` and the lifecycle run source-, kustomize-, helm- and notification-controller with
+the patches in `components/flux-lockdown`, then `flux_lockdown_verify` (`flux-lockdown.sh`) checks the
+live Deployments and fails `up` when a flag is missing:
+
+| Controller | Flags |
+|---|---|
+| kustomize-controller | `--no-cross-namespace-refs=true`, `--no-remote-bases=true`, `--default-service-account=default` |
+| helm-controller | `--no-cross-namespace-refs=true` |
+| notification-controller | none |
+
+`flux bootstrap` takes its manifests from the GitOps repository, so that repository's
+`<PLATFORM_GITOPS_PATH>/flux-system/kustomization.yaml` must carry the same patches inline. A remote
+component does not work there, because `--no-remote-bases` refuses it. The last patch gives the
+bootstrap Kustomization `serviceAccountName: kustomize-controller`; the verifier checks that too.
+
+The component's `images:` list pins each controller of Flux v2.10.0 by multi-arch index digest, and
+`flux_lockdown_images` in `flux-lockdown.sh` lists the same references. The GitOps repository's
+`flux-system/kustomization.yaml` needs that `images:` list as well: the verifier fails `up` and the
+lifecycle bootstrap with `<controller> image <ref>` when a live controller runs another image. A Flux
+upgrade changes both lists; `scripts/test_platform_flux_lockdown.py` fails when they disagree.
+
+With `--default-service-account=default`, a Kustomization without `serviceAccountName` runs as the
+`default` ServiceAccount of its namespace, which has no RBAC. Platform Kustomizations live in
+`flux-system` and set `serviceAccountName: kustomize-controller` (cluster-admin through Flux's
+`cluster-reconciler-flux-system` binding). Tenants use `components/tenant`.
+
+notification-controller runs without `--no-cross-namespace-refs`, although Flux documents the flag for
+it. The platform Alert in `flux-system` (`observability-stack/flux-notifications.yaml`) watches
+Kustomizations, HelmReleases and GitRepositories in every platform namespace, and the flag would make
+it ignore all of them. The Kyverno policy `flux-tenant-alert-sources` denies a tenant Alert whose
+`eventSources` name another namespace, so a tenant cannot subscribe to platform events.
+
+helm-controller keeps reconciling as itself. Platform HelmReleases live in their component namespaces,
+and `restrict-cluster-admin-binding` only lets cluster-admin go to service accounts in `flux-system`
+and `kube-system`, so a per-namespace reconciler account is not possible. Tenant HelmReleases get
+`serviceAccountName` from `components/tenant`, and Kyverno denies one without it. HelmReleases that
+use the `baukit` GitRepository live in `flux-system` with `targetNamespace` and `storageNamespace`.
 
 ### Adapting the contract to a remote cluster
 
@@ -192,7 +357,7 @@ remain overlay concerns; the publishable bases do not acquire those values.
 
 `overlays/local` composes the platform's own development environment. It uses
 k3d with the bundled k3s Traefik disabled, publishes the replacement Traefik
-on host ports 80 and 443, installs Flux, and lets the overlay's Flux
+on `127.0.0.1` ports 80 and 443 through k3s ServiceLB, installs Flux, and lets the overlay's Flux
 Kustomizations reconcile all pinned HelmReleases. The local flavor includes the
 baseline, cert-manager and a self-signed `ClusterIssuer`, Traefik, CNPG and one
 PostgreSQL cluster, the observability stack, and RustFS for Loki logs and
@@ -224,18 +389,29 @@ cluster and stops the local Git HTTP process. The ignored
 the same credentials; remove that directory manually only when credential
 rotation is intended.
 
-`status` prints the generated Grafana and RustFS credentials on demand. The state directory is mode 0700 and its
-`secrets.env` is mode 0600. No Secret manifest or credential value is stored in
+`status` prints where the generated Grafana, RustFS and database credentials
+live (the Kubernetes Secret and `secrets.env`), never the values. The state
+directory is mode 0700 and its `secrets.env` is mode 0600.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BAUKIT_PLATFORM_CLUSTER` | `baukit-local` | k3d cluster name. |
+| `BAUKIT_PLATFORM_STATE_DIR` | `deploy/platform/.local-state` | Generated credentials and snapshot state. |
+| `BAUKIT_PLATFORM_API_PORT` | `random` | Kubernetes API port on `127.0.0.1`. |
+| `BAUKIT_PLATFORM_HTTP_PORT` | `80` | HTTP ingress port on `127.0.0.1`. |
+| `BAUKIT_PLATFORM_HTTPS_PORT` | `443` | HTTPS ingress port on `127.0.0.1`. | No Secret manifest or credential value is stored in
 the publishable overlay. Kubernetes Secrets for PostgreSQL, Grafana,
 RustFS, and the initial product are generated and applied at runtime.
 
 ### Integration-harness GitRepository contract
 
 Flux still consumes the normal `GitRepository/baukit` contract. The helper
-creates a bare snapshot of the current checkout, including uncommitted and
-untracked platform work but excluding `.git`, build outputs, generated fixtures,
-and local state. A small read-only smart-HTTP server backed by
-`git http-backend` exposes that snapshot on host port 9418; the cluster reaches
+creates a bare snapshot of the files Git would commit from the current checkout
+(`git ls-files --cached --others --exclude-standard`): uncommitted and untracked
+work is included, gitignored files are not. A small read-only smart-HTTP
+server backed by `git http-backend` exposes that snapshot on port 9418 of the
+k3d network gateway, after the cluster exists. It rejects requests without a
+valid `Content-Length` or larger than 16 MiB. The cluster reaches
 it at `http://host.k3d.internal:9418/baukit.git`. This keeps every platform
 component on the same Flux-native path used by real overlays and avoids either
 publishing a private checkout or bypassing Flux with direct Helm installs.
@@ -290,11 +466,32 @@ for the measured complete-stack footprint.
 
 ### Local k3s compatibility and troubleshooting
 
-The infrastructure pin is the stable k3s v1.36 channel. k3s v1.36 rejects
-cgroup v1 hosts, including the WSL2 Docker environment used for this proof, so
-the k3d flavor uses the newest k3s release that still supports that host:
-`v1.34.8-k3s1`. Real nodes must use the I0 v1.36 stable pin. Upgrade the local
-exception once the development Docker host exposes cgroup v2.
+Local clusters run k3s `v1.37.2-k3s1`, the newest release. The infrastructure
+pin is the stable k3s v1.36 channel. Kubernetes 1.35 and later do not support
+cgroup v1, so `k3d_create_local_cluster` and the k3d smoke stop before k3d when
+`docker info --format '{{.CgroupVersion}}'` is not `2`. On WSL2, add
+`kernelCommandLine = cgroup_no_v1=all` under `[wsl2]` in `%UserProfile%\.wslconfig`,
+run `wsl --shutdown`, and check that `stat -fc %T /sys/fs/cgroup` prints
+`cgroup2fs`.
+
+Every local cluster gets the server flags from `platform_k3s_server_args` in
+`local-git-http.sh`: `--secrets-encryption`, the audit policy in
+`k3s/audit-policy.yaml` (log at `/var/log/kubernetes/audit/audit.log` in the
+server container, shipped by Alloy as `{service="kube-audit"}`), the Pod Security
+config in `k3s/pod-security.yaml` and `--protect-kernel-defaults`. `k3s/` is
+mounted read-only at `/etc/baukit/k3s`, so moving the checkout breaks a kept
+cluster's restart. The audit policy drops health probes, leases, Events and
+control plane reads, logs Secrets, ConfigMaps and token reviews at `Metadata` so
+no payload reaches Loki, keeps the request body of RBAC writes, and logs
+everything else at `Metadata`. `--protect-kernel-defaults` makes the kubelet
+refuse to start unless the host already has `vm.overcommit_memory=1`,
+`vm.panic_on_oom=0`, `kernel.panic=10` and `kernel.panic_on_oops=1`;
+`k3d_create_local_cluster` checks them first, plus the minimums
+`fs.inotify.max_user_instances>=512` and `fs.inotify.max_user_watches>=524288`,
+and names the ones to set with `sysctl -w`. Every container of the host user shares
+the inotify limits, so with the default of 128 instances a second or third
+parallel cluster fails with `too many open files` and its node never registers. The WSL2 kernel ships these values. A cluster created before these
+flags keeps its old arguments; recreate it with `down --delete` and `up`.
 
 - If `GitRepository/baukit` reports an EOF or connection failure, inspect
   `.local-state/git-http.log`, verify the PID recorded in

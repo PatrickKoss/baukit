@@ -1,0 +1,46 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: policy-reporter
+  namespace: kyverno
+spec:
+  interval: 30m
+  timeout: 5m
+  dependsOn:
+    - name: kyverno
+  chartRef:
+    kind: OCIRepository
+    name: policy-reporter
+    namespace: kyverno
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  driftDetection:
+    mode: enabled
+  values:
+    priorityClassName: platform-standard
+    image:
+      tag: "3.11.2@sha256:2b33409d34be3195f16d9ed2c89f8b58001aeec986b254ba6bb45323d6d1e884"
+    metrics:
+      enabled: true
+    monitoring:
+      enabled: true
+      grafana:
+        dashboards:
+          enabled: false
+    ui:
+      enabled: false
+    plugin:
+      kyverno:
+        enabled: false
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi

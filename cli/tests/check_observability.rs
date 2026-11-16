@@ -25,15 +25,23 @@ fn copy_tree(source: &Path, target: &Path) -> Result<()> {
 }
 
 fn python_problems(root: &Path) -> Result<(i32, Vec<String>)> {
+    let allowlist = root.join("product-metrics.txt");
+    if allowlist.is_file() {
+        python_problems_with(root, &["--allowlist", "product-metrics.txt"])
+    } else {
+        python_problems_with(root, &[])
+    }
+}
+
+fn python_problems_with(root: &Path, arguments: &[&str]) -> Result<(i32, Vec<String>)> {
     let script = repository_root()?.join("deploy/observability/lint/check-metric-names.py");
     let mut command = Command::new("python3");
     command
         .arg(script)
         .args(["--observability-root", "."])
+        .args(arguments)
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .current_dir(root);
-    if root.join("product-metrics.txt").is_file() {
-        command.args(["--allowlist", "product-metrics.txt"]);
-    }
     let output = command.output()?;
     let code = output.status.code().context("python3 was killed")?;
     let mut problems: Vec<String> = String::from_utf8(output.stderr)?
@@ -101,6 +109,59 @@ fn rust_rule_and_check_metric_names_py_agree_on_baukits_observability() -> Resul
     let (rust_code, rust) = rust_problems(root.path())?;
     assert_eq!((rust_code, rust), (python_code, python));
     ensure!(python_code == 0, "baukit's observability must pass");
+    Ok(())
+}
+
+#[test]
+fn rust_pack_and_check_metric_names_py_no_catalog_agree_on_the_platform_pack() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    copy_tree(
+        &repository_root()?.join("deploy/observability-platform"),
+        root.path(),
+    )?;
+    std::fs::write(
+        root.path().join("baukit-check.toml"),
+        "[observability]\n\n[[observability.packs]]\ndashboards = [\"dashboards\"]\nrules = [\"alerts\", \"recording-rules\"]\nmetrics = [\"metrics.txt\"]\ncatalog = false\n",
+    )?;
+    let (python_code, python) =
+        python_problems_with(root.path(), &["--allowlist", "metrics.txt", "--no-catalog"])?;
+    let (rust_code, rust) = rust_problems(root.path())?;
+    assert_eq!((rust_code, rust), (python_code, python));
+    ensure!(python_code == 0, "baukit's platform pack must pass");
+    Ok(())
+}
+
+#[test]
+fn pack_metrics_stay_inside_their_pack() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    write(
+        root.path(),
+        "baukit-check.toml",
+        "[observability]\nrules = [\"app\"]\n\n[[observability.packs]]\nrules = [\"platform\"]\nmetrics = [\"platform-metrics.txt\"]\ncatalog = false\n",
+    )?;
+    write(root.path(), "platform-metrics.txt", "kube_pod_info\n")?;
+    let rule = |expression: &str| {
+        format!("groups:\n  - name: g\n    rules:\n      - alert: A\n        expr: {expression}\n")
+    };
+    write(
+        root.path(),
+        "app/app.yml",
+        &rule("kube_pod_info + http_requests_total"),
+    )?;
+    write(
+        root.path(),
+        "platform/platform.yml",
+        &rule("kube_pod_info + http_requests_total + up"),
+    )?;
+    let (code, problems) = rust_problems(root.path())?;
+    ensure!(code == PYTHON_FINDINGS_EXIT, "baukit exited {code}");
+    assert_eq!(
+        problems,
+        vec![
+            "app/app.yml:5: unknown metric 'kube_pod_info'",
+            "platform/platform.yml:5: unknown metric 'http_requests_total'",
+        ]
+    );
     Ok(())
 }
 

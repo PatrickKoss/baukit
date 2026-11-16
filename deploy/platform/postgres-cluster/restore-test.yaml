@@ -14,11 +14,42 @@ rules:
       - clusters
     verbs:
       - create
-      - delete
       - get
       - list
-      - patch
       - watch
+  - apiGroups:
+      - postgresql.cnpg.io
+    resources:
+      - clusters
+    resourceNames:
+      - postgres-cluster-restore-test
+    verbs:
+      - delete
+      - patch
+  - apiGroups:
+      - postgresql.cnpg.io
+    resources:
+      - backups
+    verbs:
+      - create
+      - get
+  # kubectl exec reads the pod before it opens the exec stream.
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    resourceNames:
+      - postgres-cluster-restore-test-1
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - pods/exec
+    resourceNames:
+      - postgres-cluster-restore-test-1
+    verbs:
+      - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -58,6 +89,7 @@ spec:
             app.kubernetes.io/part-of: baukit-platform
         spec:
           serviceAccountName: postgres-restore-test
+          priorityClassName: platform-standard
           restartPolicy: Never
           securityContext:
             runAsNonRoot: true
@@ -65,9 +97,75 @@ spec:
             runAsGroup: 65532
             seccompProfile:
               type: RuntimeDefault
+          initContainers:
+            - name: write-sentinel
+              image: ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie@sha256:5a5dfbde88d5909fd4938189c141f53fb153f53c519f14907dce9e7c04baa153
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - -ec
+              args:
+                - |
+                  # kube-router rejects a new pod's traffic until it programs the pod IP.
+                  attempts=0
+                  until pg_isready -q -t 2; do
+                    attempts=$((attempts + 1))
+                    [ "${attempts}" -lt 30 ] || { printf 'postgres unreachable after %s tries\n' "${attempts}" >&2; exit 1; }
+                    sleep 1
+                  done
+                  token="$(date -u +%Y%m%dT%H%M%SZ)-${POD_NAME}"
+                  psql -v ON_ERROR_STOP=1 -v token="${token}" <<'SQL'
+                  CREATE TABLE IF NOT EXISTS baukit_restore_sentinel (
+                    id integer PRIMARY KEY CHECK (id = 1),
+                    token text NOT NULL,
+                    written_at timestamptz NOT NULL DEFAULT now()
+                  );
+                  INSERT INTO baukit_restore_sentinel (id, token) VALUES (1, :'token')
+                    ON CONFLICT (id) DO UPDATE SET token = EXCLUDED.token, written_at = now();
+                  SQL
+                  printf '%s\n' "${token}" > "${SENTINEL_FILE}"
+              env:
+                - name: POD_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.name
+                - name: SENTINEL_FILE
+                  value: /work/sentinel
+                - name: PGHOST
+                  value: postgres-cluster-rw
+                - name: PGDATABASE
+                  value: product
+                - name: PGSSLMODE
+                  value: require
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: product-db-credentials
+                      key: username
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: product-db-credentials
+                      key: password
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 32Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: work
+                  mountPath: /work
           containers:
             - name: restore-test
-              image: rancher/k3s:v1.37.1-k3s1
+              image: rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332
               imagePullPolicy: IfNotPresent
               command:
                 - /bin/sh
@@ -80,6 +178,55 @@ spec:
                       --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
                   }
                   trap cleanup EXIT
+                  storage_class=""
+                  if [ -n "${RESTORE_STORAGE_CLASS}" ]; then
+                    storage_class="storageClass: ${RESTORE_STORAGE_CLASS}"
+                  fi
+                  sentinel="$(cat "${SENTINEL_FILE}")"
+                  if [ -z "${sentinel}" ]; then
+                    printf 'no sentinel was written\n' >&2
+                    exit 1
+                  fi
+
+                  backup="postgres-restore-test-$(date -u +%Y%m%d%H%M%S)"
+                  kubectl apply -f - <<EOF
+                  apiVersion: postgresql.cnpg.io/v1
+                  kind: Backup
+                  metadata:
+                    name: ${backup}
+                    namespace: ${POD_NAMESPACE}
+                    labels:
+                      baukit.dev/restore-test: "true"
+                    ownerReferences:
+                      - apiVersion: batch/v1
+                        kind: Job
+                        name: ${JOB_NAME}
+                        uid: ${JOB_UID}
+                        controller: false
+                        blockOwnerDeletion: false
+                  spec:
+                    method: plugin
+                    cluster:
+                      name: postgres-cluster
+                    pluginConfiguration:
+                      name: barman-cloud.cloudnative-pg.io
+                  EOF
+                  deadline=$(($(date +%s) + BACKUP_TIMEOUT_SECONDS))
+                  while :; do
+                    phase="$(kubectl -n "${POD_NAMESPACE}" get backup "${backup}" -o jsonpath='{.status.phase}')"
+                    case "${phase}" in
+                      completed) break ;;
+                      failed)
+                        printf 'backup %s failed\n' "${backup}" >&2
+                        exit 1
+                        ;;
+                    esac
+                    if [ "$(date +%s)" -ge "${deadline}" ]; then
+                      printf 'backup %s did not complete, phase %s\n' "${backup}" "${phase:-none}" >&2
+                      exit 1
+                    fi
+                    sleep "${POLL_SECONDS}"
+                  done
 
                   kubectl -n "${POD_NAMESPACE}" delete cluster "${restore_cluster}" \
                     --ignore-not-found=true --wait=true --timeout=5m
@@ -92,7 +239,13 @@ spec:
                     namespace: ${POD_NAMESPACE}
                   spec:
                     instances: 1
-                    imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
+                    enablePDB: false
+                    priorityClassName: platform-standard
+                    imageCatalogRef:
+                      apiGroup: postgresql.cnpg.io
+                      kind: ImageCatalog
+                      name: postgresql
+                      major: 18
                     bootstrap:
                       recovery:
                         source: source
@@ -112,10 +265,27 @@ spec:
                         memory: 512Mi
                     storage:
                       size: 10Gi
+                      ${storage_class}
                   EOF
 
                   kubectl -n "${POD_NAMESPACE}" wait cluster/"${restore_cluster}" \
                     --for=condition=Ready --timeout=30m
+
+                  primary="$(kubectl -n "${POD_NAMESPACE}" get cluster "${restore_cluster}" \
+                    -o jsonpath='{.status.currentPrimary}')"
+                  restored="$(printf '%s\n' "${PGPASSWORD}" |
+                    kubectl -n "${POD_NAMESPACE}" exec -i "${primary}" -c postgres -- \
+                      sh -ec 'IFS= read -r PGPASSWORD; export PGPASSWORD; exec psql -h 127.0.0.1 -U "$1" -d "$2" -tAX -c "SELECT token FROM baukit_restore_sentinel WHERE id = 1"' \
+                      sentinel "${PGUSER}" "${PGDATABASE}")"
+                  if [ -z "${restored}" ]; then
+                    printf 'sentinel missing in the restored cluster, expected %s\n' "${sentinel}" >&2
+                    exit 1
+                  fi
+                  if [ "${restored}" != "${sentinel}" ]; then
+                    printf 'restored sentinel %s does not match %s\n' "${restored}" "${sentinel}" >&2
+                    exit 1
+                  fi
+                  printf 'restored sentinel %s matches\n' "${restored}"
 
                   now="$(date +%s)"
                   printf '%s\n' \
@@ -130,6 +300,36 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.namespace
+                # Empty uses the default StorageClass. Set a Delete-policy class
+                # so a restore test does not leave a retained volume behind.
+                - name: RESTORE_STORAGE_CLASS
+                  value: ""
+                - name: JOB_NAME
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['batch.kubernetes.io/job-name']
+                - name: JOB_UID
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.labels['batch.kubernetes.io/controller-uid']
+                - name: SENTINEL_FILE
+                  value: /work/sentinel
+                - name: BACKUP_TIMEOUT_SECONDS
+                  value: "1200"
+                - name: POLL_SECONDS
+                  value: "10"
+                - name: PGDATABASE
+                  value: product
+                - name: PGUSER
+                  valueFrom:
+                    secretKeyRef:
+                      name: product-db-credentials
+                      key: username
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: product-db-credentials
+                      key: password
               resources:
                 requests:
                   cpu: 25m
@@ -143,3 +343,10 @@ spec:
                   drop:
                     - ALL
                 readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+          volumes:
+            - name: work
+              emptyDir:
+                sizeLimit: 1Mi

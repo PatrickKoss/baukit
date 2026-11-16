@@ -6,10 +6,10 @@ overlay explicitly composes `deploy/platform/posthog/`; no other Baukit base or
 chart references it.
 
 The application renderer is the final published PostHog Kubernetes chart,
-`30.46.0` (PostHog `1.43.0`). PostHog ended Kubernetes support in 2023, so the
+`30.46.0` (app version `1.43.0`), running the `release-1.43.1` image, the newest
+PostHog release. PostHog ended Kubernetes support in 2023, so the
 chart is treated as a pinned renderer rather than an upgrade stream. The
-PostHog, ClickHouse 22.8.21.38, PostgreSQL 14.1, and Redis 6.2.24 (each inside
-PostHog 1.43.0's compatibility ranges),
+PostHog, ClickHouse 22.8.21.38, PostgreSQL 14.25, and Redis 6.2.24,
 Redpanda, ZooKeeper, and BusyBox images
 are pinned by both version and digest. The chart's
 bundled PostgreSQL, Redis, Kafka, ZooKeeper, ingress controller, cert-manager,
@@ -18,7 +18,8 @@ in this base instead. A zero-pod `posthog-pgbouncer` Service alias maps the
 legacy chart's mandatory port 6543 check directly to PostgreSQL; no PgBouncer
 process is installed. Redpanda provides the Kafka API without a second Kafka
 JVM, while ZooKeeper remains because PostHog's supported ClickHouse schema uses
-replicated tables.
+replicated tables. Every pod runs as `platform-standard`; the chart has no
+priority key for web, events and its Jobs, so `postRenderers` patches set it.
 
 The ClickHouse image is fetched through Google's public Docker Hub mirror but
 keeps the upstream manifest-list digest. This avoids anonymous Docker Hub rate
@@ -46,9 +47,57 @@ gap during an upgrade cannot hang the hook.
 The chart uses external S3 storage at
 `http://rustfs.postgres.svc.cluster.local:9000`, bucket `posthog`, region
 `us-east-1`. The local foundation creates the bucket. The pinned chart disables
-its bundled object store by default. PostHog 1.43.0's plugin client forces
+its bundled object store by default. PostHog 1.43.1's plugin client forces
 path-style addressing, and its Python client uses the custom endpoint with
 Boto's automatic path-style selection. Session recording remains disabled.
+
+PostHog 1.43.1 checks its services against fixed ranges in
+`posthog/settings/service_requirements.py`: PostgreSQL `>=11.0.0,<=14.1.0`,
+Redis `>=5.0.0,<=6.3.0` and ClickHouse `>=21.6.0,<22.9.0`. 14.25 only adds
+patch releases on the same PostgreSQL major, so the release sets
+`SKIP_SERVICE_VERSION_REQUIREMENTS=1`. The newest images inside the other two
+ranges are Redis 6.2.24 and ClickHouse 22.8.21.38, so neither moves to a newer
+line. The chart's own ClickHouse default, 23.9.2.56, is outside the range as
+well. PostgreSQL stays on 14.25, the newest 14 patch; a new major would need a
+dump and restore for a release that refuses anything above 14.1.
+
+Redpanda runs v26.2.7. PostHog only uses its Kafka API, and the 26.1 and 26.2
+notes list no change to the Kafka API, `--mode=dev-container`, `--smp`,
+`--memory`, `--reserve-memory` or `--overprovisioned`. Redpanda upgrades one
+feature release at a time, so a running cluster with a 25.3 data volume must
+start once on v26.1.17 before it moves to v26.2.7. A fresh install starts on
+v26.2.7 directly.
+
+## Network fence
+
+The namespace starts from the shared `default-deny` and `allow-dns-egress`
+components. `network-policy.yaml` then opens only these pairs:
+
+- Traefik to `posthog-web` and `posthog-events` on 8000;
+- PostHog app pods to PostgreSQL 5432, Redis 6379, Redpanda 9092, ClickHouse
+  8123 and 9000, and RustFS in namespace `postgres` on 9000;
+- ClickHouse to Redpanda 9092 and ZooKeeper 2181;
+- the plugin server to public addresses on 443, for plugin HTTP calls.
+
+Everything else in or out of the namespace is denied, including traffic
+between the dependencies that the pairs above do not name.
+
+## Pod Security gaps
+
+Every dependency in `dependencies.yaml` meets `restricted`. The chart
+workloads do not, and the pinned chart has no values to fix them. These
+containers set no `runAsNonRoot`, `allowPrivilegeEscalation: false`,
+`capabilities.drop: [ALL]` or seccomp profile. They pass `baseline`, since nothing
+runs privileged or on host namespaces, but fail `restricted`:
+
+- `posthog-web`: `wait-for-service-dependencies`, `wait-for-migrations`, `posthog-web`;
+- `posthog-events`: `wait-for-service-dependencies`, `posthog-events`;
+- `posthog-plugins`: `wait-for-service-dependencies`, `wait-for-migrations`, `posthog-plugins`;
+- migrate Job: `wait-for-service-dependencies`, `migrate-job`;
+- Grafana annotation hook Job: `grafana-annotation-job-post`.
+
+Closing them needs post-render patches on the HelmRelease; until then the
+namespace carries no `restricted` enforce label.
 
 ## Overlay contract
 

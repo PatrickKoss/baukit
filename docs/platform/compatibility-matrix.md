@@ -5,6 +5,16 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.26.0
+
+Last verified release train: `v0.26.0` (minor train on top of `v0.25.2`, platform hardening). The platform changes are breaking; `deploy/platform/CHANGELOG.md` lists each one with its upgrade step.
+- Every pinnable platform component moved to its newest stable release, pinned by version and digest: Flux 2.10.0, kube-prometheus-stack 93.3.0, Loki chart 21.2.3, Tempo chart 3.2.1 (Tempo 3.1.1), Alloy chart 1.16.0 from OCI, Traefik chart 42.4.0, Redpanda v26.2.7, PostHog release-1.43.1 and local k3s v1.37.2. Flux 2.10 drops Kubernetes 1.34.
+- Local and e2e k3s clusters need cgroup v2 and the host sysctls from the S5 entry, and run with secrets encryption, an API server audit policy, a Pod Security `baseline` default and labelled system namespaces. They use embedded etcd with leader election off for the controller manager, cloud controller manager and scheduler. The production datastore is still open.
+- Charts published as OCI artifacts come from an `OCIRepository` pinned by tag and digest. Every rendered image carries an `@sha256` digest, and every HelmRelease has drift detection enabled.
+- 13 of the 20 Kyverno validating policies deny. The other seven audit by design, such as image verification until product images live in a registry. 11 `PolicyException`s each name their invariant in `baukit.dev/reason`. Falco ignores the netpol probe execs and the kustomize-controller's `git` children.
+- Fixed: Redis HA waits 95 s for a sentinel failover before it starts as master, so a restarted master no longer comes up empty after a split vote. The e2e and local overlays wait for the CNPG Cluster to report Ready.
+- Tested with the full local gate, the platform e2e suites, the `k3s-hardening` suite and `platform-up.sh` with registry mirrors.
+
 ## v0.25.2
 
 Last verified release train: `v0.25.2` (patch train on top of `v0.25.1`, template scripts, mobile pins and the Expo conformance examples).
@@ -511,14 +521,13 @@ releases.
 | Reanimated / Worklets | 4.7.1 / 0.13.0 | Expo SDK 57 uses 4.5.1 / 0.10.1. Screens 4.26.2 and Safe Area Context 5.7.0 stay on the same SDK baseline. |
 | Gradle / AGP / Kotlin / NDK | 9.8.2 / 9.5.0 / 2.4.21 / r29 | Baukit pins none of them. The Expo SDK 57 template generates Gradle 9.3.1, and React Native 0.86.3 pins AGP 8.12.0, Kotlin 2.1.20, and NDK 27.1.12297006. Overriding them would go past what Expo SDK 57 supports. |
 | Java | Temurin 27 | Expo SDK 57 generates Gradle 9.3.1. [Java 27 requires Gradle 9.8](https://docs.gradle.org/current/userguide/compatibility.html), so Android builds use Temurin 25.0.4.1+1. Gradle supports Java 25 since 9.1.0. |
-| PostgreSQL | 18.6 | PostgreSQL stays on 18.x. Version 19 is still in beta. PostHog's separate database stays on 14.1. |
+| PostgreSQL | 18.6 | PostgreSQL stays on 18.x. Version 19 is still in beta. PostHog's separate database stays on 14.x, currently 14.25. |
 | Keycloak | 26.8.0 | This is still the latest stable release. The theme matrix covers 26.7.5 and 26.8.0. |
 
-Platform chart updates stay within their current major versions. The Tempo
-chart moves to 2.4.0 and kube-prometheus-stack to 88.6.5. Tempo chart 3.1.0 and
-kube-prometheus-stack 91.9.0 need separate chart migration checks. PostHog stays
-on its last published chart, 30.46.0, and ClickHouse 22.8.21.38. Its Redis image
-moves to the latest 6.2 patch, 6.2.24.
+Platform charts and images follow their newest stable release, majors included,
+since v0.26.0. PostHog stays on its last published chart, 30.46.0, with
+ClickHouse 22.8.21.38 and Redis 6.2.24, the newest releases inside PostHog's
+supported ranges.
 
 ## Update rules
 

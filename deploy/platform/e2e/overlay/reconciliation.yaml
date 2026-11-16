@@ -1,0 +1,390 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-baseline
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  interval: 10m
+  retryInterval: 30s
+  timeout: 5m
+  path: ./deploy/platform/cluster-baseline
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-foundation
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-baseline
+  interval: 10m
+  retryInterval: 30s
+  timeout: 5m
+  path: ./deploy/platform/overlays/local/components/foundation
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-cert-manager
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-baseline
+    - name: e2e-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/overlays/local/components/cert-manager
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-issuer
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-cert-manager
+  interval: 10m
+  retryInterval: 30s
+  timeout: 5m
+  path: ./deploy/platform/overlays/local/components/issuer
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-observability
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-foundation
+    - name: e2e-kyverno-policies
+  interval: 10m
+  retryInterval: 30s
+  timeout: 20m
+  path: ./deploy/platform/e2e/overlay/components/observability
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-cnpg
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-cert-manager
+    - name: e2e-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 15m
+  path: ./deploy/platform/overlays/local/components/cnpg
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-postgres
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-cnpg
+    - name: e2e-foundation
+    - name: e2e-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 20m
+  path: ./deploy/platform/overlays/local/components/postgres
+  prune: true
+  wait: true
+  # kstatus counts a CNPG Cluster without conditions as current, so the wait ended before the primary
+  # ran (FR e2e run, 2026-11-16: netpol probes found no ready postgres-cluster-rw endpoint).
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      current: has(status.conditions) && status.conditions.exists(e, e.type == 'Ready' && e.status == 'True')
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-traefik
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-observability
+    - name: e2e-issuer
+  interval: 10m
+  retryInterval: 30s
+  timeout: 15m
+  path: ./deploy/platform/overlays/local/components/traefik
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-redis
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-baseline
+    - name: e2e-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/redis-ha
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-kured
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-baseline
+    - name: e2e-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/e2e/overlay/components/kured
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-falco
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-baseline
+    - name: e2e-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/e2e/overlay/components/falco
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-kyverno
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-baseline
+  interval: 10m
+  retryInterval: 30s
+  timeout: 15m
+  path: ./deploy/platform/e2e/overlay/components/kyverno
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-kyverno-policies
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-kyverno
+  interval: 10m
+  retryInterval: 30s
+  timeout: 5m
+  path: ./deploy/platform/e2e/overlay/components/kyverno-policies
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+# The ServiceMonitors and Policy Reporter need the monitoring CRDs. Kyverno and its policies don't wait for them.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-kyverno-monitoring
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-kyverno-policies
+    - name: e2e-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/kyverno-monitoring
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+# The MetricTemplate CRD comes from the chart, so the templates apply in e2e-flagger-metrics.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-flagger
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-observability
+    - name: e2e-traefik
+  interval: 10m
+  retryInterval: 30s
+  timeout: 15m
+  path: ./deploy/platform/e2e/overlay/components/flagger
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+  patches:
+    - target:
+        group: flagger.app
+        version: v1beta1
+        kind: MetricTemplate
+        labelSelector: baukit.dev/component=progressive-delivery
+      patch: |-
+        $patch: delete
+        apiVersion: flagger.app/v1beta1
+        kind: MetricTemplate
+        metadata:
+          name: ignored
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-flagger-metrics
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-flagger
+  interval: 10m
+  retryInterval: 30s
+  timeout: 5m
+  path: ./deploy/platform/e2e/overlay/components/flagger
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+  patches:
+    - target:
+        version: v1
+        kind: Namespace
+        name: flagger-system
+      patch: |-
+        $patch: delete
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: flagger-system
+    - target:
+        group: source.toolkit.fluxcd.io
+        version: v1
+        kind: HelmRepository
+        name: flagger
+        namespace: flagger-system
+      patch: |-
+        $patch: delete
+        apiVersion: source.toolkit.fluxcd.io/v1
+        kind: HelmRepository
+        metadata:
+          name: flagger
+          namespace: flagger-system
+    - target:
+        group: helm.toolkit.fluxcd.io
+        version: v2
+        kind: HelmRelease
+        name: flagger
+        namespace: flagger-system
+      patch: |-
+        $patch: delete
+        apiVersion: helm.toolkit.fluxcd.io/v2
+        kind: HelmRelease
+        metadata:
+          name: flagger
+          namespace: flagger-system
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: e2e-tenant
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-baseline
+    - name: e2e-kyverno-policies
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/e2e/overlay/components/tenant
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+

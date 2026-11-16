@@ -12,6 +12,7 @@ metadata:
 spec:
   backoffLimit: {{ .Values.migration.backoffLimit }}
   activeDeadlineSeconds: {{ .Values.migration.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ .Values.migration.ttlSecondsAfterFinished }}
   template:
     metadata:
       labels:
@@ -25,7 +26,7 @@ spec:
       {{- end }}
     spec:
       restartPolicy: Never
-      automountServiceAccountToken: {{ .Values.serviceAccount.automountToken }}
+      {{- include "baukit-app.podIdentity" (dict "root" . "process" "migrate") | nindent 6 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- with .Values.imagePullSecrets }}
@@ -34,7 +35,7 @@ spec:
       {{- end }}
       containers:
         - name: migrate
-          image: {{ include "baukit-app.image" .Values.migration.image | quote }}
+          image: {{ include "baukit-app.image" (dict "image" .Values.migration.image "name" "migration") | quote }}
           imagePullPolicy: {{ .Values.migration.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
@@ -57,12 +58,15 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.migration.resources | nindent 12 }}
-          {{- with .Values.migration.volumeMounts }}
           volumeMounts:
+            {{- include "baukit-app.assertNoTmpOverride" (dict "process" "migration" "volumes" .Values.migration.volumes "volumeMounts" .Values.migration.volumeMounts) }}
+            {{- include "baukit-app.tmpVolumeMount" . | nindent 12 }}
+            {{- with .Values.migration.volumeMounts }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
-      {{- with .Values.migration.volumes }}
+            {{- end }}
       volumes:
+        {{- include "baukit-app.tmpVolume" . | nindent 8 }}
+        {{- with .Values.migration.volumes }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
 {{- end }}

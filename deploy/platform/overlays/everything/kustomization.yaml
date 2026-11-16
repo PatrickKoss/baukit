@@ -7,10 +7,17 @@ resources:
   - ../../cert-manager
   - ../../cluster-baseline
   - ../../cnpg
+  - ../../falco
   - ../../flagger
   - ../../hcloud
   - ../../kured
   - ../../kyverno
+  - ../../kyverno-monitoring
+  - ../../kyverno-policies
   - ../../observability-stack
   - ../../postgres-cluster
   - ../../traefik
+  - registry-allowlist.yaml
+  - cluster-network.yaml
+components:
+  - ../../components/network-policy/node-cidr

@@ -1,0 +1,9 @@
+# The local k3d network. platform-up.sh creates the cluster in a /24 slice of nodeCIDR.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: baukit-cluster-network
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  nodeCIDR: 10.89.0.0/16

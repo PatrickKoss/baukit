@@ -24,38 +24,321 @@
     "npm"
   ],
   "flux": {
-    "managerFilePatterns": ["/(^|/)\\w[^/]*\\.ya?ml$/"]
+    "managerFilePatterns": [
+      "/(^|/)\\w[^/]*\\.ya?ml$/"
+    ]
   },
   "helm-values": {
-    "managerFilePatterns": ["/(^|/)\\w[^/]*values[^/]*\\.ya?ml$/"]
+    "managerFilePatterns": [
+      "/(^|/)\\w[^/]*values[^/]*\\.ya?ml$/"
+    ]
   },
   "kubernetes": {
-    "managerFilePatterns": ["/(^|/)\\w[^/]*\\.ya?ml$/"]
+    "managerFilePatterns": [
+      "/(^|/)\\w[^/]*\\.ya?ml$/"
+    ]
   },
   "packageRules": [
     {
       "description": "One reviewed PR for compatible non-major updates",
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest", "lockFileMaintenance"],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest",
+        "lockFileMaintenance"
+      ],
       "groupName": "non-major dependencies",
       "groupSlug": "non-major-dependencies"
     },
     {
       "description": "Cargo git dependencies use immutable release tags",
-      "matchManagers": ["cargo"],
-      "matchDatasources": ["git-tags", "github-tags", "git-refs"],
+      "matchManagers": [
+        "cargo"
+      ],
+      "matchDatasources": [
+        "git-tags",
+        "github-tags",
+        "git-refs"
+      ],
       "rangeStrategy": "pin"
     },
     {
       "description": "Flux GitRepository sources update only exact tags",
-      "matchManagers": ["flux"],
-      "matchDatasources": ["git-tags", "github-tags", "gitlab-tags"],
+      "matchManagers": [
+        "flux"
+      ],
+      "matchDatasources": [
+        "git-tags",
+        "github-tags",
+        "gitlab-tags"
+      ],
       "rangeStrategy": "pin"
     },
     {
+      "description": "Helm charts wait a week so a broken chart release can be pulled first",
+      "matchDatasources": [
+        "helm"
+      ],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "OCI Helm charts in Flux OCIRepositories wait a week as well. Renovate updates ref.tag and ref.digest together",
+      "matchManagers": [
+        "flux"
+      ],
+      "matchDepTypes": [
+        "HelmChart"
+      ],
+      "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "deploy/tools.toml lists one sha256 per platform. Hosted Renovate cannot run a post-upgrade task, so the PR must refresh them by hand",
+      "matchFileNames": [
+        "deploy/tools.toml"
+      ],
+      "groupName": "deploy tools",
+      "groupSlug": "deploy-tools",
+      "prBodyNotes": [
+        "Copy each changed tool's sha256 for every platform in deploy/tools.toml from the upstream checksum file of the new release, then run `scripts/install-deploy-tools.sh` and `python3 -m unittest scripts/test_install_deploy_tools.py`."
+      ]
+    },
+    {
+      "description": "One PR per platform base: cert-manager",
+      "matchFileNames": [
+        "deploy/platform/cert-manager/**"
+      ],
+      "groupName": "platform cert-manager",
+      "groupSlug": "platform-cert-manager"
+    },
+    {
+      "description": "One PR per platform base: cluster-baseline",
+      "matchFileNames": [
+        "deploy/platform/cluster-baseline/**"
+      ],
+      "groupName": "platform cluster-baseline",
+      "groupSlug": "platform-cluster-baseline"
+    },
+    {
+      "description": "One PR per platform base: cnpg",
+      "matchFileNames": [
+        "deploy/platform/cnpg/**"
+      ],
+      "groupName": "platform cnpg",
+      "groupSlug": "platform-cnpg"
+    },
+    {
+      "description": "One PR per platform base: components",
+      "matchFileNames": [
+        "deploy/platform/components/**"
+      ],
+      "groupName": "platform components",
+      "groupSlug": "platform-components"
+    },
+    {
+      "description": "One PR per platform base: falco",
+      "matchFileNames": [
+        "deploy/platform/falco/**"
+      ],
+      "groupName": "platform falco",
+      "groupSlug": "platform-falco"
+    },
+    {
+      "description": "One PR per platform base: flagger",
+      "matchFileNames": [
+        "deploy/platform/flagger/**"
+      ],
+      "groupName": "platform flagger",
+      "groupSlug": "platform-flagger"
+    },
+    {
+      "description": "One PR per platform base: hcloud",
+      "matchFileNames": [
+        "deploy/platform/hcloud/**"
+      ],
+      "groupName": "platform hcloud",
+      "groupSlug": "platform-hcloud"
+    },
+    {
+      "description": "One PR per platform base: kured",
+      "matchFileNames": [
+        "deploy/platform/kured/**"
+      ],
+      "groupName": "platform kured",
+      "groupSlug": "platform-kured"
+    },
+    {
+      "description": "One PR per platform base: kyverno",
+      "matchFileNames": [
+        "deploy/platform/kyverno/**"
+      ],
+      "groupName": "platform kyverno",
+      "groupSlug": "platform-kyverno"
+    },
+    {
+      "description": "One PR per platform base: kyverno-monitoring",
+      "matchFileNames": [
+        "deploy/platform/kyverno-monitoring/**"
+      ],
+      "groupName": "platform kyverno-monitoring",
+      "groupSlug": "platform-kyverno-monitoring"
+    },
+    {
+      "description": "One PR per platform base: kyverno-policies",
+      "matchFileNames": [
+        "deploy/platform/kyverno-policies/**"
+      ],
+      "groupName": "platform kyverno-policies",
+      "groupSlug": "platform-kyverno-policies"
+    },
+    {
+      "description": "One PR per platform base: observability-stack",
+      "matchFileNames": [
+        "deploy/platform/observability-stack/**"
+      ],
+      "groupName": "platform observability-stack",
+      "groupSlug": "platform-observability-stack"
+    },
+    {
+      "description": "One PR per platform base: overlays",
+      "matchFileNames": [
+        "deploy/platform/overlays/**"
+      ],
+      "groupName": "platform overlays",
+      "groupSlug": "platform-overlays"
+    },
+    {
+      "description": "One PR per platform base: postgres-cluster",
+      "matchFileNames": [
+        "deploy/platform/postgres-cluster/**"
+      ],
+      "groupName": "platform postgres-cluster",
+      "groupSlug": "platform-postgres-cluster"
+    },
+    {
+      "description": "One PR per platform base: posthog",
+      "matchFileNames": [
+        "deploy/platform/posthog/**"
+      ],
+      "groupName": "platform posthog",
+      "groupSlug": "platform-posthog"
+    },
+    {
+      "description": "One PR per platform base: redis",
+      "matchFileNames": [
+        "deploy/platform/redis/**"
+      ],
+      "groupName": "platform redis",
+      "groupSlug": "platform-redis"
+    },
+    {
+      "description": "One PR per platform base: redis-ha",
+      "matchFileNames": [
+        "deploy/platform/redis-ha/**"
+      ],
+      "groupName": "platform redis-ha",
+      "groupSlug": "platform-redis-ha"
+    },
+    {
+      "description": "One PR per platform base: traefik",
+      "matchFileNames": [
+        "deploy/platform/traefik/**"
+      ],
+      "groupName": "platform traefik",
+      "groupSlug": "platform-traefik"
+    },
+    {
       "description": "Major upgrades stay isolated for explicit review",
-      "matchUpdateTypes": ["major"],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "groupName": null
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "GitHub release tools pinned in deploy/tools.toml",
+      "managerFilePatterns": [
+        "/^deploy/tools\\.toml$/"
+      ],
+      "matchStrings": [
+        "\\[tools\\.(?<depName>[a-z0-9-]+)\\]\\nversion = \"(?<currentValue>[^\"]+)\"\\nurl = \"https://github\\.com/(?<packageName>[^/\"]+/[^/\"]+)/releases/"
+      ],
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^(?:kustomize/)?v?(?<version>\\d.*)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Tools in deploy/tools.toml released outside GitHub release assets",
+      "managerFilePatterns": [
+        "/^deploy/tools\\.toml$/"
+      ],
+      "matchStrings": [
+        "\\[tools\\.(?<depName>helm)\\]\\nversion = \"(?<currentValue>[^\"]+)\"\\nurl = \"https://get\\.helm\\.sh/",
+        "\\[tools\\.(?<depName>kubectl)\\]\\nversion = \"(?<currentValue>[^\"]+)\"\\nurl = \"https://dl\\.k8s\\.io/"
+      ],
+      "datasourceTemplate": "github-releases",
+      "packageNameTemplate": "{{#if (equals depName 'helm')}}helm/helm{{else}}kubernetes/kubernetes{{/if}}",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "yamllint wheel pinned in deploy/tools.toml",
+      "managerFilePatterns": [
+        "/^deploy/tools\\.toml$/"
+      ],
+      "matchStrings": [
+        "\\[tools\\.yamllint\\]\\nversion = \"(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "yamllint",
+      "datasourceTemplate": "pypi"
+    },
+    {
+      "customType": "regex",
+      "description": "Validator images pinned by digest in deploy/tools.toml",
+      "managerFilePatterns": [
+        "/^deploy/tools\\.toml$/"
+      ],
+      "matchStrings": [
+        "\\n[a-z0-9_-]+ = \"(?<depName>[^:\"@]+):(?<currentValue>[^@\"]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Helm values that pin an image tag with a digest",
+      "managerFilePatterns": [
+        "/^deploy/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "(?:registry: \"?(?<registry>[^\"\\s]+)\"?\\n\\s+)?repository: \"?(?<repository>[^\"\\s]+)\"?\\n\\s+tag: \"?(?<currentValue>[^\"@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})\"?",
+        "(?:registry: \"?(?<registry>[^\"\\s]+)\"?\\n\\s+)?repository: \"?(?<repository>[^\"\\s]+)\"?\\n\\s+tag: \"?(?<currentValue>[^\"@\\s]+)\"?\\n\\s+digest: \"?(?<currentDigest>sha256:[a-f0-9]{64})\"?"
+      ],
+      "depNameTemplate": "{{#if registry}}{{registry}}/{{/if}}{{repository}}",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Kustomize patches that replace a container image",
+      "managerFilePatterns": [
+        "/^deploy/.+/kustomization\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "path: \\S*/image\\n\\s+value: \"?(?<depName>[^:\"@\\s]+):(?<currentValue>[^\"@\\s]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?\"?"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "k3s image defaults in the platform scripts and docs",
+      "managerFilePatterns": [
+        "/^deploy/platform/[^/]+\\.(?:sh|md)$/"
+      ],
+      "matchStrings": [
+        "(?<depName>rancher/k3s):(?<currentValue>v[0-9][^\\s\"\\'`}@]*)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?"
+      ],
+      "datasourceTemplate": "docker"
     }
   ]
 }
-

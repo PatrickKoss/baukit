@@ -1,0 +1,70 @@
+# The example routing tree with every receiver pointing at alert-sink, which this component deploys.
+global:
+  resolve_timeout: 5m
+route:
+  receiver: platform-tickets
+  group_by:
+    - namespace
+    - alertname
+  group_wait: 5s
+  group_interval: 10s
+  repeat_interval: 1m
+  routes:
+    # Watchdog always fires. The heartbeat service alerts when these notifications stop.
+    - receiver: heartbeat
+      matchers:
+        - alertname = "Watchdog"
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 1m
+    # InfoInhibitor only feeds the inhibit rule below and is never sent.
+    - receiver: blackhole
+      matchers:
+        - alertname = "InfoInhibitor"
+    - receiver: security-pager
+      matchers:
+        - severity = "critical"
+        - component =~ "falco|kyverno"
+    - receiver: platform-pager
+      matchers:
+        - severity = "critical"
+    - receiver: security-tickets
+      matchers:
+        - component =~ "falco|kyverno"
+    # Flux notification-controller sends severity="error" with component="flux".
+    - receiver: platform-tickets
+      matchers:
+        - component = "flux"
+      repeat_interval: 1h
+inhibit_rules:
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity =~ "warning|info"
+    equal:
+      - namespace
+      - alertname
+  - source_matchers:
+      - alertname = "InfoInhibitor"
+    target_matchers:
+      - severity = "info"
+    equal:
+      - namespace
+receivers:
+  - name: heartbeat
+    webhook_configs:
+      - url: http://alert-sink.observability.svc.cluster.local:8080/alerts
+        send_resolved: false
+  - name: blackhole
+  - name: platform-pager
+    webhook_configs:
+      - url: http://alert-sink.observability.svc.cluster.local:8080/alerts
+  - name: security-pager
+    webhook_configs:
+      - url: http://alert-sink.observability.svc.cluster.local:8080/alerts
+  - name: platform-tickets
+    webhook_configs:
+      - url: http://alert-sink.observability.svc.cluster.local:8080/alerts
+  - name: security-tickets
+    webhook_configs:
+      - url: http://alert-sink.observability.svc.cluster.local:8080/alerts
