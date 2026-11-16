@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import subprocess
 import unittest
@@ -143,6 +144,30 @@ class RunRowTests(unittest.TestCase):
         runner = FakeRunner(endpoints=False)
         self.run_row(runner, row("deny"))
         self.assertIn("--wait=false", runner.commands[-1])
+
+
+class SkipTests(unittest.TestCase):
+    def test_a_row_is_skipped_when_any_of_its_namespaces_is_absent(self):
+        rows = [
+            row(),
+            row(destination="  to: {service: kured.kured, port: 8080}\n"),
+            row(destination="  to: {pod: {namespace: kured, labels: {a: b}}, port: 80}\n"),
+        ]
+        rows = [dataclasses.replace(item, number=number) for number, item in enumerate(rows, 1)]
+        skipped = probe.skipped_outcomes(rows, {"kured"})
+        self.assertEqual([item.row.number for item in skipped], [2, 3])
+        self.assertEqual({item.status for item in skipped}, {"SKIP"})
+        self.assertTrue(skipped[0].detail.endswith("namespace kured absent"))
+
+    def test_absent_namespaces_compares_against_the_cluster(self):
+        namespaces = {"items": [{"metadata": {"name": "ns"}}]}
+        answer = subprocess.CompletedProcess([], 0, json.dumps(namespaces), "")
+        absent = probe.absent_namespaces(probe.Cluster(lambda *_, **__: answer), [row()])
+        self.assertEqual(absent, {"dest"})
+
+    def test_the_summary_counts_skips(self):
+        outcome = probe.Outcome(row(), "SKIP", "namespace dest absent")
+        self.assertIn("1 skipped", probe.summary([outcome], 1))
 
 
 class HelperTests(unittest.TestCase):

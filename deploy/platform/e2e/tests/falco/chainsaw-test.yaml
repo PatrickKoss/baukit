@@ -9,7 +9,8 @@ spec:
     the alert sink, and reading /etc/shadow in a test pod must fire the upstream "Read sensitive file
     untrusted" rule. The last step is the noise check: from Falco's start, through platform install and
     the suites that run alongside this one, no event at Warning or above may come from a pod other than
-    the deliberate triggers.
+    the deliberate triggers. Then a barman-cloud script exec'd in the Barman Cloud plugin sidecar must stay
+    quiet while a shell exec'd in the postgres container of the same pod fires the protected-namespace rule.
   timeouts:
     exec: 9m
   steps:
@@ -27,7 +28,7 @@ spec:
               rule='Baukit shell or package manager in app container'
               deadline=$(($(date +%s) + 180))
               until events=$(./falco-events.sh --source loki --since "$since" --min-priority Critical \
-                --rule "$rule" --namespace e2e-tenant) && [ -n "$events" ]; do
+                --rule "$rule" --namespace e2e-tenant --pod "$pod") && [ -n "$events" ]; do
                 if [ "$(date +%s)" -ge "$deadline" ]; then
                   printf 'no "%s" event in Loki within 3 minutes\n' "$rule" >&2
                   exit 1
@@ -127,7 +128,7 @@ spec:
               rule='Read sensitive file untrusted'
               deadline=$(($(date +%s) + 180))
               until events=$(./falco-events.sh --source loki --since "$since" --min-priority Warning \
-                --rule "$rule" --namespace "$NAMESPACE" --process cat) && [ -n "$events" ]; do
+                --rule "$rule" --namespace "$NAMESPACE" --pod shadow-reader --process cat) && [ -n "$events" ]; do
                 if [ "$(date +%s)" -ge "$deadline" ]; then
                   printf 'no "%s" event from cat in namespace %s in Loki within 3 minutes\n' "$rule" "$NAMESPACE" >&2
                   exit 1
@@ -144,11 +145,58 @@ spec:
               echo_pod=$(kubectl -n "$NAMESPACE" get configmap falco-triggers -o jsonpath='{.data.echo-pod}')
               # The triggers above, the e2e-backup-* clusters into which backup-restore execs psql, and the
               # netpol-probe-* pods into which the netpol suite execs its probes in protected namespaces.
+              # BAUKIT_E2E_PROFILE=persistent counts only events with a Kubernetes namespace, since a shared
+              # host's other Docker containers raise events without one. Its window opens at this run's first
+              # trigger, since Falco has outlived earlier runs; kubectl logs filters on kubelet's wall clock.
+              k8s_only=""
+              case ${BAUKIT_E2E_PROFILE:-} in
+                persistent)
+                  k8s_only="--kubernetes-only true"
+                  since=$(kubectl -n "$NAMESPACE" get configmap falco-triggers -o jsonpath='{.metadata.creationTimestamp}')
+                  printf 'persistent profile: counting only events with k8s.ns.name\n'
+                  ;;
+              esac
               events=$(./falco-events.sh --source falco --since "$since" --min-priority Warning \
                 --exclude-pod "$echo_pod" --exclude-pod shadow-reader --exclude-pod e2e-backup- \
-                --exclude-pod netpol-probe-)
+                --exclude-pod netpol-probe- $k8s_only)
               if [ -n "$events" ]; then
                 printf 'Falco raised Warning+ events outside the deliberate triggers since %s:\n%s\n' "$since" "$events" >&2
                 exit 1
               fi
               printf 'no Warning+ Falco events outside the triggers since %s\n' "$since"
+    # After the noise check, which would otherwise count the deliberate shell exec.
+    - name: barman-exec-is-quiet-and-a-shell-exec-fires
+      try:
+        - script:
+            content: |
+              set -eu
+              rule='Baukit exec into protected platform namespace'
+              pod=postgres-cluster-1
+              if ! kubectl -n falco get configmap falco-baukit-rules -o jsonpath='{.data.baukit\.rules\.yaml}' |
+                grep -q 'macro: baukit_cnpg_plugin_child'; then
+                printf 'SKIP: the deployed Falco rules lack baukit_cnpg_plugin_child\n'
+                exit 0
+              fi
+              # kubectl logs filters on the kubelet's wall clock, so a window from the API server's clock holds
+              # only this step's execs.
+              kubectl -n "$NAMESPACE" create configmap falco-exec-window >/dev/null
+              since=$(kubectl -n "$NAMESPACE" get configmap falco-exec-window -o jsonpath='{.metadata.creationTimestamp}')
+              kubectl -n postgres exec "$pod" -c plugin-barman-cloud -- /venv/bin/barman-cloud-backup-list --help >/dev/null
+              kubectl -n postgres exec "$pod" -c postgres -- sh -c 'echo falco-e2e-protected-exec' >/dev/null
+              deadline=$(($(date +%s) + 120))
+              until shell=$(./falco-events.sh --source falco --since "$since" --min-priority Critical \
+                --rule "$rule" --namespace postgres --pod "$pod" --process sh) && [ -n "$shell" ]; do
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  printf 'no "%s" event for sh in %s within 2 minutes\n' "$rule" "$pod" >&2
+                  exit 1
+                fi
+                sleep 5
+              done
+              printf 'shell exec fired: %s\n' "$shell"
+              barman=$(./falco-events.sh --source falco --since "$since" --min-priority Warning \
+                --namespace postgres --pod "$pod" --process barman-cloud-ba)
+              if [ -n "$barman" ]; then
+                printf 'the barman-cloud exec raised events:\n%s\n' "$barman" >&2
+                exit 1
+              fi
+              printf 'barman-cloud exec stayed quiet\n'

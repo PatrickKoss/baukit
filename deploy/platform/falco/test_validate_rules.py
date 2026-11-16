@@ -164,6 +164,28 @@ class RuntimeExecTest(unittest.TestCase):
             {"manager backup ", "manager healthcheck unix"},
         )
 
+    def test_barman_plugin_exception_names_only_the_sidecar_scripts(self) -> None:
+        plugin = macro_condition(self.rules, "baukit_cnpg_plugin_child")
+        exec_ = macro_condition(self.rules, "baukit_cnpg_runtime_exec")
+
+        self.assertIn("or baukit_cnpg_plugin_child", exec_)
+        self.assertIn("k8s.ns.name = postgres", plugin)
+        sidecar = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar"
+        self.assertIn(f"container.image.repository = {sidecar}", plugin)
+        self.assertIn("container.name = plugin-barman-cloud", plugin)
+        self.assertEqual(
+            set(re.findall(r"proc\.name = (\S+)", plugin)), {"barman-cloud-ba", "barman-cloud-wa"}
+        )
+        self.assertEqual(
+            set(re.findall(r'proc\.cmdline startswith "[^ ]+ /venv/bin/([^"]+)"', plugin)),
+            {
+                "barman-cloud-backup-list ",
+                "barman-cloud-backup-delete ",
+                "barman-cloud-wal-archive ",
+            },
+        )
+        self.assertNotRegex(plugin, r"proc\.name (=|in) \(?sh")
+
     def test_flux_exception_names_only_git_in_kustomize_controller(self) -> None:
         child = macro_condition(self.rules, "baukit_flux_controller_child")
 
