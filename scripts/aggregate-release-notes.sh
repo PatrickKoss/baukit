@@ -56,6 +56,7 @@ print_sections() {
 
 print_sections "Rust crates" rust/crates/*/CHANGELOG.md
 print_sections "TypeScript packages" typescript/packages/*/CHANGELOG.md
+print_sections "Deployment" deploy/chart/baukit-app/CHANGELOG.md deploy/platform/CHANGELOG.md
 
 current_tag="v$version"
 previous_tag=$(git tag --list 'v*' --sort=-v:refname | grep -Fvx "$current_tag" | head -n 1 || true)

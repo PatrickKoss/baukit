@@ -108,7 +108,8 @@ for path in sorted(Path("templates").rglob("CHANGELOG.md")):
     print(path)
 PYTHON
 )
-for changelog in rust/crates/*/CHANGELOG.md cli/CHANGELOG.md "${template_changelogs[@]}" deploy/chart/baukit-app/CHANGELOG.md; do
+for changelog in rust/crates/*/CHANGELOG.md cli/CHANGELOG.md "${template_changelogs[@]}" deploy/chart/baukit-app/CHANGELOG.md \
+  deploy/platform/CHANGELOG.md; do
   TRAIN_VERSION="$next" RELEASE_DATE="$release_date" perl -0pi -e \
     's{(## (?:\[Unreleased\]|Unreleased)\n\n)}{$1."## [".$ENV{TRAIN_VERSION}."] - ".$ENV{RELEASE_DATE}."\n\n"}e' \
     "$changelog"
@@ -122,7 +123,8 @@ import sys
 changelogs = [*Path("rust/crates").glob("*/CHANGELOG.md"),
               Path("cli/CHANGELOG.md"), *Path("templates").rglob("CHANGELOG.md"),
               *Path("typescript/packages").glob("*/CHANGELOG.md"),
-              Path("deploy/chart/baukit-app/CHANGELOG.md")]
+              Path("deploy/chart/baukit-app/CHANGELOG.md"),
+              Path("deploy/platform/CHANGELOG.md")]
 for changelog in changelogs:
     heading = f"{sys.argv[1]}\n" if changelog.parts[0] == "typescript" else f"[{sys.argv[1]}] - "
     sections = re.split(r"^## ", changelog.read_text(), flags=re.MULTILINE)
