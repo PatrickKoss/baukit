@@ -5,6 +5,13 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.26.2
+
+Last verified release train: `v0.26.2` (patch train on top of `v0.26.1`). No component versions change.
+- `flux-system/flux-errors` alerts on OCIRepository and HelmRepository errors in every platform namespace that holds them. Consumers that added their own source-error Alert for those namespaces can drop it.
+- `check_alertmanager_config.py` accepts a same-namespace Flux Alert as coverage for a tenant namespace.
+- Generated strict products' `scripts/gate.py` reserves the emulator cores before other lanes take them; `[quality] emulator_steps` and `emulator_cores` tune it.
+
 ## v0.26.1
 
 Last verified release train: `v0.26.1` (patch train on top of `v0.26.0`). No component versions change.

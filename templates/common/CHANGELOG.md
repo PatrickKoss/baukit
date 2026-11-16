@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.26.2] - 2026-11-16
+
 {% if context.quality_strict %}- `scripts/gate.py` holds the emulator cores back as soon as `android-e2e`'s dependencies pass, before the steps that waited on the same dependencies take the free cores. Before, those steps woke first and the emulator step often started on 2 or 3 cores, where a boot ANR or a 30-minute Gradle build followed. `[quality] emulator_steps` adds step names that get the same reserve, and `[quality] emulator_cores` sets its size (`BAUKIT_GATE_EMULATOR_CORES` still overrides it). Copy `scripts/gate.py` and `scripts/gate.test.py` from the template.
 {% endif %}## [0.26.1] - 2026-11-16
 
