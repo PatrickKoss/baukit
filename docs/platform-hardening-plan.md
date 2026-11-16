@@ -609,11 +609,11 @@ by then ride along).
   gets schemas, `kyverno apply`, conventions and budgets for free. It adds `tofu fmt -check`,
   `tofu validate`, `tflint`, `trivy config terraform/`, `gitleaks` with a config, `shellcheck`, and the
   existing SOPS proofs. Add a `make validate` target and a pre-push hook script (opt-in).
-- [ ] **PI3 Compose the hardened bases locally:** kyverno, kyverno-policies, falco, the platform
+- [x] **PI3 Compose the hardened bases locally:** kyverno, kyverno-policies, falco, the platform
   observability pack, and the reusable components instead of the hand copies (`foundation/minio.yaml`,
   `issuers/`, the observability resource patches). Drop namespace manifests that duplicate base-owned
   namespaces (two owners with prune on). Migrate MinIO to the baukit RustFS component.
-- [ ] **PI4 Tenants:** rebuild `apps/local/leitbild-*` on `components/tenant` with per-tenant service
+- [x] **PI4 Tenants:** rebuild `apps/local/leitbild-*` on `components/tenant` with per-tenant service
   accounts, `targetNamespace`, a per-tenant age recipient, and `postgres-client`/`ingress-backend`
   namespace labels for the NetworkPolicies.
 - [ ] **PI5 Alerting:** a SOPS-encrypted Alertmanager config Secret with a real receiver and an external
@@ -655,6 +655,22 @@ by then ride along).
 - [ ] **RF5 Hosted Platform e2e `k3s-hardening` red** (same run). `secret-encrypted-at-rest` reads
   every file under the embedded-etcd data dir three times with `find -exec cat` and hit the 4 min
   exec timeout. Check the datastore in one bounded pass.
+- [ ] **RF6 `platform-lifecycle.sh` creates platform-local without `--subnet`.** Docker then picks
+  its default network, outside the `10.89.0.0/16` nodeCIDR the node-cidr NetworkPolicies allow, so
+  the API server cannot reach the Kyverno, cert-manager and CNPG webhooks. platform-up.sh passes
+  `--subnet` and the e2e run picks a free /24; the lifecycle needs the same. Blocks PI9.
+- [ ] **RF7 Admission-order and sibling checkers assume every Kustomization path is in baukit.**
+  `check_admission_order.py` builds each reconciliation path inside the baukit checkout, so a
+  consumer's own Kustomizations (sourceRef `GitRepository/flux-system`) fail to build.
+  platform-infra moved four such Kustomizations (registry allowlist, observability inputs, issuers,
+  exposure; none renders a workload) into `platform/local/platform-infra.yaml`, which the checker does
+  not read. That split hides them from the checker and goes away with the PI re-pin to 0.26.1.
+- [ ] **RF8 Local wrappers for Kyverno and Falco.** platform-infra composes
+  `e2e/overlay/components/kyverno` and `.../falco`, because `overlays/local/components` has none.
+  Consumers should not depend on e2e paths.
+- [ ] **RF9 Consumers must seed the kubernetes-json-schema definitions by hand.** Running baukit's
+  validators from a fresh consumer worktree fails with "no kubernetes-json-schema definitions" until
+  the sha-pinned file is fetched. The validator should fetch and verify it as baukit's own run does.
 - [ ] **RF3 Gate budget under a shared host.** The 0.26.0 full gate took 2225 s, 425 s over budget,
   because `native-android` started on 2 cores while another product's gate held the second heavy
   slot. Look at the android lane's minimum core share in the pool.
@@ -1251,3 +1267,16 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   Validate and the tests reran green for me. Open: three runbooks (cluster-bootstrap, baukit-base-upgrade,
   secret-rotation) and README sections still name the old testing/production paths; PI9 fixes them
   with its runbook work. Live proof of all of this is PI9.
+- 2026-11-16 10:10: PI3 and PI4 merged into platform-infra main (60602a2, 5f07e3e), validated together
+  (local 282 resources, 48/48 CI and 93/93 cluster policies, tenant policies and key isolation, 6
+  script tests). PI3: the local overlay composes baukit's local components for observability,
+  cert-manager, cnpg, postgres, traefik and the issuer, plus Kyverno, kyverno-policies,
+  kyverno-monitoring and Falco, with only baukit's 11 PolicyExceptions; the watchdog receiver and the
+  observability patches are gone, and a misplaced observability-cluster ConfigMap moved to
+  observability-agents. PI4: leitbild-testing and leitbild-production are tenants on
+  `components/tenant`, each with its own age identity committed SOPS-encrypted to the cluster
+  recipient as the component prescribes; validate renders the tenants, runs the flux-tenant policies
+  with kyverno apply and proves every tenant key decrypts only its own files. The leitbild repo's side
+  is in `apps/PRODUCT-REQUIREMENTS.md`. Review found RF6 (lifecycle without `--subnet`, blocks PI9),
+  RF7 (checker cannot read consumer Kustomizations; platform-infra's split file is temporary), RF8
+  and RF9. They go into baukit 0.26.1 together with RF4 and RF5, then platform-infra re-pins.
