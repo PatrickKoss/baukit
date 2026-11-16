@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Validates syscall rule files with the pinned Falco image. With --k8saudit, the files are audit rules
 # and Falco loads the k8saudit plugin that k8saudit-helm-release.yaml pins. Without files, it checks
-# every shipped file of both kinds.
+# every shipped file of both kinds. With --k8saudit-replay EVENTS, Falco reads the audit events in
+# EVENTS (one JSON event per line) through the plugin, applies the shipped audit rules and prints the
+# name of each rule that fires with the user, namespace and subresource, tab separated, one per line.
 set -euo pipefail
 
 falco_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -89,17 +91,48 @@ validate_syscall() {
 validate_k8saudit() {
   local plugin_dir config
   plugin_dir=$(k8saudit_plugin_dir) || return 1
-  config=$(mktemp)
+  config=$(k8saudit_config "")
   trap 'rm -f -- "$config"' RETURN
-  printf '%s\n' 'load_plugins: [k8saudit]' 'plugins:' '  - name: k8saudit' \
-    '    library_path: /baukit-plugins/libk8saudit.so' '    open_params: ""' >"$config"
-  chmod 0644 "$config"
   run_validate "" -v "$plugin_dir:/baukit-plugins:ro" -v "$config:/etc/falco/config.d/zz-k8saudit.yaml:ro" -- "$@"
+}
+
+# Writes a config.d file that loads the k8saudit plugin with OPEN_PARAMS, and prints its path.
+k8saudit_config() {
+  local config
+  config=$(mktemp)
+  printf '%s\n' 'load_plugins: [k8saudit]' 'plugins:' '  - name: k8saudit' \
+    '    library_path: /baukit-plugins/libk8saudit.so' "    open_params: \"$1\"" >"$config"
+  chmod 0644 "$config"
+  printf '%s\n' "$config"
+}
+
+replay_k8saudit() {
+  local events plugin_dir config rules
+  events=$(cd -- "$(dirname -- "$1")" && pwd)/$(basename -- "$1")
+  plugin_dir=$(k8saudit_plugin_dir) || return 1
+  config=$(k8saudit_config /baukit-events/audit.jsonl)
+  trap 'rm -f -- "$config"' RETURN
+  rules=$falco_dir/k8saudit-rules/baukit.k8saudit.rules.yaml
+  docker run --rm --network none -v "$plugin_dir:/baukit-plugins:ro" \
+    -v "$config:/etc/falco/config.d/zz-k8saudit.yaml:ro" -v "$events:/baukit-events/audit.jsonl:ro" \
+    -v "$rules:/baukit-rules/baukit.k8saudit.rules.yaml:ro" "$image" \
+    falco -r /baukit-rules/baukit.k8saudit.rules.yaml -o json_output=true -o stdout_output.enabled=true \
+    -o log_stderr=false -o plugins_hostinfo=false --disable-source syscall |
+    python3 -c '
+import json, sys
+for line in sys.stdin:
+    if line.startswith("{"):
+        alert = json.loads(line)
+        fields = alert.get("output_fields", {})
+        print("\t".join([alert["rule"], *(str(fields.get(key, "")) for key in sys.argv[1:])]))
+' ka.user.name ka.target.namespace ka.target.subresource
 }
 
 if (($# == 0)); then
   validate_syscall "$falco_dir"/rules/*.yaml "$falco_dir"/../components/falco-shared-kernel/*.rules.yaml
   validate_k8saudit "$falco_dir"/k8saudit-rules/*.yaml
+elif [[ $1 == --k8saudit-replay ]]; then
+  replay_k8saudit "$2"
 elif [[ $1 == --k8saudit ]]; then
   shift
   validate_k8saudit "$@"

@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -89,6 +90,63 @@ class ValidateRulesTest(unittest.TestCase):
         result = validate(K8SAUDIT_RULES)
 
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+RESTORE_TEST = "system:serviceaccount:postgres:postgres-restore-test"
+
+
+def audit_event(index: int, user: str, namespace: str, subresource: str, verb: str) -> str:
+    timestamp = f"2026-11-16T21:00:{index:02d}Z"
+    return json.dumps(
+        {
+            "kind": "Event",
+            "apiVersion": "audit.k8s.io/v1",
+            "level": "Metadata",
+            "auditID": f"00000000-0000-0000-0000-{index:012d}",
+            "stage": "ResponseComplete",
+            "requestURI": f"/api/v1/namespaces/{namespace}/pods/p/{subresource}?command=true",
+            "verb": verb,
+            "user": {"username": user, "groups": ["system:authenticated"]},
+            "sourceIPs": ["10.42.0.9"],
+            "objectRef": {
+                "resource": "pods",
+                "namespace": namespace,
+                "name": "p",
+                "apiVersion": "v1",
+                "subresource": subresource,
+            },
+            "responseStatus": {"metadata": {}, "code": 101},
+            "requestReceivedTimestamp": timestamp,
+            "stageTimestamp": timestamp,
+            "annotations": {"authorization.k8s.io/decision": "allow"},
+        }
+    )
+
+
+class K8sAuditReplayTest(unittest.TestCase):
+    def test_only_the_restore_test_exec_into_postgres_is_expected(self) -> None:
+        events = [
+            (RESTORE_TEST, "postgres", "exec", "create"),
+            ("system:admin", "postgres", "exec", "get"),
+            (RESTORE_TEST, "postgres", "attach", "create"),
+            (RESTORE_TEST, "default", "exec", "create"),
+            ("system:serviceaccount:postgres:other", "postgres", "exec", "create"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            events_file = Path(directory) / "audit.jsonl"
+            events_file.write_text(
+                "".join(audit_event(i, *event) + "\n" for i, event in enumerate(events, 1)),
+                encoding="utf-8",
+            )
+
+            result = validate(Path("--k8saudit-replay"), events_file)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        fired = [tuple(line.split("\t")[1:]) for line in result.stdout.splitlines()]
+        self.assertEqual(
+            fired,
+            [(user, namespace, subresource) for user, namespace, subresource, _ in events[1:]],
+        )
 
 
 class ImagePinTest(unittest.TestCase):

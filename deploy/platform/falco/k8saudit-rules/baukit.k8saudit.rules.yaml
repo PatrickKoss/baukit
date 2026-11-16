@@ -47,13 +47,19 @@
   source: k8s_audit
   tags: [baukit, k8s_audit, secrets]
 
+# The restore-test CronJob reads its sentinel row with psql through an exec into the restored instance.
+- macro: baukit_expected_exec
+  condition: >-
+    (ka.user.name = "system:serviceaccount:postgres:postgres-restore-test" and
+     ka.target.namespace = postgres and ka.target.subresource = exec)
+
 - rule: Baukit exec or attach into pod
   desc: >-
     Someone opened an exec or attach session into a pod through the API server. kubectl uses a
     WebSocket since Kubernetes 1.30, which the API server audits as get; SPDY clients send create.
   condition: >-
     baukit_audit_complete and ka.verb in (create, get) and ka.target.resource=pods and
-    ka.target.subresource in (exec, attach)
+    ka.target.subresource in (exec, attach) and not baukit_expected_exec
   output: >-
     Pod %ka.target.subresource (user=%ka.user.name pod=%ka.target.namespace/%ka.target.name
     decision=%ka.auth.decision code=%ka.response.code uri=%ka.uri source_ips=%ka.sourceips)

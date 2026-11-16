@@ -278,6 +278,20 @@
 - from: {namespace: falco, labels: {app.kubernetes.io/name: falco}}
   to: {service: loki-gateway.observability, port: 80}
   expect: deny
+# The k8saudit webhook takes audit events from the API server (node CIDR) only; a pod that reaches it
+# could post forged events (threat-model P-14).
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: falco-k8saudit-webhook.falco, port: 9765}
+  expect: deny
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {host: 10.43.0.60, port: 9765}
+  expect: deny
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {host: 10.43.0.60, port: 9765}
+  expect: deny
+- from: {namespace: falco, labels: {app.kubernetes.io/name: falcosidekick}}
+  to: {service: falco-k8saudit-webhook.falco, port: 9765}
+  expect: deny
 - from: {namespace: flux-system, labels: {app: notification-controller}}
   to: {service: kube-prometheus-stack-alertmanager.observability, port: 9093}
   expect: allow
