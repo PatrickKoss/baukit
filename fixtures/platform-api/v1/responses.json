@@ -226,12 +226,12 @@
     },
     "organizationSummary": {
       "status": 200,
-      "source": "backend/tests/platform.rs organization summary test (business.runtime_analyzer.professional, quantity 4, one seat) and PlatformOrganizationDto in backend/openapi.json; ssoConnectionActive and directorySyncActive from Schlüsselbund C34.F; name from Schlüsselbund task/c16 51805a34 docs/platform-api.md#business-organizations and the summary test in backend/tests/platform.rs",
+      "source": "backend/tests/platform.rs organization summary test (business.laufbefund.professional, quantity 4, one seat) and PlatformOrganizationDto in backend/openapi.json; ssoConnectionActive and directorySyncActive from Schlüsselbund C34.F; name from Schlüsselbund task/c16 51805a34 docs/platform-api.md#business-organizations and the summary test in backend/tests/platform.rs",
       "body": {
         "organizationId": "018f1234-5678-7abc-8def-012345678901",
         "name": "Summary",
         "status": "active",
-        "productId": "runtime_analyzer",
+        "productId": "laufbefund",
         "tier": "professional",
         "features": [],
         "paidQuantity": 4,
@@ -247,7 +247,7 @@
       "body": {
         "organizationId": "018f1234-5678-7abc-8def-012345678901",
         "status": "active",
-        "productId": "runtime_analyzer",
+        "productId": "laufbefund",
         "tier": "professional",
         "features": [],
         "paidQuantity": 4,
@@ -271,7 +271,7 @@
     },
     "organizationMembersFirstPage": {
       "status": 200,
-      "source": "docs/platform-api.md#business-seat-directory, BusinessMemberPageDto and MembersQuery in backend/crates/schluesselbund-api/src/routes/platform.rs, and the two-page members test in backend/tests/platform.rs. Hand-recorded: subjects and cursor are illustrative (first page, query product=runtime_analyzer)",
+      "source": "docs/platform-api.md#business-seat-directory, BusinessMemberPageDto and MembersQuery in backend/crates/schluesselbund-api/src/routes/platform.rs, and the two-page members test in backend/tests/platform.rs. Hand-recorded: subjects and cursor are illustrative (first page, query product=laufbefund)",
       "body": {
         "items": [
           {
@@ -288,7 +288,7 @@
     },
     "organizationMembersLastPage": {
       "status": 200,
-      "source": "docs/platform-api.md#business-seat-directory, BusinessMemberPageDto and MembersQuery in backend/crates/schluesselbund-api/src/routes/platform.rs, and the two-page members test in backend/tests/platform.rs. Hand-recorded: subjects and cursor are illustrative (last page, query product=runtime_analyzer&cursor=c2VhdHMtcGFnZS0y)",
+      "source": "docs/platform-api.md#business-seat-directory, BusinessMemberPageDto and MembersQuery in backend/crates/schluesselbund-api/src/routes/platform.rs, and the two-page members test in backend/tests/platform.rs. Hand-recorded: subjects and cursor are illustrative (last page, query product=laufbefund&cursor=c2VhdHMtcGFnZS0y)",
       "body": {
         "items": [
           {

@@ -17,7 +17,7 @@ This is a read-only audit. I wrote no repo files. Per-product sections follow, a
 - tiefgang: 5 handlers. schlauzug: runs and room host view. leitbild: reflection-jobs owner taken from the JSON payload, plus the catalog import upsert can rewrite owner.
 
 ### SQL-scoped (good)
-eigenruhe is SQL-scoped on all 64 id routes. lesezeichen is SQL-scoped on 29 of 32. bauvisite uses require_member plus scoped SQL. runtime-analyzer uses Postgres FORCE RLS, but 39 direct pool calls and 62 SECURITY DEFINER uses bypass it. Most `/me` routes in kassensturz and heldengang are SQL-scoped too.
+eigenruhe is SQL-scoped on all 64 id routes. lesezeichen is SQL-scoped on 29 of 32. bauvisite uses require_member plus scoped SQL. laufbefund uses Postgres FORCE RLS, but 39 direct pool calls and 62 SECURITY DEFINER uses bypass it. Most `/me` routes in kassensturz and heldengang are SQL-scoped too.
 
 ### Cross-tenant tests (routes with an id / routes with a two-principal test)
 | Product | Routes with id | Routes with a two-principal test |
@@ -37,7 +37,7 @@ hebkit and schlauzug have no counted tests; see their sections.
 ### Rate-limit gaps
 - `/suite/*` and `/platform/inbound` are merged after the limiter layers in eigenruhe and lesezeichen. kassensturz has no limiter on `/platform/inbound`.
 - heldengang uses its own 300/min Postgres quota, not baukit-ratelimit. Its OAuth callback and OG image route have no limit at all.
-- runtime-analyzer: anonymous `/auth/*` traffic shares one global key, so one client can lock everyone out of sign-in.
+- laufbefund: anonymous `/auth/*` traffic shares one global key, so one client can lock everyone out of sign-in.
 - schluesselbund: invalid `/platform/v1` tokens are unlimited.
 - lesezeichen: the limiter is optional in production.
 - LLM, export, upload and outbound routes get only the generic bucket almost everywhere.
@@ -1270,15 +1270,15 @@ baukit-sync is used. `push` (`tiefgang-api/src/sync_handlers.rs:52-74`) requires
 
 ---
 
-# runtime-analyzer (finops) tenancy and rate-limit audit
+# laufbefund tenancy and rate-limit audit
 
-Reduced depth: steps 1, 3, 5 full; steps 2 and 4 spot checks. Backend at `/home/patrick/projects/runtime-analyzer/backend`. Nothing in the repo was modified.
+Reduced depth: steps 1, 3, 5 full; steps 2 and 4 spot checks. Backend at `/home/patrick/projects/laufbefund/backend`. Nothing in the repo was modified.
 
 ## 1. Ownership model
 
-- The scope key is the tenant, typed as `TenantId(Uuid)` (`crates/finops-domain`). Inside a tenant there is a second layer of `AccessScope` grants (org/product/auditor scopes, `crates/finops-domain/src/access.rs:69`).
-- The principal is `FinopsPrincipal` (`crates/finops-api/src/auth/principal.rs:18`, field `tenant_id` at :19). Its extractor is `impl FromRequestParts<ApiState> for FinopsPrincipal` at `principal.rs:346`. It reuses the value the rate-limit middleware already resolved, or calls `FinopsPrincipal::resolve`. API keys are checked against both owner and tenant at `principal.rs:60`. Inactive or wrong-tenant users are rejected at `principal.rs:159`.
-- Enforcement happens in the database, which differs from the E4-05 pattern. Repositories run their queries in `TenantScoped::run*` (`crates/finops-postgres/src/tenant_scoped.rs:9-66`). That helper opens a transaction and runs `set_config('app.current_tenant', $1, true)` (:25, :38, :58). The tables carry `ENABLE` + `FORCE ROW LEVEL SECURITY` with `USING/WITH CHECK (tenant_id = current_setting('app.current_tenant', true))`, for example `migrations/0016_rls.sql:29-31` and the loop form at `migrations/0064_evidence_manifests.sql:137`. The test DB role is created `NOSUPERUSER NOBYPASSRLS` (`crates/finops-test/src/shared_timescale.rs:114`). Migrations contain 130 ENABLE and 134 FORCE statements. Composite FKs `(tenant_id, id)` block cross-tenant references, for example `migrations/0063_compliance_catalogs.sql:174,217`.
+- The scope key is the tenant, typed as `TenantId(Uuid)` (`crates/laufbefund-domain`). Inside a tenant there is a second layer of `AccessScope` grants (org/product/auditor scopes, `crates/laufbefund-domain/src/access.rs:69`).
+- The principal is `LaufbefundPrincipal` (`crates/laufbefund-api/src/auth/principal.rs:18`, field `tenant_id` at :19). Its extractor is `impl FromRequestParts<ApiState> for LaufbefundPrincipal` at `principal.rs:346`. It reuses the value the rate-limit middleware already resolved, or calls `LaufbefundPrincipal::resolve`. API keys are checked against both owner and tenant at `principal.rs:60`. Inactive or wrong-tenant users are rejected at `principal.rs:159`.
+- Enforcement happens in the database, which differs from the E4-05 pattern. Repositories run their queries in `TenantScoped::run*` (`crates/laufbefund-postgres/src/tenant_scoped.rs:9-66`). That helper opens a transaction and runs `set_config('app.current_tenant', $1, true)` (:25, :38, :58). The tables carry `ENABLE` + `FORCE ROW LEVEL SECURITY` with `USING/WITH CHECK (tenant_id = current_setting('app.current_tenant', true))`, for example `migrations/0016_rls.sql:29-31` and the loop form at `migrations/0064_evidence_manifests.sql:137`. The test DB role is created `NOSUPERUSER NOBYPASSRLS` (`crates/laufbefund-test/src/shared_timescale.rs:114`). Migrations contain 130 ENABLE and 134 FORCE statements. Composite FKs `(tenant_id, id)` block cross-tenant references, for example `migrations/0063_compliance_catalogs.sql:174,217`.
 - If `app.current_tenant` is unset, `current_setting(..., true)` returns NULL, so an unscoped `&self.pool` query on an RLS table sees zero rows and fails closed.
 
 ## 2. Route inventory (spot check)
@@ -1287,15 +1287,15 @@ openapi.json has 270 paths. 147 of them carry a path parameter, for 192 operatio
 
 | Query | Context | Classification |
 |---|---|---|
-| `crates/finops-postgres/src/compliance.rs:485` `compliance_imports WHERE id=$1` | inside `TenantScoped::run(&self.pool, tenant.0, ...)` (:483); table has RLS and a tenant-keyed index (`migrations/0063_compliance_catalogs.sql:320`) | RLS-scoped (no WHERE tenant, DB enforces) |
-| `crates/finops-postgres/src/compliance.rs:373` `artifact_uploads WHERE id=$1 AND ...` | inside a tenant-scoped tx; `artifact_uploads` FORCE RLS (`migrations/0074_incident_receipt_uploads.sql:9`) | RLS-scoped |
-| `crates/finops-postgres/src/artifact_uploads.rs:128` `UPDATE artifact_uploads ... WHERE id=$1` | tx helper; same RLS table | RLS-scoped |
-| `crates/finops-postgres/src/compliance.rs:177,230,256,288` `assessment_profiles` / `framework_versions WHERE id=$1` | public curated catalog, only written when `tenant.is_none()` (:176). Tenant copies live in `tenant_*` tables with RLS (`0063_compliance_catalogs.sql:237,261`) | global data, not tenant-owned |
-| `crates/finops-postgres/src/compliance.rs:372` `SELECT count(*) FROM compliance_imports` | the quota count relies on RLS to scope to the tenant | RLS-scoped (implicit) |
-| `crates/finops-postgres/src/tickets.rs:290` `integrations WHERE tenant_id=$1 AND id=$2` | explicit tenant plus RLS | SQL-scoped |
-| `crates/finops-postgres/src/admin.rs:46,80,102` `api_keys WHERE tenant_id=$1 AND id=$2` | explicit | SQL-scoped |
+| `crates/laufbefund-postgres/src/compliance.rs:485` `compliance_imports WHERE id=$1` | inside `TenantScoped::run(&self.pool, tenant.0, ...)` (:483); table has RLS and a tenant-keyed index (`migrations/0063_compliance_catalogs.sql:320`) | RLS-scoped (no WHERE tenant, DB enforces) |
+| `crates/laufbefund-postgres/src/compliance.rs:373` `artifact_uploads WHERE id=$1 AND ...` | inside a tenant-scoped tx; `artifact_uploads` FORCE RLS (`migrations/0074_incident_receipt_uploads.sql:9`) | RLS-scoped |
+| `crates/laufbefund-postgres/src/artifact_uploads.rs:128` `UPDATE artifact_uploads ... WHERE id=$1` | tx helper; same RLS table | RLS-scoped |
+| `crates/laufbefund-postgres/src/compliance.rs:177,230,256,288` `assessment_profiles` / `framework_versions WHERE id=$1` | public curated catalog, only written when `tenant.is_none()` (:176). Tenant copies live in `tenant_*` tables with RLS (`0063_compliance_catalogs.sql:237,261`) | global data, not tenant-owned |
+| `crates/laufbefund-postgres/src/compliance.rs:372` `SELECT count(*) FROM compliance_imports` | the quota count relies on RLS to scope to the tenant | RLS-scoped (implicit) |
+| `crates/laufbefund-postgres/src/tickets.rs:290` `integrations WHERE tenant_id=$1 AND id=$2` | explicit tenant plus RLS | SQL-scoped |
+| `crates/laufbefund-postgres/src/admin.rs:46,80,102` `api_keys WHERE tenant_id=$1 AND id=$2` | explicit | SQL-scoped |
 
-There are 39 direct `&self.pool` executions in `finops-postgres` without tenant context. The ones I sampled are cross-tenant worker or lookup functions: `tickets.rs:301` (`ticket_poll_candidates`), `agent_tokens.rs:62,69` (`agent_cluster_tenant`). I did not classify the rest. They should be checked against `SECURITY DEFINER` functions, because 62 `SECURITY DEFINER` occurrences in migrations bypass RLS by design.
+There are 39 direct `&self.pool` executions in `laufbefund-postgres` without tenant context. The ones I sampled are cross-tenant worker or lookup functions: `tickets.rs:301` (`ticket_poll_candidates`), `agent_tokens.rs:62,69` (`agent_cluster_tenant`). I did not classify the rest. They should be checked against `SECURITY DEFINER` functions, because 62 `SECURITY DEFINER` occurrences in migrations bypass RLS by design.
 
 Caveat: my static parse of the migrations could not confirm FORCE RLS for every table with a `tenant_id` column. Many tables are covered by `FOREACH ... EXECUTE format(...)` loops, for example `0053_runtime_image_inventory.sql:282` covers `workloads`. Checking `pg_class.relforcerowsecurity` against a live DB is the reliable test, and I did not run it.
 
@@ -1310,8 +1310,8 @@ Numbers: 192 operations take an id. Roughly 15 to 20 feature areas have a cross-
 
 ## 4. Rate limiting (spot check)
 
-- baukit-ratelimit is used through a custom middleware, `rate_limit_request` (`crates/finops-api/src/lib.rs:264`). `production_router` attaches it (`lib.rs:93-99`), inside `baukit_auth::establish_principal` (`lib.rs:100-103`). The store is Redis when enabled and falls back to in-memory (`crates/finops-bin/src/bin/api.rs:133-136`, `lib.rs:92`).
-- Authenticated traffic gets one bucket per tenant, `tenant:<id>`, sized by tier: 100, 500 or 2000 per minute (`crates/finops-domain/src/tenancy.rs:393-408`). API tokens with an override get an extra per-key bucket (`lib.rs:298-302`).
+- baukit-ratelimit is used through a custom middleware, `rate_limit_request` (`crates/laufbefund-api/src/lib.rs:264`). `production_router` attaches it (`lib.rs:93-99`), inside `baukit_auth::establish_principal` (`lib.rs:100-103`). The store is Redis when enabled and falls back to in-memory (`crates/laufbefund-bin/src/bin/api.rs:133-136`, `lib.rs:92`).
+- Authenticated traffic gets one bucket per tenant, `tenant:<id>`, sized by tier: 100, 500 or 2000 per minute (`crates/laufbefund-domain/src/tenancy.rs:393-408`). API tokens with an override get an extra per-key bucket (`lib.rs:298-302`).
 - Anonymous traffic is limited only on `/auth/*`, by one global key `anonymous:auth` at 120/min (`lib.rs:274-279`). That bucket is shared by every client, so one abuser can lock all sign-ins out. All other anonymous paths skip the limiter (`lib.rs:290`), and so do erasure reconciliation requests (`lib.rs:292`).
 - No route has its own budget. Uploads (`/api/v1/artifacts/uploads/{id}/chunks/{index}`), evidence and compliance exports, outbound integrations (Jira/ServiceNow/GRC/SIEM/privacy connections) and search all draw from the same tenant-wide bucket. A noisy user inside a tenant can starve that tenant's other users.
 - `router()` (`lib.rs:73`), used by tests, has no limiter. I found no test of the production limiter.
@@ -1330,7 +1330,7 @@ baukit-sync is not a dependency of this backend. The `ticket_sync`, `grc_sync` a
 - Rate limiting: the anonymous `/auth/*` bucket is one global key (`lib.rs:278`), so a single client can exhaust it for everyone. Uploads, exports, outbound integrations and search have no per-route budget.
 
 **SQL-scoped (good summary)**
-- The tenant comes from `FinopsPrincipal` (`principal.rs:346`). Repositories run inside `TenantScoped` (`tenant_scoped.rs`). Postgres RLS is FORCEd with a `WITH CHECK` policy, the DB role is NOBYPASSRLS, and composite `(tenant_id, id)` FKs are in place. Several queries also add an explicit `tenant_id` predicate (`admin.rs:46,80,102`, `tickets.rs:290`). 27 test files test cross-tenant behaviour.
+- The tenant comes from `LaufbefundPrincipal` (`principal.rs:346`). Repositories run inside `TenantScoped` (`tenant_scoped.rs`). Postgres RLS is FORCEd with a `WITH CHECK` policy, the DB role is NOBYPASSRLS, and composite `(tenant_id, id)` FKs are in place. Several queries also add an explicit `tenant_id` predicate (`admin.rs:46,80,102`, `tickets.rs:290`). 27 test files test cross-tenant behaviour.
 
 ---
 

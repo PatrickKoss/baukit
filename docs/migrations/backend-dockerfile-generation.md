@@ -27,7 +27,7 @@ keep selecting those stages.
 | Eigenruhe | `cargo_build_jobs` |
 | Tiefgang | `backend_context`, `cargo_build_jobs`, `build_inputs` |
 | Heldengang | `backend_context`, `binaries`, `cargo_build_jobs`, `build_inputs` |
-| Runtime Analyzer | `binaries`, `cargo_build_jobs`, `build_inputs`, `runtime_binaries`, `writable_directories`, `downloads` |
+| Laufbefund | `binaries`, `cargo_build_jobs`, `build_inputs`, `runtime_binaries`, `writable_directories`, `downloads` |
 | Schlauzug | `cargo_build_jobs`, `build_inputs` |
 | BV | `runtime_packages`, `variants` |
 
@@ -140,9 +140,9 @@ Move `HELDENGANG__HTTP__BIND_ADDRESS`,
 `HELDENGANG__OPS__PORT` and `RUN_MIGRATIONS` into Helm or Compose.
 Ports belong in their service declarations; `EXPOSE` is removed.
 
-## Runtime Analyzer
+## Laufbefund
 
-The manifest's `app.name` is `finops`, so the bin crate defaults to `finops-bin`.
+The manifest's `app.name` is `laufbefund`, so the bin crate defaults to `laufbefund-bin`.
 
 ```toml
 [backend.image]
@@ -160,7 +160,7 @@ writable_directories = [
   { stage = "api", path = "/app/var/artifacts" },
   { stage = "ingest", path = "/app/var/artifacts" },
   { stage = "worker", path = "/app/var/artifacts" },
-  { stage = "worker", path = "/tmp/finops-reports" },
+  { stage = "worker", path = "/tmp/laufbefund-reports" },
 ]
 downloads = [{ stage = "worker", url = "https://github.com/anchore/grype/releases/download/v0.120.1/grype_0.120.1_linux_amd64.tar.gz", archive_sha256 = "0a9ee97ef5ae2ee953b0a80098105052e846cdbe319a57d808b519c33cd1343d", binary = "grype", binary_sha256 = "d6e3248b0e788b4da7450a9e03d1e72811771cf97de3640a18e6517bf6507eb7", destination = "/app/grype" }]
 ```

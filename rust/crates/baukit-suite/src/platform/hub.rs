@@ -455,7 +455,7 @@ mod tests {
                 .expect("limit"),
         )
         .expect("client");
-        HubClient::new(&config, "runtime_analyzer", guarded).expect("hub client")
+        HubClient::new(&config, "laufbefund", guarded).expect("hub client")
     }
 
     fn query_of(query: &[(&str, &str)]) -> Option<String> {
@@ -469,12 +469,8 @@ mod tests {
     #[test]
     fn query_values_are_form_encoded_in_order() {
         assert_eq!(
-            query_of(&[
-                ("product", "runtime_analyzer"),
-                ("cursor", "a+b/c=d&e?f#g%h"),
-            ])
-            .as_deref(),
-            Some("product=runtime_analyzer&cursor=a%2Bb%2Fc%3Dd%26e%3Ff%23g%25h")
+            query_of(&[("product", "laufbefund"), ("cursor", "a+b/c=d&e?f#g%h"),]).as_deref(),
+            Some("product=laufbefund&cursor=a%2Bb%2Fc%3Dd%26e%3Ff%23g%25h")
         );
     }
 

@@ -30,7 +30,7 @@
       "free",
       "premium"
     ],
-    "runtime_analyzer": [
+    "laufbefund": [
       "starter",
       "professional",
       "enterprise"
@@ -669,12 +669,12 @@
       ]
     },
     {
-      "id": "business.runtime_analyzer.starter",
+      "id": "business.laufbefund.starter",
       "line": "software_engineering",
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "runtime_analyzer",
+          "productId": "laufbefund",
           "tier": "starter",
           "features": []
         }
@@ -702,15 +702,15 @@
       "displayPrice": null
     },
     {
-      "id": "business.runtime_analyzer.professional",
+      "id": "business.laufbefund.professional",
       "line": "software_engineering",
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "runtime_analyzer",
+          "productId": "laufbefund",
           "tier": "professional",
           "features": [
-            "runtime_analyzer.advanced_analytics"
+            "laufbefund.advanced_analytics"
           ]
         }
       ],
@@ -737,16 +737,16 @@
       "displayPrice": null
     },
     {
-      "id": "business.runtime_analyzer.enterprise",
+      "id": "business.laufbefund.enterprise",
       "line": "software_engineering",
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "runtime_analyzer",
+          "productId": "laufbefund",
           "tier": "enterprise",
           "features": [
-            "runtime_analyzer.advanced_analytics",
-            "runtime_analyzer.compliance_suite"
+            "laufbefund.advanced_analytics",
+            "laufbefund.compliance_suite"
           ]
         }
       ],
@@ -883,7 +883,7 @@
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "runtime_analyzer",
+          "productId": "laufbefund",
           "tier": "starter",
           "features": []
         },
@@ -921,10 +921,10 @@
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "runtime_analyzer",
+          "productId": "laufbefund",
           "tier": "professional",
           "features": [
-            "runtime_analyzer.advanced_analytics"
+            "laufbefund.advanced_analytics"
           ]
         },
         {
@@ -964,11 +964,11 @@
       "storefront": "business",
       "includedProducts": [
         {
-          "productId": "runtime_analyzer",
+          "productId": "laufbefund",
           "tier": "enterprise",
           "features": [
-            "runtime_analyzer.advanced_analytics",
-            "runtime_analyzer.compliance_suite"
+            "laufbefund.advanced_analytics",
+            "laufbefund.compliance_suite"
           ]
         },
         {
