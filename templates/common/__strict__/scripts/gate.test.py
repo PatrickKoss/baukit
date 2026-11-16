@@ -264,7 +264,7 @@ class WeightedShareTests(unittest.TestCase):
         if history is not None:
             (directory / "step-seconds.txt").write_text(history)
         planned = gate.plan(STEPS, gate.Selection(True, []))
-        budget = gate.CoreBudget(cores, None, 1024, 2)
+        budget = gate.CoreBudget(cores, None, 1024, gate.EmulatorReserve(2))
         context = gate.RunContext([], directory, {})
         return gate.Runner(planned, context, budget=budget)
 
@@ -325,7 +325,7 @@ class WeightedShareTests(unittest.TestCase):
 
 class CoreBudgetTests(unittest.TestCase):
     def test_heavy_steps_never_hold_more_than_the_budget(self):
-        budget = gate.CoreBudget(4, None, 1024, 2)
+        budget = gate.CoreBudget(4, None, 1024, gate.EmulatorReserve(2))
         self.assertEqual(budget.acquire(3), 3)
         self.assertEqual(budget.acquire(3), 1)
         released = threading.Timer(0.1, budget.release, args=(3,))
@@ -334,7 +334,7 @@ class CoreBudgetTests(unittest.TestCase):
         released.join()
 
     def test_emulator_steps_wait_for_their_reserve(self):
-        budget = gate.CoreBudget(6, None, 1024, 4)
+        budget = gate.CoreBudget(6, None, 1024, gate.EmulatorReserve(4))
         self.assertEqual(budget.acquire(3), 3)
         granted = []
         waiter = threading.Thread(target=lambda: granted.append(budget.acquire(4, 4)))
@@ -346,12 +346,12 @@ class CoreBudgetTests(unittest.TestCase):
         self.assertEqual(granted, [4])
 
     def test_reserve_and_requests_stay_within_the_budget(self):
-        budget = gate.CoreBudget(2, None, 1024, 8)
+        budget = gate.CoreBudget(2, None, 1024, gate.EmulatorReserve(8))
         self.assertEqual(budget.emulator_cores, 2)
         self.assertEqual(budget.acquire(9, 9), 2)
 
     def test_reserve_holds_cores_back_from_other_steps(self):
-        budget = gate.CoreBudget(10, None, 1024, 4)
+        budget = gate.CoreBudget(10, None, 1024, gate.EmulatorReserve(4))
         budget.reserve(4)
         self.assertEqual(budget.acquire(10), 6)
         granted = []
@@ -366,7 +366,7 @@ class CoreBudgetTests(unittest.TestCase):
         self.assertEqual(granted, [2])
 
     def test_reserve_leaves_one_core_for_other_steps(self):
-        budget = gate.CoreBudget(4, None, 1024, 4)
+        budget = gate.CoreBudget(4, None, 1024, gate.EmulatorReserve(4))
         budget.reserve(4)
         self.assertEqual(budget.acquire(4), 1)
 
@@ -398,7 +398,7 @@ class EmulatorReserveTests(unittest.TestCase):
         directory = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: __import__("shutil").rmtree(directory, ignore_errors=True))
         planned = gate.plan(STEPS, gate.Selection(True, []))
-        budget = gate.CoreBudget(24, None, 1024, 8)
+        budget = gate.CoreBudget(24, None, 1024, gate.EmulatorReserve(8))
         return gate.Runner(planned, gate.RunContext([], directory, {}), budget=budget)
 
     def test_no_reserve_before_the_dependencies_pass(self):

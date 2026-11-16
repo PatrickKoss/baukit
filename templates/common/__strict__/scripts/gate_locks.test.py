@@ -348,7 +348,9 @@ class CorePoolTests(unittest.TestCase):
 
     def test_core_budget_draws_from_the_pool(self):
         with tempfile.TemporaryDirectory() as directory:
-            budget = gate.CoreBudget(4, None, 1024, 2, locks.CorePool(Path(directory), 4))
+            budget = gate.CoreBudget(
+                4, None, 1024, gate.EmulatorReserve(2), locks.CorePool(Path(directory), 4)
+            )
             other = locks.CorePool(Path(directory), 4)
             self.assertEqual(budget.acquire(3), 3)
             self.assertEqual(other.available(), 1)
@@ -387,9 +389,13 @@ class CorePoolTests(unittest.TestCase):
 
     def test_gates_in_one_pool_split_the_cores(self):
         with tempfile.TemporaryDirectory() as directory:
-            first = gate.CoreBudget(12, None, 1024, 2, locks.CorePool(Path(directory), 12))
+            first = gate.CoreBudget(
+                12, None, 1024, gate.EmulatorReserve(2), locks.CorePool(Path(directory), 12)
+            )
             self.assertEqual(first.share(1), 12)
-            second = gate.CoreBudget(12, None, 1024, 2, locks.CorePool(Path(directory), 12))
+            second = gate.CoreBudget(
+                12, None, 1024, gate.EmulatorReserve(2), locks.CorePool(Path(directory), 12)
+            )
             self.assertEqual(first.share(1), 6)
             self.assertEqual(second.share(2), 3)
             code = (

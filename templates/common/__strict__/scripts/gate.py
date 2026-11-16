@@ -292,6 +292,14 @@ def unknown_light(light: frozenset[str], steps: list[Step]) -> list[str]:
     return sorted(light - known)
 
 
+@dataclass(frozen=True)
+class EmulatorReserve:
+    """Cores held back for emulator steps, and the steps that count as emulator steps."""
+
+    cores: int
+    steps: frozenset[str] = EMULATOR_STEPS
+
+
 class CoreBudget:
     """One pool of cores that every heavy step draws its workers from while it runs."""
 
@@ -300,17 +308,16 @@ class CoreBudget:
         cores: int,
         memory_mb: int | None,
         worker_memory_mb: int,
-        emulator_cores: int,
+        emulators: EmulatorReserve,
         pool: CorePool | None = None,
-        emulator_steps: frozenset[str] = EMULATOR_STEPS,
     ):
         self.cores = max(1, cores)
         self.pool = pool
         self.free = self.cores
         self.memory_mb = memory_mb
         self.worker_memory_mb = worker_memory_mb
-        self.emulator_cores = min(self.cores, max(1, emulator_cores))
-        self.emulator_steps = emulator_steps
+        self.emulator_cores = min(self.cores, max(1, emulators.cores))
+        self.emulator_steps = emulators.steps
         self.reserved = 0
         self.condition = threading.Condition()
 
@@ -489,7 +496,7 @@ class Runner:
         if FAST_LANE not in {item.step.lane for item in planned}:
             self.fast_done.set()
         self.budget = budget or CoreBudget(
-            int(context.environment.get("BAUKIT_GATE_WORKERS", "1")), None, 0, 1
+            int(context.environment.get("BAUKIT_GATE_WORKERS", "1")), None, 0, EmulatorReserve(1)
         )
         self.light = light
         self.open_lanes = set(heavy_lanes(planned, light))
@@ -507,9 +514,7 @@ class Runner:
         self.history = read_expected_seconds(self.history_file)
         self.expected = {n: v for n, v in self.history.items() if n in self.names}
         self.pending = {item.step.name for item in planned if not is_light(item.step, light)}
-        self.emulators_waiting = {
-            name for name in self.names if name in self.budget.emulator_steps
-        }
+        self.emulators_waiting = {name for name in self.names if name in self.budget.emulator_steps}
         self.emulators_running = 0
         self.started = time.monotonic()
         self.update_reserve()
@@ -828,9 +833,8 @@ def worker_budget(
         cores,
         total_memory_mb(),
         worker_memory,
-        emulator_cores(settings, environment),
+        EmulatorReserve(emulator_cores(settings, environment), emulator_steps(settings)),
         pool,
-        emulator_steps(settings),
     )
     if pool is not None:
         extras.append(f"cores: {budget.cores} slots shared through {pool.directory}")
@@ -842,7 +846,8 @@ def worker_budget(
     )
     extras.append(
         f"workers: lanes share {budget.cores} cores; a finished lane frees its share; "
-        f"{', '.join(sorted(budget.emulator_steps))} keeps {budget.emulator_cores} for the emulators; "
+        f"{', '.join(sorted(budget.emulator_steps))} keeps {budget.emulator_cores} "
+        "for the emulators; "
         f"light: {', '.join(sorted(LIGHT_LANES | light))}"
     )
     return budget
