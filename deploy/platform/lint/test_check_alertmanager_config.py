@@ -81,6 +81,41 @@ metadata:
   namespace: traefik
 """
 
+POSTHOG_REPOSITORY = """apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: posthog
+  namespace: posthog
+"""
+
+TENANT_RELEASE = """apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: app
+  namespace: acme
+"""
+
+TENANT_REPOSITORY = """apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: app
+  namespace: acme
+"""
+
+
+def tenant_alert(namespace: str) -> str:
+    return f"""apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Alert
+metadata:
+  name: errors
+  namespace: {namespace}
+spec:
+  eventSeverity: error
+  eventSources:
+    - kind: HelmRelease
+      name: "*"
+"""
+
 
 SINK_SERVICE = """apiVersion: v1
 kind: Service
@@ -230,6 +265,28 @@ class AlertmanagerConfigTest(unittest.TestCase):
         case = Case(self)
         (case.rendered / "base-traefik.yaml").write_text(OTHER_RELEASE)
         self.assert_one_problem(case, "no eventSource for HelmRelease in namespace traefik")
+
+    def test_source_namespace_without_event_source_fails(self) -> None:
+        case = Case(self)
+        (case.rendered / "base-posthog.yaml").write_text(POSTHOG_REPOSITORY)
+        self.assert_one_problem(case, "no eventSource for HelmRepository in namespace posthog")
+
+    def test_tenant_alert_in_own_namespace_passes(self) -> None:
+        case = Case(self)
+        case.overlays["tenant"] = TENANT_RELEASE + "---\n" + tenant_alert("acme")
+        self.assertEqual(case.problems(), [])
+
+    def test_tenant_alert_does_not_cover_other_kind(self) -> None:
+        case = Case(self)
+        case.overlays["tenant"] = (
+            TENANT_RELEASE + "---\n" + TENANT_REPOSITORY + "---\n" + tenant_alert("acme")
+        )
+        self.assert_one_problem(case, "no eventSource for OCIRepository in namespace acme")
+
+    def test_alert_in_other_namespace_does_not_cover_tenant(self) -> None:
+        case = Case(self)
+        case.overlays["tenant"] = TENANT_RELEASE + "---\n" + tenant_alert("other")
+        self.assert_one_problem(case, "no eventSource for HelmRelease in namespace acme")
 
     def test_committed_example_passes(self) -> None:
         config = cac.parse_config(cac.EXAMPLE.read_text())

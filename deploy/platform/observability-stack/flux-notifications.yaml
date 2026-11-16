@@ -23,7 +23,9 @@ spec:
   eventMetadata:
     component: flux
   # One entry per kind and namespace that holds Flux objects. check_alertmanager_config.py fails
-  # when a rendered Kustomization, HelmRelease or GitRepository sits in a namespace missing here.
+  # when a rendered Kustomization, HelmRelease, GitRepository, OCIRepository or HelmRepository sits
+  # in a namespace missing here. notification-controller runs without --no-cross-namespace-refs, so
+  # this flux-system Alert receives events from every namespace listed.
   eventSources:
     - kind: Kustomization
       name: "*"
@@ -67,3 +69,36 @@ spec:
     - kind: HelmRelease
       name: "*"
       namespace: traefik
+    - kind: OCIRepository
+      name: "*"
+      namespace: cert-manager
+    - kind: OCIRepository
+      name: "*"
+      namespace: cnpg-system
+    - kind: OCIRepository
+      name: "*"
+      namespace: falco
+    - kind: OCIRepository
+      name: "*"
+      namespace: flagger-system
+    - kind: OCIRepository
+      name: "*"
+      namespace: kured
+    - kind: OCIRepository
+      name: "*"
+      namespace: kyverno
+    - kind: OCIRepository
+      name: "*"
+      namespace: observability
+    - kind: OCIRepository
+      name: "*"
+      namespace: observability-agents
+    - kind: OCIRepository
+      name: "*"
+      namespace: traefik
+    - kind: HelmRepository
+      name: "*"
+      namespace: kube-system
+    - kind: HelmRepository
+      name: "*"
+      namespace: posthog

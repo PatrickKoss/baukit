@@ -88,7 +88,11 @@ Alertmanager is the single sink for three sources:
   that ConfigMap exists.
 - Flux events. `flux-notifications.yaml` holds a `Provider` of type
   `alertmanager` and an `Alert` for error events from every Kustomization,
-  GitRepository and HelmRelease namespace. Flux sends them with
+  GitRepository, HelmRelease, OCIRepository and HelmRepository namespace.
+  `check_alertmanager_config.py` fails when a namespace with such an object has
+  no wildcard eventSource for its kind, either in `flux-system/flux-errors` or
+  in an Alert in that namespace, which is how a tenant covers its own objects.
+  Flux sends them with
   `severity="error"` and `component="flux"`. The lifecycle installs Flux's
   notification-controller (`platform-up.sh` adds it to `--components`;
   `flux bootstrap` installs it by default).
