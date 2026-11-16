@@ -29,7 +29,7 @@ done
 
 falco_lines() {
   local pod
-  for pod in $(kubectl -n falco get pods -l app.kubernetes.io/name=falco -o name); do
+  for pod in $(kubectl -n falco get pods -l app.kubernetes.io/name=falco,pod-template-generation -o name); do
     kubectl -n falco logs "$pod" -c falco --since-time="$since"
   done
 }
