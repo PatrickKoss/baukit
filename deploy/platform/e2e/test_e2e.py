@@ -711,9 +711,10 @@ class PostgresReadinessTests(unittest.TestCase):
             self.assertEqual(len(postgres), 1, path)
             self.assertRegex(
                 postgres[0],
-                r"kind: Cluster\n\s+current: has\(status\.conditions\) && status\.conditions\.exists\("
-                r"e, e\.type == 'Ready' && e\.status == 'True'\)",
+                r"kind: Cluster\n\s+current: has\(status\.conditions\) && "
+                r"status\.conditions\.exists\(e, e\.type == 'Ready' && e\.status == 'True'\)",
             )
+
 
 SINCE = "2026-11-15T16:00:00Z"
 SHELL_RULE = "Baukit shell or package manager in app container"
