@@ -41,6 +41,14 @@ ids = [
   "CVE-2026-9538",
 ]
 
+[images."docker.io/falcosecurity/falcoctl:0.14.3@sha256:2230fb4802aafe09455b58d38f8f1faedd8f09f042e9a18fffd397e63488c023"]
+expires = 2026-12-12
+reason = "0.14.3 is the newest falcoctl release and :latest resolves to this digest; the findings are go-jose 4.1.5 and golang.org/x/net 0.61.0 compiled into the binary. falcoctl only runs as the falco-k8saudit init container, pulls one digest-pinned, cosign-verified plugin from ghcr.io and exits; it parses no HTML, and a crafted JWK needs a hostile ghcr.io or sigstore endpoint, so the worst case is a failed init that retries; Renovate (SC4) moves the pin once upstream releases"
+ids = [
+  "CVE-2026-116587",
+  "CVE-2026-78661",
+]
+
 [images."docker.io/falcosecurity/falcosidekick:2.35.1@sha256:a9bb60d2c7742febd912315ca1155839abc0199bf322c58d3adbb8b0849fadb9"]
 expires = 2026-12-12
 reason = "2.35.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
