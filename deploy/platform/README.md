@@ -159,9 +159,11 @@ For application namespaces, include
 namespace, patch its quota when needed, and supply explicit ingress/egress
 allows in the same overlay. The component is not applied globally.
 
-An application namespace whose ServiceMonitor, PodMonitor or PrometheusRule
-should be scraped or loaded must carry `app.kubernetes.io/part-of:
-baukit-platform`. Without that label Prometheus ignores the namespace. The
+Prometheus scrapes ServiceMonitors and PodMonitors in every namespace and
+overwrites `namespace` on their series with the monitor's namespace. A
+PrometheusRule loads only from namespaces labelled `app.kubernetes.io/part-of:
+baukit-platform`, and a platform namespace that holds monitors or rules must be
+listed in `excludedFromEnforcement`. The
 shared `deploy/observability` rule and dashboard pack installs into
 `observability` and needs nothing extra.
 

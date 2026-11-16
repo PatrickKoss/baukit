@@ -12,8 +12,10 @@ spec:
     Kyverno guards refuse a ServiceMonitor, MetricTemplate, IngressRoute or forwardAuth that reaches
     out of the namespace or spoofs its namespace label. Prometheus writes the tenant's namespace
     label after the tenant's relabelings, and every non-tenant namespace with monitors or rules is
-    excluded from that enforcement. Needs the controllers installed with components/flux-lockdown and the snapshot server
-    at BAUKIT_E2E_GIT_URL (default http://host.k3d.internal:9418/baukit.git).
+    excluded from that enforcement. A tenant ServiceMonitor in a namespace without the platform label
+    is scraped, and a spoofed exporter namespace label is stored as the tenant namespace. Needs the
+    controllers installed with components/flux-lockdown and the snapshot server at BAUKIT_E2E_GIT_URL
+    (default http://host.k3d.internal:9418/baukit.git).
   timeouts:
     apply: 1m
     exec: 4m
@@ -421,7 +423,8 @@ spec:
               spec:
                 selector:
                   matchLabels:
-                    app.kubernetes.io/name: echo
+                    app.kubernetes.io/instance: echo
+                    baukit.dev/endpoint: ops
                 endpoints:
                   - port: metrics
                     relabelings:
@@ -473,6 +476,36 @@ spec:
               exit 1
             check:
               ($stdout): enforced
+        - script:
+            content: |
+              set -eu
+              # e2e-tenant carries only the tenant label, like a product namespace. The echo exporter
+              # emits baukit_e2e_echo_up{namespace="spoofed"}; the stored series must say e2e-tenant.
+              api=/api/v1/namespaces/observability/services/kube-prometheus-stack-prometheus:9090/proxy/api/v1
+              pool=serviceMonitor/e2e-tenant/flux-tenancy-enforced/0
+              for _ in $(seq 75); do
+                targets=$(kubectl get --raw "$api/targets?state=active&scrapePool=$pool" 2>/dev/null || true)
+                series=$(kubectl get --raw "$api/query?query=baukit_e2e_echo_up%7Bjob%3D%22echo-ops%22%7D" 2>/dev/null || true)
+                if TARGETS=$targets SERIES=$series python3 -c '
+              import json, os, sys
+              try:
+                  targets = json.loads(os.environ["TARGETS"])["data"]["activeTargets"]
+                  series = json.loads(os.environ["SERIES"])["data"]["result"]
+              except (ValueError, KeyError):
+                  sys.exit(1)
+              up = any(t["health"] == "up" for t in targets)
+              ours = [s["metric"] for s in series if s["metric"].get("team") == "e2e"]
+              sys.exit(0 if up and ours and all(m.get("namespace") == "e2e-tenant" for m in ours) else 1)
+              '; then
+                  printf scraped
+                  exit 0
+                fi
+                sleep 2
+              done
+              printf 'tenant target not up or namespace not enforced\ntargets: %s\nseries: %s\n' "$targets" "$series" >&2
+              exit 1
+            check:
+              ($stdout): scraped
       finally:
         - script:
             content: kubectl -n e2e-tenant delete servicemonitor flux-tenancy-enforced --ignore-not-found

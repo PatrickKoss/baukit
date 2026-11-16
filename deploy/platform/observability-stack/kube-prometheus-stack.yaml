@@ -427,22 +427,23 @@ spec:
                 requests:
                   storage: 30Gi
         ruleSelectorNilUsesHelmValues: false
-        # Rules, ServiceMonitors and PodMonitors are read from every namespace
-        # labelled app.kubernetes.io/part-of=baukit-platform.
+        # Rules stay platform-only: tenant reconcilers cannot create PrometheusRules, and
+        # Alertmanager routes to security-pager/-tickets on rule labels (component=falco|kyverno).
         ruleSelector: {}
         ruleNamespaceSelector:
           matchLabels:
             app.kubernetes.io/part-of: baukit-platform
+        # Monitors are read from every namespace. A label selector cannot OR platform and
+        # tenant namespaces, and a shared label would be one more thing for every tenant
+        # overlay to get right. Selecting all is safe because enforcedNamespaceLabel below
+        # pins `namespace` on every non-excluded monitor, restrict-tenant-servicemonitors
+        # rejects honorLabels and namespace relabels, and tenants cannot create PodMonitors.
         serviceMonitorSelectorNilUsesHelmValues: false
         serviceMonitorSelector: {}
-        serviceMonitorNamespaceSelector:
-          matchLabels:
-            app.kubernetes.io/part-of: baukit-platform
+        serviceMonitorNamespaceSelector: {}
         podMonitorSelectorNilUsesHelmValues: false
         podMonitorSelector: {}
-        podMonitorNamespaceSelector:
-          matchLabels:
-            app.kubernetes.io/part-of: baukit-platform
+        podMonitorNamespaceSelector: {}
         # Series from tenant monitors carry the monitor's namespace in `namespace`, set after the
         # tenant's relabelings, and tenant rules only see their own namespace. Platform monitors
         # select kube-system or honor exporter labels such as kube-state-metrics' `namespace`, so
