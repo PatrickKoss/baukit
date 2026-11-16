@@ -265,8 +265,9 @@ spec:
                 endpoints:
                   - port: metrics
               YAML
-              kubectl -n "$NAMESPACE" get canaries,metrictemplates,ingressroutes,middlewares,traefikservices,servicemonitors \
-                -o name | wc -l | tr -d ' '
+              count=$(kubectl -n "$NAMESPACE" get canaries,metrictemplates,ingressroutes,middlewares,traefikservices,servicemonitors \
+                -o name | wc -l)
+              printf '%d' "$count"
             check:
               ($stdout): "6"
     - name: tenant-guards-deny-escapes
