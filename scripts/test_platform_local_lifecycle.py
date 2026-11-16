@@ -388,6 +388,8 @@ class RegistryMirrorClusterTest(unittest.TestCase):
         baukit_use_tools() {{ :; }}
         platform_local_etcd_args() {{ printf -- "--k3s-arg\\n--cluster-init@server:0\\n"; }}
         ensure_secret_state() {{ :; }}
+        platform_check_free_subnet() {{ :; }}
+        platform_check_network_in_node_cidr() {{ :; }}
         validate_common_config() {{ :; }}
         stop_git_daemon() {{ :; }}
         remove_snapshot() {{ :; }}
@@ -446,6 +448,118 @@ class RegistryMirrorClusterTest(unittest.TestCase):
                     if c.startswith("docker network disconnect k3d-demo ")
                 )
                 self.assertLess(disconnect, calls.index("k3d cluster delete demo"))
+
+
+class LifecycleSubnetTest(unittest.TestCase):
+    """platform-lifecycle.sh keeps platform-local inside the nodeCIDR; docker and k3d are stubs."""
+
+    DOCKER = textwrap.dedent(
+        """
+        case "$1 $2" in
+          "network ls") printf 'n1\\nn2\\n' ;;
+          "network inspect")
+            if [[ $3 == k3d-* ]]; then
+              printf '%s\\n' "$OWN_SUBNETS"
+            else
+              printf '%b' "$NETWORKS"
+              if [[ -n ${VANISHED:-} ]]; then
+                printf 'Error response from daemon: network %s not found\\n' "$VANISHED" >&2
+                exit 1
+              fi
+            fi ;;
+        esac
+        """
+    )
+    STUBS = textwrap.dedent(
+        """
+        source "{helper}"
+        cluster_exists() {{ [[ $EXISTS == yes ]]; }}
+        registry_mirrors_running() {{ return 1; }}
+        k3d_create_local_cluster() {{ printf 'create %s\\n' "$*" >>"$CALLS"; exit 0; }}
+        k3d() {{ printf 'k3d %s\\n' "$*" >>"$CALLS"; exit 0; }}
+        cluster_name=demo k3s_image=k3s api_port=1 http_port=2 https_port=3
+        """
+    )
+
+    def run_ensure_cluster(
+        self, *, exists: bool, networks: str = "", own: str = "", env: dict[str, str] | None = None
+    ) -> tuple[subprocess.CompletedProcess[str], str]:
+        text = (PLATFORM / "platform-lifecycle.sh").read_text()
+        subnet = re.search(r"^k3d_subnet=.*$", text, re.MULTILINE)
+        function = re.search(r"^ensure_cluster\(\) {\n.*?^}\n", text, re.MULTILINE | re.DOTALL)
+        assert subnet is not None and function is not None
+        with tempfile.TemporaryDirectory() as directory:
+            bin_dir = Path(directory)
+            calls = bin_dir / "calls"
+            write_stub(bin_dir, "docker", self.DOCKER)
+            result = bash(
+                self.STUBS.format(helper=HELPER)
+                + f"{subnet.group(0)}\n{function.group(0)}\nensure_cluster",
+                env={
+                    "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                    "CALLS": str(calls),
+                    "EXISTS": "yes" if exists else "no",
+                    "NETWORKS": networks,
+                    "OWN_SUBNETS": own,
+                    **(env or {}),
+                },
+            )
+            return result, calls.read_text() if calls.exists() else ""
+
+    def test_new_cluster_uses_the_default_subnet_inside_the_node_cidr(self) -> None:
+        result, calls = self.run_ensure_cluster(exists=False, networks="bridge 172.17.0.0/16\\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--subnet 10.89.1.0/24", calls)
+
+    def test_subnet_override_is_passed_to_k3d(self) -> None:
+        result, calls = self.run_ensure_cluster(
+            exists=False, env={"PLATFORM_SUBNET": "10.89.7.0/24"}
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--subnet 10.89.7.0/24", calls)
+
+    def test_overlapping_docker_network_fails_before_k3d(self) -> None:
+        result, calls = self.run_ensure_cluster(
+            exists=False, networks="k3d-baukit-local 10.89.0.0/24\\nother 10.89.0.0/20\\n"
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("overlaps the Docker network(s) other (10.89.0.0/20)", result.stderr)
+        self.assertNotIn("create ", calls)
+
+    def test_a_network_removed_during_the_check_does_not_block_create(self) -> None:
+        result, calls = self.run_ensure_cluster(
+            exists=False, networks="bridge 172.17.0.0/16\\n", env={"VANISHED": "n2"}
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--subnet 10.89.1.0/24", calls)
+
+    def test_overlap_is_found_while_another_network_vanishes(self) -> None:
+        result, calls = self.run_ensure_cluster(
+            exists=False, networks="other 10.89.1.0/24\\n", env={"VANISHED": "n2"}
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("overlaps the Docker network(s) other (10.89.1.0/24)", result.stderr)
+        self.assertNotIn("create ", calls)
+
+    def test_subnet_outside_the_node_cidr_fails(self) -> None:
+        result, calls = self.run_ensure_cluster(
+            exists=False, env={"PLATFORM_SUBNET": "172.30.0.0/24"}
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not inside the nodeCIDR 10.89.0.0/16", result.stderr)
+        self.assertNotIn("create ", calls)
+
+    def test_existing_cluster_inside_the_node_cidr_starts(self) -> None:
+        result, calls = self.run_ensure_cluster(exists=True, own="10.89.1.0/24 fd00::/64")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("k3d cluster start demo", calls)
+
+    def test_existing_cluster_outside_the_node_cidr_fails_with_guidance(self) -> None:
+        result, calls = self.run_ensure_cluster(exists=True, own="172.18.0.0/16")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("k3d-demo uses 172.18.0.0/16", result.stderr)
+        self.assertIn("run recreate", result.stderr)
+        self.assertNotIn("cluster start", calls)
 
 
 class SystemNamespaceLabelTest(unittest.TestCase):

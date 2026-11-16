@@ -35,6 +35,65 @@ platform_local_etcd_args() {
     --env CATTLE_ELECTION_RETRY_PERIOD=10s@server:0
 }
 
+# nodeCIDR of overlays/local/cluster-network. The node-cidr NetworkPolicies only let the API server
+# reach webhooks from this range, so every local cluster network must sit inside it.
+platform_node_cidr=10.89.0.0/16
+
+# Prints one "<network> <subnet>..." line per Docker network. Other gates create and remove networks
+# concurrently; inspect prints the ones still present and fails on a vanished one, which holds no subnet.
+platform_docker_subnets() {
+  local networks
+  networks=$(docker network ls -q) || return 1
+  [[ -n $networks ]] || return 0
+  xargs docker network inspect --format '{{.Name}}{{range .IPAM.Config}} {{.Subnet}}{{end}}' \
+    <<<"$networks" 2>/dev/null || true
+}
+
+# Fails unless SUBNET is an IPv4 network inside platform_node_cidr that no Docker network overlaps.
+platform_check_free_subnet() {
+  local subnet=$1 networks
+  networks=$(platform_docker_subnets) || return 1
+  python3 -c '
+import ipaddress, sys
+subnet, node_cidr, lines = sys.argv[1], ipaddress.ip_network(sys.argv[2]), sys.argv[3].splitlines()
+try:
+    candidate = ipaddress.ip_network(subnet)
+except ValueError as error:
+    sys.exit(f"ERROR: PLATFORM_SUBNET {subnet} is not a network: {error}")
+if candidate.version != 4 or not candidate.subnet_of(node_cidr):
+    sys.exit(f"ERROR: PLATFORM_SUBNET {subnet} is not inside the nodeCIDR {node_cidr}")
+clashes = []
+for line in lines:
+    name, *subnets = line.split()
+    for other in subnets:
+        network = ipaddress.ip_network(other, strict=False)
+        if network.version == 4 and candidate.overlaps(network):
+            clashes.append(f"{name} ({other})")
+listed = ", ".join(clashes)
+if clashes:
+    sys.exit(f"ERROR: PLATFORM_SUBNET {subnet} overlaps the Docker network(s) {listed}; "
+             f"remove them or set PLATFORM_SUBNET to a free /24 inside {node_cidr}")
+' "$subnet" "$platform_node_cidr" "$networks"
+}
+
+# Fails unless every IPv4 subnet of the Docker network NETWORK sits inside platform_node_cidr.
+platform_check_network_in_node_cidr() {
+  local network=$1 subnets
+  subnets=$(docker network inspect "$network" --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}') || return 1
+  python3 -c '
+import ipaddress, sys
+network, node_cidr, subnets = sys.argv[1], ipaddress.ip_network(sys.argv[2]), sys.argv[3].split()
+ipv4 = [ipaddress.ip_network(s, strict=False) for s in subnets]
+ipv4 = [s for s in ipv4 if s.version == 4]
+outside = [str(s) for s in ipv4 if not s.subnet_of(node_cidr)]
+found = " ".join(outside) or "no IPv4 subnet"
+if not ipv4 or outside:
+    sys.exit(f"ERROR: Docker network {network} uses {found}, outside the "
+             f"nodeCIDR {node_cidr}, so the API server cannot reach the admission webhooks; "
+             "run recreate to rebuild the cluster on PLATFORM_SUBNET")
+' "$network" "$platform_node_cidr" "$subnets"
+}
+
 # k3s creates these namespaces without Pod Security labels, which require-psa-labels reports.
 # kube-system matches its exemption in the admission config.
 platform_label_system_namespaces() {
