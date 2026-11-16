@@ -170,16 +170,19 @@ class RuntimeExecTest(unittest.TestCase):
 
         self.assertIn("or baukit_cnpg_plugin_child", exec_)
         self.assertIn("k8s.ns.name = postgres", plugin)
-        self.assertIn(
-            "container.image.repository = ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar", plugin
-        )
+        sidecar = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar"
+        self.assertIn(f"container.image.repository = {sidecar}", plugin)
         self.assertIn("container.name = plugin-barman-cloud", plugin)
         self.assertEqual(
             set(re.findall(r"proc\.name = (\S+)", plugin)), {"barman-cloud-ba", "barman-cloud-wa"}
         )
         self.assertEqual(
             set(re.findall(r'proc\.cmdline startswith "[^ ]+ /venv/bin/([^"]+)"', plugin)),
-            {"barman-cloud-backup-list ", "barman-cloud-backup-delete ", "barman-cloud-wal-archive "},
+            {
+                "barman-cloud-backup-list ",
+                "barman-cloud-backup-delete ",
+                "barman-cloud-wal-archive ",
+            },
         )
         self.assertNotRegex(plugin, r"proc\.name (=|in) \(?sh")
 
