@@ -142,8 +142,10 @@ spec:
               host=edge.baukit.test
               resolve="--resolve $host:$https_port:127.0.0.1 --resolve $host:$http_port:127.0.0.1"
               deadline=$(($(date +%s) + 120))
-              until curl -ksS -o /dev/null $resolve "https://$host:$https_port/"; do
-                [ "$(date +%s)" -lt "$deadline" ] || { echo 'edge never answered' >&2; cat "$dir/pf.log" >&2; exit 1; }
+              # Both routes must serve whoami before the checks: right after the IngressRoutes appear Traefik answers 404 or 503.
+              until curl -ksSf -o /dev/null $resolve "https://$host:$https_port/" &&
+                curl -ksSf -o /dev/null --resolve "edge.localhost:$https_port:127.0.0.1" "https://edge.localhost:$https_port/"; do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo 'edge never served whoami' >&2; cat "$dir/pf.log" >&2; exit 1; }
                 sleep 2
               done
 
