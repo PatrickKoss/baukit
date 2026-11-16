@@ -462,6 +462,10 @@ class LifecycleSubnetTest(unittest.TestCase):
               printf '%s\\n' "$OWN_SUBNETS"
             else
               printf '%b' "$NETWORKS"
+              if [[ -n ${VANISHED:-} ]]; then
+                printf 'Error response from daemon: network %s not found\\n' "$VANISHED" >&2
+                exit 1
+              fi
             fi ;;
         esac
         """
@@ -520,6 +524,21 @@ class LifecycleSubnetTest(unittest.TestCase):
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("overlaps the Docker network(s) other (10.89.0.0/20)", result.stderr)
+        self.assertNotIn("create ", calls)
+
+    def test_a_network_removed_during_the_check_does_not_block_create(self) -> None:
+        result, calls = self.run_ensure_cluster(
+            exists=False, networks="bridge 172.17.0.0/16\\n", env={"VANISHED": "n2"}
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--subnet 10.89.1.0/24", calls)
+
+    def test_overlap_is_found_while_another_network_vanishes(self) -> None:
+        result, calls = self.run_ensure_cluster(
+            exists=False, networks="other 10.89.1.0/24\\n", env={"VANISHED": "n2"}
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("overlaps the Docker network(s) other (10.89.1.0/24)", result.stderr)
         self.assertNotIn("create ", calls)
 
     def test_subnet_outside_the_node_cidr_fails(self) -> None:

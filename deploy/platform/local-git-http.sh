@@ -39,12 +39,14 @@ platform_local_etcd_args() {
 # reach webhooks from this range, so every local cluster network must sit inside it.
 platform_node_cidr=10.89.0.0/16
 
-# Prints one "<network> <subnet>..." line per Docker network.
+# Prints one "<network> <subnet>..." line per Docker network. Other gates create and remove networks
+# concurrently; inspect prints the ones still present and fails on a vanished one, which holds no subnet.
 platform_docker_subnets() {
   local networks
   networks=$(docker network ls -q) || return 1
   [[ -n $networks ]] || return 0
-  xargs docker network inspect --format '{{.Name}}{{range .IPAM.Config}} {{.Subnet}}{{end}}' <<<"$networks"
+  xargs docker network inspect --format '{{.Name}}{{range .IPAM.Config}} {{.Subnet}}{{end}}' \
+    <<<"$networks" 2>/dev/null || true
 }
 
 # Fails unless SUBNET is an IPv4 network inside platform_node_cidr that no Docker network overlaps.
