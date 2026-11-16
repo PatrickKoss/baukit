@@ -93,6 +93,7 @@ class ValidateRulesTest(unittest.TestCase):
 
 
 RESTORE_TEST = "system:serviceaccount:postgres:postgres-restore-test"
+CNPG_OPERATOR = "system:serviceaccount:cnpg-system:cloudnative-pg"
 
 
 def audit_event(index: int, user: str, namespace: str, subresource: str, verb: str) -> str:
@@ -124,13 +125,16 @@ def audit_event(index: int, user: str, namespace: str, subresource: str, verb: s
 
 
 class K8sAuditReplayTest(unittest.TestCase):
-    def test_only_the_restore_test_exec_into_postgres_is_expected(self) -> None:
+    def test_only_restore_test_and_operator_execs_into_postgres_are_expected(self) -> None:
         events = [
             (RESTORE_TEST, "postgres", "exec", "create"),
+            (CNPG_OPERATOR, "postgres", "exec", "create"),
             ("system:admin", "postgres", "exec", "get"),
             (RESTORE_TEST, "postgres", "attach", "create"),
             (RESTORE_TEST, "default", "exec", "create"),
             ("system:serviceaccount:postgres:other", "postgres", "exec", "create"),
+            (CNPG_OPERATOR, "cnpg-system", "exec", "create"),
+            (CNPG_OPERATOR, "postgres", "attach", "create"),
         ]
         with tempfile.TemporaryDirectory() as directory:
             events_file = Path(directory) / "audit.jsonl"
@@ -145,7 +149,7 @@ class K8sAuditReplayTest(unittest.TestCase):
         fired = [tuple(line.split("\t")[1:]) for line in result.stdout.splitlines()]
         self.assertEqual(
             fired,
-            [(user, namespace, subresource) for user, namespace, subresource, _ in events[1:]],
+            [(user, namespace, subresource) for user, namespace, subresource, _ in events[2:]],
         )
 
 

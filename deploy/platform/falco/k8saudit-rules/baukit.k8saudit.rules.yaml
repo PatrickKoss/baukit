@@ -47,10 +47,12 @@
   source: k8s_audit
   tags: [baukit, k8s_audit, secrets]
 
-# The restore-test CronJob reads its sentinel row with psql through an exec into the restored instance.
+# The restore-test CronJob reads its sentinel row with psql through an exec into the restored instance,
+# and the CNPG operator execs into its own instances while it reconciles them.
 - macro: baukit_expected_exec
   condition: >-
-    (ka.user.name = "system:serviceaccount:postgres:postgres-restore-test" and
+    (ka.user.name in ("system:serviceaccount:postgres:postgres-restore-test",
+                      "system:serviceaccount:cnpg-system:cloudnative-pg") and
      ka.target.namespace = postgres and ka.target.subresource = exec)
 
 - rule: Baukit exec or attach into pod
