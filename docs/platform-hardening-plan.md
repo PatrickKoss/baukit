@@ -599,11 +599,11 @@ behave. Later phases add test directories here.
 Starts after the baukit release that carries phases V, E, C, K, N, O and FA (R and S items that are done
 by then ride along).
 
-- [ ] **PI1 Re-pin and unbreak** (F-13): pin `GitRepository/baukit` to the new `v*` tag. Replace the
+- [x] **PI1 Re-pin and unbreak** (F-13): pin `GitRepository/baukit` to the new `v*` tag. Replace the
   removed keycloak base with a platform-infra-owned component, or drop Keycloak from the overlay if the
   products no longer need it (confirm with the user). Fix the Renovate tag pattern.
   `./validate.sh` must be green.
-- [ ] **PI2 Validate against the pin, not HEAD:** platform-infra's `validate.sh` creates a `git worktree`
+- [x] **PI2 Validate against the pin, not HEAD:** platform-infra's `validate.sh` creates a `git worktree`
   of baukit at the pinned tag (fails if the tag is missing), then runs baukit's
   `deploy/platform/validate.sh --target <overlay dir>` (V-phase scripts take target directories) so it
   gets schemas, `kyverno apply`, conventions and budgets for free. It adds `tofu fmt -check`,
@@ -619,8 +619,8 @@ by then ride along).
 - [ ] **PI5 Alerting:** a SOPS-encrypted Alertmanager config Secret with a real receiver and an external
   dead man's switch for Watchdog. Flux `Provider`/`Alert` for reconcile errors. Fire a test alert and
   record its arrival in the log.
-- [ ] **PI6 Edge and identity:** bind to `127.0.0.1`, set Keycloak `sslRequired: external`, put the
-  `/admin` route behind an `ipAllowList` middleware plus the security-headers middleware.
+- [ ] **PI6 Edge and identity:** bind to `127.0.0.1` and put the admin routes (Grafana and the other
+  operator UIs; Keycloak is dropped) behind an `ipAllowList` middleware plus the security-headers middleware.
 - [ ] **PI7 SOPS hygiene:** add a second, offline break-glass recipient per environment, drop
   `mac_only_encrypted`, fix the rotation runbook (it points `SOPS_AGE_KEY_FILE` at the new key before
   `updatekeys`), rotate once, and write the cadence into the runbook.
@@ -1225,3 +1225,15 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   single-node k3s on embedded etcd with the 0.26.0 single-node args (`platform_local_etcd_args`), in
   platform-local and in the frozen Hetzner Terraform config. `platform-local` does not exist right now,
   so PI8/PI9 create it fresh on k3s v1.37.2 with cgroup v2.
+- 2026-11-16 08:05: PI1 and PI2 merged into platform-infra main (6c3b3f4). All three overlays pin
+  `v0.26.0` with one URL spelling, and Renovate groups the pin on `vX.Y.Z`. Keycloak is gone (realm,
+  keycloak-access, identity postgres-access, the certificate, four local and three per-env SOPS
+  Secrets). MinIO moved to baukit's RustFS foundation component, because the MinIO images are no longer
+  pullable. `make validate` reads the pin, fails when overlays disagree on tag or URL, builds a baukit
+  worktree at the tag and runs its validators against every overlay. It adds tofu fmt and validate,
+  tflint, trivy config, gitleaks, shellcheck and SOPS proofs that fail when a key is missing. Review
+  found the testing and production proofs silently skipped in worktrees and the Renovate rule
+  matching one of two URL spellings; both fixed before merge. Green twice for me, 1:25.
+  Left for later: no `alertmanager-routing` Secret in testing and production (PI5); flux-system
+  bootstrap still at Flux 2.9.4 without digests or PSA labels (PI8); prerequisite Namespaces copy the
+  base ones (PI3); no Kyverno on the local cluster (PI3).
