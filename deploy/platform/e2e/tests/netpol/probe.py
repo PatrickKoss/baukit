@@ -302,6 +302,29 @@ def run_row(cluster: Cluster, row: Row, prefix: str = POD_PREFIX) -> Outcome:
     )
 
 
+def row_namespaces(row: Row) -> set[str]:
+    namespaces = {row.namespace}
+    if row.kind == "pod":
+        namespaces.add(row.pod_namespace)
+    if row.kind == "service":
+        namespaces.add(row.target.split(".")[1])
+    return namespaces
+
+
+def absent_namespaces(cluster: Cluster, rows: list[Row]) -> set[str]:
+    wanted = set().union(*(row_namespaces(row) for row in rows))
+    present = {item["metadata"]["name"] for item in cluster.json("get", "namespaces")["items"]}
+    return wanted - present
+
+
+def skipped_outcomes(rows: list[Row], absent: set[str]) -> list[Outcome]:
+    return [
+        Outcome(row, "SKIP", f"namespace {', '.join(sorted(row_namespaces(row) & absent))} absent")
+        for row in rows
+        if row_namespaces(row) & absent
+    ]
+
+
 def run_matrix(cluster: Cluster, rows: list[Row], workers: int, prefix: str) -> list[Outcome]:
     outcomes = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -316,11 +339,12 @@ def run_matrix(cluster: Cluster, rows: list[Row], workers: int, prefix: str) -> 
 def summary(outcomes: list[Outcome], seconds: float) -> str:
     counts = {
         status: sum(item.status == status for item in outcomes)
-        for status in ("PASS", "FAIL", "ERROR")
+        for status in ("PASS", "FAIL", "ERROR", "SKIP")
     }
+    skipped = f", {counts['SKIP']} skipped" if counts["SKIP"] else ""
     return (
         f"netpol matrix: {len(outcomes)} rows, {counts['PASS']} passed, "
-        f"{counts['FAIL']} mismatched, {counts['ERROR']} errors in {seconds:.0f}s"
+        f"{counts['FAIL']} mismatched, {counts['ERROR']} errors{skipped} in {seconds:.0f}s"
     )
 
 
@@ -334,19 +358,32 @@ def main(argv: list[str] | None = None) -> int:
         default=POD_PREFIX,
         help="probe pod name prefix, unique per concurrent suite",
     )
+    parser.add_argument(
+        "--skip-absent-namespaces",
+        action="store_true",
+        help="report rows whose namespace does not exist as SKIP instead of probing them",
+    )
     args = parser.parse_args(argv)
     rows = netpol_matrix.load(args.matrix)
     if args.rows:
         rows = [row for row in rows if row.number in set(args.rows)]
     started = time.monotonic()
-    outcomes = run_matrix(Cluster(), rows, args.workers, args.pod_prefix)
-    bad = [item for item in outcomes if item.status != "PASS"]
+    cluster = Cluster()
+    skipped: list[Outcome] = []
+    if args.skip_absent_namespaces:
+        skipped = skipped_outcomes(rows, absent_namespaces(cluster, rows))
+        for item in skipped:
+            print(item.line(), flush=True)
+        skipped_numbers = {item.row.number for item in skipped}
+        rows = [row for row in rows if row.number not in skipped_numbers]
+    outcomes = run_matrix(cluster, rows, args.workers, args.pod_prefix) + skipped
+    bad = [item for item in outcomes if item.status not in ("PASS", "SKIP")]
     if bad:
         print("Rows that did not pass:", file=sys.stderr)
         for item in bad:
             print(f"  {item.line()}", file=sys.stderr)
     print(summary(outcomes, time.monotonic() - started), flush=True)
-    return 1 if bad or not outcomes else 0
+    return 1 if bad or len(skipped) == len(outcomes) else 0
 
 
 if __name__ == "__main__":
