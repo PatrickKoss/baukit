@@ -13,6 +13,7 @@ Last verified release train: `v0.26.0` (minor train on top of `v0.25.2`, platfor
 - Charts published as OCI artifacts come from an `OCIRepository` pinned by tag and digest. Every rendered image carries an `@sha256` digest, and every HelmRelease has drift detection enabled.
 - 13 of the 20 Kyverno validating policies deny. The other seven audit by design, such as image verification until product images live in a registry. 11 `PolicyException`s each name their invariant in `baukit.dev/reason`. Falco ignores the netpol probe execs and the kustomize-controller's `git` children.
 - Fixed: Redis HA waits 95 s for a sentinel failover before it starts as master, so a restarted master no longer comes up empty after a split vote. The e2e and local overlays wait for the CNPG Cluster to report Ready.
+- Breaking for products that deploy with the `baukit-app` chart: every image needs `image.tag` or `image.digest`, and `latest` fails the schema and the render. Values from older templates that set `tag: latest` must switch to a release tag, or to the template's `"0.0.0-unset"` placeholder in checked-in defaults. `values.schema.json` rejects unknown keys, the default ingress-controller peer is the Traefik base, PodDisruptionBudgets render for any process with more than one replica, and the chart needs Kubernetes 1.30. `deploy/chart/baukit-app/CHANGELOG.md` has the details.
 - Tested with the full local gate, the platform e2e suites, the `k3s-hardening` suite and `platform-up.sh` with registry mirrors.
 
 ## v0.25.2
