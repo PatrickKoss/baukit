@@ -1162,3 +1162,14 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   because N5's netpol probe pods exec into protected namespaces while it runs; redis-ha fails with no
   replica promoted (sentinel TILT, old master back first), only in the two full runs that include Falco.
   FR owns both; the release waits for a green full run.
+- 2026-11-16 01:10: full ci-gate on 1bd71848 (origin/main merged): every lane passed (fast incl.
+  secret-scan, workflow-lint, osv, cargo-deny; rust incl. MSRV; cli; ts incl. browser; both fixture lanes;
+  mcp; android native, expo-sqlite, expo-notifications; fuzz; images) except platform-e2e, which I stopped:
+  the gate held heavy slot 2 and its own run.sh waited for a free slot. The orchestration wrapper now
+  passes an empty BAUKIT_HEAVY_SLOT_DIR to a gate that already holds a slot. FR root-caused redis-ha: both
+  sentinels leave host-clock TILT together, the vote splits, and the retry (down-after + 2x
+  failover-timeout) came after the restarted master's ~55 s self-wait, so it started as an empty master.
+  This happens in production too. FR derives the self-wait from the sentinel timings (95 s). The falco
+  noise was netpol probe pods plus kustomize-controller's git children after a rules reload (same
+  lost-parent effect as CNPG); both now have narrow exclusions. Release waits for FR's live runs, then the
+  platform-e2e lane plus `--affected 1bd71848`.
