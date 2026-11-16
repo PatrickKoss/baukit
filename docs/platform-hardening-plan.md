@@ -616,12 +616,12 @@ by then ride along).
 - [x] **PI4 Tenants:** rebuild `apps/local/leitbild-*` on `components/tenant` with per-tenant service
   accounts, `targetNamespace`, a per-tenant age recipient, and `postgres-client`/`ingress-backend`
   namespace labels for the NetworkPolicies.
-- [ ] **PI5 Alerting:** a SOPS-encrypted Alertmanager config Secret with a real receiver and an external
+- [x] **PI5 Alerting:** a SOPS-encrypted Alertmanager config Secret with a real receiver and an external
   dead man's switch for Watchdog. Flux `Provider`/`Alert` for reconcile errors. Fire a test alert and
   record its arrival in the log.
 - [x] **PI6 Edge and identity:** bind to `127.0.0.1` and put the admin routes (Grafana and the other
   operator UIs; Keycloak is dropped) behind an `ipAllowList` middleware plus the security-headers middleware.
-- [ ] **PI7 SOPS hygiene:** add a second, offline break-glass recipient per environment, drop
+- [x] **PI7 SOPS hygiene:** add a second, offline break-glass recipient per environment, drop
   `mac_only_encrypted`, fix the rotation runbook (it points `SOPS_AGE_KEY_FILE` at the new key before
   `updatekeys`), rotate once, and write the cadence into the runbook.
 - [x] **PI8 Collapse testing and production** into tenant namespaces on the one local cluster, matching
@@ -676,6 +676,18 @@ by then ride along).
   exits with "worker is not a valid shim", so a product gate with mise shims on `PATH` failed
   `test_stop_pid_file_stops_the_expected_binary_for_workers` (reported by solo-leveling-system from
   schluesselbund). Fix on `task/rf-mise-shim`: run it with `sys.executable`. Ships in 0.26.1.
+- [ ] **RF11 falco suite reads netpol probe pods.** `falco-events.sh` selects
+  `app.kubernetes.io/name=falco` in `falco`, which the netpol suite's probe pods copy, so with both
+  suites running `logs -c falco` fails on `netpol-probe-*`. Select only the DaemonSet's pods.
+- [ ] **RF12 traefik-edge uses fixed port-forward ports.** 18080/18443 collide when several local e2e
+  clusters run at once and the curl reaches another cluster's Traefik (404 instead of a redirect). Let
+  kubectl pick free ports.
+- [ ] **RF13 flux-errors leaves out OCIRepository and HelmRepository.** baukit pulls charts from
+  OCIRepositories in eight platform namespaces and a HelmRepository in posthog; a failing pull raises
+  no alert. platform-infra adds `flux-source-errors` until baukit covers them.
+- [ ] **RF14 check_alertmanager_config rejects tenant Alerts.** It credits only flux-system/flux-errors,
+  and tenant namespaces cannot be listed there, so consumers with tenants need their own coverage check
+  (platform-infra `scripts/check_flux_alerts.py`). Accept same-namespace tenant Alerts.
 - [ ] **RF3 Gate budget under a shared host.** The 0.26.0 full gate took 2225 s, 425 s over budget,
   because `native-android` started on 2 cores while another product's gate held the second heavy
   slot. Look at the android lane's minimum core share in the pool.
@@ -1297,3 +1309,22 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   Re-validated locally (validate green, 16 script tests). PI9 must show live: the peer IP Traefik logs
   is inside the allowlist, Grafana works under the CSP with no console violations, `/metrics` returns
   403, and `docker inspect` shows only 127.0.0.1 bindings. PI5 and PI7 are running; RF10 added.
+- 2026-11-16 13:30: PI7 and PI5 merged into platform-infra main (8c78264, 38b8802), each validated on
+  top of the previous merge. PI7: every SOPS file is encrypted to its working key plus an offline
+  break-glass recipient per domain (local, hetzner testing, hetzner production; tenants add the local
+  one), `mac_only_encrypted` is gone and banned by validate, the runbook runs `updatekeys` under the old
+  key before the swap, and all three working keys were rotated on 2026-11-16. I checked all 16 files:
+  working and break-glass keys decrypt, every retired key is denied, no private key in the history.
+  The agent rotated the shared keys before its branch merged, so main briefly did not decrypt with the
+  active key; the retired keys covered it. Its validate required the break-glass private keys on every
+  run, which the offline media rules out, so PH splits that into a static recipient check in validate
+  and a `make break-glass-drill` against the mounted media. PI5: tenants carry a `flux-alerts` component
+  (Provider and Alert in their own namespace), `flux-source-errors` covers the source kinds baukit's
+  Alert misses (RF13), `PlatformWatchdogNotDelivered` fires from Alertmanager's own heartbeat counters,
+  `check_flux_alerts.py` fails when a namespace with Flux objects has no Alert (RF14 explains why not
+  baukit's checker), and the drills runbook is rewritten. The external receiver and dead man's switch
+  stay open by the user's choice; the runbook names the Secret and patch that add them. PI9 must
+  confirm Alertmanager exports `receiver_name` on its notification counters. RF4/RF5 are reviewed on
+  `task/rf-e2e`; the two suites that failed in its local runs are test bugs under concurrency (RF11,
+  RF12) and go back to the same agent. RF6-RF9 are reviewed on `task/rf-consumer`, plus my fix for
+  Docker networks that vanish during the subnet check.
