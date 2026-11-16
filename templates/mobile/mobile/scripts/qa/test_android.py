@@ -1,6 +1,8 @@
 import os
+import shlex
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -993,7 +995,8 @@ done
         worker = self.root / "backend/target/debug/worker"
         self.executable(
             worker,
-            'exec -a "$0" python3 -c "print(\'ready\', flush=True); import time; time.sleep(30)"\n',
+            f'exec -a "$0" {shlex.quote(sys.executable)} -c '
+            "\"print('ready', flush=True); import time; time.sleep(30)\"\n",
         )
         process = subprocess.Popen([str(worker)], stdout=subprocess.PIPE, text=True)
         self.addCleanup(process.stdout.close)
