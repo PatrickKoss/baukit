@@ -33,6 +33,8 @@ spec:
                 name: audit-exec-target
               spec:
                 automountServiceAccountToken: false
+                # sleep as PID 1 ignores SIGTERM; a grace period would outlast chainsaw's delete timeout.
+                terminationGracePeriodSeconds: 0
                 securityContext:
                   runAsNonRoot: true
                   runAsUser: 101
