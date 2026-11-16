@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `flux-errors` now covers OCIRepository sources in cert-manager, cnpg-system, falco, flagger-system, kured, kyverno, observability, observability-agents and traefik, and HelmRepository sources in kube-system and posthog. A failing chart pull raised no alert before. notification-controller runs without `--no-cross-namespace-refs`, so the one Alert in flux-system receives these events. Consumers that copied platform-infra's `flux-source-errors` Alert can drop it.
+- `check_alertmanager_config.py` checks OCIRepository and HelmRepository namespaces too, and credits a wildcard eventSource in any Flux Alert with severity error or info whose namespace matches the source, as tenant Alerts must. A consumer with tenants no longer needs its own coverage check; a namespace with no covering Alert still fails.
+
 ## [0.26.1] - 2026-11-16
 
 - e2e `traefik-edge` lets `kubectl port-forward` pick free local ports for Traefik's 80 and 443 and reads them from its `Forwarding from` lines. The fixed 18080 and 18443 collided with another local e2e cluster's forward, so the suite reached the other cluster's Traefik.

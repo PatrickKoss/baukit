@@ -7,8 +7,9 @@ routing config (the base example and each overlay Secret) must route Watchdog fi
 with an integration, send nothing else to a receiver without one (InfoInhibitor excepted), and carry
 the critical-over-warning and InfoInhibitor inhibit rules. A receiver URL on a cluster Service must
 name a Service that the same overlay renders, so a local route never points at a missing host.
-The Flux error Alert must cover every namespace that holds a Kustomization, HelmRelease or
-GitRepository.
+Every namespace that holds a Kustomization, HelmRelease, GitRepository, OCIRepository or
+HelmRepository needs a wildcard eventSource for that kind, either in flux-system/flux-errors or in a
+same-namespace Alert there (the shape a tenant may write).
 """
 
 from __future__ import annotations
@@ -35,12 +36,14 @@ REQUIRED_OVERLAYS = ("overlays/local/components/observability",)
 KUSTOMIZE = PLATFORM_DIR.parents[1] / ".tools/bin/kustomize"
 CHART_ROUTING_NAME = "alertmanager-kube-prometheus-stack-alertmanager"
 FLUX_ALERT = ("flux-system", "flux-errors")
-FLUX_KINDS = ("Kustomization", "HelmRelease", "GitRepository")
+FLUX_KINDS = ("Kustomization", "HelmRelease", "GitRepository", "OCIRepository", "HelmRepository")
+FLUX_ALERT_API = "notification.toolkit.fluxcd.io/"
+TENANT_ALERT_SEVERITIES = ("error", "info")
 WATCHDOG = ("alertname", "=", "Watchdog")
 INFO_INHIBITOR = ("alertname", "=", "InfoInhibitor")
 MATCHER = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(=~|!~|!=|=)\s*"?(.*?)"?\s*$')
 RELEVANT_KINDS = re.compile(
-    r"^kind: (Alertmanager|Secret|Service|Alert|Kustomization|HelmRelease|GitRepository)$", re.M
+    rf"^kind: (Alertmanager|Secret|Service|Alert|{'|'.join(FLUX_KINDS)})$", re.M
 )
 
 CLUSTER_URL = re.compile(
@@ -277,22 +280,42 @@ def cluster_url_problems(config: dict, objects: list[RenderedObject], source: st
     return problems
 
 
-def flux_alert_problems(objects: list[RenderedObject], alert: RenderedObject | None) -> list[str]:
-    if alert is None:
-        return [f"no Flux Alert {FLUX_ALERT[0]}/{FLUX_ALERT[1]} is rendered"]
+def wildcard_sources(alert: RenderedObject) -> set[tuple[str, str]]:
     spec = alert.body.get("spec") or {}
-    problems = []
-    if spec.get("eventSeverity") != "error":
-        problems.append(f"Flux Alert {alert.name} eventSeverity is not error")
-    covered = {
+    return {
         (str(source.get("kind")), str(source.get("namespace") or alert.namespace))
         for source in spec.get("eventSources") or []
         if source.get("name") == "*"
     }
+
+
+def is_flux_alert(item: RenderedObject) -> bool:
+    return item.kind == "Alert" and str(item.body.get("apiVersion", "")).startswith(FLUX_ALERT_API)
+
+
+def namespace_alert_sources(objects: list[RenderedObject]) -> set[tuple[str, str]]:
+    covered: set[tuple[str, str]] = set()
+    for alert in filter(is_flux_alert, objects):
+        if (alert.namespace, alert.name) == FLUX_ALERT:
+            continue
+        severity = (alert.body.get("spec") or {}).get("eventSeverity", "info")
+        if severity in TENANT_ALERT_SEVERITIES:
+            covered |= {item for item in wildcard_sources(alert) if item[1] == alert.namespace}
+    return covered
+
+
+def flux_alert_problems(objects: list[RenderedObject], alert: RenderedObject | None) -> list[str]:
+    if alert is None:
+        return [f"no Flux Alert {FLUX_ALERT[0]}/{FLUX_ALERT[1]} is rendered"]
+    problems = []
+    if (alert.body.get("spec") or {}).get("eventSeverity") != "error":
+        problems.append(f"Flux Alert {alert.name} eventSeverity is not error")
+    covered = wildcard_sources(alert) | namespace_alert_sources(objects)
     wanted = {(item.kind, item.namespace) for item in objects if item.kind in FLUX_KINDS}
     for kind, namespace in sorted(wanted - covered):
         problems.append(
-            f"Flux Alert {alert.name} has no eventSource for {kind} in namespace {namespace}"
+            f"Flux Alert {alert.name} has no eventSource for {kind} in namespace {namespace}, "
+            f"and no Alert in {namespace} covers it"
         )
     return problems
 
