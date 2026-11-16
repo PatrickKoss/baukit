@@ -619,7 +619,7 @@ by then ride along).
 - [ ] **PI5 Alerting:** a SOPS-encrypted Alertmanager config Secret with a real receiver and an external
   dead man's switch for Watchdog. Flux `Provider`/`Alert` for reconcile errors. Fire a test alert and
   record its arrival in the log.
-- [ ] **PI6 Edge and identity:** bind to `127.0.0.1` and put the admin routes (Grafana and the other
+- [x] **PI6 Edge and identity:** bind to `127.0.0.1` and put the admin routes (Grafana and the other
   operator UIs; Keycloak is dropped) behind an `ipAllowList` middleware plus the security-headers middleware.
 - [ ] **PI7 SOPS hygiene:** add a second, offline break-glass recipient per environment, drop
   `mac_only_encrypted`, fix the rotation runbook (it points `SOPS_AGE_KEY_FILE` at the new key before
@@ -671,6 +671,11 @@ by then ride along).
 - [ ] **RF9 Consumers must seed the kubernetes-json-schema definitions by hand.** Running baukit's
   validators from a fresh consumer worktree fails with "no kubernetes-json-schema definitions" until
   the sha-pinned file is fetched. The validator should fetch and verify it as baukit's own run does.
+- [ ] **RF10 Template fake worker breaks under mise shims.** `mobile/scripts/qa/test_android.py`
+  ran the fake worker as `exec -a "$0" python3`; the mise `python3` shim dispatches on `argv[0]` and
+  exits with "worker is not a valid shim", so a product gate with mise shims on `PATH` failed
+  `test_stop_pid_file_stops_the_expected_binary_for_workers` (reported by solo-leveling-system from
+  schluesselbund). Fix on `task/rf-mise-shim`: run it with `sys.executable`. Ships in 0.26.1.
 - [ ] **RF3 Gate budget under a shared host.** The 0.26.0 full gate took 2225 s, 425 s over budget,
   because `native-android` started on 2 cores while another product's gate held the second heavy
   slot. Look at the android lane's minimum core share in the pool.
@@ -1280,3 +1285,15 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   is in `apps/PRODUCT-REQUIREMENTS.md`. Review found RF6 (lifecycle without `--subnet`, blocks PI9),
   RF7 (checker cannot read consumer Kustomizations; platform-infra's split file is temporary), RF8
   and RF9. They go into baukit 0.26.1 together with RF4 and RF5, then platform-infra re-pins.
+- 2026-11-16 11:40: PI6 merged into platform-infra main (863fb9e). Grafana is the only operator route;
+  it gets `operator-allowlist` (127.0.0.0/8, ::1, pod CIDR 10.42.0.0/16, 10.89.0.0/16 and Docker's
+  172.16.0.0/12 until the 0.26.1 `--subnet` re-pin drops it; depth 0 because Traefik trusts no
+  forwarded headers) and `operator-security-headers` (HSTS, frameDeny, nosniff, referrer policy and a
+  Grafana CSP); `/metrics` and the health paths keep the deny-all. Both middlewares sit in
+  `observability` because the traefik base disallows cross-namespace references, so tenant routes
+  bring their own headers middleware. `scripts/check-edge-routes.py` runs in validate on every overlay
+  and fails on a route without headers, an operator route without a private allowlist, a NodePort or
+  LoadBalancer other than Traefik's, a hostPort or hostNetwork; 10 unit tests cover the negatives.
+  Re-validated locally (validate green, 16 script tests). PI9 must show live: the peer IP Traefik logs
+  is inside the allowlist, Grafana works under the CSP with no console violations, `/metrics` returns
+  403, and `docker inspect` shows only 127.0.0.1 bindings. PI5 and PI7 are running; RF10 added.
