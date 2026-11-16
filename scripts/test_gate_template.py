@@ -10,6 +10,8 @@ TEMPLATES = Path(__file__).resolve().parents[1] / "templates/common"
 SCRIPTS = (
     TEMPLATES / "__strict__/scripts/gate.py",
     TEMPLATES / "__strict__/scripts/gate.test.py",
+    TEMPLATES / "__strict__/scripts/gate_disk.py",
+    TEMPLATES / "__strict__/scripts/gate_disk.test.py",
     TEMPLATES / "__strict__/scripts/gate_locks.py",
     TEMPLATES / "__strict__/scripts/gate_locks.test.py",
     TEMPLATES / "scripts/process_runner.py",
@@ -23,6 +25,20 @@ class GateTemplateTests(unittest.TestCase):
                 shutil.copy(source, directory)
             result = run_process(
                 [sys.executable, str(Path(directory) / "gate.test.py")],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("OK", result.stderr)
+
+    def test_template_gate_disk_suite_passes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for source in SCRIPTS:
+                shutil.copy(source, directory)
+            result = run_process(
+                [sys.executable, str(Path(directory) / "gate_disk.test.py")],
                 capture_output=True,
                 text=True,
                 check=False,

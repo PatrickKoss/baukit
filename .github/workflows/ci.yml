@@ -101,11 +101,17 @@ jobs:
               - 'mise.toml'
               - '.github/**'
               - 'compose.yaml'
-              - 'deploy/**'
+              - 'deploy/tools.toml'
+              - 'deploy/lib/**'
+              - 'deploy/smoke/**'
               - 'fixtures/**'
               - 'rust/deny.toml'
               - 'rust/Cargo.toml'
               - 'renovate*.json'
+              - 'deploy/platform/**'
+              - 'deploy/observability/**'
+              - 'deploy/observability-platform/**'
+              - 'deploy/chart/**'
 
   version-coherence:
     name: Release version coherence

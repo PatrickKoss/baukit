@@ -92,13 +92,16 @@ step_osv() {
   done
   osv-scanner scan source --config osv-scanner.toml "$@"
 }
-# templates/ hold Jinja sources that generated products lint after rendering.
+# templates/ hold Jinja sources that generated products lint after rendering. Their Python
+# carries no Jinja, so python-lint also checks it with the products' ruff config.
 tracked_sources() {
   git ls-files -z -- "$@" | grep -zvE '(^|/)(node_modules|target|vendor)/|^templates/'
 }
 step_python_lint() {
   tracked_sources '*.py' | xargs -0 ruff check --force-exclude
   tracked_sources '*.py' | xargs -0 ruff format --check --force-exclude
+  git ls-files -z -- 'templates/*.py' | xargs -0 ruff check --config templates/common/ruff.toml
+  git ls-files -z -- 'templates/*.py' | xargs -0 ruff format --check --config templates/common/ruff.toml
 }
 step_shell_lint() { tracked_sources '*.sh' | xargs -0 shellcheck; }
 step_metric_names() {
