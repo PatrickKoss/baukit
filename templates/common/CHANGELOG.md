@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-16
+
 {% if context.quality_strict %}- `scripts/gate_locks.test.py` no longer expects `CorePool.acquire` to receive every released core at once. `release` closes its slot files one at a time, so a waiting step may start with any count between its minimum and its request, and `test_a_step_waits_for_its_minimum` failed under load with fewer cores than it asked for. The new `test_a_waiter_may_start_with_part_of_a_release` pins that case. Threads in the suite now finish through a `time.monotonic` loop instead of `Thread.join(timeout)`, which times out on the wall clock on Pythons without `sem_clockwait`. Copy the file from the template.
 {% endif %}
 ## [0.25.2] - 2026-11-13

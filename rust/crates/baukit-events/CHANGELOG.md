@@ -4,6 +4,8 @@ All notable changes to `baukit-events` are documented here.
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-16
+
 ## [0.25.2] - 2026-11-13
 
 ## [0.25.1] - 2026-11-13

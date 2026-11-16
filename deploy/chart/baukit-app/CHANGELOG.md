@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-16
+
 - Breaking: images have no default tag. Each image needs `image.tag` or `image.digest`, and `latest` fails the schema and the render. A digest renders `repository@sha256:...`.
 - Breaking: `values.schema.json` rejects unknown keys and wrong types.
 - Breaking: the default ingress-controller peer is the Traefik base (namespace `traefik`, `app.kubernetes.io/instance: traefik-traefik`) instead of `kube-system`.
