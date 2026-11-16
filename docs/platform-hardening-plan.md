@@ -645,41 +645,41 @@ by then ride along).
   tools. Let the `scripts-tests` step run against an empty tools root, for example a
   `BAUKIT_TOOLS_ROOT` override that `baukit_use_tools` honours, so the next test like RF1 fails
   locally first.
-- [ ] **RF4 Hosted Platform e2e `redis-ha` red** (run 43810307549 on 1650e668, the first hosted run of
+- [x] **RF4 Hosted Platform e2e `redis-ha` red** (run 43810307549 on 1650e668, the first hosted run of
   the 0.26.0 code). After the master was force-deleted, the survivor's Sentinel named no new master
   within 120 s. The run kept no Sentinel logs. A restarted master waits 95 s
   (`down_after + 3 x failover_timeout`) and then starts as an empty master if the Sentinels still
   name it, so a failover slower than that loses data rather than only missing the test deadline.
   Reproduce on a CPU-limited e2e cluster, collect Sentinel logs on failure, and make failover finish
   inside the restart wait on a 4-vCPU runner.
-- [ ] **RF5 Hosted Platform e2e `k3s-hardening` red** (same run). `secret-encrypted-at-rest` reads
+- [x] **RF5 Hosted Platform e2e `k3s-hardening` red** (same run). `secret-encrypted-at-rest` reads
   every file under the embedded-etcd data dir three times with `find -exec cat` and hit the 4 min
   exec timeout. Check the datastore in one bounded pass.
-- [ ] **RF6 `platform-lifecycle.sh` creates platform-local without `--subnet`.** Docker then picks
+- [x] **RF6 `platform-lifecycle.sh` creates platform-local without `--subnet`.** Docker then picks
   its default network, outside the `10.89.0.0/16` nodeCIDR the node-cidr NetworkPolicies allow, so
   the API server cannot reach the Kyverno, cert-manager and CNPG webhooks. platform-up.sh passes
   `--subnet` and the e2e run picks a free /24; the lifecycle needs the same. Blocks PI9.
-- [ ] **RF7 Admission-order and sibling checkers assume every Kustomization path is in baukit.**
+- [x] **RF7 Admission-order and sibling checkers assume every Kustomization path is in baukit.**
   `check_admission_order.py` builds each reconciliation path inside the baukit checkout, so a
   consumer's own Kustomizations (sourceRef `GitRepository/flux-system`) fail to build.
   platform-infra moved four such Kustomizations (registry allowlist, observability inputs, issuers,
   exposure; none renders a workload) into `platform/local/platform-infra.yaml`, which the checker does
   not read. That split hides them from the checker and goes away with the PI re-pin to 0.26.1.
-- [ ] **RF8 Local wrappers for Kyverno and Falco.** platform-infra composes
+- [x] **RF8 Local wrappers for Kyverno and Falco.** platform-infra composes
   `e2e/overlay/components/kyverno` and `.../falco`, because `overlays/local/components` has none.
   Consumers should not depend on e2e paths.
-- [ ] **RF9 Consumers must seed the kubernetes-json-schema definitions by hand.** Running baukit's
+- [x] **RF9 Consumers must seed the kubernetes-json-schema definitions by hand.** Running baukit's
   validators from a fresh consumer worktree fails with "no kubernetes-json-schema definitions" until
   the sha-pinned file is fetched. The validator should fetch and verify it as baukit's own run does.
-- [ ] **RF10 Template fake worker breaks under mise shims.** `mobile/scripts/qa/test_android.py`
+- [x] **RF10 Template fake worker breaks under mise shims.** `mobile/scripts/qa/test_android.py`
   ran the fake worker as `exec -a "$0" python3`; the mise `python3` shim dispatches on `argv[0]` and
   exits with "worker is not a valid shim", so a product gate with mise shims on `PATH` failed
   `test_stop_pid_file_stops_the_expected_binary_for_workers` (reported by solo-leveling-system from
   schluesselbund). Fix on `task/rf-mise-shim`: run it with `sys.executable`. Ships in 0.26.1.
-- [ ] **RF11 falco suite reads netpol probe pods.** `falco-events.sh` selects
+- [x] **RF11 falco suite reads netpol probe pods.** `falco-events.sh` selects
   `app.kubernetes.io/name=falco` in `falco`, which the netpol suite's probe pods copy, so with both
   suites running `logs -c falco` fails on `netpol-probe-*`. Select only the DaemonSet's pods.
-- [ ] **RF12 traefik-edge uses fixed port-forward ports.** 18080/18443 collide when several local e2e
+- [x] **RF12 traefik-edge uses fixed port-forward ports.** 18080/18443 collide when several local e2e
   clusters run at once and the curl reaches another cluster's Traefik (404 instead of a redirect). Let
   kubectl pick free ports.
 - [ ] **RF13 flux-errors leaves out OCIRepository and HelmRepository.** baukit pulls charts from
@@ -688,6 +688,11 @@ by then ride along).
 - [ ] **RF14 check_alertmanager_config rejects tenant Alerts.** It credits only flux-system/flux-errors,
   and tenant namespaces cannot be listed there, so consumers with tenants need their own coverage check
   (platform-infra `scripts/check_flux_alerts.py`). Accept same-namespace tenant Alerts.
+- [ ] **RF15 Release train leaves the golden snapshot trees stale.** `release-train.sh` bumps
+  `templates/VERSION`, which every generated file embedding `template_version` and every template
+  CHANGELOG carries, but does not run `bless_snapshots`. The 0.26.1 full gate failed 11 cli-tests on
+  it. Bless the trees in the train (after `cargo clean -p baukit-cli`, see the kache note) and fail
+  the train when the bless changes a path outside the version-bearing files.
 - [ ] **RF3 Gate budget under a shared host.** The 0.26.0 full gate took 2225 s, 425 s over budget,
   because `native-android` started on 2 cores while another product's gate held the second heavy
   slot. Look at the android lane's minimum core share in the pool.
@@ -1328,3 +1333,19 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   `task/rf-e2e`; the two suites that failed in its local runs are test bugs under concurrency (RF11,
   RF12) and go back to the same agent. RF6-RF9 are reviewed on `task/rf-consumer`, plus my fix for
   Docker networks that vanish during the subnet check.
+- 2026-11-16 12:45: baukit v0.26.1 released (main a89534d1, tag v0.26.1) with RF4-RF12 and my fix for
+  Docker networks that vanish during the subnet check. The integration full gate on faeb8072 was red in
+  python-lint (an RF11 line over 100 characters, fixed in 860c484c) and expo-sqlite. The expo lanes
+  failed twice for host reasons: schlauzug's WebKit Playwright run held the load at 67, so the emulator
+  missed its 240 s boot deadline, and laufbefund's Keycloak container held port 8081; with
+  `METRO_PORT=19081` both passed. Hosted CI on 860c484c green. The release full gate on 457df9d9 was red
+  in cli-tests (stale snapshot trees, RF15, blessed in 4f2f3d53) and native-android (SystemUI ANR at
+  boot with 3 of 24 cores free); both lanes passed on rerun, native-android at load 12. The gate ran
+  2135 s, 335 s over budget, with fixture-2 setting the wall time (RF3). platform-infra re-pinned to
+  v0.26.1 (0f73712): platform-infra.yaml folded back into reconciliation.yaml, the local Kyverno and
+  Falco components, `validate.sh --target` and `--kubernetes-definitions`, `--subnet 10.89.1.0/24` in
+  the lifecycle test, 172.16.0.0/12 dropped from the operator allowlist, and the local-snapshot egress
+  narrowed from 10.0.0.0/8 plus 192.168.0.0/16 to 10.89.0.0/16. The flux-system source egress keeps
+  172.16.0.0/12 in its `except` list. RF2 (`task/rf2`) and RF13/RF14 (`task/rf13-rf14`) are reviewed
+  and wait for 0.26.2; RF13 covers nine OCIRepository namespaces (kured too) and the kube-system and
+  posthog HelmRepositories from flux-system/flux-errors. Its live delivery is a PI9 check.
