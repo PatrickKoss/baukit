@@ -627,10 +627,12 @@ by then ride along).
 - [x] **PI8 Collapse testing and production** into tenant namespaces on the one local cluster, matching
   the local-first decision. Freeze the Hetzner overlays as a single overlay with postBuild substitution,
   validated but not bootstrapped. Apply S5 to the Terraform k3s config.
-- [ ] **PI9 Live proof on the persistent cluster:** run the baukit e2e chainsaw suites (admission,
+- [x] **PI9 Live proof on the persistent cluster:** run the baukit e2e chainsaw suites (admission,
   netpol matrix, falco detection, alert pipeline) against `platform-local` in a dedicated test
   namespace, and add `docs/runbooks/` entries for policy triage, Falco triage, Flux stuck, age-key loss
   and local cluster loss.
+  Done in platform-infra 4c675b5 (fixes, runbooks), 01a15c8 (tenant databases) and 1e3f2a6 (pin
+  v0.26.3). The platform side is green; leitbild's own deploy is not (see the 2026-11-16 18:55 log).
 
 ## Action items after the 0.26.0 release
 
@@ -1396,3 +1398,22 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
 - leitbild re-encrypted to its tenant recipients (417a229); Flux now decrypts and stops at leitbild's
   own Namespace manifests (requirement 3), which an agent is fixing. PI9 stays open until both tenants
   are Ready.
+
+
+### 2026-11-16 18:55
+
+- RF19 (tenant admin lacked the Flagger, Traefik and ServiceMonitor kinds, found by the leitbild
+  rollout) merged with its guard policies and released as 0.26.3 (main eb64a826). The release gate
+  passed in 1702 s except native-android (SystemUI ANR at boot); the android lane passed alone at load
+  16 to 22. Published to crates.io, npm and GitHub.
+- platform-infra: tenant databases move out of the product repo (01a15c8). `apps/databases/<tenant>/`
+  holds the CNPG DatabaseRole and Database, `tenant-<tenant>-database` applies them, and the role
+  password was re-encrypted from leitbild's history to the cluster key. Both roles and databases
+  applied. Pinned v0.26.3 (1e3f2a6).
+- platform-local: every platform Kustomization and HelmRelease is Ready on v0.26.3. leitbild's
+  Kustomizations now apply every object; `leitbild-migrate` connects to PostgreSQL with the moved
+  credentials (so the tenant NetworkPolicy, role and password work) and then fails on leitbild's own
+  image: `083b5343796f` was built on the host, so `env!("CARGO_MANIFEST_DIR")` points at
+  `/home/patrick/projects/leitbild/...`. Its `flagger-loadtester` HelmRelease fails the tenant policies
+  `disallow-sa-token-automount` and `require-baukit-labels`. Both are leitbild fixes: embed migrations
+  with `sqlx::migrate!`, set the loadtester's automount and labels, and release new images.
