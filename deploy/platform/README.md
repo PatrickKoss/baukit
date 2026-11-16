@@ -241,6 +241,7 @@ owned and contain assignments only.
 | `PLATFORM_API_PORT` | `random` | Host port of the Kubernetes API, bound to `127.0.0.1`. |
 | `PLATFORM_HTTP_PORT` | `80` | Host port for HTTP ingress, bound to `127.0.0.1`. |
 | `PLATFORM_HTTPS_PORT` | `443` | Host port for HTTPS ingress, bound to `127.0.0.1`. |
+| `PLATFORM_SUBNET` | `10.89.1.0/24` | Docker network of a new cluster. Must sit inside the `10.89.0.0/16` nodeCIDR and overlap no Docker network; an existing cluster outside the nodeCIDR fails until `recreate`. |
 | `PLATFORM_STATE_DIR` | XDG state path | Disposable snapshot repository state. |
 
 GitHub mode uses the owner/repository fields to bootstrap and verifies desired

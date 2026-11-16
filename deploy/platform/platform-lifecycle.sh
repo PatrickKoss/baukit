@@ -54,6 +54,8 @@ git_port=${PLATFORM_SNAPSHOT_PORT:-9418}
 api_port=${PLATFORM_API_PORT:-random}
 http_port=${PLATFORM_HTTP_PORT:-80}
 https_port=${PLATFORM_HTTPS_PORT:-443}
+# Inside the nodeCIDR, clear of platform-up.sh's 10.89.0.0/24 and the e2e range 10.89.100-199.0/24.
+k3d_subnet=${PLATFORM_SUBNET:-10.89.1.0/24}
 state_root=${XDG_STATE_HOME:-${HOME}/.local/state}
 state_dir=${PLATFORM_STATE_DIR:-$state_root/baukit-platform/$cluster_name}
 snapshot_container=${PLATFORM_SNAPSHOT_CONTAINER:-${cluster_name}-baukit-git}
@@ -239,9 +241,11 @@ ensure_snapshot() {
 ensure_cluster() {
   if cluster_exists; then
     printf 'Starting existing k3d cluster %s\n' "$cluster_name"
+    platform_check_network_in_node_cidr "k3d-$cluster_name" || exit 1
     k3d cluster start "$cluster_name" >/dev/null
   else
-    printf 'Creating k3d cluster %s with %s\n' "$cluster_name" "$k3s_image"
+    platform_check_free_subnet "$k3d_subnet" || exit 1
+    printf 'Creating k3d cluster %s with %s on %s\n' "$cluster_name" "$k3s_image" "$k3d_subnet"
     local mirror_dir mirror_args=() etcd_args=()
     mapfile -t etcd_args < <(platform_local_etcd_args)
     mirror_dir=$(mktemp -d)
@@ -250,7 +254,7 @@ ensure_cluster() {
       printf 'Using the running registry mirrors.\n'
     fi
     k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port" \
-      "${etcd_args[@]}" "${mirror_args[@]}"
+      --subnet "$k3d_subnet" "${etcd_args[@]}" "${mirror_args[@]}"
     rm -rf -- "$mirror_dir"
   fi
   local containers=()
