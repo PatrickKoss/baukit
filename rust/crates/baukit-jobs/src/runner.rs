@@ -694,7 +694,7 @@ mod tests {
         assert_eq!(store.completed.load(Ordering::SeqCst), 0);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_pending_cancellation_query_does_not_stop_the_handler() {
         let store = Arc::new(FakeStore::with_jobs(0));
         store.block_cancellation_poll.store(true, Ordering::SeqCst);
@@ -722,7 +722,7 @@ mod tests {
         assert_eq!(handler.active.load(Ordering::SeqCst), 0);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_pending_cancellation_query_does_not_stop_the_timeout() {
         let store = Arc::new(FakeStore::with_jobs(0));
         store.block_cancellation_poll.store(true, Ordering::SeqCst);
@@ -745,7 +745,7 @@ mod tests {
         assert_eq!(handler.maximum.load(Ordering::SeqCst), 1);
         tokio::time::timeout(Duration::from_secs(1), async {
             while handler.active.load(Ordering::SeqCst) != 0 {
-                tokio::task::yield_now().await;
+                tokio::time::sleep(Duration::from_millis(1)).await;
             }
         })
         .await
