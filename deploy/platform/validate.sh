@@ -18,6 +18,8 @@ schema_dir="$cache_dir/crd-schemas"
 # schema, so generate.py builds one from this pinned _definitions.json.
 kubernetes_schema_commit=2bfaff3898a7a4fa4e4760da3d2656211c9b4c71
 kubernetes_definitions_sha256=ce5535db873c37e5e16a1e8e4b4fa0a17bf3cdd3847394e135aeaff3bfcfc9a3
+kubernetes_definitions="$cache_dir/kubernetes-definitions-$kubernetes_schema_commit.json"
+kubernetes_definitions_url=${BAUKIT_KUBERNETES_DEFINITIONS_URL:-https://raw.githubusercontent.com/yannh/kubernetes-json-schema/$kubernetes_schema_commit/master/_definitions.json}
 schema_template="$schema_dir/{{ .ResourceKind }}_{{ .ResourceAPIVersion }}.json"
 
 # Core kinds come from the default kubernetes-json-schema location, cached offline.
@@ -30,6 +32,74 @@ run_kubeconform() {
     -schema-location "$schema_template" \
     "$@"
 }
+
+# Fetches the pinned definitions into the cache unless present. A cached or fetched file whose
+# sha256 differs from the pin fails, and a fetched one is not kept.
+ensure_kubernetes_definitions() {
+  if [[ ! -s $kubernetes_definitions ]]; then
+    printf '==> fetching kubernetes-json-schema definitions %s\n' "$kubernetes_schema_commit" >&2
+    mkdir -p "$cache_dir"
+    local download="$kubernetes_definitions.download"
+    if ! curl -fsSL --retry 3 -o "$download" "$kubernetes_definitions_url"; then
+      rm -f -- "$download"
+      printf 'ERROR: kubernetes-json-schema definitions are not cached and could not be fetched\n' >&2
+      return 1
+    fi
+    if ! printf '%s  %s\n' "$kubernetes_definitions_sha256" "$download" | sha256sum --check --quiet >&2; then
+      rm -f -- "$download"
+      printf 'ERROR: fetched kubernetes-json-schema definitions do not match the pinned sha256\n' >&2
+      return 1
+    fi
+    mv -- "$download" "$kubernetes_definitions"
+  fi
+  if ! printf '%s  %s\n' "$kubernetes_definitions_sha256" "$kubernetes_definitions" | sha256sum --check --quiet >&2; then
+    printf 'ERROR: %s does not match its pinned sha256\n' "$kubernetes_definitions" >&2
+    return 1
+  fi
+}
+
+# Consumers call this to get the verified definitions path for schemas/generate.py.
+if [[ ${1:-} == --kubernetes-definitions ]]; then
+  ensure_kubernetes_definitions || exit 1
+  printf '%s\n' "$kubernetes_definitions"
+  exit
+fi
+
+# Checks a consumer's overlays: validate.sh --target REPO_ROOT --rendered DIR OVERLAY_DIR...
+# Kustomizations with sourceRef GitRepository/flux-system resolve under REPO_ROOT, those with
+# GitRepository/baukit under this checkout. An overlay's reconciliation.yaml gets the ordering checks.
+if [[ ${1:-} == --target ]]; then
+  target_root=${2:?--target needs the consumer repository root}
+  [[ ${3:-} == --rendered && -n ${4:-} && $# -ge 5 ]] || {
+    printf 'usage: %s --target REPO_ROOT --rendered DIR OVERLAY_DIR...\n' "$0" >&2
+    exit 2
+  }
+  target_rendered=$4
+  shift 4
+  target_reconciliations=()
+  for overlay in "$@"; do
+    [[ -f $overlay/kustomization.yaml ]] || {
+      printf 'ERROR: %s is not a kustomize overlay\n' "$overlay" >&2
+      exit 2
+    }
+    if [[ -f $overlay/reconciliation.yaml ]]; then
+      target_reconciliations+=("$overlay/reconciliation.yaml")
+    fi
+  done
+  source_roots=(--source-root "flux-system=$target_root")
+  status=0
+  printf '==> exclusive bases\n'
+  PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_exclusive_bases.py" "$@" || status=1
+  if ((${#target_reconciliations[@]})); then
+    printf '==> monitor CRD ordering\n'
+    PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_monitor_order.py" \
+      --rendered "$target_rendered" "${source_roots[@]}" "${target_reconciliations[@]}" || status=1
+    printf '==> admission ordering\n'
+    PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_admission_order.py" \
+      --kustomize "$(command -v kustomize)" "${source_roots[@]}" "${target_reconciliations[@]}" || status=1
+  fi
+  exit "$status"
+fi
 
 if [[ ${1:-} == --kubeconform ]]; then
   shift
@@ -425,6 +495,7 @@ if ! flux_lockdown_render "$platform_dir" "$pinned_flux_version" \
 fi
 
 if [[ -n $render_output ]]; then
+  ensure_kubernetes_definitions || exit 1
   mkdir -p "$render_output"
   cp -- "$rendered_dir"/*.yaml "$render_output"/
   exit "$status"
@@ -432,21 +503,8 @@ fi
 
 flux_manifest="$work_dir/flux-install-$pinned_flux_version.yaml"
 flux install --export >"$flux_manifest"
+ensure_kubernetes_definitions || exit 1
 
-kubernetes_definitions="$cache_dir/kubernetes-definitions-$kubernetes_schema_commit.json"
-if [[ ! -s $kubernetes_definitions ]]; then
-  printf '==> fetching kubernetes-json-schema definitions %s\n' "$kubernetes_schema_commit"
-  if ! curl -fsSL --retry 3 -o "$work_dir/definitions.json" \
-    "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/$kubernetes_schema_commit/master/_definitions.json"; then
-    printf 'ERROR: kubernetes-json-schema definitions are not cached and could not be fetched\n' >&2
-    exit 1
-  fi
-  mv -- "$work_dir/definitions.json" "$kubernetes_definitions"
-fi
-if ! printf '%s  %s\n' "$kubernetes_definitions_sha256" "$kubernetes_definitions" | sha256sum --check --quiet; then
-  printf 'ERROR: %s does not match its pinned sha256\n' "$kubernetes_definitions" >&2
-  exit 1
-fi
 
 # The Flux install carries its own CRDs, which the flux_manifest schemas already cover.
 mapfile -d '' rendered_files < <(find "$rendered_dir" -type f -name '*.yaml' ! -name 'install-*' -print0 | sort -z)
