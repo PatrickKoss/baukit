@@ -28,7 +28,25 @@ command -v corepack >/dev/null || {
   exit 1
 }
 
+snapshot_trees=cli/tests/snapshots
+
+# The kache wrapper caches include_dir! output, so the bless rebuilds baukit-cli
+# without a wrapper to embed the current templates.
+bless_snapshot_trees() {
+  cargo clean --manifest-path cli/Cargo.toml -p baukit-cli
+  RUSTC_WRAPPER='' cargo run --manifest-path cli/Cargo.toml --example bless_snapshots
+}
+
 scripts/check-version-coherence.py
+
+# Bless before any edit: a tree that changes here is a template change that was
+# never blessed, and the version bump below would otherwise hide it.
+bless_snapshot_trees
+if ! git diff --quiet -- "$snapshot_trees"; then
+  git diff --stat -- "$snapshot_trees" >&2
+  echo "golden snapshot trees are stale before the version bump; bless and review them in their own commit" >&2
+  exit 1
+fi
 
 current=$(python3 -c 'import tomllib; print(tomllib.load(open("rust/Cargo.toml", "rb"))["workspace"]["package"]["version"])')
 IFS=. read -r major minor patch <<< "$current"
@@ -150,6 +168,8 @@ TRAIN_VERSION="$next" perl -0pi -e \
   deploy/chart/baukit-app/README.md
 
 python3 scripts/cli_install.py --update "$next"
+
+bless_snapshot_trees
 
 scripts/check-version-coherence.py
 

@@ -691,11 +691,13 @@ by then ride along).
 - [ ] **RF14 check_alertmanager_config rejects tenant Alerts.** It credits only flux-system/flux-errors,
   and tenant namespaces cannot be listed there, so consumers with tenants need their own coverage check
   (platform-infra `scripts/check_flux_alerts.py`). Accept same-namespace tenant Alerts.
-- [ ] **RF15 Release train leaves the golden snapshot trees stale.** `release-train.sh` bumps
+- [x] **RF15 Release train leaves the golden snapshot trees stale.** `release-train.sh` bumps
   `templates/VERSION`, which every generated file embedding `template_version` and every template
   CHANGELOG carries, but does not run `bless_snapshots`. The 0.26.1 full gate failed 11 cli-tests on
   it. Bless the trees in the train (after `cargo clean -p baukit-cli`, see the kache note) and fail
   the train when the bless changes a path outside the version-bearing files.
+  Done: the train blesses before any edit and fails if a tree changes, so only its own version and
+  changelog edits reach the second bless after the bump; covered in `scripts/test_release_train.py`.
 - [ ] **RF3 Gate budget under a shared host.** The 0.26.0 full gate took 2225 s, 425 s over budget,
   because `native-android` started on 2 cores while another product's gate held the second heavy
   slot. Look at the android lane's minimum core share in the pool.
