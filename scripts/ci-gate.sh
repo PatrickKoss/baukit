@@ -129,7 +129,13 @@ step_platform_images() {
   scripts/platform-images.sh
 }
 step_media_grants() { make media-grants-test media-grants-njs-test; }
-step_scripts_tests() { python3 -m unittest discover -s scripts -p 'test_*.py'; }
+step_scripts_tests() {
+  scripts_tests_tools=$(mktemp -d)
+  scripts_tests_status=0
+  BAUKIT_TOOLS_DIR=$scripts_tests_tools python3 -m unittest discover -s scripts -p 'test_*.py' || scripts_tests_status=$?
+  rm -rf "$scripts_tests_tools"
+  return "$scripts_tests_status"
+}
 
 step_rust_clippy() {
   cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings

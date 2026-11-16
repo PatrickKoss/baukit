@@ -242,19 +242,23 @@ class ToolsHelperTest(unittest.TestCase):
             'schema = 1\nplatforms = []\n[tools.demo]\nversion = "2.0.0"\n', encoding="utf-8"
         )
 
-    def install(self, version: str) -> None:
+    def install(self, version: str, tools_dir: Path | None = None) -> None:
+        tools_dir = tools_dir or self.repo / ".tools"
         for directory in ("bin", "markers"):
-            (self.repo / ".tools" / directory).mkdir(parents=True, exist_ok=True)
-        binary = self.repo / ".tools" / "bin" / "demo"
+            (tools_dir / directory).mkdir(parents=True, exist_ok=True)
+        binary = tools_dir / "bin" / "demo"
         binary.write_bytes(fake_tool(version))
         binary.chmod(0o755)
-        (self.repo / ".tools" / "markers" / "demo").write_text(
-            f"{version} {'a' * 64}\n", encoding="utf-8"
-        )
+        (tools_dir / "markers" / "demo").write_text(f"{version} {'a' * 64}\n", encoding="utf-8")
 
-    def use_tools(self) -> subprocess.CompletedProcess[str]:
+    def use_tools(self, tools_dir: Path | None = None) -> subprocess.CompletedProcess[str]:
         script = f'. "{HELPER}"; baukit_use_tools "{self.repo}" demo; command -v demo; demo'
-        return run_process(["sh", "-c", script], capture_output=True, text=True, check=False)
+        env = {key: value for key, value in os.environ.items() if key != "BAUKIT_TOOLS_DIR"}
+        if tools_dir is not None:
+            env["BAUKIT_TOOLS_DIR"] = str(tools_dir)
+        return run_process(
+            ["sh", "-c", script], capture_output=True, text=True, check=False, env=env
+        )
 
     def test_missing_tool_exits_2_with_install_command(self) -> None:
         result = self.use_tools()
@@ -279,6 +283,19 @@ class ToolsHelperTest(unittest.TestCase):
         self.assertEqual(
             result.stdout.splitlines(), [str(self.repo / ".tools" / "bin" / "demo"), "fake 2.0.0"]
         )
+
+    def test_tools_dir_override_replaces_repo_tools(self) -> None:
+        self.install("2.0.0")
+        override = self.repo / "override"
+
+        missing = self.use_tools(override)
+        self.install("2.0.0", override)
+        found = self.use_tools(override)
+
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn(str(override / "bin"), missing.stderr)
+        self.assertEqual(found.returncode, 0, found.stderr)
+        self.assertEqual(found.stdout.splitlines()[0], str(override / "bin" / "demo"))
 
     def test_tool_version_prints_pin_and_rejects_unknown_tool(self) -> None:
         def version(name: str) -> subprocess.CompletedProcess[str]:
