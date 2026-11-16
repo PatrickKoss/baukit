@@ -702,6 +702,19 @@ class KubeBenchScoreTests(unittest.TestCase):
         self.assertIn("--benchmark, k3s-cis-", result.stdout)
 
 
+class PostgresReadinessTests(unittest.TestCase):
+    def test_postgres_kustomizations_wait_for_a_ready_cnpg_cluster(self):
+        local = E2E.parent / "overlays/local/reconciliation.yaml"
+        for path in (RECONCILIATION, local):
+            documents = path.read_text().split("\n---\n")
+            postgres = [d for d in documents if "components/postgres\n" in d]
+            self.assertEqual(len(postgres), 1, path)
+            self.assertRegex(
+                postgres[0],
+                r"kind: Cluster\n\s+current: has\(status\.conditions\) && status\.conditions\.exists\("
+                r"e, e\.type == 'Ready' && e\.status == 'True'\)",
+            )
+
 SINCE = "2026-11-15T16:00:00Z"
 SHELL_RULE = "Baukit shell or package manager in app container"
 SHADOW_RULE = "Read sensitive file untrusted"
