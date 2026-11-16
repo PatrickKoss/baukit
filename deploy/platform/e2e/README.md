@@ -69,8 +69,9 @@ Three checks prove they bite:
   and server-side dry-runs a privileged pod (rejected by `baseline`) and a plain pod (admitted with a
   `restricted` warning), then a privileged pod in `kube-system` (admitted). Once Kyverno runs,
   `require-psa-labels` denies unlabeled namespaces, so this check cannot run later;
-- `tests/k3s-hardening` reads the datastore inside the server container and requires the Secret row to hold
-  a `k8s:enc:` envelope and no plaintext, then creates a Secret and polls Loki for its audit event
+- `tests/k3s-hardening` streams the etcd member files (`snap/db` and the WAL) out of the server container
+  once and counts the Secret key, its plaintext value and `k8s:enc:` with the host's grep. It requires the
+  Secret row, a `k8s:enc:` envelope and no plaintext, then creates a Secret and polls Loki for its audit event
   (`{service="kube-audit"}`) and checks the event carries no request body;
 - after the suites, `kube_bench_report` runs kube-bench (`k3s-cis-1.9`, image pinned by digest) as a Job
   in `kube-system` and prints `kube-bench k3s-cis-1.9 total: N PASS, N FAIL, N WARN, N INFO`, then the same

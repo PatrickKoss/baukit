@@ -68,3 +68,15 @@ spec:
               [ "$(cli "$new_master" --raw GET "$key")" = "$value" ]
               [ "$(cli "$old_master" --raw GET "$key")" = "$value" ]
               printf 'key intact on %s and %s\n' "$new_master" "$old_master"
+      catch:
+        - script:
+            content: |
+              for pod in redis-0 redis-1 redis-2; do
+                for container in redis sentinel; do
+                  printf '=== %s/%s\n' "$pod" "$container"
+                  kubectl -n platform-redis logs "$pod" -c "$container" --timestamps || true
+                  printf '=== %s/%s previous\n' "$pod" "$container"
+                  kubectl -n platform-redis logs "$pod" -c "$container" --timestamps --previous || true
+                done
+              done
+              kubectl -n platform-redis get pods -o wide || true

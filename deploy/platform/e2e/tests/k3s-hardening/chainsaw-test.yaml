@@ -23,12 +23,12 @@ spec:
               status=$(docker exec "$server" k3s secrets-encrypt status)
               printf '%s\n' "$status" | grep -q '^Encryption Status: Enabled' || { echo "$status" >&2; exit 1; }
               key=/registry/secrets/$NAMESPACE/at-rest
-              found=$(docker exec "$server" sh -c 'find /var/lib/rancher/k3s/server/db -type f -exec cat {} + | grep -c "$1" || true' sh "$key")
-              [ "$found" -gt 0 ] || { echo "the datastore has no row for $key" >&2; exit 1; }
-              plain=$(docker exec "$server" sh -c 'find /var/lib/rancher/k3s/server/db -type f -exec cat {} + | grep -c "$1" || true' sh "$marker")
-              [ "$plain" -eq 0 ] || { echo "the datastore holds the Secret value in plaintext" >&2; exit 1; }
-              docker exec "$server" sh -c 'find /var/lib/rancher/k3s/server/db -type f -exec cat {} + | grep -q "k8s:enc:"' ||
-                { echo "the datastore has no k8s:enc: envelope" >&2; exit 1; }
+              counts=$(docker exec "$server" find /var/lib/rancher/k3s/server/db/etcd/member -type f -exec cat {} + |
+                LC_ALL=C grep -aoF -e "$key" -e "$marker" -e 'k8s:enc:' | sort | uniq -c || true)
+              count() { printf '%s\n' "$counts" | awk -v p="$1" '$2 == p { print $1; f = 1 } END { if (!f) print 0 }'; }
+              [ "$(count "$key")" -gt 0 ] || { echo "the datastore has no row for $key" >&2; exit 1; }
+              [ "$(count "$marker")" -eq 0 ] || { echo "the datastore holds the Secret value in plaintext" >&2; exit 1; }
+              [ "$(count 'k8s:enc:')" -gt 0 ] || { echo "the datastore has no k8s:enc: envelope" >&2; exit 1; }
               echo "Secret $key is encrypted at rest"
     - name: secret-write-reaches-loki-as-audit-event
       try:

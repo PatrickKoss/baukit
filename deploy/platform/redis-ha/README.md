@@ -20,13 +20,15 @@ other pods for the current master:
 - No answer after three tries 5 seconds apart: `redis-0` starts as master and
   the other pods replicate from it. This is the cold-start path.
 - This pod reported as master: the pod was master and restarted before the
-  failover finished. Redis waits up to 95 seconds for the Sentinels to promote
-  another pod and starts as master only if they still agree on this pod. When
-  two Sentinels start the failover at the same moment, each votes for itself
-  and the election fails. Sentinel retries twice the failover timeout (60
-  seconds) after the first try, so the wait covers detection (5 seconds), that
-  retry and one more failover timeout for the election and promotion. Starting
-  as master earlier would make the replicas resync to the empty data set.
+  failover finished. Redis waits up to 125 seconds for the Sentinels to promote
+  another pod and starts as master only if they still agree on this pod. A
+  Sentinel whose timer stalled for more than 2 seconds sits in TILT mode for
+  30 seconds and neither votes nor fails over. When two Sentinels start the
+  failover at the same moment, each votes for itself and the election fails.
+  Sentinel retries twice the failover timeout (60 seconds) after the first
+  try, so the wait covers detection (5 seconds), one TILT period, that retry
+  and one more failover timeout for the election and promotion. Starting as
+  master earlier would make the replicas resync to the empty data set.
 - Different masters reported: Redis keeps retrying, then exits so the kubelet
   restarts it.
 
@@ -76,8 +78,10 @@ resets all rate-limit buckets. Do not store sessions, durable queues, or
 business data here.
 
 Each Redis container requests 10m CPU / 16 MiB and is limited to 100m CPU /
-64 MiB; each Sentinel requests 5m CPU / 8 MiB and is limited to 50m CPU /
-32 MiB. Redis is capped at 48 MB with `allkeys-lru`. These values target
+64 MiB; each Sentinel requests 5m CPU / 8 MiB and is limited to 250m CPU /
+32 MiB. At 50m CPU a loaded 4-CPU node throttled Sentinel in 37% of its CFS
+periods, and a throttled timer that stalls for more than 2 seconds puts
+Sentinel into TILT mode; at 250m it was throttled in under 9%. Redis is capped at 48 MB with `allkeys-lru`. These values target
 near-zero traffic and should be patched from measurements when traffic or key
 cardinality grows.
 
