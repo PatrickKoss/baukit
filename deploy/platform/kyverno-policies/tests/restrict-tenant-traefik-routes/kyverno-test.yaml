@@ -1,0 +1,36 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-tenant-traefik-routes
+policies:
+  - ../../policies/restrict-tenant-traefik-routes.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: restrict-tenant-traefik-routes
+    kind: IngressRoute
+    resources: [own-host, same-namespace-host]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-tenant-traefik-routes
+    kind: IngressRoute
+    resources: [taken-route-host, taken-ingress-host]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-tenant-traefik-routes
+    kind: Middleware
+    resources: [rate-limit, own-auth, short-auth]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-tenant-traefik-routes
+    kind: Middleware
+    resources: [foreign-auth, external-auth, lookalike-auth, plugin]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-tenant-traefik-routes
+    kind: Middleware
+    resources: [platform-auth]
+    result: skip

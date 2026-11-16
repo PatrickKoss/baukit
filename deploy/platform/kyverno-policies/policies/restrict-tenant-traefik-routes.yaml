@@ -1,0 +1,78 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-tenant-traefik-routes
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Keep tenant Traefik routes and middlewares in their namespace
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Traefik sends forwardAuth requests from its own pod, which reaches every tenant namespace.
+      A tenant forwardAuth must target a Service in its own namespace, and plugin middlewares are
+      refused. An IngressRoute may not claim a Host that an IngressRoute or Ingress in another
+      namespace already serves.
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [traefik.io]
+        apiVersions: [v1alpha1]
+        operations: [CREATE, UPDATE]
+        resources: [middlewares, ingressroutes]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  variables:
+    - name: namespace
+      expression: object.metadata.?namespace.orValue("")
+    - name: isMiddleware
+      expression: object.kind == "Middleware"
+    - name: forwardAuth
+      expression: "variables.isMiddleware ? object.spec.?forwardAuth.address.orValue('') : ''"
+    - name: ownService
+      expression: >-
+        '^https?://[a-z0-9]([-a-z0-9]*[a-z0-9])?\\.' + variables.namespace +
+        '\\.svc(\\.cluster\\.local)?(:[0-9]+)?(/.*)?$'
+    - name: hostPattern
+      expression: "'Host\\\\(`[^`]+`\\\\)'"
+    - name: hosts
+      expression: >-
+        variables.isMiddleware ? [] :
+        object.spec.?routes.orValue([])
+          .map(r, r.?match.orValue("").findAll(variables.hostPattern)).flatten()
+          .map(h, h.substring(6, size(h) - 2))
+    - name: routeHosts
+      expression: >-
+        variables.isMiddleware ? [] :
+        dyn(resource.List("traefik.io/v1alpha1", "ingressroutes", "").items)
+          .filter(i, i.metadata.namespace != variables.namespace)
+          .map(i, i.spec.?routes.orValue([])
+            .map(r, r.?match.orValue("").findAll(variables.hostPattern)).flatten()
+            .map(h, h.substring(6, size(h) - 2)))
+          .flatten()
+    - name: ingressHosts
+      expression: >-
+        variables.isMiddleware ? [] :
+        dyn(resource.List("networking.k8s.io/v1", "ingresses", "").items)
+          .filter(i, i.metadata.namespace != variables.namespace)
+          .map(i, i.spec.?rules.orValue([]).map(r, r.?host.orValue("")))
+          .flatten()
+    - name: clashes
+      expression: >-
+        variables.hosts.filter(h, h in variables.routeHosts || h in variables.ingressHosts)
+  validations:
+    - expression: variables.forwardAuth == "" || variables.forwardAuth.matches(variables.ownService)
+      messageExpression: >-
+        "forwardAuth address " + variables.forwardAuth + " must be a Service in namespace " +
+        variables.namespace + ", such as http://auth." + variables.namespace + ".svc:8080/verify."
+    - expression: "!variables.isMiddleware || !object.spec.?plugin.hasValue()"
+      message: Plugin middlewares run code inside Traefik for every tenant. Use a built-in middleware.
+    - expression: size(variables.clashes) == 0
+      messageExpression: >-
+        "Hosts " + variables.clashes.join(", ") +
+        " already belong to another namespace. Pick a different host."

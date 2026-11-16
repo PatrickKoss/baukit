@@ -5,6 +5,7 @@ resources:
   - oci-repository.yaml
   - helm-release.yaml
   - network-policy.yaml
+  - tenant-rbac.yaml
 namespace: traefik
 components:
   - ../components/network-policy/default-deny

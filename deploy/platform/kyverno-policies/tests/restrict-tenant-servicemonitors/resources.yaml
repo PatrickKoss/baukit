@@ -1,0 +1,140 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: chart-like
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: true
+      relabelings:
+        - action: replace
+          targetLabel: product
+          replacement: shop
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: own-namespace
+  namespace: shop
+spec:
+  namespaceSelector:
+    matchNames: [shop]
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: true
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: any-namespace
+  namespace: shop
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: true
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: other-namespace
+  namespace: shop
+spec:
+  namespaceSelector:
+    matchNames: [shop, other]
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: true
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: token-file
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: true
+      bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tls-file
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: true
+      tlsConfig:
+        caFile: /etc/prometheus/secrets/ca.crt
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: proxy
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: true
+      proxyUrl: http://proxy.other.svc:3128
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: address-rewrite
+  namespace: shop
+spec:
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: true
+      relabelings:
+        - action: replace
+          targetLabel: __address__
+          replacement: kube-state-metrics.observability.svc:8080
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: platform-any
+  namespace: platform
+spec:
+  namespaceSelector:
+    any: true
+  selector:
+    matchLabels:
+      app: api
+  endpoints:
+    - port: metrics
+      honorLabels: true
+

@@ -1,0 +1,36 @@
+# Tenant namespaces bind ClusterRole admin to their flux-reconciler. Kubernetes aggregates these
+# rules into admin, edit and view, so tenants manage the traefik objects baukit-app products ship.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: baukit-tenant-traefik-edit
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    app.kubernetes.io/component: flux-tenant
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+rules:
+  - apiGroups: [traefik.io]
+    resources:
+      - ingressroutes
+      - middlewares
+      - traefikservices
+    verbs: [create, delete, deletecollection, patch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: baukit-tenant-traefik-view
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    app.kubernetes.io/component: flux-tenant
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+  - apiGroups: [traefik.io]
+    resources:
+      - ingressroutes
+      - middlewares
+      - traefikservices
+    verbs: [get, list, watch]
