@@ -624,7 +624,7 @@ by then ride along).
 - [ ] **PI7 SOPS hygiene:** add a second, offline break-glass recipient per environment, drop
   `mac_only_encrypted`, fix the rotation runbook (it points `SOPS_AGE_KEY_FILE` at the new key before
   `updatekeys`), rotate once, and write the cadence into the runbook.
-- [ ] **PI8 Collapse testing and production** into tenant namespaces on the one local cluster, matching
+- [x] **PI8 Collapse testing and production** into tenant namespaces on the one local cluster, matching
   the local-first decision. Freeze the Hetzner overlays as a single overlay with postBuild substitution,
   validated but not bootstrapped. Apply S5 to the Terraform k3s config.
 - [ ] **PI9 Live proof on the persistent cluster:** run the baukit e2e chainsaw suites (admission,
@@ -1237,3 +1237,17 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   Left for later: no `alertmanager-routing` Secret in testing and production (PI5); flux-system
   bootstrap still at Flux 2.9.4 without digests or PSA labels (PI8); prerequisite Namespaces copy the
   base ones (PI3); no Kyverno on the local cluster (PI3).
+- 2026-11-16 09:20: PI8 merged into platform-infra main (eb35e75). `make up` now runs baukit's own
+  `platform-lifecycle.sh` from a `git archive` of the pinned tag, so platform-local gets k3s v1.37.2 by
+  digest, embedded etcd, S5 (secrets encryption, audit log, PSA config, protect-kernel-defaults), the
+  sysctl preflight, mirrors and the system-namespace labels without a copy. `scripts/test_platform.py`
+  pins the exact k3d args. Flux is 2.10.0 with the lockdown digests and a default-deny flux-system
+  through `clusters/components/flux-system`. testing and production are one frozen `platform/hetzner`
+  overlay with `${platform_environment}` substitution; validate renders it once per environment and
+  fails on an unsubstituted variable. Terraform installs k3s v1.37.2 by sha256 (binary and
+  install.sh), with `platform_k3s_server_args` (S5 + etcd), the wrangler leases as a systemd drop-in,
+  host sysctls and the namespace labels; `tofu test` asserts the cloud-init. Files Terraform and the
+  flux-system build cannot read from the tag are copied, and `check-baukit-copies.py` fails on drift.
+  Validate and the tests reran green for me. Open: three runbooks (cluster-bootstrap, baukit-base-upgrade,
+  secret-rotation) and README sections still name the old testing/production paths; PI9 fixes them
+  with its runbook work. Live proof of all of this is PI9.
