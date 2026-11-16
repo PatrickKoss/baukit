@@ -1,7 +1,7 @@
 # shellcheck shell=sh
 # Sourced by deploy validators. Usage: baukit_use_tools <repo-root> <tool>...
-# Puts $BAUKIT_TOOLS_DIR/bin (default <repo-root>/.tools/bin) first on PATH. Exits 2 when a tool is missing or not at the
-# version pinned in deploy/tools.toml.
+# Puts $BAUKIT_TOOLS_DIR/bin (default <repo-root>/.tools/bin) first on PATH. Exits 2 when a
+# tool is missing or not at the version pinned in deploy/tools.toml.
 
 baukit_use_tools() {
     baukit_tools_root=$1
