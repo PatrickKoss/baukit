@@ -9,7 +9,7 @@ fi
 timeout=$1 rule=$2
 shift 2
 
-alertmanager=alertmanager-kube-prometheus-stack-alertmanager-0
+alertmanager="alertmanager-kube-prometheus-stack-alertmanager-0"
 sink=http://alert-sink.observability.svc.cluster.local:8080/alerts
 deadline=$(($(date +%s) + timeout))
 while :; do
