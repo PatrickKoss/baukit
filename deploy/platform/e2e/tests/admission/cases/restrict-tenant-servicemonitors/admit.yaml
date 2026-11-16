@@ -9,3 +9,8 @@ spec:
       app.kubernetes.io/name: echo
   endpoints:
     - port: metrics
+      honorLabels: false
+      relabelings:
+        - action: replace
+          targetLabel: product
+          replacement: e2e-echo

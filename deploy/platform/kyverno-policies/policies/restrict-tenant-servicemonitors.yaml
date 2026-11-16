@@ -9,8 +9,8 @@ metadata:
     policies.kyverno.io/severity: high
     policies.kyverno.io/description: >-
       Prometheus runs every ServiceMonitor with its own identity. A tenant ServiceMonitor may not
-      select other namespaces, read files from the Prometheus pod, send scrapes through a proxy or
-      rewrite the scrape address.
+      select other namespaces, read files from the Prometheus pod, send scrapes through a proxy,
+      rewrite the scrape address or set the namespace label that canary queries filter on.
 spec:
   validationActions:
     - Deny
@@ -46,6 +46,18 @@ spec:
       expression: >-
         variables.endpoints.filter(e,
           e.?relabelings.orValue([]).exists(r, r.?targetLabel.orValue("") == "__address__"))
+    - name: relabelings
+      expression: >-
+        variables.endpoints.map(e,
+          e.?relabelings.orValue([]) + e.?metricRelabelings.orValue([])).flatten()
+    - name: honoredEndpoints
+      expression: variables.endpoints.filter(e, e.?honorLabels.orValue(false))
+    - name: namespaceWrites
+      expression: >-
+        variables.relabelings.filter(r,
+          r.?targetLabel.orValue("") == "namespace" ||
+          r.?targetLabel.orValue("").contains("$") ||
+          r.?action.orValue("replace").lowerAscii() == "labelmap")
   validations:
     - expression: >-
         !variables.selector.?any.orValue(false) &&
@@ -63,3 +75,11 @@ spec:
       message: >-
         A relabeling that writes __address__ points Prometheus at an arbitrary host. Select the
         Service by label instead.
+    - expression: size(variables.honoredEndpoints) == 0
+      message: >-
+        honorLabels lets the scraped target set namespace, product and service. Drop it, so
+        Prometheus renames clashing labels to exported_<name>.
+    - expression: size(variables.namespaceWrites) == 0
+      message: >-
+        A relabeling or metricRelabeling may not write the namespace label, use a templated
+        targetLabel or use labelmap. Set fixed labels with action replace instead.

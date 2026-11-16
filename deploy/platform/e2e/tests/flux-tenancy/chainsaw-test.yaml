@@ -9,8 +9,10 @@ spec:
     The component's Kustomization writes into the tenant namespace. A Kustomization the tenant writes
     itself with targetNamespace flux-system is forbidden, and a remote base is refused. The reconciler
     manages the Flagger, Traefik and ServiceMonitor kinds baukit-app products ship, and the tenant
-    Kyverno guards refuse a ServiceMonitor, MetricTemplate or forwardAuth that reaches out of the
-    namespace. Needs the controllers installed with components/flux-lockdown and the snapshot server
+    Kyverno guards refuse a ServiceMonitor, MetricTemplate, IngressRoute or forwardAuth that reaches
+    out of the namespace or spoofs its namespace label. Prometheus writes the tenant's namespace
+    label after the tenant's relabelings, and every non-tenant namespace with monitors or rules is
+    excluded from that enforcement. Needs the controllers installed with components/flux-lockdown and the snapshot server
     at BAUKIT_E2E_GIT_URL (default http://host.k3d.internal:9418/baukit.git).
   timeouts:
     apply: 1m
@@ -194,7 +196,7 @@ spec:
                 provider:
                   type: prometheus
                   address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-                query: vector(0)
+                query: sum(rate(http_requests_total{namespace="{{ namespace }}", status=~"5.."}[{{ interval }}]))
               ---
               apiVersion: flagger.app/v1beta1
               kind: Canary
@@ -310,6 +312,67 @@ spec:
                   address: http://kubernetes.default.svc
                 query: vector(0)
               YAML
+              expect_denied restrict-tenant-servicemonitors <<YAML
+              apiVersion: monitoring.coreos.com/v1
+              kind: ServiceMonitor
+              metadata:
+                name: honored
+              spec:
+                selector: {}
+                endpoints:
+                  - port: metrics
+                    honorLabels: true
+              YAML
+              expect_denied restrict-tenant-servicemonitors <<YAML
+              apiVersion: monitoring.coreos.com/v1
+              kind: ServiceMonitor
+              metadata:
+                name: spoofed-namespace
+              spec:
+                selector: {}
+                endpoints:
+                  - port: metrics
+                    metricRelabelings:
+                      - targetLabel: namespace
+                        replacement: flagger-system
+              YAML
+              expect_denied restrict-tenant-servicemonitors <<YAML
+              apiVersion: monitoring.coreos.com/v1
+              kind: ServiceMonitor
+              metadata:
+                name: mapped-labels
+              spec:
+                selector: {}
+                endpoints:
+                  - port: metrics
+                    relabelings:
+                      - action: labelmap
+                        regex: __meta_kubernetes_pod_label_(.+)
+              YAML
+              expect_denied restrict-tenant-metric-templates <<YAML
+              apiVersion: flagger.app/v1beta1
+              kind: MetricTemplate
+              metadata:
+                name: every-namespace
+              spec:
+                provider:
+                  type: prometheus
+                query: sum(rate(http_requests_total{product="leitbild"}[1m]))
+              YAML
+              expect_denied restrict-tenant-traefik-routes <<YAML
+              apiVersion: traefik.io/v1alpha1
+              kind: IngressRoute
+              metadata:
+                name: pattern-host
+              spec:
+                entryPoints: [websecure]
+                routes:
+                  - kind: Rule
+                    match: HostRegexp(\`^.+\\.example\\.test$\`)
+                    services:
+                      - name: api
+                        port: 80
+              YAML
               expect_denied restrict-tenant-traefik-routes <<YAML
               apiVersion: traefik.io/v1alpha1
               kind: Middleware
@@ -322,3 +385,94 @@ spec:
               printf denied
             check:
               ($stdout): denied
+    - name: namespace-label-is-enforced
+      try:
+        - script:
+            content: |
+              set -eu
+              excluded=$(kubectl -n observability get prometheus kube-prometheus-stack-prometheus \
+                -o jsonpath='{range .spec.excludedFromEnforcement[*]}{.resource}/{.namespace}{"\n"}{end}')
+              tenants=$(kubectl get namespaces -l baukit.dev/tenant=true -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}')
+              missing=""
+              for resource in servicemonitors podmonitors prometheusrules; do
+                for namespace in $(kubectl get "$resource.monitoring.coreos.com" -A \
+                  -o jsonpath='{range .items[*]}{.metadata.namespace}{"\n"}{end}' | sort -u); do
+                  case $namespace in chainsaw-*) continue ;; esac
+                  printf '%s\n' "$tenants" | grep -qx "$namespace" && continue
+                  printf '%s\n' "$excluded" | grep -qx "$resource/$namespace" ||
+                    missing="$missing $resource/$namespace"
+                done
+              done
+              if [ -n "$missing" ]; then
+                printf 'platform monitors outside excludedFromEnforcement:%s\n' "$missing" >&2
+                exit 1
+              fi
+              printf covered
+            check:
+              ($stdout): covered
+        - script:
+            content: |
+              set -eu
+              kubectl -n e2e-tenant apply --as=system:serviceaccount:e2e-tenant:flux-reconciler -f - >/dev/null <<YAML
+              apiVersion: monitoring.coreos.com/v1
+              kind: ServiceMonitor
+              metadata:
+                name: flux-tenancy-enforced
+              spec:
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/name: echo
+                endpoints:
+                  - port: metrics
+                    relabelings:
+                      - targetLabel: team
+                        replacement: e2e
+                    metricRelabelings:
+                      - action: labeldrop
+                        regex: debug_.*
+              YAML
+              job=serviceMonitor/e2e-tenant/flux-tenancy-enforced/0
+              for _ in $(seq 60); do
+                config=$(kubectl -n observability get secret prometheus-kube-prometheus-stack-prometheus \
+                  -o jsonpath='{.data.prometheus\.yaml\.gz}' | base64 -d | gunzip)
+                if printf '%s' "$config" | JOB=$job python3 -c '
+              import os, re, sys
+              config = sys.stdin.read()
+              start = config.find("- job_name: " + os.environ["JOB"] + "\n")
+              if start < 0:
+                  sys.exit(1)
+              end = config.find("\n- job_name: ", start + 1)
+              job = config[start : end if end > 0 else len(config)]
+              def entries(section):
+                  body = job.partition(section + ":\n")[2]
+                  lines = []
+                  for line in body.split("\n"):
+                      if not line.startswith(("  - ", "    ")):
+                          break
+                      lines.append(line)
+                  return re.split(r"\n  - ", "\n" + "\n".join(lines))[1:]
+              def enforced_after(section, marker):
+                  items = entries(section)
+                  first = next((i for i, e in enumerate(items) if marker in e), None)
+                  return first is not None and any(
+                      "target_label: namespace" in e and "replacement: e2e-tenant" in e
+                      for e in items[first + 1 :]
+                  )
+              ok = enforced_after("relabel_configs", "target_label: team") and enforced_after(
+                  "metric_relabel_configs", "debug_"
+              )
+              sys.exit(0 if ok else 2)
+              '; then
+                  printf enforced
+                  exit 0
+                fi
+                sleep 2
+              done
+              printf '%s has no namespace label enforced after its relabelings:\n' "$job" >&2
+              printf '%s' "$config" | grep -A60 -- "- job_name: $job" >&2 || true
+              exit 1
+            check:
+              ($stdout): enforced
+      finally:
+        - script:
+            content: kubectl -n e2e-tenant delete servicemonitor flux-tenancy-enforced --ignore-not-found

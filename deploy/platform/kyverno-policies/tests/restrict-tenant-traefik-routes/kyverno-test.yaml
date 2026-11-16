@@ -12,13 +12,29 @@ results:
   - isValidatingPolicy: true
     policy: restrict-tenant-traefik-routes
     kind: IngressRoute
-    resources: [own-host, same-namespace-host]
+    resources: [own-host, same-namespace-host, fresh-hosts]
     result: pass
   - isValidatingPolicy: true
     policy: restrict-tenant-traefik-routes
     kind: IngressRoute
-    resources: [taken-route-host, taken-ingress-host]
+    resources: [taken-route-host, taken-ingress-host, upper-case-host, spaced-host, quoted-host,
+      trailing-dot-host, v2-multi-host, host-header, lowercase-matcher, host-regexp]
     result: fail
+  - isValidatingPolicy: true
+    policy: restrict-tenant-traefik-routes
+    kind: IngressRouteTCP
+    resources: [sni-own]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-tenant-traefik-routes
+    kind: IngressRouteTCP
+    resources: [sni-taken, sni-http-host, sni-wildcard, sni-regexp]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-tenant-traefik-routes
+    kind: IngressRouteTCP
+    resources: [platform-sni]
+    result: skip
   - isValidatingPolicy: true
     policy: restrict-tenant-traefik-routes
     kind: Middleware

@@ -12,15 +12,16 @@ results:
   - isValidatingPolicy: true
     policy: restrict-tenant-servicemonitors
     kind: ServiceMonitor
-    resources: [chart-like, own-namespace]
+    resources: [chart-like, own-namespace, honor-labels-false]
     result: pass
   - isValidatingPolicy: true
     policy: restrict-tenant-servicemonitors
     kind: ServiceMonitor
-    resources: [any-namespace, other-namespace, token-file, tls-file, proxy, address-rewrite]
+    resources: [any-namespace, other-namespace, token-file, tls-file, proxy, address-rewrite,
+      honor-labels, namespace-relabel, namespace-metric-relabel, templated-target, label-map]
     result: fail
   - isValidatingPolicy: true
     policy: restrict-tenant-servicemonitors
     kind: ServiceMonitor
-    resources: [platform-any]
+    resources: [platform-any, platform-honor]
     result: skip

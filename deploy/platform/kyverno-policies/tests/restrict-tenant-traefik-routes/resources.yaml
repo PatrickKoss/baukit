@@ -127,3 +127,198 @@ metadata:
 spec:
   forwardAuth:
     address: https://auth.example.com/verify
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: upper-case-host
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`OTHER.Example.Test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: spaced-host
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host( ` other.example.test ` )
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: quoted-host
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host("other.example.test")
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: trailing-dot-host
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`other.example.test.`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: v2-multi-host
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`fresh.example.test`, `legacy.example.test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: host-header
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: HostHeader(`other.example.test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: lowercase-matcher
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: host(`other.example.test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: host-regexp
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: HostRegexp(`^.+\\.example\\.test$`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: fresh-hosts
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: Host(`fresh.example.test`) || Host(`Fresh2.example.test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: sni-taken
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: HostSNI(`tcp.example.test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: sni-http-host
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: HostSNI(`other.example.test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: sni-wildcard
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: sni-regexp
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: HostSNIRegexp(`^.+$`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: sni-own
+  namespace: shop
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: HostSNI(`db.shop.example.test`)
+      services:
+        - name: web
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: platform-sni
+  namespace: platform
+spec:
+  entryPoints: [websecure]
+  routes:
+    - match: HostSNI(`*`)
+      services:
+        - name: web
+          port: 80
