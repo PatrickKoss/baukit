@@ -701,6 +701,22 @@ by then ride along).
 - [x] **RF3 Gate budget under a shared host.** The 0.26.0 full gate took 2225 s, 425 s over budget,
   because `native-android` started on 2 cores while another product's gate held the second heavy
   slot. Look at the android lane's minimum core share in the pool.
+  Done: `gate.py` reserves `emulator_cores` (8) as soon as an emulator step's dependencies pass;
+  the 0.26.2 integration gate started native-android on 8 cores at +6 s and ran 1101 s.
+- [ ] **RF16 Lifecycle reuses a stale cluster network.** `ensure_cluster` in `platform-lifecycle.sh`
+  runs only `platform_check_free_subnet` on create. A leftover `k3d-platform-local` network from an
+  older cluster (172.18.0.0/16, created 2026-08-09) made k3d ignore `--subnet`, and the cluster came up
+  outside the node CIDR. Refuse a same-named network whose subnet is not `$PLATFORM_SUBNET` on create,
+  as the start path already does with `platform_check_network_in_node_cidr`.
+- [ ] **RF17 Chainsaw suites on a persistent cluster.** Against platform-local, netpol fails its three
+  kured cases (local skips kured by design) and falco's no-warning step trips on Critical events from
+  other Docker containers on the shared host (no Kubernetes metadata). Give the suites a local
+  profile: skip absent namespaces, and filter Falco events to ones with `k8s.ns.name`.
+- [ ] **RF18 Gate disk floor.** The 0.26.2 release gate went red in four lanes at 91% disk: the e2e
+  kubelet evicted Postgres and Traefik for ephemeral storage (threshold about 50 GiB) and testcontainers
+  timed out. The same squeeze tainted platform-local with DiskPressure. `ci-gate.sh` should refuse to
+  start below a free-space floor (gate peak plus the eviction threshold) and print the largest stale
+  `target/` dirs.
 
 ## Verification per change
 
@@ -1354,3 +1370,19 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   172.16.0.0/12 in its `except` list. RF2 (`task/rf2`) and RF13/RF14 (`task/rf13-rf14`) are reviewed
   and wait for 0.26.2; RF13 covers nine OCIRepository namespaces (kured too) and the kube-system and
   posthog HelmRepositories from flux-system/flux-errors. Its live delivery is a PI9 check.
+
+### 2026-11-16 16:10
+
+- 0.26.2 released: RF2, RF3, RF13/RF14 and RF15 merged through an integration branch (full gate green
+  in 1101 s, native-android on 8 cores at +6 s). The release train blessed the 13 snapshot trees itself.
+  The release full gate on 7d89731b was red in rust, fixtures-1, fixtures-2 and platform-e2e at 91%
+  disk (RF18); after freeing 248 GB every failed lane's steps passed, so main is fb82bf81, tag v0.26.2.
+- PI9 merged in platform-infra (4c675b5): `serviceAccountName: kustomize-controller` on 19 flux-system
+  Kustomizations (`make up` timed out on Forbidden), the observability ingress-backend label (Grafana
+  502), Alertmanager `receiver-name-in-metrics`, five runbooks, stale runbooks fixed. Live: edge peer
+  10.42.0.1, Grafana CSP clean, `/metrics` 403, 127.0.0.1-only bindings, drills 1 to 3, broken
+  OCIRepository and CNPG restore-test alerts delivered. Chainsaw admission and alert-pipeline pass;
+  netpol and falco fail on host specifics (RF17). Stale network found (RF16).
+- leitbild re-encrypted to its tenant recipients (417a229); Flux now decrypts and stops at leitbild's
+  own Namespace manifests (requirement 3), which an agent is fixing. PI9 stays open until both tenants
+  are Ready.
