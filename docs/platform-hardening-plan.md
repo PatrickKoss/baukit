@@ -1173,3 +1173,9 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   noise was netpol probe pods plus kustomize-controller's git children after a rules reload (same
   lost-parent effect as CNPG); both now have narrow exclusions. Release waits for FR's live runs, then the
   platform-e2e lane plus `--affected 1bd71848`.
+- 2026-11-16 02:30: FR merged (8f211215). Live falco+netpol+redis-ha runs: 3/3 pass twice (652 s, 637 s).
+  A third bug surfaced in FR's run 0: kstatus treats a CNPG Cluster without conditions as current, so the
+  postgres Kustomization finished before the primary ran. The e2e and local overlays now carry a
+  `healthCheckExprs` entry that requires Ready=True; platform-infra's production overlay needs the same (PI).
+  Neither live run hit a split vote, so the 95 s Redis wait is proven offline only. Full ci-gate rerun on
+  8f211215 because `deploy/**` is a shared path.
