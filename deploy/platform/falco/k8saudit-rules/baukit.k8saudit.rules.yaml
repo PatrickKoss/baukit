@@ -12,7 +12,8 @@
   condition: ka.user.name startswith "system:serviceaccount:"
 
 # Platform controllers that read Secrets by design, measured from the audit log of a full local
-# platform on 2026-11-16. Overlays append their own with `override: condition: append`.
+# platform on 2026-11-16. CNPG gives each cluster instance a service account that reads the cluster's
+# own Secrets in postgres. Overlays append their own with `override: condition: append`.
 - macro: baukit_expected_secret_reader
   condition: >-
     (ka.user.name startswith "system:serviceaccount:flux-system:" or
@@ -22,7 +23,7 @@
      ka.user.name startswith "system:serviceaccount:cnpg-system:" or
      ka.user.name startswith "system:serviceaccount:observability:" or
      ka.user.name startswith "system:serviceaccount:traefik:" or
-     ka.user.name = "system:serviceaccount:postgres:postgres-cluster")
+     (ka.user.name startswith "system:serviceaccount:postgres:" and ka.target.namespace=postgres))
 
 # GitOps applies RBAC through Flux; k3s writes its own bindings at start.
 - macro: baukit_expected_rbac_writer
@@ -47,9 +48,11 @@
   tags: [baukit, k8s_audit, secrets]
 
 - rule: Baukit exec or attach into pod
-  desc: Someone opened an exec or attach session into a pod through the API server.
+  desc: >-
+    Someone opened an exec or attach session into a pod through the API server. kubectl uses a
+    WebSocket since Kubernetes 1.30, which the API server audits as get; SPDY clients send create.
   condition: >-
-    baukit_audit_complete and ka.verb=create and ka.target.resource=pods and
+    baukit_audit_complete and ka.verb in (create, get) and ka.target.resource=pods and
     ka.target.subresource in (exec, attach)
   output: >-
     Pod %ka.target.subresource (user=%ka.user.name pod=%ka.target.namespace/%ka.target.name

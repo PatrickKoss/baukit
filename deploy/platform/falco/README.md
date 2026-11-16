@@ -31,8 +31,8 @@ from the FA0 spike. Falco reloads the directory when the ConfigMap changes.
 
 | Rule | Priority | Fires on |
 |---|---|---|
-| Baukit secret read by unexpected service account | Warning | get, list or watch on Secrets by a service account outside `baukit_expected_secret_reader` (flux-system, kube-system, kyverno, cert-manager, cnpg-system, observability, traefik, `postgres:postgres-cluster`) |
-| Baukit exec or attach into pod | Warning | create on `pods/exec` or `pods/attach` |
+| Baukit secret read by unexpected service account | Warning | get, list or watch on Secrets by a service account outside `baukit_expected_secret_reader` (flux-system, kube-system, kyverno, cert-manager, cnpg-system, observability, traefik, and service accounts in `postgres` reading Secrets in `postgres`, which CNPG instances do) |
+| Baukit exec or attach into pod | Warning | create (SPDY) or get (WebSocket, kubectl since 1.30) on `pods/exec` or `pods/attach` |
 | Baukit ClusterRoleBinding changed outside GitOps | Critical | create, update, patch or delete of a ClusterRoleBinding by anyone but Flux's kustomize- and helm-controller or k3s, dry runs excluded |
 
 An overlay adds an expected secret reader with
