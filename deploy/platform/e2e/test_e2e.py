@@ -799,7 +799,7 @@ class FalcoEventsTests(unittest.TestCase):
 
     def test_loki_triggers_start_at_falco_pod_start(self):
         chainsaw = (E2E / "tests/falco/chainsaw-test.yaml").read_text()
-        falco_start = "kubectl -n falco get pods -l app.kubernetes.io/name=falco"
+        falco_start = "kubectl -n falco get pods -l app.kubernetes.io/name=falco,pod-template-generation"
         self.assertNotIn("since=$(date", chainsaw)
         self.assertEqual(chainsaw.count(f"since=$({falco_start}"), 3)
 

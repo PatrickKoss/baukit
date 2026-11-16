@@ -20,7 +20,7 @@ spec:
               set -eu
               # On WSL2 Falco's event clock lags the wall clock by an amount that grows with its uptime,
               # so the Loki window opens at Falco's start. Rule, namespace and priority match only this trigger.
-              since=$(kubectl -n falco get pods -l app.kubernetes.io/name=falco -o jsonpath='{.items[0].status.startTime}')
+              since=$(kubectl -n falco get pods -l app.kubernetes.io/name=falco,pod-template-generation -o jsonpath='{.items[0].status.startTime}')
               pod=$(kubectl -n e2e-tenant get pods -l baukit.dev/process=api -o jsonpath='{.items[0].metadata.name}')
               kubectl -n "$NAMESPACE" create configmap falco-triggers --from-literal=echo-pod="$pod"
               kubectl -n e2e-tenant exec "$pod" -c api -- sh -c 'echo falco-e2e'
@@ -123,7 +123,7 @@ spec:
             content: |
               set -eu
               # Falco's event clock lags on WSL2, see the first step. The test namespace and process match only this pod.
-              since=$(kubectl -n falco get pods -l app.kubernetes.io/name=falco -o jsonpath='{.items[0].status.startTime}')
+              since=$(kubectl -n falco get pods -l app.kubernetes.io/name=falco,pod-template-generation -o jsonpath='{.items[0].status.startTime}')
               rule='Read sensitive file untrusted'
               deadline=$(($(date +%s) + 180))
               until events=$(./falco-events.sh --source loki --since "$since" --min-priority Warning \
@@ -140,7 +140,7 @@ spec:
         - script:
             content: |
               set -eu
-              since=$(kubectl -n falco get pods -l app.kubernetes.io/name=falco -o jsonpath='{.items[0].status.startTime}')
+              since=$(kubectl -n falco get pods -l app.kubernetes.io/name=falco,pod-template-generation -o jsonpath='{.items[0].status.startTime}')
               echo_pod=$(kubectl -n "$NAMESPACE" get configmap falco-triggers -o jsonpath='{.data.echo-pod}')
               # The triggers above, the e2e-backup-* clusters into which backup-restore execs psql, and the
               # netpol-probe-* pods into which the netpol suite execs its probes in protected namespaces.

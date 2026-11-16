@@ -21,6 +21,7 @@ def load_process_runner():
 
 
 process_runner = load_process_runner()
+SENTINEL_TILT_MS = 30000
 SUFFIX = ".redis-headless.platform-redis.svc.cluster.local"
 STUB = textwrap.dedent(
     """\
@@ -128,6 +129,17 @@ class DecideMasterTest(RedisHaScript, unittest.TestCase):
         failover_ms = sentinel_setting(conf, "failover-timeout")
         retry_after_split_vote_ms = down_after_ms + 2 * failover_ms
         self.assertGreaterEqual(waited_seconds * 1000, retry_after_split_vote_ms + failover_ms)
+
+    def test_restarted_master_waits_out_a_sentinel_tilt_before_the_split_vote_retry(self) -> None:
+        answers = {1: f"{fqdn(0)}\n6379\n", 2: f"{fqdn(0)}\n6379\n"}
+        result = self.decide("redis-0", answers, extra_env={"SELF_WAIT_SECONDS": ""})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        waited_seconds = result.stderr.count("waiting for Sentinels")
+        conf = self.decide("redis-1", {0: f"{fqdn(0)}\n6379\n"}, mode="sentinel").stdout
+        down_after_ms = sentinel_setting(conf, "down-after-milliseconds")
+        failover_ms = sentinel_setting(conf, "failover-timeout")
+        worst_case_promotion_ms = down_after_ms + SENTINEL_TILT_MS + 3 * failover_ms
+        self.assertGreaterEqual(waited_seconds * 1000, worst_case_promotion_ms)
 
     def test_disagreeing_sentinels_fail_the_start(self) -> None:
         answers = {1: f"{fqdn(1)}\n6379\n", 2: f"{fqdn(2)}\n6379\n"}
