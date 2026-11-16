@@ -640,11 +640,14 @@ by then ride along).
   tools, and every local gate had them, so it passed locally. The test now stubs `baukit_use_tools`
   and `registry_mirrors_running`, like it already stubbed `require_tools`. Verified with
   `ci-gate.sh --step scripts-tests` in a worktree without `.tools`: 481 tests OK.
-- [ ] **RF2 Mirror CI's tool-free `scripts-tests` locally.** `deploy/lib/tools.sh` always reads
+- [x] **RF2 Mirror CI's tool-free `scripts-tests` locally.** `deploy/lib/tools.sh` always reads
   `<repo>/.tools`, so a local gate cannot tell whether a script test depends on installed deploy
   tools. Let the `scripts-tests` step run against an empty tools root, for example a
   `BAUKIT_TOOLS_ROOT` override that `baukit_use_tools` honours, so the next test like RF1 fails
   locally first.
+  `baukit_use_tools` now reads `BAUKIT_TOOLS_DIR` (default `<repo>/.tools`, the same variable the
+  installer uses), and the `scripts-tests` step points it at an empty temp dir. A probe test that
+  needs `.tools/bin/flux` passed the step before and fails it now.
 - [ ] **RF4 Hosted Platform e2e `redis-ha` red** (run 43810307549 on 1650e668, the first hosted run of
   the 0.26.0 code). After the master was force-deleted, the survivor's Sentinel named no new master
   within 120 s. The run kept no Sentinel logs. A restarted master waits 95 s
