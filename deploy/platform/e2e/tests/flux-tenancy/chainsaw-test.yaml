@@ -7,7 +7,10 @@ spec:
   description: >-
     A tenant namespace built from components/tenant reconciles as its flux-reconciler service account.
     The component's Kustomization writes into the tenant namespace. A Kustomization the tenant writes
-    itself with targetNamespace flux-system is forbidden, and a remote base is refused. Needs the controllers installed with components/flux-lockdown and the snapshot server
+    itself with targetNamespace flux-system is forbidden, and a remote base is refused. The reconciler
+    manages the Flagger, Traefik and ServiceMonitor kinds baukit-app products ship, and the tenant
+    Kyverno guards refuse a ServiceMonitor, MetricTemplate or forwardAuth that reaches out of the
+    namespace. Needs the controllers installed with components/flux-lockdown and the snapshot server
     at BAUKIT_E2E_GIT_URL (default http://host.k3d.internal:9418/baukit.git).
   timeouts:
     apply: 1m
@@ -158,3 +161,164 @@ spec:
               exit 1
             check:
               ($stdout): refused
+    - name: tenant-admin-manages-chart-kinds
+      try:
+        - script:
+            content: |
+              set -eu
+              as=system:serviceaccount:e2e-tenant:flux-reconciler
+              for resource in canaries.flagger.app metrictemplates.flagger.app \
+                ingressroutes.traefik.io middlewares.traefik.io traefikservices.traefik.io \
+                servicemonitors.monitoring.coreos.com; do
+                for verb in get list watch create update patch delete deletecollection; do
+                  kubectl auth can-i "$verb" "$resource" -n e2e-tenant --as="$as" >/dev/null ||
+                    { printf '%s cannot %s %s\n' "$as" "$verb" "$resource" >&2; exit 1; }
+                done
+                if kubectl auth can-i create "$resource" -n flux-system --as="$as" >/dev/null; then
+                  printf '%s can create %s in flux-system\n' "$as" "$resource" >&2
+                  exit 1
+                fi
+              done
+              printf granted
+            check:
+              ($stdout): granted
+        - script:
+            content: |
+              set -eu
+              kubectl -n "$NAMESPACE" apply --as="system:serviceaccount:$NAMESPACE:flux-reconciler" -f - >/dev/null <<YAML
+              apiVersion: flagger.app/v1beta1
+              kind: MetricTemplate
+              metadata:
+                name: error-rate
+              spec:
+                provider:
+                  type: prometheus
+                  address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+                query: vector(0)
+              ---
+              apiVersion: flagger.app/v1beta1
+              kind: Canary
+              metadata:
+                name: api
+              spec:
+                provider: traefik
+                targetRef:
+                  apiVersion: apps/v1
+                  kind: Deployment
+                  name: api
+                service:
+                  port: 80
+                analysis:
+                  interval: 1m
+                  threshold: 1
+                  stepWeights: [50]
+                  metrics:
+                    - name: error-rate
+                      templateRef:
+                        name: error-rate
+                      thresholdRange:
+                        max: 1
+              ---
+              apiVersion: traefik.io/v1alpha1
+              kind: Middleware
+              metadata:
+                name: rate-limit
+              spec:
+                rateLimit:
+                  average: 10
+                  burst: 20
+              ---
+              apiVersion: traefik.io/v1alpha1
+              kind: TraefikService
+              metadata:
+                name: api
+              spec:
+                weighted:
+                  services:
+                    - name: api
+                      port: 80
+                      weight: 100
+              ---
+              apiVersion: traefik.io/v1alpha1
+              kind: IngressRoute
+              metadata:
+                name: api
+              spec:
+                entryPoints: [websecure]
+                routes:
+                  - kind: Rule
+                    match: Host(\`$NAMESPACE.flux-tenancy.invalid\`)
+                    middlewares:
+                      - name: rate-limit
+                    services:
+                      - kind: TraefikService
+                        name: api
+              ---
+              apiVersion: monitoring.coreos.com/v1
+              kind: ServiceMonitor
+              metadata:
+                name: api
+              spec:
+                selector:
+                  matchLabels:
+                    app.kubernetes.io/name: api
+                endpoints:
+                  - port: metrics
+              YAML
+              count=$(kubectl -n "$NAMESPACE" get canaries,metrictemplates,ingressroutes,middlewares,traefikservices,servicemonitors \
+                -o name | wc -l)
+              printf '%d' "$count"
+            check:
+              ($stdout): "6"
+    - name: tenant-guards-deny-escapes
+      try:
+        - script:
+            content: |
+              set -eu
+              as="system:serviceaccount:$NAMESPACE:flux-reconciler"
+              expect_denied() {
+                policy=$1
+                if output=$(kubectl -n "$NAMESPACE" apply --dry-run=server --as="$as" -f - 2>&1); then
+                  printf '%s admitted:\n%s\n' "$policy" "$output" >&2
+                  exit 1
+                fi
+                case $output in
+                  *"$policy"*) ;;
+                  *) printf '%s: unexpected error: %s\n' "$policy" "$output" >&2; exit 1 ;;
+                esac
+              }
+              expect_denied restrict-tenant-servicemonitors <<YAML
+              apiVersion: monitoring.coreos.com/v1
+              kind: ServiceMonitor
+              metadata:
+                name: everywhere
+              spec:
+                namespaceSelector:
+                  any: true
+                selector: {}
+                endpoints:
+                  - port: metrics
+              YAML
+              expect_denied restrict-tenant-metric-templates <<YAML
+              apiVersion: flagger.app/v1beta1
+              kind: MetricTemplate
+              metadata:
+                name: elsewhere
+              spec:
+                provider:
+                  type: prometheus
+                  address: http://kubernetes.default.svc
+                query: vector(0)
+              YAML
+              expect_denied restrict-tenant-traefik-routes <<YAML
+              apiVersion: traefik.io/v1alpha1
+              kind: Middleware
+              metadata:
+                name: foreign-auth
+              spec:
+                forwardAuth:
+                  address: http://grafana.observability.svc.cluster.local/api
+              YAML
+              printf denied
+            check:
+              ($stdout): denied

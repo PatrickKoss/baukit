@@ -1,0 +1,10 @@
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: admission-foreign-address
+  namespace: e2e-tenant
+spec:
+  provider:
+    type: prometheus
+    address: http://kubernetes.default.svc
+  query: vector(0)

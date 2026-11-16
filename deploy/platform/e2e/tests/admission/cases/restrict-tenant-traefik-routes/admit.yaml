@@ -1,0 +1,8 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: admission-own-auth
+  namespace: e2e-tenant
+spec:
+  forwardAuth:
+    address: http://auth.e2e-tenant.svc.cluster.local:8080/verify

@@ -5,6 +5,7 @@ resources:
   - oci-repository.yaml
   - helm-release.yaml
   - metric-templates.yaml
+  - tenant-rbac.yaml
   - network-policy.yaml
 namespace: flagger-system
 components:

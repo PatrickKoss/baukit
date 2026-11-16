@@ -1,0 +1,65 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-tenant-servicemonitors
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Keep tenant ServiceMonitors in their namespace
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Prometheus runs every ServiceMonitor with its own identity. A tenant ServiceMonitor may not
+      select other namespaces, read files from the Prometheus pod, send scrapes through a proxy or
+      rewrite the scrape address.
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [monitoring.coreos.com]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [servicemonitors]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  variables:
+    - name: namespace
+      expression: object.metadata.?namespace.orValue("")
+    - name: selector
+      expression: object.spec.?namespaceSelector.orValue({})
+    - name: endpoints
+      expression: object.spec.?endpoints.orValue([])
+    - name: fileEndpoints
+      expression: >-
+        variables.endpoints.filter(e,
+          e.?bearerTokenFile.hasValue() ||
+          e.?tlsConfig.caFile.hasValue() ||
+          e.?tlsConfig.certFile.hasValue() ||
+          e.?tlsConfig.keyFile.hasValue())
+    - name: proxyEndpoints
+      expression: variables.endpoints.filter(e, e.?proxyUrl.hasValue())
+    - name: addressRewrites
+      expression: >-
+        variables.endpoints.filter(e,
+          e.?relabelings.orValue([]).exists(r, r.?targetLabel.orValue("") == "__address__"))
+  validations:
+    - expression: >-
+        !variables.selector.?any.orValue(false) &&
+        variables.selector.?matchNames.orValue([]).all(n, n == variables.namespace)
+      messageExpression: >-
+        "ServiceMonitor " + object.metadata.name + " selects namespaces other than " +
+        variables.namespace + ". Drop spec.namespaceSelector."
+    - expression: size(variables.fileEndpoints) == 0
+      message: >-
+        bearerTokenFile and tlsConfig caFile, certFile or keyFile read files from the Prometheus pod.
+        Reference a Secret in this namespace instead.
+    - expression: size(variables.proxyEndpoints) == 0
+      message: proxyUrl sends scrapes through a host outside the namespace. Remove it.
+    - expression: size(variables.addressRewrites) == 0
+      message: >-
+        A relabeling that writes __address__ points Prometheus at an arbitrary host. Select the
+        Service by label instead.

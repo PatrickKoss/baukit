@@ -21,6 +21,9 @@ resources:
   - policies/restrict-loadbalancer-and-nodeport.yaml
   - policies/restrict-netpol-wildcards.yaml
   - policies/restrict-service-external-ips.yaml
+  - policies/restrict-tenant-metric-templates.yaml
+  - policies/restrict-tenant-servicemonitors.yaml
+  - policies/restrict-tenant-traefik-routes.yaml
   - policies/restrict-wildcard-rbac.yaml
   - policies/unique-ingress-host-and-path.yaml
   - policies/verify-baukit-images.yaml

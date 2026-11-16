@@ -1,0 +1,10 @@
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: admission-platform-prometheus
+  namespace: e2e-tenant
+spec:
+  provider:
+    type: prometheus
+    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+  query: vector(0)

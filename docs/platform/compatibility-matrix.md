@@ -5,6 +5,12 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.26.3
+
+Last verified release train: `v0.26.3` (patch train on top of `v0.26.2`). No component versions change.
+- Tenant `admin` (and so `flux-reconciler`) can manage Canary, MetricTemplate, IngressRoute, Middleware, TraefikService and ServiceMonitor through aggregated ClusterRoles in the flagger, traefik and observability bases.
+- Breaking for tenants: `restrict-tenant-servicemonitors`, `restrict-tenant-metric-templates` and `restrict-tenant-traefik-routes` deny, in `baukit.dev/tenant` namespaces, ServiceMonitors that select other namespaces or use token files, `proxyUrl` or `__address__` relabels; MetricTemplates off the platform Prometheus; forwardAuth outside the tenant, plugin middlewares, and a `Host()` another namespace already serves.
+
 ## v0.26.2
 
 Last verified release train: `v0.26.2` (patch train on top of `v0.26.1`). No component versions change.

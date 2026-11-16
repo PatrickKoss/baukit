@@ -703,6 +703,16 @@ by then ride along).
   slot. Look at the android lane's minimum core share in the pool.
   Done: `gate.py` reserves `emulator_cores` (8) as soon as an emulator step's dependencies pass;
   the 0.26.2 integration gate started native-android on 8 cores at +6 s and ran 1101 s.
+- [x] **RF19 Tenant admin lacks the product CRD kinds.** Tenants reconcile as `flux-reconciler` with
+  ClusterRole `admin`, which aggregated no flagger.app, traefik.io or monitoring.coreos.com rules, so
+  leitbild's Canary, MetricTemplate, IngressRoute, Middleware, TraefikService and the chart's
+  ServiceMonitor were Forbidden. Done: the flagger, traefik and observability bases ship
+  `baukit-tenant-*-{edit,view}` ClusterRoles aggregated into admin/edit/view, and three Deny policies
+  (`restrict-tenant-servicemonitors`, `-metric-templates`, `-traefik-routes`) close the escapes the
+  grant opened: foreign namespaceSelectors, token files, proxyUrl and `__address__` relabels on
+  ServiceMonitors; forwardAuth outside the tenant and plugin middlewares; a Host another namespace
+  serves; MetricTemplates off the platform Prometheus. Threat model P-07 to P-13. Open: P-13 (metric
+  label spoofing across products) and `HostRegexp`/`HostSNI` clashes.
 - [ ] **RF16 Lifecycle reuses a stale cluster network.** `ensure_cluster` in `platform-lifecycle.sh`
   runs only `platform_check_free_subnet` on create. A leftover `k3d-platform-local` network from an
   older cluster (172.18.0.0/16, created 2026-08-09) made k3d ignore `--subnet`, and the cluster came up

@@ -128,6 +128,7 @@ class TenantComponentTest(unittest.TestCase):
             [{"kind": "ServiceAccount", "name": "flux-reconciler", "namespace": "acme"}],
         )
         self.assertEqual(by_kind(docs, "ClusterRoleBinding"), [])
+        self.assertEqual(by_kind(docs, "ClusterRole"), [])
         self.assertEqual(by_kind(docs, "ConfigMap"), [])
 
     def test_flux_objects_reconcile_as_the_tenant_with_its_own_sops_key(self) -> None:
@@ -402,6 +403,56 @@ class PlatformUnderLockdownTest(unittest.TestCase):
             "spec": {**PLATFORM_KUSTOMIZATION["spec"], "targetNamespace": "acme"},
         }
         self.assertEqual(namespace_findings(targeted, [binding]), [])
+
+
+EDIT_VERBS = ["create", "delete", "deletecollection", "patch", "update"]
+VIEW_VERBS = ["get", "list", "watch"]
+TENANT_GRANTS = {
+    "flagger": ("flagger.app", ["canaries", "metrictemplates"]),
+    "traefik": ("traefik.io", ["ingressroutes", "middlewares", "traefikservices"]),
+    "observability-stack": ("monitoring.coreos.com", ["servicemonitors"]),
+}
+AGGREGATE = "rbac.authorization.k8s.io/aggregate-to-"
+
+
+def aggregated_roles(docs: list[dict]) -> dict[str, dict]:
+    return {
+        doc["metadata"]["name"]: doc
+        for doc in by_kind(docs, "ClusterRole")
+        if any(key.startswith(AGGREGATE) for key in doc["metadata"].get("labels", {}))
+    }
+
+
+class TenantAggregatedRolesTest(unittest.TestCase):
+    def test_each_crd_base_grants_tenant_admins_exactly_the_chart_kinds(self) -> None:
+        for base, (group, resources) in TENANT_GRANTS.items():
+            with self.subTest(base=base):
+                roles = list(aggregated_roles(rendered(PLATFORM / base)).values())
+                rules = [rule for role in roles for rule in role["rules"]]
+                self.assertEqual(sorted(rule["verbs"] for rule in rules), [EDIT_VERBS, VIEW_VERBS])
+                for rule in rules:
+                    self.assertEqual(rule["apiGroups"], [group])
+                    self.assertEqual(rule["resources"], resources)
+                for role in roles:
+                    labels = role["metadata"]["labels"]
+                    self.assertEqual(labels[f"{AGGREGATE}admin"], "true")
+                    writes = role["rules"][0]["verbs"] == EDIT_VERBS
+                    self.assertEqual(f"{AGGREGATE}view" in labels, not writes)
+
+    def test_traefik_refuses_cross_namespace_and_external_name_refs(self) -> None:
+        [release] = by_kind(rendered(PLATFORM / "traefik"), "HelmRelease")
+        providers = release["spec"]["values"]["providers"]
+        self.assertIs(providers["kubernetesCRD"]["allowCrossNamespace"], False)
+        self.assertIs(providers["kubernetesCRD"]["allowExternalNameServices"], False)
+        self.assertIs(providers["kubernetesIngress"]["allowExternalNameServices"], False)
+
+    def test_no_other_base_aggregates_into_admin(self) -> None:
+        for path in sorted(PLATFORM.glob("*/kustomization.yaml")):
+            base = path.parent.name
+            if base == "overlays" or base in TENANT_GRANTS:
+                continue
+            with self.subTest(base=base):
+                self.assertEqual(aggregated_roles(rendered(path.parent)), {})
 
 
 if __name__ == "__main__":

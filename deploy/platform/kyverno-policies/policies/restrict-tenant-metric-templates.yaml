@@ -1,0 +1,40 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-tenant-metric-templates
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Point tenant MetricTemplates at the platform Prometheus
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Flagger queries a MetricTemplate's provider from its own pod. A tenant MetricTemplate uses
+      the prometheus provider with the platform Prometheus address, or no address so Flagger uses
+      the same one.
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [flagger.app]
+        apiVersions: [v1beta1]
+        operations: [CREATE, UPDATE]
+        resources: [metrictemplates]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  variables:
+    - name: prometheus
+      expression: "'http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090'"
+    - name: provider
+      expression: object.spec.?provider.orValue({})
+  validations:
+    - expression: >-
+        variables.provider.?type.orValue("") == "prometheus" &&
+        variables.provider.?address.orValue(variables.prometheus) == variables.prometheus
+      messageExpression: >-
+        "MetricTemplate " + object.metadata.name + " must use provider type prometheus with address " +
+        variables.prometheus + " or no address."
