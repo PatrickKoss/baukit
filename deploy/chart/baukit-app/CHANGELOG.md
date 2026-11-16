@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.26.4] - 2026-11-16
+
 - Breaking: the API and worker ServiceMonitors set `honorLabels: false`. Application labels that clash with target labels arrive as `exported_<name>`, so `fixed_window_amount_budget_decisions_total` carries the budget namespace in `exported_namespace`. Tenant namespaces on the baukit platform refuse `honorLabels: true`.
 
 ## [0.26.3] - 2026-11-16
