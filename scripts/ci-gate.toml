@@ -6,7 +6,17 @@ android_emulators = 2
 # 1477 to 2029 s and hit a SystemUI ANR, on 10 cores 947 s.
 emulator_steps = ["native-android", "expo-sqlite", "expo-notifications"]
 emulator_cores = 8
-shared = ["deploy/**", "fixtures/**", "rust/deny.toml", "rust/Cargo.toml", "renovate*.json"]
+# deploy/ is mapped per directory in [quality.affected]; only its shared tool pins and
+# helpers force the full gate.
+shared = [
+  "deploy/tools.toml",
+  "deploy/lib/**",
+  "deploy/smoke/**",
+  "fixtures/**",
+  "rust/deny.toml",
+  "rust/Cargo.toml",
+  "renovate*.json",
+]
 
 [quality.gate_budget_minutes]
 full = 30
@@ -52,3 +62,10 @@ mcp-fixture = 60
 "templates/**/Dockerfile*" = ["platform-images"]
 "examples/**/Dockerfile*" = ["platform-images"]
 "scripts/platform-images.sh" = ["platform-images"]
+# The fast lane always runs platform-validate, the observability steps and media-grants, so
+# these paths add only the lanes that render or run them beyond that.
+"deploy/platform/**" = ["platform-e2e", "platform-images"]
+"deploy/observability/**" = ["platform-e2e"]
+"deploy/observability-platform/**" = ["platform-e2e"]
+"deploy/chart/**" = ["platform-e2e", "platform-images", "fixtures"]
+"deploy/media-grants/**" = []
