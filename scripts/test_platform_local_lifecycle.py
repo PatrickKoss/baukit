@@ -321,7 +321,8 @@ class LocalDatastoreTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = bash(
                 f'source "{PLATFORM / "platform-up.sh"}"\n'
-                "require_tools() { :; }\nensure_secret_state() { :; }\n"
+                "baukit_use_tools() { :; }\nrequire_tools() { :; }\nensure_secret_state() { :; }\n"
+                "registry_mirrors_running() { return 1; }\n"
                 "cluster_exists() { return 1; }\n"
                 'k3d_create_local_cluster() { printf "%s\\n" "$@"; exit 0; }\nup',
                 env={"BAUKIT_PLATFORM_STATE_DIR": directory},

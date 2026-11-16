@@ -632,6 +632,23 @@ by then ride along).
   namespace, and add `docs/runbooks/` entries for policy triage, Falco triage, Flux stuck, age-key loss
   and local cluster loss.
 
+## Action items after the 0.26.0 release
+
+- [x] **RF1 CI `scripts-tests` red on main** (run 43806553373, job "OpenAPI compatibility check").
+  `test_platform_up_creates_the_cluster_with_the_helper_args` sourced `platform-up.sh` and ran `up`,
+  whose `baukit_use_tools ... flux` exits 2 without `.tools/bin/flux`. That CI job installs no deploy
+  tools, and every local gate had them, so it passed locally. The test now stubs `baukit_use_tools`
+  and `registry_mirrors_running`, like it already stubbed `require_tools`. Verified with
+  `ci-gate.sh --step scripts-tests` in a worktree without `.tools`: 481 tests OK.
+- [ ] **RF2 Mirror CI's tool-free `scripts-tests` locally.** `deploy/lib/tools.sh` always reads
+  `<repo>/.tools`, so a local gate cannot tell whether a script test depends on installed deploy
+  tools. Let the `scripts-tests` step run against an empty tools root, for example a
+  `BAUKIT_TOOLS_ROOT` override that `baukit_use_tools` honours, so the next test like RF1 fails
+  locally first.
+- [ ] **RF3 Gate budget under a shared host.** The 0.26.0 full gate took 2225 s, 425 s over budget,
+  because `native-android` started on 2 cores while another product's gate held the second heavy
+  slot. Look at the android lane's minimum core share in the pool.
+
 ## Verification per change
 
 | Change touches | Run |
