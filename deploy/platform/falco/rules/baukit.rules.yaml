@@ -118,6 +118,15 @@
       or (proc.name = sh and proc.cmdline startswith "sh -c -- /controller/manager wal-archive ")
       or (proc.name = barman-cloud-wa and proc.cmdline startswith "barman-cloud-wa /venv/bin/barman-cloud-wal-archive ")))
 
+# kustomize-controller runs git to fetch a remote kustomization base. After a rules reload its children
+# look like execs (INT full run, 2026-11-15: git init, remote add, fetch, checkout and submodule update
+# for the flux-tenancy remote base).
+- macro: baukit_flux_controller_child
+  condition: >
+    (k8s.ns.name = flux-system
+    and container.image.repository = ghcr.io/fluxcd/kustomize-controller
+    and proc.name = git)
+
 - macro: baukit_cnpg_runtime_exec
   condition: >
     (baukit_cnpg_instance_manager_child
@@ -188,6 +197,7 @@
     baukit_runtime_exec
     and k8s.ns.name in (baukit_exec_protected_namespaces)
     and not baukit_cnpg_runtime_exec
+    and not baukit_flux_controller_child
   output: Process started by kubectl exec or attach in a protected platform namespace | process=%proc.name command=%proc.cmdline user=%user.name terminal=%proc.tty k8s_ns=%k8s.ns.name k8s_pod=%k8s.pod.name container=%container.name image=%container.image.repository:%container.image.tag
   priority: CRITICAL
   tags: [baukit, baukit_platform, container, process, mitre_execution, T1609]

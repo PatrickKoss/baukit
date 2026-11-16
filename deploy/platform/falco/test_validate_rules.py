@@ -164,6 +164,29 @@ class RuntimeExecTest(unittest.TestCase):
             {"manager backup ", "manager healthcheck unix"},
         )
 
+    def test_flux_exception_names_only_git_in_kustomize_controller(self) -> None:
+        child = macro_condition(self.rules, "baukit_flux_controller_child")
+
+        self.assertEqual(
+            set(re.findall(r"(\S+) = (\S+?)\)?(?:\s|$)", child)),
+            {
+                ("(k8s.ns.name", "flux-system"),
+                ("container.image.repository", "ghcr.io/fluxcd/kustomize-controller"),
+                ("proc.name", "git"),
+            },
+        )
+        self.assertEqual(child.count(" and "), 2)
+        self.assertNotIn(" or ", child)
+        self.assertNotIn("source-controller", child)
+        self.assertNotIn("sh", re.findall(r"proc\.name = (\S+?)\)?(?:\s|$)", child))
+
+    def test_protected_exec_rule_excludes_the_flux_controller_git_children(self) -> None:
+        rule = self.rules.split("- rule: Baukit exec into protected platform namespace", 1)[1]
+        condition = rule.split("  output:", 1)[0]
+
+        self.assertIn("and not baukit_flux_controller_child", condition)
+        self.assertIn("baukit_runtime_exec", condition)
+
 
 if __name__ == "__main__":
     unittest.main()
