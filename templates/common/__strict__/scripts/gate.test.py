@@ -350,6 +350,33 @@ class CoreBudgetTests(unittest.TestCase):
         self.assertEqual(budget.emulator_cores, 2)
         self.assertEqual(budget.acquire(9, 9), 2)
 
+    def test_reserve_holds_cores_back_from_other_steps(self):
+        budget = gate.CoreBudget(10, None, 1024, 4)
+        budget.reserve(4)
+        self.assertEqual(budget.acquire(10), 6)
+        granted = []
+        other = threading.Thread(target=lambda: granted.append(budget.acquire(2)))
+        other.start()
+        other.join(0.1)
+        self.assertEqual(granted, [])
+        self.assertEqual(budget.acquire(8, 4, emulator=True), 4)
+        budget.reserve(0)
+        budget.release(4)
+        other.join(1)
+        self.assertEqual(granted, [2])
+
+    def test_reserve_leaves_one_core_for_other_steps(self):
+        budget = gate.CoreBudget(4, None, 1024, 4)
+        budget.reserve(4)
+        self.assertEqual(budget.acquire(4), 1)
+
+    def test_emulator_steps_come_from_the_settings(self):
+        self.assertEqual(gate.emulator_steps({}), frozenset({"android-e2e"}))
+        configured = {"quality": {"emulator_steps": ["native-android"], "emulator_cores": 8}}
+        self.assertEqual(gate.emulator_steps(configured), {"android-e2e", "native-android"})
+        self.assertEqual(gate.emulator_cores(configured, {}), 8)
+        self.assertEqual(gate.emulator_cores(configured, {"BAUKIT_GATE_EMULATOR_CORES": "5"}), 5)
+
     def test_emulator_cores_follow_the_emulator_count(self):
         self.assertEqual(gate.emulator_cores({}, {}), 4)
         self.assertEqual(gate.emulator_cores({"quality": {"android_emulators": 3}}, {}), 6)
@@ -364,6 +391,43 @@ class CoreBudgetTests(unittest.TestCase):
             gate.heavy_lanes(planned, frozenset({"images", "mobile"})), ["backend", "web"]
         )
         self.assertEqual(gate.unknown_light(frozenset({"images", "nope"}), STEPS), ["nope"])
+
+
+class EmulatorReserveTests(unittest.TestCase):
+    def runner(self):
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(directory, ignore_errors=True))
+        planned = gate.plan(STEPS, gate.Selection(True, []))
+        budget = gate.CoreBudget(24, None, 1024, 8)
+        return gate.Runner(planned, gate.RunContext([], directory, {}), budget=budget)
+
+    def test_no_reserve_before_the_dependencies_pass(self):
+        runner = self.runner()
+        self.assertEqual(runner.budget.reserved, 0)
+
+    def test_reserve_starts_when_the_dependencies_pass(self):
+        runner = self.runner()
+        runner.record("mobile-unit", 5, "passed")
+        self.assertEqual(runner.budget.reserved, 8)
+        self.assertEqual(runner.budget.acquire(24), 16)
+
+    def test_failed_dependency_keeps_no_reserve(self):
+        runner = self.runner()
+        runner.record("mobile-unit", 5, "failed with exit 1")
+        self.assertEqual(runner.budget.reserved, 0)
+
+    def test_reserve_ends_once_the_emulator_step_holds_its_cores(self):
+        runner = self.runner()
+        runner.record("mobile-unit", 5, "passed")
+        android = next(i.step for i in runner.planned if i.step.name == "android-e2e")
+        cores, drawn = runner.cores_for(android)
+        self.assertTrue(drawn)
+        self.assertGreaterEqual(cores, 8)
+        self.assertEqual(runner.budget.reserved, 0)
+        runner.release_cores(android, cores)
+        runner.record("android-e2e", 9, "passed")
+        self.assertEqual(runner.budget.reserved, 0)
+        self.assertEqual(runner.budget.available(), 24)
 
 
 class RunnerTests(unittest.TestCase):
