@@ -34,7 +34,7 @@ snapshot_trees=cli/tests/snapshots
 # without a wrapper to embed the current templates.
 bless_snapshot_trees() {
   cargo clean --manifest-path cli/Cargo.toml -p baukit-cli
-  RUSTC_WRAPPER= cargo run --manifest-path cli/Cargo.toml --example bless_snapshots
+  RUSTC_WRAPPER='' cargo run --manifest-path cli/Cargo.toml --example bless_snapshots
 }
 
 scripts/check-version-coherence.py
