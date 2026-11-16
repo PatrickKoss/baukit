@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import re
 import shutil
@@ -13,6 +14,8 @@ REPO_ROOT = FALCO_DIR.parents[2]
 SCRIPT = FALCO_DIR / "validate-rules.sh"
 PLATFORM_DIR = FALCO_DIR.parent
 BAUKIT_RULES = FALCO_DIR / "rules/baukit.rules.yaml"
+K8SAUDIT_RULES = FALCO_DIR / "k8saudit-rules/baukit.k8saudit.rules.yaml"
+K8SAUDIT_RELEASE = FALCO_DIR / "k8saudit-helm-release.yaml"
 
 
 def load_process_runner():
@@ -57,6 +60,7 @@ class ValidateRulesTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("baukit.rules.yaml: Ok", result.stdout)
+        self.assertIn("baukit.k8saudit.rules.yaml: Ok", result.stdout)
 
     def test_broken_rules_fail(self) -> None:
         for name, content in BROKEN_RULES.items():
@@ -68,6 +72,86 @@ class ValidateRulesTest(unittest.TestCase):
 
                 self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_broken_k8saudit_rules_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            rules_file = Path(directory) / "broken.rules.yaml"
+            rules_file.write_text(
+                "- rule: Broken audit rule\n  desc: Misspells a k8saudit field.\n"
+                "  condition: ka.verbb=get\n  output: broken\n  priority: WARNING\n"
+                "  source: k8s_audit\n",
+                encoding="utf-8",
+            )
+
+            result = validate(Path("--k8saudit"), rules_file)
+
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_k8saudit_rules_need_the_plugin(self) -> None:
+        result = validate(K8SAUDIT_RULES)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+RESTORE_TEST = "system:serviceaccount:postgres:postgres-restore-test"
+CNPG_OPERATOR = "system:serviceaccount:cnpg-system:cloudnative-pg"
+
+
+def audit_event(index: int, user: str, namespace: str, subresource: str, verb: str) -> str:
+    timestamp = f"2026-11-16T21:00:{index:02d}Z"
+    return json.dumps(
+        {
+            "kind": "Event",
+            "apiVersion": "audit.k8s.io/v1",
+            "level": "Metadata",
+            "auditID": f"00000000-0000-0000-0000-{index:012d}",
+            "stage": "ResponseComplete",
+            "requestURI": f"/api/v1/namespaces/{namespace}/pods/p/{subresource}?command=true",
+            "verb": verb,
+            "user": {"username": user, "groups": ["system:authenticated"]},
+            "sourceIPs": ["10.42.0.9"],
+            "objectRef": {
+                "resource": "pods",
+                "namespace": namespace,
+                "name": "p",
+                "apiVersion": "v1",
+                "subresource": subresource,
+            },
+            "responseStatus": {"metadata": {}, "code": 101},
+            "requestReceivedTimestamp": timestamp,
+            "stageTimestamp": timestamp,
+            "annotations": {"authorization.k8s.io/decision": "allow"},
+        }
+    )
+
+
+class K8sAuditReplayTest(unittest.TestCase):
+    def test_only_restore_test_and_operator_execs_into_postgres_are_expected(self) -> None:
+        events = [
+            (RESTORE_TEST, "postgres", "exec", "create"),
+            (CNPG_OPERATOR, "postgres", "exec", "create"),
+            ("system:admin", "postgres", "exec", "get"),
+            (RESTORE_TEST, "postgres", "attach", "create"),
+            (RESTORE_TEST, "default", "exec", "create"),
+            ("system:serviceaccount:postgres:other", "postgres", "exec", "create"),
+            (CNPG_OPERATOR, "cnpg-system", "exec", "create"),
+            (CNPG_OPERATOR, "postgres", "attach", "create"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            events_file = Path(directory) / "audit.jsonl"
+            events_file.write_text(
+                "".join(audit_event(i, *event) + "\n" for i, event in enumerate(events, 1)),
+                encoding="utf-8",
+            )
+
+            result = validate(Path("--k8saudit-replay"), events_file)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        fired = [tuple(line.split("\t")[1:]) for line in result.stdout.splitlines()]
+        self.assertEqual(
+            fired,
+            [(user, namespace, subresource) for user, namespace, subresource, _ in events[2:]],
+        )
+
 
 class ImagePinTest(unittest.TestCase):
     def test_release_uses_the_validated_falco_image(self) -> None:
@@ -78,6 +162,17 @@ class ImagePinTest(unittest.TestCase):
         release = (FALCO_DIR / "helm-release.yaml").read_text(encoding="utf-8")
 
         self.assertIn(f'tag: "{tag}"', release)
+        self.assertIn(f'tag: "{tag}"', K8SAUDIT_RELEASE.read_text(encoding="utf-8"))
+
+    def test_k8saudit_plugin_is_pinned_by_digest(self) -> None:
+        release = K8SAUDIT_RELEASE.read_text(encoding="utf-8")
+
+        self.assertRegex(
+            release,
+            r"- ghcr\.io/falcosecurity/plugins/plugin/k8saudit:[0-9.]+@sha256:[a-f0-9]{64}\n",
+        )
+        self.assertRegex(release, r'repository: falcosecurity/falcoctl\n\s+tag: "[0-9.]+@sha256:')
+        self.assertIn("indexes: []", release)
 
 
 def macro_condition(text: str, name: str) -> str:

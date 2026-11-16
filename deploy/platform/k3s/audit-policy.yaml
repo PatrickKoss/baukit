@@ -1,8 +1,10 @@
-# Rules match top down; the first match wins.
+# Rules match top down; the first match wins. The log and the Falco webhook share this policy.
+# A rule that sets both users and userGroups needs both to match, so each list gets its own rule.
 apiVersion: audit.k8s.io/v1
 kind: Policy
 omitStages:
   - RequestReceived
+  - ResponseStarted
 rules:
   # Health probes and discovery carry no actor intent.
   - level: None
@@ -25,6 +27,11 @@ rules:
         resources: [events]
       - group: events.k8s.io
         resources: [events]
+  # Controllers ask what they may do before every reconcile; the answer changes nothing.
+  - level: None
+    resources:
+      - group: authorization.k8s.io
+        resources: [selfsubjectaccessreviews, selfsubjectrulesreviews]
   # Reads by the control plane and the kubelet are constant background traffic.
   - level: None
     verbs: [get, list, watch]
@@ -34,19 +41,31 @@ rules:
       - system:kube-scheduler
       - system:kube-proxy
       - system:k3s-controller
+  - level: None
+    verbs: [get, list, watch]
     userGroups:
       - system:nodes
       - system:serviceaccounts:kube-system
-  # Secret, ConfigMap and token payloads must never reach the log.
+  # Secret, ConfigMap and token payloads must never reach the log, for reads by anyone.
   - level: Metadata
     resources:
       - group: ""
         resources: [secrets, configmaps, serviceaccounts/token]
       - group: authentication.k8s.io
         resources: [tokenreviews]
+  # Exec, attach and port-forward open a session into a pod.
+  - level: Metadata
+    resources:
+      - group: ""
+        resources: [pods/exec, pods/attach, pods/portforward]
   # RBAC writes keep the request body, so the log shows which rights changed.
   - level: Request
     verbs: [create, update, patch, delete, deletecollection]
     resources:
       - group: rbac.authorization.k8s.io
+  # Every other read by a service account is a controller resyncing its cache.
+  - level: None
+    verbs: [get, list, watch]
+    userGroups:
+      - system:serviceaccounts
   - level: Metadata

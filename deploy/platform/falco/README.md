@@ -10,13 +10,40 @@ Falco reads container and pod metadata from the k3s containerd socket
 (`/run/k3s/containerd/containerd.sock`). The upstream rules and the container plugin come from the image,
 so no falcoctl sidecar fetches artifacts at runtime.
 
+A second release, `falco-k8saudit`, runs the same chart and image as a single-replica Deployment
+without a driver. Its k8saudit plugin listens on 9765 for the API server's audit webhook, which reaches
+it on the fixed ClusterIP `10.43.0.60` (Service `falco-k8saudit-webhook`) because the API server cannot
+resolve cluster DNS. The address sits in the static band of the k3s default service CIDR
+`10.43.0.0/16`; a cluster with another service CIDR changes the release and `../k3s/audit-webhook.yaml`
+together. The plugin is not in the image, so a falcoctl init container installs
+`ghcr.io/falcosecurity/plugins/plugin/k8saudit` by digest and checks its cosign signature. That pod runs
+as 65534 with a read-only root, no capabilities and no service account token, and sends its events to
+the same falcosidekick, so they reach Loki and Alertmanager like the syscall events (`eventsource`
+label `k8s_audit`).
+
 ## Rules
 
 `rules/baukit.rules.yaml` becomes the `falco-baukit-rules` ConfigMap, mounted at `/etc/falco/rules.d`
 next to the upstream `falco_rules.yaml`. It adds the baukit app and platform rules and the noise macros
 from the FA0 spike. Falco reloads the directory when the ConfigMap changes.
 
-Validate rules locally with `./validate-rules.sh` (Docker, no network). `validate.sh` runs it, so a broken
+`k8saudit-rules/baukit.k8saudit.rules.yaml` becomes `falco-k8saudit-rules` for the k8saudit release:
+
+| Rule | Priority | Fires on |
+|---|---|---|
+| Baukit secret read by unexpected service account | Warning | get, list or watch on Secrets by a service account outside `baukit_expected_secret_reader` (flux-system, kube-system, kyverno, cert-manager, cnpg-system, observability, traefik, and service accounts in `postgres` reading Secrets in `postgres`, which CNPG instances do) |
+| Baukit exec or attach into pod | Warning | create (SPDY) or get (WebSocket, kubectl since 1.30) on `pods/exec` or `pods/attach`, except `baukit_expected_exec`: execs into `postgres` by the restore-test CronJob and the CNPG operator |
+| Baukit ClusterRoleBinding changed outside GitOps | Critical | create, update, patch or delete of a ClusterRoleBinding by anyone but Flux's kustomize- and helm-controller or k3s, dry runs excluded |
+
+An overlay adds an expected secret reader with
+`- macro: baukit_expected_secret_reader` and `override: condition: append` in a rules file of its own
+mounted into the k8saudit release.
+
+Validate rules locally with `./validate-rules.sh` (Docker). The syscall rules run without network; the
+k8saudit rules need the plugin, which the script downloads once per digest with the pinned falcoctl into
+`${XDG_CACHE_HOME:-~/.cache}/baukit/falco-plugins`. `./validate-rules.sh --k8saudit FILE` checks one
+audit rules file, and `./validate-rules.sh --k8saudit-replay EVENTS` runs the shipped audit rules over a
+file of audit events (one JSON event per line) and prints each alert. `validate.sh` runs it, so a broken
 rule fails `scripts/ci-gate.sh --step platform-validate`.
 
 ## Overlay contract
@@ -89,7 +116,10 @@ Exceptions for one deployment go into the overlay's `falco-overlay-rules` Config
 Default deny in the namespace. Prometheus may scrape 8765 (Falco) and 2801 (falcosidekick). Falco may
 reach falcosidekick on 2801, and so may pods with the falcosidekick labels, which the chart's Helm test
 pod carries. Falcosidekick may reach itself on 2801, `loki-gateway` (8080) and Alertmanager (9093) in
-`observability`, plus DNS.
+`observability`, plus DNS. The k8saudit pod accepts 9765 from the node CIDR only (the API server calls
+from the node address; `allow-k8saudit-webhook-from-nodes` carries the `node-cidr-peer` placeholder, so
+an overlay must compose `components/network-policy/node-cidr`), and may reach public addresses on 443 for
+the plugin download (`allow-internet-https`, narrowed to that pod).
 
 Alerts, the dashboard and the runbooks live in `deploy/observability-platform` (component `falco`).
 The runbooks are in `docs/runbooks/platform/falco-*.md` and `falcosidekick-output-errors.md`. Idle

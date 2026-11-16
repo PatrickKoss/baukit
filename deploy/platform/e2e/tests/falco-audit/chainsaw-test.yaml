@@ -1,0 +1,153 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: falco-audit
+spec:
+  description: >-
+    The API server sends its audit events to falco-k8saudit through the webhook from
+    platform_k3s_server_args. Each baukit k8saudit rule fires once: an exec into a test pod, a Secret
+    read with the token of a test service account, and a ClusterRoleBinding created outside Flux. Every
+    event must reach alert-sink through falcosidekick and Alertmanager, like the syscall rules do.
+  timeouts:
+    exec: 6m
+  steps:
+    - name: falco-k8saudit-is-ready
+      try:
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: falco-k8saudit
+                namespace: falco
+              status:
+                readyReplicas: 1
+    - name: exec-into-pod-reaches-the-sink
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: audit-exec-target
+              spec:
+                automountServiceAccountToken: false
+                # sleep as PID 1 ignores SIGTERM; a grace period would outlast chainsaw's delete timeout.
+                terminationGracePeriodSeconds: 0
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 101
+                  seccompProfile:
+                    type: RuntimeDefault
+                containers:
+                  - name: target
+                    image: localhost/baukit-e2e/echo:local
+                    imagePullPolicy: Never
+                    command: [sleep, "600"]
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities:
+                        drop: [ALL]
+                    resources:
+                      requests:
+                        cpu: 10m
+                        memory: 16Mi
+                      limits:
+                        cpu: 100m
+                        memory: 32Mi
+        - assert:
+            resource:
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: audit-exec-target
+              status:
+                phase: Running
+        - script:
+            content: |
+              set -eu
+              # cat, not a shell, so the syscall rules stay quiet for the falco suite's noise check.
+              kubectl -n "$NAMESPACE" exec audit-exec-target -c target -- cat /etc/hostname >/dev/null
+              ./sink-alert.sh 300 'Baukit exec or attach into pod' \
+                ka_target_namespace="$NAMESPACE" ka_target_name=audit-exec-target ka_target_subresource=exec
+    - name: secret-read-by-test-service-account-reaches-the-sink
+      try:
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: ServiceAccount
+              metadata:
+                name: audit-reader
+              automountServiceAccountToken: false
+        - apply:
+            resource:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: audit-probe
+              stringData:
+                value: not-a-real-secret
+        - apply:
+            resource:
+              apiVersion: rbac.authorization.k8s.io/v1
+              kind: Role
+              metadata:
+                name: audit-reader
+              rules:
+                - apiGroups: [""]
+                  resources: [secrets]
+                  resourceNames: [audit-probe]
+                  verbs: [get]
+        - apply:
+            resource:
+              apiVersion: rbac.authorization.k8s.io/v1
+              kind: RoleBinding
+              metadata:
+                name: audit-reader
+              roleRef:
+                apiGroup: rbac.authorization.k8s.io
+                kind: Role
+                name: audit-reader
+              subjects:
+                - kind: ServiceAccount
+                  name: audit-reader
+                  namespace: ($namespace)
+        - script:
+            content: |
+              set -eu
+              dir=$(mktemp -d)
+              trap 'rm -rf "$dir"' EXIT
+              # Only the token authenticates; the admin client certificate stays out of this kubeconfig.
+              server=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+              kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' |
+                base64 -d >"$dir/ca.crt"
+              token=$(kubectl -n "$NAMESPACE" create token audit-reader --duration=10m)
+              printf 'apiVersion: v1\nkind: Config\n' >"$dir/kubeconfig"
+              KUBECONFIG=$dir/kubeconfig kubectl --server="$server" --certificate-authority="$dir/ca.crt" \
+                --token="$token" -n "$NAMESPACE" get secret audit-probe -o name
+              ./sink-alert.sh 300 'Baukit secret read by unexpected service account' \
+                ka_user_name="system:serviceaccount:$NAMESPACE:audit-reader" \
+                ka_target_namespace="$NAMESPACE" ka_target_name=audit-probe
+    - name: cluster-role-binding-change-reaches-the-sink
+      try:
+        - apply:
+            resource:
+              apiVersion: rbac.authorization.k8s.io/v1
+              kind: ClusterRoleBinding
+              metadata:
+                name: (join('-', ['falco-audit', $namespace]))
+              roleRef:
+                apiGroup: rbac.authorization.k8s.io
+                kind: ClusterRole
+                name: view
+              subjects:
+                - kind: ServiceAccount
+                  name: audit-reader
+                  namespace: ($namespace)
+        - script:
+            content: |
+              set -eu
+              ./sink-alert.sh 300 'Baukit ClusterRoleBinding changed outside GitOps' \
+                ka_target_name="falco-audit-$NAMESPACE"

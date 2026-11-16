@@ -52,7 +52,8 @@ with its condition message.
 - `components/kyverno-policies`: the policy library plus the registry allowlist, which admits the
   public registries the platform pulls from and `localhost/baukit-e2e/`;
 - `components/falco`: the falco base plus `../components/falco-shared-kernel`, because the e2e cluster
-  shares the host kernel with Docker and other clusters;
+  shares the host kernel with Docker and other clusters, and the node-cidr component for the k8saudit
+  webhook policy;
 - `components/tenant`: the `e2e-tenant` namespace built from `../components/tenant` and the echo
   app, deployed with `deploy/chart/baukit-app` from the image the runner builds in `echo/`.
 

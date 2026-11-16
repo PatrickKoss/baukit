@@ -1,0 +1,84 @@
+# Rules on API server audit events from the k8saudit plugin (source k8s_audit). The audit policy in
+# deploy/platform/k3s/audit-policy.yaml decides which requests arrive; it never sends a Secret body.
+
+- required_plugin_versions:
+    - name: k8saudit
+      version: 0.18.0
+
+- macro: baukit_audit_complete
+  condition: ka.stage=ResponseComplete
+
+- macro: baukit_audit_service_account
+  condition: ka.user.name startswith "system:serviceaccount:"
+
+# Platform controllers that read Secrets by design, measured from the audit log of a full local
+# platform on 2026-11-16. CNPG gives each cluster instance a service account that reads the cluster's
+# own Secrets in postgres. Overlays append their own with `override: condition: append`.
+- macro: baukit_expected_secret_reader
+  condition: >-
+    (ka.user.name startswith "system:serviceaccount:flux-system:" or
+     ka.user.name startswith "system:serviceaccount:kube-system:" or
+     ka.user.name startswith "system:serviceaccount:kyverno:" or
+     ka.user.name startswith "system:serviceaccount:cert-manager:" or
+     ka.user.name startswith "system:serviceaccount:cnpg-system:" or
+     ka.user.name startswith "system:serviceaccount:observability:" or
+     ka.user.name startswith "system:serviceaccount:traefik:" or
+     (ka.user.name startswith "system:serviceaccount:postgres:" and ka.target.namespace=postgres))
+
+# GitOps applies RBAC through Flux; k3s writes its own bindings at start.
+- macro: baukit_expected_rbac_writer
+  condition: >-
+    (ka.user.name in ("system:serviceaccount:flux-system:kustomize-controller",
+                      "system:serviceaccount:flux-system:helm-controller",
+                      "system:apiserver", "system:k3s-supervisor", "system:kube-controller-manager"))
+
+- rule: Baukit secret read by unexpected service account
+  desc: >-
+    A service account outside the platform controllers read, listed or watched Secrets. Workloads
+    get their Secrets as mounted volumes or env, not from the API.
+  condition: >-
+    baukit_audit_complete and ka.target.resource=secrets and ka.verb in (get, list, watch) and
+    baukit_audit_service_account and not baukit_expected_secret_reader
+  output: >-
+    Secret read by unexpected service account (user=%ka.user.name verb=%ka.verb
+    secret=%ka.target.namespace/%ka.target.name decision=%ka.auth.decision code=%ka.response.code
+    source_ips=%ka.sourceips user_agent=%ka.useragent)
+  priority: WARNING
+  source: k8s_audit
+  tags: [baukit, k8s_audit, secrets]
+
+# The restore-test CronJob reads its sentinel row with psql through an exec into the restored instance,
+# and the CNPG operator execs into its own instances while it reconciles them.
+- macro: baukit_expected_exec
+  condition: >-
+    (ka.user.name in ("system:serviceaccount:postgres:postgres-restore-test",
+                      "system:serviceaccount:cnpg-system:cloudnative-pg") and
+     ka.target.namespace = postgres and ka.target.subresource = exec)
+
+- rule: Baukit exec or attach into pod
+  desc: >-
+    Someone opened an exec or attach session into a pod through the API server. kubectl uses a
+    WebSocket since Kubernetes 1.30, which the API server audits as get; SPDY clients send create.
+  condition: >-
+    baukit_audit_complete and ka.verb in (create, get) and ka.target.resource=pods and
+    ka.target.subresource in (exec, attach) and not baukit_expected_exec
+  output: >-
+    Pod %ka.target.subresource (user=%ka.user.name pod=%ka.target.namespace/%ka.target.name
+    decision=%ka.auth.decision code=%ka.response.code uri=%ka.uri source_ips=%ka.sourceips)
+  priority: WARNING
+  source: k8s_audit
+  tags: [baukit, k8s_audit, exec]
+
+- rule: Baukit ClusterRoleBinding changed outside GitOps
+  desc: A ClusterRoleBinding was created, changed or deleted by someone other than Flux or k3s.
+  condition: >-
+    baukit_audit_complete and ka.target.resource=clusterrolebindings and
+    ka.verb in (create, update, patch, delete, deletecollection) and
+    not ka.uri contains "dryRun=All" and not baukit_expected_rbac_writer
+  output: >-
+    ClusterRoleBinding %ka.verb (user=%ka.user.name binding=%ka.target.name
+    role=%ka.req.binding.role subjects=%ka.req.binding.subjects decision=%ka.auth.decision
+    code=%ka.response.code source_ips=%ka.sourceips)
+  priority: CRITICAL
+  source: k8s_audit
+  tags: [baukit, k8s_audit, rbac]

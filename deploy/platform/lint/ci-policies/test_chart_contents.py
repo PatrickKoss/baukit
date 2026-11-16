@@ -171,6 +171,17 @@ class ChartContentsTest(unittest.TestCase):
         with self.assertRaises(cc.ContentsError):
             self.fixture.collect()
 
+    def test_a_second_release_without_tests_keeps_the_chart_tests(self) -> None:
+        base = self.fixture.rendered / "base-demo.yaml"
+        base.write_text(
+            base.read_text()
+            + "---\n"
+            + RELEASE.format(name="web-quiet", chart="web", version="2.0.0")
+        )
+        (self.fixture.rendered / "chart-demo-web-quiet.yaml").write_text("kind: ConfigMap\n")
+        contents = self.fixture.collect()
+        self.assertEqual(contents["web@2.0.0"], cc.Contents(crds=False, tests=True))
+
     def test_test_hook_detection(self) -> None:
         quoted = textwrap.dedent("""\
             metadata:

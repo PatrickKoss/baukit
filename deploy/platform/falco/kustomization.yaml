@@ -5,12 +5,25 @@ resources:
   - namespace.yaml
   - oci-repository.yaml
   - helm-release.yaml
+  - k8saudit-helm-release.yaml
   - network-policy.yaml
 components:
   - ../components/network-policy/default-deny
   - ../components/network-policy/dns-egress
   - ../components/network-policy/prometheus-scrape
+  - ../components/network-policy/internet-https
 patches:
+  # falcoctl in falco-k8saudit pulls the digest-pinned k8saudit plugin from ghcr.io at pod start.
+  - target:
+      kind: NetworkPolicy
+      name: allow-internet-https
+    patch: |-
+      - op: replace
+        path: /spec/podSelector
+        value:
+          matchLabels:
+            app.kubernetes.io/name: falco
+            app.kubernetes.io/instance: falco-k8saudit
   - target:
       kind: NetworkPolicy
       name: allow-prometheus-scrape
@@ -26,6 +39,9 @@ configMapGenerator:
   - name: falco-baukit-rules
     files:
       - rules/baukit.rules.yaml
+  - name: falco-k8saudit-rules
+    files:
+      - k8saudit-rules/baukit.k8saudit.rules.yaml
 generatorOptions:
   # Falco watches rules.d and reloads in place, so the ConfigMap keeps a stable name.
   disableNameSuffixHash: true
