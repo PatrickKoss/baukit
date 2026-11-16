@@ -465,6 +465,9 @@ spec:
           - {resource: servicemonitors, namespace: kube-system}
           - {resource: podmonitors, namespace: kube-system}
           - {resource: prometheusrules, namespace: kube-system}
+          - {resource: servicemonitors, namespace: kured}
+          - {resource: podmonitors, namespace: kured}
+          - {resource: prometheusrules, namespace: kured}
           - {resource: servicemonitors, namespace: kyverno}
           - {resource: podmonitors, namespace: kyverno}
           - {resource: prometheusrules, namespace: kyverno}
