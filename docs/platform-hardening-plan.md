@@ -1179,3 +1179,15 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   `healthCheckExprs` entry that requires Ready=True; platform-infra's production overlay needs the same (PI).
   Neither live run hit a split vote, so the 95 s Redis wait is proven offline only. Full ci-gate rerun on
   8f211215 because `deploy/**` is a shared path.
+- 2026-11-16 05:35: release 0.26.0 prepared (fe8df971) and gated. The full gate on 8f211215 was red in
+  rust-tests: `a_pending_cancellation_query_does_not_stop_the_timeout` raced a 20 ms job timeout against
+  the 5 ms cancellation poll on real time. FJ moved both cancellation-poll tests to paused time (old
+  binary 197/200 under load, new 200/200); the affected re-gate passed. `release-train.sh` now cuts
+  `deploy/platform/CHANGELOG.md` and the release notes include both deployment changelogs; entries that
+  shipped before 0.26.0 sit under "Earlier trains". The full gate on fe8df971 failed in two lanes: the
+  android boot ANR'd at load 46 (rerun green, emulator settled in 20 s instead of 218 s), and the ingress
+  e2e cleanup ran past chainsaw's 30 s. FI measured it: the namespace controller requeues after the pod's
+  30 s grace period although nginx exits 0 after about 8 s, so the ingress values set a 10 s grace
+  (cleanup 16-19 s). The three remaining e2e namespaces moved to PSA v1.37. Full gate on d05a0fb4 green
+  in 2225 s, 425 s over budget because native-android started on 2 cores while another product's gate
+  held the second heavy slot.
