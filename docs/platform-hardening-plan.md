@@ -645,6 +645,16 @@ by then ride along).
   tools. Let the `scripts-tests` step run against an empty tools root, for example a
   `BAUKIT_TOOLS_ROOT` override that `baukit_use_tools` honours, so the next test like RF1 fails
   locally first.
+- [ ] **RF4 Hosted Platform e2e `redis-ha` red** (run 43810307549 on 1650e668, the first hosted run of
+  the 0.26.0 code). After the master was force-deleted, the survivor's Sentinel named no new master
+  within 120 s. The run kept no Sentinel logs. A restarted master waits 95 s
+  (`down_after + 3 x failover_timeout`) and then starts as an empty master if the Sentinels still
+  name it, so a failover slower than that loses data rather than only missing the test deadline.
+  Reproduce on a CPU-limited e2e cluster, collect Sentinel logs on failure, and make failover finish
+  inside the restart wait on a 4-vCPU runner.
+- [ ] **RF5 Hosted Platform e2e `k3s-hardening` red** (same run). `secret-encrypted-at-rest` reads
+  every file under the embedded-etcd data dir three times with `find -exec cat` and hit the 4 min
+  exec timeout. Check the datastore in one bounded pass.
 - [ ] **RF3 Gate budget under a shared host.** The 0.26.0 full gate took 2225 s, 425 s over budget,
   because `native-android` started on 2 cores while another product's gate held the second heavy
   slot. Look at the android lane's minimum core share in the pool.
