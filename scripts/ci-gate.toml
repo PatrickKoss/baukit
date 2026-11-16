@@ -12,6 +12,22 @@ shared = ["deploy/**", "fixtures/**", "rust/deny.toml", "rust/Cargo.toml", "reno
 full = 30
 affected = 15
 
+# gate.py refuses to start below the highest floor of the planned steps. The 0.26.2 gate
+# failed at 91% disk: a full gate grows a worktree by about 19 GB, and platform-e2e's k3d
+# kubelet evicts pods below about 50 GiB free, so it needs that plus the build, cluster and
+# images. The fixture and Testcontainers steps build products and pull images. `--step` runs
+# skip the check because hosted CI runners have less space and run one step each.
+[quality.disk]
+floor_gb = 30
+
+[quality.disk.step_floor_gb]
+platform-e2e = 120
+rust-tests = 60
+fixture-1 = 60
+fixture-2 = 60
+affected-fixture = 60
+mcp-fixture = 60
+
 [quality.affected]
 "README.md" = []
 "CLAUDE.md" = []

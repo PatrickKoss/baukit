@@ -463,7 +463,11 @@ class RunnerTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
                 check=False,
-                env={"PATH": "/usr/bin:/bin", "BAUKIT_GATE_CORES": "4"},
+                env={
+                    "PATH": "/usr/bin:/bin",
+                    "BAUKIT_GATE_CORES": "4",
+                    "BAUKIT_GATE_DISK_FLOOR_GB": "0",
+                },
             )
             ran = (root / "ran").read_text().split("\n") if (root / "ran").exists() else []
             timings = (

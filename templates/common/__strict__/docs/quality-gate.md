@@ -146,6 +146,10 @@ The gate prints the mode, the reason for each changed file and the step list bef
 
 `quality.gate_budget_minutes` holds the target wall time for the full and the affected gate. New products start at 10 and 5 minutes, the small tier. Mid-size repositories set 20 and 10, large ones 30 and 15. At the end the gate prints whether it stayed within the budget. Over budget, it prints a warning with the lane that set the wall time and that lane's steps, slowest first. The gate doesn't fail over budget.
 
+## Disk floor
+
+Before it runs a step, the gate checks the free space on the filesystem of the checkout and, when it differs, of Docker's data root. Below the floor it exits with status 2, prints the free GB and the floor, and lists the largest `target/` directories and `docker system df` reclaimable space. It never deletes anything. `[quality.disk] floor_gb` sets the floor, 40 GB by default, and `[quality.disk.step_floor_gb]` maps step names to higher floors, such as a step that starts a local Kubernetes cluster whose kubelet evicts pods when disk runs low. A run needs the highest floor among its planned steps. `BAUKIT_GATE_DISK_FLOOR_GB` overrides the floor for one run, and 0 turns the check off. `sh scripts/quality-gate.sh --step NAME` runs one step without the check.
+
 ## Related settings
 
 `[ports] keycloak_extra = [8181]` lists loopback Keycloak ports for realms the product reads but does not run, such as the hub's suite realm next to its own product realm. It has no default. Doctor accepts issuers of the form `localhost:<port>/realms/` on `ports.keycloak` and on each listed port, and rejects an empty list, zero, duplicates and ports that collide with another host port.

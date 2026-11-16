@@ -156,6 +156,7 @@ step_scripts_tests() {
   python3 scripts/process_runner.test.py
   python3 scripts/check-markdown-links.test.py
   python3 scripts/gate.test.py
+  python3 scripts/gate_disk.test.py
   python3 scripts/gate_locks.test.py
 {% if context.web %}  python3 scripts/with-loopback-network.test.py
 {% endif %}}

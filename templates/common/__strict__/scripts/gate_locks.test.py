@@ -465,6 +465,7 @@ except BlockingIOError: print(1)' "{root}/locks/docker-network.lock")" >> "{trac
             "PATH": os.environ["PATH"],
             "PYTHONPATH": os.environ.get("PYTHONPATH", ""),
             "BAUKIT_GATE_CORES": "4",
+            "BAUKIT_GATE_DISK_FLOOR_GB": "0",
             "BAUKIT_GATE_LOCK_DIR": str(root / "locks"),
             **(extra_env or {}),
         }

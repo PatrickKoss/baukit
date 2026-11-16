@@ -26,6 +26,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from gate_disk import disk_error
 from gate_locks import (
     CorePool,
     Need,
@@ -914,6 +915,18 @@ def lock_lines(planned: list[PlannedStep], sharing: HostSharing) -> list[str]:
     return lines
 
 
+def plan_or_disk_exit(
+    plan_only: bool, settings: dict, planned: list[PlannedStep], environment: dict[str, str]
+) -> int | None:
+    if plan_only:
+        return 0
+    shortage = disk_error(settings, [item.step.name for item in planned], Path.cwd(), environment)
+    if shortage:
+        print(shortage, file=sys.stderr)
+        return 2
+    return None
+
+
 def run_command(arguments: argparse.Namespace) -> int:
     script = shlex.split(arguments.script)
     listing = run_process(
@@ -958,8 +971,8 @@ def run_command(arguments: argparse.Namespace) -> int:
     sharing = HostSharing(ResourceLocks.from_environment(environment), resource_map(settings))
     extras.extend(lock_lines(planned, sharing))
     print_plan(mode, arguments.affected, selection, planned, extras)
-    if arguments.plan:
-        return 0
+    if (stop := plan_or_disk_exit(arguments.plan, settings, planned, environment)) is not None:
+        return stop
     log_directory = prepare_log_directory(Path(arguments.log_dir))
     environment["BAUKIT_GATE_LOG_DIR"] = str(log_directory)
     started = time.monotonic()
