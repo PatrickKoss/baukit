@@ -249,7 +249,9 @@ class BindAddressTest(unittest.TestCase):
         result = bash(f'source "{HELPER}"\nplatform_k3s_server_args')
         self.assertEqual(result.returncode, 0, result.stderr)
         named = re.findall(r"/etc/baukit/k3s/(\S+)", result.stdout)
-        self.assertEqual(sorted(named), ["audit-policy.yaml", "pod-security.yaml"])
+        self.assertEqual(
+            sorted(named), ["audit-policy.yaml", "audit-webhook.yaml", "pod-security.yaml"]
+        )
         for name in named:
             self.assertTrue((PLATFORM / "k3s" / name).is_file(), name)
 
@@ -389,6 +391,7 @@ class RegistryMirrorClusterTest(unittest.TestCase):
         platform_local_etcd_args() {{ printf -- "--k3s-arg\\n--cluster-init@server:0\\n"; }}
         ensure_secret_state() {{ :; }}
         platform_check_free_subnet() {{ :; }}
+        platform_check_cluster_network() {{ :; }}
         platform_check_network_in_node_cidr() {{ :; }}
         validate_common_config() {{ :; }}
         stop_git_daemon() {{ :; }}
@@ -456,7 +459,12 @@ class LifecycleSubnetTest(unittest.TestCase):
     DOCKER = textwrap.dedent(
         """
         case "$1 $2" in
-          "network ls") printf 'n1\\nn2\\n' ;;
+          "network ls")
+            if [[ ${3:-} == -q && ${5:-} == "name=^k3d-demo\\$" ]]; then
+              [[ -z ${LEFTOVER:-} ]] || printf 'leftover-id\\n'
+            else
+              printf 'n1\\nn2\\n'
+            fi ;;
           "network inspect")
             if [[ $3 == k3d-* ]]; then
               printf '%s\\n' "$OWN_SUBNETS"
@@ -548,6 +556,37 @@ class LifecycleSubnetTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not inside the nodeCIDR 10.89.0.0/16", result.stderr)
         self.assertNotIn("create ", calls)
+
+    def test_leftover_network_on_another_subnet_fails_before_k3d(self) -> None:
+        result, calls = self.run_ensure_cluster(
+            exists=False,
+            networks="k3d-demo 172.18.0.0/16\\n",
+            own="172.18.0.0/16",
+            env={"LEFTOVER": "yes"},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("leftover Docker network k3d-demo uses 172.18.0.0/16", result.stderr)
+        self.assertIn("docker network rm k3d-demo", result.stderr)
+        self.assertNotIn("create ", calls)
+        self.assertNotIn("network rm", calls)
+
+    def test_leftover_network_without_ipv4_fails(self) -> None:
+        result, calls = self.run_ensure_cluster(
+            exists=False, own="fd00::/64", env={"LEFTOVER": "yes"}
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("uses no IPv4 subnet", result.stderr)
+        self.assertNotIn("create ", calls)
+
+    def test_leftover_network_on_the_platform_subnet_is_reused(self) -> None:
+        result, calls = self.run_ensure_cluster(
+            exists=False,
+            networks="k3d-demo 10.89.1.0/24\\n",
+            own="10.89.1.0/24 fd00::/64",
+            env={"LEFTOVER": "yes"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--subnet 10.89.1.0/24", calls)
 
     def test_existing_cluster_inside_the_node_cidr_starts(self) -> None:
         result, calls = self.run_ensure_cluster(exists=True, own="10.89.1.0/24 fd00::/64")
@@ -862,11 +901,12 @@ class K3sPolicyFilesTest(unittest.TestCase):
             return any(fnmatch(request["path"], url) for url in rule.get("nonResourceURLs", []))
         if "nonResourceURLs" in rule:
             return False
-        subjects = set(rule.get("users", [])) | set(rule.get("userGroups", []))
+        users, groups = rule.get("users"), rule.get("userGroups")
         return all(
             (
                 request["verb"] in rule.get("verbs", [request["verb"]]),
-                not subjects or bool(subjects & {request["user"], *request["groups"]}),
+                not users or request["user"] in users,
+                not groups or bool(set(groups) & set(request["groups"])),
                 any(
                     entry["group"] == request["group"]
                     and request["resource"] in entry.get("resources", [request["resource"]])
@@ -907,6 +947,33 @@ class K3sPolicyFilesTest(unittest.TestCase):
         user_read = self.request(verb="list")
         self.assertEqual(self.first_level(user_read), "Metadata")
 
+    def test_service_account_reads_keep_only_sensitive_resources(self) -> None:
+        reader = self.request(
+            verb="get",
+            user="system:serviceaccount:e2e:reader",
+            groups=["system:serviceaccounts", "system:serviceaccounts:e2e"],
+        )
+        self.assertEqual(self.first_level({**reader, "resource": "secrets"}), "Metadata")
+        self.assertEqual(self.first_level(reader), "None")
+        self.assertEqual(self.first_level({**reader, "verb": "patch"}), "Metadata")
+
+    def test_exec_and_attach_are_logged_without_bodies(self) -> None:
+        for resource in ("pods/exec", "pods/attach", "pods/portforward"):
+            with self.subTest(resource=resource):
+                self.assertEqual(self.first_level(self.request(resource=resource)), "Metadata")
+
+    def test_webhook_targets_the_falco_k8saudit_service(self) -> None:
+        server = self.load("audit-webhook.yaml")["clusters"][0]["cluster"]["server"]
+        release = (PLATFORM / "falco/k8saudit-helm-release.yaml").read_text()
+        cluster_ip = re.search(r"clusterIP: (\S+)", release)
+        port = re.search(r"open_params: \"http://:(\d+)(/\S+)\"", release)
+        assert cluster_ip is not None and port is not None
+        self.assertEqual(server, f"http://{cluster_ip.group(1)}:{port.group(1)}{port.group(2)}")
+
+    def test_access_review_self_checks_are_dropped(self) -> None:
+        review = self.request(group="authorization.k8s.io", resource="selfsubjectaccessreviews")
+        self.assertEqual(self.first_level(review), "None")
+
     def test_health_probes_and_leases_are_dropped(self) -> None:
         self.assertEqual(self.first_level({"path": "/readyz"}), "None")
         self.assertEqual(self.first_level({"path": "/livez/etcd"}), "None")
@@ -914,7 +981,9 @@ class K3sPolicyFilesTest(unittest.TestCase):
         self.assertEqual(self.first_level(lease), "None")
 
     def test_policy_skips_the_request_received_stage(self) -> None:
-        self.assertEqual(self.load("audit-policy.yaml")["omitStages"], ["RequestReceived"])
+        self.assertEqual(
+            self.load("audit-policy.yaml")["omitStages"], ["RequestReceived", "ResponseStarted"]
+        )
 
 
 if __name__ == "__main__":

@@ -50,12 +50,14 @@ platform_docker_subnets() {
 }
 
 # Fails unless SUBNET is an IPv4 network inside platform_node_cidr that no Docker network overlaps.
+# The optional OWN network is skipped; platform_check_cluster_network vets it.
 platform_check_free_subnet() {
-  local subnet=$1 networks
+  local subnet=$1 own=${2:-} networks
   networks=$(platform_docker_subnets) || return 1
   python3 -c '
 import ipaddress, sys
 subnet, node_cidr, lines = sys.argv[1], ipaddress.ip_network(sys.argv[2]), sys.argv[3].splitlines()
+own = sys.argv[4]
 try:
     candidate = ipaddress.ip_network(subnet)
 except ValueError as error:
@@ -65,6 +67,8 @@ if candidate.version != 4 or not candidate.subnet_of(node_cidr):
 clashes = []
 for line in lines:
     name, *subnets = line.split()
+    if name == own:
+        continue
     for other in subnets:
         network = ipaddress.ip_network(other, strict=False)
         if network.version == 4 and candidate.overlaps(network):
@@ -73,7 +77,25 @@ listed = ", ".join(clashes)
 if clashes:
     sys.exit(f"ERROR: PLATFORM_SUBNET {subnet} overlaps the Docker network(s) {listed}; "
              f"remove them or set PLATFORM_SUBNET to a free /24 inside {node_cidr}")
-' "$subnet" "$platform_node_cidr" "$networks"
+' "$subnet" "$platform_node_cidr" "$networks" "$own"
+}
+
+# Before a create: k3d reuses a Docker network named NETWORK and ignores --subnet, so a leftover one
+# must carry exactly SUBNET. It is never removed here; the error prints the command.
+platform_check_cluster_network() {
+  local network=$1 subnet=$2 found subnets
+  found=$(docker network ls -q --filter "name=^${network}\$") || return 1
+  [[ -n $found ]] || return 0
+  subnets=$(docker network inspect "$network" --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}') || return 1
+  python3 -c '
+import ipaddress, sys
+network, subnet, subnets = sys.argv[1], ipaddress.ip_network(sys.argv[2]), sys.argv[3].split()
+ipv4 = [s for s in (ipaddress.ip_network(s, strict=False) for s in subnets) if s.version == 4]
+if ipv4 != [subnet]:
+    found = " ".join(map(str, ipv4)) or "no IPv4 subnet"
+    sys.exit(f"ERROR: a leftover Docker network {network} uses {found}, not PLATFORM_SUBNET {subnet}; "
+             f"k3d would reuse it and ignore --subnet. Remove it with: docker network rm {network}")
+' "$network" "$subnet" "$subnets"
 }
 
 # Fails unless every IPv4 subnet of the Docker network NETWORK sits inside platform_node_cidr.
@@ -119,7 +141,9 @@ platform_k3s_server_args() {
     "--kube-apiserver-arg=audit-log-path=$platform_k3s_audit_log" \
     --kube-apiserver-arg=audit-log-maxage=7 \
     --kube-apiserver-arg=audit-log-maxbackup=3 \
-    --kube-apiserver-arg=audit-log-maxsize=100
+    --kube-apiserver-arg=audit-log-maxsize=100 \
+    "--kube-apiserver-arg=audit-webhook-config-file=$platform_k3s_config_mount/audit-webhook.yaml" \
+    --kube-apiserver-arg=audit-webhook-batch-max-wait=5s
 }
 
 # The kubelet refuses to start under --protect-kernel-defaults unless the exact

@@ -1,6 +1,6 @@
 # Threat model
 
-Baukit foundation, written with `agent-skills/skills/baukit-threat-model`. Last reviewed: 2026-11-07, on top of commit d8fdd25a.
+Baukit foundation, written with `agent-skills/skills/baukit-threat-model`. Last reviewed: 2026-11-16, on top of commit f22e039f.
 
 Baukit is a library, so this model covers the controls the crates, packages, templates and edge config provide, and the threats they cover for a product that uses them as generated. Each product keeps its own `docs/threat-model.md` for routes, data and integrations it adds. Gaps S-01 to S-11 come from the security catalog in `docs/quality-security-plan.md`.
 
@@ -30,6 +30,7 @@ Baukit is a library, so this model covers the controls the crates, packages, tem
 | inbound webhooks and suite hub | `baukit-core` webhook signatures, `baukit-suite` receiver | shared secret or peer signature |
 | tenant GitOps repository to cluster | Flux Kustomizations and HelmReleases in a namespace labelled `baukit.dev/tenant=true` (`deploy/platform/components/tenant`) | the tenant's `flux-reconciler` ServiceAccount, impersonated by kustomize-controller and helm-controller |
 | tenant custom resources to platform controllers | Flagger `Canary` and `MetricTemplate`, Traefik `IngressRoute`, `Middleware` and `TraefikService`, Prometheus Operator `ServiceMonitor` in a tenant namespace, granted to `admin` by `baukit-tenant-*` ClusterRoles in the flagger, traefik and observability-stack bases | Flagger, Traefik and Prometheus, each acting with its own pod identity and network reach |
+| API server to Falco audit webhook | k8saudit plugin on `falco-k8saudit-webhook` (`10.43.0.60:9765/k8s-audit`, plain HTTP inside the cluster) | none on the listener; NetworkPolicy admits the node CIDR only |
 
 ## Threats
 
@@ -68,6 +69,10 @@ Baukit is a library, so this model covers the controls the crates, packages, tem
 | P-11 | tenant custom resources to platform controllers | I, E | Tenant MetricTemplate makes Flagger query an arbitrary address or a SaaS provider | Kyverno `restrict-tenant-metric-templates` allows only the `prometheus` provider at the platform Prometheus address; Flagger's egress NetworkPolicy reaches only Prometheus, DNS and the API server, which also bounds Canary webhook URLs | `deploy/platform/kyverno-policies/tests/restrict-tenant-metric-templates`, `deploy/platform/e2e/tests/flux-tenancy/chainsaw-test.yaml` step `tenant-guards-deny-escapes` | covered |
 | P-12 | tenant custom resources to platform controllers | E | Tenant Canary `targetRef` or `autoscalerRef` makes Flagger scale or rewrite a workload in another namespace | the Canary API has no namespace field on either ref; Flagger resolves both in the Canary's namespace | none | accepted, upstream API shape (RF19) |
 | P-13 | tenant custom resources to platform controllers | T | Tenant ServiceMonitor sets `product` or `service` labels of another product through relabelings or `honorLabels`, and skews that product's canary analysis | none: MetricTemplates do not filter on `namespace`, and Prometheus has no `enforcedNamespaceLabel` | none | gap, RF19 follow-up |
+| P-14 | API server to Falco audit webhook | S, T | A pod posts forged audit events, or floods the listener to hide real ones | `allow-k8saudit-webhook-from-nodes` admits 9765 from the node CIDR only (`deploy/platform/falco/network-policy.yaml`); the webhook is plain HTTP without client auth | `deploy/platform/e2e/tests/netpol` covers the namespace default deny; no probe of 9765 from a pod | untested |
+| P-15 | API server to Falco audit webhook | I | Secret values reach Falco, Loki or Alertmanager through audit events | audit policy logs Secrets, ConfigMaps and tokens at `Metadata` (`deploy/platform/k3s/audit-policy.yaml`) | `scripts/test_platform_local_lifecycle.py` audit policy tests | covered |
+| P-16 | API server to Falco audit webhook | R, E | Secret read by an unexpected service account, exec into a pod or a ClusterRoleBinding change goes unseen | k8saudit rules (`deploy/platform/falco/k8saudit-rules/baukit.k8saudit.rules.yaml`) routed through falcosidekick to Alertmanager; `BaukitFalcoK8sAuditDown` when the receiver is gone | `deploy/platform/e2e/tests/falco-audit/chainsaw-test.yaml`, `deploy/observability-platform/tests/falco.test.yml` | covered |
+| P-17 | supply chain | T | Tampered k8saudit plugin runs in the Falco pod | reference pinned by digest, falcoctl checks the cosign signature; egress on 443 only for that pod | `deploy/platform/falco/test_validate_rules.py::test_k8saudit_plugin_is_pinned_by_digest` | covered |
 | S-01 | browser to API | I | XSS reads access and refresh tokens from `localStorage` | none, tokens stored by `typescript/packages/auth-web/src/index.ts` | to write: no storage write contains a refresh token | gap, P2.2 |
 | S-02 | browser to API | T, I | Clickjacking, MIME sniffing, no CSP to contain XSS | none in `baukit-http`, templates or chart | to write: header assertions in the fixture gate | gap, P2.1 |
 | S-03 | supply chain | T, E | Retagged GitHub Action runs with release permissions | none, actions pinned by tag | to write: zizmor and actionlint gate step | gap, P2.5 |

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+- `platform-lifecycle.sh up` refuses a leftover Docker network `k3d-<cluster>` whose subnet is not `PLATFORM_SUBNET`, because k3d would reuse it and ignore `--subnet`. The error prints `docker network rm k3d-<cluster>`; the script never removes the network itself. A leftover on the right subnet is reused as before.
+- Falco reads Kubernetes audit events (FA6). A new HelmRelease `falco-k8saudit` runs the k8saudit plugin 0.18.0 (installed by digest with cosign verification) in a non-root Deployment and forwards to the existing falcosidekick, so events reach Loki and Alertmanager with `eventsource="k8s_audit"`. New rules: secret read by an unexpected service account (Warning), exec or attach into a pod (Warning), ClusterRoleBinding change outside Flux (Critical). New alert `BaukitFalcoK8sAuditDown` with runbook `falco-k8saudit-down`, and e2e suite `falco-audit`.
+- `k3s/audit-policy.yaml` is stricter: it skips the `RequestReceived` and `ResponseStarted` stages, drops self access reviews and service account reads of anything but Secrets, ConfigMaps and tokens, and logs exec, attach and port-forward at `Metadata`. Secrets stay at `Metadata`, so no body reaches the log or Falco. Node and kube-system reads now really are dropped: a rule naming users and userGroups needs both to match, so the old combined rule never fired. On the platform-local cluster the log fell from about 21 to 7.6 events per second.
+- Local clusters send audit events to `http://10.43.0.60:9765/k8s-audit` (`k3s/audit-webhook.yaml`). Existing clusters keep their old flags until `down --delete` and `up`.
+- Overlays that compose the falco base must also compose `components/network-policy/node-cidr`, which fills the webhook ingress policy.
+- platform-infra must add these k3s server flags, ship `audit-policy.yaml` and `audit-webhook.yaml` to the node, and keep the k3s default service CIDR `10.43.0.0/16` (or change the ClusterIP in both files):
+  `--kube-apiserver-arg=audit-policy-file=<dir>/audit-policy.yaml`, `--kube-apiserver-arg=audit-webhook-config-file=<dir>/audit-webhook.yaml`, `--kube-apiserver-arg=audit-webhook-batch-max-wait=5s`. The falco namespace needs HTTPS egress to ghcr.io and the sigstore endpoints for the plugin download.
+
 ## [0.26.3] - 2026-11-16
 
 - Tenant `flux-reconciler` accounts can manage the kinds baukit-app products ship. The flagger base adds ClusterRoles `baukit-tenant-flagger-edit` and `-view` (canaries, metrictemplates), the traefik base `baukit-tenant-traefik-*` (ingressroutes, middlewares, traefikservices) and the observability-stack base `baukit-tenant-monitoring-*` (servicemonitors). The edit roles aggregate into `admin` and `edit`, the view roles into `admin`, `edit` and `view`. Before, a tenant reconcile failed with `cannot patch resource "canaries"` and the same for the other kinds. A cluster without one of these bases carries none of its roles.

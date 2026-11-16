@@ -1,0 +1,15 @@
+# Audit webhook backend: the falco-k8saudit Service on its fixed ClusterIP (falco/k8saudit-helm-release.yaml).
+# The API server reaches it through kube-proxy on the node; the falco namespace admits only the node CIDR.
+apiVersion: v1
+kind: Config
+clusters:
+  - name: falco-k8saudit
+    cluster:
+      server: http://10.43.0.60:9765/k8s-audit
+contexts:
+  - name: falco-k8saudit
+    context:
+      cluster: falco-k8saudit
+      user: ""
+current-context: falco-k8saudit
+users: []

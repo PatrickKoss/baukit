@@ -39,6 +39,40 @@ tests:
         alertname: BaukitFalcoDown
         exp_alerts: []
 
+  - name: falco-k8saudit without an available replica fires BaukitFalcoK8sAuditDown
+    interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="falco",deployment="falco-k8saudit"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitFalcoK8sAuditDown
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitFalcoK8sAuditDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: falco
+              namespace: falco
+              deployment: falco-k8saudit
+            exp_annotations:
+              summary: Falco receives no Kubernetes audit events
+              description: >-
+                The falco-k8saudit Deployment in namespace falco has had no available replica for
+                10 minutes. The API server drops its audit webhook batches, so secret reads, exec
+                sessions and ClusterRoleBinding changes raise no alerts.
+              runbook_url: RUNBOOK_BASE_URL/falco-k8saudit-down
+  - name: an available falco-k8saudit stays quiet
+    interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="falco",deployment="falco-k8saudit"}'
+        values: '1x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitFalcoK8sAuditDown
+        exp_alerts: []
+
   - name: rising kernel drops fire BaukitFalcoEventsDropped
     interval: 1m
     input_series:
