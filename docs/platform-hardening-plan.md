@@ -1191,3 +1191,10 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   (cleanup 16-19 s). The three remaining e2e namespaces moved to PSA v1.37. Full gate on d05a0fb4 green
   in 2225 s, 425 s over budget because native-android started on 2 cores while another product's gate
   held the second heavy slot.
+- 2026-11-16 06:10: baukit v0.26.0 released (main aa6792b9, tag v0.26.0; GitHub release, crates.io and npm
+  green). The 0.26.0 matrix adds the five breaking `baukit-app` chart changes after schluesselbund's bump hit
+  the `image.tag: latest` render failure (c980e87a). User decisions for PI: drop Keycloak from
+  platform-infra (products use Clerk or WorkOS; PI6 loses its Keycloak items), and run the persistent
+  single-node k3s on embedded etcd with the 0.26.0 single-node args (`platform_local_etcd_args`), in
+  platform-local and in the frozen Hetzner Terraform config. `platform-local` does not exist right now,
+  so PI8/PI9 create it fresh on k3s v1.37.2 with cgroup v2.
