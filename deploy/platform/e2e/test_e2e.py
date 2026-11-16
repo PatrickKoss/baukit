@@ -829,6 +829,21 @@ class FalcoEventsTests(unittest.TestCase):
         self.assertIn(f"{prefix.group(1)}-", excluded)
         self.assertIn("e2e-backup-", excluded)
 
+    def test_kubernetes_only_drops_events_without_a_namespace(self):
+        host = falco_event("Critical", "Drop and execute new binary in container", None, "check")
+        self.EVENTS = [*FalcoEventsTests.EVENTS, host]
+        everything = self.rules(self.query("falco", "Warning"))
+        self.assertIn("Drop and execute new binary in container", everything)
+        cluster_only = self.rules(self.query("falco", "Warning", "--kubernetes-only", "true"))
+        self.assertEqual(cluster_only, [SHADOW_RULE, SHADOW_RULE, SHELL_RULE])
+
+    def test_only_the_persistent_profile_relaxes_the_noise_check(self):
+        chainsaw = (E2E / "tests/falco/chainsaw-test.yaml").read_text()
+        step = chainsaw.split("name: no-warning-events-outside-the-triggers", 1)[1]
+        self.assertEqual(step.count("--kubernetes-only true"), 1)
+        self.assertIn("case ${BAUKIT_E2E_PROFILE:-} in\n                persistent)", step)
+        self.assertNotIn("BAUKIT_E2E_PROFILE", (E2E / "run.sh").read_text())
+
     def test_excluded_prefix_drops_netpol_probe_execs(self):
         probe_exec = falco_event("Critical", EXEC_RULE, "postgres", "sh", "netpol-probe-19")
         self.EVENTS = [*FalcoEventsTests.EVENTS, probe_exec]

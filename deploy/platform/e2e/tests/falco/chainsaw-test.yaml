@@ -148,11 +148,13 @@ spec:
               # host's other Docker containers raise events without one. Its window opens at this run's first
               # trigger, since Falco has outlived earlier runs; kubectl logs filters on kubelet's wall clock.
               k8s_only=""
-              if [ "${BAUKIT_E2E_PROFILE:-}" = persistent ]; then
-                k8s_only="--kubernetes-only true"
-                since=$(kubectl -n "$NAMESPACE" get configmap falco-triggers -o jsonpath='{.metadata.creationTimestamp}')
-                printf 'persistent profile: counting only events with k8s.ns.name\n'
-              fi
+              case ${BAUKIT_E2E_PROFILE:-} in
+                persistent)
+                  k8s_only="--kubernetes-only true"
+                  since=$(kubectl -n "$NAMESPACE" get configmap falco-triggers -o jsonpath='{.metadata.creationTimestamp}')
+                  printf 'persistent profile: counting only events with k8s.ns.name\n'
+                  ;;
+              esac
               events=$(./falco-events.sh --source falco --since "$since" --min-priority Warning \
                 --exclude-pod "$echo_pod" --exclude-pod shadow-reader --exclude-pod e2e-backup- \
                 --exclude-pod netpol-probe- $k8s_only)
