@@ -5,6 +5,14 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.28.0
+
+Last verified release train: `v0.28.0` (minor train on top of `v0.27.4`). CloudNativePG chart 0.29.2 with operator 1.30.2, and Traefik chart 42.4.1; every other component is unchanged.
+- BREAKING: `verify-baukit-images` and `require-image-digest` deny instead of audit. Tenant images from `ghcr.io/patrickkoss/*` must be cosign-signed with the product key and pinned by digest; Kyverno reads the public key from `kyverno/baukit-image-signing-key` and pulls signatures with the `kyverno/baukit-image-verify-registry` credential.
+- BREAKING: the Rust crates and generated backends use `jiff` instead of `chrono` for timestamps, dates and durations.
+- kube-bench `k3s-cis-1.9` fails platform-e2e on any FAIL; every `default` ServiceAccount outside kube-system disables token automount (CIS 5.1.5).
+- Falco captures only the syscalls its rules need and uses 16 MiB ring buffers.
+
 ## v0.27.4
 
 Last verified release train: `v0.27.4` (patch train on top of `v0.27.3`). No component versions change.

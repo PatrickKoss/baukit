@@ -4,6 +4,8 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-11-17
+
 - BREAKING: chrono is replaced by jiff 1.0. `DeliveryClaim::local_date` and `DeliveryClaim::new` use `jiff::civil::Date`. `RECEIPT_POLL_DELAY` and `RECEIPT_RETENTION` are `jiff::SignedDuration`. `PendingReceipt::sent_at`, `DeviceRegistration` timestamps and every store `now` or cutoff argument use `jiff::Timestamp`. See the type mapping in `cli/CHANGELOG.md`.
 
 ## [0.27.4] - 2026-11-17

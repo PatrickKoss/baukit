@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-11-17
+
 - BREAKING: chrono is replaced by jiff 1.0. `PurgeHorizonAdapter::write_tombstone` and `purge_batch` take `jiff::Timestamp`, and the data-subject conformance clock uses `jiff`. See the type mapping in `cli/CHANGELOG.md`.
 
 ## [0.27.4] - 2026-11-17

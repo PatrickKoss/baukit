@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-11-17
+
 - BREAKING: chrono is replaced by jiff 1.0. `Job` and `NewJob` timestamps, `NewJob::run_after`, `TerminalJobCutoffs` (`succeeded_before`, `cancelled_before`, `failed_before`), `FixedUtcInterval::slot_at`, `next_slot` and `FixedUtcSlot::starts_at` use `jiff::Timestamp`. See the type mapping in `cli/CHANGELOG.md`.
 
 ## [0.27.4] - 2026-11-17
