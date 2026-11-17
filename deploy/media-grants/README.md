@@ -91,7 +91,7 @@ with the new one. Once the longest grant lifetime has passed, clear the previous
 
 ## Runtimes
 
-The module is tested with njs 1.0.1 in nginx 1.31.8 under both engines (`js_engine njs` and
+The module is tested with njs 1.0.2 in nginx 1.31.8 under both engines (`js_engine njs` and
 `js_engine qjs`) and in Node 24. The native engine has no destructuring, `for...of`, classes, or
 named exports, so the module uses none of them and exports one default object. It needs `Buffer`
 with `base64url`, `crypto.subtle` HMAC, and `process.env`.
