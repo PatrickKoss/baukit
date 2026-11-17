@@ -145,20 +145,25 @@ spec:
               echo_pod=$(kubectl -n "$NAMESPACE" get configmap falco-triggers -o jsonpath='{.data.echo-pod}')
               # The triggers above, the e2e-backup-* clusters into which backup-restore execs psql, and the
               # netpol-probe-* pods into which the netpol suite execs its probes in protected namespaces.
-              # BAUKIT_E2E_PROFILE=persistent counts only events with a Kubernetes namespace, since a shared
-              # host's other Docker containers raise events without one. Its window opens at this run's first
-              # trigger, since Falco has outlived earlier runs; kubectl logs filters on kubelet's wall clock.
-              k8s_only=""
+              # Falco sees every process on a shared host, so only events with a Kubernetes namespace count,
+              # plus, outside the persistent profile, k3s and containerd on this cluster's k3d node containers.
+              # The persistent window opens at this run's first trigger, since Falco has outlived earlier runs;
+              # kubectl logs filters on kubelet's wall clock.
+              scope="--kubernetes-only true"
               case ${BAUKIT_E2E_PROFILE:-} in
                 persistent)
-                  k8s_only="--kubernetes-only true"
                   since=$(kubectl -n "$NAMESPACE" get configmap falco-triggers -o jsonpath='{.metadata.creationTimestamp}')
                   printf 'persistent profile: counting only events with k8s.ns.name\n'
+                  ;;
+                *)
+                  nodes=$(docker ps -q --filter "label=k3d.cluster=${BAUKIT_E2E_CLUSTER:-baukit-platform-e2e}")
+                  [ -n "$nodes" ] || { printf 'no k3d node containers for this cluster\n' >&2; exit 1; }
+                  for node in $nodes; do scope="$scope --node-container-id $node"; done
                   ;;
               esac
               events=$(./falco-events.sh --source falco --since "$since" --min-priority Warning \
                 --exclude-pod "$echo_pod" --exclude-pod shadow-reader --exclude-pod e2e-backup- \
-                --exclude-pod netpol-probe- $k8s_only)
+                --exclude-pod netpol-probe- $scope)
               if [ -n "$events" ]; then
                 printf 'Falco raised Warning+ events outside the deliberate triggers since %s:\n%s\n' "$since" "$events" >&2
                 exit 1
