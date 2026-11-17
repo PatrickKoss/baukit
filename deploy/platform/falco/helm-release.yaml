@@ -43,6 +43,9 @@ spec:
       kind: modern_ebpf
       modernEbpf:
         leastPrivileged: true
+        # 16 MiB per ring buffer, 12 buffers on a 24-CPU host. The 8 MiB default overflowed on
+        # bursts from host-wide builds, which share the node's kernel.
+        bufSizePreset: 5
     collectors:
       containerEngine:
         engines:
@@ -87,6 +90,9 @@ spec:
     serviceMonitor:
       create: true
     falco:
+      # Capture only the syscalls the loaded rules need plus the state Falco tracks for them.
+      base_syscalls:
+        repair: true
       json_output: true
       json_include_output_property: true
       http_output:
