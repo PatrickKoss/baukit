@@ -9,6 +9,7 @@ components:
   - ../../../../components/network-policy/node-cidr
 patches:
   - path: resources.yaml
+  - path: wsl-clock.yaml
 
   - path: loki-storage.yaml
 generatorOptions:

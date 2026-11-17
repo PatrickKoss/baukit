@@ -1,0 +1,24 @@
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: admission-platform-template
+  namespace: e2e-tenant
+spec:
+  provider: traefik
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: echo
+  service:
+    port: 80
+  analysis:
+    interval: 1m
+    threshold: 1
+    stepWeights: [50]
+    metrics:
+      - name: errors
+        templateRef:
+          name: baukit-http-error-percent
+          namespace: flagger-system
+        thresholdRange:
+          max: 1

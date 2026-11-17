@@ -1,0 +1,146 @@
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: own-template
+  namespace: shop
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  service:
+    port: 80
+  analysis:
+    metrics:
+      - name: errors
+        templateRef:
+          name: errors
+---
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: own-namespace-named
+  namespace: shop
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  service:
+    port: 80
+  analysis:
+    metrics:
+      - name: errors
+        templateRef:
+          name: errors
+          namespace: shop
+---
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: builtin-only
+  namespace: shop
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  service:
+    port: 80
+  analysis:
+    metrics:
+      - name: request-success-rate
+        thresholdRange:
+          min: 99
+---
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: no-analysis
+  namespace: shop
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  service:
+    port: 80
+
+---
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: platform-template
+  namespace: shop
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  service:
+    port: 80
+  analysis:
+    metrics:
+      - name: errors
+        templateRef:
+          name: baukit-http-error-percent
+          namespace: flagger-system
+        templateVariables:
+          product: leitbild
+          environment: production
+---
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: other-tenant-template
+  namespace: shop
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  service:
+    port: 80
+  analysis:
+    metrics:
+      - name: own
+        templateRef:
+          name: errors
+      - name: theirs
+        templateRef:
+          name: errors
+          namespace: other
+---
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: inline-query
+  namespace: shop
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  service:
+    port: 80
+  analysis:
+    metrics:
+      - name: everything
+        query: sum(up)
+---
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: platform-canary
+  namespace: platform
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  service:
+    port: 80
+  analysis:
+    metrics:
+      - name: everything
+        query: sum(up)

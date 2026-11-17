@@ -10,7 +10,11 @@ spec:
     itself with targetNamespace flux-system is forbidden, and a remote base is refused. The reconciler
     manages the Flagger, Traefik and ServiceMonitor kinds baukit-app products ship, and the tenant
     Kyverno guards refuse a ServiceMonitor, MetricTemplate, IngressRoute or forwardAuth that reaches
-    out of the namespace or spoofs its namespace label. Flagger's -primary copy of a labelled tenant
+    out of the namespace or spoofs its namespace label. A tenant MetricTemplate must query the
+    tenant-metrics-proxy in its own namespace, which the tenant cannot change, delete or exec into,
+    and a Canary must not use another namespace's template. Through that proxy, as Flagger, sum(up)
+    sees only the proxy's namespace, and a selector naming e2e-tenant from another tenant returns
+    nothing. Flagger's -primary copy of a labelled tenant
     Deployment passes require-baukit-labels. Prometheus writes the tenant's namespace
     label after the tenant's relabelings, and every non-tenant namespace with monitors or rules is
     excluded from that enforcement. A tenant ServiceMonitor in a namespace without the platform label
@@ -198,8 +202,8 @@ spec:
               spec:
                 provider:
                   type: prometheus
-                  address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-                query: sum(rate(http_requests_total{namespace="{{ namespace }}", status=~"5.."}[{{ interval }}]))
+                  address: http://tenant-metrics-proxy.$NAMESPACE.svc.cluster.local:8080
+                query: sum(rate(http_requests_total{status=~"5.."}[{{ interval }}]))
               ---
               apiVersion: flagger.app/v1beta1
               kind: Canary
@@ -442,6 +446,43 @@ spec:
                   type: prometheus
                 query: sum(rate(http_requests_total{product="leitbild"}[1m]))
               YAML
+              expect_denied restrict-tenant-metric-templates <<YAML
+              apiVersion: flagger.app/v1beta1
+              kind: MetricTemplate
+              metadata:
+                name: other-tenant-proxy
+              spec:
+                provider:
+                  type: prometheus
+                  address: http://tenant-metrics-proxy.e2e-tenant.svc.cluster.local:8080
+                query: sum(up)
+              YAML
+              expect_denied restrict-tenant-canaries <<YAML
+              apiVersion: flagger.app/v1beta1
+              kind: Canary
+              metadata:
+                name: platform-template
+              spec:
+                provider: traefik
+                targetRef:
+                  apiVersion: apps/v1
+                  kind: Deployment
+                  name: api
+                service:
+                  port: 80
+                analysis:
+                  interval: 1m
+                  threshold: 1
+                  stepWeights: [50]
+                  metrics:
+                    - name: errors
+                      templateRef:
+                        name: baukit-http-error-percent
+                        namespace: flagger-system
+                      templateVariables:
+                        product: leitbild
+                        environment: production
+              YAML
               expect_denied restrict-tenant-traefik-routes <<YAML
               apiVersion: traefik.io/v1alpha1
               kind: IngressRoute
@@ -465,6 +506,54 @@ spec:
                 forwardAuth:
                   address: http://grafana.observability.svc.cluster.local/api
               YAML
+              printf denied
+            check:
+              ($stdout): denied
+    - name: metrics-proxy-is-platform-owned
+      catch:
+        - script:
+            content: kubectl -n "$NAMESPACE" get deployment,pods,service,networkpolicy -l app.kubernetes.io/name=tenant-metrics-proxy -o wide
+      try:
+        - script:
+            content: |
+              set -eu
+              kubectl -n "$NAMESPACE" rollout status deployment/tenant-metrics-proxy --timeout=3m >/dev/null
+              value=$(kubectl -n "$NAMESPACE" get deployment tenant-metrics-proxy \
+                -o jsonpath='{.spec.template.spec.containers[0].args[3]}')
+              [ "$value" = "-label-value=$NAMESPACE" ] && printf pinned
+            check:
+              ($stdout): pinned
+        - script:
+            content: |
+              set -eu
+              as="system:serviceaccount:$NAMESPACE:flux-reconciler"
+              denied() {
+                what=$1
+                shift
+                if output=$("$@" 2>&1); then
+                  printf '%s admitted:\n%s\n' "$what" "$output" >&2
+                  exit 1
+                fi
+                case $output in
+                  *protect-tenant-metrics-proxy*) ;;
+                  # The admin role grants no pods/ephemeralcontainers; RBAC refuses before the policy.
+                  *"cannot patch resource \"pods/ephemeralcontainers\""*) ;;
+                  *) printf '%s: unexpected error: %s\n' "$what" "$output" >&2; exit 1 ;;
+                esac
+              }
+              pod=$(kubectl -n "$NAMESPACE" get pods -l app.kubernetes.io/name=tenant-metrics-proxy \
+                -o jsonpath='{.items[0].metadata.name}')
+              denied "label value change" kubectl -n "$NAMESPACE" patch deployment tenant-metrics-proxy \
+                --as="$as" --dry-run=server --type=json \
+                -p '[{"op":"replace","path":"/spec/template/spec/containers/0/args/3","value":"-label-value=e2e-tenant"}]'
+              denied "service delete" kubectl -n "$NAMESPACE" delete service tenant-metrics-proxy \
+                --as="$as" --dry-run=server
+              denied "exec" kubectl -n "$NAMESPACE" exec "$pod" --as="$as" -- true
+              denied "ephemeral container" kubectl -n "$NAMESPACE" debug "$pod" --as="$as" \
+                --image=quay.io/prometheus/busybox:latest --profile=restricted -- true
+              impostor='{"apiVersion":"v1","kind":"Pod","metadata":{"name":"impostor","labels":{"app.kubernetes.io/name":"tenant-metrics-proxy"}},"spec":{"automountServiceAccountToken":false,"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}},"containers":[{"name":"shell","image":"quay.io/prometheus/busybox:latest","resources":{"requests":{"cpu":"10m","memory":"16Mi"},"limits":{"cpu":"50m","memory":"32Mi"}},"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}]}}'
+              denied "impostor pod" sh -c 'printf "%s" "$1" | kubectl -n "$2" create --as="$3" --dry-run=server -f -' \
+                _ "$impostor" "$NAMESPACE" "$as"
               printf denied
             check:
               ($stdout): denied
@@ -587,6 +676,47 @@ spec:
               exit 1
             check:
               ($stdout): scraped
+        - script:
+            content: |
+              set -eu
+              # Flagger's own pod queries each proxy, the path a tenant MetricTemplate takes. Direct
+              # Prometheus answers sum(up) for every namespace; each proxy only for its own.
+              kubectl -n e2e-tenant rollout status deployment/tenant-metrics-proxy --timeout=3m >/dev/null
+              query() {
+                kubectl -n flagger-system exec deployment/flagger -c flagger -- \
+                  wget -q -O - "$1/api/v1/query?query=$2" 2>&1 || true
+              }
+              direct=http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+              tenant_a=http://tenant-metrics-proxy.e2e-tenant.svc.cluster.local:8080
+              tenant_b=http://tenant-metrics-proxy.$NAMESPACE.svc.cluster.local:8080
+              by_namespace=count%20by%20%28namespace%29%20%28up%29
+              naming_a=sum%28up%7Bnamespace%3D%22e2e-tenant%22%7D%29
+              log=$(mktemp)
+              trap 'rm -f "$log"' EXIT
+              for _ in $(seq 30); do
+                DIRECT=$(query "$direct" "$by_namespace") A=$(query "$tenant_a" "$by_namespace") \
+                B=$(query "$tenant_b" "$by_namespace") B_NAMING_A=$(query "$tenant_b" "$naming_a") \
+                NAMESPACE=$NAMESPACE python3 -c '
+              import json, os, sys
+              def namespaces(name):
+                  try:
+                      result = json.loads(os.environ[name])["data"]["result"]
+                  except (ValueError, KeyError, TypeError):
+                      return None
+                  return sorted({r["metric"].get("namespace", "") for r in result})
+              direct, a, b = namespaces("DIRECT"), namespaces("A"), namespaces("B")
+              b_naming_a = namespaces("B_NAMING_A")
+              print(f"direct={direct} e2e-tenant-proxy={a} tenant-proxy={b} tenant-proxy-naming-e2e-tenant={b_naming_a}", file=sys.stderr)
+              ok = (direct is not None and len(direct) > 1 and a == ["e2e-tenant"]
+                    and b is not None and set(b) <= {os.environ["NAMESPACE"]} and not b_naming_a)
+              sys.exit(0 if ok else 1)
+              ' 2>"$log" && { printf scoped; exit 0; }
+                sleep 2
+              done
+              cat "$log" >&2
+              exit 1
+            check:
+              ($stdout): scoped
       finally:
         - script:
             content: kubectl -n e2e-tenant delete servicemonitor flux-tenancy-enforced --ignore-not-found

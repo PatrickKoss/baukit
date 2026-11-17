@@ -100,7 +100,7 @@ HelmRelease disagrees with this table.
 | `kyverno` | OCI `oci://ghcr.io/kyverno/charts/kyverno` | no | none |  | Kyverno signs its images, not the 3.10.0 chart: no signature tag or bundle for the digest. |
 | `kyverno-policies` | OCI `oci://ghcr.io/kyverno/charts/kyverno-policies` | no | none |  | Same as the kyverno chart. |
 | `policy-reporter` | OCI `oci://ghcr.io/kyverno/charts/policy-reporter` | keyless | cosign | `^https://token\.actions\.githubusercontent\.com$` `^https://github\.com/kyverno/policy-reporter/\.github/workflows/release-chart\.yaml@refs/tags/policy-reporter-chart-v[0-9]+\.[0-9]+\.[0-9]+$` |  |
-| `kube-prometheus-stack` | OCI `oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack` | no | none |  | No signature or bundle for the 93.3.0 digest. |
+| `kube-prometheus-stack` | OCI `oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack` | no | none |  | No signature or bundle for the 93.3.1 digest. |
 | `loki` | OCI `oci://ghcr.io/grafana-community/helm-charts/loki` | no | none |  | grafana-community pushes charts unsigned. |
 | `tempo` | OCI `oci://ghcr.io/grafana-community/helm-charts/tempo` | no | none |  | grafana-community pushes charts unsigned. |
 | `alloy` | OCI `oci://ghcr.io/grafana/helm-charts/alloy` | no | none |  | No signature or bundle for the 1.16.0 digest. |

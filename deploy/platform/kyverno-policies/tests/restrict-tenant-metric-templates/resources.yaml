@@ -1,7 +1,35 @@
 apiVersion: flagger.app/v1beta1
 kind: MetricTemplate
 metadata:
-  name: platform-address
+  name: own-proxy
+  namespace: shop
+spec:
+  provider:
+    type: prometheus
+    address: http://tenant-metrics-proxy.shop.svc.cluster.local:8080
+  query: sum(up)
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: leitbild-like
+  namespace: shop
+spec:
+  provider:
+    type: prometheus
+    address: http://tenant-metrics-proxy.shop.svc.cluster.local:8080
+  query: |
+    (
+      100 *
+      (sum(rate(http_requests_total{namespace="{{ namespace }}", product="leitbild", rollout="canary", status=~"5.."}[{{ interval }}])) or on() vector(0))
+      /
+      clamp_min(sum(rate(http_requests_total{product="leitbild", rollout="canary", namespace="{{ namespace }}"}[{{ interval }}])), 0.001)
+    ) or on() vector(0)
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: platform-prometheus
   namespace: shop
 spec:
   provider:
@@ -22,13 +50,48 @@ spec:
 apiVersion: flagger.app/v1beta1
 kind: MetricTemplate
 metadata:
-  name: foreign-address
+  name: other-tenant-proxy
   namespace: shop
 spec:
   provider:
     type: prometheus
-    address: http://api.other.svc:9090
-  query: sum(rate(http_requests_total{namespace="{{ namespace }}"}[1m]))
+    address: http://tenant-metrics-proxy.other.svc.cluster.local:8080
+  query: sum(up)
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: short-proxy-name
+  namespace: shop
+spec:
+  provider:
+    type: prometheus
+    address: http://tenant-metrics-proxy:8080
+  query: sum(up)
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: external-url
+  namespace: shop
+spec:
+  provider:
+    type: prometheus
+    address: https://prometheus.example.com
+  query: sum(up)
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: proxy-with-secret
+  namespace: shop
+spec:
+  provider:
+    type: prometheus
+    address: http://tenant-metrics-proxy.shop.svc.cluster.local:8080
+    secretRef:
+      name: creds
+  query: sum(up)
 ---
 apiVersion: flagger.app/v1beta1
 kind: MetricTemplate
@@ -38,8 +101,8 @@ metadata:
 spec:
   provider:
     type: datadog
-    address: https://api.datadoghq.eu
-  query: sum(rate(http_requests_total{namespace="{{ namespace }}"}[1m]))
+    address: http://tenant-metrics-proxy.shop.svc.cluster.local:8080
+  query: sum(up)
 ---
 apiVersion: flagger.app/v1beta1
 kind: MetricTemplate
@@ -50,117 +113,4 @@ spec:
   provider:
     type: prometheus
     address: http://anywhere.example:9090
-  query: sum(rate(http_requests_total{namespace="{{ namespace }}"}[1m]))
----
-apiVersion: flagger.app/v1beta1
-kind: MetricTemplate
-metadata:
-  name: leitbild-like
-  namespace: shop
-spec:
-  provider:
-    type: prometheus
-    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-  query: |
-    (
-      100 *
-      (sum(rate(http_requests_total{namespace="{{ namespace }}", product="leitbild", rollout="canary", status=~"5.."}[{{ interval }}])) or on() vector(0))
-      /
-      clamp_min(sum(rate(http_requests_total{product="leitbild", rollout="canary", namespace="{{ namespace }}"}[{{ interval }}])), 0.001)
-    ) or on() vector(0)
----
-apiVersion: flagger.app/v1beta1
-kind: MetricTemplate
-metadata:
-  name: compact-filter
-  namespace: shop
-spec:
-  provider:
-    type: prometheus
-    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-  query: |
-    histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace = "{{namespace}}",pod=~"{{ target }}-.*"}[{{ interval }}])))
----
-apiVersion: flagger.app/v1beta1
-kind: MetricTemplate
-metadata:
-  name: no-filter
-  namespace: shop
-spec:
-  provider:
-    type: prometheus
-    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-  query: |
-    sum(rate(http_requests_total{product="leitbild"}[{{ interval }}]))
----
-apiVersion: flagger.app/v1beta1
-kind: MetricTemplate
-metadata:
-  name: one-unfiltered
-  namespace: shop
-spec:
-  provider:
-    type: prometheus
-    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-  query: |
-    sum(rate(errors_total{namespace="{{ namespace }}"}[1m])) / sum(rate(http_requests_total{product="leitbild"}[1m]))
----
-apiVersion: flagger.app/v1beta1
-kind: MetricTemplate
-metadata:
-  name: bare-range
-  namespace: shop
-spec:
-  provider:
-    type: prometheus
-    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-  query: |
-    sum(rate(errors_total{namespace="{{ namespace }}"}[1m])) / sum(rate(http_requests_total[1m]))
----
-apiVersion: flagger.app/v1beta1
-kind: MetricTemplate
-metadata:
-  name: other-namespace
-  namespace: shop
-spec:
-  provider:
-    type: prometheus
-    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-  query: |
-    sum(rate(http_requests_total{namespace="leitbild-production"}[1m]))
----
-apiVersion: flagger.app/v1beta1
-kind: MetricTemplate
-metadata:
-  name: lookalike-label
-  namespace: shop
-spec:
-  provider:
-    type: prometheus
-    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-  query: |
-    sum(rate(http_requests_total{kube_namespace="{{ namespace }}"}[1m]))
----
-apiVersion: flagger.app/v1beta1
-kind: MetricTemplate
-metadata:
-  name: no-selector
-  namespace: shop
-spec:
-  provider:
-    type: prometheus
-    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-  query: |
-    vector(0)
----
-apiVersion: flagger.app/v1beta1
-kind: MetricTemplate
-metadata:
-  name: platform-unfiltered
-  namespace: platform
-spec:
-  provider:
-    type: prometheus
-    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-  query: |
-    sum(rate(http_requests_total[1m]))
+  query: sum(up)

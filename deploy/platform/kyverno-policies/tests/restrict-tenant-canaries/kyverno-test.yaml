@@ -1,0 +1,26 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: restrict-tenant-canaries
+policies:
+  - ../../policies/restrict-tenant-canaries.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: restrict-tenant-canaries
+    kind: Canary
+    resources: [own-template, own-namespace-named, builtin-only, no-analysis]
+    result: pass
+  - isValidatingPolicy: true
+    policy: restrict-tenant-canaries
+    kind: Canary
+    resources: [platform-template, other-tenant-template, inline-query]
+    result: fail
+  - isValidatingPolicy: true
+    policy: restrict-tenant-canaries
+    kind: Canary
+    resources: [platform-canary]
+    result: skip

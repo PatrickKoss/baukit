@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.27.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.27.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/localization-core@0.27.0
+
 ## 0.26.7
 
 ### Patch Changes

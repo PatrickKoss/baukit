@@ -1,10 +1,10 @@
 apiVersion: flagger.app/v1beta1
 kind: MetricTemplate
 metadata:
-  name: admission-platform-prometheus
+  name: admission-tenant-proxy
   namespace: e2e-tenant
 spec:
   provider:
     type: prometheus
-    address: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
-  query: sum(rate(http_requests_total{namespace="{{ namespace }}"}[{{ interval }}]))
+    address: http://tenant-metrics-proxy.e2e-tenant.svc.cluster.local:8080
+  query: sum(rate(http_requests_total[{{ interval }}]))

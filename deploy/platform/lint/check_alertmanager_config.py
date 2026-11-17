@@ -4,7 +4,8 @@
 The kube-prometheus-stack chart render must read its config from the routing Secret and mount that
 Secret, so a cluster without it never starts Alertmanager. The base must not ship the Secret. Every
 routing config (the base example and each overlay Secret) must route Watchdog first to a receiver
-with an integration, send nothing else to a receiver without one (InfoInhibitor excepted), and carry
+with an integration, send nothing else to a receiver without one (a route that matches exactly one
+alertname used only as an inhibit rule source, such as InfoInhibitor, excepted), and carry
 the critical-over-warning and InfoInhibitor inhibit rules. A receiver URL on a cluster Service must
 name a Service that the same overlay renders, so a local route never points at a missing host.
 Every namespace that holds a Kustomization, HelmRelease, GitRepository, OCIRepository or
@@ -40,7 +41,6 @@ FLUX_KINDS = ("Kustomization", "HelmRelease", "GitRepository", "OCIRepository", 
 FLUX_ALERT_API = "notification.toolkit.fluxcd.io/"
 TENANT_ALERT_SEVERITIES = ("error", "info")
 WATCHDOG = ("alertname", "=", "Watchdog")
-INFO_INHIBITOR = ("alertname", "=", "InfoInhibitor")
 MATCHER = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(=~|!~|!=|=)\s*"?(.*?)"?\s*$')
 RELEVANT_KINDS = re.compile(
     rf"^kind: (Alertmanager|Secret|Service|Alert|{'|'.join(FLUX_KINDS)})$", re.M
@@ -102,6 +102,11 @@ def delivering_receivers(config: dict) -> tuple[set[str], set[str]]:
     return names, delivering
 
 
+def is_inhibitor_route(route: dict, inhibitors: set[Matcher]) -> bool:
+    matchers = route_matchers(route)
+    return len(matchers) == 1 and matchers <= inhibitors
+
+
 def walk_routes(route: dict, inherited: str, path: str) -> Iterator[tuple[str, str, dict]]:
     receiver = str(route.get("receiver") or inherited)
     yield path, receiver, route
@@ -109,16 +114,26 @@ def walk_routes(route: dict, inherited: str, path: str) -> Iterator[tuple[str, s
         yield from walk_routes(child, receiver, f"{path}.routes[{index}]")
 
 
+def inhibitor_matchers(config: dict) -> set[Matcher]:
+    return {
+        matcher
+        for rule in config.get("inhibit_rules") or []
+        for matcher in parse_matchers(rule.get("source_matchers") or [])
+        if matcher[0] == "alertname" and matcher[1] == "="
+    }
+
+
 def route_problems(config: dict, source: str) -> list[str]:
     root = config.get("route")
     if not isinstance(root, dict):
         return [f"{source}: has no route"]
     names, delivering = delivering_receivers(config)
+    inhibitors = inhibitor_matchers(config)
     problems = []
     for path, receiver, route in walk_routes(root, "", "route"):
         if receiver not in names:
             problems.append(f"{source}: {path} uses undefined receiver {receiver!r}")
-        elif receiver not in delivering and route_matchers(route) != {INFO_INHIBITOR}:
+        elif receiver not in delivering and not is_inhibitor_route(route, inhibitors):
             problems.append(
                 f"{source}: {path} sends alerts to receiver {receiver!r}, which has no integration"
             )

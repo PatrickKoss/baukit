@@ -306,6 +306,13 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: kured
+        # protect-tenant-metrics-proxy keeps these labels to the platform-owned proxy.
+        - namespaceSelector:
+            matchLabels:
+              baukit.dev/tenant: "true"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tenant-metrics-proxy
       ports:
         - protocol: TCP
           port: 9090

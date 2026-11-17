@@ -754,10 +754,14 @@ by then ride along).
 - [x] **RF21 Host clashes through HostRegexp and HostSNI (P-10).** Done (0.26.4): host arguments are
   normalised and compared across IngressRoutes, IngressRouteTCPs and Ingresses; `HostRegexp`,
   `HostSNIRegexp` and `HostSNI(`*`)` are denied in tenant namespaces.
-- [ ] **RF22 Bare metric names in tenant queries.** `restrict-tenant-metric-templates` cannot see a
+- [x] **RF22 Bare metric names in tenant queries.** `restrict-tenant-metric-templates` cannot see a
   bare metric name such as `sum(up)` without a PromQL parser, so a tenant canary query can still read
   other tenants' series (as a pass/fail result). Put prom-label-proxy with the namespace enforced in
   front of the provider address tenant MetricTemplates may use.
+  Done: `components/tenant` ships `tenant-metrics-proxy` (prom-label-proxy 0.16.2, `-label-value`
+  from the Namespace name, `-error-on-replace`); tenant MetricTemplates must use it, tenant Canaries
+  may not use inline queries or other namespaces' templates, and `protect-tenant-metrics-proxy` keeps
+  the tenant from changing or exec-ing into the proxy. leitbild must switch its MetricTemplate address.
 - [x] **RF23 platform-local adopts FA6.** The audit webhook flags apply only when the lifecycle creates
   the cluster, so platform-local sends no audit events until `down --delete` and `up`. That drops its
   data; schedule it with the user.
@@ -784,11 +788,26 @@ by then ride along).
   ServiceMonitor target has, so the recreated platform-local fired for 31 platform targets.
   Done (0.26.7): they require `product`, which only the baukit-app ServiceMonitor sets; a promtool
   case keeps them quiet for platform targets.
-- [ ] **RF28 Alertmanager "crashlooping" on WSL.** On platform-local `process_start_time_seconds` of
+- [x] **RF28 Alertmanager "crashlooping" on WSL.** On platform-local `process_start_time_seconds` of
   alertmanager, its config-reloader and Prometheus advances with wall time (the process always looks
-  about 1060 s old) although nothing restarts and the host's `btime` is stable, so the upstream
-  `AlertmanagerClusterCrashlooping` fires. Find the kernel-side cause on WSL2 before deciding between
-  a local-only inhibition with a reason and leaving it.
+  about 1060 s old) although nothing restarts, so the upstream `AlertmanagerClusterCrashlooping`
+  fires. Cause: btime is not stable. The WSL2 kernel's wall clock runs ahead of `CLOCK_BOOTTIME` and
+  the kernel computes btime as wall minus boot time per read, so btime grows in 1 s steps
+  (`delta(node_boot_time_seconds[1h])` = 207 s, 16 changes per 10 min). `/proc/1/stat` field 22 of
+  alertmanager stays 2469727 and `timens_offsets` are zero. All 29 scraped jobs show the drift, and
+  only `AlertmanagerClusterCrashlooping` reads `process_start_time_seconds`. Baukit cannot change the
+  WSL2 clock. Fix: the platform pack's `wsl` component (local overlay only) adds
+  `BaukitWslStartTimeDriftInhibitor`, which inhibits that alert per namespace and service and goes
+  silent when a container restarts, the start time jumps more than 150 s in 10 min, or btime is
+  stable. Runbook `docs/runbooks/platform/wsl-start-time-drift.md`.
+- [x] **RF29 Image allowlist expires 2026-12-12.** All 49 allowlist entries expired on one date.
+  Done (0.27.0): every platform component, tool and template image moved to its newest stable
+  version and digest (kube-prometheus-stack 93.3.1, Loki chart 21.3.1, rustfs, aws-cli, whoami,
+  nginx 1.31.8, alpine 3.24.4, Rust 1.100.0, Keycloak 26.8.2, rebuilt digests). A fresh Trivy DB
+  dropped redis 6.2 and the web Dockerfile's DS-0002 (template sets `USER 101`). Findings without an
+  upstream fix expire 2027-01-16. ClickHouse 22.8, postgres 14 and redis 6.2 stay on PostHog
+  1.43.1's lines although newer majors would fix some findings; they move with the PostHog
+  replacement.
 
 ## Verification per change
 
@@ -1509,3 +1528,13 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   Initialized with primaries serving.
 - The fresh cluster showed RF27 (fixed in 0.26.7) and RF28. `PrometheusMissingRuleEvaluations` pends
   after single misses that hit every group at once under host load 25 to 40; not a rule problem.
+
+### 2026-11-17 09:30
+
+- 0.27.0 bundles RF22 (per-tenant prom-label-proxy, tenant MetricTemplates must target it; new
+  policies `restrict-tenant-canaries` and `protect-tenant-metrics-proxy`), RF28 (WSL2 btime drift:
+  `/proc/stat` btime grows about 200 s per hour, local-only inhibition that a real restart lifts) and
+  RF29 (newest pins, allowlist to 2027-01-16). platform-local had `BaukitBuildInfoAbsent` clear on
+  v0.26.7.
+- Every plan item except RF25 (Hetzner, uncertain, may be removed) is done. leitbild must point its
+  MetricTemplates at `tenant-metrics-proxy` after platform-infra pins 0.27.0.

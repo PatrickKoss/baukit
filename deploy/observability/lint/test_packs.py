@@ -169,7 +169,7 @@ class PlatformChartTests(unittest.TestCase):
         )
 
     def test_one_prometheus_rule_per_rule_file_with_runbook_urls(self) -> None:
-        result = self.render()
+        result = self.render("--set", "components.wsl=true")
         self.assertEqual(result.returncode, 0, result.stderr)
         rule_files = sorted((PLATFORM_PACK / "alerts").glob("*.yml"))
         rule_files += sorted((PLATFORM_PACK / "recording-rules").glob("*.yml"))
@@ -178,6 +178,11 @@ class PlatformChartTests(unittest.TestCase):
             "runbook_url: https://runbooks.test/platform/platform-target-down", result.stdout
         )
         self.assertNotIn("RUNBOOK_BASE_URL", result.stdout)
+
+    def test_wsl_rules_render_only_when_enabled(self) -> None:
+        result = self.render()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("BaukitWslStartTimeDriftInhibitor", result.stdout)
 
     def test_a_disabled_component_renders_nothing(self) -> None:
         result = self.render("--set", "components.platform=false")

@@ -6,8 +6,9 @@ metadata:
 spec:
   description: >-
     Every Kyverno policy in Deny mode rejects its violating manifest with an error that names the policy
-    and admits its compliant one. Each cases/<policy>/ holds deny.yaml, admit.yaml and an optional
-    setup.yaml that is created first. Manifests go through server-side dry run, so only setup objects
+    and admits its compliant one. Each cases/<policy>/ holds deny.yaml, admit.yaml, an optional
+    setup.yaml that is created first and an optional file as naming the user both manifests are
+    sent as. Manifests go through server-side dry run, so only setup objects
     persist, and those are deleted at the end. test_admission_cases.py checks that the case
     directories match the Deny policies.
   timeouts:
@@ -24,14 +25,18 @@ spec:
                 if [ -f "$dir/setup.yaml" ]; then
                   kubectl apply -f "$dir/setup.yaml" >/dev/null
                 fi
-                if output=$(kubectl apply --dry-run=server -f "$dir/deny.yaml" 2>&1); then
+                set --
+                if [ -f "$dir/as" ]; then
+                  set -- "--as=$(cat "$dir/as")"
+                fi
+                if output=$(kubectl apply "$@" --dry-run=server -f "$dir/deny.yaml" 2>&1); then
                   echo "$policy: violating manifest was admitted"
                   failed=1
                 elif ! printf '%s\n' "$output" | grep -Fq "Policy $policy failed:"; then
                   echo "$policy: rejected, but not by this policy: $output"
                   failed=1
                 fi
-                if ! output=$(kubectl apply --dry-run=server -f "$dir/admit.yaml" 2>&1); then
+                if ! output=$(kubectl apply "$@" --dry-run=server -f "$dir/admit.yaml" 2>&1); then
                   echo "$policy: compliant manifest was rejected: $output"
                   failed=1
                 fi

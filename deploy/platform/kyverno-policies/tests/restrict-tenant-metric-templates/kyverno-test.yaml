@@ -12,16 +12,16 @@ results:
   - isValidatingPolicy: true
     policy: restrict-tenant-metric-templates
     kind: MetricTemplate
-    resources: [platform-address, default-address, leitbild-like, compact-filter]
+    resources: [own-proxy, leitbild-like]
     result: pass
   - isValidatingPolicy: true
     policy: restrict-tenant-metric-templates
     kind: MetricTemplate
-    resources: [foreign-address, foreign-provider, no-filter, one-unfiltered, bare-range,
-      other-namespace, lookalike-label, no-selector]
+    resources: [platform-prometheus, default-address, other-tenant-proxy, short-proxy-name,
+      external-url, proxy-with-secret, foreign-provider]
     result: fail
   - isValidatingPolicy: true
     policy: restrict-tenant-metric-templates
     kind: MetricTemplate
-    resources: [platform-foreign, platform-unfiltered]
+    resources: [platform-foreign]
     result: skip
