@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Mobile QA: saving a quick-boot snapshot now deletes the qcow2 snapshot tags of pruned snapshots through the saving emulator's console (`emu avd snapshot delete`). Pruning used to delete only `snapshots/<name>`, so every tag and its VM state stayed in the AVD's overlays: the shared `baukit-native-qa` AVD had 32 tags, a 9.5 GB userdata overlay and a 2.3 GB cache overlay that each `-read-only` launch copies into the emulator temp directory. Existing overlays keep their size, and freed clusters are reused.
+
 ## [0.27.4] - 2026-11-17
 
 - Generated backends ignore RUSTSEC-2026-0543 (chrono unmaintained, no fix) in `osv-scanner.toml` until 2027-02-15 and in `backend/deny.toml`, like baukit itself. The jiff migration is RF30 in docs/platform-hardening-plan.md.

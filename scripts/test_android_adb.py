@@ -548,6 +548,28 @@ class AndroidSnapshotTests(unittest.TestCase):
             ],
         )
 
+    def test_stale_tags_are_baukit_tags_without_a_snapshot_directory(self):
+        avd = self.root / "test-qa.avd"
+        self.snapshot(avd, "baukit-clean-bbbbbbbbbbbb")
+        self.snapshot(avd, "baukit-clean-dddddddddddd")
+        listing = (
+            "List of snapshots present on all disks:\n"
+            "ID        TAG                 VM SIZE                DATE       VM CLOCK\n"
+            "--        baukit-clean-aaaaaaaaaaaa    68M 2026-11-03 11:08:12   00:03:09.504\n"
+            "--        baukit-clean-bbbbbbbbbbbb    68M 2026-11-04 13:54:29   00:01:15.416\n"
+            "--        baukit-clean-cccccccccccc    68M 2026-11-05 00:59:34   00:00:59.652\n"
+            "--        baukit-clean-dddddddddddd    68M 2026-11-06 08:54:34   00:01:17.943\n"
+            "--        baukit-clean-eeeeeeeeeeee    68M 2026-11-07 02:54:01   00:00:47.639\n"
+            "--        default_boot    68M 2026-11-07 23:13:25   00:00:42.868\n"
+            "OK\n"
+        )
+        self.assertEqual(
+            android_adb.stale_snapshot_tags(
+                listing, avd, "baukit-clean-eeeeeeeeeeee", {"baukit-clean-cccccccccccc"}
+            ),
+            ["baukit-clean-aaaaaaaaaaaa"],
+        )
+
     def test_loaded_snapshots_reads_emulator_command_lines_for_the_avd(self):
         proc = self.root / "proc"
         for pid, args in (
