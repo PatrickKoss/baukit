@@ -179,6 +179,93 @@ spec:
                     echo "waiting for PostgreSQL compatibility service"
                     sleep 1
                   done
+          # Chart 30.46.0 renders this Helm hook without the grafana, loki and promtail guard its pre twin
+          # has. It only echoes the release revision for Grafana annotations, which this platform has no use for.
+          - target:
+              group: batch
+              version: v1
+              kind: Job
+              name: posthog-grafana-annotation-job-post-.*
+            patch: |-
+              $patch: delete
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                name: grafana-annotation-job-post
+          - target:
+              group: batch
+              version: v1
+              kind: Job
+              name: posthog-migrate-.*
+            patch: |-
+              - op: add
+                path: /spec/template/spec/securityContext
+                value:
+                  runAsNonRoot: true
+                  runAsUser: 999
+                  runAsGroup: 1000
+                  seccompProfile: {type: RuntimeDefault}
+              - op: add
+                path: /spec/template/spec/containers/0/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  capabilities: {drop: [ALL]}
+              - op: add
+                path: /spec/template/spec/initContainers/0/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  capabilities: {drop: [ALL]}
+              - op: add
+                path: /spec/template/spec/initContainers/0/resources
+                value:
+                  requests: {cpu: 5m, memory: 8Mi}
+                  limits: {cpu: 50m, memory: 32Mi}
+          # The posthog image runs as posthog (uid 999, gid 1000) and busybox nc needs no privilege, so
+          # every container passes the restricted profile. The chart cannot set init container fields.
+          - target:
+              group: apps
+              version: v1
+              kind: Deployment
+              name: posthog-(web|events|plugins)
+            patch: |-
+              - op: add
+                path: /spec/template/spec/securityContext
+                value:
+                  runAsNonRoot: true
+                  runAsUser: 999
+                  runAsGroup: 1000
+                  seccompProfile: {type: RuntimeDefault}
+              - op: add
+                path: /spec/template/spec/containers/0/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  capabilities: {drop: [ALL]}
+              - op: add
+                path: /spec/template/spec/initContainers/0/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  capabilities: {drop: [ALL]}
+              - op: add
+                path: /spec/template/spec/initContainers/0/resources
+                value:
+                  requests: {cpu: 5m, memory: 8Mi}
+                  limits: {cpu: 50m, memory: 32Mi}
+          - target:
+              group: apps
+              version: v1
+              kind: Deployment
+              name: posthog-(web|plugins)
+            patch: |-
+              - op: add
+                path: /spec/template/spec/initContainers/1/securityContext
+                value:
+                  allowPrivilegeEscalation: false
+                  capabilities: {drop: [ALL]}
+              - op: add
+                path: /spec/template/spec/initContainers/1/resources
+                value:
+                  requests: {cpu: 10m, memory: 192Mi}
+                  limits: {cpu: 500m, memory: 512Mi}
           - target:
               group: apps
               version: v1

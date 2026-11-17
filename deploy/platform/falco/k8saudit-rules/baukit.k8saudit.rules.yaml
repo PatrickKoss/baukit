@@ -13,7 +13,8 @@
 
 # Platform controllers that read Secrets by design, measured from the audit log of a full local
 # platform on 2026-11-16. CNPG gives each cluster instance a service account that reads the cluster's
-# own Secrets in postgres. Overlays append their own with `override: condition: append`.
+# own Secrets in postgres. Flagger gets the Secrets a canary target references to copy them for the
+# primary workload; it never lists or watches them and never reads platform namespaces. Overlays append their own with `override: condition: append`.
 - macro: baukit_expected_secret_reader
   condition: >-
     (ka.user.name startswith "system:serviceaccount:flux-system:" or
@@ -23,7 +24,10 @@
      ka.user.name startswith "system:serviceaccount:cnpg-system:" or
      ka.user.name startswith "system:serviceaccount:observability:" or
      ka.user.name startswith "system:serviceaccount:traefik:" or
-     (ka.user.name startswith "system:serviceaccount:postgres:" and ka.target.namespace=postgres))
+     (ka.user.name startswith "system:serviceaccount:postgres:" and ka.target.namespace=postgres) or
+     (ka.user.name = "system:serviceaccount:flagger-system:flagger" and ka.verb = get and
+      not ka.target.namespace in (flagger-system, flux-system, kube-system, kyverno, cert-manager,
+                                  cnpg-system, observability, traefik, postgres, falco, posthog)))
 
 # GitOps applies RBAC through Flux; k3s writes its own bindings at start.
 - macro: baukit_expected_rbac_writer
