@@ -2,7 +2,7 @@
 
 ## Meaning
 
-Prometheus has no `up` series with a `service` label at all, for 5 minutes. No product target is
+Prometheus has no `up` series with both a `product` and a `service` label, for 5 minutes. No product target is
 being discovered. This is a discovery problem, not one broken pod.
 
 ## Impact

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.26.7] - 2026-11-17
+
+- The app pack's `BaukitServiceScrapeDown`, `BaukitServiceTargetsAbsent` and `BaukitBuildInfoAbsent` select `up{product!="", service!=""}`. Every ServiceMonitor target carries `service`, so `BaukitBuildInfoAbsent` fired for about 30 platform targets (coredns, kubelet, grafana, loki and others). Only the baukit-app chart's relabeling sets `product`. promtool cases cover a platform target with `service` and no `product`.
+
 ## [0.26.6] - 2026-11-17
 
 - Flagger sets `includeLabelPrefix: "app.kubernetes.io/,baukit.dev/"`. Flagger 1.45.0 copies a target Deployment's labels onto the `-primary` Deployment only for prefixes in `-include-label-prefix`, and the default copies none. In a tenant namespace Kyverno `require-baukit-labels` then denied every primary, so each tenant Canary stayed in `Initializing`.

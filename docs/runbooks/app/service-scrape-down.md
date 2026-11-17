@@ -15,7 +15,7 @@ down. A scrape that fails because the pod is gone usually comes with user-visibl
 Which targets are down:
 
 ```promql
-up{service!=""} == 0
+up{product!="", service!=""} == 0
 ```
 
 Pod state behind the `instance` label:
