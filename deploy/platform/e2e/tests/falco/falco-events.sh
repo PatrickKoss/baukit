@@ -6,11 +6,12 @@ usage() {
   cat >&2 <<USAGE
 usage: ${0##*/} --source falco|loki --since RFC3339 --min-priority PRIORITY
        [--rule RULE] [--namespace NAMESPACE] [--process NAME] [--pod NAME] [--exclude-pod PREFIX]... [--kubernetes-only true]
+       [--node-container-id ID]...
 USAGE
   exit 2
 }
 
-source_name="" since="" min_priority="" rule="" namespace="" process="" pod="" exclude_pods="" kubernetes_only=""
+source_name="" since="" min_priority="" rule="" namespace="" process="" pod="" exclude_pods="" kubernetes_only="" node_container_ids=""
 while (($# > 0)); do
   [[ $# -ge 2 ]] || usage
   case $1 in
@@ -23,6 +24,7 @@ while (($# > 0)); do
     --pod) pod=$2 ;;
     --exclude-pod) exclude_pods+="$2"$'\n' ;;
     --kubernetes-only) kubernetes_only=$2 ;;
+    --node-container-id) node_container_ids+="$2"$'\n' ;;
     *) usage ;;
   esac
   shift 2
@@ -62,12 +64,14 @@ case $source_name in
 esac
 
 "$lines" | MIN_PRIORITY=$min_priority RULE=$rule NAMESPACE=$namespace PROCESS=$process POD=$pod \
-  EXCLUDE_PODS=$exclude_pods KUBERNETES_ONLY=$kubernetes_only python3 -c '
+  EXCLUDE_PODS=$exclude_pods KUBERNETES_ONLY=$kubernetes_only \
+  NODE_CONTAINER_IDS=$node_container_ids python3 -c '
 import json, os, sys
 order = ["Debug", "Informational", "Notice", "Warning", "Error", "Critical", "Alert", "Emergency"]
 floor = order.index(os.environ["MIN_PRIORITY"])
 rule, namespace, process = os.environ["RULE"], os.environ["NAMESPACE"], os.environ["PROCESS"]
 excluded = tuple(prefix for prefix in os.environ["EXCLUDE_PODS"].splitlines() if prefix)
+nodes = {node for node in os.environ["NODE_CONTAINER_IDS"].splitlines() if node}
 for line in sys.stdin:
     try:
         event = json.loads(line)
@@ -82,7 +86,8 @@ for line in sys.stdin:
     fields = event.get("output_fields") or {}
     if namespace and fields.get("k8s.ns.name") != namespace:
         continue
-    if os.environ["KUBERNETES_ONLY"] and not fields.get("k8s.ns.name"):
+    on_node = fields.get("container.id") in nodes
+    if os.environ["KUBERNETES_ONLY"] and not fields.get("k8s.ns.name") and not on_node:
         continue
     if process and fields.get("proc.name") != process:
         continue

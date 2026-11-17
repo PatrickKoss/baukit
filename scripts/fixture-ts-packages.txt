@@ -1,0 +1,20 @@
+# @baukit/* packages that generated fixtures import. scripts/build-fixture-ts-packages.sh
+# builds each one with its workspace dependencies.
+@baukit/a11y-core
+@baukit/analytics-core
+@baukit/analytics-posthog-native
+@baukit/api-runtime
+@baukit/auth-native
+@baukit/auth-node
+@baukit/auth-web
+@baukit/csp
+@baukit/data-contracts
+@baukit/data-contracts-expo-sqlite
+@baukit/localization-core
+@baukit/navigation
+@baukit/preferences-core
+@baukit/purchases-core
+@baukit/purchases-revenuecat
+@baukit/pwa-web
+@baukit/type-guards
+@baukit/ui-tokens

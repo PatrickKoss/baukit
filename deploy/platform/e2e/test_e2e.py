@@ -848,10 +848,34 @@ class FalcoEventsTests(unittest.TestCase):
         cluster_only = self.rules(self.query("falco", "Warning", "--kubernetes-only", "true"))
         self.assertEqual(cluster_only, [SHADOW_RULE, SHADOW_RULE, SHELL_RULE])
 
-    def test_only_the_persistent_profile_relaxes_the_noise_check(self):
+    def test_node_container_ids_keep_this_clusters_node_events(self):
+        foreign_rule, node_rule = "Drop and execute new binary in container", "Fileless execution"
+        foreign = falco_event("Critical", foreign_rule, None, "check")
+        foreign["output_fields"]["container.id"] = "e0061c7e0721"
+        node = falco_event("Critical", node_rule, None, "k3s")
+        node["output_fields"]["container.id"] = "5bde0017ed33"
+        self.EVENTS = [*FalcoEventsTests.EVENTS, foreign, node]
+        scoped = self.query(
+            "falco",
+            "Warning",
+            "--kubernetes-only",
+            "true",
+            "--node-container-id",
+            "5bde0017ed33",
+            "--exclude-pod",
+            "shadow-reader",
+        )
+        self.assertEqual(self.rules(scoped), [SHELL_RULE, node_rule])
+
+    def test_noise_check_scopes_events_to_this_cluster(self):
         chainsaw = (E2E / "tests/falco/chainsaw-test.yaml").read_text()
         step = chainsaw.split("name: no-warning-events-outside-the-triggers", 1)[1]
-        self.assertEqual(step.count("--kubernetes-only true"), 1)
+        step = step.split("- name:", 1)[0]
+        self.assertIn('scope="--kubernetes-only true"', step)
+        self.assertIn("--exclude-pod netpol-probe- $scope)", step)
+        cluster = "${BAUKIT_E2E_CLUSTER:-baukit-platform-e2e}"
+        self.assertIn(f'docker ps -q --filter "label=k3d.cluster={cluster}"', step)
+        self.assertIn('scope="$scope --node-container-id $node"', step)
         self.assertIn("case ${BAUKIT_E2E_PROFILE:-} in\n                persistent)", step)
         self.assertNotIn("BAUKIT_E2E_PROFILE", (E2E / "run.sh").read_text())
 

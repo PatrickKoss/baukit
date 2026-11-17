@@ -278,6 +278,22 @@ def prune_snapshots(avd_dir: Path, keep: str, loaded: set[str]) -> int:
     return 0
 
 
+def stale_snapshot_tags(listing: str, avd_dir: Path, keep: str, loaded: set[str]) -> list[str]:
+    """Names of baukit qcow2 snapshot tags whose snapshot directory was pruned.
+
+    `listing` is `emu avd snapshot list` output. Deleting only the directory leaves the tag and
+    its VM state in every qcow2 overlay, and a read-only launch copies those overlays.
+    """
+    tags = {fields[1] for line in listing.splitlines() if len(fields := line.split()) > 1}
+    return sorted(
+        tag
+        for tag in tags
+        if tag.startswith(SNAPSHOT_PREFIX)
+        and tag not in {keep, *loaded}
+        and not (avd_dir / "snapshots" / tag).is_dir()
+    )
+
+
 def attached(adb: str, serial: str, timeout: float) -> int:
     try:
         result = run_command(
@@ -464,6 +480,13 @@ def prune_snapshots_mode(_probe_timeout: float) -> int:
     return prune_snapshots(Path(sys.argv[2]), sys.argv[3], loaded_snapshots(sys.argv[4]))
 
 
+def stale_snapshot_tags_mode(_probe_timeout: float) -> int:
+    avd_dir, keep, avd_name = Path(sys.argv[2]), sys.argv[3], sys.argv[4]
+    for tag in stale_snapshot_tags(sys.stdin.read(), avd_dir, keep, loaded_snapshots(avd_name)):
+        print(tag)
+    return 0
+
+
 def attached_mode(probe_timeout: float) -> int:
     return attached(sys.argv[2], sys.argv[3], probe_timeout)
 
@@ -477,6 +500,7 @@ MODES = dict(
         timed_mode("--settle", "BAUKIT_QA_SETTLE_TIMEOUT_SECONDS", DEFAULT_SETTLE_TIMEOUT, settle),
         ("--snapshot-name", snapshot_name_mode),
         ("--prune-snapshots", prune_snapshots_mode),
+        ("--stale-snapshot-tags", stale_snapshot_tags_mode),
         timed_mode(
             "--wait-for-wifi-route",
             "BAUKIT_QA_WIFI_TIMEOUT_SECONDS",

@@ -328,6 +328,15 @@ lock_snapshot() {
   python3 -c 'import fcntl; fcntl.flock(9, fcntl.LOCK_EX)'
 }
 
+delete_stale_snapshot_tags() {
+  local listing tag
+  listing="$(adb_bounded -s "$serial" emu avd snapshot list)" || return
+  while IFS= read -r tag; do
+    adb_bounded -s "$serial" emu avd snapshot delete "$tag" >/dev/null || return
+    echo "qa: deleted stale qcow2 snapshot tag $tag"
+  done < <(printf '%s\n' "$listing" | python3 "$root/mobile/scripts/qa/android-adb.py" --stale-snapshot-tags "$avd_dir" "$snapshot_name" "$avd_name")
+}
+
 save_snapshot() {
   launch_emulator 0
   await_emulator "$serial"
@@ -339,6 +348,7 @@ save_snapshot() {
   touch "$snapshot_ready"
   echo "qa: saved quick-boot snapshot $snapshot_name"
   python3 "$root/mobile/scripts/qa/android-adb.py" --prune-snapshots "$avd_dir" "$snapshot_name" "$avd_name"
+  delete_stale_snapshot_tags
   if ((emulator_count > 1)); then
     adb_bounded -s "$serial" emu kill >/dev/null
     python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-stop "$adb" "$serial" "$(emulator_pid "$serial")"
