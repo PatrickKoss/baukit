@@ -5,6 +5,11 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.26.7
+
+Last verified release train: `v0.26.7` (patch train on top of `v0.26.6`). No component versions change.
+- The app readiness alerts (`BaukitServiceScrapeDown`, `BaukitServiceTargetsAbsent`, `BaukitBuildInfoAbsent`) select only targets with a `product` label, which the baukit-app ServiceMonitor sets. Products that scrape apps with their own ServiceMonitor must add `product`, `service` and `environment` relabelings.
+
 ## v0.26.6
 
 Last verified release train: `v0.26.6` (patch train on top of `v0.26.5`). No component versions change.

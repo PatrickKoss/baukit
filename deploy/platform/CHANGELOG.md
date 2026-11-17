@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.26.7] - 2026-11-17
+
 - The app pack's `BaukitServiceScrapeDown`, `BaukitServiceTargetsAbsent` and `BaukitBuildInfoAbsent` select `up{product!="", service!=""}`. Every ServiceMonitor target carries `service`, so `BaukitBuildInfoAbsent` fired for about 30 platform targets (coredns, kubelet, grafana, loki and others). Only the baukit-app chart's relabeling sets `product`. promtool cases cover a platform target with `service` and no `product`.
 
 ## [0.26.6] - 2026-11-17
