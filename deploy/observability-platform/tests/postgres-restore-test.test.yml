@@ -2,9 +2,11 @@ rule_files:
   - ../alerts/cnpg.rules.yml
 evaluation_interval: 10m
 tests:
-  - name: a missing restore proof fires BaukitPostgresRestoreTestStale after 1h
+  - name: a missing restore proof on a cluster older than 35 days fires after 1h
     interval: 5m
     input_series:
+      - series: 'kube_cronjob_created{namespace="postgres",cronjob="postgres-restore-test"}'
+        values: '-3024000x30'
       - series: 'cnpg_collector_up{cluster="postgres-cluster",namespace="postgres",pod="postgres-cluster-1"}'
         values: '1x30'
     alert_rule_test:
@@ -20,7 +22,8 @@ tests:
             exp_annotations:
               summary: The PostgreSQL restore test has not succeeded in 35 days
               description: >-
-                The monthly recovery proof is absent or older than 35 days. Check
+                The monthly recovery proof is older than 35 days, or absent although the CronJob
+                exists for longer than that. Check
                 the postgres-restore-test CronJob and the CNPG backup object store.
               runbook_url: RUNBOOK_BASE_URL/postgres-restore-test-stale
   - name: a proof older than 35 days fires and a 34-day-old proof stays quiet
@@ -43,13 +46,23 @@ tests:
             exp_annotations:
               summary: The PostgreSQL restore test has not succeeded in 35 days
               description: >-
-                The monthly recovery proof is absent or older than 35 days. Check
+                The monthly recovery proof is older than 35 days, or absent although the CronJob
+                exists for longer than that. Check
                 the postgres-restore-test CronJob and the CNPG backup object store.
               runbook_url: RUNBOOK_BASE_URL/postgres-restore-test-stale
   - name: a fresh proof stays quiet
     interval: 5m
     input_series:
       - series: 'baukit_restore_test_last_success_timestamp_seconds{cluster="postgres-cluster",job="restore-test-pushgateway"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: BaukitPostgresRestoreTestStale
+        exp_alerts: []
+  - name: a missing restore proof on a fresh cluster stays quiet
+    interval: 5m
+    input_series:
+      - series: 'kube_cronjob_created{namespace="postgres",cronjob="postgres-restore-test"}'
         values: '0x30'
     alert_rule_test:
       - eval_time: 2h

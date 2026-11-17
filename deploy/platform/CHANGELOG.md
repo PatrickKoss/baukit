@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.27.3] - 2026-11-17
+
+- `BaukitCnpgWalArchiveStale` no longer fires on an idle database. It needs the last archival older than 15 minutes and WAL waiting for it: a pending `.ready` file (`cnpg_collector_pg_wal_archive_status{value="ready"}`) or a failed attempt newer than the last success. PostgreSQL skips the `archive_timeout` switch when nothing was written, so platform-local fired with `failed_count` 0 and an empty archive queue.
+- `BaukitPostgresRestoreTestStale` counts a missing restore proof only once `kube_cronjob_created` for `postgres/postgres-restore-test` is older than 35 days. A recreated cluster fired for up to a month before the first monthly run. A stale proof, and a missing one on an older cluster, still fire.
+- Falco `Baukit secret read by unexpected service account` lets `flagger-system:flagger` get Secrets outside the platform namespaces. Flagger reads the Secrets a canary target references to copy them for the `-primary` workload, and on platform-local it was the only service account that fired the rule in 12 h (203 gets on `leitbild-runtime`). A list or watch by Flagger, or a get in a platform namespace, still fires. A replay test covers both cases.
+- PostHog web, events and plugins pass the restricted Kyverno policies. A post-renderer patch sets the pod to `runAsNonRoot` as uid 999 and gid 1000, the `posthog` user the image already runs as, with seccomp `RuntimeDefault`. Every container, init containers included, drops `ALL` capabilities and disallows privilege escalation. The `wait-for-service-dependencies` and `wait-for-migrations` init containers get requests and limits, which the chart cannot set. The `posthog-migrate-*` hook Job gets the same pod and container settings and init container resources. The post-renderer drops the `posthog-grafana-annotation-job-post-*` hook Job: chart 30.46.0 renders it without the Grafana, Loki and Promtail guard its pre twin has, no value turns it off, and it only echoes the Helm revision for Grafana annotations the platform does not use.
+
 ## [0.27.2] - 2026-11-17
 
 - `Job/postgres/rustfs-create-bucket` carries `kustomize.toolkit.fluxcd.io/force: enabled`. The 0.27.0 aws-cli bump changed its immutable pod template, Flux failed to apply it on running clusters, and every Kustomization depending on local-foundation stalled. Flux now deletes and recreates the Job, which is idempotent. New convention rule `flux-job-force` requires that annotation on every `batch/v1` Job that Flux applies from a base or overlay. Jobs rendered by Helm charts are exempt.

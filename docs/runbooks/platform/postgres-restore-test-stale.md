@@ -3,7 +3,9 @@
 ## Meaning
 
 `baukit_restore_test_last_success_timestamp_seconds{cluster="postgres-cluster"}` is older than 35
-days, or absent, for one hour. The monthly `postgres-restore-test` CronJob in namespace `postgres`
+days for one hour, or absent for one hour once the `postgres-restore-test` CronJob
+(`kube_cronjob_created`) is older than 35 days. A cluster younger than that has had no scheduled run
+yet and stays quiet. The monthly `postgres-restore-test` CronJob in namespace `postgres`
 has not proved that the latest backup restores. The metric lives only in the
 `restore-test-pushgateway` pod's memory, so a restarted Pushgateway also makes it absent.
 

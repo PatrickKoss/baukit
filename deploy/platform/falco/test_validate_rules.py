@@ -96,6 +96,22 @@ RESTORE_TEST = "system:serviceaccount:postgres:postgres-restore-test"
 CNPG_OPERATOR = "system:serviceaccount:cnpg-system:cloudnative-pg"
 
 
+FLAGGER = "system:serviceaccount:flagger-system:flagger"
+
+
+def secret_event(index: int, user: str, namespace: str, verb: str) -> str:
+    event = json.loads(audit_event(index, user, namespace, "", verb))
+    event["requestURI"] = f"/api/v1/namespaces/{namespace}/secrets/s"
+    event["objectRef"] = {
+        "resource": "secrets",
+        "namespace": namespace,
+        "name": "s",
+        "apiVersion": "v1",
+    }
+    event["responseStatus"]["code"] = 200
+    return json.dumps(event)
+
+
 def audit_event(index: int, user: str, namespace: str, subresource: str, verb: str) -> str:
     timestamp = f"2026-11-16T21:00:{index:02d}Z"
     return json.dumps(
@@ -150,6 +166,31 @@ class K8sAuditReplayTest(unittest.TestCase):
         self.assertEqual(
             fired,
             [(user, namespace, subresource) for user, namespace, subresource, _ in events[2:]],
+        )
+
+    def test_flagger_gets_secrets_only_in_tenant_namespaces(self) -> None:
+        events = [
+            (FLAGGER, "leitbild-testing", "get"),
+            (FLAGGER, "leitbild-production", "get"),
+            (FLAGGER, "leitbild-testing", "list"),
+            (FLAGGER, "kube-system", "get"),
+            ("system:serviceaccount:leitbild-testing:leitbild", "leitbild-testing", "get"),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            events_file = Path(directory) / "audit.jsonl"
+            events_file.write_text(
+                "".join(secret_event(i, *event) + "\n" for i, event in enumerate(events, 1)),
+                encoding="utf-8",
+            )
+
+            result = validate(Path("--k8saudit-replay"), events_file)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        fired = [tuple(line.split("\t")[:3]) for line in result.stdout.splitlines()]
+        rule = "Baukit secret read by unexpected service account"
+        self.assertEqual(
+            fired,
+            [(rule, user, namespace) for user, namespace, _ in events[2:]],
         )
 
 
