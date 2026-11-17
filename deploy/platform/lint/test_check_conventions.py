@@ -544,6 +544,43 @@ class FluxJobForceTest(unittest.TestCase):
         self.assertEqual(violations("flux-job-force", context(job)), [])
 
 
+class DriftJobTtlTest(unittest.TestCase):
+    def release(self, mode: str | None = "enabled") -> cc.Resource:
+        spec = {} if mode is None else {"driftDetection": {"mode": mode}}
+        return resource("HelmRelease", "app", apiVersion="helm.toolkit.fluxcd.io/v2", spec=spec)
+
+    def job(self, *, ttl: bool = True, hook: bool = False) -> cc.Resource:
+        annotations = {"helm.sh/hook": "pre-install"} if hook else {}
+        spec = {"ttlSecondsAfterFinished": 300} if ttl else {}
+        obj = resource(
+            "Job", "migrate", apiVersion="batch/v1", annotations=annotations, spec=spec
+        ).obj
+        return cc.Resource(obj, "app", False, ("app", "app"))
+
+    def test_release_job_with_ttl_under_drift_detection_fails(self) -> None:
+        self.assertEqual(
+            violations("drift-job-ttl", context(self.release(), self.job())),
+            [
+                "bases: Job app/migrate is a release resource with ttlSecondsAfterFinished;"
+                " drift detection recreates it after the TTL deletes it"
+            ],
+        )
+
+    def test_hook_job_with_ttl_passes(self) -> None:
+        ctx = context(self.release(), self.job(hook=True))
+        self.assertEqual(violations("drift-job-ttl", ctx), [])
+
+    def test_release_job_without_ttl_passes(self) -> None:
+        ctx = context(self.release(), self.job(ttl=False))
+        self.assertEqual(violations("drift-job-ttl", ctx), [])
+
+    def test_release_without_drift_detection_passes(self) -> None:
+        for mode in (None, "disabled"):
+            with self.subTest(mode=mode):
+                ctx = context(self.release(mode), self.job())
+                self.assertEqual(violations("drift-job-ttl", ctx), [])
+
+
 DIGEST = "@sha256:" + "a" * 64
 
 
@@ -947,7 +984,8 @@ CONFIG = """\
 [rules]
 active = ["policy-exception-budget", "dashboards-selected", "metrics-enabled", "alert-metadata",
   "alert-runbook", "alert-tested", "rules-selected", "prune-disabled", "exporters-scraped",
-  "image-digest", "priority-class", "pdb-multi-replica", "kured-alert-filter", "flux-job-force"]
+  "image-digest", "priority-class", "pdb-multi-replica", "kured-alert-filter", "flux-job-force",
+  "drift-job-ttl"]
 [rules.pending]
 psa-labels = "N1"
 default-deny-network-policy = "N2"
@@ -1023,7 +1061,7 @@ class MainTest(unittest.TestCase):
         code, stdout, stderr = self.run_main(budget=1)
         self.assertEqual(code, 0, stderr)
         self.assertIn(
-            "Conventions: 14 active, 2 pending "
+            "Conventions: 15 active, 2 pending "
             "[default-deny-network-policy (N2): 1; psa-labels (N1): 1]",
             stdout,
         )

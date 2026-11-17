@@ -162,14 +162,6 @@ spec:
               group: batch
               version: v1
               kind: Job
-            patch: |-
-              - op: add
-                path: /spec/ttlSecondsAfterFinished
-                value: 300
-          - target:
-              group: batch
-              version: v1
-              kind: Job
               name: posthog-migrate-.*
             patch: |-
               - op: replace
