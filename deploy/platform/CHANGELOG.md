@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.26.6] - 2026-11-17
+
+- Flagger sets `includeLabelPrefix: "app.kubernetes.io/,baukit.dev/"`. Flagger 1.45.0 copies a target Deployment's labels onto the `-primary` Deployment only for prefixes in `-include-label-prefix`, and the default copies none. In a tenant namespace Kyverno `require-baukit-labels` then denied every primary, so each tenant Canary stayed in `Initializing`.
+- e2e suite `flux-tenancy` runs a Canary on a labelled tenant Deployment and checks that `<name>-primary` exists with `app.kubernetes.io/name`, `app.kubernetes.io/part-of` and `baukit.dev/process`.
+
 ## [0.26.5] - 2026-11-17
 
 - New local wrapper `overlays/local/components/flagger` composes the flagger base with `cluster-network` and `components/network-policy/node-cidr`. Before, the flagger base kept the fail-closed placeholder `192.0.2.0/32` in `allow-apiserver-egress`, so on a local cluster flagger could not reach the API server and crashlooped. Local Flux Kustomizations for flagger and flagger-metrics must point at `./deploy/platform/overlays/local/components/flagger`.

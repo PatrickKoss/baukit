@@ -5,6 +5,11 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.26.6
+
+Last verified release train: `v0.26.6` (patch train on top of `v0.26.5`). No component versions change.
+- Flagger copies `app.kubernetes.io/` and `baukit.dev/` labels onto `-primary` Deployments, so tenant Canaries pass `require-baukit-labels`.
+
 ## v0.26.5
 
 Last verified release train: `v0.26.5` (patch train on top of `v0.26.4`). No component versions change.
