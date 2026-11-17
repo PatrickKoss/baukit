@@ -4,6 +4,7 @@
 
 ## [0.28.0] - 2026-11-17
 
+- Generated `osv-scanner.toml` ignores GHSA-fc5q-39xc-vjpf (picomatch ReDoS) for web and mobile products until 2027-02-15. Every picomatch release through 4.0.7, the latest, is affected, and only build and test tooling reaches it. The ignore for GHSA-gcqx-w48m-w2h4 (deepmerge) is gone because GitHub withdrew the advisory.
 - BREAKING: baukit and generated backends use jiff 1.0 instead of chrono. Every public baukit type that held a chrono value now holds the jiff type below, with no compatibility shim. JSON stays RFC 3339 and OpenAPI stays `date-time` or `date`. jiff prints the fewest fractional second digits needed (`.5Z`, not `.500Z`). Generated backends depend on `jiff` and, for SQLx binds in tests, `jiff-sqlx`. SQLx 0.9 has no jiff feature, so bind with `jiff_sqlx::ToSqlx::to_sqlx` and decode into `jiff_sqlx::Timestamp` or `jiff_sqlx::Date`, then call `to_jiff()`. `backend/deny.toml` ignores RUSTSEC-2026-0543 only in the MCP flavor, where rmcp compiles chrono through schemars. `osv-scanner.toml` keeps the ignore for every backend because `backend/Cargo.lock` still lists chrono as serde_with's optional dependency through testcontainers.
 
   | chrono | jiff |
