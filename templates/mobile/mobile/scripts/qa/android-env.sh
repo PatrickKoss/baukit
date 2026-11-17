@@ -75,6 +75,12 @@ stop_android() {
   return "$status"
 }
 
+emulator_pid() {
+  local pid_file="$state_dir/android-emulator-${1#emulator-}.pid"
+  [[ -f "$pid_file" ]] && cat "$pid_file"
+  return 0
+}
+
 stop_emulator() {
   local owned_serial="$1" devices owned_avd expected_avd
   [[ "$owned_serial" =~ ^emulator-[0-9]+$ ]] || return 1
@@ -93,7 +99,7 @@ stop_emulator() {
     return 1
   }
   adb_bounded -s "$owned_serial" emu kill || return
-  python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-stop "$adb" "$owned_serial"
+  python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-stop "$adb" "$owned_serial" "$(emulator_pid "$owned_serial")"
 }
 
 clear_ownership() {
@@ -277,12 +283,6 @@ launch_emulator() {
   printf 'emulator-%s\n' "$port" >> "$state_dir/android-serial"
 }
 
-emulator_pid() {
-  local pid_file="$state_dir/android-emulator-${1#emulator-}.pid"
-  [[ -f "$pid_file" ]] && cat "$pid_file"
-  return 0
-}
-
 started_emulator_pids() {
   local pid_file pid
   for pid_file in "$state_dir"/android-emulator-*.pid; do
@@ -341,7 +341,7 @@ save_snapshot() {
   python3 "$root/mobile/scripts/qa/android-adb.py" --prune-snapshots "$avd_dir" "$snapshot_name" "$avd_name"
   if ((emulator_count > 1)); then
     adb_bounded -s "$serial" emu kill >/dev/null
-    python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-stop "$adb" "$serial"
+    python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-stop "$adb" "$serial" "$(emulator_pid "$serial")"
     rm -f "$state_dir/android-emulator-${serial#emulator-}.pid"
     : > "$state_dir/android-serial"
   fi

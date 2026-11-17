@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Mobile QA: `android-adb.py --wait-for-stop` takes the emulator pid and waits for that qemu process to exit. qemu closes its console port about 0.3 s after `emu kill` but keeps running for up to 20 s while it shuts down and closes the AVD's qcow2 overlays, so the cold-snapshot path in `android-env.sh` could relaunch emulators on images the saving emulator still held. `android-env.sh` passes the pid when it stops an emulator and after saving a quick-boot snapshot.
+
 ## [0.27.3] - 2026-11-17
 
 ## [0.27.2] - 2026-11-17
