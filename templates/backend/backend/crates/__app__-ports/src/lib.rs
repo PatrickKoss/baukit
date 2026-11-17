@@ -34,7 +34,7 @@ pub trait ItemRepository: Send + Sync + 'static {
     fn resolve_subject(
         &self,
         subject: String,
-        authenticated_at: Option<chrono::DateTime<chrono::Utc>>,
+        authenticated_at: Option<jiff::Timestamp>,
     ) -> PortFuture<'_, Result<InternalUser, RepositoryError>>;
 }
 

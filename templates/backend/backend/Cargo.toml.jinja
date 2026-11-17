@@ -20,7 +20,8 @@ publish = false
 
 [workspace.dependencies]
 axum = "0.8.9"
-{% if context.auth_enabled or context.platform %}chrono = "0.4.45"
+{% if context.auth_enabled or context.platform %}jiff = { version = "1.0.0", features = ["serde"] }
+jiff-sqlx = { version = "1.0.0", features = ["postgres"] }
 {% endif %}{{ context.baukit_dependencies }}
 {% if context.platform %}async-trait = "0.1.89"
 url = "2.5.8"

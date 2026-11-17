@@ -37,7 +37,7 @@ stores product data. Partial hub configuration fails validation.
 In hub mode, the API merges `POST /platform/inbound` outside user authentication.
 HMAC authenticates the raw bytes. The OpenAPI spec includes the route in both
 modes. `Extension<Entitlements>` is available to product HTTP handlers. Read with
-`entitlements.current(subject, chrono::Utc::now().timestamp()).await?`,
+`entitlements.current(subject, jiff::Timestamp::now().as_second()).await?`,
 `has_entitlement(subject, feature, now)` or `has_tier(subject, tier, now)`.
 Product code defines feature and tier meanings.
 

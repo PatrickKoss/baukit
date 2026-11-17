@@ -1,8 +1,8 @@
 [advisories]
 ignore = [
   { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is unmaintained with no patched release; reached only through testcontainers 0.28.0, used by baukit-test as test support; remove when testcontainers ships testcontainers-rs#1006" },
-  { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained (informational, all versions, no patched release); baukit's public types and sqlx/utoipa features use it; remove when the jiff migration in docs/platform-hardening-plan.md lands" },
-]
+{% if context.mcp %}  { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained (informational, all versions, no patched release); reached only through rmcp 3.9.0, which enables the schemars chrono04 feature, used by baukit-mcp; remove when rmcp drops chrono" },
+{% endif %}]
 
 [licenses]
 confidence-threshold = 0.8

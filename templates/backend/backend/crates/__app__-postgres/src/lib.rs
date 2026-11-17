@@ -198,7 +198,7 @@ impl UserRepository for PostgresUserRepository {
     fn resolve_subject(
         &self,
         subject: String,
-        authenticated_at: Option<chrono::DateTime<chrono::Utc>>,
+        authenticated_at: Option<jiff::Timestamp>,
     ) -> PortFuture<'_, Result<InternalUser, RepositoryError>> {
         Box::pin(async move {
             let mut transaction = self

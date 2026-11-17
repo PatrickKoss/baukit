@@ -1,7 +1,7 @@
 use std::{error::Error, path::PathBuf};
 
 use baukit_erasure::ProductErasure as _;
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -17,7 +17,7 @@ async fn profile_erasure_deletes_only_the_erased_subjects_browser_sessions()
     let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
     let container = baukit_test::start_postgres_with_migrations(&migrations).await?;
     let pool = PgPool::connect(container.connection_url()).await?;
-    let expires_at = Utc::now() + Duration::days(1);
+    let expires_at = Timestamp::now() + SignedDuration::from_hours(24);
     insert_session(&pool, ERASED, expires_at).await?;
     insert_session(&pool, ERASED, expires_at).await?;
     insert_session(&pool, KEPT, expires_at).await?;
@@ -39,7 +39,7 @@ async fn profile_erasure_deletes_only_the_erased_subjects_browser_sessions()
 async fn insert_session(
     pool: &PgPool,
     subject: &str,
-    expires_at: DateTime<Utc>,
+    expires_at: Timestamp,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO baukit_auth_browser_sessions (
@@ -52,7 +52,7 @@ async fn insert_session(
     .bind(Uuid::new_v4())
     .bind(subject)
     .bind(vec![0_u8; 16])
-    .bind(expires_at)
+    .bind(jiff_sqlx::Timestamp::from(expires_at))
     .execute(pool)
     .await?;
     Ok(())

@@ -10,7 +10,7 @@ workspace = true
 
 [dependencies]
 {% if context.platform %}baukit-suite = { workspace = true, features = ["platform"] }
-{% endif %}{% if context.auth_enabled %}chrono.workspace = true
+{% endif %}{% if context.auth_enabled %}jiff.workspace = true
 {% endif %}{{ context.app_crate }}-domain.workspace = true
 thiserror.workspace = true
 uuid.workspace = true

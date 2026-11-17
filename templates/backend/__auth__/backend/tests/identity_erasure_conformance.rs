@@ -70,13 +70,13 @@ impl EndpointAdapter {
         method: &str,
         path: &str,
         key: Option<&str>,
-        authenticated_at: Option<chrono::DateTime<chrono::Utc>>,
+        authenticated_at: Option<jiff::Timestamp>,
     ) -> Result<IdentityErasureResponse, TestError> {
         let mut claims = self
             .issuer
             .claims(subject, AUDIENCE, Duration::from_secs(60))?;
         if let Some(time) = authenticated_at {
-            claims = claims.claim("auth_time", time.timestamp());
+            claims = claims.claim("auth_time", time.as_second());
         }
         let token = self.issuer.mint(&claims)?;
         let mut request = Request::builder()
@@ -348,13 +348,13 @@ async fn retained_identity_reonboards_with_a_new_profile_and_rejects_old_session
         )
         .await?;
     assert_eq!(erased.status, 200);
-    let fence: chrono::DateTime<chrono::Utc> =
+    let fence: jiff::Timestamp =
         sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
             .bind(adapter.store.subject_hash("returning-subject"))
             .fetch_one(&adapter.pool)
             .await?;
     let old =
-        chrono::DateTime::from_timestamp(fence.timestamp(), 0).ok_or("old login timestamp")?;
+        jiff::Timestamp::from_second(fence.as_second()).map_err(|_| "old login timestamp")?;
     for authenticated_at in [None, Some(old)] {
         let response = adapter
             .request_with_authenticated_at(
@@ -368,8 +368,8 @@ async fn retained_identity_reonboards_with_a_new_profile_and_rejects_old_session
         assert_eq!(response.status, 401);
         assert_eq!(response.body["error"]["code"], "profile_erased");
     }
-    let fresh = chrono::DateTime::from_timestamp(fence.timestamp() + 1, 0)
-        .ok_or("fresh login timestamp")?;
+    let fresh = jiff::Timestamp::from_second(fence.as_second() + 1)
+        .map_err(|_| "fresh login timestamp")?;
     let onboarded = adapter
         .request_with_authenticated_at("returning-subject", "GET", "/me", None, Some(fresh))
         .await?;
