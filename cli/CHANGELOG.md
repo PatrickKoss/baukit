@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Fixture prebuilds (`native-android-gate`, `generated-fixture-gate.sh`, `mcp-remote-fixture.sh`) run `scripts/build-fixture-ts-packages.sh`, which builds the packages in `scripts/fixture-ts-packages.txt` with their workspace dependencies. The old hand-written lists missed `@baukit/preferences-core`, so a standalone `--step native-android` failed in Gradle on a missing `dist`.
+
 ## [0.27.4] - 2026-11-17
 
 - Generated backends ignore RUSTSEC-2026-0543 (chrono unmaintained, no fix) in `osv-scanner.toml` until 2027-02-15 and in `backend/deny.toml`, like baukit itself. The jiff migration is RF30 in docs/platform-hardening-plan.md.
