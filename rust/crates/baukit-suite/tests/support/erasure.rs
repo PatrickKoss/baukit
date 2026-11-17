@@ -3,7 +3,8 @@ use baukit_erasure::{
     ErasureError, ErasureFuture, ErasureOutcome, ErasureService, ErasureState, IdentityRetention,
     PostgresErasureStore, ProductErasure,
 };
-use chrono::DateTime;
+use jiff::SignedDuration;
+use jiff::Timestamp;
 use sqlx::PgConnection;
 
 const SUBJECT: &str = "stable-provider-subject";
@@ -139,7 +140,7 @@ impl Fixture {
     async fn onboard(
         &self,
         subject: &str,
-        authenticated_at: Option<DateTime<Utc>>,
+        authenticated_at: Option<Timestamp>,
     ) -> Result<SuiteLink, Box<dyn Error>> {
         let owner = Uuid::now_v7();
         let mut transaction = self.db.pool.begin().await?;
@@ -163,7 +164,7 @@ impl Fixture {
     async fn erase(
         &self,
         subject: &str,
-        authenticated_at: Option<DateTime<Utc>>,
+        authenticated_at: Option<Timestamp>,
         key: &str,
     ) -> Result<ErasureOutcome, ErasureError> {
         erase_with_suite(
@@ -177,9 +178,7 @@ impl Fixture {
         .await
     }
 
-    async fn reonboard(
-        &self,
-    ) -> Result<(ErasureOutcome, SuiteLink, DateTime<Utc>), Box<dyn Error>> {
+    async fn reonboard(&self) -> Result<(ErasureOutcome, SuiteLink, Timestamp), Box<dyn Error>> {
         let original = self.onboard(SUBJECT, None).await?;
         self.peer.push_response(ScriptedWebhookResponse::new(200));
         let receipt = self.erase(SUBJECT, None, FIRST_KEY).await?;
@@ -189,9 +188,10 @@ impl Fixture {
             [SUBJECT]
         );
         assert_eq!(self.peer.calls(), 1);
-        let login: DateTime<Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+        let login: jiff_sqlx::Timestamp = sqlx::query_scalar("SELECT clock_timestamp()")
             .fetch_one(&self.db.pool)
             .await?;
+        let login = login.to_jiff();
         let new_link = self.onboard(SUBJECT, Some(login)).await?;
         assert_ne!(original.user_id, new_link.user_id);
         assert_ne!(original.id, new_link.id);
@@ -242,12 +242,13 @@ async fn old_key_replay_after_reonboarding_does_not_notify_or_revoke_new_links()
 async fn fenced_login_after_reonboarding_does_not_notify_or_revoke_new_links() -> TestResult {
     let fixture = Fixture::new().await?;
     let (_, link, _) = fixture.reonboard().await?;
-    let erased_at: DateTime<Utc> =
+    let erased_at: jiff_sqlx::Timestamp =
         sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
             .bind(fixture.service.store().subject_hash(SUBJECT))
             .fetch_one(&fixture.db.pool)
             .await?;
-    let old_login = erased_at - chrono::Duration::seconds(1);
+    let erased_at = erased_at.to_jiff();
+    let old_login = erased_at - SignedDuration::from_secs(1);
     assert!(matches!(
         fixture.erase(SUBJECT, Some(old_login), NEW_KEY).await,
         Err(ErasureError::ProfileErased)

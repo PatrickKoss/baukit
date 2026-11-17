@@ -1,5 +1,6 @@
 use crate::domain::{RewardMode, SUITE_MAX_REPLAY_DAYS, SuiteLink};
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::SignedDuration;
+use jiff::{Timestamp, civil::Date};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -31,16 +32,17 @@ pub struct AuthorizationResponse {
 #[derive(Clone, Debug)]
 pub struct SuiteLinkView {
     pub link: SuiteLink,
-    pub replay_earliest: NaiveDate,
+    pub replay_earliest: Date,
 }
 
-pub fn replay_earliest(now: DateTime<Utc>) -> NaiveDate {
-    now.date_naive() - chrono::Duration::days(i64::from(SUITE_MAX_REPLAY_DAYS))
+pub fn replay_earliest(now: Timestamp) -> Date {
+    now.to_zoned_datetime(jiff::tz::TimeZone::UTC).date()
+        - SignedDuration::from_hours(24 * i64::from(SUITE_MAX_REPLAY_DAYS))
 }
 
 impl SuiteLinkView {
     #[cfg(feature = "runtime")]
-    pub(super) fn new(link: SuiteLink, now: DateTime<Utc>) -> Self {
+    pub(super) fn new(link: SuiteLink, now: Timestamp) -> Self {
         Self {
             link,
             replay_earliest: replay_earliest(now),

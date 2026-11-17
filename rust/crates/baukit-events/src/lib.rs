@@ -6,7 +6,7 @@
 #[cfg(doctest)]
 struct ReadmeDoctests;
 
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -36,7 +36,7 @@ pub struct EventEnvelope {
     /// Identity-service subject that owns the event.
     pub user_id: String,
     /// UTC instant at which the domain action occurred.
-    pub occurred_at: DateTime<Utc>,
+    pub occurred_at: Timestamp,
     /// Stable sender identifier.
     pub source_app: String,
     /// Envelope schema version.
@@ -111,7 +111,7 @@ pub struct IngestOutcome {
 pub fn validate_event_envelope(
     envelope: &EventEnvelope,
     expected_user_id: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<(), EventValidationCode> {
     if envelope.schema_version != EVENT_SCHEMA_VERSION {
         return Err(EventValidationCode::EventSchemaUnsupported);
@@ -125,7 +125,7 @@ pub fn validate_event_envelope(
     if envelope.user_id != expected_user_id {
         return Err(EventValidationCode::EventUserMismatch);
     }
-    if now.signed_duration_since(envelope.occurred_at) > TimeDelta::seconds(MAX_EVENT_AGE_SECONDS) {
+    if now.duration_since(envelope.occurred_at) > SignedDuration::from_secs(MAX_EVENT_AGE_SECONDS) {
         return Err(EventValidationCode::EventTooOld);
     }
     Ok(())

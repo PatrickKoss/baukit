@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use baukit_config::Secret;
 use baukit_erasure::ErasureService;
-use chrono::TimeDelta;
+use jiff::SignedDuration;
 
 use crate::{
     CONTRACT_VERSION, DiscoveryDocument, IdentifierType, Limits, OperationKind, ReceiptKey,
@@ -29,13 +29,13 @@ pub struct DataSubjectConfig {
     pub hash_key: Secret<String>,
     pub(super) export_product: Option<Arc<dyn DataSubjectExportProduct>>,
     /// Export part retention after completion, default seven days.
-    pub export_retention: TimeDelta,
+    pub export_retention: SignedDuration,
     /// Operation and receipt retention, default 400 days.
-    pub operation_retention: TimeDelta,
+    pub operation_retention: SignedDuration,
     /// Maximum erasure job attempts, default five.
     pub max_attempts: u32,
     /// Wait for identity deletion after local erasure, default 24 hours, at most 30 days.
-    pub identity_deletion_timeout: TimeDelta,
+    pub identity_deletion_timeout: SignedDuration,
     /// Product fence store and explicit identity retention policy, using the same database.
     pub erasure: ErasureService,
 }
@@ -58,11 +58,11 @@ impl DataSubjectConfig {
             signer,
             previous_receipt_keys: Vec::new(),
             hash_key,
-            operation_retention: TimeDelta::days(400),
+            operation_retention: SignedDuration::from_hours(24 * 400),
             export_product: None,
-            export_retention: TimeDelta::days(7),
+            export_retention: SignedDuration::from_hours(24 * 7),
             max_attempts: 5,
-            identity_deletion_timeout: TimeDelta::days(1),
+            identity_deletion_timeout: SignedDuration::from_hours(24),
             erasure,
         }
     }
@@ -93,19 +93,21 @@ impl DataSubjectConfig {
             || self.limits.max_identifier_length == 0
             || self.limits.max_export_part_bytes == 0
             || self.limits.max_export_part_bytes > i64::MAX as u64
-            || self.export_retention <= TimeDelta::zero()
-            || chrono::Utc::now()
-                .checked_add_signed(self.export_retention)
+            || self.export_retention <= SignedDuration::ZERO
+            || jiff::Timestamp::now()
+                .checked_add(self.export_retention)
+                .ok()
                 .is_none()
             || self.hash_key.expose().len() < 32
-            || self.operation_retention <= TimeDelta::zero()
-            || chrono::Utc::now()
-                .checked_add_signed(self.operation_retention)
+            || self.operation_retention <= SignedDuration::ZERO
+            || jiff::Timestamp::now()
+                .checked_add(self.operation_retention)
+                .ok()
                 .is_none()
             || self.max_attempts == 0
             || self.max_attempts > i32::MAX as u32
-            || self.identity_deletion_timeout <= TimeDelta::zero()
-            || self.identity_deletion_timeout > TimeDelta::days(30)
+            || self.identity_deletion_timeout <= SignedDuration::ZERO
+            || self.identity_deletion_timeout > SignedDuration::from_hours(24 * 30)
             || self
                 .previous_receipt_keys
                 .iter()

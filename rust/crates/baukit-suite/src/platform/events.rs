@@ -1,5 +1,6 @@
 use baukit_events::{EventEnvelope, validate_event_envelope};
-use chrono::{DateTime, Utc};
+use jiff::SignedDuration;
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 use uuid::Uuid;
@@ -196,15 +197,15 @@ impl PlatformEventDecoder {
     /// `PlatformError::Invalid` when the body is not a valid event envelope, comes from another
     /// source app, occurs more than `MAX_EVENT_FUTURE_SECONDS` ahead, or a known event type fails
     /// its payload schema or names an owner other than the envelope user.
-    pub fn decode(&self, body: &[u8], now: DateTime<Utc>) -> Result<PlatformEvent, PlatformError> {
+    pub fn decode(&self, body: &[u8], now: Timestamp) -> Result<PlatformEvent, PlatformError> {
         let envelope: EventEnvelope =
             serde_json::from_slice(body).map_err(|_| PlatformError::Invalid)?;
         // Deliveries may retry beyond the suite's seven-day event age.
         validate_event_envelope(&envelope, &envelope.user_id, envelope.occurred_at)
             .map_err(|_| PlatformError::Invalid)?;
         if envelope.source_app != self.source_app
-            || envelope.occurred_at.signed_duration_since(now)
-                > chrono::TimeDelta::seconds(MAX_EVENT_FUTURE_SECONDS)
+            || envelope.occurred_at.duration_since(now)
+                > SignedDuration::from_secs(MAX_EVENT_FUTURE_SECONDS)
         {
             return Err(PlatformError::Invalid);
         }
@@ -248,12 +249,12 @@ impl From<PlatformEvent> for EventEnvelope {
 
 /// A clock adapter avoids process-global test clocks.
 pub trait PlatformClock: Send + Sync {
-    fn now(&self) -> DateTime<Utc>;
+    fn now(&self) -> Timestamp;
 }
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemPlatformClock;
 impl PlatformClock for SystemPlatformClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
+    fn now(&self) -> Timestamp {
+        Timestamp::now()
     }
 }

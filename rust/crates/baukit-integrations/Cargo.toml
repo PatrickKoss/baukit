@@ -19,7 +19,7 @@ default = []
 # Single-use, browser-bound OAuth state with an in-memory store.
 oauth-state = ["dep:aws-lc-rs", "dep:base64", "dep:subtle"]
 # PostgreSQL OAuth state store.
-postgres = ["oauth-state", "dep:sqlx"]
+postgres = ["oauth-state", "dep:sqlx", "dep:jiff-sqlx"]
 # Cookie helpers for axum routes.
 axum = ["oauth-state", "dep:axum"]
 
@@ -28,7 +28,8 @@ aws-lc-rs = { workspace = true, optional = true }
 axum = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 baukit-http.workspace = true
-chrono.workspace = true
+jiff.workspace = true
+jiff-sqlx = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sqlx = { workspace = true, optional = true }

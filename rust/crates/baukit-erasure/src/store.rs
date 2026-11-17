@@ -9,7 +9,8 @@ use axum::{
 use baukit_config::Secret;
 use baukit_http::{ApiError, IdempotencyKeyRule};
 use baukit_jobs::{NewJob, PostgresJobStore};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{PgConnection, PgPool, Postgres, Transaction};
@@ -47,7 +48,7 @@ pub struct ErasureOutcome {
     pub operation_id: Uuid,
     /// Completion timestamp, present only after success.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub completed_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<Timestamp>,
 }
 impl ErasureOutcome {
     /// HTTP response code for DELETE and its replay receipt.
@@ -188,13 +189,13 @@ impl PostgresErasureStore {
         &self,
         transaction: &mut Transaction<'_, Postgres>,
         subject: &str,
-        authenticated_at: Option<DateTime<Utc>>,
+        authenticated_at: Option<Timestamp>,
     ) -> Result<(), ErasureError> {
         let hash = self.subject_hash(subject);
         lock(transaction, &hash).await?;
         let fenced: bool = sqlx::query_scalar(REJECTED_SESSION_SQL)
             .bind(hash)
-            .bind(authenticated_at)
+            .bind(authenticated_at.map(ToSqlx::to_sqlx))
             .fetch_one(&mut **transaction)
             .await?;
         if fenced {
@@ -212,11 +213,11 @@ impl PostgresErasureStore {
     pub async fn is_fenced(
         &self,
         subject: &str,
-        authenticated_at: Option<DateTime<Utc>>,
+        authenticated_at: Option<Timestamp>,
     ) -> Result<bool, ErasureError> {
         Ok(sqlx::query_scalar(REJECTED_SESSION_SQL)
             .bind(self.subject_hash(subject))
-            .bind(authenticated_at)
+            .bind(authenticated_at.map(ToSqlx::to_sqlx))
             .fetch_one(&self.pool)
             .await?)
     }
@@ -251,10 +252,10 @@ impl PostgresErasureStore {
         let outcome = ErasureOutcome {
             status: ErasureState::Completed,
             operation_id,
-            completed_at: Some(Utc::now()),
+            completed_at: Some(Timestamp::now()),
         };
         let response: Value = sqlx::query_scalar("UPDATE erasure_operations SET state = 'completed', completed_at = COALESCE(completed_at, $2), response = CASE WHEN state = 'completed' THEN response ELSE $3 END WHERE id = $1 RETURNING response")
-            .bind(operation_id).bind(outcome.completed_at).bind(serde_json::to_value(&outcome)?)
+            .bind(operation_id).bind(outcome.completed_at.map(ToSqlx::to_sqlx)).bind(serde_json::to_value(&outcome)?)
             .fetch_one(&mut **transaction).await?;
         Ok(serde_json::from_value(response)?)
     }
@@ -281,7 +282,7 @@ async fn lock(transaction: &mut Transaction<'_, Postgres>, hash: &[u8]) -> Resul
 pub async fn reject_fenced_subject(
     store: &PostgresErasureStore,
     subject: &str,
-    authenticated_at: Option<DateTime<Utc>>,
+    authenticated_at: Option<Timestamp>,
 ) -> Result<(), ErasureError> {
     if store.is_fenced(subject, authenticated_at).await? {
         Err(ErasureError::ProfileErased)
@@ -414,7 +415,7 @@ impl ErasureService {
     pub async fn preflight(
         &self,
         subject: &str,
-        authenticated_at: Option<DateTime<Utc>>,
+        authenticated_at: Option<Timestamp>,
         key: &str,
     ) -> Result<ErasurePreflight, ErasureError> {
         validate_request(subject, key)?;
@@ -440,7 +441,7 @@ impl ErasureService {
     pub async fn erase(
         &self,
         subject: &str,
-        authenticated_at: Option<DateTime<Utc>>,
+        authenticated_at: Option<Timestamp>,
         key: &str,
         product: &dyn ProductErasure,
     ) -> Result<ErasureOutcome, ErasureError> {
@@ -665,7 +666,7 @@ mod tests {
             serde_json::json!({"status":"pending", "operationId":Uuid::nil()})
         );
         outcome.status = ErasureState::Completed;
-        outcome.completed_at = Some(Utc::now());
+        outcome.completed_at = Some(Timestamp::now());
         assert_eq!(outcome.status_code(), StatusCode::OK);
         assert!(serde_json::to_value(outcome).expect("serialize")["completedAt"].is_string());
     }

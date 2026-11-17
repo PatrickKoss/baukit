@@ -1,3 +1,4 @@
+use jiff::SignedDuration;
 use std::sync::Arc;
 
 use baukit_integrations::oauth_state::{
@@ -74,7 +75,7 @@ async fn postgres_store_reports_each_failure() -> TestResult {
     let container = baukit_test::start_postgres().await?;
     let pool = pool(container.connection_url()).await?;
     let service = OAuthStateService::new(Arc::new(PostgresOAuthStateStore::new(pool)));
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let first = service.start_at(input(), now).await?;
     let second = service.start_at(input(), now).await?;
 
@@ -92,7 +93,7 @@ async fn postgres_store_reports_each_failure() -> TestResult {
         .complete_at(
             &second.state,
             &second.binding,
-            now + chrono::Duration::minutes(11),
+            now + SignedDuration::from_mins(11),
         )
         .await
         .expect_err("expired");

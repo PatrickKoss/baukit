@@ -21,7 +21,7 @@ baukit-mcp = { path = "../crates/baukit-mcp" }
 baukit-ratelimit = { path = "../crates/baukit-ratelimit" }
 baukit-sync = { path = "../crates/baukit-sync", default-features = false }
 baukit-test = { path = "../crates/baukit-test", default-features = false }
-chrono = "0.4.45"
+jiff = { version = "1.0.0", features = ["serde"] }
 http = "1.5.0"
 serde_json = "1.0.151"
 tokio = { version = "1.53.2", features = ["full"] }

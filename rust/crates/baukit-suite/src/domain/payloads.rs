@@ -223,10 +223,7 @@ pub(super) fn valid_key(key: &str) -> bool {
 
 impl SuiteEvent {
     /// Builds a protocol test. Its payload is always empty and cannot grant a reward.
-    pub fn connection_test(
-        test_id: uuid::Uuid,
-        occurred_at: chrono::DateTime<chrono::Utc>,
-    ) -> Self {
+    pub fn connection_test(test_id: uuid::Uuid, occurred_at: jiff::Timestamp) -> Self {
         Self {
             natural_key: test_id.to_string(),
             event_type: SUITE_CONNECTION_TEST_TYPE.into(),

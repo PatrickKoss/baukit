@@ -13,7 +13,7 @@ impl SuiteDeliveryService {
     pub async fn deliver(
         &self,
         job: SuiteDeliverJobV1,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<DeliveryAction, SuiteServiceError> {
         self.deliver_claimed(job, now, None).await
     }
@@ -25,7 +25,7 @@ impl SuiteDeliveryService {
     pub async fn deliver_claimed(
         &self,
         job: SuiteDeliverJobV1,
-        now: DateTime<Utc>,
+        now: Timestamp,
         completion: Option<(Uuid, &str)>,
     ) -> Result<DeliveryAction, SuiteServiceError> {
         let link = self.context.store.find_link(job.link_id).await?;
@@ -50,7 +50,7 @@ impl SuiteDeliveryService {
                 SuiteSignedCall {
                     remote_link_id: link.remote_link_id,
                     delivery_id: &job.envelope.event_id,
-                    timestamp: now.timestamp(),
+                    timestamp: now.as_second(),
                     source_app: &self.context.registry.own().id,
                     secret: &secret,
                     body: &body,
@@ -82,7 +82,7 @@ impl SuiteDeliveryService {
     pub async fn revoke(
         &self,
         job: SuiteRevokeJobV1,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<DeliveryAction, SuiteServiceError> {
         let Some(link) = self.context.store.find_link(job.link_id).await? else {
             return Ok(DeliveryAction::LinkMissing);
@@ -92,7 +92,7 @@ impl SuiteDeliveryService {
     async fn revoke_link(
         &self,
         link: &SuiteLink,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<DeliveryAction, SuiteServiceError> {
         let peer = self.context.active_peer(&link.peer_app)?;
         let secret = self
@@ -109,7 +109,7 @@ impl SuiteDeliveryService {
                 SuiteSignedCall {
                     remote_link_id: link.remote_link_id,
                     delivery_id: &delivery_id,
-                    timestamp: now.timestamp(),
+                    timestamp: now.as_second(),
                     source_app: &self.context.registry.own().id,
                     secret: &secret,
                     body: b"{}",
@@ -129,15 +129,14 @@ impl SuiteDeliveryService {
         &self,
         owner: Uuid,
         id: Uuid,
-        since: NaiveDate,
-        now: DateTime<Utc>,
+        since: Date,
+        now: Timestamp,
     ) -> Result<u64, SuiteServiceError> {
-        validate_replay_since(since, now.date_naive()).map_err(|_| {
-            SuiteServiceError::ReplayWindow {
+        validate_replay_since(since, now.to_zoned_datetime(jiff::tz::TimeZone::UTC).date())
+            .map_err(|_| SuiteServiceError::ReplayWindow {
                 earliest: replay_earliest(now),
-                latest: now.date_naive(),
-            }
-        })?;
+                latest: now.to_zoned_datetime(jiff::tz::TimeZone::UTC).date(),
+            })?;
         let link = self
             .context
             .store
@@ -178,7 +177,7 @@ impl SuiteDeliveryService {
         &self,
         owner: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteServiceError> {
         let link = self
             .context
@@ -204,10 +203,7 @@ impl SuiteDeliveryService {
     /// # Errors
     ///
     /// `Store` when the cleanup query fails or times out.
-    pub async fn cleanup(
-        &self,
-        now: DateTime<Utc>,
-    ) -> Result<SuiteCleanupOutcome, SuiteServiceError> {
+    pub async fn cleanup(&self, now: Timestamp) -> Result<SuiteCleanupOutcome, SuiteServiceError> {
         Ok(self.context.store.cleanup(now).await?)
     }
 }
@@ -250,7 +246,7 @@ impl SuiteProfileRevoker for SuiteDeliveryService {
         for link in links {
             let result = tokio::time::timeout(
                 Duration::from_millis(SUITE_ERASURE_REVOKE_TIMEOUT_MILLIS),
-                self.revoke_link(link, Utc::now()),
+                self.revoke_link(link, Timestamp::now()),
             )
             .await;
             match result {

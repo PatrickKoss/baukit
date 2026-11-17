@@ -1,6 +1,7 @@
+use jiff::SignedDuration;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use thiserror::Error;
 
 /// A fixed, whole-second UTC interval anchored at the Unix epoch.
@@ -37,16 +38,14 @@ impl FixedUtcInterval {
     /// # Errors
     ///
     /// [`FixedUtcIntervalError::OutOfRange`] when the slot start overflows the timestamp range.
-    pub fn slot_at(
-        self,
-        observed_at: DateTime<Utc>,
-    ) -> Result<FixedUtcSlot, FixedUtcIntervalError> {
+    pub fn slot_at(self, observed_at: Timestamp) -> Result<FixedUtcSlot, FixedUtcIntervalError> {
         let starts_at_seconds = observed_at
-            .timestamp()
+            .as_second()
             .div_euclid(self.seconds)
             .checked_mul(self.seconds)
             .ok_or(FixedUtcIntervalError::OutOfRange)?;
-        let starts_at = DateTime::from_timestamp(starts_at_seconds, 0)
+        let starts_at = jiff::Timestamp::from_second(starts_at_seconds)
+            .ok()
             .ok_or(FixedUtcIntervalError::OutOfRange)?;
         Ok(FixedUtcSlot { starts_at })
     }
@@ -64,13 +63,13 @@ impl FixedUtcInterval {
     pub fn next_slot(
         self,
         current: FixedUtcSlot,
-        observed_at: DateTime<Utc>,
+        observed_at: Timestamp,
     ) -> Result<FixedUtcSlot, FixedUtcIntervalError> {
         let observed = self.slot_at(observed_at)?;
         let latest_start = current.starts_at.max(observed.starts_at);
         let starts_at = latest_start
-            .checked_add_signed(chrono::Duration::seconds(self.seconds))
-            .ok_or(FixedUtcIntervalError::OutOfRange)?;
+            .checked_add(SignedDuration::from_secs(self.seconds))
+            .map_err(|_| FixedUtcIntervalError::OutOfRange)?;
         Ok(FixedUtcSlot { starts_at })
     }
 
@@ -89,13 +88,13 @@ impl FixedUtcInterval {
     /// ```
     /// use std::time::Duration;
     /// use baukit_jobs::{FixedUtcInterval, FixedUtcJitter};
-    /// use chrono::DateTime;
+    /// use jiff::Timestamp;
     ///
     /// let interval = FixedUtcInterval::new(Duration::from_secs(3600))?;
-    /// let slot = interval.slot_at(DateTime::UNIX_EPOCH)?;
+    /// let slot = interval.slot_at(Timestamp::UNIX_EPOCH)?;
     /// let jitter = FixedUtcJitter::new(0.1)?;
     /// let run_at = interval.run_at(slot, "connection:1", jitter)?;
-    /// assert_eq!(run_at.timestamp(), 345);
+    /// assert_eq!(run_at.as_second(), 345);
     /// assert_eq!(slot.identifier(), "fixed-utc:0");
     /// # Ok::<(), baukit_jobs::FixedUtcIntervalError>(())
     /// ```
@@ -109,16 +108,15 @@ impl FixedUtcInterval {
         slot: FixedUtcSlot,
         key: &str,
         jitter: FixedUtcJitter,
-    ) -> Result<DateTime<Utc>, FixedUtcIntervalError> {
+    ) -> Result<Timestamp, FixedUtcIntervalError> {
         let seconds = u64::try_from(self.seconds).map_err(|_| FixedUtcIntervalError::OutOfRange)?;
         let bound = jitter_bound(seconds, jitter.fraction);
         let offset = fnv1a(key.as_bytes()) % (bound + 1);
         let offset = i64::try_from(offset).map_err(|_| FixedUtcIntervalError::OutOfRange)?;
-        let offset =
-            chrono::Duration::try_seconds(offset).ok_or(FixedUtcIntervalError::OutOfRange)?;
+        let offset = SignedDuration::from_secs(offset);
         slot.starts_at
-            .checked_add_signed(offset)
-            .ok_or(FixedUtcIntervalError::OutOfRange)
+            .checked_add(offset)
+            .map_err(|_| FixedUtcIntervalError::OutOfRange)
     }
 }
 
@@ -166,24 +164,24 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 /// One fixed recurring UTC slot.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct FixedUtcSlot {
-    starts_at: DateTime<Utc>,
+    starts_at: Timestamp,
 }
 
 impl FixedUtcSlot {
     /// Returns the UTC boundary at which the slot starts.
     #[must_use]
-    pub const fn starts_at(self) -> DateTime<Utc> {
+    pub const fn starts_at(self) -> Timestamp {
         self.starts_at
     }
 
     /// Returns the canonical idempotency identifier for this UTC slot.
     #[must_use]
     pub fn identifier(self) -> String {
-        format!("fixed-utc:{}", self.starts_at.timestamp())
+        format!("fixed-utc:{}", self.starts_at.as_second())
     }
 }
 
-/// Invalid fixed UTC interval, jitter fraction, or timestamp outside Chrono's range.
+/// Invalid fixed UTC interval, jitter fraction, or timestamp outside jiff's range.
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum FixedUtcIntervalError {
     /// The interval is zero.
@@ -202,13 +200,13 @@ pub enum FixedUtcIntervalError {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{TimeDelta, TimeZone as _};
+    use jiff::SignedDuration;
 
     use super::*;
 
-    fn at(hour: u32, minute: u32) -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 9, 4, hour, minute, 0)
-            .single()
+    fn at(hour: i8, minute: i8) -> Timestamp {
+        jiff::tz::TimeZone::UTC
+            .to_timestamp(jiff::civil::datetime(2026, 9, 4, hour, minute, 0, 0))
             .expect("valid timestamp")
     }
 
@@ -306,11 +304,11 @@ mod tests {
     #[test]
     fn slots_before_the_unix_epoch_use_floor_division() {
         let interval = FixedUtcInterval::new(Duration::from_secs(60)).expect("interval");
-        let observed = DateTime::UNIX_EPOCH - TimeDelta::milliseconds(1);
+        let observed = Timestamp::UNIX_EPOCH - SignedDuration::from_millis(1);
 
         assert_eq!(
             interval.slot_at(observed).expect("slot").starts_at(),
-            DateTime::UNIX_EPOCH - TimeDelta::seconds(60)
+            Timestamp::UNIX_EPOCH - SignedDuration::from_secs(60)
         );
     }
 
@@ -325,13 +323,13 @@ mod tests {
             ("tiny", 1, 0.1, 0),
         ] {
             let interval = FixedUtcInterval::new(Duration::from_secs(seconds)).expect("interval");
-            let slot = interval.slot_at(DateTime::UNIX_EPOCH).expect("slot");
+            let slot = interval.slot_at(Timestamp::UNIX_EPOCH).expect("slot");
             let jitter = FixedUtcJitter::new(fraction).expect("jitter");
             assert_eq!(
                 interval
                     .run_at(slot, key, jitter)
                     .expect("run time")
-                    .timestamp(),
+                    .as_second(),
                 expected,
                 "key={key}, seconds={seconds}, fraction={fraction}"
             );
@@ -369,7 +367,7 @@ mod tests {
             let key = format!("connection:{sequence}");
             let offset = (interval.run_at(slot, &key, jitter).expect("run time")
                 - slot.starts_at())
-            .num_seconds();
+            .as_secs();
             assert!((0..=599).contains(&offset));
             buckets[usize::try_from(offset).expect("offset is non-negative") / 60] += 1;
             endpoints[0] |= offset == 0;
@@ -402,8 +400,8 @@ mod tests {
         for seconds in [1, 2, 10, 60, 3600] {
             let interval = FixedUtcInterval::new(Duration::from_secs(seconds)).expect("interval");
             for observed in [
-                DateTime::UNIX_EPOCH - TimeDelta::seconds(1),
-                DateTime::UNIX_EPOCH,
+                Timestamp::UNIX_EPOCH - SignedDuration::from_secs(1),
+                Timestamp::UNIX_EPOCH,
                 at(12, 0),
             ] {
                 let slot = interval.slot_at(observed).expect("slot");
@@ -455,16 +453,14 @@ mod tests {
     #[test]
     fn jitter_handles_timestamp_limits_without_panicking() {
         let interval = FixedUtcInterval::new(Duration::from_secs(1)).expect("interval");
-        let slot = interval
-            .slot_at(DateTime::<Utc>::MAX_UTC)
-            .expect("last slot");
+        let slot = interval.slot_at(Timestamp::MAX).expect("last slot");
         assert_eq!(
             interval.run_at(slot, "", FixedUtcJitter::new(1.0).expect("jitter")),
             Ok(slot.starts_at())
         );
         let interval =
             FixedUtcInterval::new(Duration::from_secs(i64::MAX as u64)).expect("interval");
-        let slot = interval.slot_at(DateTime::UNIX_EPOCH).expect("slot");
+        let slot = interval.slot_at(Timestamp::UNIX_EPOCH).expect("slot");
         assert_eq!(
             interval.run_at(slot, "", FixedUtcJitter::new(1.0).expect("jitter")),
             Err(FixedUtcIntervalError::OutOfRange)

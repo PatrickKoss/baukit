@@ -207,7 +207,7 @@ fn authentication_time_validates_integer_shape_and_clock_skew() {
     for seconds in [0, now - 1, now, now + skew] {
         assert_eq!(
             authentication_time(Some(&Value::from(seconds)), now, skew).expect("valid timestamp"),
-            DateTime::from_timestamp(i64::try_from(seconds).expect("valid timestamp"), 0)
+            jiff::Timestamp::from_second(i64::try_from(seconds).expect("valid timestamp")).ok()
         );
     }
     for invalid in [
@@ -233,7 +233,7 @@ fn authentication_time_validates_integer_shape_and_clock_skew() {
         authentication_time(Some(&Value::from(now + skew + 1)), now, skew),
         Err(VerificationError::NotYetValid)
     ));
-    let timestamp = DateTime::from_timestamp(i64::try_from(now).expect("valid timestamp"), 0)
+    let timestamp = jiff::Timestamp::from_second(i64::try_from(now).expect("valid timestamp"))
         .expect("valid timestamp");
     assert_eq!(
         Principal::new("subject")

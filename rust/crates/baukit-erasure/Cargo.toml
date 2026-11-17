@@ -25,7 +25,8 @@ baukit-config.workspace = true
 baukit-egress = { workspace = true, optional = true }
 baukit-http.workspace = true
 baukit-jobs.workspace = true
-chrono.workspace = true
+jiff.workspace = true
+jiff-sqlx.workspace = true
 aws-lc-rs.workspace = true
 serde.workspace = true
 serde_json.workspace = true

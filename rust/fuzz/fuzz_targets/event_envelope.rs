@@ -1,7 +1,7 @@
 #![no_main]
 
 use baukit_events::{EventEnvelope, validate_event_envelope};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use libfuzzer_sys::fuzz_target;
 
 const EXPECTED_USER_ID: &str = "oidc-subject-1";
@@ -11,7 +11,7 @@ fuzz_target!(|data: &[u8]| {
     let Ok(envelope) = serde_json::from_slice::<EventEnvelope>(data) else {
         return;
     };
-    let now: DateTime<Utc> = NOW.parse().expect("fixed timestamp");
+    let now: Timestamp = NOW.parse().expect("fixed timestamp");
     if validate_event_envelope(&envelope, EXPECTED_USER_ID, now).is_ok() {
         assert_eq!(envelope.user_id, EXPECTED_USER_ID);
         assert!(!envelope.event_id.is_empty());

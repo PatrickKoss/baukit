@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use chrono::{Duration as ChronoDuration, Utc};
+use jiff::SignedDuration;
 use proptest::prelude::*;
 
 use super::*;
@@ -88,12 +88,12 @@ async fn unknown_state_is_unknown() {
 #[tokio::test]
 async fn expired_state_is_expired_and_burned() {
     let service = service();
-    let now = Utc::now();
+    let now = Timestamp::now();
     let started = service
         .start_at(input(Pkce::S256), now)
         .await
         .expect("start");
-    let later = now + ChronoDuration::seconds(601);
+    let later = now + SignedDuration::from_secs(601);
     let error = service
         .complete_at(&started.state, &started.binding, later)
         .await
@@ -127,7 +127,7 @@ async fn another_browser_is_rejected_and_burns_the_state() {
 async fn purge_drops_expired_pending_and_used_records() {
     let store = Arc::new(InMemoryOAuthStateStore::default());
     let service = OAuthStateService::new(store.clone());
-    let now = Utc::now();
+    let now = Timestamp::now();
     let used = service.start_at(input(Pkce::S256), now).await.expect("a");
     service
         .complete_at(&used.state, &used.binding, now)
@@ -135,7 +135,7 @@ async fn purge_drops_expired_pending_and_used_records() {
         .expect("complete");
     service.start_at(input(Pkce::S256), now).await.expect("b");
     let removed = store
-        .purge_expired(now + ChronoDuration::seconds(601))
+        .purge_expired(now + SignedDuration::from_secs(601))
         .await
         .expect("purge");
     assert_eq!(removed, 2);

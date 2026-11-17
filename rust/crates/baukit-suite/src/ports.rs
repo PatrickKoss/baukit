@@ -9,9 +9,9 @@ use crate::domain::{
 };
 use async_trait::async_trait;
 use baukit_events::{EventEnvelope, IngestOutcome, IngestOutcomeStatus};
+use jiff::Timestamp;
 #[cfg(feature = "postgres")]
-use chrono::NaiveDate;
-use chrono::{DateTime, Utc};
+use jiff::civil::Date;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -73,11 +73,11 @@ pub struct SuiteInboundEvent {
     pub event_id: String,
     pub user_id: Uuid,
     pub event_type: String,
-    pub occurred_at: DateTime<Utc>,
+    pub occurred_at: Timestamp,
     pub payload_hash: [u8; 32],
     pub replay: bool,
     pub outcome: AppliedOutcome,
-    pub received_at: DateTime<Utc>,
+    pub received_at: Timestamp,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -94,8 +94,8 @@ pub struct SuiteDeliveryRecord {
     pub status: String,
     pub attempt_count: u32,
     pub last_error_code: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -128,7 +128,7 @@ pub trait SuiteLinkStore: Send + Sync {
         &self,
         tx: &mut sqlx::PgConnection,
         request: &LinkRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteStoreError>;
     /// Includes expired/consumed requests; callback lookup never consumes them.
     async fn find_request_by_state_hash(
@@ -153,7 +153,7 @@ pub trait SuiteLinkStore: Send + Sync {
         &self,
         owner_id: Uuid,
         link_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<u64, SuiteStoreError>;
     /// Consumes an unexpired open request after exchange; a non-open row is CodeInvalid.
     async fn consume_request_in_transaction(
@@ -161,7 +161,7 @@ pub trait SuiteLinkStore: Send + Sync {
         tx: &mut sqlx::PgConnection,
         request_id: Uuid,
         owner_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteStoreError>;
     /// Records the link with insertion/replay; an open or already linked request is CodeInvalid.
     async fn record_request_link_in_transaction(
@@ -194,7 +194,7 @@ pub trait SuiteLinkStore: Send + Sync {
         tx: &mut sqlx::PgConnection,
         code_hash: [u8; 32],
         link_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteStoreError>;
     /// Locks the owner's link row; another owner's id is NotFound.
     async fn link_for_update(
@@ -219,7 +219,7 @@ pub trait SuiteLinkStore: Send + Sync {
         tx: &mut sqlx::PgConnection,
         owner_id: Uuid,
         link_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteStoreError>;
     /// Unscoped lookup for peer-authenticated ingest and background delivery. User-facing reads
     /// use `find_link_for_owner`.
@@ -236,20 +236,20 @@ pub trait SuiteLinkStore: Send + Sync {
         link_id: Uuid,
         share_xp: Option<bool>,
         reward_mode: Option<RewardMode>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLink, SuiteStoreError>;
     async fn reenable(
         &self,
         owner_id: Uuid,
         link_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLink, SuiteStoreError>;
     async fn record_delivery(
         &self,
         owner_id: Uuid,
         link_id: Uuid,
         action: DeliveryAction,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<DeliveryState, SuiteStoreError>;
     async fn complete_delivery(
         &self,
@@ -257,7 +257,7 @@ pub trait SuiteLinkStore: Send + Sync {
         link_id: Uuid,
         job_id: Uuid,
         worker_id: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteStoreError>;
     async fn inbox_in_transaction(
         &self,
@@ -278,7 +278,7 @@ pub trait SuiteLinkStore: Send + Sync {
         tx: &mut sqlx::PgConnection,
         owner_id: Uuid,
         link_id: Uuid,
-        received_at: DateTime<Utc>,
+        received_at: Timestamp,
     ) -> Result<(), SuiteStoreError>;
     async fn deliveries(
         &self,
@@ -286,7 +286,7 @@ pub trait SuiteLinkStore: Send + Sync {
         link_id: Uuid,
         limit: u32,
     ) -> Result<Vec<SuiteDeliveryRecord>, SuiteStoreError>;
-    async fn cleanup(&self, now: DateTime<Utc>) -> Result<SuiteCleanupOutcome, SuiteStoreError>;
+    async fn cleanup(&self, now: Timestamp) -> Result<SuiteCleanupOutcome, SuiteStoreError>;
 }
 
 #[async_trait]
@@ -314,8 +314,8 @@ pub trait SuiteEventOutbox: Send + Sync {
         tx: &mut sqlx::PgConnection,
         owner_id: Uuid,
         link_id: Uuid,
-        since: NaiveDate,
-        requested_at: DateTime<Utc>,
+        since: Date,
+        requested_at: Timestamp,
         events: &[SuiteEvent],
     ) -> Result<u64, SuiteStoreError>;
     async fn enqueue_test_in_transaction(
@@ -409,7 +409,7 @@ pub struct SuiteApplyEvent<'a> {
     /// Provider history hashes the same bytes.
     pub payload_hash: [u8; 32],
     pub replay: bool,
-    pub received_at: DateTime<Utc>,
+    pub received_at: Timestamp,
 }
 
 #[async_trait]
@@ -469,7 +469,7 @@ pub trait SuiteReplaySource: Send + Sync {
         &self,
         connection: &mut sqlx::PgConnection,
         owner_id: Uuid,
-        since: NaiveDate,
+        since: Date,
     ) -> Result<Vec<SuiteEvent>, SuiteStoreError>;
 }
 

@@ -8,7 +8,9 @@ use axum::{
 use baukit_config::{Secret, Validate};
 use baukit_core::webhook_signature::sign_webhook_hmac_sha256;
 use baukit_suite::platform::*;
-use chrono::{DateTime, Utc};
+use jiff::SignedDuration;
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::{
@@ -57,8 +59,8 @@ impl PlatformEventHandler for Handler {
 }
 struct Clock;
 impl PlatformClock for Clock {
-    fn now(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp(1_800_000_000, 0).expect("time")
+    fn now(&self) -> Timestamp {
+        jiff::Timestamp::from_second(1_800_000_000).expect("time")
     }
 }
 #[test]
@@ -1097,8 +1099,7 @@ fn decoder_uses_configured_source_and_distinct_prefix_and_limits_future_events()
     ));
     assert!(self::decoder().decode(&body, Clock.now()).is_err());
     for (seconds, accepted) in [(300, true), (301, false), (-40 * 24 * 3600, true)] {
-        value["occurredAt"] =
-            json!((Clock.now() + chrono::TimeDelta::seconds(seconds)).to_rfc3339());
+        value["occurredAt"] = json!((Clock.now() + SignedDuration::from_secs(seconds)).to_string());
         assert_eq!(
             decoder
                 .decode(&serde_json::to_vec(&value).expect("json"), Clock.now())
@@ -1267,15 +1268,15 @@ async fn assert_purge_batches(
     pool: &sqlx::PgPool,
     inbox: &PostgresPlatformInbox,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let cutoff = Utc::now() - chrono::TimeDelta::days(30);
+    let cutoff = Timestamp::now() - SignedDuration::from_hours(24 * 30);
     for (id, at) in [
-        ("old-1", cutoff - chrono::TimeDelta::days(1)),
-        ("old-2", cutoff - chrono::TimeDelta::days(1)),
-        ("old-3", cutoff - chrono::TimeDelta::seconds(1)),
+        ("old-1", cutoff - SignedDuration::from_hours(24)),
+        ("old-2", cutoff - SignedDuration::from_hours(24)),
+        ("old-3", cutoff - SignedDuration::from_secs(1)),
         ("boundary", cutoff),
-        ("recent", Utc::now()),
+        ("recent", Timestamp::now()),
     ] {
-        sqlx::query("INSERT INTO platform_inbound_receipts(event_id,body_hash,received_at) VALUES($1,$2,$3)").bind(id).bind([0_u8;32].as_slice()).bind(at).execute(pool).await?;
+        sqlx::query("INSERT INTO platform_inbound_receipts(event_id,body_hash,received_at) VALUES($1,$2,$3)").bind(id).bind([0_u8;32].as_slice()).bind(at.to_sqlx()).execute(pool).await?;
     }
     assert_eq!(
         inbox.purge_received_before(cutoff, 0).await,
@@ -1457,7 +1458,7 @@ async fn skipped_entitlement_preparation_returns_retryable_503() {
     .with_clock(Arc::new(Clock));
     let body = serde_json::to_string(&event()).expect("event");
     let response = router(receiver)
-        .oneshot(request(&body, "current", Clock.now().timestamp()))
+        .oneshot(request(&body, "current", Clock.now().as_second()))
         .await
         .expect("response");
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
@@ -1491,18 +1492,18 @@ async fn receiver_clock_controls_prepared_free_snapshot_deadline() {
     .with_clock(Arc::new(Clock));
     let body = serde_json::to_string(&event()).expect("event");
     let response = router(receiver)
-        .oneshot(request(&body, "current", Clock.now().timestamp()))
+        .oneshot(request(&body, "current", Clock.now().as_second()))
         .await
         .expect("response");
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     let snapshot = cache
-        .get("suite|person-123", "hebkit", Clock.now().timestamp())
+        .get("suite|person-123", "hebkit", Clock.now().as_second())
         .await
         .expect("cache")
         .expect("free snapshot");
     assert_eq!(snapshot.tier, "free");
     assert_eq!(
         snapshot.valid_until,
-        Clock.now().timestamp() + FREE_CACHE_TTL_SECONDS
+        Clock.now().as_second() + FREE_CACHE_TTL_SECONDS
     );
 }

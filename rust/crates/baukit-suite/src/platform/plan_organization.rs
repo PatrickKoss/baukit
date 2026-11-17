@@ -276,5 +276,5 @@ pub(crate) fn organization_entitlement(
 }
 
 fn now() -> i64 {
-    chrono::Utc::now().timestamp()
+    jiff::Timestamp::now().as_second()
 }

@@ -16,7 +16,7 @@ workspace = true
 
 [features]
 default = []
-postgres = ["dep:sqlx", "dep:baukit-jobs", "dep:baukit-erasure", "dep:metrics", "dep:tracing"]
+postgres = ["dep:sqlx", "dep:jiff-sqlx", "dep:baukit-jobs", "dep:baukit-erasure", "dep:metrics", "dep:tracing"]
 http = ["runtime", "dep:axum", "dep:utoipa", "dep:baukit-http"]
 jobs = ["runtime"]
 runtime = ["postgres", "dep:baukit-core", "dep:baukit-credential-vault", "dep:baukit-ratelimit", "dep:rand", "dep:tokio"]
@@ -36,7 +36,8 @@ baukit-erasure = { workspace = true, optional = true }
 baukit-events.workspace = true
 baukit-jobs = { workspace = true, optional = true }
 baukit-ratelimit = { workspace = true, optional = true }
-chrono.workspace = true
+jiff.workspace = true
+jiff-sqlx = { workspace = true, optional = true }
 metrics = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 rand = { version = "0.9.5", optional = true }
@@ -50,7 +51,7 @@ tracing = { workspace = true, optional = true }
 url.workspace = true
 uuid = { workspace = true, features = ["v5"] }
 axum = { workspace = true, optional = true }
-utoipa = { workspace = true, optional = true, features = ["uuid", "chrono"] }
+utoipa = { workspace = true, optional = true, features = ["uuid", "jiff_0_2"] }
 
 [dev-dependencies]
 baukit-core = { path = "../baukit-core", features = ["webhook-signature"] }

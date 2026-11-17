@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
@@ -45,11 +45,11 @@ pub struct Job {
     /// Maximum number of claims before terminal failure.
     pub max_attempts: u32,
     /// Earliest time a pending job may be claimed.
-    pub run_after: DateTime<Utc>,
+    pub run_after: Timestamp,
     /// Worker which owns a running job.
     pub locked_by: Option<String>,
     /// Expiry time for the current lease.
-    pub locked_until: Option<DateTime<Utc>>,
+    pub locked_until: Option<Timestamp>,
     /// Optional key unique within `job_type`.
     pub idempotency_key: Option<String>,
     /// Key reserved while this job is pending or running, retained after completion.
@@ -61,11 +61,11 @@ pub struct Job {
     /// Stable terminal failure reason; set only while status is `failed`.
     pub failure_reason: Option<JobFailureReason>,
     /// Time cancellation was requested for a running job.
-    pub cancel_requested_at: Option<DateTime<Utc>>,
+    pub cancel_requested_at: Option<Timestamp>,
     /// Creation timestamp used for queue-age telemetry.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Timestamp of the latest lifecycle transition.
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
 }
 
 /// A job returned from a successful claim.
@@ -83,17 +83,17 @@ pub struct NewJob {
     /// Maximum number of claims before terminal failure.
     pub max_attempts: u32,
     /// Earliest time the job may be claimed.
-    pub run_after: DateTime<Utc>,
+    pub run_after: Timestamp,
     /// Optional key unique within `job_type`.
     pub idempotency_key: Option<String>,
     /// Creation timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 impl NewJob {
     /// Creates a job ready to run immediately with a UUIDv7 identifier.
     pub fn new(job_type: impl Into<String>, payload: Value, max_attempts: u32) -> Self {
-        let now = Utc::now();
+        let now = Timestamp::now();
         Self {
             id: Uuid::now_v7(),
             job_type: job_type.into(),
@@ -107,7 +107,7 @@ impl NewJob {
 
     /// Sets the earliest claim time.
     #[must_use]
-    pub const fn run_after(mut self, run_after: DateTime<Utc>) -> Self {
+    pub const fn run_after(mut self, run_after: Timestamp) -> Self {
         self.run_after = run_after;
         self
     }
@@ -156,11 +156,11 @@ pub enum FailureDisposition {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TerminalJobCutoffs {
     /// Delete succeeded jobs older than this timestamp.
-    pub succeeded_before: DateTime<Utc>,
+    pub succeeded_before: Timestamp,
     /// Delete cancelled jobs older than this timestamp.
-    pub cancelled_before: DateTime<Utc>,
+    pub cancelled_before: Timestamp,
     /// Delete failed jobs older than this timestamp.
-    pub failed_before: DateTime<Utc>,
+    pub failed_before: Timestamp,
 }
 
 /// Counts returned after one terminal-job cleanup batch commits.

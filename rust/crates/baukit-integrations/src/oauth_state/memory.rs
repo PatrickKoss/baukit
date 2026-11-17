@@ -3,7 +3,7 @@ use std::{
     sync::{Mutex, PoisonError},
 };
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use super::{
     ConsumeOutcome, OAuthStateError, OAuthStateFuture, OAuthStateStore, PendingOAuthFlow, TokenHash,
@@ -12,7 +12,7 @@ use super::{
 #[derive(Default)]
 struct Records {
     pending: HashMap<TokenHash, PendingOAuthFlow>,
-    used: HashMap<TokenHash, DateTime<Utc>>,
+    used: HashMap<TokenHash, Timestamp>,
 }
 
 /// Process-local [`OAuthStateStore`] for tests and single-instance products.
@@ -67,10 +67,7 @@ impl OAuthStateStore for InMemoryOAuthStateStore {
         Box::pin(async move { Ok(outcome) })
     }
 
-    fn purge_expired(
-        &self,
-        now: DateTime<Utc>,
-    ) -> OAuthStateFuture<'_, Result<u64, OAuthStateError>> {
+    fn purge_expired(&self, now: Timestamp) -> OAuthStateFuture<'_, Result<u64, OAuthStateError>> {
         let removed = self.with_records(|records| {
             let before = records.pending.len() + records.used.len();
             records.pending.retain(|_, flow| flow.expires_at > now);

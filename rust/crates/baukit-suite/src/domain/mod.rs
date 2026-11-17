@@ -1,11 +1,12 @@
 use crate::error_codes::SuiteErrorCode;
+use jiff::SignedDuration;
 use std::{collections::BTreeMap, net::IpAddr, time::Duration};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use baukit_events::{
     EVENT_SCHEMA_VERSION, EventEnvelope, EventValidationCode, validate_event_envelope,
 };
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::{Digest as _, Sha256};
@@ -28,6 +29,7 @@ pub const SUITE_JOB_TYPES: [&str; 2] = [SUITE_EVENTS_DELIVER_JOB_TYPE, SUITE_LIN
 pub const SUITE_QUEUE: &str = "suite-events";
 pub const SUITE_CIRCUIT_FAILURES: u32 = 20;
 pub const SUITE_MAX_ATTEMPTS: u32 = 10;
+const SECONDS_PER_DAY: i64 = 86_400;
 const SIGNATURE_WINDOW_SECONDS: i64 = 300;
 pub const SUITE_SIGNATURE_WINDOW_SECONDS: u64 = SIGNATURE_WINDOW_SECONDS.unsigned_abs();
 pub const SUITE_UNAVAILABLE_RETRY_SECONDS: u64 = 300;
@@ -438,13 +440,13 @@ pub struct SuiteLink {
     pub reward_mode: RewardMode,
     pub delivery_health: DeliveryHealth,
     pub consecutive_failures: u32,
-    pub last_delivery_at: Option<DateTime<Utc>>,
-    pub last_failure_at: Option<DateTime<Utc>>,
+    pub last_delivery_at: Option<Timestamp>,
+    pub last_failure_at: Option<Timestamp>,
     pub last_failure_code: Option<String>,
-    pub last_received_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub revoked_at: Option<DateTime<Utc>>,
+    pub last_received_at: Option<Timestamp>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub revoked_at: Option<Timestamp>,
 }
 
 impl SuiteLink {
@@ -508,7 +510,7 @@ pub fn validate_inbound(
     catalog: &PayloadCatalog,
     envelope: &EventEnvelope,
     link: &SuiteLink,
-    now: DateTime<Utc>,
+    now: Timestamp,
     replay: bool,
 ) -> Result<ValidatedInbound, InboundValidationError> {
     // Baukit's age check is neutralized for replay; every other check still runs.
@@ -518,7 +520,7 @@ pub fn validate_inbound(
         if replay { envelope.occurred_at } else { now },
     )
     .map_err(InboundValidationError::Envelope)?;
-    if envelope.occurred_at > now + chrono::Duration::seconds(SIGNATURE_WINDOW_SECONDS) {
+    if envelope.occurred_at > now + SignedDuration::from_secs(SIGNATURE_WINDOW_SECONDS) {
         return Err(InboundValidationError::FutureOccurrence);
     }
     if envelope.source_app != link.peer_app {
@@ -549,8 +551,8 @@ pub enum ReplayWindowError {
 ///
 /// `ReplayWindowError::Future` when `since` is after `today`, `TooOld` when it is more than
 /// `SUITE_MAX_REPLAY_DAYS` days back.
-pub fn validate_replay_since(since: NaiveDate, today: NaiveDate) -> Result<(), ReplayWindowError> {
-    let age = today.signed_duration_since(since).num_days();
+pub fn validate_replay_since(since: Date, today: Date) -> Result<(), ReplayWindowError> {
+    let age = today.duration_since(since).as_secs() / SECONDS_PER_DAY;
     if age < 0 {
         Err(ReplayWindowError::Future)
     } else if age > i64::from(SUITE_MAX_REPLAY_DAYS) {
@@ -564,7 +566,7 @@ pub fn validate_replay_since(since: NaiveDate, today: NaiveDate) -> Result<(), R
 pub struct SuiteEvent {
     pub event_type: String,
     pub natural_key: String,
-    pub occurred_at: DateTime<Utc>,
+    pub occurred_at: Timestamp,
     pub payload: Map<String, Value>,
 }
 
@@ -656,9 +658,9 @@ pub struct LinkRequest {
     pub client_state_nonce: String,
     pub return_url: String,
     pub link_id: Option<Uuid>,
-    pub expires_at: DateTime<Utc>,
-    pub consumed_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
+    pub consumed_at: Option<Timestamp>,
+    pub created_at: Timestamp,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -670,9 +672,9 @@ pub struct LinkCode {
     pub suite_subject: Option<String>,
     pub auto_approved: bool,
     pub link_id: Option<Uuid>,
-    pub expires_at: DateTime<Utc>,
-    pub consumed_at: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
+    pub consumed_at: Option<Timestamp>,
+    pub created_at: Timestamp,
 }
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]

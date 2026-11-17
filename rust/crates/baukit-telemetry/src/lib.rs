@@ -67,7 +67,6 @@ use std::{
     },
 };
 
-use chrono::{SecondsFormat, Utc};
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
 use opentelemetry::{
     Context as OtelContext, KeyValue, global,
@@ -672,7 +671,7 @@ where
     let mut fields = Map::new();
     fields.insert(
         "timestamp".to_owned(),
-        Value::String(Utc::now().to_rfc3339_opts(SecondsFormat::Nanos, true)),
+        Value::String(format!("{:.9}", jiff::Timestamp::now())),
     );
     fields.insert(
         "level".to_owned(),

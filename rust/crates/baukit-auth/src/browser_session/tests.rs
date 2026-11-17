@@ -21,7 +21,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use baukit_credential_vault::CredentialCipher;
 use baukit_egress::EgressError;
 use baukit_http::HttpOptions;
-use chrono::{DateTime, TimeDelta, TimeZone as _, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::Value;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 use tower::ServiceExt as _;
@@ -97,7 +97,7 @@ impl SessionTransaction for MemoryTransaction {
         &'a mut self,
         id: Uuid,
         successor: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> StoreFuture<'a, ()> {
         if let Some(row) = self.working.get_mut(&id) {
             row.rotated_to = Some(successor);
@@ -107,7 +107,7 @@ impl SessionTransaction for MemoryTransaction {
         Box::pin(std::future::ready(Ok(())))
     }
 
-    fn revoke_family<'a>(&'a mut self, family_id: Uuid, now: DateTime<Utc>) -> StoreFuture<'a, ()> {
+    fn revoke_family<'a>(&'a mut self, family_id: Uuid, now: Timestamp) -> StoreFuture<'a, ()> {
         for row in self.working.values_mut() {
             if row.family_id == family_id && row.revoked_at.is_none() {
                 row.revoked_at = Some(now);
@@ -238,21 +238,21 @@ impl IdentityProvider for FakeIdp {
 }
 
 struct FakeClock {
-    now: StdMutex<DateTime<Utc>>,
+    now: StdMutex<Timestamp>,
 }
 
 impl FakeClock {
     fn new() -> Self {
-        let start = Utc
-            .with_ymd_and_hms(2026, 11, 7, 12, 0, 0)
-            .single()
-            .unwrap_or(DateTime::<Utc>::MIN_UTC);
+        let start = jiff::tz::TimeZone::UTC
+            .to_timestamp(jiff::civil::datetime(2026, 11, 7, 12, 0, 0, 0))
+            .ok()
+            .unwrap_or(Timestamp::MIN);
         Self {
             now: StdMutex::new(start),
         }
     }
 
-    fn advance(&self, delta: TimeDelta) {
+    fn advance(&self, delta: SignedDuration) {
         if let Ok(mut now) = self.now.lock() {
             *now += delta;
         }
@@ -260,11 +260,8 @@ impl FakeClock {
 }
 
 impl Clock for FakeClock {
-    fn now(&self) -> DateTime<Utc> {
-        self.now
-            .lock()
-            .map(|now| *now)
-            .unwrap_or(DateTime::<Utc>::MIN_UTC)
+    fn now(&self) -> Timestamp {
+        self.now.lock().map(|now| *now).unwrap_or(Timestamp::MIN)
     }
 }
 
@@ -701,8 +698,8 @@ async fn exchange_returns_the_access_token_and_stores_only_ciphertext() -> TestR
     let body = json(response).await?;
     assert_eq!(body["accessToken"], "access-0");
     assert_eq!(body["subject"], SUBJECT);
-    let expected = harness.clock.now() + TimeDelta::seconds(300);
-    assert_eq!(body["expiresAt"], expected.timestamp_millis());
+    let expected = harness.clock.now() + SignedDuration::from_secs(300);
+    assert_eq!(body["expiresAt"], expected.as_millisecond());
     let rows = harness.store.snapshot().await;
     let row = rows.values().next().ok_or("no row")?;
     assert!(
@@ -735,7 +732,7 @@ async fn old_secret_inside_the_grace_window_gets_the_successor_token() -> TestRe
     let harness = harness(FakeIdp::default())?;
     let first = signed_in(&harness).await?;
     let rotated = refreshed(&harness, &first).await?;
-    harness.clock.advance(TimeDelta::seconds(10));
+    harness.clock.advance(SignedDuration::from_secs(10));
     let replay = refreshed(&harness, &first).await?;
     assert_eq!(replay.status, StatusCode::OK);
     assert!(replay.set_cookie.is_none());
@@ -753,7 +750,7 @@ async fn old_secret_after_the_grace_window_revokes_the_family() -> TestResult {
     let second = rotated_cookie(&harness, &first).await?;
     harness
         .clock
-        .advance(TimeDelta::seconds(10) + TimeDelta::milliseconds(1));
+        .advance(SignedDuration::from_secs(10) + SignedDuration::from_millis(1));
     let replay = refreshed(&harness, &first).await?;
     assert_eq!(replay.status, StatusCode::UNAUTHORIZED);
     assert_eq!(replay.body["error"]["code"], "session_expired");
@@ -928,7 +925,7 @@ async fn idp_outage_is_retryable_and_keeps_the_session() -> TestResult {
 async fn idle_timeout_ends_the_session_without_an_idp_call() -> TestResult {
     let harness = harness(FakeIdp::default())?;
     let first = signed_in(&harness).await?;
-    harness.clock.advance(TimeDelta::days(30));
+    harness.clock.advance(SignedDuration::from_hours(24 * 30));
     assert_eq!(
         refreshed(&harness, &first).await?.status,
         StatusCode::UNAUTHORIZED

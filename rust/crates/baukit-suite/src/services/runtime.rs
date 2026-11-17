@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use baukit_credential_vault::CredentialCipher;
 use baukit_events::IngestOutcome;
 use baukit_ratelimit::{Quota, RateLimitStore};
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -40,10 +40,7 @@ pub enum SuiteServiceError {
     #[error("suite payload is invalid")]
     PayloadInvalid,
     #[error("replay date must be between {earliest} and {latest}")]
-    ReplayWindow {
-        earliest: NaiveDate,
-        latest: NaiveDate,
-    },
+    ReplayWindow { earliest: Date, latest: Date },
     #[error("suite event applier is unavailable")]
     Unavailable,
     #[error("suite link cannot deliver")]
@@ -230,19 +227,19 @@ pub trait SuiteApi: Send + Sync {
         &self,
         user: SuiteUser,
         input: LinkStartRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<LinkStartResponse, SuiteServiceError>;
     async fn callback(
         &self,
         input: LinkCallbackQuery,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<CallbackRedirect, SuiteServiceError>;
     async fn complete(
         &self,
         user: SuiteUser,
         id: Uuid,
         code: String,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLinkView, SuiteServiceError>;
     async fn preview(
         &self,
@@ -255,7 +252,7 @@ pub trait SuiteApi: Send + Sync {
         &self,
         user: SuiteUser,
         input: AuthorizationRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<AuthorizationResponse, SuiteServiceError>;
     async fn deny(
         &self,
@@ -264,7 +261,7 @@ pub trait SuiteApi: Send + Sync {
     async fn exchange(
         &self,
         input: ExchangeRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<ExchangeResponse, SuiteServiceError>;
     async fn list(&self, user: Uuid) -> Result<Vec<SuiteLinkView>, SuiteServiceError>;
     async fn get(&self, user: Uuid, id: Uuid) -> Result<SuiteLinkView, SuiteServiceError>;
@@ -274,28 +271,27 @@ pub trait SuiteApi: Send + Sync {
         id: Uuid,
         xp: Option<bool>,
         mode: Option<RewardMode>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLinkView, SuiteServiceError>;
     async fn disconnect(
         &self,
         user: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteServiceError>;
-    async fn test(&self, user: Uuid, id: Uuid, now: DateTime<Utc>)
-    -> Result<(), SuiteServiceError>;
+    async fn test(&self, user: Uuid, id: Uuid, now: Timestamp) -> Result<(), SuiteServiceError>;
     async fn reenable(
         &self,
         user: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLinkView, SuiteServiceError>;
     async fn replay(
         &self,
         user: Uuid,
         id: Uuid,
-        since: NaiveDate,
-        now: DateTime<Utc>,
+        since: Date,
+        now: Timestamp,
     ) -> Result<u64, SuiteServiceError>;
     async fn deliveries(
         &self,
@@ -307,14 +303,14 @@ pub trait SuiteApi: Send + Sync {
         id: Uuid,
         headers: SignedHeaders,
         body: Vec<u8>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteServiceError>;
     async fn ingest(
         &self,
         id: Uuid,
         headers: SignedHeaders,
         body: Vec<u8>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<IngestResult, SuiteServiceError>;
 }
 
@@ -332,14 +328,14 @@ impl SuiteApi for SuiteModule {
         &self,
         u: SuiteUser,
         i: LinkStartRequest,
-        n: DateTime<Utc>,
+        n: Timestamp,
     ) -> Result<LinkStartResponse, SuiteServiceError> {
         self.links.start(u, i, n).await
     }
     async fn callback(
         &self,
         i: LinkCallbackQuery,
-        n: DateTime<Utc>,
+        n: Timestamp,
     ) -> Result<CallbackRedirect, SuiteServiceError> {
         self.links.callback(i, n).await
     }
@@ -348,7 +344,7 @@ impl SuiteApi for SuiteModule {
         u: SuiteUser,
         id: Uuid,
         c: String,
-        n: DateTime<Utc>,
+        n: Timestamp,
     ) -> Result<SuiteLinkView, SuiteServiceError> {
         self.links
             .complete(u, id, c, n)
@@ -368,7 +364,7 @@ impl SuiteApi for SuiteModule {
         &self,
         u: SuiteUser,
         i: AuthorizationRequest,
-        n: DateTime<Utc>,
+        n: Timestamp,
     ) -> Result<AuthorizationResponse, SuiteServiceError> {
         self.links.authorize(u, i, n).await
     }
@@ -378,12 +374,12 @@ impl SuiteApi for SuiteModule {
     async fn exchange(
         &self,
         i: ExchangeRequest,
-        n: DateTime<Utc>,
+        n: Timestamp,
     ) -> Result<ExchangeResponse, SuiteServiceError> {
         self.links.exchange(i, n).await
     }
     async fn list(&self, u: Uuid) -> Result<Vec<SuiteLinkView>, SuiteServiceError> {
-        let now = Utc::now();
+        let now = Timestamp::now();
         self.links.list(u).await.map(|links| {
             links
                 .into_iter()
@@ -395,7 +391,7 @@ impl SuiteApi for SuiteModule {
         self.links
             .get(u, id)
             .await
-            .map(|link| SuiteLinkView::new(link, Utc::now()))
+            .map(|link| SuiteLinkView::new(link, Timestamp::now()))
     }
     async fn update(
         &self,
@@ -403,29 +399,24 @@ impl SuiteApi for SuiteModule {
         id: Uuid,
         xp: Option<bool>,
         m: Option<RewardMode>,
-        n: DateTime<Utc>,
+        n: Timestamp,
     ) -> Result<SuiteLinkView, SuiteServiceError> {
         self.links
             .update(u, id, xp, m, n)
             .await
             .map(|link| SuiteLinkView::new(link, n))
     }
-    async fn disconnect(
-        &self,
-        u: Uuid,
-        id: Uuid,
-        n: DateTime<Utc>,
-    ) -> Result<(), SuiteServiceError> {
+    async fn disconnect(&self, u: Uuid, id: Uuid, n: Timestamp) -> Result<(), SuiteServiceError> {
         self.links.disconnect(u, id, n).await
     }
-    async fn test(&self, u: Uuid, id: Uuid, n: DateTime<Utc>) -> Result<(), SuiteServiceError> {
+    async fn test(&self, u: Uuid, id: Uuid, n: Timestamp) -> Result<(), SuiteServiceError> {
         self.delivery.test(u, id, n).await
     }
     async fn reenable(
         &self,
         u: Uuid,
         id: Uuid,
-        n: DateTime<Utc>,
+        n: Timestamp,
     ) -> Result<SuiteLinkView, SuiteServiceError> {
         self.links
             .reenable(u, id, n)
@@ -436,8 +427,8 @@ impl SuiteApi for SuiteModule {
         &self,
         u: Uuid,
         id: Uuid,
-        s: NaiveDate,
-        n: DateTime<Utc>,
+        s: Date,
+        n: Timestamp,
     ) -> Result<u64, SuiteServiceError> {
         self.delivery.replay(u, id, s, n).await
     }
@@ -458,7 +449,7 @@ impl SuiteApi for SuiteModule {
         id: Uuid,
         h: SignedHeaders,
         b: Vec<u8>,
-        n: DateTime<Utc>,
+        n: Timestamp,
     ) -> Result<(), SuiteServiceError> {
         self.ingest.revoke_from_peer(id, h, b, n).await
     }
@@ -467,7 +458,7 @@ impl SuiteApi for SuiteModule {
         id: Uuid,
         h: SignedHeaders,
         b: Vec<u8>,
-        n: DateTime<Utc>,
+        n: Timestamp,
     ) -> Result<IngestResult, SuiteServiceError> {
         self.ingest.ingest(id, h, b, n).await
     }
@@ -478,23 +469,23 @@ pub trait SuiteDeliveryRunner: Send + Sync {
     async fn deliver(
         &self,
         job: SuiteDeliverJobV1,
-        now: DateTime<Utc>,
+        now: Timestamp,
         job_id: Uuid,
         worker_id: &str,
     ) -> Result<DeliveryAction, SuiteServiceError>;
     async fn revoke(
         &self,
         job: SuiteRevokeJobV1,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<DeliveryAction, SuiteServiceError>;
-    async fn cleanup(&self, now: DateTime<Utc>) -> Result<SuiteCleanupOutcome, SuiteServiceError>;
+    async fn cleanup(&self, now: Timestamp) -> Result<SuiteCleanupOutcome, SuiteServiceError>;
 }
 #[async_trait]
 impl SuiteDeliveryRunner for SuiteDeliveryService {
     async fn deliver(
         &self,
         j: SuiteDeliverJobV1,
-        n: DateTime<Utc>,
+        n: Timestamp,
         job_id: Uuid,
         worker_id: &str,
     ) -> Result<DeliveryAction, SuiteServiceError> {
@@ -503,11 +494,11 @@ impl SuiteDeliveryRunner for SuiteDeliveryService {
     async fn revoke(
         &self,
         j: SuiteRevokeJobV1,
-        n: DateTime<Utc>,
+        n: Timestamp,
     ) -> Result<DeliveryAction, SuiteServiceError> {
         self.revoke(j, n).await
     }
-    async fn cleanup(&self, n: DateTime<Utc>) -> Result<SuiteCleanupOutcome, SuiteServiceError> {
+    async fn cleanup(&self, n: Timestamp) -> Result<SuiteCleanupOutcome, SuiteServiceError> {
         self.cleanup(n).await
     }
 }

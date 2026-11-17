@@ -339,7 +339,7 @@ impl BrowserSessionState {
         };
         let body = SessionResponse {
             access_token: issued.access_token.to_string(),
-            expires_at: issued.expires_at.timestamp_millis(),
+            expires_at: issued.expires_at.as_millisecond(),
             subject: issued.subject,
         };
         let mut response = Json(body).into_response();

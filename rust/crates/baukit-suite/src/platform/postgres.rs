@@ -1,5 +1,6 @@
 use super::*;
 use async_trait::async_trait;
+use jiff_sqlx::ToSqlx;
 use sqlx::{PgConnection, PgPool};
 
 /// Copy into a forward product migration. No peer-link or jobs schema required.
@@ -20,14 +21,14 @@ impl PostgresPlatformInbox {
     /// `PlatformError::Invalid` when `batch` is 0. `Unavailable` when the database query fails.
     pub async fn purge_received_before(
         &self,
-        cutoff: chrono::DateTime<chrono::Utc>,
+        cutoff: jiff::Timestamp,
         batch: u32,
     ) -> Result<u64, PlatformError> {
         if batch == 0 {
             return Err(PlatformError::Invalid);
         }
         Ok(sqlx::query("DELETE FROM platform_inbound_receipts WHERE event_id IN (SELECT event_id FROM platform_inbound_receipts WHERE received_at < $1 ORDER BY received_at,event_id LIMIT $2 FOR UPDATE SKIP LOCKED)")
-            .bind(cutoff).bind(i64::from(batch)).execute(&self.pool).await.map_err(storage)?.rows_affected())
+            .bind(cutoff.to_sqlx()).bind(i64::from(batch)).execute(&self.pool).await.map_err(storage)?.rows_affected())
     }
 }
 #[async_trait]

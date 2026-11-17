@@ -5,7 +5,8 @@ use crate::{
     services::{SuiteDeliveryRunner, SuiteServiceError},
 };
 use baukit_jobs::{ClaimedJob, JobCancellation, JobError, JobFuture, JobHandler};
-use chrono::Utc;
+use jiff::Timestamp;
+
 use std::sync::Arc;
 pub struct SuiteJobHandler {
     service: Arc<dyn SuiteDeliveryRunner>,
@@ -35,7 +36,7 @@ impl JobHandler for SuiteJobHandler {
                                         SuiteErrorCode::SuitePayloadInvalid.as_str(),
                                     )
                                 })?,
-                                Utc::now(),
+                                Timestamp::now(),
                                 job.id,
                                 cancellation.worker_id(),
                             )
@@ -49,7 +50,7 @@ impl JobHandler for SuiteJobHandler {
                                         SuiteErrorCode::SuitePayloadInvalid.as_str(),
                                     )
                                 })?,
-                                Utc::now(),
+                                Timestamp::now(),
                             )
                             .await
                     }
@@ -114,13 +115,13 @@ pub async fn run_hourly_cleanup(
     service: Arc<dyn SuiteDeliveryRunner>,
     shutdown: tokio::sync::watch::Receiver<bool>,
 ) -> Result<(), SuiteServiceError> {
-    run_hourly_cleanup_with_clock(service, shutdown, Utc::now).await
+    run_hourly_cleanup_with_clock(service, shutdown, jiff::Timestamp::now).await
 }
 
 async fn run_hourly_cleanup_with_clock(
     service: Arc<dyn SuiteDeliveryRunner>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
-    now: impl Fn() -> chrono::DateTime<Utc>,
+    now: impl Fn() -> jiff::Timestamp,
 ) -> Result<(), SuiteServiceError> {
     metrics::describe_counter!(
         "suite_cleanup_failures_total",
@@ -139,7 +140,7 @@ async fn run_hourly_cleanup_with_clock(
         slot = interval
             .next_slot(slot, now())
             .map_err(|error| SuiteStoreError::InvalidData(error.to_string()))?;
-        let wait = (slot.starts_at() - now()).to_std().unwrap_or_default();
+        let wait = std::time::Duration::try_from(slot.starts_at() - now()).unwrap_or_default();
         tokio::select! {
             () = shutdown_requested(&mut shutdown) => { return Ok(()); }
             () = tokio::time::sleep(wait) => {
@@ -163,6 +164,7 @@ async fn shutdown_requested(shutdown: &mut tokio::sync::watch::Receiver<bool>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jiff::SignedDuration;
     struct CleanupMetrics(Arc<std::sync::atomic::AtomicU64>);
     impl metrics::Recorder for CleanupMetrics {
         fn describe_counter(
@@ -219,7 +221,7 @@ mod tests {
         async fn deliver(
             &self,
             _: SuiteDeliverJobV1,
-            _: chrono::DateTime<Utc>,
+            _: jiff::Timestamp,
             _: uuid::Uuid,
             _: &str,
         ) -> Result<DeliveryAction, SuiteServiceError> {
@@ -228,13 +230,13 @@ mod tests {
         async fn revoke(
             &self,
             _: SuiteRevokeJobV1,
-            _: chrono::DateTime<Utc>,
+            _: jiff::Timestamp,
         ) -> Result<DeliveryAction, SuiteServiceError> {
             Err(SuiteStoreError::InvalidData("unexpected revoke during cleanup".into()).into())
         }
         async fn cleanup(
             &self,
-            _: chrono::DateTime<Utc>,
+            _: jiff::Timestamp,
         ) -> Result<SuiteCleanupOutcome, SuiteServiceError> {
             if self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
                 return Err(SuiteStoreError::Storage("cleanup database unavailable".into()).into());
@@ -250,11 +252,11 @@ mod tests {
         let service = Arc::new(CleanupRunner(std::sync::atomic::AtomicUsize::new(0)));
         let (sender, receiver) = tokio::sync::watch::channel(false);
         let started = tokio::time::Instant::now();
-        let anchor: chrono::DateTime<Utc> = "2026-10-08T12:30:00Z".parse().expect("time");
+        let anchor: jiff::Timestamp = "2026-10-08T12:30:00Z".parse().expect("time");
         let task = tokio::spawn(run_hourly_cleanup_with_clock(
             service.clone(),
             receiver,
-            move || anchor + chrono::Duration::from_std(started.elapsed()).expect("elapsed"),
+            move || anchor + SignedDuration::try_from(started.elapsed()).expect("elapsed"),
         ));
         tokio::task::yield_now().await;
         sender.send(false).expect("notification");

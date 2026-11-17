@@ -400,8 +400,8 @@ impl HubAccountPlan {
             tier: "free".into(),
             features: Vec::new(),
             revision,
-            valid_until: chrono::Utc::now()
-                .timestamp()
+            valid_until: jiff::Timestamp::now()
+                .as_second()
                 .saturating_add(FREE_CACHE_TTL_SECONDS),
             grace_until: None,
         };
@@ -440,7 +440,7 @@ impl AccountPlan for HubAccountPlan {
     async fn current(&self, suite_subject: &str) -> Result<AccountEntitlement, PlanError> {
         let snapshot = self
             .entitlements
-            .current(suite_subject, chrono::Utc::now().timestamp())
+            .current(suite_subject, jiff::Timestamp::now().as_second())
             .await
             .ok()
             .flatten()

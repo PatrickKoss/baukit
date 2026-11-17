@@ -96,7 +96,7 @@ pub trait PlatformEventHandler: Send + Sync {
     async fn prepare_at(
         &self,
         event: &PlatformEvent,
-        _now: chrono::DateTime<chrono::Utc>,
+        _now: jiff::Timestamp,
     ) -> Result<Option<std::sync::Arc<dyn PlatformEventHandler>>, PlatformError> {
         self.prepare(event).await
     }

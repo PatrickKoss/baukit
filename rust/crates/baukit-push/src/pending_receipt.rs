@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, num::NonZeroU32};
 
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -14,13 +14,13 @@ use crate::{
 /// How long a recorded ticket waits before its first poll, and between polls.
 ///
 /// Expo recommends checking receipts 15 minutes after the send.
-pub const RECEIPT_POLL_DELAY: TimeDelta = TimeDelta::minutes(15);
+pub const RECEIPT_POLL_DELAY: SignedDuration = SignedDuration::from_mins(15);
 
 /// How long the provider keeps a receipt after the send.
 ///
 /// Expo clears receipts after 24 hours. A ticket older than this never
 /// settles; [`PendingReceiptStore::purge`] removes it.
-pub const RECEIPT_RETENTION: TimeDelta = TimeDelta::hours(24);
+pub const RECEIPT_RETENTION: SignedDuration = SignedDuration::from_hours(24);
 
 /// An accepted notification whose receipt has not been read yet.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -32,7 +32,7 @@ pub struct PendingReceipt {
     /// The device token the notification went to.
     pub token: DeviceToken,
     /// The instant the send started; invalidation compares it.
-    pub sent_at: DateTime<Utc>,
+    pub sent_at: Timestamp,
 }
 
 /// Storage port for tickets whose receipts are still outstanding.
@@ -48,15 +48,15 @@ pub trait PendingReceiptStore: Send + Sync {
     fn record(
         &self,
         receipts: Vec<PendingReceipt>,
-        due_at: DateTime<Utc>,
+        due_at: Timestamp,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>>;
 
     /// Takes up to `limit` tickets due at or before `now`, oldest due first,
     /// and makes them due again at `retry_at`.
     fn take_due(
         &self,
-        now: DateTime<Utc>,
-        retry_at: DateTime<Utc>,
+        now: Timestamp,
+        retry_at: Timestamp,
         limit: NonZeroU32,
     ) -> PushStoreFuture<'_, Result<Vec<PendingReceipt>, PushStoreError>>;
 
@@ -72,7 +72,7 @@ pub trait PendingReceiptStore: Send + Sync {
     /// than `limit`.
     fn purge(
         &self,
-        sent_before: DateTime<Utc>,
+        sent_before: Timestamp,
         limit: NonZeroU32,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>>;
 
@@ -89,7 +89,7 @@ pub trait PendingReceiptStore: Send + Sync {
         &self,
         owner_id: Uuid,
         outcomes: &[PushOutcome],
-        sent_at: DateTime<Utc>,
+        sent_at: Timestamp,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         let receipts = accepted_receipts(owner_id, outcomes, sent_at);
         if receipts.is_empty() {
@@ -104,7 +104,7 @@ pub trait PendingReceiptStore: Send + Sync {
 pub fn accepted_receipts(
     owner_id: Uuid,
     outcomes: &[PushOutcome],
-    sent_at: DateTime<Utc>,
+    sent_at: Timestamp,
 ) -> Vec<PendingReceipt> {
     outcomes
         .iter()
@@ -160,7 +160,7 @@ pub async fn poll_pending_receipts<S, P, R>(
     source: &S,
     pending: &P,
     registry: &R,
-    now: DateTime<Utc>,
+    now: Timestamp,
     limit: NonZeroU32,
 ) -> Result<ReceiptPoll, ReceiptPollError>
 where
@@ -179,7 +179,7 @@ where
         .receipts(due.iter().map(|receipt| receipt.ticket.clone()).collect())
         .await?;
 
-    let mut dead_by_send = BTreeMap::<DateTime<Utc>, Vec<DeviceToken>>::new();
+    let mut dead_by_send = BTreeMap::<Timestamp, Vec<DeviceToken>>::new();
     let mut settled = Vec::new();
     for pending_receipt in due {
         let Some(receipt) = receipts.get(&pending_receipt.ticket) else {
@@ -229,8 +229,8 @@ mod tests {
 
     const LIMIT: NonZeroU32 = NonZeroU32::new(10).expect("ten is not zero");
 
-    fn at(minutes: i64) -> DateTime<Utc> {
-        DateTime::UNIX_EPOCH + TimeDelta::minutes(minutes)
+    fn at(minutes: i64) -> Timestamp {
+        Timestamp::UNIX_EPOCH + SignedDuration::from_mins(minutes)
     }
 
     fn token(value: &str) -> DeviceToken {

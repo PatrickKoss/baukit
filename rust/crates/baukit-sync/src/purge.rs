@@ -26,7 +26,8 @@ use std::{
     num::NonZeroU32,
 };
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 use sqlx::{PgPool, Postgres, Row as _, Transaction};
 use thiserror::Error;
 use uuid::Uuid;
@@ -157,7 +158,7 @@ struct Candidate {
 pub async fn purge_tombstone_batch(
     transaction: &mut Transaction<'_, Postgres>,
     table: &TombstoneTable,
-    cutoff: DateTime<Utc>,
+    cutoff: Timestamp,
     limit: NonZeroU32,
 ) -> Result<PurgeBatch, PurgeError> {
     let candidates = select_candidates(transaction, table, cutoff, limit).await?;
@@ -199,7 +200,7 @@ pub async fn purge_tombstone_batch(
 pub async fn purge_tombstones(
     pool: &PgPool,
     tables: &[TombstoneTable],
-    cutoff: DateTime<Utc>,
+    cutoff: Timestamp,
     limit: NonZeroU32,
 ) -> Result<Vec<PurgedTable>, PurgeError> {
     let mut report = Vec::with_capacity(tables.len());
@@ -258,7 +259,7 @@ pub async fn guard_pull_cursor(
 async fn drain_table(
     pool: &PgPool,
     table: &TombstoneTable,
-    cutoff: DateTime<Utc>,
+    cutoff: Timestamp,
     limit: NonZeroU32,
 ) -> Result<u64, PurgeError> {
     let mut deleted = 0_u64;
@@ -276,11 +277,11 @@ async fn drain_table(
 async fn select_candidates(
     transaction: &mut Transaction<'_, Postgres>,
     table: &TombstoneTable,
-    cutoff: DateTime<Utc>,
+    cutoff: Timestamp,
     limit: NonZeroU32,
 ) -> Result<Vec<Candidate>, PurgeError> {
     let rows = sqlx::query(table.select)
-        .bind(cutoff)
+        .bind(cutoff.to_sqlx())
         .bind(i64::from(limit.get()))
         .fetch_all(&mut **transaction)
         .await?;

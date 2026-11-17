@@ -1,4 +1,6 @@
 #![cfg(test)]
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 use std::{
     collections::HashSet,
     error::Error,
@@ -12,7 +14,7 @@ use baukit_jobs::{
     PostgresJobStore, StoreError, WorkerConfig, WorkerRunner,
 };
 use baukit_runtime::ShutdownToken;
-use chrono::{TimeDelta, Utc};
+use jiff::SignedDuration;
 use metrics_exporter_prometheus::PrometheusBuilder;
 use serde_json::json;
 use sqlx::PgPool;
@@ -81,7 +83,7 @@ async fn cancel_claim_and_recover(
                     .claim(
                         "cancelled-worker",
                         &[ALPHA],
-                        Utc::now(),
+                        Timestamp::now(),
                         Duration::from_secs(30),
                     )
                     .await
@@ -124,7 +126,7 @@ async fn recover_abandoned_claim(
     store: &PostgresJobStore,
     job_id: Uuid,
 ) -> Result<(), Box<dyn Error>> {
-    let recovery_time = Utc::now() + TimeDelta::minutes(2);
+    let recovery_time = Timestamp::now() + SignedDuration::from_mins(2);
     let recovered = store
         .claim(
             "recovery-worker",
@@ -151,7 +153,7 @@ async fn postgres_claim_returns_only_requested_job_types() -> Result<(), Box<dyn
     let unhandled = enqueue_aged(&store, UNHANDLED).await?;
     let alpha = store.enqueue(NewJob::new(ALPHA, json!({}), 3)).await?.job;
     let beta = store.enqueue(NewJob::new(BETA, json!({}), 3)).await?.job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     let lease = Duration::from_secs(30);
 
     let claimed = store.claim("worker-b", &[BETA], now, lease).await?;
@@ -252,8 +254,8 @@ async fn postgres_filtered_claim_reclaims_expired_leases_only_for_its_types()
 -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;
     let job = store.enqueue(NewJob::new(ALPHA, json!({}), 3)).await?.job;
-    let now = Utc::now();
-    let expired = now + TimeDelta::seconds(2);
+    let now = Timestamp::now();
+    let expired = now + SignedDuration::from_secs(2);
 
     store
         .claim("worker-a", &[ALPHA], now, Duration::from_secs(1))
@@ -276,7 +278,7 @@ async fn postgres_filtered_claim_reclaims_expired_leases_only_for_its_types()
     assert_eq!(reclaimed.locked_by.as_deref(), Some("worker-c"));
 
     let final_attempt = store.enqueue(NewJob::new(ALPHA, json!({}), 1)).await?.job;
-    let final_now = Utc::now();
+    let final_now = Timestamp::now();
     store
         .claim("worker-c", &[ALPHA], final_now, Duration::from_secs(1))
         .await?
@@ -286,7 +288,7 @@ async fn postgres_filtered_claim_reclaims_expired_leases_only_for_its_types()
             .claim(
                 "worker-b",
                 &[BETA],
-                final_now + TimeDelta::seconds(2),
+                final_now + SignedDuration::from_secs(2),
                 Duration::from_secs(10),
             )
             .await?
@@ -308,7 +310,7 @@ async fn postgres_filtered_claim_reclaims_expired_leases_only_for_its_types()
 async fn postgres_filtered_claim_honors_cancellation() -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;
     let pending = store.enqueue(NewJob::new(ALPHA, json!({}), 3)).await?.job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     assert!(store.request_cancellation(pending.id, now).await?);
     assert!(
         store
@@ -323,7 +325,7 @@ async fn postgres_filtered_claim_honors_cancellation() -> Result<(), Box<dyn Err
     );
 
     let expired = store.enqueue(NewJob::new(ALPHA, json!({}), 3)).await?.job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     store
         .claim("worker-a", &[ALPHA], now, Duration::from_secs(1))
         .await?
@@ -334,7 +336,7 @@ async fn postgres_filtered_claim_honors_cancellation() -> Result<(), Box<dyn Err
             .claim(
                 "worker-b",
                 &[ALPHA],
-                now + TimeDelta::seconds(2),
+                now + SignedDuration::from_secs(2),
                 Duration::from_secs(10),
             )
             .await?
@@ -361,7 +363,11 @@ async fn postgres_filtered_claim_honors_cancellation() -> Result<(), Box<dyn Err
             == "running"
     })
     .await;
-    assert!(store.request_cancellation(running.id, Utc::now()).await?);
+    assert!(
+        store
+            .request_cancellation(running.id, Timestamp::now())
+            .await?
+    );
     wait_until(|| async {
         status_and_attempts(&pool, running.id)
             .await
@@ -404,7 +410,7 @@ async fn postgres_claim_index_skips_a_backlog_of_unhandled_types() -> Result<(),
         "EXPLAIN SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND job_type = ANY($1) AND ((status = 'pending' AND run_after <= $2) OR (status = 'running' AND locked_until <= $2)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 1",
     )
     .bind(&[ALPHA][..])
-    .bind(Utc::now())
+    .bind((Timestamp::now()).to_sqlx())
     .fetch_all(&pool)
     .await?;
     let plan = plan.join("\n");
@@ -531,7 +537,7 @@ async fn fixture()
 }
 
 async fn enqueue_aged(store: &PostgresJobStore, job_type: &str) -> Result<Uuid, StoreError> {
-    let created_at = Utc::now() - TimeDelta::seconds(i64::from(UNHANDLED_AGE_SECONDS));
+    let created_at = Timestamp::now() - SignedDuration::from_secs(i64::from(UNHANDLED_AGE_SECONDS));
     let mut job = NewJob::new(job_type, json!({}), 3);
     job.created_at = created_at;
     job.run_after = created_at;

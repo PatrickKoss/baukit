@@ -16,7 +16,9 @@ use baukit_jobs::{
     JobStore, NewJob, PostgresJobStore, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
 use baukit_test::{ScriptedWebhookReceiver, ScriptedWebhookResponse};
-use chrono::{SubsecRound as _, Utc};
+use jiff::SignedDuration;
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 
 use baukit_ratelimit::InMemoryRateLimitStore;
 use baukit_suite::adapters::peer::ReqwestSuitePeerClient;
@@ -233,7 +235,7 @@ async fn exchange_link(
                 code_challenge: pkce_challenge(&verifier)?,
                 hint: None,
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     let request = ExchangeRequest {
@@ -246,7 +248,7 @@ async fn exchange_link(
         initiator_suite_subject: peer_subject,
         initiator_display_name: None,
     };
-    let response = service.exchange(request.clone(), Utc::now()).await?;
+    let response = service.exchange(request.clone(), Timestamp::now()).await?;
     Ok((service.get(owner, response.link_id).await?, request))
 }
 
@@ -489,7 +491,7 @@ async fn two_routers_link_both_roles_reconnect_relay_and_disconnect() -> TestRes
             let delivery = SuiteDeliveryService::new(a_context.clone());
             assert_eq!(
                 delivery
-                    .revoke(SuiteRevokeJobV1::new(a_id), Utc::now())
+                    .revoke(SuiteRevokeJobV1::new(a_id), Timestamp::now())
                     .await?,
                 DeliveryAction::Delivered
             );
@@ -542,7 +544,7 @@ async fn assert_fixture_errors(
                             display_name: None
                         },
                         start,
-                        Utc::now()
+                        Timestamp::now()
                     )
                     .await
                     .expect_err("rejected input")
@@ -566,12 +568,12 @@ async fn assert_exchange_retry_rejects_changed_requests(
     )
     .await?;
     assert!(link.suite_subject.is_none());
-    let retry = service.exchange(request.clone(), Utc::now()).await?;
+    let retry = service.exchange(request.clone(), Timestamp::now()).await?;
     assert_eq!(retry.link_id, link.id);
     request.initiator_link_id = Uuid::now_v7();
     assert_eq!(
         service
-            .exchange(request.clone(), Utc::now())
+            .exchange(request.clone(), Timestamp::now())
             .await
             .expect_err("rejected input")
             .code(),
@@ -580,7 +582,7 @@ async fn assert_exchange_retry_rejects_changed_requests(
     request.code_verifier = URL_SAFE_NO_PAD.encode([10u8; 32]);
     assert_eq!(
         service
-            .exchange(request, Utc::now())
+            .exchange(request, Timestamp::now())
             .await
             .expect_err("rejected input")
             .code(),
@@ -609,7 +611,7 @@ async fn assert_account_hint_matching(service: &SuiteLinkService, u: &SuiteUser)
                 code_challenge: pkce_challenge(&verifier)?,
                 hint: Some(hint_for("one|person")),
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     let mut request = ExchangeRequest {
@@ -624,7 +626,7 @@ async fn assert_account_hint_matching(service: &SuiteLinkService, u: &SuiteUser)
     };
     assert_eq!(
         service
-            .exchange(request.clone(), Utc::now())
+            .exchange(request.clone(), Timestamp::now())
             .await
             .expect_err("rejected input")
             .code(),
@@ -633,18 +635,18 @@ async fn assert_account_hint_matching(service: &SuiteLinkService, u: &SuiteUser)
     request.initiator_suite_subject = Some("one|other".to_owned());
     assert_eq!(
         service
-            .exchange(request.clone(), Utc::now())
+            .exchange(request.clone(), Timestamp::now())
             .await
             .expect_err("rejected input")
             .code(),
         "suite_link_account_mismatch"
     );
     request.initiator_suite_subject = Some("one|person".to_owned());
-    let created = service.exchange(request.clone(), Utc::now()).await?;
+    let created = service.exchange(request.clone(), Timestamp::now()).await?;
     assert_eq!(created.suite_subject, Some("one|person".to_owned()));
     assert_eq!(
         service
-            .exchange(request, Utc::now() + chrono::Duration::seconds(61))
+            .exchange(request, Timestamp::now() + SignedDuration::from_secs(61))
             .await
             .expect_err("rejected input")
             .code(),
@@ -669,7 +671,7 @@ async fn assert_invalid_nonces_store_nothing(
         };
         assert_eq!(
             service
-                .start(u.clone(), invalid, Utc::now())
+                .start(u.clone(), invalid, Timestamp::now())
                 .await
                 .expect_err("nonce")
                 .code(),
@@ -700,7 +702,7 @@ async fn assert_start_supersedes_prepared_exchange(
                 ..SuiteUser::default()
             },
             start.clone(),
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     let untouched_peer = service
@@ -710,10 +712,12 @@ async fn assert_start_supersedes_prepared_exchange(
                 peer_app: "hebkit".into(),
                 ..start.clone()
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
-    let first = service.start(u.clone(), start.clone(), Utc::now()).await?;
+    let first = service
+        .start(u.clone(), start.clone(), Timestamp::now())
+        .await?;
     let sealed = cipher().encrypt(
         first.request_id,
         &baukit_credential_vault::CredentialSecrets::new().with("link_secret", vec![9_u8; 32])?,
@@ -732,7 +736,9 @@ async fn assert_start_supersedes_prepared_exchange(
         .prepare_exchange_in_transaction(&mut tx, first.request_id, u.id, &prepared)
         .await?;
     c.store.commit_transaction(tx).await?;
-    let second = service.start(u.clone(), start.clone(), Utc::now()).await?;
+    let second = service
+        .start(u.clone(), start.clone(), Timestamp::now())
+        .await?;
     for untouched in [untouched_owner.request_id, untouched_peer.request_id] {
         let open: bool =
             sqlx::query_scalar("SELECT consumed_at IS NULL FROM suite_link_requests WHERE id=$1")
@@ -755,7 +761,12 @@ async fn assert_start_supersedes_prepared_exchange(
     );
     assert_eq!(
         service
-            .complete(u.clone(), first.request_id, "code".to_owned(), Utc::now())
+            .complete(
+                u.clone(),
+                first.request_id,
+                "code".to_owned(),
+                Timestamp::now()
+            )
             .await
             .expect_err("rejected input")
             .code(),
@@ -779,7 +790,7 @@ async fn assert_callbacks_and_starts_reject_bad_input(
                     code: Some("code".to_owned()),
                     error: None,
                 },
-                Utc::now(),
+                Timestamp::now(),
             )
             .await?;
         assert_eq!(query(&bad.location, "status"), "failed");
@@ -793,7 +804,7 @@ async fn assert_callbacks_and_starts_reject_bad_input(
                 code: Some("code".to_owned()),
                 error: None,
             },
-            Utc::now() + chrono::Duration::minutes(11),
+            Timestamp::now() + SignedDuration::from_mins(11),
         )
         .await?;
     assert_eq!(query(&expired.location, "status"), "failed");
@@ -801,7 +812,7 @@ async fn assert_callbacks_and_starts_reject_bad_input(
     bad_start.peer_app = "unknown".to_owned();
     assert_eq!(
         service
-            .start(u.clone(), bad_start, Utc::now())
+            .start(u.clone(), bad_start, Timestamp::now())
             .await
             .expect_err("rejected input")
             .code(),
@@ -811,7 +822,7 @@ async fn assert_callbacks_and_starts_reject_bad_input(
     bad_start.return_url = "https://evil.example/suite/linked".to_owned();
     assert_eq!(
         service
-            .start(u.clone(), bad_start, Utc::now())
+            .start(u.clone(), bad_start, Timestamp::now())
             .await
             .expect_err("rejected input")
             .code(),
@@ -947,13 +958,15 @@ async fn assert_xp_shared_only_when_both_preferences_allow(
         .enumerate()
     {
         c.store
-            .update_preferences(owner, link_id, Some(per_link), None, Utc::now())
+            .update_preferences(owner, link_id, Some(per_link), None, Timestamp::now())
             .await?;
         let outbox = make_outbox(pool.clone(), &c.clone(), global);
         let event = activity(2, Some(9));
         let mut event = event;
-        event.natural_key = (Utc::now().date_naive()
-            - chrono::Duration::days(i64::try_from(index)? + 1))
+        event.natural_key = (Timestamp::now()
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+            .date()
+            - SignedDuration::from_hours(24 * i64::try_from(index)? + 1))
         .to_string();
         let mut tx = c.store.begin_transaction().await?;
         outbox
@@ -1051,7 +1064,10 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
     let outbox = make_outbox(db.pool.clone(), &c.clone(), true);
     let event = activity(3, Some(17));
     let mut event = event;
-    event.natural_key = (Utc::now().date_naive()).to_string();
+    event.natural_key = (Timestamp::now()
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+        .date())
+    .to_string();
     assert_enqueue_rolls_back_and_dedupes(&c, &outbox, owner, &event, &db.pool).await?;
     assert_xp_shared_only_when_both_preferences_allow(&c, owner, link.id, &db.pool).await?;
     c.store
@@ -1059,7 +1075,7 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
             link.user_id,
             link.id,
             DeliveryAction::Unauthorized,
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     assert_eq!(
@@ -1083,7 +1099,7 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
     tx.rollback().await?;
     assert_eq!(
         service
-            .reenable(owner, link.id, Utc::now())
+            .reenable(owner, link.id, Timestamp::now())
             .await?
             .consecutive_failures,
         0
@@ -1093,20 +1109,25 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
             link.user_id,
             link.id,
             DeliveryAction::Unauthorized,
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     assert_attention_failures_escalate(&service, &jobs, owner, link.id, &db.pool).await?;
     assert_eq!(
         service
-            .reenable(owner, link.id, Utc::now())
+            .reenable(owner, link.id, Timestamp::now())
             .await
             .expect_err("rejected input")
             .code(),
         "not_found"
     );
     c.store
-        .record_delivery(link.user_id, link.id, DeliveryAction::Revoked, Utc::now())
+        .record_delivery(
+            link.user_id,
+            link.id,
+            DeliveryAction::Revoked,
+            Timestamp::now(),
+        )
         .await?;
     assert_eq!(
         service.get(owner, link.id).await?.status,
@@ -1116,20 +1137,20 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
 }
 
 fn signed_inbound_request(
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
     id: Uuid,
     event: &EventEnvelope,
     key: &[u8],
 ) -> Result<Request<Body>, Box<dyn Error>> {
     let body = serde_json::to_vec(event)?;
-    let signature = sign_webhook_hmac_sha256(key, now.timestamp(), &event.event_id, &body);
+    let signature = sign_webhook_hmac_sha256(key, now.as_second(), &event.event_id, &body);
     Ok(Request::builder()
         .method("POST")
         .uri(format!("/api/v1/suite/inbound/{id}"))
         .header("content-type", "application/json")
         .header("x-suite-source", "beta")
         .header("x-suite-delivery-id", &event.event_id)
-        .header("x-suite-timestamp", now.timestamp().to_string())
+        .header("x-suite-timestamp", now.as_second().to_string())
         .header("x-suite-signature", signature)
         .body(Body::from(body))?)
 }
@@ -1161,7 +1182,7 @@ fn assert_only_known_link_keys_were_limited(
 
 async fn assert_unknown_ids_hit_their_own_limit(
     app: &Router,
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
     event: &EventEnvelope,
     key: &[u8],
 ) -> TestResult {
@@ -1202,7 +1223,7 @@ async fn inbound_limits_isolate_known_links_from_unknown_id_traffic() -> TestRes
     let service = SuiteLinkService::new(context.clone());
     let applier = Arc::new(Applier::default());
     let app = common::app_with_suite(&db.pool, module(&db.pool, context, applier.clone()));
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut envelope: EventEnvelope = activity(24, Some(24)).envelope("remote", "beta");
     envelope.event_type = "beta.activity.completed".into();
     envelope.user_id = "remote".to_owned();
@@ -1316,11 +1337,8 @@ async fn receiving_signature_fixture_matrix_uses_raw_bytes() -> TestResult {
                     .expect("valid test value")
                     .as_bytes()
                     .to_vec(),
-                chrono::DateTime::from_timestamp(
-                    case["now"].as_i64().expect("valid test value"),
-                    0,
-                )
-                .expect("valid test value"),
+                jiff::Timestamp::from_second(case["now"].as_i64().expect("valid test value"))
+                    .expect("valid test value"),
             )
             .await
             .expect_err("rejected input");
@@ -1386,7 +1404,10 @@ async fn worker_retries_then_commits_delivery_and_health_with_its_lease() -> Tes
     let (link, _) = exchange_link(&links, owner, None, None).await?;
     let event = activity(1, Some(2));
     let mut event = event;
-    event.natural_key = (Utc::now().date_naive()).to_string();
+    event.natural_key = (Timestamp::now()
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+        .date())
+    .to_string();
     let mut tx = c.store.begin_transaction().await?;
     c.outbox
         .enqueue_in_transaction(&mut tx, owner, &[event])
@@ -1446,7 +1467,7 @@ async fn seed_terminal_suite_jobs(
     jobs: &PostgresJobStore,
     pool: &PgPool,
     link_id: Uuid,
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> Result<(Vec<Uuid>, Vec<Uuid>), Box<dyn Error>> {
     let mut suite_jobs = Vec::new();
     let mut retained = Vec::new();
@@ -1458,9 +1479,9 @@ async fn seed_terminal_suite_jobs(
         ] {
             for status in ["succeeded", "failed", "cancelled"] {
                 let updated = if old {
-                    now - chrono::Duration::days(31)
+                    now - SignedDuration::from_hours(24 * 31)
                 } else {
-                    now - chrono::Duration::days(29)
+                    now - SignedDuration::from_hours(24 * 29)
                 };
                 let mut pending = NewJob::new(
                     kind,
@@ -1475,7 +1496,7 @@ async fn seed_terminal_suite_jobs(
                 )
                 .bind(job.id)
                 .bind(status)
-                .bind(updated)
+                .bind(updated.to_sqlx())
                 .bind((status == "failed").then_some("permanent"))
                 .execute(pool)
                 .await?;
@@ -1495,7 +1516,7 @@ async fn suite_cleanup_retains_its_history_until_30_days_after_generic_cleanup()
     let (db, context, owner) = authorizer_fixture().await?;
     let (link, _) =
         exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     context
         .store
         .record_delivery(link.user_id, link.id, DeliveryAction::Delivered, now)
@@ -1503,17 +1524,17 @@ async fn suite_cleanup_retains_its_history_until_30_days_after_generic_cleanup()
     let jobs = PostgresJobStore::new(db.pool.clone()).retain_kinds(&baukit_suite::SUITE_JOB_TYPES);
     let (mut suite_jobs, mut retained) =
         seed_terminal_suite_jobs(&jobs, &db.pool, link.id, now).await?;
-    let ordinary_updated = now - chrono::Duration::days(31);
+    let ordinary_updated = now - SignedDuration::from_hours(24 * 31);
     let mut pending = NewJob::new("email.send", json!({}), 1);
     pending.created_at = ordinary_updated;
     pending.run_after = ordinary_updated;
     let ordinary = jobs.enqueue(pending).await?.job;
     sqlx::query("UPDATE job_outbox SET status='succeeded',updated_at=$2 WHERE id=$1")
         .bind(ordinary.id)
-        .bind(ordinary_updated)
+        .bind(ordinary_updated.to_sqlx())
         .execute(&db.pool)
         .await?;
-    let generic_cutoff = now - chrono::Duration::days(7);
+    let generic_cutoff = now - SignedDuration::from_hours(24 * 7);
     assert_eq!(
         jobs.cleanup_terminal_jobs(
             TerminalJobCutoffs {
@@ -1566,7 +1587,7 @@ async fn assert_corrupt_request_state_fails_completion(
                 state_nonce: "nonce".to_owned(),
                 return_url: "http://127.0.0.1:12340/suite/linked".to_owned(),
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     sqlx::query("UPDATE suite_link_requests SET state_hash='\\x01'::bytea WHERE id=$1")
@@ -1597,7 +1618,7 @@ async fn unavailable_appliers_and_corrupt_storage_fail_with_retryable_or_interna
     let mut event: EventEnvelope = activity(24, Some(24)).envelope("remote", "beta");
     event.event_type = "beta.activity.completed".into();
     event.user_id = "remote".to_owned();
-    event.occurred_at = Utc::now();
+    event.occurred_at = Timestamp::now();
     let raw = serde_json::to_vec(&event)?;
     let request = || {
         Request::builder()
@@ -1608,13 +1629,13 @@ async fn unavailable_appliers_and_corrupt_storage_fail_with_retryable_or_interna
             .header("x-suite-delivery-id", &event.event_id)
             .header(
                 "x-suite-timestamp",
-                event.occurred_at.timestamp().to_string(),
+                event.occurred_at.as_second().to_string(),
             )
             .header(
                 "x-suite-signature",
                 sign_webhook_hmac_sha256(
                     &secret(&link),
-                    event.occurred_at.timestamp(),
+                    event.occurred_at.as_second(),
                     &event.event_id,
                     &raw,
                 ),
@@ -1677,7 +1698,7 @@ async fn assert_link_operations_rejected(
 ) -> TestResult {
     for operation in ["test", "replay"] {
         let body = if operation == "replay" {
-            json!({"since":Utc::now().date_naive().to_string()})
+            json!({"since":Timestamp::now().to_zoned_datetime(jiff::tz::TimeZone::UTC).date().to_string()})
         } else {
             json!({})
         };
@@ -1745,7 +1766,7 @@ async fn disabled_jobs_fail_permanently_and_revoked_failures_leave_link_health_u
     let links = SuiteLinkService::new(context.clone());
     let (link, _) = exchange_link(&links, owner, None, None).await?;
     SuiteDeliveryService::new(context.clone())
-        .test(owner, link.id, Utc::now())
+        .test(owner, link.id, Timestamp::now())
         .await?;
     sqlx::query(
         "UPDATE suite_links SET delivery_health='disabled',consecutive_failures=20,last_failure_code='suite_unauthorized' WHERE id=$1",
@@ -1783,7 +1804,7 @@ async fn disabled_jobs_fail_permanently_and_revoked_failures_leave_link_health_u
         Some("suite_unauthorized")
     );
     assert_eq!(receiver.calls(), 0);
-    links.disconnect(owner, link.id, Utc::now()).await?;
+    links.disconnect(owner, link.id, Timestamp::now()).await?;
     let before = links.get(owner, link.id).await?;
     let jobs = PostgresJobStore::new(db.pool.clone());
     for id in [link.id.to_string(), "malformed-uuid".to_owned()] {
@@ -1853,18 +1874,18 @@ impl SuiteReplaySource for History {
         &self,
         connection: &mut sqlx::PgConnection,
         owner: Uuid,
-        since: chrono::NaiveDate,
+        since: jiff::civil::Date,
     ) -> Result<Vec<SuiteEvent>, SuiteStoreError> {
         self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let events: Vec<(String, String, chrono::DateTime<Utc>, Value)> = sqlx::query_as("SELECT event_type,natural_key,occurred_at,payload FROM history_events WHERE owner_id=$1 AND occurred_at::date >= $2 ORDER BY occurred_at,natural_key")
-            .bind(owner).bind(since).fetch_all(connection).await.map_err(|error| SuiteStoreError::Storage(error.to_string()))?;
+        let events: Vec<(String, String, jiff_sqlx::Timestamp, Value)> = sqlx::query_as("SELECT event_type,natural_key,occurred_at,payload FROM history_events WHERE owner_id=$1 AND occurred_at::date >= $2 ORDER BY occurred_at,natural_key")
+            .bind(owner).bind(since.to_sqlx()).fetch_all(connection).await.map_err(|error| SuiteStoreError::Storage(error.to_string()))?;
         events
             .into_iter()
             .map(|(event_type, natural_key, occurred_at, payload)| {
                 Ok(SuiteEvent {
                     event_type,
                     natural_key,
-                    occurred_at,
+                    occurred_at: occurred_at.to_jiff(),
                     payload: serde_json::from_value(payload)
                         .map_err(|error| SuiteStoreError::InvalidData(error.to_string()))?,
                 })
@@ -1938,7 +1959,8 @@ fn activity(minutes: u32, xp: Option<u32>) -> SuiteEvent {
     SuiteEvent {
         event_type: "alpha.activity.completed".into(),
         natural_key: id.to_string(),
-        occurred_at: Utc::now().trunc_subsecs(6),
+        occurred_at: Timestamp::from_microsecond(Timestamp::now().as_microsecond())
+            .expect("valid test value"),
         payload,
     }
 }
@@ -2082,7 +2104,7 @@ async fn signed_route(
     replay: bool,
 ) -> Result<(StatusCode, Value, axum::http::HeaderMap), Box<dyn Error>> {
     let raw = serde_json::to_vec(event)?;
-    let timestamp = Utc::now().timestamp();
+    let timestamp = Timestamp::now().as_second();
     let mut request = Request::builder()
         .method("POST")
         .uri(format!("/api/v1/suite/inbound/{id}"))
@@ -2137,7 +2159,7 @@ async fn receiving_deduplicates_conflicts_isolates_owners_and_makes_replay_rewar
         signed_route(&app, other_link.id, &event, &secret(&other_link), false).await?;
     assert_eq!(other_response.0, StatusCode::ACCEPTED);
     event.event_id = Uuid::new_v5(&SUITE_EVENT_NAMESPACE, b"replayed").to_string();
-    event.occurred_at = Utc::now() - chrono::Duration::days(200);
+    event.occurred_at = Timestamp::now() - SignedDuration::from_hours(24 * 200);
     let stale = signed_route(&app, link.id, &event, &key, false).await?;
     assert_eq!(stale.1["error"]["code"], "event_too_old");
     let replay = signed_route(&app, link.id, &event, &key, true).await?;
@@ -2160,7 +2182,7 @@ async fn receiving_deduplicates_conflicts_isolates_owners_and_makes_replay_rewar
     .await?;
     assert_eq!(rows.len(), 3);
     assert!(rows.contains(&(owner, true, "off".into())));
-    event.occurred_at = Utc::now();
+    event.occurred_at = Timestamp::now();
     event.user_id = "wrong-subject".into();
     assert_eq!(
         signed_route(&app, link.id, &event, &key, false).await?.1["error"]["code"],
@@ -2182,7 +2204,7 @@ async fn initial_replay_reads_product_history_and_standalone_rejects_writes() ->
     let owner = user(&db.pool, "history-owner").await?;
     let event = activity(40, Some(8));
     sqlx::query("INSERT INTO history_events(owner_id,event_type,natural_key,occurred_at,payload) VALUES($1,$2,$3,$4,$5)")
-        .bind(owner).bind(&event.event_type).bind(&event.natural_key).bind(event.occurred_at).bind(json!(event.payload)).execute(&db.pool).await?;
+        .bind(owner).bind(&event.event_type).bind(&event.natural_key).bind(event.occurred_at.to_sqlx()).bind(json!(event.payload)).execute(&db.pool).await?;
     let context = make_context(&db.pool, registry("alpha", "beta", 12340, 12341));
     let links = SuiteLinkService::new(context.clone());
     let (link, _) = exchange_link(&links, owner, None, None).await?;
@@ -2366,7 +2388,7 @@ async fn seed_owner_suite_rows(
                 return_url: "http://127.0.0.1:12340/suite/linked".into(),
                 state_nonce: "nonce".into(),
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     Ok(())
@@ -2581,7 +2603,7 @@ async fn in_process_peer_links_the_second_app_and_delivers_to_its_real_router() 
                     event.envelope(&a_owner.to_string(), "alpha"),
                     false
                 ),
-                Utc::now()
+                Timestamp::now()
             )
             .await?,
         DeliveryAction::Delivered
@@ -2590,10 +2612,10 @@ async fn in_process_peer_links_the_second_app_and_delivers_to_its_real_router() 
         b_applier.calls.lock().expect("calls").as_slice(),
         &[(b_owner, RewardMode::Native, false)]
     );
-    a_api.disconnect(a_owner, link.id, Utc::now()).await?;
+    a_api.disconnect(a_owner, link.id, Timestamp::now()).await?;
     assert_eq!(
         delivery
-            .revoke(SuiteRevokeJobV1::new(link.id), Utc::now())
+            .revoke(SuiteRevokeJobV1::new(link.id), Timestamp::now())
             .await?,
         DeliveryAction::Delivered
     );
@@ -2647,13 +2669,13 @@ async fn assert_replay_window_and_rate_limit(
     app: &Router,
     token: &str,
     link_id: Uuid,
-    today: chrono::NaiveDate,
+    today: jiff::civil::Date,
 ) -> TestResult {
-    let earliest = today - chrono::Duration::days(i64::from(SUITE_MAX_REPLAY_DAYS));
+    let earliest = today - SignedDuration::from_hours(24 * i64::from(SUITE_MAX_REPLAY_DAYS));
     let path = format!("/suite/links/{}/replay", link_id);
     for since in [
-        earliest - chrono::Duration::days(1),
-        today + chrono::Duration::days(1),
+        earliest - SignedDuration::from_hours(24),
+        today + SignedDuration::from_hours(24),
     ] {
         let response = call(app, "POST", &path, Some(token), json!({"since":since})).await?;
         assert_eq!(response.0, StatusCode::UNPROCESSABLE_ENTITY);
@@ -2691,7 +2713,7 @@ async fn assert_exchange_failure_budget(
         wrong.code_verifier = URL_SAFE_NO_PAD.encode([11u8; 32]);
         assert_eq!(
             service
-                .exchange(wrong, Utc::now())
+                .exchange(wrong, Timestamp::now())
                 .await
                 .expect_err("wrong verifier")
                 .code(),
@@ -2701,11 +2723,11 @@ async fn assert_exchange_failure_budget(
     let mut wrong = request.clone();
     wrong.code_verifier = URL_SAFE_NO_PAD.encode([11u8; 32]);
     assert!(matches!(
-        service.exchange(wrong, Utc::now()).await,
+        service.exchange(wrong, Timestamp::now()).await,
         Err(SuiteServiceError::RateLimited(_))
     ));
     assert_eq!(
-        service.exchange(request, Utc::now()).await?.link_id,
+        service.exchange(request, Timestamp::now()).await?.link_id,
         link_id
     );
     assert_eq!(
@@ -2733,7 +2755,7 @@ async fn assert_unknown_clients_are_rejected(service: &SuiteLinkService) {
         };
         assert_eq!(
             service
-                .exchange(input, Utc::now())
+                .exchange(input, Timestamp::now())
                 .await
                 .expect_err("unknown client")
                 .code(),
@@ -2761,17 +2783,18 @@ async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contr
     let token = owner.to_string();
     assert_peer_metadata(&app, &token).await?;
     history.reads.store(0, std::sync::atomic::Ordering::SeqCst);
-    let last: chrono::DateTime<Utc> =
+    let last: jiff_sqlx::Timestamp =
         sqlx::query_scalar("SELECT last_replay_at FROM suite_links WHERE id=$1")
             .bind(link.id)
             .fetch_one(&db.pool)
             .await?;
+    let last = last.to_jiff();
     let exact = SuiteDeliveryService::new(context.clone())
         .replay(
             owner,
             link.id,
-            last.date_naive(),
-            last + chrono::Duration::seconds(1),
+            last.to_zoned_datetime(jiff::tz::TimeZone::UTC).date(),
+            last + SignedDuration::from_secs(1),
         )
         .await
         .expect_err("cooldown");
@@ -2780,11 +2803,13 @@ async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contr
         SuiteServiceError::Store(SuiteStoreError::ReplayTooSoon(86_399))
     ));
     assert_eq!(history.reads.load(std::sync::atomic::Ordering::SeqCst), 0);
-    let today = Utc::now().date_naive();
+    let today = Timestamp::now()
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+        .date();
     assert_replay_window_and_rate_limit(&app, &token, link.id, today).await?;
     assert_eq!(history.reads.load(std::sync::atomic::Ordering::SeqCst), 0);
     assert_exchange_failure_budget(&service, request, &limiter, link.id).await?;
-    service.disconnect(owner, link.id, Utc::now()).await?;
+    service.disconnect(owner, link.id, Timestamp::now()).await?;
     let mut removed = (*context).clone();
     removed.registry = Arc::new(PeerRegistry::new(
         "alpha",
@@ -2793,7 +2818,7 @@ async fn replay_errors_peer_metadata_and_failed_exchange_budgets_match_the_contr
     )?);
     assert!(matches!(
         SuiteDeliveryService::new(Arc::new(removed))
-            .replay(owner, link.id, today, Utc::now())
+            .replay(owner, link.id, today, Timestamp::now())
             .await,
         Err(SuiteServiceError::LinkRevoked)
     ));
@@ -2884,7 +2909,7 @@ async fn assert_missing_headers_and_stale_timestamps_rejected(
         "x-suite-signature",
         "content-type",
     ] {
-        let timestamp = Utc::now().timestamp();
+        let timestamp = Timestamp::now().as_second();
         let stamp = timestamp.to_string();
         let signature = sign_webhook_hmac_sha256(key, timestamp, &event.event_id, &raw);
         let mut request = Request::builder()
@@ -2912,7 +2937,7 @@ async fn assert_missing_headers_and_stale_timestamps_rejected(
         assert_eq!(body["error"]["code"], "suite_signature_invalid");
     }
     for delta in [-301, 600] {
-        let timestamp = Utc::now().timestamp() + delta;
+        let timestamp = Timestamp::now().as_second() + delta;
         let request = Request::builder()
             .method("POST")
             .uri(format!("/api/v1/suite/inbound/{}", link_id))
@@ -2943,7 +2968,8 @@ async fn signed_http_matrix_hides_revocation_and_protocol_tests_skip_the_applier
     let (link, _) = exchange_link(&links, owner, None, None).await?;
     let applier = Arc::new(Applier::default());
     let app = common::app_with_suite(&db.pool, module(&db.pool, context.clone(), applier.clone()));
-    let event = SuiteEvent::connection_test(Uuid::now_v7(), Utc::now()).envelope("remote", "beta");
+    let event =
+        SuiteEvent::connection_test(Uuid::now_v7(), Timestamp::now()).envelope("remote", "beta");
     let key = secret(&link);
     assert_missing_headers_and_stale_timestamps_rejected(&app, link.id, &event, &key).await?;
     let mut wrong_source = event.clone();
@@ -2965,7 +2991,7 @@ async fn signed_http_matrix_hides_revocation_and_protocol_tests_skip_the_applier
         .fetch_one(&db.pool)
         .await?;
     assert_eq!(count, 0);
-    links.disconnect(owner, link.id, Utc::now()).await?;
+    links.disconnect(owner, link.id, Timestamp::now()).await?;
     for (key, status, code) in [
         (
             &[99_u8; 32][..],
@@ -3061,18 +3087,23 @@ async fn assert_invalid_peer_responses_leave_requests_pending(
         let start = start_app_link(service, &principal).await?;
         assert_eq!(
             service
-                .complete(principal, start.request_id, code.to_owned(), Utc::now())
+                .complete(
+                    principal,
+                    start.request_id,
+                    code.to_owned(),
+                    Timestamp::now()
+                )
                 .await
                 .expect_err("invalid peer response")
                 .code(),
             "suite_peer_unreachable"
         );
-        let pending: (Option<chrono::DateTime<Utc>>, Option<Uuid>) =
+        let pending: (Option<jiff_sqlx::Timestamp>, Option<Uuid>) =
             sqlx::query_as("SELECT consumed_at,link_id FROM suite_link_requests WHERE id=$1")
                 .bind(start.request_id)
                 .fetch_one(pool)
                 .await?;
-        assert_eq!(pending, (None, None));
+        assert!(pending.0.is_none() && pending.1.is_none());
         let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM suite_links WHERE user_id=$1")
             .bind(owner)
             .fetch_one(pool)
@@ -3108,13 +3139,13 @@ async fn assert_concurrent_completes_share_one_exchange(
                 principal.clone(),
                 started.request_id,
                 code.clone(),
-                Utc::now()
+                Timestamp::now()
             ),
             service.complete(
                 principal.clone(),
                 started.request_id,
                 code.clone(),
-                Utc::now()
+                Timestamp::now()
             ),
         )
     })
@@ -3132,14 +3163,18 @@ async fn assert_concurrent_completes_share_one_exchange(
             .fetch_one(pool)
             .await?;
     assert_eq!(active, 1);
-    service.disconnect(owner, first.id, Utc::now()).await?;
-    service.disconnect(owner, first.id, Utc::now()).await?;
+    service
+        .disconnect(owner, first.id, Timestamp::now())
+        .await?;
+    service
+        .disconnect(owner, first.id, Timestamp::now())
+        .await?;
     let revokes: i64 = sqlx::query_scalar("SELECT count(*) FROM job_outbox WHERE payload->>'link_id'=$1 AND job_type='suite.links.revoke'")
         .bind(first.id.to_string()).fetch_one(pool).await?;
     assert_eq!(revokes, 1);
     assert_eq!(
         service
-            .complete(principal, started.request_id, code, Utc::now())
+            .complete(principal, started.request_id, code, Timestamp::now())
             .await
             .expect_err("revoked completed request")
             .code(),
@@ -3160,7 +3195,7 @@ async fn start_app_link(
                 return_url: "alpha://suite/linked".into(),
                 state_nonce: "nonce".into(),
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?)
 }
@@ -3210,7 +3245,7 @@ async fn completion_retries_identical_sealed_credentials_outside_the_transaction
             principal.clone(),
             start.request_id,
             code.clone(),
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     assert_eq!(completed.remote_link_id, valid.link_id);
@@ -3225,7 +3260,7 @@ async fn completion_retries_identical_sealed_credentials_outside_the_transaction
     );
     assert_eq!(
         service
-            .complete(principal, start.request_id, code.clone(), Utc::now())
+            .complete(principal, start.request_id, code.clone(), Timestamp::now())
             .await?,
         completed
     );
@@ -3276,7 +3311,7 @@ async fn a_replay_grant_or_ledger_entry_rolls_back_the_inbox_and_product_write()
         exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
     let mut event = activity(12, Some(3)).envelope("remote", "beta");
     event.event_type = "beta.activity.completed".into();
-    event.occurred_at = Utc::now() - chrono::Duration::days(300);
+    event.occurred_at = Timestamp::now() - SignedDuration::from_hours(24 * 300);
     for ledger_only in [false, true] {
         let app = common::app_with_suite(
             &db.pool,
@@ -3323,7 +3358,7 @@ async fn assert_erasure_removes_pending_request(
                 ),
                 state_nonce: URL_SAFE_NO_PAD.encode([1u8; 32]),
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     let mut erasure = pool.begin().await?;
@@ -3337,7 +3372,7 @@ async fn assert_erasure_removes_pending_request(
                 principal,
                 request.request_id,
                 URL_SAFE_NO_PAD.encode([2u8; 32]),
-                Utc::now(),
+                Timestamp::now(),
             )
             .await
     });
@@ -3379,7 +3414,7 @@ async fn assert_erasure_invalidates_pending_exchange(
                 code_challenge: pkce_challenge(&verifier)?,
                 hint: None,
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     let input = ExchangeRequest {
@@ -3397,7 +3432,7 @@ async fn assert_erasure_invalidates_pending_exchange(
         .fetch_one(&mut *erasure)
         .await?;
     context.store.lock_ingest_user(&mut erasure, owner).await?;
-    let exchange = tokio::spawn(async move { service.exchange(input, Utc::now()).await });
+    let exchange = tokio::spawn(async move { service.exchange(input, Timestamp::now()).await });
     wait_for_blocked_connection(pool, blocker).await?;
     sqlx::query("SET LOCAL lock_timeout='1s'")
         .execute(&mut *erasure)
@@ -3525,7 +3560,7 @@ async fn link_job_routes_wait_for_erasure_before_locking_links() -> TestResult {
                 method,
                 &path,
                 Some(&owner.to_string()),
-                json!({"since":Utc::now().date_naive()}),
+                json!({"since":Timestamp::now().to_zoned_datetime(jiff::tz::TimeZone::UTC).date()}),
             )
             .await
             .map_err(|error| error.to_string())
@@ -3649,10 +3684,10 @@ async fn two_cleanups_delivery_failure_and_erasure_do_not_invert_link_and_job_lo
     let (db, context, owner) = authorizer_fixture().await?;
     let (link, _) =
         exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     sqlx::query("UPDATE suite_links SET created_at=$2 WHERE id=$1")
         .bind(link.id)
-        .bind(now - chrono::Duration::days(8))
+        .bind((now - SignedDuration::from_hours(24 * 8)).to_sqlx())
         .execute(&db.pool)
         .await?;
     let job = PostgresJobStore::new(db.pool.clone())
@@ -3919,7 +3954,7 @@ async fn delivery_maps_401_and_410_then_stops_calling_a_revoked_peer() -> TestRe
     );
     let delivery = SuiteDeliveryService::new(context);
     assert_eq!(
-        delivery.deliver(job.clone(), Utc::now()).await?,
+        delivery.deliver(job.clone(), Timestamp::now()).await?,
         DeliveryAction::Unauthorized
     );
     let attention = links.get(owner, link.id).await?;
@@ -3930,13 +3965,13 @@ async fn delivery_maps_401_and_410_then_stops_calling_a_revoked_peer() -> TestRe
         Some("suite_unauthorized")
     );
     assert_eq!(
-        delivery.deliver(job.clone(), Utc::now()).await?,
+        delivery.deliver(job.clone(), Timestamp::now()).await?,
         DeliveryAction::Revoked
     );
     assert_eq!(links.get(owner, link.id).await?.status, LinkStatus::Revoked);
     assert_eq!(receiver.calls(), 2);
     assert_eq!(
-        delivery.deliver(job, Utc::now()).await?,
+        delivery.deliver(job, Timestamp::now()).await?,
         DeliveryAction::LinkRevoked
     );
     assert_eq!(receiver.calls(), 2);
@@ -3947,7 +3982,7 @@ async fn issue_exchange_request(
     service: &SuiteLinkService,
     owner: Uuid,
     client: &str,
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> Result<ExchangeRequest, Box<dyn Error>> {
     let verifier = URL_SAFE_NO_PAD.encode([9_u8; 32]);
     let authorized = service
@@ -3985,12 +4020,12 @@ async fn failed_exchange_budget_counts_every_invalid_code_and_allows_a_fresh_val
     let limiter = Arc::new(FixedWindowLimiter::default());
     Arc::get_mut(&mut context).expect("context").limiter = limiter.clone();
     let service = SuiteLinkService::new(context);
-    let now = Utc::now();
+    let now = Timestamp::now();
     let valid = issue_exchange_request(&service, owner, "beta", now).await?;
     let mut unknown = valid.clone();
     unknown.code = URL_SAFE_NO_PAD.encode([8_u8; 32]);
     let expired =
-        issue_exchange_request(&service, owner, "beta", now - chrono::Duration::seconds(61))
+        issue_exchange_request(&service, owner, "beta", now - SignedDuration::from_secs(61))
             .await?;
     let mut wrong_client = issue_exchange_request(&service, owner, "hebkit", now).await?;
     wrong_client.client = "beta".into();
@@ -4146,10 +4181,10 @@ async fn cleanup_does_not_wait_for_an_owner_without_cleanup_work() -> TestResult
     let (expired, _) = exchange_link(&service, owner, None, None).await?;
     let recent_owner = user(&db.pool, "recent-owner").await?;
     let (recent, _) = exchange_link(&service, recent_owner, None, None).await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     sqlx::query("UPDATE suite_links SET created_at=$2 WHERE id=$1")
         .bind(expired.id)
-        .bind(now - chrono::Duration::days(8))
+        .bind((now - SignedDuration::from_hours(24 * 8)).to_sqlx())
         .execute(&db.pool)
         .await?;
     let mut busy = db.pool.begin().await?;
@@ -4212,7 +4247,7 @@ async fn start_preserves_default_and_hosted_authorize_paths_and_protocol_paramet
                     state_nonce: "client-nonce".into(),
                     return_url: "https://alpha.example/suite/linked".into(),
                 },
-                Utc::now(),
+                Timestamp::now(),
             )
             .await?;
         let url = Url::parse(&response.authorize_url)?;
@@ -4292,7 +4327,7 @@ async fn foreign_owner_lookup_returns_none_without_accounting_failures() -> Test
         .execute(&db.pool)
         .await?;
     let snapshot = || async {
-        sqlx::query_as::<_, (i32, chrono::DateTime<Utc>, bool)>(
+        sqlx::query_as::<_, (i32, jiff_sqlx::Timestamp, bool)>(
             "SELECT l.consecutive_failures, l.updated_at, f.accounted FROM suite_links l JOIN suite_failed_delivery_jobs f ON f.link_id=l.id WHERE l.id=$1",
         )
         .bind(link.id)
@@ -4332,7 +4367,7 @@ async fn link_id_routes_deny_a_second_principal_and_leave_the_link_untouched() -
     let base = format!("/suite/links/{}", link.id);
     let for_method = |method: &str| match method {
         "PATCH" => json!({"shareXp":false}),
-        _ => json!({"since":Utc::now().date_naive()}),
+        _ => json!({"since":Timestamp::now().to_zoned_datetime(jiff::tz::TimeZone::UTC).date()}),
     };
     for (method, path) in [
         ("GET", base.clone()),
@@ -4374,7 +4409,7 @@ async fn link_store_writes_by_id_deny_a_second_principal() -> TestResult {
     let (link, _) =
         exchange_link(&SuiteLinkService::new(context.clone()), owner, None, None).await?;
     let store = &context.store;
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut tx = store.begin_transaction().await?;
     assert_eq!(
         store

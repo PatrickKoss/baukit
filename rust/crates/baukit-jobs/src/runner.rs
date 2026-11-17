@@ -1,3 +1,5 @@
+use jiff::SignedDuration;
+use jiff::Timestamp;
 use std::{
     future::Future,
     pin::Pin,
@@ -9,7 +11,7 @@ use std::{
 };
 
 use baukit_runtime::ShutdownToken;
-use chrono::Utc;
+
 use tokio::{
     task::JoinSet,
     time::{Instant, MissedTickBehavior},
@@ -204,7 +206,7 @@ impl WorkerRunner {
                 break;
             }
 
-            let age = self.store.oldest_pending_age(Utc::now()).await?;
+            let age = self.store.oldest_pending_age(Timestamp::now()).await?;
             metrics::set_queue_age(self.config.queue, age);
             while running.len() < self.config.concurrency && !shutdown.is_cancelled() {
                 let store = Arc::clone(&self.store);
@@ -214,7 +216,7 @@ impl WorkerRunner {
                 // Jobs enqueued during this loop must not be claimed before their creation time.
                 let claim = tokio::spawn(async move {
                     store
-                        .claim(&worker_id, job_types, Utc::now(), lease_duration)
+                        .claim(&worker_id, job_types, Timestamp::now(), lease_duration)
                         .await
                 });
                 let claimed = tokio::select! {
@@ -350,20 +352,22 @@ async fn settle_attempt(
     match result {
         AttemptResult::Cancelled => {
             ensure_transition(
-                store.cancel(job.id, &config.worker_id, Utc::now()).await?,
+                store
+                    .cancel(job.id, &config.worker_id, Timestamp::now())
+                    .await?,
                 job.id,
             )?;
             Ok(FAILURE)
         }
         AttemptResult::Handled(Ok(())) => {
-            let now = Utc::now();
+            let now = Timestamp::now();
             if store.complete(job.id, &config.worker_id, now).await? {
                 return Ok(SUCCESS);
             }
             cancel_after_lost_transition(store, config, job, now).await
         }
         AttemptResult::Handled(Err(error)) => {
-            let now = Utc::now();
+            let now = Timestamp::now();
             let delay = error
                 .retry_after()
                 .unwrap_or_else(|| retry_delay(config, job.attempts));
@@ -393,7 +397,7 @@ async fn cancel_after_lost_transition(
     store: &dyn JobStore,
     config: &WorkerConfig,
     job: &ClaimedJob,
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
 ) -> Result<&'static str, RunnerError> {
     if store.cancellation_requested(job.id).await?
         && store.cancel(job.id, &config.worker_id, now).await?
@@ -429,14 +433,14 @@ fn retry_delay(config: &WorkerConfig, attempts: u32) -> Duration {
 }
 
 fn add_duration(
-    timestamp: chrono::DateTime<Utc>,
+    timestamp: jiff::Timestamp,
     duration: Duration,
-) -> Result<chrono::DateTime<Utc>, RunnerError> {
-    let duration = chrono::Duration::from_std(duration)
+) -> Result<jiff::Timestamp, RunnerError> {
+    let duration = SignedDuration::try_from(duration)
         .map_err(|_| RunnerError::InvalidConfig("retry delay is out of range".to_owned()))?;
     timestamp
-        .checked_add_signed(duration)
-        .ok_or_else(|| RunnerError::InvalidConfig("retry deadline is out of range".to_owned()))
+        .checked_add(duration)
+        .map_err(|_| RunnerError::InvalidConfig("retry deadline is out of range".to_owned()))
 }
 
 fn ensure_transition(updated: bool, job_id: Uuid) -> Result<(), RunnerError> {
@@ -457,7 +461,7 @@ mod tests {
         },
     };
 
-    use chrono::TimeDelta;
+    use jiff::SignedDuration;
     use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
     use serde_json::json;
     use tokio::sync::Notify;
@@ -675,7 +679,7 @@ mod tests {
                 .recorded_retry_delay
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
-            Some(chrono::Duration::seconds(42))
+            Some(SignedDuration::from_secs(42))
         );
     }
 
@@ -785,7 +789,7 @@ mod tests {
         cancellation_poll_started: Notify,
         cancellation_poll_release: Notify,
         transition: Notify,
-        recorded_retry_delay: Mutex<Option<chrono::Duration>>,
+        recorded_retry_delay: Mutex<Option<jiff::SignedDuration>>,
         claimed_job_types: Mutex<Vec<Vec<String>>>,
         enqueue_during_claim: AtomicBool,
     }
@@ -829,7 +833,7 @@ mod tests {
             &'a self,
             _worker_id: &'a str,
             job_types: &'a [&'a str],
-            now: chrono::DateTime<Utc>,
+            now: jiff::Timestamp,
             _lease_for: Duration,
         ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>> {
             Box::pin(async move {
@@ -867,7 +871,7 @@ mod tests {
             &'a self,
             _job_id: Uuid,
             _worker_id: &'a str,
-            _now: chrono::DateTime<Utc>,
+            _now: jiff::Timestamp,
         ) -> StoreFuture<'a, Result<bool, StoreError>> {
             Box::pin(async move {
                 self.completed.fetch_add(1, Ordering::SeqCst);
@@ -881,9 +885,9 @@ mod tests {
             _job_id: Uuid,
             _worker_id: &'a str,
             _retryable: bool,
-            retry_at: chrono::DateTime<Utc>,
+            retry_at: jiff::Timestamp,
             _error: &'a str,
-            now: chrono::DateTime<Utc>,
+            now: jiff::Timestamp,
         ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>> {
             Box::pin(async move {
                 *self
@@ -912,7 +916,7 @@ mod tests {
         fn request_cancellation(
             &self,
             _job_id: Uuid,
-            _now: chrono::DateTime<Utc>,
+            _now: jiff::Timestamp,
         ) -> StoreFuture<'_, Result<bool, StoreError>> {
             Box::pin(async { Ok(false) })
         }
@@ -921,7 +925,7 @@ mod tests {
             &'a self,
             _job_id: Uuid,
             _worker_id: &'a str,
-            _now: chrono::DateTime<Utc>,
+            _now: jiff::Timestamp,
         ) -> StoreFuture<'a, Result<bool, StoreError>> {
             Box::pin(async move {
                 self.cancelled.fetch_add(1, Ordering::SeqCst);
@@ -932,7 +936,7 @@ mod tests {
 
         fn oldest_pending_age(
             &self,
-            _now: chrono::DateTime<Utc>,
+            _now: jiff::Timestamp,
         ) -> StoreFuture<'_, Result<Duration, StoreError>> {
             Box::pin(async { Ok(Duration::ZERO) })
         }
@@ -1033,7 +1037,7 @@ mod tests {
     }
 
     fn fake_job(sequence: usize) -> Job {
-        let now = Utc::now();
+        let now = Timestamp::now();
         Job {
             id: Uuid::now_v7(),
             job_type: "test.job".to_owned(),
@@ -1043,7 +1047,7 @@ mod tests {
             max_attempts: 3,
             run_after: now,
             locked_by: Some("test-worker".to_owned()),
-            locked_until: Some(now + TimeDelta::minutes(1)),
+            locked_until: Some(now + SignedDuration::from_mins(1)),
             idempotency_key: None,
             dedupe_key: None,
             pending_dedupe_key: None,

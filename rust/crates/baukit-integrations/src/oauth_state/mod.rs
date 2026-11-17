@@ -15,10 +15,11 @@ pub mod axum;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 
+use jiff::SignedDuration;
 use std::{fmt, future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use aws_lc_rs::rand::SystemRandom;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use thiserror::Error;
 
 pub use memory::InMemoryOAuthStateStore;
@@ -78,7 +79,7 @@ pub struct PendingOAuthFlow {
     /// PKCE verifier, when the provider supports PKCE.
     pub pkce_verifier: Option<PkceVerifier>,
     /// End of the flow's lifetime.
-    pub expires_at: DateTime<Utc>,
+    pub expires_at: Timestamp,
 }
 
 impl fmt::Debug for PendingOAuthFlow {
@@ -131,10 +132,7 @@ pub trait OAuthStateStore: Send + Sync {
     /// # Errors
     ///
     /// [`OAuthStateError::Store`] when the backend fails.
-    fn purge_expired(
-        &self,
-        now: DateTime<Utc>,
-    ) -> OAuthStateFuture<'_, Result<u64, OAuthStateError>>;
+    fn purge_expired(&self, now: Timestamp) -> OAuthStateFuture<'_, Result<u64, OAuthStateError>>;
 }
 
 /// Whether the provider takes a PKCE challenge.
@@ -226,7 +224,7 @@ impl OAuthStateService {
     ///
     /// [`OAuthStateError::Random`], [`OAuthStateError::InvalidTtl`] or a store error.
     pub async fn start(&self, input: StartOAuthFlow) -> Result<StartedOAuthFlow, OAuthStateError> {
-        self.start_at(input, Utc::now()).await
+        self.start_at(input, Timestamp::now()).await
     }
 
     /// Starts a flow at `now`.
@@ -237,12 +235,12 @@ impl OAuthStateService {
     pub async fn start_at(
         &self,
         input: StartOAuthFlow,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<StartedOAuthFlow, OAuthStateError> {
-        let ttl = chrono::Duration::from_std(self.ttl).map_err(|_| OAuthStateError::InvalidTtl)?;
+        let ttl = SignedDuration::try_from(self.ttl).map_err(|_| OAuthStateError::InvalidTtl)?;
         let expires_at = now
-            .checked_add_signed(ttl)
-            .ok_or(OAuthStateError::InvalidTtl)?;
+            .checked_add(ttl)
+            .map_err(|_| OAuthStateError::InvalidTtl)?;
         let state = OAuthState::generate(&self.random)?;
         let binding = BrowserBinding::generate(&self.random)?;
         let pkce_verifier = match input.pkce {
@@ -279,7 +277,7 @@ impl OAuthStateService {
         state: &OAuthState,
         binding: &BrowserBinding,
     ) -> Result<CompletedOAuthFlow, OAuthStateError> {
-        self.complete_at(state, binding, Utc::now()).await
+        self.complete_at(state, binding, Timestamp::now()).await
     }
 
     /// Consumes the flow, then checks expiry and the browser binding. A failed
@@ -293,7 +291,7 @@ impl OAuthStateService {
         &self,
         state: &OAuthState,
         binding: &BrowserBinding,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<CompletedOAuthFlow, OAuthStateError> {
         let flow = match self.store.consume(&state.hash()).await? {
             ConsumeOutcome::Consumed(flow) => flow,

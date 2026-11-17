@@ -4,7 +4,7 @@ use baukit_events::{
     MAX_EVENT_ID_CHARACTERS, MAX_EVENT_PAYLOAD_KEYS, MAX_EVENT_TYPE_SEGMENT_CHARACTERS,
     validate_event_envelope,
 };
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -36,7 +36,7 @@ struct FixtureCase {
 struct FixtureInput {
     envelope: EventEnvelope,
     expected_user_id: String,
-    now: DateTime<Utc>,
+    now: Timestamp,
 }
 
 #[test]

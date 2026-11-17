@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -58,19 +58,19 @@ pub struct ApiToken {
     /// Opaque product-defined permissions stored with the token.
     pub grants: BTreeSet<String>,
     /// When the token was issued.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// When the token stops being accepted, if it expires at all.
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<Timestamp>,
     /// When the token last authenticated a request.
-    pub last_used_at: Option<DateTime<Utc>>,
+    pub last_used_at: Option<Timestamp>,
     /// When the token was revoked, if it was.
-    pub revoked_at: Option<DateTime<Utc>>,
+    pub revoked_at: Option<Timestamp>,
 }
 
 impl ApiToken {
     /// Returns whether the token is still usable at `now`.
     #[must_use]
-    pub fn is_active_at(&self, now: DateTime<Utc>) -> bool {
+    pub fn is_active_at(&self, now: Timestamp) -> bool {
         self.revoked_at.is_none() && self.expires_at.is_none_or(|expires_at| expires_at > now)
     }
 }
@@ -81,7 +81,7 @@ pub struct NewApiToken {
     /// Human-chosen label, 1 to 100 characters after trimming.
     pub name: String,
     /// Optional expiry, which must be in the future.
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<Timestamp>,
     /// Opaque product-defined permissions, stored in the same write as the token.
     ///
     /// Each grant is an RFC 6749 scope token of at most 128 bytes, and a token
@@ -113,7 +113,7 @@ impl NewApiToken {
 
     /// Sets the expiry of the token being created.
     #[must_use]
-    pub fn expiring_at(mut self, expires_at: DateTime<Utc>) -> Self {
+    pub fn expiring_at(mut self, expires_at: Timestamp) -> Self {
         self.expires_at = Some(expires_at);
         self
     }
@@ -139,9 +139,9 @@ pub struct ApiTokenRecord {
     /// Validated grants to store in the same write as the digest.
     pub grants: BTreeSet<String>,
     /// When the token was issued.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// When the token stops being accepted, if it expires at all.
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<Timestamp>,
 }
 
 /// A validated token ready to insert, created by [`ApiTokenService::prepare`].
@@ -341,7 +341,7 @@ pub trait ApiTokenStore: Send + Sync {
     fn touch_last_used(
         &self,
         token_id: Uuid,
-        used_at: DateTime<Utc>,
+        used_at: Timestamp,
     ) -> ApiTokenStoreFuture<'_, Result<(), ApiTokenStoreError>>;
 
     /// Revokes one token owned by `owner_id`.
@@ -352,7 +352,7 @@ pub trait ApiTokenStore: Send + Sync {
         &self,
         owner_id: Uuid,
         token_id: Uuid,
-        revoked_at: DateTime<Utc>,
+        revoked_at: Timestamp,
     ) -> ApiTokenStoreFuture<'_, Result<bool, ApiTokenStoreError>>;
 
     /// Lists the tokens belonging to one owner, newest first.
@@ -415,8 +415,8 @@ fn validate_grants(grants: &BTreeSet<String>) -> Result<(), ApiTokenError> {
 fn validate_token_fields(
     name: &str,
     grants: &BTreeSet<String>,
-    expires_at: Option<DateTime<Utc>>,
-    now: DateTime<Utc>,
+    expires_at: Option<Timestamp>,
+    now: Timestamp,
 ) -> Result<(), ApiTokenError> {
     if name.is_empty() || name.chars().count() > MAX_NAME_LENGTH {
         return Err(ApiTokenError::InvalidName);
@@ -501,7 +501,7 @@ impl ApiTokenService {
         owner_id: Uuid,
         request: NewApiToken,
     ) -> Result<IssuedApiToken, ApiTokenError> {
-        self.issue_at(owner_id, request, Utc::now()).await
+        self.issue_at(owner_id, request, Timestamp::now()).await
     }
 
     /// Issues one token as of an explicit instant.
@@ -515,7 +515,7 @@ impl ApiTokenService {
         &self,
         owner_id: Uuid,
         request: NewApiToken,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<IssuedApiToken, ApiTokenError> {
         let (prepared, generated) = self.prepare_at(owner_id, request, now)?;
         let token = self
@@ -544,7 +544,7 @@ impl ApiTokenService {
         owner_id: Uuid,
         request: NewApiToken,
     ) -> Result<(PreparedApiToken, GeneratedApiToken), ApiTokenError> {
-        self.prepare_at(owner_id, request, Utc::now())
+        self.prepare_at(owner_id, request, Timestamp::now())
     }
 
     /// Prepares a token as of an explicit instant without writing to the store.
@@ -559,7 +559,7 @@ impl ApiTokenService {
         &self,
         owner_id: Uuid,
         request: NewApiToken,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(PreparedApiToken, GeneratedApiToken), ApiTokenError> {
         let name = request.name.trim();
         validate_token_fields(name, &request.grants, request.expires_at, now)?;
@@ -601,7 +601,7 @@ impl ApiTokenService {
     ///
     /// Fails like [`Self::revoke_at`] at the current time.
     pub async fn revoke(&self, owner_id: Uuid, token_id: Uuid) -> Result<(), ApiTokenError> {
-        self.revoke_at(owner_id, token_id, Utc::now()).await
+        self.revoke_at(owner_id, token_id, Timestamp::now()).await
     }
 
     /// Revokes one token as of an explicit instant.
@@ -615,7 +615,7 @@ impl ApiTokenService {
         &self,
         owner_id: Uuid,
         token_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), ApiTokenError> {
         let revoked = self
             .store
@@ -640,7 +640,7 @@ impl ApiTokenService {
     ///
     /// Fails like [`Self::verify_at`] at the current time.
     pub async fn verify(&self, presented: &str) -> Result<ApiToken, ApiTokenError> {
-        self.verify_at(presented, Utc::now()).await
+        self.verify_at(presented, Timestamp::now()).await
     }
 
     /// Verifies a presented token as of an explicit instant.
@@ -654,7 +654,7 @@ impl ApiTokenService {
     pub async fn verify_at(
         &self,
         presented: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<ApiToken, ApiTokenError> {
         if !self.format.is_well_formed(presented) {
             return Err(ApiTokenError::Invalid);
@@ -749,9 +749,8 @@ impl IdentityVerifier for ApiTokenVerifier {
 
 #[cfg(test)]
 mod tests {
+    use jiff::SignedDuration;
     use std::{collections::HashMap, sync::Mutex};
-
-    use chrono::TimeZone as _;
 
     use super::*;
     use crate::{AuthState, establish_principal};
@@ -760,7 +759,7 @@ mod tests {
     struct MemoryStore {
         tokens: Mutex<HashMap<Uuid, ApiToken>>,
         hashes: Mutex<HashMap<Vec<u8>, Uuid>>,
-        touched: Mutex<Vec<(Uuid, DateTime<Utc>)>>,
+        touched: Mutex<Vec<(Uuid, Timestamp)>>,
         failure: Mutex<Option<ApiTokenStoreError>>,
         touch_failure: Mutex<Option<ApiTokenStoreError>>,
     }
@@ -818,7 +817,7 @@ mod tests {
         fn touch_last_used(
             &self,
             token_id: Uuid,
-            used_at: DateTime<Utc>,
+            used_at: Timestamp,
         ) -> ApiTokenStoreFuture<'_, Result<(), ApiTokenStoreError>> {
             if let Some(error) = self
                 .touch_failure
@@ -843,7 +842,7 @@ mod tests {
             &self,
             owner_id: Uuid,
             token_id: Uuid,
-            revoked_at: DateTime<Utc>,
+            revoked_at: Timestamp,
         ) -> ApiTokenStoreFuture<'_, Result<bool, ApiTokenStoreError>> {
             if let Some(error) = self.failure.lock().expect("failure lock").clone() {
                 return Box::pin(std::future::ready(Err(error)));
@@ -879,9 +878,9 @@ mod tests {
         }
     }
 
-    fn instant() -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 8, 22, 12, 0, 0)
-            .single()
+    fn instant() -> Timestamp {
+        jiff::tz::TimeZone::UTC
+            .to_timestamp(jiff::civil::datetime(2026, 8, 22, 12, 0, 0, 0))
             .expect("valid test instant")
     }
 
@@ -1296,7 +1295,7 @@ mod tests {
             .issue_at(
                 Uuid::now_v7(),
                 NewApiToken::new("Automation")
-                    .expiring_at(instant() + chrono::Duration::minutes(1)),
+                    .expiring_at(instant() + SignedDuration::from_mins(1)),
                 instant(),
             )
             .await
@@ -1304,7 +1303,7 @@ mod tests {
 
         assert!(matches!(
             service
-                .verify_at(&issued.secret, instant() + chrono::Duration::minutes(2))
+                .verify_at(&issued.secret, instant() + SignedDuration::from_mins(2))
                 .await,
             Err(ApiTokenError::Expired)
         ));
@@ -1312,7 +1311,7 @@ mod tests {
         assert!(
             !issued
                 .token
-                .is_active_at(instant() + chrono::Duration::minutes(2))
+                .is_active_at(instant() + SignedDuration::from_mins(2))
         );
     }
 
@@ -1482,7 +1481,7 @@ mod tests {
             fn touch_last_used(
                 &self,
                 _token_id: Uuid,
-                _used_at: DateTime<Utc>,
+                _used_at: Timestamp,
             ) -> ApiTokenStoreFuture<'_, Result<(), ApiTokenStoreError>> {
                 unreachable!("not used")
             }
@@ -1491,7 +1490,7 @@ mod tests {
                 &self,
                 _owner_id: Uuid,
                 _token_id: Uuid,
-                _revoked_at: DateTime<Utc>,
+                _revoked_at: Timestamp,
             ) -> ApiTokenStoreFuture<'_, Result<bool, ApiTokenStoreError>> {
                 unreachable!("not used")
             }
@@ -1537,7 +1536,7 @@ mod tests {
             ApiTokenFormat::new("custom_").expect("format"),
         );
         let owner_id = Uuid::now_v7();
-        let expires_at = instant() + chrono::Duration::hours(1);
+        let expires_at = instant() + SignedDuration::from_hours(1);
         let (prepared, generated) = service
             .prepare_at(
                 owner_id,
@@ -1585,7 +1584,7 @@ mod tests {
         let (current, _) = service
             .prepare(owner_id, NewApiToken::new("Current"))
             .expect("prepare now");
-        assert!(current.record().created_at <= Utc::now());
+        assert!(current.record().created_at <= Timestamp::now());
         assert_eq!(prepared.clone().into_record(), *record);
     }
 
@@ -1707,8 +1706,8 @@ mod tests {
             .issue_at(
                 Uuid::now_v7(),
                 NewApiToken::new("Automation")
-                    .expiring_at(instant() - chrono::Duration::minutes(1)),
-                instant() - chrono::Duration::minutes(2),
+                    .expiring_at(instant() - SignedDuration::from_mins(1)),
+                instant() - SignedDuration::from_mins(2),
             )
             .await
             .expect("issue token");

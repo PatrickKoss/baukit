@@ -1,6 +1,7 @@
+use jiff_sqlx::{Timestamp as SqlTimestamp, ToSqlx};
 use std::num::NonZeroU32;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use sqlx::{PgConnection, PgExecutor, PgPool, Row as _, postgres::PgRow};
 use uuid::Uuid;
 
@@ -102,7 +103,7 @@ impl PostgresDeviceRegistry {
     async fn invalidate_tokens(
         &self,
         tokens: Vec<DeviceToken>,
-        sent_at: DateTime<Utc>,
+        sent_at: Timestamp,
     ) -> Result<u64, PushStoreError> {
         if tokens.is_empty() {
             return Ok(0);
@@ -111,7 +112,7 @@ impl PostgresDeviceRegistry {
             "DELETE FROM push_devices WHERE token = ANY($1) AND last_registered_at <= $2",
         )
         .bind(tokens.iter().map(DeviceToken::expose).collect::<Vec<_>>())
-        .bind(sent_at)
+        .bind(sent_at.to_sqlx())
         .execute(&self.pool)
         .await
         .map_err(PushStoreError::internal)?
@@ -154,7 +155,7 @@ impl DeviceRegistry for PostgresDeviceRegistry {
     fn invalidate(
         &self,
         tokens: Vec<DeviceToken>,
-        sent_at: DateTime<Utc>,
+        sent_at: Timestamp,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         Box::pin(self.invalidate_tokens(tokens, sent_at))
     }
@@ -212,7 +213,7 @@ impl PostgresDeliveryClaimStore {
     async fn insert_claim(
         &self,
         claim: DeliveryClaim,
-        claimed_at: DateTime<Utc>,
+        claimed_at: Timestamp,
     ) -> Result<bool, PushStoreError> {
         let inserted = sqlx::query(
             "INSERT INTO push_delivery_claims (owner_id, local_date, kind, claimed_at)
@@ -220,9 +221,9 @@ impl PostgresDeliveryClaimStore {
              ON CONFLICT (owner_id, local_date, kind) DO NOTHING",
         )
         .bind(claim.owner_id)
-        .bind(claim.local_date)
+        .bind(claim.local_date.to_sqlx())
         .bind(claim.kind.as_str())
-        .bind(claimed_at)
+        .bind(claimed_at.to_sqlx())
         .execute(&self.pool)
         .await
         .map_err(PushStoreError::internal)?
@@ -236,7 +237,7 @@ impl PostgresDeliveryClaimStore {
              WHERE owner_id = $1 AND local_date = $2 AND kind = $3",
         )
         .bind(claim.owner_id)
-        .bind(claim.local_date)
+        .bind(claim.local_date.to_sqlx())
         .bind(claim.kind.as_str())
         .execute(&self.pool)
         .await
@@ -245,11 +246,7 @@ impl PostgresDeliveryClaimStore {
         Ok(deleted == 1)
     }
 
-    async fn purge_claims(
-        &self,
-        before: NaiveDate,
-        limit: NonZeroU32,
-    ) -> Result<u64, PushStoreError> {
+    async fn purge_claims(&self, before: Date, limit: NonZeroU32) -> Result<u64, PushStoreError> {
         purge_delivery_claims(&self.pool, before, limit)
             .await
             .map_err(PushStoreError::internal)
@@ -260,7 +257,7 @@ impl DeliveryClaimStore for PostgresDeliveryClaimStore {
     fn claim(
         &self,
         claim: DeliveryClaim,
-        claimed_at: DateTime<Utc>,
+        claimed_at: Timestamp,
     ) -> PushStoreFuture<'_, Result<bool, PushStoreError>> {
         Box::pin(self.insert_claim(claim, claimed_at))
     }
@@ -271,7 +268,7 @@ impl DeliveryClaimStore for PostgresDeliveryClaimStore {
 
     fn purge(
         &self,
-        before: NaiveDate,
+        before: Date,
         limit: NonZeroU32,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         Box::pin(self.purge_claims(before, limit))
@@ -310,7 +307,7 @@ where
 /// Returns any database error unchanged.
 pub async fn purge_delivery_claims<'e, E>(
     executor: E,
-    before: NaiveDate,
+    before: Date,
     limit: NonZeroU32,
 ) -> Result<u64, sqlx::Error>
 where
@@ -325,7 +322,7 @@ where
              FOR UPDATE SKIP LOCKED
          )",
     )
-    .bind(before)
+    .bind(before.to_sqlx())
     .bind(i64::from(limit.get()))
     .execute(executor)
     .await?
@@ -354,7 +351,7 @@ impl PostgresPendingReceiptStore {
     async fn insert_receipts(
         &self,
         receipts: Vec<PendingReceipt>,
-        due_at: DateTime<Utc>,
+        due_at: Timestamp,
     ) -> Result<u64, PushStoreError> {
         if receipts.is_empty() {
             return Ok(0);
@@ -387,10 +384,10 @@ impl PostgresPendingReceiptStore {
         .bind(
             receipts
                 .iter()
-                .map(|receipt| receipt.sent_at)
+                .map(|receipt| receipt.sent_at.to_sqlx())
                 .collect::<Vec<_>>(),
         )
-        .bind(due_at)
+        .bind(due_at.to_sqlx())
         .execute(&self.pool)
         .await
         .map_err(PushStoreError::internal)?
@@ -400,8 +397,8 @@ impl PostgresPendingReceiptStore {
 
     async fn take_due_receipts(
         &self,
-        now: DateTime<Utc>,
-        retry_at: DateTime<Utc>,
+        now: Timestamp,
+        retry_at: Timestamp,
         limit: NonZeroU32,
     ) -> Result<Vec<PendingReceipt>, PushStoreError> {
         let rows = sqlx::query(
@@ -414,8 +411,8 @@ impl PostgresPendingReceiptStore {
              )
              RETURNING ticket_id, owner_id, token, sent_at",
         )
-        .bind(now)
-        .bind(retry_at)
+        .bind(now.to_sqlx())
+        .bind(retry_at.to_sqlx())
         .bind(i64::from(limit.get()))
         .fetch_all(&self.pool)
         .await
@@ -438,7 +435,7 @@ impl PostgresPendingReceiptStore {
 
     async fn purge_receipts(
         &self,
-        sent_before: DateTime<Utc>,
+        sent_before: Timestamp,
         limit: NonZeroU32,
     ) -> Result<u64, PushStoreError> {
         let deleted = sqlx::query(
@@ -450,7 +447,7 @@ impl PostgresPendingReceiptStore {
                  FOR UPDATE SKIP LOCKED
              )",
         )
-        .bind(sent_before)
+        .bind(sent_before.to_sqlx())
         .bind(i64::from(limit.get()))
         .execute(&self.pool)
         .await
@@ -464,15 +461,15 @@ impl PendingReceiptStore for PostgresPendingReceiptStore {
     fn record(
         &self,
         receipts: Vec<PendingReceipt>,
-        due_at: DateTime<Utc>,
+        due_at: Timestamp,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         Box::pin(self.insert_receipts(receipts, due_at))
     }
 
     fn take_due(
         &self,
-        now: DateTime<Utc>,
-        retry_at: DateTime<Utc>,
+        now: Timestamp,
+        retry_at: Timestamp,
         limit: NonZeroU32,
     ) -> PushStoreFuture<'_, Result<Vec<PendingReceipt>, PushStoreError>> {
         Box::pin(self.take_due_receipts(now, retry_at, limit))
@@ -487,7 +484,7 @@ impl PendingReceiptStore for PostgresPendingReceiptStore {
 
     fn purge(
         &self,
-        sent_before: DateTime<Utc>,
+        sent_before: Timestamp,
         limit: NonZeroU32,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         Box::pin(self.purge_receipts(sent_before, limit))
@@ -577,7 +574,7 @@ where
     .bind(registration.owner_id)
     .bind(registration.platform.as_str())
     .bind(registration.time_zone.as_ref().map(DeviceTimeZone::as_str))
-    .bind(registration.registered_at)
+    .bind(registration.registered_at.to_sqlx())
     .execute(executor)
     .await?;
     Ok(())
@@ -614,7 +611,10 @@ fn pending_receipt(row: &PgRow) -> Result<PendingReceipt, PushStoreError> {
         ticket: PushTicketId::new(ticket).map_err(PushStoreError::internal)?,
         owner_id: row.try_get("owner_id").map_err(PushStoreError::internal)?,
         token: DeviceToken::new(token).map_err(PushStoreError::internal)?,
-        sent_at: row.try_get("sent_at").map_err(PushStoreError::internal)?,
+        sent_at: row
+            .try_get::<SqlTimestamp, _>("sent_at")
+            .map_err(PushStoreError::internal)?
+            .to_jiff(),
     })
 }
 
@@ -632,10 +632,12 @@ fn registered_device(row: &PgRow) -> Result<RegisteredDevice, PushStoreError> {
             .transpose()
             .map_err(PushStoreError::internal)?,
         created_at: row
-            .try_get("created_at")
-            .map_err(PushStoreError::internal)?,
+            .try_get::<SqlTimestamp, _>("created_at")
+            .map_err(PushStoreError::internal)?
+            .to_jiff(),
         last_registered_at: row
-            .try_get("last_registered_at")
-            .map_err(PushStoreError::internal)?,
+            .try_get::<SqlTimestamp, _>("last_registered_at")
+            .map_err(PushStoreError::internal)?
+            .to_jiff(),
     })
 }

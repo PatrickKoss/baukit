@@ -20,7 +20,7 @@ use baukit_data_subject::{
     validate_subject_reference,
 };
 use baukit_http::ApiError;
-use chrono::{DateTime, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde_json::Value;
 use tokio::{net::TcpListener, sync::watch, task::JoinHandle};
 use uuid::Uuid;
@@ -253,26 +253,24 @@ struct TargetState {
     default_script: SharedScript,
     operations: HashMap<Uuid, Operation>,
     requests: Vec<ReceivedDataSubjectRequest>,
-    clock_offset: chrono::Duration,
+    clock_offset: SignedDuration,
 }
 
 impl TargetState {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now() + self.clock_offset
+    fn now(&self) -> Timestamp {
+        Timestamp::now() + self.clock_offset
     }
 
     fn purge(&mut self) {
         let now = self.now();
         self.operations.retain(|_, operation| {
             if operation.resource.completed_at.is_some_and(|completed| {
-                now.signed_duration_since(completed)
-                    .to_std()
+                Duration::try_from(now.duration_since(completed))
                     .is_ok_and(|age| age >= self.options.export_retention)
             }) {
                 operation.parts.clear();
             }
-            now.signed_duration_since(operation.resource.created_at)
-                .to_std()
+            Duration::try_from(now.duration_since(operation.resource.created_at))
                 .is_ok_and(|age| age < self.options.operation_retention)
         });
     }
@@ -341,7 +339,7 @@ impl DataSubjectTargetServer {
             )),
             operations: HashMap::new(),
             requests: Vec::new(),
-            clock_offset: chrono::Duration::zero(),
+            clock_offset: SignedDuration::ZERO,
         }));
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let base_url = format!("http://{}", listener.local_addr()?);
@@ -490,23 +488,23 @@ impl DataSubjectTargetServer {
     }
 
     /// Advances the retention clock without sleeping. Network delays use real time.
-    /// Durations beyond chrono's range are rejected without changing the clock.
+    /// Durations beyond the supported timestamp range are rejected without changing the clock.
     ///
     /// # Errors
     ///
     /// Returns an [`io::Error`] when `duration` or the resulting clock offset is out
-    /// of chrono's range.
+    /// of the supported timestamp range.
     pub fn advance_time(&self, duration: Duration) -> io::Result<()> {
-        let delta = chrono::Duration::from_std(duration)
+        let delta = SignedDuration::try_from(duration)
             .map_err(|_| io::Error::other("invalid test clock advance"))?;
         let mut state = lock(&self.state);
         let offset = state
             .clock_offset
-            .checked_add(&delta)
+            .checked_add(delta)
             .ok_or_else(|| io::Error::other("invalid test clock advance"))?;
-        Utc::now()
-            .checked_add_signed(offset)
-            .ok_or_else(|| io::Error::other("invalid test clock advance"))?;
+        Timestamp::now()
+            .checked_add(offset)
+            .map_err(|_| io::Error::other("invalid test clock advance"))?;
         state.clock_offset = offset;
         state.purge();
         Ok(())
@@ -900,10 +898,7 @@ fn read(state: &TargetState, operation: &mut Operation, part: Option<&str>) -> R
             .resource
             .completed_at
             .expect("completed timestamp");
-        if state
-            .now()
-            .signed_duration_since(completed)
-            .to_std()
+        if Duration::try_from(state.now().duration_since(completed))
             .is_ok_and(|age| age >= state.options.export_retention)
         {
             return (error(StatusCode::GONE, codes::EXPORT_EXPIRED), delay);

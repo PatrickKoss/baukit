@@ -48,7 +48,7 @@ impl SuiteReplaySource for NoReplay {
         &self,
         _connection: &mut PgConnection,
         _owner: Uuid,
-        _since: chrono::NaiveDate,
+        _since: jiff::civil::Date,
     ) -> Result<Vec<SuiteEvent>, SuiteStoreError> {
         Ok(Vec::new())
     }

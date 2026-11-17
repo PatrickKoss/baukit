@@ -15,7 +15,7 @@ readme = "README.md"
 workspace = true
 
 [features]
-sqlx-postgres = ["dep:sqlx"]
+sqlx-postgres = ["dep:sqlx", "dep:jiff-sqlx"]
 test-support = ["dep:tokio"]
 
 [dependencies]
@@ -23,7 +23,8 @@ axum.workspace = true
 baukit-config.workspace = true
 baukit-egress.workspace = true
 baukit-http.workspace = true
-chrono.workspace = true
+jiff.workspace = true
+jiff-sqlx = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sqlx = { workspace = true, optional = true }

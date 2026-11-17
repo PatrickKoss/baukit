@@ -215,7 +215,7 @@ async fn export_part(
     let number = number.parse::<u32>().map_err(|_| not_found())?;
     let bytes = state
         .store
-        .export_part(&client, id, number, chrono::Utc::now())
+        .export_part(&client, id, number, jiff::Timestamp::now())
         .await
         .map_err(api_error)?
         .ok_or_else(not_found)?;

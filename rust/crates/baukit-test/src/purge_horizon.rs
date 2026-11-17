@@ -1,15 +1,15 @@
 use std::{fmt, num::NonZeroU32, pin::pin, time::Duration};
 
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use tokio::sync::oneshot;
 
 const BATCH_LIMIT: NonZeroU32 = NonZeroU32::new(2).expect("two is not zero");
 const BATCH_TOMBSTONES: usize = 5;
 const DRAIN_LIMIT: NonZeroU32 = NonZeroU32::new(100).expect("one hundred is not zero");
 const MAX_DRAIN_BATCHES: usize = 1_000;
-const EXPIRED_AGE: TimeDelta = TimeDelta::days(2);
-const RETENTION: TimeDelta = TimeDelta::days(1);
-const FAR_FUTURE: TimeDelta = TimeDelta::days(1);
+const EXPIRED_AGE: SignedDuration = SignedDuration::from_hours(24 * 2);
+const RETENTION: SignedDuration = SignedDuration::from_hours(24);
+const FAR_FUTURE: SignedDuration = SignedDuration::from_hours(24);
 const PURGE_OVERLAP: Duration = Duration::from_millis(250);
 const RACE_DEADLINE: Duration = Duration::from_secs(30);
 const BUSY_OWNER_LIVE_ROWS: usize = 3;
@@ -90,14 +90,14 @@ pub trait PurgeHorizonAdapter {
     fn write_tombstone(
         &self,
         owner: &Self::Owner,
-        deleted_at: DateTime<Utc>,
+        deleted_at: Timestamp,
     ) -> impl std::future::Future<Output = Result<i64, Self::Error>>;
 
     /// Runs one purge transaction that removes at most `limit` tombstones
     /// deleted before `cutoff`, and returns how many it removed.
     fn purge_batch(
         &self,
-        cutoff: DateTime<Utc>,
+        cutoff: Timestamp,
         limit: NonZeroU32,
     ) -> impl std::future::Future<Output = Result<u64, Self::Error>>;
 
@@ -166,7 +166,7 @@ pub async fn check_purge_horizon_conformance<Adapter>(
 where
     Adapter: PurgeHorizonAdapter,
 {
-    let clock = Clock::new(Utc::now());
+    let clock = Clock::new(Timestamp::now());
     let mut violations = Vec::new();
     let cases = [
         monotonic_horizon_and_cursor_boundaries(adapter, clock, &mut violations).await,
@@ -199,23 +199,23 @@ where
 
 #[derive(Clone, Copy)]
 struct Clock {
-    now: DateTime<Utc>,
+    now: Timestamp,
 }
 
 impl Clock {
-    const fn new(now: DateTime<Utc>) -> Self {
+    const fn new(now: Timestamp) -> Self {
         Self { now }
     }
 
-    fn expired(self) -> DateTime<Utc> {
+    fn expired(self) -> Timestamp {
         self.now - EXPIRED_AGE
     }
 
-    fn cutoff(self) -> DateTime<Utc> {
+    fn cutoff(self) -> Timestamp {
         self.now - RETENTION
     }
 
-    fn everything(self) -> DateTime<Utc> {
+    fn everything(self) -> Timestamp {
         self.now + FAR_FUTURE
     }
 }
@@ -618,7 +618,7 @@ async fn race_purge_against_pull<Adapter>(
     adapter: &Adapter,
     owner: &Adapter::Owner,
     cursor: i64,
-    cutoff: DateTime<Utc>,
+    cutoff: Timestamp,
 ) -> RaceOutcome<Adapter::Error>
 where
     Adapter: PurgeHorizonAdapter,
@@ -701,7 +701,7 @@ where
     .await
 }
 
-async fn drain<Adapter>(adapter: &Adapter, cutoff: DateTime<Utc>, case: &str) -> CaseResult
+async fn drain<Adapter>(adapter: &Adapter, cutoff: Timestamp, case: &str) -> CaseResult
 where
     Adapter: PurgeHorizonAdapter,
 {

@@ -90,7 +90,7 @@ impl Drop for GeneratedApiToken {
 mod tests {
     use std::collections::BTreeSet;
 
-    use chrono::Utc;
+    use jiff::Timestamp;
     use uuid::Uuid;
 
     use super::{ApiToken, IssuedApiToken};
@@ -104,7 +104,7 @@ mod tests {
                 name: "ci".to_owned(),
                 display_prefix: "bk_live_abcd".to_owned(),
                 grants: BTreeSet::new(),
-                created_at: Utc::now(),
+                created_at: Timestamp::now(),
                 expires_at: None,
                 last_used_at: None,
                 revoked_at: None,

@@ -2,7 +2,8 @@ use crate::domain::*;
 use crate::ports::*;
 pub use crate::{SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL};
 use async_trait::async_trait;
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
+use jiff_sqlx::ToSqlx;
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -32,7 +33,7 @@ impl PostgresSuiteLinkStore {
         owner: Uuid,
         id: Uuid,
         action: DeliveryAction,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<DeliveryState, SuiteStoreError> {
         let mut tx = self.begin_transaction().await?;
         let link = self.link_for_update(&mut tx, owner, id).await?;
@@ -74,7 +75,7 @@ impl PostgresSuiteLinkStore {
         .bind(after.health.as_str())
         .bind(i32::try_from(after.consecutive_failures).map_err(invalid)?)
         .bind(action == DeliveryAction::Delivered)
-        .bind(now)
+        .bind(now.to_sqlx())
         .bind(action.permanent_code())
         .bind(owner)
         .execute(&mut *tx)
@@ -132,14 +133,13 @@ fn changed(count: u64) -> Result<(), SuiteStoreError> {
     }
 }
 
-fn replay_retry_after(last: Option<DateTime<Utc>>, now: DateTime<Utc>) -> u64 {
+fn replay_retry_after(last: Option<Timestamp>, now: Timestamp) -> u64 {
     last.map(|last| {
-        (last + Duration::seconds(SUITE_REPLAY_INTERVAL_SECONDS) - now)
-            .num_milliseconds()
+        let millis = (last + SignedDuration::from_secs(SUITE_REPLAY_INTERVAL_SECONDS) - now)
+            .as_millis()
             .saturating_add(999)
-            .max(0)
-            .unsigned_abs()
-            / 1000
+            .max(0);
+        u64::try_from(millis / 1000).unwrap_or(u64::MAX)
     })
     .unwrap_or(0)
 }
@@ -156,7 +156,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         &self,
         tx: &mut sqlx::PgConnection,
         r: &LinkRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteStoreError> {
         lock_owner(tx, r.user_id).await?;
         sqlx::query(
@@ -167,7 +167,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         )
         .bind(r.user_id)
         .bind(&r.peer_app)
-        .bind(now)
+        .bind(now.to_sqlx())
         .execute(&mut *tx)
         .await
         .map_err(storage)?;
@@ -194,8 +194,8 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .bind(r.verifier.key_version)
         .bind(&r.client_state_nonce)
         .bind(&r.return_url)
-        .bind(r.expires_at)
-        .bind(r.created_at)
+        .bind(r.expires_at.to_sqlx())
+        .bind(r.created_at.to_sqlx())
         .execute(&mut *tx)
         .await
         .map_err(storage)?;
@@ -257,9 +257,9 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         &self,
         owner: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<u64, SuiteStoreError> {
-        let last: Option<DateTime<Utc>> = sqlx::query_scalar(
+        let last: Option<jiff_sqlx::Timestamp> = sqlx::query_scalar(
             r#"SELECT last_replay_at FROM suite_links WHERE id=$1 AND user_id=$2"#,
         )
         .bind(id)
@@ -268,14 +268,17 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .await
         .map_err(storage)?
         .ok_or(SuiteStoreError::NotFound)?;
-        Ok(replay_retry_after(last, now))
+        Ok(replay_retry_after(
+            last.map(jiff_sqlx::Timestamp::to_jiff),
+            now,
+        ))
     }
     async fn consume_request_in_transaction(
         &self,
         tx: &mut sqlx::PgConnection,
         id: Uuid,
         owner: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteStoreError> {
         let n = sqlx::query(
             r#"UPDATE suite_link_requests
@@ -289,7 +292,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         )
         .bind(id)
         .bind(owner)
-        .bind(now)
+        .bind(now.to_sqlx())
         .execute(&mut *tx)
         .await
         .map_err(storage)?
@@ -348,8 +351,8 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .bind(&c.code_challenge)
         .bind(c.suite_subject.as_deref())
         .bind(c.auto_approved)
-        .bind(c.expires_at)
-        .bind(c.created_at)
+        .bind(c.expires_at.to_sqlx())
+        .bind(c.created_at.to_sqlx())
         .execute(&mut *tx)
         .await
         .map_err(storage)?;
@@ -393,7 +396,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         tx: &mut sqlx::PgConnection,
         hash: [u8; 32],
         link: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteStoreError> {
         let n = sqlx::query(
             r#"UPDATE suite_link_codes
@@ -405,7 +408,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         )
         .bind(hash.as_slice())
         .bind(link)
-        .bind(now)
+        .bind(now.to_sqlx())
         .execute(&mut *tx)
         .await
         .map_err(storage)?
@@ -498,8 +501,8 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .bind(l.share_xp)
         .bind(l.reward_mode.as_str())
         .bind(l.delivery_health.as_str())
-        .bind(l.created_at)
-        .bind(l.updated_at)
+        .bind(l.created_at.to_sqlx())
+        .bind(l.updated_at.to_sqlx())
         .execute(&mut *tx)
         .await
         .map_err(storage)?;
@@ -510,12 +513,12 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         tx: &mut sqlx::PgConnection,
         owner: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteStoreError> {
         self.link_for_update(tx, owner, id).await?;
         changed(sqlx::query(r#"UPDATE suite_links SET status='revoked',revoked_at=COALESCE(revoked_at,$2),updated_at=$2 WHERE id=$1 AND user_id=$3"#)
 .bind(id)
-.bind(now)
+.bind(now.to_sqlx())
 .bind(owner)
         .execute(&mut *tx)
         .await
@@ -597,7 +600,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         id: Uuid,
         xp: Option<bool>,
         mode: Option<RewardMode>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLink, SuiteStoreError> {
         let mut tx = self.begin_transaction().await?;
         self.link_for_update(&mut tx, owner, id).await?;
@@ -617,7 +620,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .bind(owner)
         .bind(xp)
         .bind(mode.map(RewardMode::as_str))
-        .bind(now)
+        .bind(now.to_sqlx())
         .fetch_optional(&mut *tx)
         .await
         .map_err(storage)?
@@ -630,7 +633,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         &self,
         owner: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLink, SuiteStoreError> {
         let mut tx = self.begin_transaction().await?;
         self.link_for_update(&mut tx, owner, id).await?;
@@ -646,7 +649,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
             last_received_at, created_at, updated_at, revoked_at"#)
 .bind(id)
 .bind(owner)
-.bind(now)
+.bind(now.to_sqlx())
         .fetch_optional(&mut *tx)
         .await
         .map_err(storage)?.ok_or(SuiteStoreError::NotFound)?.try_into()?;
@@ -658,7 +661,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         owner: Uuid,
         id: Uuid,
         action: DeliveryAction,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<DeliveryState, SuiteStoreError> {
         self.health(owner, id, action, now).await
     }
@@ -668,7 +671,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         id: Uuid,
         job_id: Uuid,
         worker_id: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteStoreError> {
         let mut tx = self.begin_transaction().await?;
         let link = self.link_for_update(&mut tx, owner, id).await?;
@@ -690,7 +693,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
             .bind(id)
             .bind(state.health.as_str())
             .bind(i32::try_from(state.consecutive_failures).map_err(invalid)?)
-            .bind(now)
+            .bind(now.to_sqlx())
             .bind(owner)
             .execute(&mut *tx)
             .await
@@ -765,7 +768,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .bind(&e.event_id)
         .bind(e.user_id)
         .bind(&e.event_type)
-        .bind(e.occurred_at)
+        .bind(e.occurred_at.to_sqlx())
         .bind(e.payload_hash.as_slice())
         .bind(e.replay)
         .bind(match e.outcome.outcome {
@@ -774,7 +777,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
             AppliedOutcomeStatus::Capped => "capped",
         })
         .bind(e.outcome.ledger_entry_id.as_deref())
-        .bind(e.received_at)
+        .bind(e.received_at.to_sqlx())
         .execute(&mut *tx)
         .await
         .map_err(storage)?
@@ -790,14 +793,14 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         tx: &mut sqlx::PgConnection,
         owner: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteStoreError> {
         changed(
             sqlx::query(
                 r#"UPDATE suite_links SET last_received_at=$2,updated_at=$2 WHERE id=$1 AND user_id=$3"#,
             )
                 .bind(id)
-                .bind(now)
+                .bind(now.to_sqlx())
                 .bind(owner)
                 .execute(&mut *tx)
                 .await
@@ -841,13 +844,13 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
                 status: r.status,
                 attempt_count: r.attempt_count.try_into().map_err(invalid)?,
                 last_error_code: r.last_error,
-                created_at: r.created_at,
-                updated_at: r.updated_at,
+                created_at: r.created_at.to_jiff(),
+                updated_at: r.updated_at.to_jiff(),
             })
         })
         .collect()
     }
-    async fn cleanup(&self, now: DateTime<Utc>) -> Result<SuiteCleanupOutcome, SuiteStoreError> {
+    async fn cleanup(&self, now: Timestamp) -> Result<SuiteCleanupOutcome, SuiteStoreError> {
         let mut tx = self.begin_transaction().await?;
         let acquired: bool = sqlx::query_scalar(
             "SELECT pg_try_advisory_xact_lock(hashtextextended('baukit_suite.cleanup',0))",
@@ -943,8 +946,8 @@ struct DeliveryRow {
     status: String,
     attempt_count: i32,
     last_error: Option<String>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    created_at: jiff_sqlx::Timestamp,
+    updated_at: jiff_sqlx::Timestamp,
 }
 
 impl PostgresSuiteLinkStore {

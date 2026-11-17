@@ -1,6 +1,6 @@
 use std::fmt;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -217,7 +217,7 @@ pub struct Restriction {
     /// Applicable legal obligation.
     pub legal_basis: String,
     /// Retention end date, or null if no date is known.
-    pub retain_until: Option<NaiveDate>,
+    pub retain_until: Option<Date>,
 }
 
 /// Digest and size of the exact downloadable JSON part bytes.
@@ -253,9 +253,9 @@ pub struct OperationResource {
     /// Echo of the client's opaque correlation reference.
     pub subject_reference: String,
     /// Acceptance timestamp.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Terminal timestamp, null while pending.
-    pub completed_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<Timestamp>,
     /// Category counts and actions.
     pub categories: Vec<CategoryEntry>,
     /// Legal retention obligations.
@@ -287,9 +287,9 @@ pub struct ReceiptPayload {
     /// Service that signed this proof.
     pub service: Service,
     /// Operation acceptance time.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Operation completion time.
-    pub completed_at: DateTime<Utc>,
+    pub completed_at: Timestamp,
     /// Category counts and actions, without identifiers or record content.
     pub categories: Vec<CategoryEntry>,
     /// Legal retention obligations.

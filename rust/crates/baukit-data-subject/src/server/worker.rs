@@ -1,3 +1,4 @@
+use jiff_sqlx::ToSqlx;
 use std::{
     collections::{BTreeMap, HashSet},
     sync::Arc,
@@ -7,7 +8,7 @@ use baukit_erasure::ErasureState;
 use baukit_jobs::{
     ClaimedJob, JobCancellation, JobError, JobFuture, JobHandler, NewJob, PostgresJobStore,
 };
-use chrono::{DateTime, SubsecRound, TimeDelta, Utc};
+use jiff::{RoundMode, SignedDuration, Timestamp, TimestampRound, Unit};
 use serde::Deserialize;
 use sqlx::{Acquire, PgConnection, Postgres, Transaction};
 use uuid::Uuid;
@@ -65,7 +66,7 @@ impl DataSubjectHandler {
                 &mut transaction,
                 job.id,
                 cancellation.worker_id(),
-                Utc::now(),
+                Timestamp::now(),
             )
             .await?
         {
@@ -79,7 +80,7 @@ impl DataSubjectHandler {
                 &mut transaction,
                 job.id,
                 cancellation.worker_id(),
-                Utc::now(),
+                Timestamp::now(),
             )
             .await?
         {
@@ -105,7 +106,7 @@ impl DataSubjectHandler {
         job: &ClaimedJob,
         id: Uuid,
         subjects: Option<Vec<LocalSubject>>,
-    ) -> Result<Option<DateTime<Utc>>, DataSubjectError> {
+    ) -> Result<Option<Timestamp>, DataSubjectError> {
         let Some(operation) = load_for_execution(transaction, id).await? else {
             return Ok(None);
         };
@@ -142,7 +143,7 @@ impl DataSubjectHandler {
         id: Uuid,
         mut operation: OperationResource,
         subjects: &[LocalSubject],
-    ) -> Result<Option<DateTime<Utc>>, DataSubjectError> {
+    ) -> Result<Option<Timestamp>, DataSubjectError> {
         let mut fenced = HashSet::new();
         let mut waiting = false;
         for subject in subjects {
@@ -158,12 +159,12 @@ impl DataSubjectHandler {
             operation.restrictions.extend(report.restrictions);
         }
         if waiting {
-            let started_at: DateTime<Utc> = sqlx::query_scalar("UPDATE data_subject_operations SET categories = $2, restrictions = $3, identity_deletion_started_at = clock_timestamp() WHERE id = $1 RETURNING identity_deletion_started_at")
+            let started_at: jiff_sqlx::Timestamp = sqlx::query_scalar("UPDATE data_subject_operations SET categories = $2, restrictions = $3, identity_deletion_started_at = clock_timestamp() WHERE id = $1 RETURNING identity_deletion_started_at")
                 .bind(id).bind(serde_json::to_value(operation.categories)?)
                 .bind(serde_json::to_value(operation.restrictions)?)
                 .fetch_one(&mut **transaction).await?;
             return Ok(Some(
-                started_at + self.store.config.identity_deletion_timeout,
+                started_at.to_jiff() + self.store.config.identity_deletion_timeout,
             ));
         }
         operation.status = result_status(subjects.is_empty(), &operation);
@@ -198,21 +199,21 @@ impl DataSubjectHandler {
         transaction: &mut Transaction<'_, Postgres>,
         id: Uuid,
         mut operation: OperationResource,
-    ) -> Result<Option<DateTime<Utc>>, DataSubjectError> {
-        let started_at: Option<DateTime<Utc>> = sqlx::query_scalar(
+    ) -> Result<Option<Timestamp>, DataSubjectError> {
+        let started_at: Option<jiff_sqlx::Timestamp> = sqlx::query_scalar(
             "SELECT identity_deletion_started_at FROM data_subject_operations WHERE id = $1",
         )
         .bind(id)
         .fetch_one(&mut **transaction)
         .await?;
-        let deadline = started_at.ok_or(DataSubjectError::Result)?
+        let deadline = started_at.ok_or(DataSubjectError::Result)?.to_jiff()
             + self.store.config.identity_deletion_timeout;
         let states: Vec<String> = sqlx::query_scalar("SELECT identity_operation.state FROM erasure_operations AS identity_operation JOIN data_subject_identity_operations AS dependency ON dependency.identity_operation_id = identity_operation.id WHERE dependency.operation_id = $1")
             .bind(id).fetch_all(&mut **transaction).await?;
         if states.is_empty() {
             return Err(DataSubjectError::Result);
         }
-        if states.iter().any(|state| state == "failed") || Utc::now() >= deadline {
+        if states.iter().any(|state| state == "failed") || Timestamp::now() >= deadline {
             sqlx::query("UPDATE data_subject_operations SET status = 'failed', completed_at = now(), error_code = $2 WHERE id = $1")
                 .bind(id).bind(codes::OPERATION_FAILED).execute(&mut **transaction).await?;
             return Ok(None);
@@ -231,10 +232,10 @@ impl DataSubjectHandler {
         transaction: &mut Transaction<'_, Postgres>,
         id: Uuid,
         check_count: u32,
-        deadline: DateTime<Utc>,
+        deadline: Timestamp,
     ) -> Result<(), DataSubjectError> {
-        let delay = TimeDelta::seconds((1_i64 << check_count.min(6)).min(60));
-        let run_after = (Utc::now() + delay).min(deadline);
+        let delay = SignedDuration::from_secs((1_i64 << check_count.min(6)).min(60));
+        let run_after = (Timestamp::now() + delay).min(deadline);
         jobs.enqueue_in_transaction(
             transaction,
             NewJob::new(
@@ -287,15 +288,15 @@ impl DataSubjectHandler {
         operation.categories = categories;
         operation.status = result_status(subjects.is_empty(), &operation);
         operation.parts = parts.iter().map(|part| part.metadata.clone()).collect();
-        let completed_at = Utc::now().trunc_subsecs(6);
+        let completed_at = now_in_micros()?;
         operation.completed_at = Some(completed_at);
         let expires_at = completed_at
-            .checked_add_signed(self.store.config.export_retention)
-            .ok_or(DataSubjectError::Configuration)?;
+            .checked_add(self.store.config.export_retention)
+            .map_err(|_| DataSubjectError::Configuration)?;
         for part in parts {
             sqlx::query("INSERT INTO data_subject_export_parts (operation_id, part_number, json_bytes, sha256, bytes, expires_at) VALUES ($1, $2, $3, $4, $5, $6)")
                 .bind(operation.operation_id).bind(i64::from(part.metadata.part_number))
-                .bind(part.bytes).bind(part.metadata.sha256).bind(i64::try_from(part.metadata.bytes).map_err(|_| DataSubjectError::Result)?).bind(expires_at)
+                .bind(part.bytes).bind(part.metadata.sha256).bind(i64::try_from(part.metadata.bytes).map_err(|_| DataSubjectError::Result)?).bind(expires_at.to_sqlx())
                 .execute(&mut *execution).await?;
         }
         self.sign_result(&mut execution, operation).await?;
@@ -308,9 +309,10 @@ impl DataSubjectHandler {
         connection: &mut PgConnection,
         operation: OperationResource,
     ) -> Result<(), DataSubjectError> {
-        let completed_at = operation
-            .completed_at
-            .unwrap_or_else(|| Utc::now().trunc_subsecs(6));
+        let completed_at = match operation.completed_at {
+            Some(completed_at) => completed_at,
+            None => now_in_micros()?,
+        };
         let receipt = self
             .store
             .config
@@ -332,15 +334,26 @@ impl DataSubjectHandler {
             .map_err(|_| DataSubjectError::Result)?;
         sqlx::query("UPDATE data_subject_operations SET status = $2, completed_at = $3, categories = $4, restrictions = $5, receipt = $6, parts = $7, export_expires_at = $8 WHERE id = $1")
             .bind(operation.operation_id).bind(serde_json::to_value(operation.status)?.as_str().ok_or(DataSubjectError::Result)?)
-            .bind(completed_at).bind(serde_json::to_value(operation.categories)?)
+            .bind(completed_at.to_sqlx()).bind(serde_json::to_value(operation.categories)?)
             .bind(serde_json::to_value(operation.restrictions)?).bind(serde_json::to_value(receipt)?)
             .bind(serde_json::to_value(operation.parts)?)
-            .bind(if operation.kind == OperationKind::Export && operation.status == OperationStatus::Completed {
-                Some(completed_at.checked_add_signed(self.store.config.export_retention).ok_or(DataSubjectError::Configuration)?)
-            } else { None })
+            .bind((if operation.kind == OperationKind::Export && operation.status == OperationStatus::Completed {
+                Some(completed_at.checked_add(self.store.config.export_retention).map_err(|_| DataSubjectError::Configuration)?)
+            } else { None }).map(ToSqlx::to_sqlx))
             .execute(connection).await?;
         Ok(())
     }
+}
+
+/// The current time at PostgreSQL's microsecond precision, so signed receipts match stored rows.
+fn now_in_micros() -> Result<Timestamp, DataSubjectError> {
+    Timestamp::now()
+        .round(
+            TimestampRound::new()
+                .smallest(Unit::Microsecond)
+                .mode(RoundMode::Trunc),
+        )
+        .map_err(|_| DataSubjectError::Result)
 }
 
 fn result_status(not_found: bool, operation: &OperationResource) -> OperationStatus {

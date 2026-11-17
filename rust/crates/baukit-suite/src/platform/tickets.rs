@@ -370,7 +370,8 @@ impl TicketVerifier {
     ///
     /// The errors of [`Self::verify_at`].
     pub async fn verify(&self, ticket: &str) -> Result<TicketClaims, TicketError> {
-        self.verify_at(ticket, chrono::Utc::now().timestamp()).await
+        self.verify_at(ticket, jiff::Timestamp::now().as_second())
+            .await
     }
     /// # Errors
     ///

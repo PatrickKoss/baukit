@@ -7,7 +7,7 @@ use std::{
     sync::{Arc, Mutex, MutexGuard, PoisonError},
 };
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use uuid::Uuid;
 
 use crate::{
@@ -116,7 +116,7 @@ fn evict_over_cap(
     u64::try_from(evicted.len()).unwrap_or(u64::MAX)
 }
 
-fn recency(device: &RegisteredDevice) -> (DateTime<Utc>, DateTime<Utc>, &DeviceToken) {
+fn recency(device: &RegisteredDevice) -> (Timestamp, Timestamp, &DeviceToken) {
     (device.last_registered_at, device.created_at, &device.token)
 }
 
@@ -174,7 +174,7 @@ impl DeviceRegistry for MemoryDeviceRegistry {
     fn invalidate(
         &self,
         tokens: Vec<DeviceToken>,
-        sent_at: DateTime<Utc>,
+        sent_at: Timestamp,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         let dead = tokens.into_iter().collect::<HashSet<_>>();
         let mut devices = self.devices();
@@ -223,7 +223,7 @@ impl DeliveryClaimStore for MemoryDeliveryClaimStore {
     fn claim(
         &self,
         claim: DeliveryClaim,
-        _claimed_at: DateTime<Utc>,
+        _claimed_at: Timestamp,
     ) -> PushStoreFuture<'_, Result<bool, PushStoreError>> {
         let inserted = self.claims().insert(claim);
         Box::pin(std::future::ready(Ok(inserted)))
@@ -236,7 +236,7 @@ impl DeliveryClaimStore for MemoryDeliveryClaimStore {
 
     fn purge(
         &self,
-        before: NaiveDate,
+        before: Date,
         limit: NonZeroU32,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         let mut claims = self.claims();
@@ -260,7 +260,7 @@ impl DeliveryClaimStore for MemoryDeliveryClaimStore {
 #[derive(Clone, Debug)]
 struct DueReceipt {
     receipt: PendingReceipt,
-    due_at: DateTime<Utc>,
+    due_at: Timestamp,
 }
 
 /// [`PendingReceiptStore`] held in memory with the PostgreSQL adapter's
@@ -302,7 +302,7 @@ impl PendingReceiptStore for MemoryPendingReceiptStore {
     fn record(
         &self,
         receipts: Vec<PendingReceipt>,
-        due_at: DateTime<Utc>,
+        due_at: Timestamp,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         let mut stored = self.receipts();
         let before = stored.len();
@@ -317,8 +317,8 @@ impl PendingReceiptStore for MemoryPendingReceiptStore {
 
     fn take_due(
         &self,
-        now: DateTime<Utc>,
-        retry_at: DateTime<Utc>,
+        now: Timestamp,
+        retry_at: Timestamp,
         limit: NonZeroU32,
     ) -> PushStoreFuture<'_, Result<Vec<PendingReceipt>, PushStoreError>> {
         let mut stored = self.receipts();
@@ -352,7 +352,7 @@ impl PendingReceiptStore for MemoryPendingReceiptStore {
 
     fn purge(
         &self,
-        sent_before: DateTime<Utc>,
+        sent_before: Timestamp,
         limit: NonZeroU32,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         let mut stored = self.receipts();
@@ -381,7 +381,7 @@ impl PendingReceiptStore for MemoryPendingReceiptStore {
 
 #[cfg(test)]
 mod tests {
-    use chrono::{NaiveDate, TimeDelta};
+    use jiff::SignedDuration;
 
     use super::*;
     use crate::{DeliveryKind, DevicePlatform, PushDeliveryStatus, PushOutcome, PushRejection};
@@ -394,8 +394,8 @@ mod tests {
         DeviceToken::new(value).expect("valid test token")
     }
 
-    fn at(minutes: i64) -> DateTime<Utc> {
-        DateTime::UNIX_EPOCH + TimeDelta::minutes(minutes)
+    fn at(minutes: i64) -> Timestamp {
+        Timestamp::UNIX_EPOCH + SignedDuration::from_mins(minutes)
     }
 
     fn registration(owner_id: Uuid, value: &str, minutes: i64) -> DeviceRegistration {
@@ -475,7 +475,7 @@ mod tests {
         let store = MemoryDeliveryClaimStore::new();
         let claim = DeliveryClaim::new(
             Uuid::now_v7(),
-            NaiveDate::from_ymd_opt(2026, 9, 27).expect("valid date"),
+            jiff::civil::Date::new(2026, 9, 27).expect("valid date"),
             DeliveryKind::new("daily_reminder")?,
         );
         assert!(store.claim(claim.clone(), at(0)).await?);
@@ -494,7 +494,7 @@ mod tests {
         let claim = |day| {
             DeliveryClaim::new(
                 owner,
-                NaiveDate::from_ymd_opt(2026, 9, day).expect("valid date"),
+                jiff::civil::Date::new(2026, 9, day).expect("valid date"),
                 kind.clone(),
             )
         };

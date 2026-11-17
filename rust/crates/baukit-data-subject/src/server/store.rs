@@ -1,8 +1,9 @@
+use jiff_sqlx::ToSqlx;
 use std::sync::Arc;
 
 use aws_lc_rs::hmac;
 use baukit_jobs::{NewJob, PostgresJobStore};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde_json::Value;
 use sqlx::{PgConnection, PgPool, Row, postgres::PgRow};
 use uuid::Uuid;
@@ -151,7 +152,7 @@ impl PostgresDataSubjectStore {
         let id = Uuid::now_v7();
         let row = sqlx::query("INSERT INTO data_subject_operations (id, kind, client_id, key_hash, request_hash, subject_reference, status, purge_after) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7) RETURNING id, kind, status, subject_reference, created_at, completed_at, categories, restrictions, parts, receipt, error_code")
             .bind(id).bind(kind).bind(client_id).bind(key_hash).bind(request_hash).bind(request.subject_reference())
-            .bind(Utc::now().checked_add_signed(self.config.operation_retention).ok_or(DataSubjectError::Configuration)?)
+            .bind((Timestamp::now().checked_add(self.config.operation_retention).map_err(|_| DataSubjectError::Configuration)?).to_sqlx())
             .fetch_one(&mut *transaction).await?;
         PostgresJobStore::new(self.pool.clone())
             .enqueue_in_transaction(
@@ -200,7 +201,7 @@ impl PostgresDataSubjectStore {
         client_id: &str,
         id: Uuid,
         part_number: u32,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<Vec<u8>>, DataSubjectError> {
         let mut transaction = self.pool.begin().await?;
         let row = sqlx::query("SELECT id, kind, status, subject_reference, created_at, completed_at, categories, restrictions, parts, receipt, error_code, export_expires_at FROM data_subject_operations WHERE id = $1 AND client_id = $2 AND kind = 'export' FOR SHARE")
@@ -208,7 +209,9 @@ impl PostgresDataSubjectStore {
         let Some(row) = row else {
             return Ok(None);
         };
-        let expires_at: Option<DateTime<Utc>> = row.try_get("export_expires_at")?;
+        let expires_at = row
+            .try_get::<Option<jiff_sqlx::Timestamp>, _>("export_expires_at")?
+            .map(jiff_sqlx::Timestamp::to_jiff);
         let operation = resource(&row)?;
         if operation.status == OperationStatus::Pending {
             return Err(DataSubjectError::ExportNotReady);
@@ -227,7 +230,7 @@ impl PostgresDataSubjectStore {
             return Err(DataSubjectError::ExportExpired);
         }
         let bytes = sqlx::query_scalar("SELECT json_bytes FROM data_subject_export_parts WHERE operation_id = $1 AND part_number = $2 AND expires_at > $3")
-            .bind(id).bind(i64::from(part_number)).bind(now).fetch_optional(&mut *transaction).await?;
+            .bind(id).bind(i64::from(part_number)).bind(now.to_sqlx()).fetch_optional(&mut *transaction).await?;
         transaction.commit().await?;
         Ok(bytes)
     }
@@ -243,7 +246,7 @@ impl PostgresDataSubjectStore {
     /// [`DataSubjectError::Database`] when a query or the commit fails.
     pub async fn purge_expired(
         &self,
-        now: DateTime<Utc>,
+        now: Timestamp,
         batch_size: u32,
     ) -> Result<u64, DataSubjectError> {
         if batch_size == 0 || batch_size > MAX_PURGE_BATCH_SIZE {
@@ -252,7 +255,7 @@ impl PostgresDataSubjectStore {
         let mut transaction = self.pool.begin().await?;
         // Execution takes the job lock before the operation lock too.
         let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM data_subject_operations WHERE purge_after < $1 ORDER BY purge_after, id LIMIT $2")
-            .bind(now).bind(i64::from(batch_size)).fetch_all(&mut *transaction).await?;
+            .bind(now.to_sqlx()).bind(i64::from(batch_size)).fetch_all(&mut *transaction).await?;
         let locked_jobs: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM job_outbox WHERE job_type = ANY($1) AND idempotency_key = ANY($2) ORDER BY id FOR UPDATE")
             .bind(vec![ERASURE_JOB_TYPE, EXPORT_JOB_TYPE, FINALIZATION_JOB_TYPE]).bind(ids.iter().map(ToString::to_string).collect::<Vec<_>>())
             .fetch_all(&mut *transaction).await?;
@@ -264,12 +267,12 @@ impl PostgresDataSubjectStore {
             "DELETE FROM data_subject_operations WHERE id = ANY($1) AND purge_after < $2",
         )
         .bind(ids)
-        .bind(now)
+        .bind(now.to_sqlx())
         .execute(&mut *transaction)
         .await?
         .rows_affected();
         sqlx::query("DELETE FROM data_subject_export_parts WHERE (operation_id, part_number) IN (SELECT operation_id, part_number FROM data_subject_export_parts WHERE expires_at <= $1 ORDER BY expires_at, operation_id, part_number LIMIT $2 FOR UPDATE SKIP LOCKED)")
-            .bind(now).bind(i64::from(batch_size)).execute(&mut *transaction).await?;
+            .bind(now.to_sqlx()).bind(i64::from(batch_size)).execute(&mut *transaction).await?;
         transaction.commit().await?;
         Ok(count)
     }
@@ -297,8 +300,12 @@ fn resource(row: &PgRow) -> Result<OperationResource, DataSubjectError> {
         kind: serde_json::from_value(Value::String(row.try_get("kind")?))?,
         status: serde_json::from_value(Value::String(row.try_get("status")?))?,
         subject_reference: row.try_get("subject_reference")?,
-        created_at: row.try_get("created_at")?,
-        completed_at: row.try_get("completed_at")?,
+        created_at: row
+            .try_get::<jiff_sqlx::Timestamp, _>("created_at")?
+            .to_jiff(),
+        completed_at: row
+            .try_get::<Option<jiff_sqlx::Timestamp>, _>("completed_at")?
+            .map(jiff_sqlx::Timestamp::to_jiff),
         categories: serde_json::from_value(row.try_get("categories")?)?,
         restrictions: serde_json::from_value(row.try_get("restrictions")?)?,
         parts: serde_json::from_value(row.try_get("parts")?)?,

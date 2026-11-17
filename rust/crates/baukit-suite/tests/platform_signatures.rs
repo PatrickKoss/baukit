@@ -61,14 +61,14 @@ use axum::{
 };
 use baukit_config::Secret;
 use baukit_suite::platform::*;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use std::sync::Arc;
 use tower::ServiceExt;
 
 struct Clock(i64);
 impl PlatformClock for Clock {
-    fn now(&self) -> DateTime<Utc> {
-        DateTime::from_timestamp(self.0, 0).expect("time")
+    fn now(&self) -> Timestamp {
+        jiff::Timestamp::from_second(self.0).expect("time")
     }
 }
 struct Handler;
