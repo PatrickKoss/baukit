@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tenant-metrics-proxy
+  labels:
+    app.kubernetes.io/name: tenant-metrics-proxy
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/process: metrics-proxy
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tenant-metrics-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tenant-metrics-proxy
+        app.kubernetes.io/part-of: baukit-platform
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      priorityClassName: platform-standard
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: prom-label-proxy
+          image: quay.io/prometheuscommunity/prom-label-proxy:v0.16.2@sha256:9812cce38fa78c39250c9c59c78bbe75895ef9126952a098cd44adef2e21dbc5
+          args:
+            - -insecure-listen-address=:8080
+            - -upstream=http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+            - -label=namespace
+            - -label-value=tenant
+            - -error-on-replace
+            - -http-timeout=30s
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tenant-metrics-proxy
+  labels:
+    app.kubernetes.io/name: tenant-metrics-proxy
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  selector:
+    app.kubernetes.io/name: tenant-metrics-proxy
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tenant-metrics-proxy
+  labels:
+    app.kubernetes.io/name: tenant-metrics-proxy
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tenant-metrics-proxy
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: flagger-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: flagger
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9090

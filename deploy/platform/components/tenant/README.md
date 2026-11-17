@@ -24,6 +24,13 @@ The component adds:
 - `spec.serviceAccountName: flux-reconciler` on every Kustomization and HelmRelease in the build;
 - `spec.targetNamespace` set to the tenant namespace and SOPS decryption with the tenant's own key on
   every Kustomization.
+- `tenant-metrics-proxy`, a prom-label-proxy Deployment, Service and NetworkPolicy. It forwards
+  queries to the platform Prometheus with `namespace="<tenant>"` written into every selector
+  (`-label-value` comes from the Namespace name), and answers 400 when a query names another
+  namespace. Only Flagger reaches it on 8080, and it reaches only Prometheus on 9090. Tenant
+  MetricTemplates must use `http://tenant-metrics-proxy.<tenant>.svc.cluster.local:8080`
+  (`restrict-tenant-metric-templates`), and `protect-tenant-metrics-proxy` keeps the tenant from
+  changing it. The registry allowlist must admit `quay.io/`.
 
 ## Parameters
 

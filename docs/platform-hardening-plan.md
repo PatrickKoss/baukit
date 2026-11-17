@@ -754,10 +754,14 @@ by then ride along).
 - [x] **RF21 Host clashes through HostRegexp and HostSNI (P-10).** Done (0.26.4): host arguments are
   normalised and compared across IngressRoutes, IngressRouteTCPs and Ingresses; `HostRegexp`,
   `HostSNIRegexp` and `HostSNI(`*`)` are denied in tenant namespaces.
-- [ ] **RF22 Bare metric names in tenant queries.** `restrict-tenant-metric-templates` cannot see a
+- [x] **RF22 Bare metric names in tenant queries.** `restrict-tenant-metric-templates` cannot see a
   bare metric name such as `sum(up)` without a PromQL parser, so a tenant canary query can still read
   other tenants' series (as a pass/fail result). Put prom-label-proxy with the namespace enforced in
   front of the provider address tenant MetricTemplates may use.
+  Done: `components/tenant` ships `tenant-metrics-proxy` (prom-label-proxy 0.16.2, `-label-value`
+  from the Namespace name, `-error-on-replace`); tenant MetricTemplates must use it, tenant Canaries
+  may not use inline queries or other namespaces' templates, and `protect-tenant-metrics-proxy` keeps
+  the tenant from changing or exec-ing into the proxy. leitbild must switch its MetricTemplate address.
 - [x] **RF23 platform-local adopts FA6.** The audit webhook flags apply only when the lifecycle creates
   the cluster, so platform-local sends no audit events until `down --delete` and `up`. That drops its
   data; schedule it with the user.

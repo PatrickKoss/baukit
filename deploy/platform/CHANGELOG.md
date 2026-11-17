@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- Breaking for tenants (RF22): a tenant MetricTemplate must use `provider.address: http://tenant-metrics-proxy.<namespace>.svc.cluster.local:8080` (its own namespace, no `secretRef`). `components/tenant` now ships `tenant-metrics-proxy`, prom-label-proxy `0.16.2` (`quay.io/prometheuscommunity/prom-label-proxy`, pinned by digest) started with `-label=namespace -label-value=<tenant> -error-on-replace`, so every selector of the query, bare metric names such as `sum(up)` included, only sees the tenant's series, and a selector naming another namespace gets HTTP 400. The `namespace="{{ namespace }}"` selector requirement and its `[` false positive are gone. The registry allowlist must admit `quay.io/`. Threat model P-13 is closed.
+- Breaking for tenants: new Deny policy `restrict-tenant-canaries` refuses a Canary metric with an inline `query` or a `templateRef` into another namespace, `flagger-system` included. The shared `baukit-*` MetricTemplates query Prometheus unscoped with tenant-supplied variables; tenants copy them into their namespace with the proxy address.
+- New Deny policy `protect-tenant-metrics-proxy`: in tenant namespaces only platform kustomize-controller, `system:masters`, nodes and kube-system controllers may create, change or delete objects named `tenant-metrics-proxy*` or labelled (also in pod templates) `app.kubernetes.io/name=tenant-metrics-proxy`, or exec, attach and add ephemeral containers to its pods.
+- Flagger may reach `tenant-metrics-proxy` pods on 8080 in tenant namespaces, and Prometheus admits them on 9090.
+- e2e `flux-tenancy` checks from Flagger's pod that `count by (namespace) (up)` through each proxy returns only that proxy's namespace and that a selector naming `e2e-tenant` returns nothing through another tenant's proxy; `admission` cases may name a user in an `as` file.
+
 ## [0.26.7] - 2026-11-17
 
 - The app pack's `BaukitServiceScrapeDown`, `BaukitServiceTargetsAbsent` and `BaukitBuildInfoAbsent` select `up{product!="", service!=""}`. Every ServiceMonitor target carries `service`, so `BaukitBuildInfoAbsent` fired for about 30 platform targets (coredns, kubelet, grafana, loki and others). Only the baukit-app chart's relabeling sets `product`. promtool cases cover a platform target with `service` and no `product`.

@@ -1,0 +1,44 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-tenant-canaries
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Keep tenant Canary metrics in the tenant namespace
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Flagger runs a Canary metric's inline query, and a MetricTemplate in another namespace, against
+      that template's provider or its own metricsServer, both unscoped. A tenant Canary metric uses a
+      templateRef in the Canary's own namespace, whose address restrict-tenant-metric-templates pins
+      to the tenant metrics proxy, or a builtin metric without a query.
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: true
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [flagger.app]
+        apiVersions: [v1beta1]
+        operations: [CREATE, UPDATE]
+        resources: [canaries]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  variables:
+    - name: namespace
+      expression: string(object.metadata.namespace)
+    - name: escaping
+      expression: >-
+        object.spec.?analysis.?metrics.orValue([]).filter(m,
+          m.?query.orValue("") != "" ||
+          !(string(m.?templateRef.?namespace.orValue("")) in ["", variables.namespace]))
+        .map(m, m.?name.orValue(""))
+  validations:
+    - expression: size(variables.escaping) == 0
+      messageExpression: >-
+        "Canary " + object.metadata.name + " metrics " + variables.escaping.join(", ") +
+        " must reference a MetricTemplate in namespace " + object.metadata.namespace +
+        " and carry no inline query."

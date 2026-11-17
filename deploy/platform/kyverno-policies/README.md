@@ -32,6 +32,9 @@ All policies use the Kyverno 1.20 CEL types (`ValidatingPolicy`, `ImageValidatin
 | `restrict-netpol-wildcards` | tenant NetworkPolicies | Deny |
 | `flux-tenant-alert-sources` | tenant Flux Alerts (notification-controller runs without `--no-cross-namespace-refs`) | Deny |
 | `flux-tenant-service-account` | tenant Flux Kustomizations and HelmReleases | Deny |
+| `restrict-tenant-metric-templates` | tenant MetricTemplates: only the prometheus provider at `tenant-metrics-proxy` in the same namespace | Deny |
+| `restrict-tenant-canaries` | tenant Canaries: no inline metric query, no MetricTemplate from another namespace | Deny |
+| `protect-tenant-metrics-proxy` | tenant objects named `tenant-metrics-proxy*` or labelled `app.kubernetes.io/name=tenant-metrics-proxy`, exec, attach and ephemeral containers on its pods; only platform Flux, `system:masters`, nodes and kube-system controllers | Deny |
 | `verify-baukit-images` | tenant Pods with `ghcr.io/patrickkoss/*` images | Audit |
 | `generate-tenant-defaults` | tenant Namespaces | generates, synchronized |
 
