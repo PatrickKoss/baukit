@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Falco stops dropping kernel events during heavy local gates. It sets `base_syscalls.repair: true`, so the driver captures only the syscalls the loaded rules need plus the process and fd state they depend on, and raises the modern_ebpf ring buffers from 8 MiB (`bufSizePreset: 4`) to 16 MiB (`5`). With 2 CPUs per buffer a 24-CPU host gets 12 buffers, 192 MiB instead of 96 MiB. On platform-local the old config dropped 95.9 M of 2.88 G events in 10 h (3.3 %), at up to 18 k drops/s during gates, which kept `BaukitFalcoEventsDropped` firing. Most drops were `close` (14.9 M) and `connect` (2.9 M) exit events from host-wide builds, which share the k3d node's kernel. The container was CPU-throttled in 0.4 % of periods, so the limit was not the cause.
 - The ephemeral platform-e2e Falco noise check counts only events from this cluster: events with a Kubernetes namespace, plus events whose `container.id` is one of the run's k3d node containers (k3s and containerd run in the node's `docker-<id>.scope` cgroup). Falco sees every process on the host, and another session's Docker builds (`nvidia-cdi-hook` ldconfig, buildkitd's qemu check) failed the step with `k8s_ns_name=<NA>` events. `falco-events.sh` gains `--node-container-id`.
 
 ## [0.27.4] - 2026-11-17
