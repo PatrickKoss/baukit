@@ -12,3 +12,12 @@ metadata:
     pod-security.kubernetes.io/audit: restricted
     pod-security.kubernetes.io/warn: restricted
     baukit.dev/ingress-backend: "true"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: posthog
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+automountServiceAccountToken: false

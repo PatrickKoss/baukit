@@ -496,7 +496,7 @@ main() {
   wait_for_platform
   printf 'Platform Ready after %ss\n' "$((SECONDS - started))"
   run_tests
-  kube_bench_report "$artifacts_dir"
+  kube_bench_report "$artifacts_dir" "k3d-$cluster_name-server-0"
   printf 'platform-e2e passed in %ss\n' "$((SECONDS - started))"
 }
 

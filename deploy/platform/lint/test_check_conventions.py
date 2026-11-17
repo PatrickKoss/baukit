@@ -98,6 +98,28 @@ class PsaLabelsTest(unittest.TestCase):
         self.assertIn("Namespace app enforces privileged", found[0])
 
 
+class DefaultServiceAccountTest(unittest.TestCase):
+    def quiet_account(self, namespace_name: str, automount: object = False) -> cc.Resource:
+        return resource(
+            "ServiceAccount", "default", namespace_name, automountServiceAccountToken=automount
+        )
+
+    def test_namespace_with_a_tokenless_default_account_passes(self) -> None:
+        ctx = context(namespace("app"), self.quiet_account("app"))
+        self.assertEqual(violations("default-service-account", ctx), [])
+
+    def test_namespace_without_a_default_account_fails(self) -> None:
+        found = violations("default-service-account", context(namespace("app")))
+        self.assertEqual(len(found), 1)
+        self.assertIn("Namespace app declares no default ServiceAccount", found[0])
+
+    def test_an_account_that_mounts_or_sits_elsewhere_does_not_count(self) -> None:
+        for account in (self.quiet_account("app", True), self.quiet_account("other")):
+            with self.subTest(account=account.namespace):
+                found = violations("default-service-account", context(namespace("app"), account))
+                self.assertEqual(len(found), 1)
+
+
 class DefaultDenyTest(unittest.TestCase):
     def test_namespace_running_pods_without_policy_fails(self) -> None:
         found = violations("default-deny-network-policy", context(resource("Deployment", "api")))
@@ -895,7 +917,8 @@ class ActivationTest(unittest.TestCase):
     def test_pending_rule_that_fails_is_reported_not_failed(self) -> None:
         names = [name for name in cc.RULES if name != "psa-labels"]
         activation = cc.load_activation(self.config(names, {"psa-labels": "N1"}))
-        outcome = cc.evaluate(context(namespace("app")), activation)
+        account = resource("ServiceAccount", "default", automountServiceAccountToken=False)
+        outcome = cc.evaluate(context(namespace("app"), account), activation)
         self.assertEqual(outcome.failures, [])
         self.assertIn(f"{len(names)} active, 1 pending [psa-labels (N1): 1]", outcome.summary)
 
@@ -989,6 +1012,7 @@ active = ["policy-exception-budget", "dashboards-selected", "metrics-enabled", "
 [rules.pending]
 psa-labels = "N1"
 default-deny-network-policy = "N2"
+default-service-account = "S5"
 """
 
 ALERT_PACK = """\
@@ -1061,8 +1085,8 @@ class MainTest(unittest.TestCase):
         code, stdout, stderr = self.run_main(budget=1)
         self.assertEqual(code, 0, stderr)
         self.assertIn(
-            "Conventions: 15 active, 2 pending "
-            "[default-deny-network-policy (N2): 1; psa-labels (N1): 1]",
+            "Conventions: 15 active, 3 pending [default-deny-network-policy (N2): 1; "
+            "default-service-account (S5): 1; psa-labels (N1): 1]",
             stdout,
         )
 

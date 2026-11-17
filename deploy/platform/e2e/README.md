@@ -76,9 +76,11 @@ Three checks prove they bite:
   (`{service="kube-audit"}`) and checks the event carries no request body;
 - after the suites, `kube_bench_report` runs kube-bench (`k3s-cis-1.9`, image pinned by digest) as a Job
   in `kube-system` and prints `kube-bench k3s-cis-1.9 total: N PASS, N FAIL, N WARN, N INFO`, then the same
-  line for the `etcd` section. The findings are
-  report-only; the step fails only when the Job does not complete or prints no summary. The full report is
-  `kube-bench.txt` in the artifacts.
+  line for the `etcd` section. k3d has no journald, so the audits' `journalctl -u k3s` would find no
+  component args; the runner copies the `Running kube-*` lines from `docker logs` of the server into the
+  `kube-bench-journal` ConfigMap and puts a `journalctl` that prints them first on the Job's `PATH`.
+  `kube_bench_skips` lists the four skipped checks with a reason each. Any FAIL fails the step; WARN (manual
+  checks) is report only. The full report is `kube-bench.txt` in the artifacts.
 
 The last line, `platform-e2e cluster time Ns, exit S`, counts from cluster creation to the end of cleanup and leaves out lock and slot waits.
 

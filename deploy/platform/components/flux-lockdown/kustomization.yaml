@@ -15,6 +15,8 @@ images:
   - name: ghcr.io/fluxcd/notification-controller
     newTag: v1.10.0
     digest: sha256:9f58b9532ec9d3ccf539cd3ccdf283477a5dcb7777b922db5477d8bbd4d3767c
+resources:
+  - default-service-account.yaml
 patches:
   - target:
       kind: Deployment

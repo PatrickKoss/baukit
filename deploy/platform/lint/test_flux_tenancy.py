@@ -111,7 +111,11 @@ class TenantComponentTest(unittest.TestCase):
         result = self.render(with_parameters=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         docs = objects(result.stdout)
-        [account] = by_kind(docs, "ServiceAccount")
+        accounts = {a["metadata"]["name"]: a for a in by_kind(docs, "ServiceAccount")}
+        self.assertEqual(set(accounts), {"flux-reconciler", "default"})
+        self.assertEqual(accounts["default"]["metadata"]["namespace"], "acme")
+        self.assertFalse(accounts["default"]["automountServiceAccountToken"])
+        account = accounts["flux-reconciler"]
         self.assertEqual(
             account["metadata"],
             {**account["metadata"], "name": "flux-reconciler", "namespace": "acme"},

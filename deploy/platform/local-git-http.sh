@@ -116,7 +116,8 @@ if not ipv4 or outside:
 ' "$network" "$platform_node_cidr" "$subnets"
 }
 
-# k3s creates these namespaces without Pod Security labels, which require-psa-labels reports.
+# k3s creates these namespaces without Pod Security labels, which require-psa-labels reports, and
+# with token-mounting default ServiceAccounts.
 # kube-system matches its exemption in the admission config.
 platform_label_system_namespaces() {
   local level namespace
@@ -128,7 +129,20 @@ platform_label_system_namespaces() {
       pod-security.kubernetes.io/enforce-version=v1.37 \
       pod-security.kubernetes.io/audit="$level" \
       pod-security.kubernetes.io/warn="$level" >/dev/null
+    [[ $namespace == kube-system ]] || platform_default_service_account "$namespace" | kubectl apply -f - >/dev/null
   done
+}
+
+# CIS 5.1.5: default ServiceAccounts mount no token. kube-system is exempt, as in the benchmark.
+platform_default_service_account() {
+  cat <<YAML
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: $1
+automountServiceAccountToken: false
+YAML
 }
 
 platform_k3s_server_args() {
