@@ -17,5 +17,5 @@ results:
   - isImageValidatingPolicy: true
     policy: verify-baukit-images
     kind: Pod
-    resources: [unsigned-product]
+    resources: [unsigned-product, unsigned-init-container]
     result: fail

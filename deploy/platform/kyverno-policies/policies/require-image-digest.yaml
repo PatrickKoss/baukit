@@ -9,7 +9,7 @@ metadata:
     policies.kyverno.io/severity: medium
 spec:
   validationActions:
-    - Audit
+    - Deny
   evaluation:
     background:
       enabled: true

@@ -18,6 +18,7 @@ resources:
   - ../../postgres-cluster
   - ../../traefik
   - registry-allowlist.yaml
+  - image-signing-key.yaml
   - cluster-network.yaml
 components:
   - ../../components/network-policy/node-cidr

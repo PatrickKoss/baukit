@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- BREAKING: `verify-baukit-images` and `require-image-digest` deny instead of audit. Tenant Pods with `ghcr.io/patrickkoss/*` images need a digest pin and a cosign signature from the product key (plan D6). The key comes from the overlay-owned ConfigMap `kyverno/baukit-image-signing-key` (`cosign.pub`), and Kyverno reads GHCR with the dockerconfigjson Secret `kyverno/baukit-image-verify-registry`. Before pinning this release: sign and digest-pin every deployed product image, add both objects to the cluster overlay, and label production tenant namespaces `baukit.dev/environment: production`. `require-image-digest` still covers only those namespaces.
 - The ephemeral platform-e2e Falco noise check counts only events from this cluster: events with a Kubernetes namespace, plus events whose `container.id` is one of the run's k3d node containers (k3s and containerd run in the node's `docker-<id>.scope` cgroup). Falco sees every process on the host, and another session's Docker builds (`nvidia-cdi-hook` ldconfig, buildkitd's qemu check) failed the step with `k8s_ns_name=<NA>` events. `falco-events.sh` gains `--node-container-id`.
 
 ## [0.27.4] - 2026-11-17

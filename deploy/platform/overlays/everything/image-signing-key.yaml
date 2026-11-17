@@ -1,0 +1,15 @@
+# Public half of the product cosign key. verify-baukit-images reads cosign.pub from here; a cluster
+# without this ConfigMap denies every ghcr.io/patrickkoss image in tenant namespaces.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: baukit-image-signing-key
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+data:
+  cosign.pub: |
+    -----BEGIN PUBLIC KEY-----
+    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE8CJi9EtYqEArl93H5GhsrebbBJuz
+    ZkAVnb2J5UYXkngooNNA32o6M+MsEWO5zxULEtYN2ER+WWWgfyo1qTUKzg==
+    -----END PUBLIC KEY-----
