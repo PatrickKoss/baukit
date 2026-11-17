@@ -592,8 +592,8 @@ behave. Later phases add test directories here.
   - `--protect-kernel-defaults` if the WSL2 kernel tolerates it (record the result);
   - in Terraform, download the k3s installer by checksum instead of `curl | sh`.
 
-  Run kube-bench (k3s CIS profile, pinned image) as a report-only e2e step and record the score in
-  the log.
+  Run kube-bench (k3s CIS profile, pinned image) as an e2e step and record the score in the log.
+  Since 0.28.0 any FAIL fails platform-e2e; WARN (manual checks) stays report only.
 - [x] **S6 Local lifecycle exposure** (F-09, F-10): build the snapshot from
   `git ls-files --cached --others --exclude-standard`, bind the snapshot server and the k3d API, 80 and
   443 to `127.0.0.1` (or the k3d network gateway), run the snapshot image as non-root, validate
@@ -809,12 +809,14 @@ by then ride along).
   1.43.1's lines although newer majors would fix some findings; they move with the PostHog
   replacement.
 
-- [ ] **RF30 Replace chrono with jiff.** RUSTSEC-2026-0543 (2026-11-17 in OSV) marks chrono
+- [x] **RF30 Replace chrono with jiff.** RUSTSEC-2026-0543 (2026-11-17 in OSV) marks chrono
   unmaintained, all versions, no fix; upstream winds it down and recommends jiff
   (chronotope/chrono#1768). baukit-data-subject, -erasure, -integrations, -suite, -sync and -test use
   chrono, partly in public types, plus the sqlx and utoipa chrono features and the backend template.
   Moving is a breaking change for every product. Until then `osv-scanner.toml`, `rust/deny.toml` and
   the backend template configs ignore the advisory until 2027-02-15.
+  Done in 0.28.0: every baukit crate, example and the backend template use jiff 1.0 and jiff-sqlx;
+  chrono remains only through rmcp 3.9.0 (schemars `chrono04`), so the ignore names that path.
 
 ## Verification per change
 
@@ -1593,3 +1595,30 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   run alone missed `@baukit/preferences-core`.
 - The ephemeral platform-e2e Falco noise check counts only pod events and this cluster's k3d node
   containers. Another session's `docker build` on the same host had turned it red.
+
+### 2026-11-17 18:00
+
+- 0.28.0 shipped (tag v0.28.0, published to crates.io and npm). It is a minor train because RF30 changes
+  public types: the crates and the backend template use jiff instead of chrono.
+- kube-bench k3s-cis-1.9 now gates platform-e2e: 68 PASS, 0 FAIL, 44 WARN; etcd 7/7. 21 of the 26
+  earlier FAILs were audits that call `journalctl`, which k3d nodes lack; the Job now reads the
+  component args from the server container's log. The 5.1.x audits had also lacked API credentials.
+  CIS 5.1.5 is fixed: every `default` ServiceAccount outside kube-system disables token automount, and
+  the convention rule `default-service-account` keeps it that way. 1.1.20, 5.1.1, 5.1.3 and 5.1.6 are
+  skipped with a reason each in `deploy/platform/e2e/k3s-checks.sh`.
+- Falco drops: all 95.9 M drops on platform-local were full ring buffers, in bursts at load 60. Falco
+  now sets `base_syscalls.repair: true` and 16 MiB buffers. No drops occurred on either config during
+  the test window, so the fix still has to show itself under a heavy gate on platform-local.
+- Image exceptions: CloudNativePG 1.30.2 cleared its 5 IDs. Every other listed image is on its newest
+  tag; PostHog's self-host chart has had no release since January 2024. The remaining entries keep
+  their 2027-01-16 expiry.
+- D6 is merged and released, not live: `verify-baukit-images` and `require-image-digest` deny in
+  0.28.0. platform-infra (branch task/d6-image-signing) carries the public key ConfigMap, the
+  production namespace label and Kyverno's GHCR credential, a classic PAT with only `read:packages`.
+  The four live leitbild images are signed. Order: merge leitbild's digest pins (with its 0.28.0
+  bump), then platform-infra, then pin v0.28.0.
+- Osv during the release: GHSA-fc5q-39xc-vjpf now covers every picomatch release through 4.0.7, the
+  latest, reached only through build and test tooling; ignored until 2027-02-15. GitHub withdrew
+  GHSA-gcqx-w48m-w2h4 (deepmerge), so its ignore is gone.
+- Products move to 0.28.0 in wave F13 (briefs in the orchestrator's platform-hardening/prompts/F13),
+  each migrating its own code from chrono to jiff. schlauzug is left to the session working there.
