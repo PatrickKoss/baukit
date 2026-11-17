@@ -502,10 +502,16 @@ behave. Later phases add test directories here.
 - [x] **FA5 Footprint and docs.** Measure Falco and falcosidekick at idle and record it in
   `local-footprint.md`. Write the base README (overlay contract, the noise-tuning procedure, how to add
   an exception macro with a reason) and the runbooks.
-- [ ] **FA6 Kubernetes audit events (optional, after FA4).** Configure the k3s API server audit webhook
+- [x] **FA6 Kubernetes audit events (optional, after FA4).** Configure the k3s API server audit webhook
   to Falco's `k8saudit` plugin, through `--k3s-arg` in the lifecycle and the Terraform k3s config. It
   adds rules for secrets read by unexpected service accounts, exec into pods and ClusterRoleBinding
   changes. Only proceed if FA0 showed headroom.
+  Done (0.26.4): HelmRelease `falco-k8saudit` runs the k8saudit plugin 0.18.0, pinned by digest and
+  cosign-verified, behind ClusterIP 10.43.0.60:9765 that only the node CIDR may reach; rules for
+  secret reads, exec/attach (WebSocket `get` and SPDY `create`) and ClusterRoleBinding changes outside
+  Flux, with restore-test and CNPG operator execs into `postgres` expected. e2e `falco-audit`, netpol
+  deny rows for 9765, threat model P-14 to P-17. falcoctl 0.14.3 carries two Go module CVEs with no
+  fixed release; allowlisted until 2026-12-12.
 
 ## Phase R: reliability
 
@@ -715,20 +721,46 @@ by then ride along).
   ServiceMonitors; forwardAuth outside the tenant and plugin middlewares; a Host another namespace
   serves; MetricTemplates off the platform Prometheus. Threat model P-07 to P-13. Open: P-13 (metric
   label spoofing across products) and `HostRegexp`/`HostSNI` clashes.
-- [ ] **RF16 Lifecycle reuses a stale cluster network.** `ensure_cluster` in `platform-lifecycle.sh`
+- [x] **RF16 Lifecycle reuses a stale cluster network.** `ensure_cluster` in `platform-lifecycle.sh`
   runs only `platform_check_free_subnet` on create. A leftover `k3d-platform-local` network from an
   older cluster (172.18.0.0/16, created 2026-08-09) made k3d ignore `--subnet`, and the cluster came up
   outside the node CIDR. Refuse a same-named network whose subnet is not `$PLATFORM_SUBNET` on create,
   as the start path already does with `platform_check_network_in_node_cidr`.
-- [ ] **RF17 Chainsaw suites on a persistent cluster.** Against platform-local, netpol fails its three
+  Done (0.26.4): `platform_check_cluster_network` refuses such a network on create and prints the
+  `docker network rm` command.
+- [x] **RF17 Chainsaw suites on a persistent cluster.** Against platform-local, netpol fails its three
   kured cases (local skips kured by design) and falco's no-warning step trips on Critical events from
   other Docker containers on the shared host (no Kubernetes metadata). Give the suites a local
   profile: skip absent namespaces, and filter Falco events to ones with `k8s.ns.name`.
-- [ ] **RF18 Gate disk floor.** The 0.26.2 release gate went red in four lanes at 91% disk: the e2e
+  Done (0.26.4): `deploy/platform/e2e/persistent.sh` runs suites with `BAUKIT_E2E_PROFILE=persistent`
+  and undoes its setup on exit; netpol skips absent namespaces, falco counts only events with
+  `k8s.ns.name` since the run started and matches trigger pods by name. A Falco exception quiets the
+  Barman Cloud sidecar's own scripts; a shell exec into the same pod still fires.
+- [x] **RF18 Gate disk floor.** The 0.26.2 release gate went red in four lanes at 91% disk: the e2e
   kubelet evicted Postgres and Traefik for ephemeral storage (threshold about 50 GiB) and testcontainers
   timed out. The same squeeze tainted platform-local with DiskPressure. `ci-gate.sh` should refuse to
   start below a free-space floor (gate peak plus the eviction threshold) and print the largest stale
   `target/` dirs.
+  Done (0.26.4): the gate refuses to start below `[quality.disk]` floors (30 GB, 120 GB with
+  platform-e2e, 60 GB with Rust or fixture lanes), overridable with `BAUKIT_GATE_DISK_FLOOR_GB`.
+  Also: `deploy/` paths map to their lanes instead of forcing the full gate (CI's platform filter
+  matches, enforced by a test), and python-lint covers the template Python.
+- [x] **RF20 Metric label spoofing across products (P-13).** Done (0.26.4): Prometheus sets
+  `enforcedNamespaceLabel: namespace` with platform namespaces excluded (e2e fails on a missed one);
+  `restrict-tenant-servicemonitors` denies `honorLabels`, relabels writing `namespace`, `$` targets and
+  `labelmap`; MetricTemplate selectors must filter on `namespace="{{ namespace }}"`. Prometheus now
+  scrapes ServiceMonitors and PodMonitors in tenant namespaces (before, none were scraped); rules stay
+  platform-only.
+- [x] **RF21 Host clashes through HostRegexp and HostSNI (P-10).** Done (0.26.4): host arguments are
+  normalised and compared across IngressRoutes, IngressRouteTCPs and Ingresses; `HostRegexp`,
+  `HostSNIRegexp` and `HostSNI(`*`)` are denied in tenant namespaces.
+- [ ] **RF22 Bare metric names in tenant queries.** `restrict-tenant-metric-templates` cannot see a
+  bare metric name such as `sum(up)` without a PromQL parser, so a tenant canary query can still read
+  other tenants' series (as a pass/fail result). Put prom-label-proxy with the namespace enforced in
+  front of the provider address tenant MetricTemplates may use.
+- [ ] **RF23 platform-local adopts FA6.** The audit webhook flags apply only when the lifecycle creates
+  the cluster, so platform-local sends no audit events until `down --delete` and `up`. That drops its
+  data; schedule it with the user.
 
 ## Verification per change
 
@@ -1417,3 +1449,16 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   `/home/patrick/projects/leitbild/...`. Its `flagger-loadtester` HelmRelease fails the tenant policies
   `disallow-sa-token-automount` and `require-baukit-labels`. Both are leitbild fixes: embed migrations
   with `sqlx::migrate!`, set the loadtester's automount and labels, and release new images.
+
+### 2026-11-17 02:00
+
+- FA6, RF16, RF17, RF18 and the new RF20/RF21 merged and released as 0.26.4 (main f0c56079, tag
+  v0.26.4). The first full gate ran 85 min beside another session's Android and Playwright runs and
+  went red in five lanes: testcontainers and Helm timeouts (rust, mcp, platform-e2e, android) and one
+  real finding, falcoctl 0.14.3 CVEs in platform-images. The starved lanes passed on rerun at lower
+  load; platform-e2e passed all 13 suites in 610 s.
+- Gate selection: `deploy/` no longer forces the full gate. An e2e-only branch now runs the fast lane,
+  platform-images and platform-e2e instead of ten lanes; agents run `run.sh --suite` for their own
+  suites and the full e2e runs once on the release commit.
+- Open: RF22, RF23; the platform-infra pin to v0.26.4 with the audit webhook flags; leitbild's live
+  rollout of `addcc502a3ed` on platform-local.
