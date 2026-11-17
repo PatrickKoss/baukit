@@ -5,6 +5,11 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.27.1
+
+Last verified release train: `v0.27.1` (patch train on top of `v0.27.0`). No component versions change.
+- Platform repos that render `components/tenant` validate again: the default-deny convention counts Kyverno's generated `default-deny` in namespaces labelled `baukit.dev/tenant=true`, and the offline policy run admits each rendered set as the controller that applies it. Use v0.27.1 rather than v0.27.0 for any platform repo with tenants.
+
 ## v0.27.0
 
 Last verified release train: `v0.27.0` (minor train on top of `v0.26.7`).

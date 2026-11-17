@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-11-17
+
 ## [0.27.0] - 2026-11-17
 
 - `backend/Dockerfile` builds on `rust:1.100.0-trixie` with the `docker/dockerfile:1.29.0` frontend. The distroless `cc-debian13:nonroot` and `debian:trixie-slim` runtime bases move to upstream's current digests. `mise.toml` and the CI workflow install Rust 1.100.0 to match.

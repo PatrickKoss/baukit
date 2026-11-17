@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-11-17
+
 - `validate.sh` renders `lint/tenant-universe`, a tenant namespace with `components/tenant`, so platform-validate sees the `tenant-metrics-proxy` pods in a tenant namespace. With 0.27.0 a consumer overlay with tenants failed `validate.sh` twice, and baukit's own run had no tenant namespace to catch it.
 - The `default-deny-network-policy` convention rule counts a namespace labelled `baukit.dev/tenant: "true"` as covered for Ingress and Egress, since Kyverno `generate-tenant-defaults` creates its `default-deny`. A test reads that policy and checks it still generates a default-deny with an empty podSelector for both directions.
 - `protect-tenant-metrics-proxy` reads the username with `request.?userInfo.?username.orValue("")`. A request without a user now evaluates to untrusted and is denied, instead of erroring. New kyverno test `protect-tenant-metrics-proxy-anonymous`.

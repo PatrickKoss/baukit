@@ -1538,3 +1538,7 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   v0.26.7.
 - Every plan item except RF25 (Hetzner, uncertain, may be removed) is done. leitbild must point its
   MetricTemplates at `tenant-metrics-proxy` after platform-infra pins 0.27.0.
+- 0.27.1: pinning platform-infra to v0.27.0 failed validate twice (default-deny convention blind to
+  Kyverno-generated tenant defaults; `protect-tenant-metrics-proxy` erroring offline without a request
+  user) and a third defect hid behind them (the policy runner parsed generated YAML as its report).
+  baukit's validate now renders a tenant universe with the proxy, so these fail in baukit first.
