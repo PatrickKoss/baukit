@@ -353,8 +353,7 @@ async fn retained_identity_reonboards_with_a_new_profile_and_rejects_old_session
             .bind(adapter.store.subject_hash("returning-subject"))
             .fetch_one(&adapter.pool)
             .await?;
-    let old =
-        jiff::Timestamp::from_second(fence.as_second()).map_err(|_| "old login timestamp")?;
+    let old = jiff::Timestamp::from_second(fence.as_second()).map_err(|_| "old login timestamp")?;
     for authenticated_at in [None, Some(old)] {
         let response = adapter
             .request_with_authenticated_at(
@@ -368,8 +367,8 @@ async fn retained_identity_reonboards_with_a_new_profile_and_rejects_old_session
         assert_eq!(response.status, 401);
         assert_eq!(response.body["error"]["code"], "profile_erased");
     }
-    let fresh = jiff::Timestamp::from_second(fence.as_second() + 1)
-        .map_err(|_| "fresh login timestamp")?;
+    let fresh =
+        jiff::Timestamp::from_second(fence.as_second() + 1).map_err(|_| "fresh login timestamp")?;
     let onboarded = adapter
         .request_with_authenticated_at("returning-subject", "GET", "/me", None, Some(fresh))
         .await?;

@@ -39,14 +39,14 @@ impl FixedUtcInterval {
     ///
     /// [`FixedUtcIntervalError::OutOfRange`] when the slot start overflows the timestamp range.
     pub fn slot_at(self, observed_at: Timestamp) -> Result<FixedUtcSlot, FixedUtcIntervalError> {
-        let starts_at_seconds = observed_at
-            .as_second()
+        let whole_seconds =
+            observed_at.as_second() - i64::from(observed_at.subsec_nanosecond().is_negative());
+        let starts_at_seconds = whole_seconds
             .div_euclid(self.seconds)
             .checked_mul(self.seconds)
             .ok_or(FixedUtcIntervalError::OutOfRange)?;
         let starts_at = jiff::Timestamp::from_second(starts_at_seconds)
-            .ok()
-            .ok_or(FixedUtcIntervalError::OutOfRange)?;
+            .map_err(|_| FixedUtcIntervalError::OutOfRange)?;
         Ok(FixedUtcSlot { starts_at })
     }
 
