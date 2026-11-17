@@ -50,6 +50,12 @@ class Timing:
 SYSTEM_TIMING = Timing()
 
 
+@dataclass(frozen=True)
+class Emulator:
+    serial: str
+    pid: int | None = None
+
+
 def run_command(command: list[str], **options) -> subprocess.CompletedProcess:
     return subprocess.run(  # noqa: S603 -- fixed adb program or the caller's argv list, no shell
         command, check=False, **options
@@ -286,7 +292,6 @@ def attached(adb: str, serial: str, timeout: float) -> int:
 
 
 def console_port_open(serial: str) -> bool:
-    """The emulator console port stays bound until the qemu process has exited."""
     match = SERIAL_PATTERN.match(serial)
     if match is None:
         return False
@@ -310,33 +315,39 @@ def adb_lists(adb: str, serial: str, timeout: float) -> bool | None:
 
 def wait_for_stop(
     adb: str,
-    serial: str,
+    emulator: Emulator,
     probe_timeout: float,
     stop_timeout: float,
     *,
     timing: Timing = SYSTEM_TIMING,
 ) -> int:
-    """Waits until adb forgot `serial` and the qemu process released its console port.
+    """Waits until adb forgot the serial, its console port closed and the qemu process exited.
 
-    A probe that times out under load is retried until the stop deadline.
+    qemu closes its console about a second before it exits and may take up to 20 s to
+    shut down, still holding the AVD's files, so the next emulator waits for `pid` to
+    exit. A probe that times out under load is retried until the stop deadline.
     """
+    serial, pid = emulator.serial, emulator.pid
     started = timing.clock()
     deadline = started + stop_timeout
     listed: bool | None = None
+    console = running = False
     while (remaining := deadline - timing.clock()) > 0:
         try:
             listed = adb_lists(adb, serial, min(probe_timeout, remaining))
         except ChildProcessError as failure:
             return int(failure.args[0])
-        if listed is False and not console_port_open(serial):
+        console = listed is False and console_port_open(serial)
+        running = listed is False and not console and pid is not None and process_running(pid)
+        if listed is False and not console and not running:
             print(f"qa: {serial} stopped after {timing.clock() - started:.1f} s", file=sys.stderr)
             return 0
         timing.sleep(min(POLL_INTERVAL, max(0, deadline - timing.clock())))
-    state = {
-        True: "still listed by adb",
-        False: "still holding its console port",
-        None: "adb probes timed out",
-    }[listed]
+    state = "adb probes timed out" if listed is None else "still listed by adb"
+    if console:
+        state = "still holding its console port"
+    elif running:
+        state = f"qemu process {pid} still running"
     print(f"qa: {serial} did not stop within {stop_timeout:g} s ({state})", file=sys.stderr)
     return 124
 
@@ -435,6 +446,13 @@ def wait_for_boot_mode(probe_timeout: float) -> int:
     return wait_for_boot(sys.argv[2], sys.argv[3], probe_timeout, boot_timeout, pid)
 
 
+def wait_for_stop_mode(probe_timeout: float) -> int:
+    pid_argument = sys.argv[4] if len(sys.argv) > BOOT_BASE_ARGUMENTS else ""
+    stop_timeout = timeout_setting("BAUKIT_QA_STOP_TIMEOUT_SECONDS", DEFAULT_STOP_TIMEOUT)
+    pid = int(pid_argument) if pid_argument else None
+    return wait_for_stop(sys.argv[2], Emulator(sys.argv[3], pid), probe_timeout, stop_timeout)
+
+
 def snapshot_name_mode(_probe_timeout: float) -> int:
     print(
         snapshot_name(Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4], sys.argv[5], sys.argv[6])
@@ -466,9 +484,7 @@ MODES = dict(
             wait_for_wifi_route,
         ),
         ("--attached", attached_mode),
-        timed_mode(
-            "--wait-for-stop", "BAUKIT_QA_STOP_TIMEOUT_SECONDS", DEFAULT_STOP_TIMEOUT, wait_for_stop
-        ),
+        ("--wait-for-stop", wait_for_stop_mode),
         ("--wait-for-boot", wait_for_boot_mode),
     ]
 )

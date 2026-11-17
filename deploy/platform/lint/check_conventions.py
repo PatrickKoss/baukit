@@ -42,6 +42,8 @@ PRUNE_ANNOTATION = "kustomize.toolkit.fluxcd.io/prune"
 PRUNE_DISABLED = "disabled"
 FORCE_ANNOTATION = "kustomize.toolkit.fluxcd.io/force"
 FORCE_ENABLED = "enabled"
+HOOK_ANNOTATION = "helm.sh/hook"
+DRIFT_OFF = "disabled"
 WORKLOAD_KINDS = {"Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Pod"}
 MONITOR_KINDS = {"ServiceMonitor", "PodMonitor"}
 CNPG_GROUP = "postgresql.cnpg.io/"
@@ -569,6 +571,27 @@ def rule_flux_job_force(context: Context) -> Iterable[str]:
                 yield f"{universe}: {job.ref()} lacks {FORCE_ANNOTATION}: {FORCE_ENABLED}"
 
 
+def drift_detected_releases(resources: list[Resource]) -> set[tuple[str, str]]:
+    return {
+        release_identity(release)
+        for release in by_kind(resources, "HelmRelease")
+        if ((release.spec.get("driftDetection") or {}).get("mode") or DRIFT_OFF) != DRIFT_OFF
+    }
+
+
+def rule_drift_job_ttl(context: Context) -> Iterable[str]:
+    for universe, resources in context.universes.items():
+        releases = drift_detected_releases(resources)
+        for job in by_kind(resources, "Job"):
+            if job.release not in releases or HOOK_ANNOTATION in job.annotations:
+                continue
+            if "ttlSecondsAfterFinished" in job.spec:
+                yield (
+                    f"{universe}: {job.ref()} is a release resource with ttlSecondsAfterFinished;"
+                    " drift detection recreates it after the TTL deletes it"
+                )
+
+
 def rule_image_digest(context: Context) -> Iterable[str]:
     sources = {
         universe: [(resource.ref(), resource.obj) for resource in resources]
@@ -760,6 +783,7 @@ RULES: dict[str, Rule] = {
     "policy-exception-budget": rule_policy_exception_budget,
     "prune-disabled": rule_prune_disabled,
     "flux-job-force": rule_flux_job_force,
+    "drift-job-ttl": rule_drift_job_ttl,
     "image-digest": rule_image_digest,
     "priority-class": rule_priority_class,
     "pdb-multi-replica": rule_pdb_multi_replica,

@@ -5,6 +5,11 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.27.4
+
+Last verified release train: `v0.27.4` (patch train on top of `v0.27.3`). No component versions change.
+- The PostHog migrate Job keeps no TTL, so helm-controller drift detection stops recreating it and rerunning migrations about every 30 minutes. The convention rule `drift-job-ttl` guards this.
+
 ## v0.27.3
 
 Last verified release train: `v0.27.3` (patch train on top of `v0.27.2`). No component versions change.

@@ -24,3 +24,8 @@ reason = "No fix available: unsafe-libyaml is unmaintained with no successor rel
 id = "RUSTSEC-2026-0440"
 ignoreUntil = 2027-02-05
 reason = "No fix available: astral-tokio-tar is unmaintained with no patched release; reached through testcontainers in baukit-test. Mirrors the rust/deny.toml ignore."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+ignoreUntil = 2027-02-15
+reason = "No fix available: chrono is unmaintained (RustSec informational, all versions); baukit crates, sqlx and utoipa expose its types. Migration to jiff is tracked in docs/platform-hardening-plan.md."

@@ -809,6 +809,13 @@ by then ride along).
   1.43.1's lines although newer majors would fix some findings; they move with the PostHog
   replacement.
 
+- [ ] **RF30 Replace chrono with jiff.** RUSTSEC-2026-0543 (2026-11-17 in OSV) marks chrono
+  unmaintained, all versions, no fix; upstream winds it down and recommends jiff
+  (chronotope/chrono#1768). baukit-data-subject, -erasure, -integrations, -suite, -sync and -test use
+  chrono, partly in public types, plus the sqlx and utoipa chrono features and the backend template.
+  Moving is a breaking change for every product. Until then `osv-scanner.toml`, `rust/deny.toml` and
+  the backend template configs ignore the advisory until 2027-02-15.
+
 ## Verification per change
 
 | Change touches | Run |
@@ -1542,3 +1549,28 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   Kyverno-generated tenant defaults; `protect-tenant-metrics-proxy` erroring offline without a request
   user) and a third defect hid behind them (the policy runner parsed generated YAML as its report).
   baukit's validate now renders a tenant universe with the proxy, so these fail in baukit first.
+
+### 2026-11-17 11:00
+
+- 0.27.2: Flux could not re-apply `Job/postgres/rustfs-create-bucket` after its pod template changed
+  (Job templates are immutable), which blocked `local-foundation`. The Job carries
+  `kustomize.toolkit.fluxcd.io/force: enabled` now, and the convention rule `flux-job-force` fails any
+  Flux-applied Job without it. validate builds an `overlays/<name>-applied` universe from the Flux
+  Kustomization paths, so the rule sees what Flux applies, not only `components/*`.
+- 0.27.3 fixes the alerts that fired on a healthy platform-local: `BaukitCnpgWalArchiveStale` on an
+  idle database, `BaukitPostgresRestoreTestStale` on a cluster younger than the restore interval, Falco
+  flagging Flagger's Secret copies into tenant namespaces, and Kyverno failing PostHog web, events,
+  plugins and migrate on the restricted policies. platform-infra pins v0.27.3 (1a0b94e). Live check
+  after the rollout: all Kustomizations and HelmReleases Ready; WAL and restore alerts quiet; no
+  Flagger secret-read events; new PostHog pods run as non-root with ALL capabilities dropped; Kyverno
+  posthog admission failures stopped at the 09:37 UTC upgrade.
+- That check found 0.27.4's bug. Our post-renderer gave every PostHog Job a 300 s TTL, but the
+  chart renders the migrate Job as a release resource, not a hook. Kubernetes deleted it, drift
+  detection recreated it and migrations reran about every 30 minutes since 0.1.0. The TTL patch is
+  gone and the convention rule `drift-job-ttl` fails a non-hook release Job with a TTL under drift
+  detection.
+- Left as is: `BaukitFalcoEventsDropped` fires during heavy local gates because the k3d node shares
+  the WSL kernel and Falco sees every host syscall; `AlertmanagerClusterCrashlooping` and
+  `CPUThrottlingHigh` are suppressed by the WSL inhibitors. D6 (image signatures) stays parked, so
+  leitbild's `loadtester-digest` branch stays unmerged and `verify-baukit-images` stays in Audit.
+  RF25 (Hetzner) stays open by choice.
