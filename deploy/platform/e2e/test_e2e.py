@@ -700,6 +700,66 @@ class KubeBenchScoreTests(unittest.TestCase):
             result.stdout, r"image: docker\.io/aquasec/kube-bench:v[\d.]+@sha256:[0-9a-f]{64}"
         )
         self.assertIn("--benchmark, k3s-cis-", result.stdout)
+        self.assertIn("--skip, '1.1.20,5.1.1,5.1.3,5.1.5,5.1.6'", result.stdout)
+        self.assertIn("value: /opt/baukit-journal:", result.stdout)
+        self.assertIn("configMap: {name: kube-bench-journal, defaultMode: 0555}", result.stdout)
+
+
+COMPONENT_LOG = "".join(
+    f'time=x level=info msg="Running {name} --flag=1"\n'
+    for name in (
+        "kube-apiserver",
+        "kube-controller-manager",
+        "kube-scheduler",
+        "kubelet",
+        "kube-proxy",
+    )
+)
+
+
+class KubeBenchReportTests(unittest.TestCase):
+    def run_report(self, docker_log, report):
+        with tempfile.TemporaryDirectory() as tmp:
+            stub = Path(tmp)
+            (stub / "log").write_text(docker_log)
+            (stub / "report").write_text(report)
+            (stub / "docker").write_text(f'#!/bin/sh\ncat "{stub}/log"\n')
+            (stub / "kubectl").write_text(
+                f'#!/bin/sh\ncase "$*" in *logs*) cat "{stub}/report";;'
+                " *apply*) cat >/dev/null;; esac\n"
+            )
+            for name in ("docker", "kubectl"):
+                (stub / name).chmod(0o755)
+            script = f'source "{E2E / "k3s-checks.sh"}"\nkube_bench_report "{tmp}" server-0'
+            env = {**os.environ, "PATH": f"{tmp}:{os.environ['PATH']}"}
+            return process_runner.run_process(
+                ["bash", "-c", script], capture_output=True, text=True, check=False, env=env
+            )
+
+    @staticmethod
+    def summary(fail):
+        return (
+            "[FAIL] 1.2.1 Ensure anonymous auth is off\n" * min(fail, 1)
+            + "== Summary etcd ==\n7 checks PASS\n0 checks FAIL\n0 checks WARN\n0 checks INFO\n"
+            + f"== Summary total ==\n67 checks PASS\n{fail} checks FAIL\n"
+            + "44 checks WARN\n19 checks INFO\n"
+        )
+
+    def test_passes_without_fail(self):
+        result = self.run_report(COMPONENT_LOG, self.summary(0))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("total: 67 PASS, 0 FAIL", result.stdout)
+
+    def test_fails_on_a_fail_and_lists_it(self):
+        result = self.run_report(COMPONENT_LOG, self.summary(1))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("[FAIL] 1.2.1", result.stderr)
+
+    def test_fails_when_a_component_logged_no_args(self):
+        log = COMPONENT_LOG.replace("Running kubelet", "Running nothing")
+        result = self.run_report(log, self.summary(0))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('no "Running kubelet" line', result.stderr)
 
 
 class PostgresReadinessTests(unittest.TestCase):

@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- platform-e2e fails on any kube-bench `k3s-cis-1.9` FAIL; WARN (manual checks) stays report only. 21 of the 26 FAILs were audits that read k3s's component args with `journalctl -u k3s`, which finds nothing on k3d because k3s runs as PID 1 without journald. The runner now copies the `Running kube-*` lines from `docker logs` of the server node into the `kube-bench-journal` ConfigMap, and the Job puts a `journalctl` that prints them first on `PATH`; the args already met those checks. The step skips five checks, each with its reason in `k3s-checks.sh`: 1.1.20 (k3s writes public `*.crt` files 0644), 5.1.1 (Flux binds cluster-admin), 5.1.3 (wildcards in Flux, Flagger and Kubernetes aggregate roles), 5.1.5 (third-party charts run on default ServiceAccounts) and 5.1.6 (operators need mounted tokens).
 - The ephemeral platform-e2e Falco noise check counts only events from this cluster: events with a Kubernetes namespace, plus events whose `container.id` is one of the run's k3d node containers (k3s and containerd run in the node's `docker-<id>.scope` cgroup). Falco sees every process on the host, and another session's Docker builds (`nvidia-cdi-hook` ldconfig, buildkitd's qemu check) failed the step with `k8s_ns_name=<NA>` events. `falco-events.sh` gains `--node-container-id`.
 
 ## [0.27.4] - 2026-11-17
