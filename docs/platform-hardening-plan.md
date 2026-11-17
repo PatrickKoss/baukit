@@ -800,6 +800,14 @@ by then ride along).
   `BaukitWslStartTimeDriftInhibitor`, which inhibits that alert per namespace and service and goes
   silent when a container restarts, the start time jumps more than 150 s in 10 min, or btime is
   stable. Runbook `docs/runbooks/platform/wsl-start-time-drift.md`.
+- [x] **RF29 Image allowlist expires 2026-12-12.** All 49 allowlist entries expired on one date.
+  Done (0.27.0): every platform component, tool and template image moved to its newest stable
+  version and digest (kube-prometheus-stack 93.3.1, Loki chart 21.3.1, rustfs, aws-cli, whoami,
+  nginx 1.31.8, alpine 3.24.4, Rust 1.100.0, Keycloak 26.8.2, rebuilt digests). A fresh Trivy DB
+  dropped redis 6.2 and the web Dockerfile's DS-0002 (template sets `USER 101`). Findings without an
+  upstream fix expire 2027-01-16. ClickHouse 22.8, postgres 14 and redis 6.2 stay on PostHog
+  1.43.1's lines although newer majors would fix some findings; they move with the PostHog
+  replacement.
 
 ## Verification per change
 
@@ -1520,3 +1528,13 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   Initialized with primaries serving.
 - The fresh cluster showed RF27 (fixed in 0.26.7) and RF28. `PrometheusMissingRuleEvaluations` pends
   after single misses that hit every group at once under host load 25 to 40; not a rule problem.
+
+### 2026-11-17 09:30
+
+- 0.27.0 bundles RF22 (per-tenant prom-label-proxy, tenant MetricTemplates must target it; new
+  policies `restrict-tenant-canaries` and `protect-tenant-metrics-proxy`), RF28 (WSL2 btime drift:
+  `/proc/stat` btime grows about 200 s per hour, local-only inhibition that a real restart lifts) and
+  RF29 (newest pins, allowlist to 2027-01-16). platform-local had `BaukitBuildInfoAbsent` clear on
+  v0.26.7.
+- Every plan item except RF25 (Hetzner, uncertain, may be removed) is done. leitbild must point its
+  MetricTemplates at `tenant-metrics-proxy` after platform-infra pins 0.27.0.

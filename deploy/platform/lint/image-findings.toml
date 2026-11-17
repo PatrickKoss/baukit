@@ -1883,8 +1883,8 @@ ids = [
 ]
 
 [images."quay.io/prometheuscommunity/prom-label-proxy:v0.16.2@sha256:9812cce38fa78c39250c9c59c78bbe75895ef9126952a098cd44adef2e21dbc5"]
-expires = 2026-12-17
-reason = "v0.16.2 is the newest prom-label-proxy release and links golang.org/x/net v0.61.0 indirectly; the finding is in x/net/html, and the proxy parses PromQL and Prometheus JSON, never HTML, from the platform Prometheus only, behind a NetworkPolicy that admits Flagger alone; Renovate (SC4) moves the pin once upstream releases with x/net 0.62.0"
+expires = 2027-01-16
+reason = "v0.16.2 is the newest prom-label-proxy release as of 2026-11-17 (follow-up RF29) and links golang.org/x/net v0.61.0 indirectly; the finding is in x/net/html, and the proxy parses PromQL and Prometheus JSON, never HTML, from the platform Prometheus only, behind a NetworkPolicy that admits Flagger alone; Renovate (SC4) moves the pin once upstream releases with x/net 0.62.0"
 ids = ["CVE-2026-78661"]
 
 [images."quay.io/prometheus/alertmanager:v0.35.0@sha256:5f6e66c01bd610aef6dd671642a52eee775fd3a89bd8788ebada33efaf373d10"]
