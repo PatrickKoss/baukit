@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.27.2] - 2026-11-17
+
 - `Job/postgres/rustfs-create-bucket` carries `kustomize.toolkit.fluxcd.io/force: enabled`. The 0.27.0 aws-cli bump changed its immutable pod template, Flux failed to apply it on running clusters, and every Kustomization depending on local-foundation stalled. Flux now deletes and recreates the Job, which is idempotent. New convention rule `flux-job-force` requires that annotation on every `batch/v1` Job that Flux applies from a base or overlay. Jobs rendered by Helm charts are exempt.
 - `validate.sh` adds an `overlays/<name>-applied` universe for each overlay. It is built from the `spec.path` of every Flux Kustomization the overlay renders, which is the set Flux applies. Before this, `overlays/local/components/*` reached no convention rule, so the rule above could not see the rustfs Job. `lint/flux_applied.py` resolves the paths, and a path that does not resolve fails validation.
 
