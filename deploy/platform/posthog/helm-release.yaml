@@ -162,23 +162,6 @@ spec:
               group: batch
               version: v1
               kind: Job
-            patch: |-
-              - op: add
-                path: /spec/ttlSecondsAfterFinished
-                value: 300
-          # The migrate Job is a regular release resource, so drift detection recreates it after the TTL deletes it.
-          - target:
-              group: batch
-              version: v1
-              kind: Job
-              name: posthog-migrate-.*
-            patch: |-
-              - op: remove
-                path: /spec/ttlSecondsAfterFinished
-          - target:
-              group: batch
-              version: v1
-              kind: Job
               name: posthog-migrate-.*
             patch: |-
               - op: replace

@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- The `posthog-migrate-*` Job no longer gets `ttlSecondsAfterFinished`. Chart 30.46.0 renders it as a regular release resource, not a Helm hook, so Kubernetes deleted it 300 s after it finished, helm-controller drift detection reported it removed and recreated it, and PostHog migrations reran on every drift check (4 DriftCorrected events in about 2 h on platform-local). A post-renderer patch removes the field again after the TTL patch. New convention rule `drift-job-ttl` fails a chart Job without a `helm.sh/hook` annotation that sets `ttlSecondsAfterFinished` in a HelmRelease with drift detection on.
+- The `posthog-migrate-*` Job no longer gets `ttlSecondsAfterFinished`. Chart 30.46.0 renders it as a regular release resource, not a Helm hook, so Kubernetes deleted it 300 s after it finished, helm-controller drift detection reported it removed and recreated it, and PostHog migrations reran on every drift check (4 DriftCorrected events in about 2 h on platform-local). The post-renderer TTL patch is gone. The migrate Job is the only Job the release renders, and it has no hooks. New convention rule `drift-job-ttl` fails a chart Job without a `helm.sh/hook` annotation that sets `ttlSecondsAfterFinished` in a HelmRelease with drift detection on.
 
 ## [0.27.3] - 2026-11-17
 
