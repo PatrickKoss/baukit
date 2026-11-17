@@ -31,7 +31,7 @@
 //!
 //! ```rust
 //! use baukit_push::{DeviceRegistry, PushMessage, PushSender};
-//!
+//! use jiff::Timestamp;
 //!
 //! async fn deliver(
 //!     sender: &impl PushSender,
