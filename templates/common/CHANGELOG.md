@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.26.5] - 2026-11-17
+
 ## [0.26.4] - 2026-11-16
 
 {% if context.quality_strict %}- `scripts/gate.py` refuses to start when the filesystem of the checkout or of Docker's data root (`docker info`) has less free space than the floor. It exits with status 2, names the free GB and the floor, and lists the largest `target/` directories and Docker's reclaimable space. It deletes nothing. A run at 91% disk failed lanes 50 minutes in with pod evictions and Testcontainers timeouts. `[quality.disk] floor_gb` sets the floor (default 40), `[quality.disk.step_floor_gb]` raises it for named steps, and `BAUKIT_GATE_DISK_FLOOR_GB` overrides it for one run (0 turns the check off). `sh scripts/quality-gate.sh --step NAME` does not check. Copy `scripts/gate.py`, `scripts/gate.test.py`, `scripts/gate_locks.test.py`, `scripts/gate_disk.py`, `scripts/gate_disk.test.py` and `scripts/quality-gate.sh` from the template.
