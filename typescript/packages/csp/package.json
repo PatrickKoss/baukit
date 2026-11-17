@@ -1,6 +1,6 @@
 {
   "name": "@baukit/csp",
-  "version": "0.26.5",
+  "version": "0.26.6",
   "description": "Content Security Policy builder and security headers for Baukit web builds.",
   "license": "MIT",
   "author": "Patrick Koss",

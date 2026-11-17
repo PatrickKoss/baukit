@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.26.6] - 2026-11-17
+
 - Flagger sets `includeLabelPrefix: "app.kubernetes.io/,baukit.dev/"`. Flagger 1.45.0 copies a target Deployment's labels onto the `-primary` Deployment only for prefixes in `-include-label-prefix`, and the default copies none. In a tenant namespace Kyverno `require-baukit-labels` then denied every primary, so each tenant Canary stayed in `Initializing`.
 - e2e suite `flux-tenancy` runs a Canary on a labelled tenant Deployment and checks that `<name>-primary` exists with `app.kubernetes.io/name`, `app.kubernetes.io/part-of` and `baukit.dev/process`.
 
