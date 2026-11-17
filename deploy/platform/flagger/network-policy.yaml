@@ -21,3 +21,13 @@ spec:
       ports:
         - protocol: TCP
           port: 9090
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              baukit.dev/tenant: "true"
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tenant-metrics-proxy
+      ports:
+        - protocol: TCP
+          port: 8080

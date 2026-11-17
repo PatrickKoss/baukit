@@ -1,0 +1,133 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tenant-metrics-proxy
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: tenant-metrics-proxy
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tenant-metrics-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tenant-metrics-proxy
+    spec:
+      containers:
+        - name: prom-label-proxy
+          image: quay.io/prometheuscommunity/prom-label-proxy:v0.16.2
+          args: [-label-value=other]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: impostor
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: impostor
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tenant-metrics-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tenant-metrics-proxy
+    spec:
+      containers:
+        - name: shell
+          image: quay.io/prometheus/busybox:latest
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: impostor-cron
+  namespace: shop
+spec:
+  schedule: "* * * * *"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: tenant-metrics-proxy
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: shell
+              image: quay.io/prometheus/busybox:latest
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: impostor-pod
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: tenant-metrics-proxy
+spec:
+  containers:
+    - name: shell
+      image: quay.io/prometheus/busybox:latest
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tenant-metrics-proxy
+  namespace: shop
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: shop
+  labels:
+    app.kubernetes.io/name: api
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/example/api:1.0.0
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-flagger-to-proxy
+  namespace: shop
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  policyTypes: [Ingress]
+  ingress:
+    - {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tenant-metrics-proxy-platform
+  namespace: platform
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tenant-metrics-proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: tenant-metrics-proxy
+    spec:
+      containers:
+        - name: anything
+          image: quay.io/prometheus/busybox:latest

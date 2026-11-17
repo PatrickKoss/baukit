@@ -1,0 +1,10 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: UserInfo
+metadata:
+  name: tenant
+userInfo:
+  username: system:serviceaccount:shop:flux-reconciler
+  groups:
+    - system:serviceaccounts
+    - system:serviceaccounts:shop
+    - system:authenticated

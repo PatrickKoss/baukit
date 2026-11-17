@@ -1,0 +1,84 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: protect-tenant-metrics-proxy
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    policies.kyverno.io/title: Keep the tenant metrics proxy out of tenant hands
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      components/tenant installs tenant-metrics-proxy in each tenant namespace, and Prometheus admits
+      its pods. The tenant's admin role could otherwise change its label value, run another image
+      under its labels, or exec into it and query Prometheus directly. Only platform Flux, cluster
+      admins, nodes and kube-system controllers may create, change or delete an object named
+      tenant-metrics-proxy*, or one whose labels or pod template carry
+      app.kubernetes.io/name=tenant-metrics-proxy, and only they may exec, attach or add ephemeral
+      containers to its pods.
+spec:
+  validationActions:
+    - Deny
+  evaluation:
+    background:
+      enabled: false
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: [pods, services, replicationcontrollers]
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CONNECT]
+        resources: [pods/exec, pods/attach]
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [UPDATE]
+        resources: [pods/ephemeralcontainers]
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: [deployments, replicasets, statefulsets, daemonsets]
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: [jobs, cronjobs]
+      - apiGroups: [networking.k8s.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: [networkpolicies]
+    namespaceSelector:
+      matchLabels:
+        baukit.dev/tenant: "true"
+  variables:
+    - name: prefix
+      expression: "'tenant-metrics-proxy'"
+    - name: user
+      expression: string(request.userInfo.username)
+    - name: trusted
+      expression: >-
+        request.userInfo.?groups.orValue([]).exists(g, g in ["system:masters", "system:nodes"]) ||
+        variables.user.startsWith("system:serviceaccount:kube-system:") ||
+        variables.user in ["system:kube-controller-manager",
+          "system:serviceaccount:flux-system:kustomize-controller"]
+    - name: objects
+      expression: >-
+        [object, oldObject].filter(o, o != null && has(o.metadata))
+    - name: labelSets
+      expression: >-
+        variables.objects.map(o, [
+          o.metadata.?labels.orValue({}),
+          o.spec.?template.?metadata.?labels.orValue({}),
+          o.spec.?jobTemplate.?spec.?template.?metadata.?labels.orValue({})
+        ])
+    - name: touchesProxy
+      expression: >-
+        string(request.?name.orValue("")).startsWith(variables.prefix) ||
+        variables.labelSets.exists(sets, sets.exists(l,
+          string(l[?"app.kubernetes.io/name"].orValue("")) == variables.prefix))
+  validations:
+    - expression: variables.trusted || !variables.touchesProxy
+      messageExpression: >-
+        variables.user + " may not " + string(request.operation) + " " + string(request.resource.resource) +
+        (string(request.?subResource.orValue("")) == "" ? "" : "/" + string(request.subResource)) + " " +
+        string(request.?name.orValue("")) + ": tenant-metrics-proxy belongs to the platform."

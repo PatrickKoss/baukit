@@ -3,6 +3,7 @@ kind: Component
 resources:
   - service-account.yaml
   - role-binding.yaml
+  - metrics-proxy.yaml
 patches:
   - target:
       kind: Namespace
@@ -74,3 +75,11 @@ replacements:
           - spec.targetNamespace
         options:
           create: true
+      - select:
+          kind: Deployment
+          name: tenant-metrics-proxy
+        fieldPaths:
+          - spec.template.spec.containers.[name=prom-label-proxy].args.3
+        options:
+          delimiter: "="
+          index: 1

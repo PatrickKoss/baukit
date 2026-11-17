@@ -5,13 +5,13 @@ metadata:
   labels:
     app.kubernetes.io/part-of: baukit-platform
   annotations:
-    policies.kyverno.io/title: Point tenant MetricTemplates at the platform Prometheus
+    policies.kyverno.io/title: Point tenant MetricTemplates at the tenant metrics proxy
     policies.kyverno.io/severity: high
     policies.kyverno.io/description: >-
-      Flagger queries a MetricTemplate's provider from its own pod. A tenant MetricTemplate uses
-      the prometheus provider with the platform Prometheus address, or no address so Flagger uses
-      the same one. Every series selector in the query filters on the Canary's namespace with
-      namespace="{{ namespace }}", the label Prometheus enforces for tenant ServiceMonitors.
+      Flagger queries a MetricTemplate's provider from its own pod. A tenant MetricTemplate uses the
+      prometheus provider at the tenant-metrics-proxy Service in its own namespace. The proxy, which
+      components/tenant installs, writes namespace="<tenant>" into every selector of the query, so
+      a bare metric name cannot read another namespace's series.
 spec:
   validationActions:
     - Deny
@@ -28,34 +28,16 @@ spec:
       matchLabels:
         baukit.dev/tenant: "true"
   variables:
-    - name: prometheus
-      expression: "'http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090'"
+    - name: proxy
+      expression: >-
+        "http://tenant-metrics-proxy." + object.metadata.namespace + ".svc.cluster.local:8080"
     - name: provider
       expression: object.spec.?provider.orValue({})
-    - name: query
-      expression: object.spec.?query.orValue("")
-    - name: selectors
-      expression: >-
-        variables.query.findAll('\\{(?:[^{}]|\\{\\{[^{}]*\\}\\})*\\}')
-          .filter(s, s.contains("="))
-    - name: unfiltered
-      expression: >-
-        variables.selectors.filter(s,
-          !s.matches('[{,]\\s*namespace\\s*=\\s*"\\{\\{\\s*namespace\\s*\\}\\}"\\s*[,}]'))
-    - name: bareRanges
-      expression: variables.query.findAll('[a-zA-Z_:][a-zA-Z0-9_:]*\\s*\\[')
   validations:
     - expression: >-
         variables.provider.?type.orValue("") == "prometheus" &&
-        variables.provider.?address.orValue(variables.prometheus) == variables.prometheus
+        variables.provider.?address.orValue("") == variables.proxy &&
+        !has(variables.provider.secretRef)
       messageExpression: >-
         "MetricTemplate " + object.metadata.name + " must use provider type prometheus with address " +
-        variables.prometheus + " or no address."
-    - expression: >-
-        size(variables.selectors) > 0 && size(variables.unfiltered) == 0 &&
-        size(variables.bareRanges) == 0
-      messageExpression: >-
-        "MetricTemplate " + object.metadata.name + " must filter every series selector on " +
-        "namespace=\"{{ namespace }}\", for example http_requests_total{namespace=\"{{ namespace }}\"}. " +
-        "Unfiltered selectors: " + (size(variables.selectors) == 0 ? "the whole query" :
-        (variables.unfiltered + variables.bareRanges).join(", "))
+        variables.proxy + " and no secretRef."

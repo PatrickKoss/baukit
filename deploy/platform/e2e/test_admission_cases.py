@@ -8,9 +8,13 @@ PLATFORM = E2E.parent
 POLICIES = PLATFORM / "kyverno-policies/policies"
 CASES = E2E / "tests/admission/cases"
 CASE_FILES = {"deny.yaml", "admit.yaml"}
-OPTIONAL_FILES = {"setup.yaml"}
+OPTIONAL_FILES = {"setup.yaml", "as"}
 VALIDATING_KINDS = {"ValidatingPolicy", "ImageValidatingPolicy"}
-IRREGULAR_PLURALS = {"Ingress": "ingresses", "NetworkPolicy": "networkpolicies"}
+IRREGULAR_PLURALS = {
+    "Canary": "canaries",
+    "Ingress": "ingresses",
+    "NetworkPolicy": "networkpolicies",
+}
 
 
 def load_helm_yaml():

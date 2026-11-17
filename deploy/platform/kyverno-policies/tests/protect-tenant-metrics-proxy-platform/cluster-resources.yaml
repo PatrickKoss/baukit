@@ -1,0 +1,16 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: ClusterResource
+metadata:
+  name: namespaces
+spec:
+  resources:
+    - apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: shop
+        labels:
+          baukit.dev/tenant: "true"
+    - apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: platform

@@ -21,9 +21,13 @@ The target cluster must provide:
   unique `baukit.dev/workload=<product>-api` label;
 - an IngressRoute that points to a same-name TraefikService which Flagger may
   adopt, plus clone-safe Services, ServiceMonitors, and NetworkPolicies;
-- one product-owned Canary in each environment. Reference the shared
-  MetricTemplates in `flagger-system`; API error percentage and HTTP p95 are
-  the normal blocking metrics. Worker templates are dashboard/diagnostic
+- one product-owned Canary in each environment. Outside tenant namespaces,
+  reference the shared MetricTemplates in `flagger-system`; API error
+  percentage and HTTP p95 are the normal blocking metrics. A tenant Canary
+  may not (`restrict-tenant-canaries`): those templates query Prometheus
+  unscoped with tenant-supplied variables. Copy the query into a MetricTemplate
+  in the tenant namespace whose address is that namespace's
+  `tenant-metrics-proxy` (see `../components/tenant`). Worker templates are dashboard/diagnostic
   building blocks unless the product explicitly makes workers promotable.
 
 Overlay the HelmRelease only when the Prometheus address or resource sizing
