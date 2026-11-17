@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The ephemeral platform-e2e Falco noise check counts only events from this cluster: events with a Kubernetes namespace, plus events whose `container.id` is one of the run's k3d node containers (k3s and containerd run in the node's `docker-<id>.scope` cgroup). Falco sees every process on the host, and another session's Docker builds (`nvidia-cdi-hook` ldconfig, buildkitd's qemu check) failed the step with `k8s_ns_name=<NA>` events. `falco-events.sh` gains `--node-container-id`.
+
 ## [0.27.4] - 2026-11-17
 
 - platform-e2e gives chainsaw cleanup 2 minutes instead of the 30 s default. Deleting a test namespace waits for pod termination and finalizers, and under gate load `ingress` and `traefik-edge` each failed cleanup with `context deadline exceeded` after their assertions passed.
