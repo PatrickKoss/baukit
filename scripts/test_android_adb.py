@@ -266,10 +266,11 @@ class AndroidHealthTests(unittest.TestCase):
             self.probe(timeout=True), (124, "qa: Android system health probe timed out\n")
         )
 
-    def stop(self, listings, console, stop_timeout=120, probe_timeout=10):
+    def stop(self, listings, console, stop_timeout=120, probe_timeout=10, running=None):
         clock = FakeClock()
         listings = list(listings)
         console = list(console)
+        running = list(running or [False])
 
         def run(command, **options):
             outcome = listings.pop(0) if len(listings) > 1 else listings[0]
@@ -283,14 +284,18 @@ class AndroidHealthTests(unittest.TestCase):
         def console_open(_serial):
             return console.pop(0) if len(console) > 1 else console[0]
 
+        def process_running(_pid):
+            return running.pop(0) if len(running) > 1 else running[0]
+
         with (
             patch.object(android_adb, "run_command", side_effect=run),
             patch.object(android_adb, "console_port_open", side_effect=console_open),
+            patch.object(android_adb, "process_running", side_effect=process_running),
             contextlib.redirect_stderr(stderr),
         ):
             status = android_adb.wait_for_stop(
                 "adb",
-                "emulator-5556",
+                android_adb.Emulator("emulator-5556", 4242),
                 probe_timeout,
                 stop_timeout,
                 timing=android_adb.Timing(clock=clock, sleep=clock.sleep),
@@ -309,6 +314,15 @@ class AndroidHealthTests(unittest.TestCase):
         status, _, elapsed = self.stop(["List of devices attached\n"], [True, True, True, False])
         self.assertEqual(status, 0)
         self.assertGreaterEqual(elapsed, 4)
+
+    def test_stop_waits_for_the_qemu_process_after_its_console_port_closed(self):
+        gone = "List of devices attached\n"
+        status, _, elapsed = self.stop([gone], [False], running=[True, True, False])
+        self.assertEqual(status, 0)
+        self.assertGreaterEqual(elapsed, 4)
+        status, stderr, _ = self.stop([gone], [False], stop_timeout=30, running=[True])
+        self.assertEqual(status, 124)
+        self.assertIn("qemu process 4242 still running", stderr)
 
     def test_stop_retries_a_probe_that_timed_out_under_load(self):
         status, _, _ = self.stop(["timeout", "timeout", "List of devices attached\n"], [False])
@@ -331,7 +345,8 @@ class AndroidHealthTests(unittest.TestCase):
             patch.object(android_adb, "run_command", return_value=failed),
             contextlib.redirect_stderr(stderr),
         ):
-            status = android_adb.wait_for_stop("adb", "emulator-5556", 10, 120)
+            emulator = android_adb.Emulator("emulator-5556")
+            status = android_adb.wait_for_stop("adb", emulator, 10, 120)
         self.assertEqual(status, 7)
         self.assertIn("shutdown probe failed", stderr.getvalue())
 
