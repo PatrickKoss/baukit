@@ -687,6 +687,10 @@ async fn assert_invalid_nonces_store_nothing(
     Ok(())
 }
 
+fn now() -> Timestamp {
+    Timestamp::now()
+}
+
 async fn assert_start_supersedes_prepared_exchange(
     service: &SuiteLinkService,
     c: &SuiteContext,
@@ -715,9 +719,7 @@ async fn assert_start_supersedes_prepared_exchange(
             Timestamp::now(),
         )
         .await?;
-    let first = service
-        .start(u.clone(), start.clone(), Timestamp::now())
-        .await?;
+    let first = service.start(u.clone(), start.clone(), now()).await?;
     let sealed = cipher().encrypt(
         first.request_id,
         &baukit_credential_vault::CredentialSecrets::new().with("link_secret", vec![9_u8; 32])?,
@@ -736,9 +738,7 @@ async fn assert_start_supersedes_prepared_exchange(
         .prepare_exchange_in_transaction(&mut tx, first.request_id, u.id, &prepared)
         .await?;
     c.store.commit_transaction(tx).await?;
-    let second = service
-        .start(u.clone(), start.clone(), Timestamp::now())
-        .await?;
+    let second = service.start(u.clone(), start.clone(), now()).await?;
     for untouched in [untouched_owner.request_id, untouched_peer.request_id] {
         let open: bool =
             sqlx::query_scalar("SELECT consumed_at IS NULL FROM suite_link_requests WHERE id=$1")

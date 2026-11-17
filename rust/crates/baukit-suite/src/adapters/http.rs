@@ -2,9 +2,7 @@ pub use super::http_support::SuiteHttpState;
 use super::http_support::*;
 use crate::domain::*;
 use crate::error_codes::SuiteErrorCode;
-use crate::services::{
-    AuthorizationDeny, AuthorizationRequest, SignedHeaders, SuiteApi, SuiteLinkView, SuiteUser,
-};
+use crate::services::{AuthorizationDeny, AuthorizationRequest, SignedHeaders, SuiteLinkView};
 use axum::{
     Json,
     body::Bytes,
@@ -260,12 +258,6 @@ struct PreviewQuery {
     hint_domain: Option<String>,
     client: String,
     hint: Option<String>,
-}
-fn api(state: &SuiteHttpState) -> Result<&dyn SuiteApi, HttpError> {
-    Ok(state.api.as_ref())
-}
-fn user(context: SuiteUser) -> Result<SuiteUser, HttpError> {
-    Ok(context)
 }
 fn signed(headers: &HeaderMap) -> Result<SignedHeaders, HttpError> {
     SignedHeaders::parse(
@@ -590,9 +582,8 @@ async fn test(
     Authenticated(context): Authenticated,
     ApiPath(id): ApiPath<Uuid>,
 ) -> Result<StatusCode, HttpError> {
-    api(&state)?
-        .test(user(context)?.id, id, Timestamp::now())
-        .await?;
+    let now = Timestamp::now();
+    api(&state)?.test(user(context)?.id, id, now).await?;
     Ok(StatusCode::ACCEPTED)
 }
 
@@ -869,19 +860,17 @@ async fn callback(
     State(state): State<SuiteHttpState>,
     Query(q): Query<LinkCallbackQuery>,
 ) -> Result<Response, HttpError> {
-    let r = api(&state)?
-        .callback(q, Timestamp::now())
-        .await
-        .map_err(|e| {
-            if e.code() == SuiteErrorCode::SuiteCodeInvalid.as_str() {
-                HttpError::bad_request_with_code(
-                    SuiteErrorCode::SuiteCodeInvalid,
-                    "Invalid suite callback",
-                )
-            } else {
-                e.into()
-            }
-        })?;
+    let now = Timestamp::now();
+    let r = api(&state)?.callback(q, now).await.map_err(|e| {
+        if e.code() == SuiteErrorCode::SuiteCodeInvalid.as_str() {
+            HttpError::bad_request_with_code(
+                SuiteErrorCode::SuiteCodeInvalid,
+                "Invalid suite callback",
+            )
+        } else {
+            e.into()
+        }
+    })?;
     Ok((
         StatusCode::SEE_OTHER,
         [

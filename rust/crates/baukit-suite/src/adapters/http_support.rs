@@ -126,3 +126,11 @@ pub(super) struct SuiteErrorBody {
     request_id: String,
     details: std::collections::BTreeMap<String, serde_json::Value>,
 }
+
+pub(super) fn api(state: &SuiteHttpState) -> Result<&dyn SuiteApi, HttpError> {
+    Ok(state.api.as_ref())
+}
+
+pub(super) fn user(context: SuiteUser) -> Result<SuiteUser, HttpError> {
+    Ok(context)
+}

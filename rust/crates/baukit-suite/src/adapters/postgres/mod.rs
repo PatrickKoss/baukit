@@ -3,7 +3,7 @@ use crate::ports::*;
 pub use crate::{SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL};
 use async_trait::async_trait;
 use jiff::{SignedDuration, Timestamp};
-use jiff_sqlx::ToSqlx;
+use jiff_sqlx::{Timestamp as SqlTimestamp, ToSqlx};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -259,7 +259,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         id: Uuid,
         now: Timestamp,
     ) -> Result<u64, SuiteStoreError> {
-        let last: Option<jiff_sqlx::Timestamp> = sqlx::query_scalar(
+        let last: Option<SqlTimestamp> = sqlx::query_scalar(
             r#"SELECT last_replay_at FROM suite_links WHERE id=$1 AND user_id=$2"#,
         )
         .bind(id)
@@ -268,10 +268,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .await
         .map_err(storage)?
         .ok_or(SuiteStoreError::NotFound)?;
-        Ok(replay_retry_after(
-            last.map(jiff_sqlx::Timestamp::to_jiff),
-            now,
-        ))
+        Ok(replay_retry_after(last.map(SqlTimestamp::to_jiff), now))
     }
     async fn consume_request_in_transaction(
         &self,

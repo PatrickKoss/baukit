@@ -1,5 +1,3 @@
-use jiff::SignedDuration;
-use jiff::Timestamp;
 use std::{
     future::Future,
     pin::Pin,
@@ -11,7 +9,7 @@ use std::{
 };
 
 use baukit_runtime::ShutdownToken;
-
+use jiff::{SignedDuration, Timestamp};
 use tokio::{
     task::JoinSet,
     time::{Instant, MissedTickBehavior},
@@ -351,12 +349,10 @@ async fn settle_attempt(
 ) -> Result<&'static str, RunnerError> {
     match result {
         AttemptResult::Cancelled => {
-            ensure_transition(
-                store
-                    .cancel(job.id, &config.worker_id, Timestamp::now())
-                    .await?,
-                job.id,
-            )?;
+            let cancelled = store
+                .cancel(job.id, &config.worker_id, Timestamp::now())
+                .await?;
+            ensure_transition(cancelled, job.id)?;
             Ok(FAILURE)
         }
         AttemptResult::Handled(Ok(())) => {
