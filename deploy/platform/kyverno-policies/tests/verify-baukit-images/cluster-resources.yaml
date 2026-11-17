@@ -14,4 +14,15 @@ spec:
       kind: Namespace
       metadata:
         name: platform
-
+    # A throwaway test key; its private half was discarded.
+    - apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: baukit-image-signing-key
+        namespace: kyverno
+      data:
+        cosign.pub: |
+          -----BEGIN PUBLIC KEY-----
+          MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECKRyXMqAm/wH21+c0ws/WHXjFec7
+          dctnejGmAxHKJkgabOSSbwsmN5XGisC5yRJckofR7LO4C1HxtZviHqfGGQ==
+          -----END PUBLIC KEY-----

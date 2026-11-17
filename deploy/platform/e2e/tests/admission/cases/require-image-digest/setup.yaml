@@ -1,0 +1,20 @@
+# A production tenant namespace; the e2e tenant is not labelled production.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: e2e-production
+  labels:
+    baukit.dev/tenant: "true"
+    baukit.dev/environment: production
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.37
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+# Dry-run Pods need their ServiceAccount; the namespace's default one may not exist yet.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admission
+  namespace: e2e-production
+automountServiceAccountToken: false

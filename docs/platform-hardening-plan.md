@@ -52,7 +52,7 @@ These are defaults the plan assumes. Each one can be overruled before its phase 
 | D3 | Falco output path | Falco native Prometheus metrics, plus falcosidekick with Loki and Alertmanager outputs. Web UI off. | Events land next to the other logs in Grafana. Critical events page through the same Alertmanager routing. |
 | D4 | Kyverno policy form | Write new policies as the CEL policy types the pinned Kyverno recommends (`ValidatingPolicy`, `GeneratingPolicy`). Migrate the three existing `ClusterPolicy` objects. | Kyverno chart 3.10.0 (v1.20.0) already ships its Pod Security policies as `ValidatingPolicy` (`vpolExclude` values). Check the deprecation status of `ClusterPolicy` in the v1.20 release notes before K1 starts. |
 | D5 | Mutation | No mutating policies, apart from generating default objects (NetworkPolicy, LimitRange) in tenant namespaces. | Explicit over implicit. A mutated `seccompProfile` hides a chart that is wrong. |
-| D6 | Image signature verification | Parked until product images live in a registry. Today they are built locally and loaded with `k3d image import`. | `verifyImages` needs a registry and signatures. The policy and its test land in Audit mode so they are ready. |
+| D6 | Image signature verification | Key-based cosign signing into GHCR (2026-11-17). The private key and password live in the break-glass directory; products sign each pushed image by digest and pin GitOps images as `tag@sha256:digest`. | `verify-baukit-images` denies unsigned or tag-only `ghcr.io/patrickkoss/*` images in tenants. The public key comes from the overlay ConfigMap `kyverno/baukit-image-signing-key`; Kyverno pulls with the Secret `kyverno/baukit-image-verify-registry`. No Rekor upload. |
 | D7 | Traefik exposure | Switch from DaemonSet with hostPorts to a Deployment behind k3s ServiceLB (`type: LoadBalancer`). | It fixes the rollout hang (F-01). The `traefik` namespace can then run `restricted`, because the svclb pod holds the hostPort in `kube-system`. |
 | D8 | PostHog | Out of scope for replacement. Fence it with NetworkPolicy, PSA `baseline` and a recorded exception list. | The self-host chart is sunset (F-30). Replacing it is a product decision, not hardening work. |
 | D9 | Platform e2e cost | A separate `platform-e2e` gate lane, selected by `--affected` for `deploy/**`. It holds `k3d-full.lock`, waits while both machine-wide heavy-run slots (`/tmp/claude-heavy-slots/slot-{1,2}`) are taken, and is not part of the 30-minute full-gate budget until it has been measured. | A disposable k3d cluster with the full stack takes minutes to converge. It must not starve product gates. |
@@ -293,7 +293,7 @@ behave. Later phases add test directories here.
   | Policy | Applies to | Mode at landing |
   |---|---|---|
   | `restrict-image-registries` (allowlist from a params ConfigMap, overlay-owned) | all pods | Audit, Enforce on tenants |
-  | `require-image-digest` | tenant namespaces labelled `baukit.dev/environment=production` | Audit (until D6) |
+  | `require-image-digest` | tenant namespaces labelled `baukit.dev/environment=production` | Deny (D6) |
   | `require-probes` (readiness + liveness on Deployment/StatefulSet) | tenants | Enforce |
   | `require-baukit-labels` (`app.kubernetes.io/name`, `part-of`, `baukit.dev/process`) | tenants | Enforce |
   | `disallow-default-namespace` | all | Enforce |
@@ -306,7 +306,7 @@ behave. Later phases add test directories here.
   | `require-psa-labels` (Namespace must carry an `enforce` level; `privileged` only from the allowlist) | Namespaces | Enforce |
   | `restrict-netpol-wildcards` (no `from: [{}]` or empty namespaceSelector in tenant policies) | tenants | Enforce |
   | `flux-tenant-service-account` (Kustomization/HelmRelease in a tenant namespace must set `serviceAccountName` and may not reference sources in other namespaces) | tenants | Enforce |
-  | `verify-baukit-images` (cosign keyless, identity = the product's release workflow) | tenants | Audit (D6) |
+  | `verify-baukit-images` (cosign key from `kyverno/baukit-image-signing-key`) | tenants | Deny (D6) |
 
 - [x] **K5 Generated defaults for tenants.** A `GeneratingPolicy` (or `ClusterPolicy` generate rule if
   D4 says so) creates `default-deny` NetworkPolicy, a LimitRange and the DNS egress allow in every

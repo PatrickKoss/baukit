@@ -158,6 +158,29 @@ class NormalizeTest(unittest.TestCase):
         placed = rcl.with_namespace(objects, "release", {"ClusterRole"})
         self.assertEqual([rcl.namespace_of(obj) for obj in placed], ["release", "other", ""])
 
+    def test_release_pins_tagged_images_by_digest(self) -> None:
+        pinned = "redis:8@sha256:" + "1" * 64
+        job = {
+            "kind": "CronJob",
+            "spec": {
+                "jobTemplate": {
+                    "spec": {
+                        "template": {
+                            "spec": {
+                                "initContainers": [{"image": "app:1"}],
+                                "containers": [{"image": pinned}],
+                            }
+                        }
+                    }
+                }
+            },
+        }
+        pod_spec = rcl.pin_release_digests([job])[0]["spec"]["jobTemplate"]["spec"]["template"]
+        self.assertEqual(
+            pod_spec["spec"]["initContainers"][0]["image"], "app:1" + rcl.RELEASE_DIGEST
+        )
+        self.assertEqual(pod_spec["spec"]["containers"][0]["image"], pinned)
+
     def test_nulls_are_dropped(self) -> None:
         cleaned = rcl.without_nulls({"a": None, "b": [None, {"c": None, "d": 1}]})
         self.assertEqual(cleaned, {"b": [{"d": 1}]})

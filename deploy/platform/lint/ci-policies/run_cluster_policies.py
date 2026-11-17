@@ -35,6 +35,17 @@ APP_PROFILES = {
 }
 APP_NAMESPACE = "product"
 APP_EXTRA_LABELS = {"baukit.dev/environment": "production"}
+# A product release pins every image by digest; the profiles carry placeholder tags.
+RELEASE_DIGEST = "@sha256:" + "0" * 64
+POD_SPEC_PATHS = (
+    ("spec",),
+    ("spec", "template", "spec"),
+    ("spec", "jobTemplate", "spec", "template", "spec"),
+)
+CONTAINER_KEYS = ("containers", "initContainers")
+# Signature checks fetch from the registry, which a static render cannot do. Their kyverno tests
+# cover the offline rules.
+REGISTRY_POLICIES = {"verify-baukit-images"}
 TENANT_COMPONENT = PLATFORM / "components/tenant/kustomization.yaml"
 ALLOWLIST = ("kyverno", "baukit-registry-allowlist")
 POLICY_KINDS = {
@@ -235,6 +246,22 @@ def render_app(profile: str, values: Path, run: Runner) -> str:
     return output
 
 
+def pin_release_digests(objects: list[dict]) -> list[dict]:
+    for obj in objects:
+        for path in POD_SPEC_PATHS:
+            spec = obj
+            for key in path:
+                spec = spec.get(key) if isinstance(spec, dict) else None
+            if not isinstance(spec, dict):
+                continue
+            for key in CONTAINER_KEYS:
+                for container in spec.get(key) or []:
+                    image = container.get("image", "")
+                    if image and "@sha256:" not in image:
+                        container["image"] = image + RELEASE_DIGEST
+    return objects
+
+
 def release_namespaces(rendered: Path) -> dict[str, str]:
     namespaces = {}
     for release, chart, _ in chart_contents.releases_by_render(rendered):
@@ -264,7 +291,7 @@ def collect_inputs(
                 objects, release_ns.get(f"{name}.yaml", "default"), cluster_kinds
             )
         elif name.startswith("app-"):
-            objects = with_namespace(objects, APP_NAMESPACE, cluster_kinds)
+            objects = pin_release_digests(with_namespace(objects, APP_NAMESPACE, cluster_kinds))
         universes.append(Universe(name, objects))
 
     cluster = [
@@ -273,7 +300,11 @@ def collect_inputs(
         if not universe.name.startswith("app-")
         for obj in universe.objects
     ]
-    policies = unique(obj for obj in cluster if obj.get("kind") in POLICY_KINDS)
+    policies = unique(
+        obj
+        for obj in cluster
+        if obj.get("kind") in POLICY_KINDS and name_of(obj) not in REGISTRY_POLICIES
+    )
     exceptions = unique(obj for obj in cluster if obj.get("kind") == "PolicyException")
     namespaces: dict[str, dict] = {}
     for obj in cluster:

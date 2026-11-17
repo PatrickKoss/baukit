@@ -8,12 +8,16 @@ metadata:
     policies.kyverno.io/title: Verify baukit product images
     policies.kyverno.io/severity: high
     policies.kyverno.io/description: >-
-      Product images under ghcr.io/patrickkoss must carry a cosign keyless signature made by the
-      product's release workflow. Audit until product images live in a registry (plan D6).
+      Product images under ghcr.io/patrickkoss must be referenced by digest and carry a cosign
+      signature made with the product signing key. The overlay supplies the public key in
+      ConfigMap kyverno/baukit-image-signing-key and the registry pull credential in
+      Secret kyverno/baukit-image-verify-registry (plan D6).
 spec:
   validationActions:
-    - Audit
-  failurePolicy: Ignore
+    - Deny
+  failurePolicy: Fail
+  webhookConfiguration:
+    timeoutSeconds: 15
   evaluation:
     background:
       enabled: true
@@ -28,18 +32,33 @@ spec:
         baukit.dev/tenant: "true"
   matchImageReferences:
     - glob: ghcr.io/patrickkoss/*
+  # Read with the controllers' existing access to Secrets in the kyverno namespace. A missing
+  # Secret means anonymous pulls, which private GHCR packages refuse.
+  credentials:
+    secrets:
+      - baukit-image-verify-registry
+  validationConfigurations:
+    mutateDigest: false
+    verifyDigest: true
+    required: true
+  variables:
+    - name: signingKey
+      expression: >-
+        resource.Get("v1", "configmaps", "kyverno", "baukit-image-signing-key")
+        .?data[?"cosign.pub"].orValue("")
   attestors:
     - name: release
       cosign:
-        keyless:
-          identities:
-            - issuer: https://token.actions.githubusercontent.com
-              subjectRegExp: '^https://github\.com/patrickkoss/[A-Za-z0-9_.-]+/\.github/workflows/release\.yml@refs/tags/v[0-9].*$'
+        key:
+          expression: variables.signingKey
+        # Signatures skip the public Rekor log so private image digests stay private.
         ctlog:
-          url: https://rekor.sigstore.dev
+          insecureIgnoreTlog: true
   validations:
     - expression: >-
-        images.containers.map(image, verifyImageSignatures(image, [attestors.release])).all(e, e > 0)
+        (images.containers + images.?initContainers.orValue([]))
+        .map(image, verifyImageSignatures(image, [attestors.release])).all(e, e > 0)
       message: >-
-        Product images must be signed by the product's release workflow with cosign keyless signing.
-        Publish the image through .github/workflows/release.yml, which signs it, and deploy that tag.
+        Product images must be pinned as repository:tag@sha256:<digest> and signed with the product
+        cosign key. Release the image with the product's release script, which signs it, and deploy
+        the digest pin it writes.

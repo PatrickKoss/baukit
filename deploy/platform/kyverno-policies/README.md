@@ -18,7 +18,7 @@ All policies use the Kyverno 1.20 CEL types (`ValidatingPolicy`, `ImageValidatin
 | `protect-operations-ports` | public Services, Ingresses | Audit |
 | `restrict-image-registries` | Pods outside tenants | Audit |
 | `restrict-image-registries-tenants` | tenant Pods | Deny |
-| `require-image-digest` | tenants labelled `baukit.dev/environment=production` | Audit |
+| `require-image-digest` | tenants labelled `baukit.dev/environment=production` | Deny |
 | `require-probes` | tenant Deployments and StatefulSets | Deny |
 | `require-baukit-labels` | tenant workloads | Deny |
 | `disallow-default-namespace` | all workloads and Ingresses | Deny |
@@ -35,7 +35,7 @@ All policies use the Kyverno 1.20 CEL types (`ValidatingPolicy`, `ImageValidatin
 | `restrict-tenant-metric-templates` | tenant MetricTemplates: only the prometheus provider at `tenant-metrics-proxy` in the same namespace | Deny |
 | `restrict-tenant-canaries` | tenant Canaries: no inline metric query, no MetricTemplate from another namespace | Deny |
 | `protect-tenant-metrics-proxy` | tenant objects named `tenant-metrics-proxy*` or labelled `app.kubernetes.io/name=tenant-metrics-proxy`, exec, attach and ephemeral containers on its pods; only platform Flux, `system:masters`, nodes and kube-system controllers | Deny |
-| `verify-baukit-images` | tenant Pods with `ghcr.io/patrickkoss/*` images | Audit |
+| `verify-baukit-images` | tenant Pods with `ghcr.io/patrickkoss/*` images: digest pin and a cosign signature from the product key | Deny |
 | `generate-tenant-defaults` | tenant Namespaces | generates, synchronized |
 
 `ValidatingPolicy` has one `validationActions` list per policy, so "Audit everywhere, Deny in
@@ -91,6 +91,15 @@ kyverno test deploy/platform/kyverno-policies/tests/
 Expected `skip` results do not bite: the CLI reports an excluded resource as matching any
 expectation. The pass and fail rows do.
 
-`verify-baukit-images` has no signed pass fixture yet. Its fail fixture is a tag-only product
-image, which fails offline because verification needs a digest. A signed case needs product images in
-a registry (plan D6).
+`verify-baukit-images` checks signatures against the public key in the ConfigMap
+`kyverno/baukit-image-signing-key` (key `cosign.pub`), which the cluster overlay owns like the
+registry allowlist. Signatures are key-based cosign bundles without a Rekor entry. Kyverno pulls them
+with the dockerconfigjson Secret `kyverno/baukit-image-verify-registry` (a `read:packages` token). The
+policy names only that Secret, and the Kyverno controllers can already read Secrets in their own
+namespace, so no RBAC changes. Without the Secret Kyverno pulls anonymously, private GHCR refuses,
+and every product Pod is denied.
+
+The offline suite covers the tag-only product image and initContainer (denied: verification needs a
+digest) and a third-party image (skipped). Signature checks need the registry, so
+`run_cluster_policies.py` leaves this policy out of the static render and pins the app profiles'
+placeholder tags by a dummy digest.
