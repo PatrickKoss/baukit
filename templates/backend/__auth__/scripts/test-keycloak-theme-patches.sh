@@ -30,7 +30,7 @@ trap 'cleanup; rm -f "$theme_compose"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-for keycloak_version in 26.7.5 26.8.0; do
+for keycloak_version in 26.7.5 26.8.2; do
   theme_project="{{ context.app_name }}-keycloak-theme-$$-$(printf '%s' "$keycloak_version" | tr . -)"
   keycloak_image="quay.io/keycloak/keycloak:$keycloak_version"
   compose up -d --wait keycloak

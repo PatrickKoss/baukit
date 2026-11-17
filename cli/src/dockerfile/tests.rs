@@ -38,7 +38,7 @@ fn assert_image_pin(output: &str, key: &str, image: &str) {
 fn defaults_and_worker_follow_capabilities() -> Result<()> {
     let mut manifest = manifest("")?;
     let output = render_dockerfile(&manifest)?;
-    assert!(output.starts_with("# syntax=docker/dockerfile:1.28.0\n"));
+    assert!(output.starts_with("# syntax=docker/dockerfile:1.29.0\n"));
     assert!(output.ends_with("ENTRYPOINT [\"/app/migrate\"]\n"));
     assert!(output.contains("ARG CARGO_BUILD_JOBS\n"));
     assert!(output.contains("ARG CARGO_TARGET_CACHE_PREFIX=test-product\n"));
@@ -51,7 +51,7 @@ fn defaults_and_worker_follow_capabilities() -> Result<()> {
     assert!(output.contains("/workspace/crates/test-product-bin/Cargo.toml"));
     assert!(!output.contains("AS worker"));
     for (key, image) in [
-        ("RUST_IMAGE", "rust:1.99.0-trixie"),
+        ("RUST_IMAGE", "rust:1.100.0-trixie"),
         ("RUNTIME_IMAGE", "gcr.io/distroless/cc-debian13:nonroot"),
     ] {
         assert_image_pin(&output, key, image);
@@ -323,7 +323,7 @@ fn omitted_variants_preserve_previous_default_bytes() -> Result<()> {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>(),
-        "6fb68c1e45d368b7b0b43ebeeaa84c4668cb6d3fdfcf7d01ab948922f830b485"
+        "171e3e6342a70378df06da1cfcfa9d54d15a637bd55a32ab128dfb29bbe9bb85"
     );
     assert_eq!(output, render_dockerfile(&manifest("variants = []")?)?);
     Ok(())

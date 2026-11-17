@@ -2086,10 +2086,3 @@ ids = [
   "CVE-2026-78669",
   "CVE-2026-97031",
 ]
-
-[dockerfiles."templates/web/web/Dockerfile"]
-expires = 2026-12-12
-reason = "relies on uid 101 from nginx-unprivileged; an explicit USER changes the golden snapshots, pending in C2"
-ids = [
-  "DS-0002",
-]

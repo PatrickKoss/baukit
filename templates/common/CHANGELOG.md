@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- `backend/Dockerfile` builds on `rust:1.100.0-trixie` with the `docker/dockerfile:1.29.0` frontend. The distroless `cc-debian13:nonroot` and `debian:trixie-slim` runtime bases move to upstream's current digests. `mise.toml` and the CI workflow install Rust 1.100.0 to match.
+- `web/Dockerfile` builds on `nginx/nginx-unprivileged:1.31.8-alpine`, pinned by digest, and sets `USER 101` explicitly. That is the uid the image already ran as, and it clears Trivy's DS-0002 finding.
+- `compose.yaml` pins `postgres:18.7-alpine`, `redis:8.10.3-alpine` and the default `quay.io/keycloak/keycloak:26.8.2` by digest. The Keycloak theme check runs against 26.7.5 and 26.8.2. The mobile QA compose file uses the same redis pin.
+
 ## [0.26.7] - 2026-11-17
 
 ## [0.26.6] - 2026-11-17
