@@ -1,10 +1,11 @@
+use jiff_sqlx::ToSqlx;
 use std::sync::Arc;
 
 use crate::domain::*;
 use crate::ports::*;
 use async_trait::async_trait;
 use baukit_jobs::{NewJob, PostgresJobStore};
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use jiff::{SignedDuration, Timestamp, civil::Date};
 use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
@@ -127,7 +128,7 @@ impl PostgresSuiteEventOutbox {
         tx: &mut PgConnection,
         link: &SuiteLink,
         events: &[SuiteEvent],
-        replay: Option<DateTime<Utc>>,
+        replay: Option<Timestamp>,
         test: bool,
     ) -> Result<u64, SuiteEmissionError> {
         if !link.can_enqueue() || self.registry.active_peer(&link.peer_app).is_none() {
@@ -169,12 +170,9 @@ impl PostgresSuiteEventOutbox {
                 link.share_xp,
             );
             let key = match replay {
-                Some(started_at) => format!(
-                    "{}:{}:replay:{}",
-                    envelope.event_id,
-                    link.id,
-                    started_at.to_rfc3339()
-                ),
+                Some(started_at) => {
+                    format!("{}:{}:replay:{started_at}", envelope.event_id, link.id)
+                }
                 None => format!("{}:{}", envelope.event_id, link.id),
             };
             let job = NewJob::new(
@@ -303,11 +301,12 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         tx: &mut PgConnection,
         owner: Uuid,
         id: Uuid,
-        since: NaiveDate,
-        now: DateTime<Utc>,
+        since: Date,
+        now: Timestamp,
         events: &[SuiteEvent],
     ) -> Result<u64, SuiteStoreError> {
-        validate_replay_since(since, now.date_naive()).map_err(invalid)?;
+        validate_replay_since(since, now.to_zoned_datetime(jiff::tz::TimeZone::UTC).date())
+            .map_err(invalid)?;
         super::lock_owner(tx, owner).await?;
         super::account_owner_failures(tx, owner).await?;
         let link: SuiteLink = sqlx::query_as::<_, LinkRow>(
@@ -334,15 +333,15 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
             OR last_replay_at<=$3)"#,
         )
         .bind(id)
-        .bind(now)
-        .bind(now - Duration::seconds(SUITE_REPLAY_INTERVAL_SECONDS))
+        .bind(now.to_sqlx())
+        .bind((now - SignedDuration::from_secs(SUITE_REPLAY_INTERVAL_SECONDS)).to_sqlx())
         .bind(owner)
         .execute(&mut *tx)
         .await
         .map_err(storage)?
         .rows_affected();
         if changed != 1 {
-            let last: DateTime<Utc> = sqlx::query_scalar::<_, Option<DateTime<Utc>>>(
+            let last = sqlx::query_scalar::<_, Option<jiff_sqlx::Timestamp>>(
                 r#"SELECT last_replay_at FROM suite_links WHERE id=$1 AND user_id=$2"#,
             )
             .bind(id)
@@ -350,7 +349,8 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
             .fetch_one(&mut *tx)
             .await
             .map_err(storage)?
-            .ok_or_else(|| invalid("replay time is missing"))?;
+            .ok_or_else(|| invalid("replay time is missing"))?
+            .to_jiff();
             return Err(SuiteStoreError::ReplayTooSoon(replay_retry_after(
                 Some(last),
                 now,

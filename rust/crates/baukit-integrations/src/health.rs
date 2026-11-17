@@ -1,7 +1,7 @@
 //! Connection health, as an owner and an operator need to see it.
 
 use baukit_http::RetryClass;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 /// Where a connection stands between working and needing the owner.
@@ -57,20 +57,20 @@ pub struct ConnectionStatus {
     /// Current health.
     pub health: ConnectionHealth,
     /// When an import last succeeded.
-    pub last_success_at: Option<DateTime<Utc>>,
+    pub last_success_at: Option<Timestamp>,
     /// When an import was last attempted, successful or not.
-    pub last_attempt_at: Option<DateTime<Utc>>,
+    pub last_attempt_at: Option<Timestamp>,
     /// Stable code of the most recent failure.
     pub last_error_code: Option<String>,
     /// When the runner will try again, if a retry is scheduled.
-    pub next_retry_at: Option<DateTime<Utc>>,
+    pub next_retry_at: Option<Timestamp>,
     /// Attempts spent on the work that is currently failing.
     pub failed_attempts: u32,
 }
 
 impl ConnectionStatus {
     /// Records a successful import at `now`, clearing the failure state.
-    pub fn succeeded(&mut self, now: DateTime<Utc>) {
+    pub fn succeeded(&mut self, now: Timestamp) {
         self.health = ConnectionHealth::Healthy;
         self.last_success_at = Some(now);
         self.last_attempt_at = Some(now);
@@ -86,9 +86,9 @@ impl ConnectionStatus {
     /// spent.
     pub fn failed(
         &mut self,
-        now: DateTime<Utc>,
+        now: Timestamp,
         error: &crate::ConnectorError,
-        next_retry_at: Option<DateTime<Utc>>,
+        next_retry_at: Option<Timestamp>,
     ) {
         self.health = ConnectionHealth::after_failure(error.class);
         self.last_attempt_at = Some(now);
@@ -105,8 +105,8 @@ mod tests {
     use super::*;
     use crate::ConnectorError;
 
-    fn now() -> DateTime<Utc> {
-        DateTime::from_timestamp(1_760_000_000, 0).expect("valid timestamp")
+    fn now() -> Timestamp {
+        jiff::Timestamp::from_second(1_760_000_000).expect("valid timestamp")
     }
 
     #[test]

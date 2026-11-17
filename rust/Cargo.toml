@@ -55,10 +55,11 @@ baukit-ops = { version = "=0.27.4", path = "crates/baukit-ops" }
 baukit-runtime = { version = "=0.27.4", path = "crates/baukit-runtime" }
 baukit-suite = { version = "=0.27.4", path = "crates/baukit-suite" }
 baukit-telemetry = { version = "=0.27.4", path = "crates/baukit-telemetry" }
-chrono = { version = "0.4.45", features = ["serde"] }
 config = "0.15.27"
 dotenvy = "0.15.7"
 http = "1.5.0"
+jiff = { version = "1.0.0", features = ["serde"] }
+jiff-sqlx = { version = "1.0.0", features = ["postgres"] }
 jsonschema = { version = "0.58.5", default-features = false }
 metrics = "0.24.6"
 metrics-exporter-prometheus = "0.18.3"
@@ -74,7 +75,7 @@ rmcp = { version = "3.9.0", default-features = false, features = ["server", "tra
 serde = { version = "1.0.229", features = ["derive"] }
 serde_html_form = "0.4.1"
 serde_json = "1.0.151"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "chrono", "json", "uuid"] }
+sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "json", "uuid"] }
 subtle = "2.6.1"
 tempfile = "3.27.0"
 testcontainers = { version = "0.28.0", default-features = false, features = ["aws-lc-rs", "watchdog"] }

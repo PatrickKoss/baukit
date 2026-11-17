@@ -108,7 +108,7 @@ fn init_telemetry(
     pool: &PgPool,
 ) -> Result<WorkerRunner, Box<dyn Error>> {
 {% if context.platform or context.auth_enabled %}    let handler = Arc::new(RetentionJobHandler::new(pool.clone())?);
-    handler.enqueue_initial(chrono::Utc::now()).await?;
+    handler.enqueue_initial(jiff::Timestamp::now()).await?;
 {% endif %}    let runner = WorkerRunner::new(
         {% if context.auth_enabled %}Arc::new(
             PostgresJobStore::new(pool.clone())

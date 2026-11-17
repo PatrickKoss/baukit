@@ -14,7 +14,7 @@ should. The clock orders timestamps. It does not choose which record wins.
 | Feature | Adds | Dependencies |
 |---|---|---|
 | none | `hlc`, the `horizon` cursor rule and wire constants, and the reference SQL constants | `serde`, `thiserror` |
-| `sqlx-postgres` | `next_revision`, `ensure_owner`, `current_revision`, `current_revision_for_update`, and the `purge` module | SQLx 0.9 with PostgreSQL, `chrono`, `uuid` |
+| `sqlx-postgres` | `next_revision`, `ensure_owner`, `current_revision`, `current_revision_for_update`, and the `purge` module | SQLx 0.9 with PostgreSQL, `jiff`, `jiff-sqlx`, `uuid` |
 
 A backend that allocates revisions or purges tombstones enables the feature:
 
@@ -221,7 +221,7 @@ use std::{num::NonZeroU32, time::Duration};
 
 use baukit_jobs::{FixedUtcInterval, FixedUtcSlot};
 use baukit_sync::purge::{PurgedTable, TombstoneTable, purge_tombstones};
-use chrono::{TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 
 const RECORDS: TombstoneTable = TombstoneTable::new(
     "product_records",
@@ -231,7 +231,7 @@ const RECORDS: TombstoneTable = TombstoneTable::new(
     "DELETE FROM product_records record USING UNNEST($1::uuid[], $2::uuid[]) AS purged (id, owner_id)
      WHERE record.id = purged.id AND record.owner_id = purged.owner_id",
 );
-const TOMBSTONE_RETENTION: TimeDelta = TimeDelta::days(30);
+const TOMBSTONE_RETENTION: SignedDuration = SignedDuration::from_hours(30 * 24);
 const PURGE_BATCH: NonZeroU32 = NonZeroU32::new(1_000).expect("batch size is not zero");
 const PURGE_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
@@ -241,7 +241,7 @@ async fn purge_slot(
 ) -> Result<(Vec<PurgedTable>, FixedUtcSlot), Box<dyn std::error::Error>> {
     let cutoff = slot.starts_at() - TOMBSTONE_RETENTION;
     let report = purge_tombstones(pool, &[RECORDS], cutoff, PURGE_BATCH).await?;
-    let next = FixedUtcInterval::new(PURGE_INTERVAL)?.next_slot(slot, Utc::now())?;
+    let next = FixedUtcInterval::new(PURGE_INTERVAL)?.next_slot(slot, Timestamp::now())?;
     Ok((report, next))
 }
 ```

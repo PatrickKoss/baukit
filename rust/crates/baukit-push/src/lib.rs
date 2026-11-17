@@ -31,14 +31,14 @@
 //!
 //! ```rust
 //! use baukit_push::{DeviceRegistry, PushMessage, PushSender};
-//! use chrono::Utc;
+//! use jiff::Timestamp;
 //!
 //! async fn deliver(
 //!     sender: &impl PushSender,
 //!     registry: &impl DeviceRegistry,
 //!     messages: Vec<PushMessage>,
 //! ) -> Result<u64, Box<dyn std::error::Error>> {
-//!     let sent_at = Utc::now();
+//!     let sent_at = Timestamp::now();
 //!     let outcomes = sender.send(messages).await?;
 //!     Ok(registry.invalidate_dead_tokens(&outcomes, sent_at).await?)
 //! }

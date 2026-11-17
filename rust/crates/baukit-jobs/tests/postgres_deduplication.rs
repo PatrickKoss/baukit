@@ -1,4 +1,5 @@
 #![cfg(test)]
+use jiff::Timestamp;
 use std::{error::Error, path::PathBuf, sync::Arc, time::Duration};
 
 use baukit_jobs::{
@@ -6,7 +7,7 @@ use baukit_jobs::{
     POSTGRES_MIGRATION_0003_SQL, POSTGRES_MIGRATION_0004_SQL, POSTGRES_MIGRATION_SQL,
     PostgresJobStore,
 };
-use chrono::{TimeDelta, Utc};
+use jiff::SignedDuration;
 use serde_json::json;
 use sqlx::PgPool;
 use tokio::sync::Barrier;
@@ -27,7 +28,7 @@ async fn terminal_jobs_release_the_key_and_running_jobs_keep_it() -> Result<(), 
     ] {
         let original = store.enqueue_deduplicated(new_job(), KEY).await?;
         assert!(original.created);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let claimed = store
             .claim("worker", &[KIND], now, LEASE)
             .await?
@@ -72,7 +73,7 @@ async fn terminal_jobs_release_the_key_and_running_jobs_keep_it() -> Result<(), 
         assert_ne!(replacement.job.id, original.job.id);
         assert!(
             store
-                .request_cancellation(replacement.job.id, Utc::now())
+                .request_cancellation(replacement.job.id, Timestamp::now())
                 .await?
         );
         let stored_key: String =
@@ -94,7 +95,7 @@ async fn terminal_jobs_release_the_key_and_running_jobs_keep_it() -> Result<(), 
 async fn pending_retries_and_expired_leases_keep_the_key_until_terminal()
 -> Result<(), Box<dyn Error>> {
     let (_fixture, pool, store) = fixture().await?;
-    let scheduled = Utc::now() + TimeDelta::hours(1);
+    let scheduled = Timestamp::now() + SignedDuration::from_hours(1);
     let original = store
         .enqueue_deduplicated(new_job().run_after(scheduled), KEY)
         .await?;
@@ -105,7 +106,7 @@ async fn pending_retries_and_expired_leases_keep_the_key_until_terminal()
         .claim("worker-a", &[KIND], scheduled, LEASE)
         .await?
         .expect("scheduled job claimed");
-    let retry_at = scheduled + TimeDelta::minutes(1);
+    let retry_at = scheduled + SignedDuration::from_mins(1);
     assert_eq!(
         store
             .record_failure(first.id, "worker-a", true, retry_at, "temporary", scheduled)
@@ -116,8 +117,8 @@ async fn pending_retries_and_expired_leases_keep_the_key_until_terminal()
     assert!(!duplicate.created);
     assert_eq!(duplicate.job.status, JobStatus::Pending);
     assert_eq!(
-        duplicate.job.run_after.timestamp_micros(),
-        retry_at.timestamp_micros()
+        duplicate.job.run_after.as_microsecond(),
+        retry_at.as_microsecond()
     );
     assert_eq!(duplicate.job.attempts, 1);
     store
@@ -125,7 +126,7 @@ async fn pending_retries_and_expired_leases_keep_the_key_until_terminal()
         .await?
         .expect("retry claimed");
     assert!(!store.enqueue_deduplicated(new_job(), KEY).await?.created);
-    let reclaimed_at = retry_at + TimeDelta::seconds(2);
+    let reclaimed_at = retry_at + SignedDuration::from_secs(2);
     let reclaimed = store
         .claim("worker-c", &[KIND], reclaimed_at, Duration::from_secs(1))
         .await?
@@ -133,7 +134,7 @@ async fn pending_retries_and_expired_leases_keep_the_key_until_terminal()
     assert_eq!(reclaimed.id, first.id);
     assert_eq!(reclaimed.attempts, 3);
     assert!(!store.enqueue_deduplicated(new_job(), KEY).await?.created);
-    let expired_at = reclaimed_at + TimeDelta::seconds(2);
+    let expired_at = reclaimed_at + SignedDuration::from_secs(2);
     assert!(
         store
             .claim("worker-d", &[KIND], expired_at, LEASE)
@@ -147,7 +148,7 @@ async fn pending_retries_and_expired_leases_keep_the_key_until_terminal()
     );
     assert!(
         store
-            .request_cancellation(replacement.job.id, Utc::now())
+            .request_cancellation(replacement.job.id, Timestamp::now())
             .await?
     );
     let pending_replacement = store.enqueue_deduplicated(new_job(), KEY).await?;
@@ -253,7 +254,7 @@ async fn returning_an_active_job_holds_its_lock_until_transaction_end() -> Resul
 {
     let (_fixture, pool, store) = fixture().await?;
     let original = store.enqueue_deduplicated(new_job(), KEY).await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     store
         .claim("worker", &[KIND], now, LEASE)
         .await?
@@ -288,7 +289,7 @@ async fn completion_between_insert_and_lookup_retries_with_a_new_job() -> Result
 {
     let (_fixture, pool, store) = fixture().await?;
     let original = store.enqueue_deduplicated(new_job(), KEY).await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     store
         .claim("worker", &[KIND], now, LEASE)
         .await?
@@ -375,7 +376,11 @@ async fn forward_migration_preserves_legacy_keys_and_keeps_modes_independent()
         Some(serde_json::Value::Null)
     );
     assert_eq!(before, after);
-    assert!(store.request_cancellation(legacy_id, Utc::now()).await?);
+    assert!(
+        store
+            .request_cancellation(legacy_id, Timestamp::now())
+            .await?
+    );
     let duplicate = store.enqueue(new_job().idempotency_key(KEY)).await?;
     assert!(!duplicate.created, "legacy idempotency is permanent");
     assert_eq!(duplicate.job.id, legacy_id);
@@ -403,7 +408,7 @@ async fn pending_jobs_allow_one_followup_per_claim() -> Result<(), Box<dyn Error
     assert_eq!(original.job.pending_dedupe_key.as_deref(), Some(KEY));
     assert!(original.job.dedupe_key.is_none());
     let running = store
-        .claim("worker-a", &[KIND], Utc::now(), LEASE)
+        .claim("worker-a", &[KIND], Timestamp::now(), LEASE)
         .await?
         .expect("claimed");
     assert_eq!(running.id, original.job.id);
@@ -418,7 +423,7 @@ async fn pending_jobs_allow_one_followup_per_claim() -> Result<(), Box<dyn Error
     let duplicate = store
         .enqueue_pending_deduplicated(
             NewJob::new(KIND, json!({"ignored": true}), 99)
-                .run_after(Utc::now() + TimeDelta::hours(1)),
+                .run_after(Timestamp::now() + SignedDuration::from_hours(1)),
             KEY,
         )
         .await?;
@@ -428,7 +433,7 @@ async fn pending_jobs_allow_one_followup_per_claim() -> Result<(), Box<dyn Error
         "a duplicate preserves the original input"
     );
     let second = store
-        .claim("worker-b", &[KIND], Utc::now(), LEASE)
+        .claim("worker-b", &[KIND], Timestamp::now(), LEASE)
         .await?
         .expect("follow-up claimed");
     assert_eq!(second.id, followup.job.id);
@@ -444,15 +449,23 @@ async fn pending_jobs_allow_one_followup_per_claim() -> Result<(), Box<dyn Error
     ).fetch_one(&pool).await?;
     assert_eq!(counts, (2, 1));
 
-    assert!(store.complete(running.id, "worker-a", Utc::now()).await?);
-    let now = Utc::now();
+    assert!(
+        store
+            .complete(running.id, "worker-a", Timestamp::now())
+            .await?
+    );
+    let now = Timestamp::now();
     assert_eq!(
         store
             .record_failure(second.id, "worker-b", false, now, "permanent", now)
             .await?,
         Some(FailureDisposition::Failed)
     );
-    assert!(store.request_cancellation(third.job.id, Utc::now()).await?);
+    assert!(
+        store
+            .request_cancellation(third.job.id, Timestamp::now())
+            .await?
+    );
     assert!(
         store
             .enqueue_pending_deduplicated(new_job(), KEY)
@@ -471,7 +484,7 @@ async fn concurrent_pending_enqueues_create_one_followup_during_a_run() -> Resul
     let (_fixture, pool, store) = fixture().await?;
     store.enqueue_pending_deduplicated(new_job(), KEY).await?;
     let running = store
-        .claim("worker", &[KIND], Utc::now(), LEASE)
+        .claim("worker", &[KIND], Timestamp::now(), LEASE)
         .await?
         .expect("claimed");
     const PRODUCERS: usize = 8;
@@ -524,15 +537,18 @@ async fn pending_retries_and_lease_recovery_do_not_collide_with_followups()
 -> Result<(), Box<dyn Error>> {
     let (_fixture, pool, store) = fixture().await?;
     let original = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     let running = store
         .claim("worker-a", &[KIND], now, LEASE)
         .await?
         .expect("claimed");
     let followup = store
-        .enqueue_pending_deduplicated(new_job().run_after(now + TimeDelta::hours(1)), KEY)
+        .enqueue_pending_deduplicated(
+            new_job().run_after(now + SignedDuration::from_hours(1)),
+            KEY,
+        )
         .await?;
-    let retry_at = now + TimeDelta::seconds(2);
+    let retry_at = now + SignedDuration::from_secs(2);
     assert_eq!(
         store
             .record_failure(running.id, "worker-a", true, retry_at, "temporary", now)
@@ -549,7 +565,7 @@ async fn pending_retries_and_lease_recovery_do_not_collide_with_followups()
     assert_eq!(retried.id, original.job.id);
     assert_eq!(retried.attempts, 2);
     assert!(retried.pending_dedupe_key.is_none());
-    let recovered_at = retry_at + TimeDelta::seconds(2);
+    let recovered_at = retry_at + SignedDuration::from_secs(2);
     let recovered = store
         .claim("worker-c", &[KIND], recovered_at, Duration::from_secs(1))
         .await?
@@ -562,7 +578,7 @@ async fn pending_retries_and_lease_recovery_do_not_collide_with_followups()
             .claim(
                 "worker-d",
                 &[KIND],
-                recovered_at + TimeDelta::seconds(2),
+                recovered_at + SignedDuration::from_secs(2),
                 LEASE
             )
             .await?
@@ -604,13 +620,13 @@ async fn mixed_deduplication_modes_reserve_independent_keys() -> Result<(), Box<
         pending.job
     );
     let running_active = store
-        .claim("worker-a", &[KIND], Utc::now(), LEASE)
+        .claim("worker-a", &[KIND], Timestamp::now(), LEASE)
         .await?
         .expect("active claimed");
     assert_eq!(running_active.id, active.job.id);
     assert_eq!(running_active.dedupe_key.as_deref(), Some(KEY));
     let running_pending = store
-        .claim("worker-b", &[KIND], Utc::now(), LEASE)
+        .claim("worker-b", &[KIND], Timestamp::now(), LEASE)
         .await?
         .expect("pending claimed");
     assert_eq!(running_pending.id, pending.job.id);
@@ -624,7 +640,7 @@ async fn mixed_deduplication_modes_reserve_independent_keys() -> Result<(), Box<
     assert_eq!(duplicate.job, running_active);
     assert!(
         store
-            .complete(running_active.id, "worker-a", Utc::now())
+            .complete(running_active.id, "worker-a", Timestamp::now())
             .await?
     );
     let replacement = store.enqueue_deduplicated(new_job(), KEY).await?;
@@ -674,14 +690,14 @@ async fn pending_transaction_rolls_back_and_locks_duplicates_until_commit()
     assert_eq!(duplicate.job, original.job);
     assert!(
         store
-            .claim("worker", &[KIND], Utc::now(), LEASE)
+            .claim("worker", &[KIND], Timestamp::now(), LEASE)
             .await?
             .is_none(),
         "claim skips the locked pending duplicate"
     );
     transaction.commit().await?;
     let claimed = store
-        .claim("worker", &[KIND], Utc::now(), LEASE)
+        .claim("worker", &[KIND], Timestamp::now(), LEASE)
         .await?
         .expect("claim after commit");
     assert_eq!(claimed.id, original.job.id);
@@ -700,13 +716,17 @@ async fn pending_transaction_rolls_back_and_locks_duplicates_until_commit()
 async fn product_backfill_keys_only_the_newest_legacy_pending_row() -> Result<(), Box<dyn Error>> {
     let (_fixture, pool, store) = fixture().await?;
     let mut older_job = new_job().idempotency_key("legacy:older");
-    older_job.created_at -= TimeDelta::minutes(1);
+    older_job.created_at -= SignedDuration::from_mins(1);
     let older = store.enqueue(older_job).await?;
     let legacy = store.enqueue(new_job().idempotency_key(KEY)).await?;
     assert!(legacy.job.pending_dedupe_key.is_none());
     let extra = store.enqueue_pending_deduplicated(new_job(), KEY).await?;
     assert!(extra.created, "unkeyed legacy rows do not deduplicate");
-    assert!(store.request_cancellation(extra.job.id, Utc::now()).await?);
+    assert!(
+        store
+            .request_cancellation(extra.job.id, Timestamp::now())
+            .await?
+    );
 
     let mut transaction = pool.begin().await?;
     sqlx::query("LOCK TABLE job_outbox IN SHARE ROW EXCLUSIVE MODE")
@@ -748,7 +768,7 @@ async fn product_backfill_keys_only_the_newest_legacy_pending_row() -> Result<()
     assert_eq!(duplicate.job.idempotency_key.as_deref(), Some(KEY));
     assert!(
         store
-            .request_cancellation(duplicate.job.id, Utc::now())
+            .request_cancellation(duplicate.job.id, Timestamp::now())
             .await?
     );
     let permanent = store.enqueue(new_job().idempotency_key(KEY)).await?;

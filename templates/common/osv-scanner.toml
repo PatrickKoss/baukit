@@ -9,7 +9,7 @@ reason = "No fix available: astral-tokio-tar is unmaintained with no patched rel
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0543"
 ignoreUntil = 2027-02-15
-reason = "No fix available: chrono is unmaintained (RustSec informational, all versions); reached through baukit crates, sqlx and utoipa in backend/. Mirrors baukit's ignore."
+reason = "No fix available: chrono is unmaintained (RustSec informational, all versions). Baukit uses jiff; chrono stays in backend/Cargo.lock as serde_with's optional dependency through testcontainers, and the MCP flavor compiles it through rmcp (schemars chrono04). Mirrors baukit's ignore."
 {% endif %}{% if context.mobile %}
 [[IgnoredVulns]]
 id = "GHSA-gcqx-w48m-w2h4"

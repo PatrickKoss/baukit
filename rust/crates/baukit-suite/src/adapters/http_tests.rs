@@ -50,3 +50,14 @@ fn openapi_uses_the_event_envelope_wire_name_and_generic_app_ids() {
             .is_none()
     );
 }
+#[test]
+fn openapi_keeps_date_time_and_date_formats_for_jiff_types() {
+    let document = serde_json::to_value(SuiteOpenApi::openapi()).expect("OpenAPI");
+    let schemas = &document["components"]["schemas"];
+    let created_at = &schemas["DeliveryResponse"]["properties"]["createdAt"];
+    assert_eq!(created_at["type"], "string");
+    assert_eq!(created_at["format"], "date-time");
+    let since = &schemas["ReplayRequest"]["properties"]["since"];
+    assert_eq!(since["type"], "string");
+    assert_eq!(since["format"], "date");
+}

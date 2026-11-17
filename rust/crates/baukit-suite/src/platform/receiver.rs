@@ -132,7 +132,7 @@ async fn inbound(
     let delivery_id = required("x-suite-delivery-id")?;
     if parsed < 0
         || parsed.to_string() != timestamp
-        || !signature_timestamp_valid(parsed, now.timestamp())
+        || !signature_timestamp_valid(parsed, now.as_second())
         || delivery_id.is_empty()
         || delivery_id.len() > MAX_DELIVERY_ID_BYTES
         || delivery_id.chars().any(char::is_control)
@@ -194,7 +194,7 @@ fn api_error(error: PlatformError) -> ApiError {
 
 struct TimedHandler<'a> {
     inner: &'a dyn PlatformEventHandler,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 }
 #[async_trait::async_trait]
 impl PlatformEventHandler for TimedHandler<'_> {

@@ -9,6 +9,7 @@ mod exports;
 #[path = "server/identity.rs"]
 mod identity;
 
+use jiff::Timestamp;
 use std::{
     error::Error,
     sync::{Arc, atomic::Ordering},
@@ -21,8 +22,8 @@ use axum::{
 };
 use baukit_data_subject::*;
 use baukit_jobs::{JobStore, PostgresJobStore};
-use chrono::{TimeDelta, Utc};
 use fixture::{Fixture, as_export, part_request, post_export, request_body};
+use jiff::SignedDuration;
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
 use uuid::Uuid;
@@ -485,7 +486,7 @@ async fn expired_final_lease_also_fails_the_operation_and_scrubs_subjects() -> T
         )
         .await?;
     let jobs = PostgresJobStore::new(f.pool.clone());
-    let mut now = Utc::now();
+    let mut now = Timestamp::now();
     for _ in 0..2 {
         assert!(
             jobs.claim(
@@ -497,7 +498,7 @@ async fn expired_final_lease_also_fails_the_operation_and_scrubs_subjects() -> T
             .await?
             .is_some()
         );
-        now += TimeDelta::seconds(2);
+        now += SignedDuration::from_secs(2);
     }
     assert!(
         jobs.claim(
@@ -587,18 +588,18 @@ async fn purge_is_bounded_and_removes_only_expired_operations_and_execution_payl
     f.run_until(ids[0]).await?;
     sqlx::query("UPDATE data_subject_operations SET purge_after = now() - interval '1 day' WHERE id = ANY($1)").bind(&ids[..2]).execute(&f.pool).await?;
     assert_eq!(
-        f.store.purge_expired(Utc::now(), 0).await,
+        f.store.purge_expired(Timestamp::now(), 0).await,
         Err(DataSubjectError::Configuration)
     );
     assert_eq!(
         f.store
-            .purge_expired(Utc::now(), MAX_PURGE_BATCH_SIZE + 1)
+            .purge_expired(Timestamp::now(), MAX_PURGE_BATCH_SIZE + 1)
             .await,
         Err(DataSubjectError::Configuration)
     );
-    assert_eq!(f.store.purge_expired(Utc::now(), 1).await?, 1);
-    assert_eq!(f.store.purge_expired(Utc::now(), 1).await?, 1);
-    assert_eq!(f.store.purge_expired(Utc::now(), 1).await?, 0);
+    assert_eq!(f.store.purge_expired(Timestamp::now(), 1).await?, 1);
+    assert_eq!(f.store.purge_expired(Timestamp::now(), 1).await?, 1);
+    assert_eq!(f.store.purge_expired(Timestamp::now(), 1).await?, 0);
     assert_eq!(f.operation_count().await?, 1);
     assert!(
         f.store
@@ -816,12 +817,15 @@ async fn configuration_rejects_unsafe_keys_limits_retention_and_receipt_keys() -
             Secret::new("configuration-hash-key-at-least-32-bytes".into()),
             erasure,
         );
-        assert_eq!(config.identity_deletion_timeout, TimeDelta::days(1));
-        assert_eq!(config.export_retention, TimeDelta::days(7));
+        assert_eq!(
+            config.identity_deletion_timeout,
+            SignedDuration::from_hours(24)
+        );
+        assert_eq!(config.export_retention, SignedDuration::from_hours(24 * 7));
         match invalid {
             0 => config.hash_key = Secret::new("too-short".into()),
             1 => config.limits.max_identifiers = 0,
-            2 => config.operation_retention = TimeDelta::zero(),
+            2 => config.operation_retention = SignedDuration::ZERO,
             3 => config.max_attempts = 0,
             4 => config.allowed_client_ids.clear(),
             5 => config.identifier_types.push(IdentifierType::Email),
@@ -834,15 +838,18 @@ async fn configuration_rejects_unsafe_keys_limits_retention_and_receipt_keys() -
                 config.previous_receipt_keys.push(key);
             }
             8 => config.service.name.clear(),
-            9 => config.identity_deletion_timeout = TimeDelta::zero(),
-            10 => config.identity_deletion_timeout = -TimeDelta::seconds(1),
-            11 => config.identity_deletion_timeout = TimeDelta::days(30) + TimeDelta::seconds(1),
-            12 => config.export_retention = TimeDelta::zero(),
-            13 => config.export_retention = -TimeDelta::seconds(1),
-            14 => config.export_retention = TimeDelta::MAX,
+            9 => config.identity_deletion_timeout = SignedDuration::ZERO,
+            10 => config.identity_deletion_timeout = -SignedDuration::from_secs(1),
+            11 => {
+                config.identity_deletion_timeout =
+                    SignedDuration::from_hours(24 * 30) + SignedDuration::from_secs(1)
+            }
+            12 => config.export_retention = SignedDuration::ZERO,
+            13 => config.export_retention = -SignedDuration::from_secs(1),
+            14 => config.export_retention = SignedDuration::MAX,
             15 => config.limits.max_export_part_bytes = 0,
             16 => config.limits.max_export_part_bytes = u64::MAX,
-            _ => config.operation_retention = TimeDelta::MAX,
+            _ => config.operation_retention = SignedDuration::MAX,
         }
         assert!(matches!(
             PostgresDataSubjectStore::new(pool.clone(), config),

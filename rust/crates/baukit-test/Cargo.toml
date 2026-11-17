@@ -18,7 +18,7 @@ workspace = true
 default = ["sqlx-postgres"]
 suite = ["dep:baukit-suite", "baukit-core/webhook-signature"]
 data-subject = ["dep:baukit-data-subject"]
-sqlx-postgres = ["dep:sqlx"]
+sqlx-postgres = ["dep:sqlx", "dep:jiff-sqlx"]
 
 [dependencies]
 async-trait = "0.1.92"
@@ -33,7 +33,8 @@ baukit-http.workspace = true
 baukit-integrations.workspace = true
 baukit-openapi.workspace = true
 baukit-ops.workspace = true
-chrono.workspace = true
+jiff.workspace = true
+jiff-sqlx = { workspace = true, optional = true }
 jsonschema.workspace = true
 pem.workspace = true
 regex.workspace = true

@@ -1,6 +1,7 @@
+use jiff_sqlx::{Timestamp as SqlTimestamp, ToSqlx};
 use std::{collections::BTreeSet, num::NonZeroU32};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sqlx::{PgConnection, PgExecutor, PgPool, Row as _, postgres::PgRow};
 use uuid::Uuid;
 
@@ -111,17 +112,13 @@ impl PostgresApiTokenStore {
             .map_err(ApiTokenStoreError::internal)
     }
 
-    async fn touch(
-        &self,
-        token_id: Uuid,
-        used_at: DateTime<Utc>,
-    ) -> Result<(), ApiTokenStoreError> {
+    async fn touch(&self, token_id: Uuid, used_at: Timestamp) -> Result<(), ApiTokenStoreError> {
         sqlx::query(
             "UPDATE api_tokens SET last_used_at = $2
              WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < $2)",
         )
         .bind(token_id)
-        .bind(used_at)
+        .bind(used_at.to_sqlx())
         .execute(&self.pool)
         .await
         .map_err(ApiTokenStoreError::internal)?;
@@ -132,7 +129,7 @@ impl PostgresApiTokenStore {
         &self,
         owner_id: Uuid,
         token_id: Uuid,
-        revoked_at: DateTime<Utc>,
+        revoked_at: Timestamp,
     ) -> Result<bool, ApiTokenStoreError> {
         let revoked = sqlx::query(
             "UPDATE api_tokens SET revoked_at = $3
@@ -140,7 +137,7 @@ impl PostgresApiTokenStore {
         )
         .bind(owner_id)
         .bind(token_id)
-        .bind(revoked_at)
+        .bind(revoked_at.to_sqlx())
         .execute(&self.pool)
         .await
         .map_err(ApiTokenStoreError::internal)?
@@ -187,7 +184,7 @@ impl ApiTokenStore for PostgresApiTokenStore {
     fn touch_last_used(
         &self,
         token_id: Uuid,
-        used_at: DateTime<Utc>,
+        used_at: Timestamp,
     ) -> ApiTokenStoreFuture<'_, Result<(), ApiTokenStoreError>> {
         Box::pin(self.touch(token_id, used_at))
     }
@@ -196,7 +193,7 @@ impl ApiTokenStore for PostgresApiTokenStore {
         &self,
         owner_id: Uuid,
         token_id: Uuid,
-        revoked_at: DateTime<Utc>,
+        revoked_at: Timestamp,
     ) -> ApiTokenStoreFuture<'_, Result<bool, ApiTokenStoreError>> {
         Box::pin(self.revoke_token(owner_id, token_id, revoked_at))
     }
@@ -240,7 +237,7 @@ where
 /// Returns any database error unchanged.
 pub async fn purge_inactive_api_tokens<'e, E>(
     executor: E,
-    cutoff: DateTime<Utc>,
+    cutoff: Timestamp,
     limit: NonZeroU32,
 ) -> Result<u64, sqlx::Error>
 where
@@ -255,7 +252,7 @@ where
              FOR UPDATE SKIP LOCKED
          )",
     )
-    .bind(cutoff)
+    .bind(cutoff.to_sqlx())
     .bind(i64::from(limit.get()))
     .execute(executor)
     .await?
@@ -266,7 +263,7 @@ where
 async fn lock_and_count_active(
     connection: &mut PgConnection,
     owner_id: Uuid,
-    at: DateTime<Utc>,
+    at: Timestamp,
 ) -> Result<i64, sqlx::Error> {
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1 || $2::text, 0))")
         .bind(OWNER_LOCK_NAMESPACE)
@@ -280,7 +277,7 @@ async fn lock_and_count_active(
            AND (expires_at IS NULL OR expires_at > $2)",
     )
     .bind(owner_id)
-    .bind(at)
+    .bind(at.to_sqlx())
     .fetch_one(connection)
     .await
 }
@@ -316,8 +313,8 @@ where
     .bind(&record.secret_hash)
     .bind(&record.display_prefix)
     .bind(record.grants.iter().map(String::as_str).collect::<Vec<_>>())
-    .bind(record.created_at)
-    .bind(record.expires_at)
+    .bind(record.created_at.to_sqlx())
+    .bind(record.expires_at.map(ToSqlx::to_sqlx))
     .fetch_one(executor)
     .await?;
     api_token(&row)
@@ -338,9 +335,15 @@ fn api_token(row: &PgRow) -> Result<ApiToken, sqlx::Error> {
         name: row.try_get("name")?,
         display_prefix: row.try_get("token_prefix")?,
         grants: grants.into_iter().collect::<BTreeSet<_>>(),
-        created_at: row.try_get("created_at")?,
-        expires_at: row.try_get("expires_at")?,
-        last_used_at: row.try_get("last_used_at")?,
-        revoked_at: row.try_get("revoked_at")?,
+        created_at: row.try_get::<SqlTimestamp, _>("created_at")?.to_jiff(),
+        expires_at: row
+            .try_get::<Option<SqlTimestamp>, _>("expires_at")?
+            .map(SqlTimestamp::to_jiff),
+        last_used_at: row
+            .try_get::<Option<SqlTimestamp>, _>("last_used_at")?
+            .map(SqlTimestamp::to_jiff),
+        revoked_at: row
+            .try_get::<Option<SqlTimestamp>, _>("revoked_at")?
+            .map(SqlTimestamp::to_jiff),
     })
 }

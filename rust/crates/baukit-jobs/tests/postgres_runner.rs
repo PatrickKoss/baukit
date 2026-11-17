@@ -1,4 +1,5 @@
 #![cfg(test)]
+use jiff::Timestamp;
 use std::{error::Error, future::pending, path::PathBuf, sync::Arc, time::Duration};
 
 use baukit_jobs::{
@@ -6,7 +7,7 @@ use baukit_jobs::{
     PostgresJobStore, WorkerConfig, WorkerRunner,
 };
 use baukit_runtime::ShutdownToken;
-use chrono::Utc;
+
 use serde_json::{Value, json};
 use sqlx::{PgPool, Row as _, postgres::PgPoolOptions};
 use tokio::sync::{Notify, mpsc};
@@ -39,7 +40,7 @@ async fn cancellation_drops_the_handler_transaction_before_recording_the_outcome
         // request first, then repeat it while the handler holds the lock.
         assert!(
             cancellation_store
-                .request_cancellation(job.id, Utc::now())
+                .request_cancellation(job.id, Timestamp::now())
                 .await?
         );
         handler.lock_allowed.notify_one();
@@ -49,7 +50,7 @@ async fn cancellation_drops_the_handler_transaction_before_recording_the_outcome
         let requesting_store = Arc::clone(&cancellation_store);
         let request = tokio::spawn(async move {
             requesting_store
-                .request_cancellation(job.id, Utc::now())
+                .request_cancellation(job.id, Timestamp::now())
                 .await
         });
         wait_for_blocked_request(&fixture.pool, handler_pid).await?;
@@ -270,9 +271,9 @@ async fn assert_outcome(
     assert_eq!(row.try_get::<i32, _>("attempts")?, 1);
     assert_eq!(row.try_get::<Option<String>, _>("locked_by")?, None);
     for field in ["locked_until", "cancel_requested_at"] {
-        assert_eq!(
-            row.try_get::<Option<chrono::DateTime<Utc>>, _>(field)?,
-            None
+        assert!(
+            row.try_get::<Option<jiff_sqlx::Timestamp>, _>(field)?
+                .is_none()
         );
     }
     assert_eq!(

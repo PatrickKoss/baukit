@@ -7,7 +7,7 @@ use baukit_auth::{
     erase_owner_api_tokens, insert_api_token, purge_inactive_api_tokens,
 };
 use baukit_test::PostgresTestContainer;
-use chrono::{DateTime, TimeDelta, TimeZone as _, Utc};
+use jiff::{SignedDuration, Timestamp};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -31,9 +31,9 @@ impl IdentityVerifier for RejectingVerifier {
     }
 }
 
-fn instant() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 9, 27, 12, 0, 0)
-        .single()
+fn instant() -> Timestamp {
+    jiff::tz::TimeZone::UTC
+        .to_timestamp(jiff::civil::datetime(2026, 9, 27, 12, 0, 0, 0))
         .expect("valid test instant")
 }
 
@@ -140,11 +140,11 @@ async fn the_active_token_limit_holds_under_concurrent_issue() -> Result<(), Tes
     let expired = tokens
         .issue_at(
             owner_id,
-            NewApiToken::new("Old").expiring_at(instant() + TimeDelta::minutes(1)),
+            NewApiToken::new("Old").expiring_at(instant() + SignedDuration::from_mins(1)),
             instant(),
         )
         .await?;
-    let later = instant() + TimeDelta::hours(1);
+    let later = instant() + SignedDuration::from_hours(1);
     assert!(!expired.token.is_active_at(later));
 
     let attempts = (0..CONCURRENT_ISSUES).map(|index| {
@@ -190,7 +190,7 @@ async fn a_revoked_token_stops_authenticating_and_only_its_owner_can_revoke_it()
     assert!(matches!(foreign, Err(ApiTokenError::NotFound)));
     tokens.verify_at(&issued.secret, instant()).await?;
 
-    let revoked_at = instant() + TimeDelta::minutes(5);
+    let revoked_at = instant() + SignedDuration::from_mins(5);
     tokens
         .revoke_at(owner_id, issued.token.id, revoked_at)
         .await?;
@@ -213,7 +213,7 @@ async fn an_expired_token_is_reported_and_its_last_use_is_left_alone() -> Result
     let (_container, pool) = fixture().await?;
     let tokens = service(&pool);
     let owner_id = owner(&pool).await?;
-    let expires_at = instant() + TimeDelta::hours(1);
+    let expires_at = instant() + SignedDuration::from_hours(1);
     let issued = tokens
         .issue_at(
             owner_id,
@@ -222,7 +222,7 @@ async fn an_expired_token_is_reported_and_its_last_use_is_left_alone() -> Result
         )
         .await?;
 
-    let used_at = instant() + TimeDelta::minutes(30);
+    let used_at = instant() + SignedDuration::from_mins(30);
     tokens.verify_at(&issued.secret, used_at).await?;
     let expired = tokens.verify_at(&issued.secret, expires_at).await;
     assert!(matches!(expired, Err(ApiTokenError::Expired)));
@@ -279,7 +279,7 @@ async fn concurrent_last_used_updates_keep_the_latest_instant() -> Result<(), Te
             let store = store.clone();
             tokio::spawn(async move {
                 store
-                    .touch_last_used(token_id, instant() + TimeDelta::seconds(offset))
+                    .touch_last_used(token_id, instant() + SignedDuration::from_secs(offset))
                     .await
             })
         })
@@ -287,7 +287,7 @@ async fn concurrent_last_used_updates_keep_the_latest_instant() -> Result<(), Te
     for touch in touches {
         touch.await??;
     }
-    let latest = instant() + TimeDelta::seconds(CONCURRENT_TOUCHES - 1);
+    let latest = instant() + SignedDuration::from_secs(CONCURRENT_TOUCHES - 1);
     assert_eq!(
         tokens.list_for_owner(owner_id).await?[0].last_used_at,
         Some(latest)
@@ -307,7 +307,7 @@ async fn purge_removes_only_tokens_inactive_before_the_cutoff() -> Result<(), Te
     let (_container, pool) = fixture().await?;
     let tokens = service(&pool);
     let owner_id = owner(&pool).await?;
-    let issue = |name: &'static str, expires_at: Option<DateTime<Utc>>| {
+    let issue = |name: &'static str, expires_at: Option<Timestamp>| {
         let tokens = tokens.clone();
         async move {
             let mut request = NewApiToken::new(name);
@@ -315,10 +315,12 @@ async fn purge_removes_only_tokens_inactive_before_the_cutoff() -> Result<(), Te
             tokens.issue_at(owner_id, request, instant()).await
         }
     };
-    let cutoff = instant() + TimeDelta::days(30);
+    let cutoff = instant() + SignedDuration::from_hours(24 * 30);
     let active = issue("Active", None).await?;
-    let expired_long_ago = issue("Expired", Some(instant() + TimeDelta::days(1))).await?;
-    let expires_after_cutoff = issue("Expiring", Some(cutoff + TimeDelta::days(1))).await?;
+    let expired_long_ago =
+        issue("Expired", Some(instant() + SignedDuration::from_hours(24))).await?;
+    let expires_after_cutoff =
+        issue("Expiring", Some(cutoff + SignedDuration::from_hours(24))).await?;
     let revoked_long_ago = issue("Revoked", None).await?;
     let revoked_recently = issue("Recently revoked", None).await?;
     tokens
@@ -423,7 +425,7 @@ async fn a_caller_owned_transaction_commits_a_verifiable_token() -> Result<(), T
         owner_id,
         NewApiToken::new("  Commit  ")
             .with_grants(["records:read"])
-            .expiring_at(instant() + TimeDelta::hours(1)),
+            .expiring_at(instant() + SignedDuration::from_hours(1)),
         instant(),
     )?;
     let record = prepared.record();

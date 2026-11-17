@@ -382,7 +382,7 @@ impl PlatformEventHandler for EntitlementEventHandler {
     async fn prepare_at(
         &self,
         event: &PlatformEvent,
-        now: chrono::DateTime<chrono::Utc>,
+        now: jiff::Timestamp,
     ) -> Result<Option<Arc<dyn PlatformEventHandler>>, PlatformError> {
         if let PlatformEventKind::EntitlementsChanged(changed) = event.kind() {
             if changed.product != self.product_id {
@@ -398,7 +398,7 @@ impl PlatformEventHandler for EntitlementEventHandler {
                 &changed.suite_subject,
                 &self.product_id,
                 revision,
-                now.timestamp(),
+                now.as_second(),
             )
             .await?;
             return Ok(Some(Arc::new(PreparedEntitlements {

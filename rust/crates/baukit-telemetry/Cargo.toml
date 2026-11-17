@@ -16,7 +16,7 @@ workspace = true
 
 [dependencies]
 baukit-core.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 opentelemetry.workspace = true

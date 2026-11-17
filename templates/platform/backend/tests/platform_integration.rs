@@ -78,7 +78,7 @@ fn issue_ticket(
     } else {
         requested
     };
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let claims = json!({"iss": issuer, "sub": subject, "aud": PRODUCT,
         "tier": "paid", "features": ["export"], "rev": 7, "iat": now, "exp": now + 3600});
     let header = URL_SAFE_NO_PAD.encode(br#"{"alg":"EdDSA","kid":"fixture","typ":"JWT"}"#);
@@ -102,7 +102,7 @@ fn settings(base: &str) -> ProductConfig {
 }
 
 fn request(body: &str, secret: &str) -> Result<Request<Body>, axum::http::Error> {
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     Request::post("/platform/inbound")
         .header("content-type", "application/json")
         .header("x-suite-source", "identity_hub")
@@ -128,7 +128,7 @@ async fn signed_fixture_event_reads_entitlements_and_retains_receipts() -> Resul
     config.validate()?;
     let services = compose(pool.clone(), &config)?;
     let mut event: Value = serde_json::from_str(include_str!("fixtures/platform-event.json"))?;
-    event["occurredAt"] = json!(chrono::Utc::now().to_rfc3339());
+    event["occurredAt"] = json!(jiff::Timestamp::now().to_string());
     let body = serde_json::to_string(&event)?;
     let response = services
         .router
@@ -156,7 +156,7 @@ async fn signed_fixture_event_reads_entitlements_and_retains_receipts() -> Resul
         .await?;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     let cache = PostgresEntitlementCache::new(pool.clone());
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     assert_verified_entitlements(&cache, &services, now).await?;
     let receipts: i64 = sqlx::query_scalar("SELECT count(*) FROM platform_inbound_receipts")
         .fetch_one(&pool)
@@ -220,7 +220,7 @@ async fn run_receipt_purge(pool: sqlx::PgPool) -> Result<(), Box<dyn Error>> {
     use {{ context.app_crate }}_worker::retention::{PURGE_JOB_TYPE, RetentionJobHandler};
     use std::time::Duration;
 
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let interval = FixedUtcInterval::new(Duration::from_secs(24 * 60 * 60))?;
     let slot = interval.slot_at(now)?;
     let handler = Arc::new(RetentionJobHandler::new(pool.clone())?);
@@ -259,15 +259,15 @@ async fn run_receipt_purge(pool: sqlx::PgPool) -> Result<(), Box<dyn Error>> {
     shutdown.trigger();
     task.await??;
     finished??;
-    let next = interval.next_slot(slot, chrono::Utc::now())?;
-    let pending: Vec<(String, chrono::DateTime<chrono::Utc>, Value)> = sqlx::query_as(
+    let next = interval.next_slot(slot, jiff::Timestamp::now())?;
+    let pending: Vec<(String, jiff_sqlx::Timestamp, Value)> = sqlx::query_as(
         "SELECT idempotency_key, run_after, payload FROM job_outbox WHERE job_type = $1 AND status = 'pending'",
     ).bind(PURGE_JOB_TYPE).fetch_all(&pool).await?;
     let [(key, run_after, payload)] = pending.as_slice() else {
         return Err(format!("expected one pending purge, found {}", pending.len()).into());
     };
     assert_eq!(*key, next.identifier());
-    assert_eq!(*run_after, next.starts_at());
+    assert_eq!(run_after.to_jiff(), next.starts_at());
     assert_eq!(payload.get("slot"), Some(&json!(next.starts_at())));
     assert!(!replica.enqueue_initial(now).await?.created);
     let old: bool = sqlx::query_scalar(

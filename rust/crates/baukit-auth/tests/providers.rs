@@ -283,7 +283,7 @@ async fn clerk_sessions_take_authenticated_at_from_the_sign_in_time_claim()
         .await?;
     assert_eq!(
         present.authenticated_at(),
-        chrono::DateTime::from_timestamp(signed_in, 0)
+        jiff::Timestamp::from_second(signed_in).ok()
     );
 
     let missing = clerk.verify(&server.mint(&base.clone())?).await?;
@@ -294,7 +294,7 @@ async fn clerk_sessions_take_authenticated_at_from_the_sign_in_time_claim()
         .await?;
     assert_eq!(
         auth_time_only.authenticated_at(),
-        chrono::DateTime::from_timestamp(signed_in, 0)
+        jiff::Timestamp::from_second(signed_in).ok()
     );
 
     for malformed in [

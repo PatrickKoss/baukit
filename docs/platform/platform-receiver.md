@@ -75,7 +75,7 @@ return success without calling the handler again. Handler failure or cancellatio
 back both writes and receipt. Reusing an event ID with different raw bytes returns
 409. Retain receipts for at least 30 days to match the hub's delivery retention.
 For a longer operational replay window, keep them longer. Schedule
-`inbox.purge_received_before(Utc::now() - TimeDelta::days(30), 1000).await?`
+`inbox.purge_received_before(Timestamp::now() - SignedDuration::from_hours(30 * 24), 1000).await?`
 in a maintenance job, repeating batches until it returns zero. The cutoff is
 exclusive and the batch must be positive. An index on `received_at` supports the
 cleanup. Pruning receipts allows replay. Receipt rows retain only the event ID,

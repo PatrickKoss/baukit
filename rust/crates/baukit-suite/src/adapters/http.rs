@@ -2,9 +2,7 @@ pub use super::http_support::SuiteHttpState;
 use super::http_support::*;
 use crate::domain::*;
 use crate::error_codes::SuiteErrorCode;
-use crate::services::{
-    AuthorizationDeny, AuthorizationRequest, SignedHeaders, SuiteApi, SuiteLinkView, SuiteUser,
-};
+use crate::services::{AuthorizationDeny, AuthorizationRequest, SignedHeaders, SuiteLinkView};
 use axum::{
     Json,
     body::Bytes,
@@ -13,7 +11,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use baukit_http::ApiPath;
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -89,13 +87,13 @@ pub struct SuiteLinkResponse {
     #[schema(value_type = SuiteDeliveryHealth)]
     delivery_health: DeliveryHealth,
     consecutive_failures: u32,
-    last_delivery_at: Option<DateTime<Utc>>,
-    last_failure_at: Option<DateTime<Utc>>,
+    last_delivery_at: Option<Timestamp>,
+    last_failure_at: Option<Timestamp>,
     last_failure_code: Option<SuiteDeliveryFailureCode>,
-    last_received_at: Option<DateTime<Utc>>,
-    replay_earliest: NaiveDate,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    last_received_at: Option<Timestamp>,
+    replay_earliest: Date,
+    created_at: Timestamp,
+    updated_at: Timestamp,
 }
 impl From<SuiteLinkView> for SuiteLinkResponse {
     fn from(view: SuiteLinkView) -> Self {
@@ -177,7 +175,7 @@ struct SuiteEnvelope {
     #[serde(rename = "type")]
     event_type: String,
     schema_version: u32,
-    occurred_at: DateTime<Utc>,
+    occurred_at: Timestamp,
     user_id: String,
     source_app: String,
     payload: std::collections::BTreeMap<String, serde_json::Value>,
@@ -199,8 +197,8 @@ struct DeliveryResponse {
     status: String,
     attempt_count: u32,
     last_failure_code: Option<SuiteDeliveryFailureCode>,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
+    created_at: Timestamp,
+    updated_at: Timestamp,
 }
 #[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -224,7 +222,7 @@ struct PatchRequest {
 #[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ReplayRequest {
-    since: NaiveDate,
+    since: Date,
 }
 #[derive(Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -260,12 +258,6 @@ struct PreviewQuery {
     hint_domain: Option<String>,
     client: String,
     hint: Option<String>,
-}
-fn api(state: &SuiteHttpState) -> Result<&dyn SuiteApi, HttpError> {
-    Ok(state.api.as_ref())
-}
-fn user(context: SuiteUser) -> Result<SuiteUser, HttpError> {
-    Ok(context)
 }
 fn signed(headers: &HeaderMap) -> Result<SignedHeaders, HttpError> {
     SignedHeaders::parse(
@@ -351,7 +343,7 @@ async fn start(
                 return_url: r.return_url,
                 state_nonce: r.state_nonce,
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     Ok((
@@ -398,7 +390,7 @@ async fn complete(
         StatusCode::CREATED,
         Json(
             api(&state)?
-                .complete(user(context)?, id, r.code, Utc::now())
+                .complete(user(context)?, id, r.code, Timestamp::now())
                 .await?
                 .into(),
         ),
@@ -488,7 +480,7 @@ async fn reenable(
 ) -> Result<Json<SuiteLinkResponse>, HttpError> {
     Ok(Json(
         api(&state)?
-            .reenable(user(context)?.id, id, Utc::now())
+            .reenable(user(context)?.id, id, Timestamp::now())
             .await?
             .into(),
     ))
@@ -528,7 +520,7 @@ async fn update(
     })?;
     Ok(Json(
         api(&state)?
-            .update(user(context)?.id, id, r.share_xp, mode, Utc::now())
+            .update(user(context)?.id, id, r.share_xp, mode, Timestamp::now())
             .await?
             .into(),
     ))
@@ -559,7 +551,7 @@ async fn disconnect(
     ApiPath(id): ApiPath<Uuid>,
 ) -> Result<StatusCode, HttpError> {
     api(&state)?
-        .disconnect(user(context)?.id, id, Utc::now())
+        .disconnect(user(context)?.id, id, Timestamp::now())
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
@@ -590,7 +582,8 @@ async fn test(
     Authenticated(context): Authenticated,
     ApiPath(id): ApiPath<Uuid>,
 ) -> Result<StatusCode, HttpError> {
-    api(&state)?.test(user(context)?.id, id, Utc::now()).await?;
+    let now = Timestamp::now();
+    api(&state)?.test(user(context)?.id, id, now).await?;
     Ok(StatusCode::ACCEPTED)
 }
 
@@ -627,7 +620,7 @@ async fn replay(
     ApiJson(r): ApiJson<ReplayRequest>,
 ) -> Result<StatusCode, HttpError> {
     api(&state)?
-        .replay(user(context)?.id, id, r.since, Utc::now())
+        .replay(user(context)?.id, id, r.since, Timestamp::now())
         .await?;
     Ok(StatusCode::ACCEPTED)
 }
@@ -746,7 +739,7 @@ async fn authorize(
                 code_challenge: r.code_challenge,
                 hint: r.hint,
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     Ok(Json(RedirectResponse {
@@ -830,7 +823,7 @@ async fn exchange(
                 initiator_suite_subject: r.initiator_suite_subject,
                 initiator_display_name: r.initiator_display_name,
             },
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     Ok((
@@ -867,7 +860,8 @@ async fn callback(
     State(state): State<SuiteHttpState>,
     Query(q): Query<LinkCallbackQuery>,
 ) -> Result<Response, HttpError> {
-    let r = api(&state)?.callback(q, Utc::now()).await.map_err(|e| {
+    let now = Timestamp::now();
+    let r = api(&state)?.callback(q, now).await.map_err(|e| {
         if e.code() == SuiteErrorCode::SuiteCodeInvalid.as_str() {
             HttpError::bad_request_with_code(
                 SuiteErrorCode::SuiteCodeInvalid,
@@ -921,7 +915,7 @@ async fn revoke(
             signed(&headers)?,
             body.map_err(|_| HttpError::from(crate::services::SuiteServiceError::PayloadInvalid))?
                 .to_vec(),
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     Ok(StatusCode::NO_CONTENT)
@@ -963,7 +957,7 @@ async fn inbound(
             signed(&headers)?,
             body.map_err(|_| HttpError::from(crate::services::SuiteServiceError::PayloadInvalid))?
                 .to_vec(),
-            Utc::now(),
+            Timestamp::now(),
         )
         .await?;
     Ok((

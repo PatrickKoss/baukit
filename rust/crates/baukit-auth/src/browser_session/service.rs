@@ -9,7 +9,7 @@ use std::{
 
 use aws_lc_rs::rand::SystemRandom;
 use baukit_credential_vault::CredentialCipher;
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -27,21 +27,21 @@ use super::{
 pub(crate) const GRACE_WINDOW: Duration = Duration::from_secs(10);
 
 pub(crate) trait Clock: Send + Sync {
-    fn now(&self) -> DateTime<Utc>;
+    fn now(&self) -> Timestamp;
 }
 
 pub(crate) struct SystemClock;
 
 impl Clock for SystemClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
+    fn now(&self) -> Timestamp {
+        Timestamp::now()
     }
 }
 
 /// An access token for the browser, with the cookie to set when one rotated.
 pub(crate) struct Issued {
     pub(crate) access_token: Zeroizing<String>,
-    pub(crate) expires_at: DateTime<Utc>,
+    pub(crate) expires_at: Timestamp,
     pub(crate) subject: String,
     pub(crate) cookie: Option<(SessionCredential, Duration)>,
 }
@@ -97,8 +97,8 @@ pub(crate) struct SessionService {
 }
 
 struct Lifetimes {
-    idle_expires_at: DateTime<Utc>,
-    absolute_expires_at: DateTime<Utc>,
+    idle_expires_at: Timestamp,
+    absolute_expires_at: Timestamp,
     max_age: Duration,
 }
 
@@ -207,7 +207,7 @@ impl SessionService {
         row: &SessionRow,
         refresh_token: &str,
         tokens: TokenSet,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Issued, SessionError> {
         if let Some(id_token) = &tokens.id_token
             && self.idp.subject(id_token).await.map_err(idp_error)? != row.subject
@@ -255,7 +255,7 @@ impl SessionService {
         mut transaction: Box<dyn SessionTransaction>,
         row: &SessionRow,
         successor: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Issued, SessionError> {
         let successor = transaction.lock(successor).await?;
         if let Some(successor) = successor
@@ -347,8 +347,8 @@ impl SessionService {
 
     fn lifetimes(
         &self,
-        now: DateTime<Utc>,
-        absolute_expires_at: DateTime<Utc>,
+        now: Timestamp,
+        absolute_expires_at: Timestamp,
         refresh_expires_in: Option<Duration>,
     ) -> Lifetimes {
         let mut idle = self.settings.idle_timeout;
@@ -364,9 +364,7 @@ impl SessionService {
             }
             idle = idle.min(refresh_lifetime);
         }
-        let remaining = (absolute_expires_at - now)
-            .to_std()
-            .unwrap_or(Duration::ZERO);
+        let remaining = Duration::try_from(absolute_expires_at - now).unwrap_or(Duration::ZERO);
         let max_age = idle.min(remaining);
         Lifetimes {
             idle_expires_at: after(now, max_age),
@@ -386,8 +384,8 @@ impl SessionService {
         subject: &str,
         refresh_token: &str,
         id_token: Option<&str>,
-        grace: Option<(&str, DateTime<Utc>)>,
-        now: DateTime<Utc>,
+        grace: Option<(&str, Timestamp)>,
+        now: Timestamp,
         lifetimes: &Lifetimes,
     ) -> Result<SessionRow, CryptoError> {
         let mut fields = vec![(REFRESH_TOKEN_FIELD, refresh_token)];
@@ -438,9 +436,9 @@ async fn locked_match(
 }
 
 /// Adds a duration, saturating at the latest representable instant.
-fn after(instant: DateTime<Utc>, duration: Duration) -> DateTime<Utc> {
-    TimeDelta::from_std(duration)
+fn after(instant: Timestamp, duration: Duration) -> Timestamp {
+    SignedDuration::try_from(duration)
         .ok()
-        .and_then(|delta| instant.checked_add_signed(delta))
-        .unwrap_or(DateTime::<Utc>::MAX_UTC)
+        .and_then(|delta| instant.checked_add(delta).ok())
+        .unwrap_or(Timestamp::MAX)
 }

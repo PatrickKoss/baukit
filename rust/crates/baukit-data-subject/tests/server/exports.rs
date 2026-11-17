@@ -1,4 +1,5 @@
 use super::*;
+use jiff::Timestamp;
 
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
@@ -495,15 +496,19 @@ impl HttpExportClient {
             .map(|byte| format!("{byte:02x}"))
             .collect();
         assert_eq!(sha256, part.sha256);
-        let (stored, hash, length, expires_at): (Vec<u8>, String, i64, chrono::DateTime<Utc>) = sqlx::query_as("SELECT json_bytes, sha256, bytes, expires_at FROM data_subject_export_parts WHERE operation_id = $1 AND part_number = $2")
+        let (stored, hash, length, expires_at): (Vec<u8>, String, i64, jiff_sqlx::Timestamp) = sqlx::query_as("SELECT json_bytes, sha256, bytes, expires_at FROM data_subject_export_parts WHERE operation_id = $1 AND part_number = $2")
             .bind(operation_id).bind(i64::from(part.part_number)).fetch_one(&f.pool).await?;
+        let expires_at = expires_at.to_jiff();
         assert_eq!(stored.as_slice(), bytes.as_ref());
         assert_eq!(hash, sha256);
         assert_eq!(
             u64::try_from(length).expect("stored length is non-negative"),
             part.bytes
         );
-        assert_eq!(expires_at, payload.completed_at + TimeDelta::days(7));
+        assert_eq!(
+            expires_at,
+            payload.completed_at + SignedDuration::from_hours(24 * 7)
+        );
         Ok(bytes.to_vec())
     }
 }
@@ -616,7 +621,7 @@ async fn expired_parts_purge_in_bounded_batches_without_removing_receipts_or_oth
 -> TestResult {
     let f = Fixture::with_exports(|config| {
         config.limits.max_export_part_bytes = 110;
-        config.export_retention = TimeDelta::hours(2);
+        config.export_retention = SignedDuration::from_hours(2);
     })
     .await?;
     let token = f.token("privacy", "data-subject.export")?;
@@ -633,12 +638,12 @@ async fn expired_parts_purge_in_bounded_batches_without_removing_receipts_or_oth
     assert_eq!(f.operation_count().await?, 2);
     assert!(
         f.store
-            .export_part("privacy", retained.operation_id, 1, Utc::now())
+            .export_part("privacy", retained.operation_id, 1, Timestamp::now())
             .await?
             .is_some()
     );
     sqlx::query("UPDATE data_subject_operations SET purge_after = now() - interval '1 second' WHERE id = $1").bind(retained.operation_id).execute(&f.pool).await?;
-    assert_eq!(f.store.purge_expired(Utc::now(), 1).await?, 1);
+    assert_eq!(f.store.purge_expired(Timestamp::now(), 1).await?, 1);
     assert_eq!(
         sqlx::query_scalar::<_, i64>("SELECT count(*) FROM data_subject_export_parts")
             .fetch_one(&f.pool)
@@ -662,11 +667,13 @@ async fn assert_invalid_parts_and_part_expiry(
         )
         .await?;
     }
-    let (earliest, latest): (chrono::DateTime<Utc>, chrono::DateTime<Utc>) = sqlx::query_as("SELECT min(expires_at), max(expires_at) FROM data_subject_export_parts WHERE operation_id = $1")
+    let (earliest, latest): (jiff_sqlx::Timestamp, jiff_sqlx::Timestamp) = sqlx::query_as("SELECT min(expires_at), max(expires_at) FROM data_subject_export_parts WHERE operation_id = $1")
         .bind(complete.operation_id).fetch_one(&f.pool).await?;
+    let earliest = earliest.to_jiff();
+    let latest = latest.to_jiff();
     assert_eq!(
         earliest,
-        complete.completed_at.ok_or("completion")? + TimeDelta::hours(2)
+        complete.completed_at.ok_or("completion")? + SignedDuration::from_hours(2)
     );
     assert_eq!(earliest, latest);
     assert_eq!(
@@ -690,7 +697,7 @@ async fn assert_expired_parts_purge_one_per_batch(
             codes::EXPORT_EXPIRED,
         )
         .await?;
-        assert_eq!(f.store.purge_expired(Utc::now(), 1).await?, 0);
+        assert_eq!(f.store.purge_expired(Timestamp::now(), 1).await?, 0);
         assert_eq!(
             sqlx::query_scalar::<_, i64>(
                 "SELECT count(*) FROM data_subject_export_parts WHERE operation_id = $1"

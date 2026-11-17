@@ -228,7 +228,7 @@ a product prefix or labels.
    ) -> Result<AppliedOutcome, SuiteStoreError>;
 
    async fn SuiteReplaySource::replay_since(
-       &self, connection: &mut PgConnection, owner_id: Uuid, since: NaiveDate,
+       &self, connection: &mut PgConnection, owner_id: Uuid, since: jiff::civil::Date,
    ) -> Result<Vec<SuiteEvent>, SuiteStoreError>;
 
    async fn SuiteIdentitySource::identity(

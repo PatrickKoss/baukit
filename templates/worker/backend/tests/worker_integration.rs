@@ -96,9 +96,10 @@ async fn retention_job_purges_expired_browser_sessions() -> Result<(), Box<dyn E
     let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
     let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
     let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
-    let now = chrono::Utc::now();
-    insert_browser_session(&pool, "expired", now - chrono::TimeDelta::days(3)).await?;
-    insert_browser_session(&pool, "active", now + chrono::TimeDelta::days(3)).await?;
+    let now = jiff::Timestamp::now();
+    let three_days = jiff::SignedDuration::from_hours(72);
+    insert_browser_session(&pool, "expired", now - three_days).await?;
+    insert_browser_session(&pool, "active", now + three_days).await?;
 
     let handler = Arc::new(RetentionJobHandler::new(pool.clone())?);
     let job_id = handler.enqueue_initial(now).await?.job.id;
@@ -127,7 +128,7 @@ async fn retention_job_purges_expired_browser_sessions() -> Result<(), Box<dyn E
 async fn insert_browser_session(
     pool: &sqlx::PgPool,
     subject: &str,
-    expires_at: chrono::DateTime<chrono::Utc>,
+    expires_at: jiff::Timestamp,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO baukit_auth_browser_sessions (
@@ -140,7 +141,7 @@ async fn insert_browser_session(
     .bind(uuid::Uuid::new_v4())
     .bind(subject)
     .bind(vec![0_u8; 16])
-    .bind(expires_at)
+    .bind(jiff_sqlx::Timestamp::from(expires_at))
     .execute(pool)
     .await?;
     Ok(())

@@ -1,6 +1,8 @@
+use jiff::SignedDuration;
+use jiff_sqlx::{Timestamp as SqlTimestamp, ToSqlx};
 use std::{future::Future, pin::Pin, time::Duration};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sqlx::{PgConnection, PgPool, Postgres, Row as _, Transaction};
 use uuid::Uuid;
 
@@ -65,7 +67,7 @@ pub trait JobStore: Send + Sync + 'static {
         &'a self,
         worker_id: &'a str,
         job_types: &'a [&'a str],
-        now: DateTime<Utc>,
+        now: Timestamp,
         lease_for: Duration,
     ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>>;
 
@@ -74,7 +76,7 @@ pub trait JobStore: Send + Sync + 'static {
         &'a self,
         job_id: Uuid,
         worker_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> StoreFuture<'a, Result<bool, StoreError>>;
 
     /// Records a failed attempt, retrying only when permitted and attempts remain.
@@ -83,9 +85,9 @@ pub trait JobStore: Send + Sync + 'static {
         job_id: Uuid,
         worker_id: &'a str,
         retryable: bool,
-        retry_at: DateTime<Utc>,
+        retry_at: Timestamp,
         error: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>>;
 
     /// Returns whether cancellation was requested for a running job.
@@ -95,7 +97,7 @@ pub trait JobStore: Send + Sync + 'static {
     fn request_cancellation(
         &self,
         job_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> StoreFuture<'_, Result<bool, StoreError>>;
 
     /// Marks a currently owned job cancelled.
@@ -103,15 +105,12 @@ pub trait JobStore: Send + Sync + 'static {
         &'a self,
         job_id: Uuid,
         worker_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> StoreFuture<'a, Result<bool, StoreError>>;
 
     /// Returns the age of the oldest pending job of any type, or zero for an
     /// empty queue.
-    fn oldest_pending_age(
-        &self,
-        now: DateTime<Utc>,
-    ) -> StoreFuture<'_, Result<Duration, StoreError>>;
+    fn oldest_pending_age(&self, now: Timestamp) -> StoreFuture<'_, Result<Duration, StoreError>>;
 
     /// Probes the same locking query shape used to claim work without claiming it.
     fn ready(&self) -> StoreFuture<'_, Result<(), StoreError>>;
@@ -303,7 +302,7 @@ impl PostgresJobStore {
         transaction: &mut Transaction<'_, Postgres>,
         job_id: Uuid,
         worker_id: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<bool, StoreError> {
         validate_worker_id(worker_id)?;
         finish_on(
@@ -335,7 +334,7 @@ impl PostgresJobStore {
         transaction: &mut Transaction<'_, Postgres>,
         job_id: Uuid,
         worker_id: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<bool, StoreError> {
         validate_worker_id(worker_id)?;
         sqlx::query_scalar::<_, Uuid>(concat!(
@@ -345,7 +344,7 @@ impl PostgresJobStore {
         ))
         .bind(job_id)
         .bind(worker_id)
-        .bind(now)
+        .bind(now.to_sqlx())
         .bind(false)
         .fetch_optional(&mut **transaction)
         .await
@@ -369,7 +368,7 @@ impl PostgresJobStore {
         transaction: &mut Transaction<'_, Postgres>,
         job_type: &str,
         key: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<CancellationOutcome, StoreError> {
         validate_text("job_type", job_type, MAX_JOB_TYPE_LENGTH)?;
         validate_text("idempotency_key", key, MAX_IDEMPOTENCY_KEY_LENGTH)?;
@@ -392,7 +391,7 @@ impl PostgresJobStore {
         transaction: &mut Transaction<'_, Postgres>,
         job_type: &str,
         prefix: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<CancellationOutcome, StoreError> {
         validate_text("job_type", job_type, MAX_JOB_TYPE_LENGTH)?;
         validate_text("idempotency_key_prefix", prefix, MAX_IDEMPOTENCY_KEY_LENGTH)?;
@@ -437,9 +436,9 @@ impl PostgresJobStore {
             DELETE FROM job_outbox AS job USING candidates
             WHERE job.id = candidates.id RETURNING job.status"#,
         )
-        .bind(cutoffs.succeeded_before)
-        .bind(cutoffs.cancelled_before)
-        .bind(cutoffs.failed_before)
+        .bind(cutoffs.succeeded_before.to_sqlx())
+        .bind(cutoffs.cancelled_before.to_sqlx())
+        .bind(cutoffs.failed_before.to_sqlx())
         .bind(i64::from(batch_size))
         .bind(&self.retained_failed_kinds)
         .bind(&self.retained_kinds)
@@ -480,7 +479,7 @@ impl JobStore for PostgresJobStore {
         &'a self,
         worker_id: &'a str,
         job_types: &'a [&'a str],
-        now: DateTime<Utc>,
+        now: Timestamp,
         lease_for: Duration,
     ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>> {
         let pool = self.pool.clone();
@@ -497,10 +496,10 @@ impl JobStore for PostgresJobStore {
                     "lease duration must be non-zero".to_owned(),
                 ));
             }
-            let lease_for = chrono::Duration::from_std(lease_for).map_err(|_| {
+            let lease_for = SignedDuration::try_from(lease_for).map_err(|_| {
                 StoreError::InvalidInput("lease duration is out of range".to_owned())
             })?;
-            let locked_until = now.checked_add_signed(lease_for).ok_or_else(|| {
+            let locked_until = now.checked_add(lease_for).map_err(|_| {
                 StoreError::InvalidInput("lease deadline is out of range".to_owned())
             })?;
             let mut transaction = pool.begin().await.map_err(StoreError::database)?;
@@ -508,14 +507,14 @@ impl JobStore for PostgresJobStore {
             sqlx::query(
                 "UPDATE job_outbox SET status = 'cancelled', locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, updated_at = $1 WHERE status = 'running' AND locked_until <= $1 AND cancel_requested_at IS NOT NULL",
             )
-            .bind(now)
+            .bind(now.to_sqlx())
             .execute(&mut *transaction)
             .await
             .map_err(StoreError::database)?;
             sqlx::query(
                 "UPDATE job_outbox SET status = 'failed', locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = COALESCE(last_error, 'worker lease expired after final attempt'), failure_reason = 'attempts_exhausted', updated_at = $1 WHERE status = 'running' AND locked_until <= $1 AND attempts >= max_attempts",
             )
-            .bind(now)
+            .bind(now.to_sqlx())
             .execute(&mut *transaction)
             .await
             .map_err(StoreError::database)?;
@@ -523,9 +522,9 @@ impl JobStore for PostgresJobStore {
             let row = sqlx::query(
                 "WITH candidate AS (SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND job_type = ANY($4) AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE job_outbox AS job SET status = 'running', pending_dedupe_key = NULL, attempts = job.attempts + 1, locked_by = $2, locked_until = $3, last_error = NULL, failure_reason = NULL, updated_at = $1 FROM candidate WHERE job.id = candidate.id RETURNING job.id, job.job_type, job.payload, job.status, job.attempts, job.max_attempts, job.run_after, job.locked_by, job.locked_until, job.idempotency_key, job.dedupe_key, job.pending_dedupe_key, job.last_error, job.failure_reason, job.cancel_requested_at, job.created_at, job.updated_at",
             )
-                .bind(now)
+                .bind(now.to_sqlx())
                 .bind(worker_id)
-                .bind(locked_until)
+                .bind(locked_until.to_sqlx())
                 .bind(job_types)
                 .fetch_optional(&mut *transaction)
                 .await
@@ -539,7 +538,7 @@ impl JobStore for PostgresJobStore {
         &'a self,
         job_id: Uuid,
         worker_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> StoreFuture<'a, Result<bool, StoreError>> {
         Box::pin(async move {
             validate_worker_id(worker_id)?;
@@ -561,9 +560,9 @@ impl JobStore for PostgresJobStore {
         job_id: Uuid,
         worker_id: &'a str,
         retryable: bool,
-        retry_at: DateTime<Utc>,
+        retry_at: Timestamp,
         error: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>> {
         Box::pin(async move {
             validate_worker_id(worker_id)?;
@@ -573,9 +572,9 @@ impl JobStore for PostgresJobStore {
             .bind(job_id)
             .bind(worker_id)
             .bind(retryable)
-            .bind(retry_at)
+            .bind(retry_at.to_sqlx())
             .bind(bound_error(error))
-            .bind(now)
+            .bind(now.to_sqlx())
             .fetch_optional(&self.pool)
             .await
             .map_err(StoreError::database)?;
@@ -606,7 +605,7 @@ impl JobStore for PostgresJobStore {
     fn request_cancellation(
         &self,
         job_id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> StoreFuture<'_, Result<bool, StoreError>> {
         Box::pin(async move {
             sqlx::query(concat!(
@@ -614,7 +613,7 @@ impl JobStore for PostgresJobStore {
                 cancellation_assignments!(),
                 " WHERE id = $2 AND status IN ('pending', 'running')"
             ))
-            .bind(now)
+            .bind(now.to_sqlx())
             .bind(job_id)
             .execute(&self.pool)
             .await
@@ -627,7 +626,7 @@ impl JobStore for PostgresJobStore {
         &'a self,
         job_id: Uuid,
         worker_id: &'a str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> StoreFuture<'a, Result<bool, StoreError>> {
         Box::pin(async move {
             validate_worker_id(worker_id)?;
@@ -644,15 +643,12 @@ impl JobStore for PostgresJobStore {
         })
     }
 
-    fn oldest_pending_age(
-        &self,
-        now: DateTime<Utc>,
-    ) -> StoreFuture<'_, Result<Duration, StoreError>> {
+    fn oldest_pending_age(&self, now: Timestamp) -> StoreFuture<'_, Result<Duration, StoreError>> {
         Box::pin(async move {
             let seconds = sqlx::query_scalar::<_, f64>(
                 "SELECT COALESCE(GREATEST(0, EXTRACT(EPOCH FROM ($1 - MIN(created_at)))), 0)::double precision FROM job_outbox WHERE status = 'pending'",
             )
-            .bind(now)
+            .bind(now.to_sqlx())
             .fetch_one(&self.pool)
             .await
             .map_err(StoreError::database)?;
@@ -668,7 +664,7 @@ impl JobStore for PostgresJobStore {
             sqlx::query(
                 "SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND job_type = ANY($2) AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 0",
             )
-            .bind(Utc::now())
+            .bind(jiff_sqlx::ToSqlx::to_sqlx(Timestamp::now()))
             .bind(no_job_types)
             .fetch_all(&mut *transaction)
             .await
@@ -698,9 +694,9 @@ async fn enqueue_on(
         .bind(&job.job_type)
         .bind(&job.payload)
         .bind(max_attempts)
-        .bind(job.run_after)
+        .bind(job.run_after.to_sqlx())
         .bind(&job.idempotency_key)
-        .bind(job.created_at)
+        .bind(job.created_at.to_sqlx())
         .fetch_optional(&mut *connection)
         .await
         .map_err(StoreError::database)?;
@@ -759,9 +755,9 @@ async fn enqueue_deduplicated_on(
             .bind(&job.job_type)
             .bind(&job.payload)
             .bind(max_attempts)
-            .bind(job.run_after)
+            .bind(job.run_after.to_sqlx())
             .bind(dedupe_key)
-            .bind(job.created_at)
+            .bind(job.created_at.to_sqlx())
             .fetch_optional(&mut *connection)
             .await
             .map_err(StoreError::database)?;
@@ -796,7 +792,7 @@ async fn finish_on(
     worker_id: &str,
     status: JobStatus,
     error: Option<&str>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<bool, StoreError> {
     let status = status_name(status);
     let allow_cancellation = status == "cancelled";
@@ -806,7 +802,7 @@ async fn finish_on(
     ))
     .bind(job_id)
     .bind(worker_id)
-    .bind(now)
+    .bind(now.to_sqlx())
     .bind(allow_cancellation)
     .bind(status)
     .bind(error.map(bound_error))
@@ -820,14 +816,14 @@ async fn request_cancellation_by_key_on(
     connection: &mut PgConnection,
     job_type: &str,
     key: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<CancellationOutcome, StoreError> {
     let statuses: Vec<String> = sqlx::query_scalar(concat!(
         "UPDATE job_outbox SET ",
         cancellation_assignments!(),
         " WHERE job_type = $2 AND idempotency_key = $3 AND status IN ('pending', 'running') RETURNING status"
     ))
-    .bind(now)
+    .bind(now.to_sqlx())
     .bind(job_type)
     .bind(key)
     .fetch_all(connection)
@@ -840,14 +836,14 @@ async fn request_cancellation_by_key_prefix_on(
     connection: &mut PgConnection,
     job_type: &str,
     prefix: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<CancellationOutcome, StoreError> {
     let statuses: Vec<String> = sqlx::query_scalar(concat!(
         "UPDATE job_outbox SET ",
         cancellation_assignments!(),
         " WHERE job_type = $2 AND left(idempotency_key, char_length($3)) = $3 AND status IN ('pending', 'running') RETURNING status"
     ))
-    .bind(now)
+    .bind(now.to_sqlx())
     .bind(job_type)
     .bind(prefix)
     .fetch_all(connection)
@@ -885,9 +881,11 @@ fn row_to_job(row: &sqlx::postgres::PgRow) -> Result<Job, StoreError> {
         max_attempts: u32::try_from(max_attempts).map_err(|_| {
             StoreError::InvalidData(format!("negative maximum attempt count {max_attempts}"))
         })?,
-        run_after: row.try_get("run_after")?,
+        run_after: row.try_get::<SqlTimestamp, _>("run_after")?.to_jiff(),
         locked_by: row.try_get("locked_by")?,
-        locked_until: row.try_get("locked_until")?,
+        locked_until: row
+            .try_get::<Option<SqlTimestamp>, _>("locked_until")?
+            .map(SqlTimestamp::to_jiff),
         idempotency_key: row.try_get("idempotency_key")?,
         dedupe_key: row.try_get("dedupe_key")?,
         pending_dedupe_key: row.try_get("pending_dedupe_key")?,
@@ -897,9 +895,11 @@ fn row_to_job(row: &sqlx::postgres::PgRow) -> Result<Job, StoreError> {
             .as_deref()
             .map(parse_failure_reason)
             .transpose()?,
-        cancel_requested_at: row.try_get("cancel_requested_at")?,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
+        cancel_requested_at: row
+            .try_get::<Option<SqlTimestamp>, _>("cancel_requested_at")?
+            .map(SqlTimestamp::to_jiff),
+        created_at: row.try_get::<SqlTimestamp, _>("created_at")?.to_jiff(),
+        updated_at: row.try_get::<SqlTimestamp, _>("updated_at")?.to_jiff(),
     })
 }
 

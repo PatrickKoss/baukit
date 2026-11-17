@@ -8,7 +8,7 @@ use baukit_auth::{
     ApiToken, ApiTokenRecord, ApiTokenService, ApiTokenStore, ApiTokenStoreError,
     ApiTokenStoreFuture, StoredApiToken,
 };
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use uuid::Uuid;
 
 /// In-memory [`ApiTokenStore`] for tests that need the real token service.
@@ -143,7 +143,7 @@ impl ApiTokenStore for InMemoryApiTokenStore {
     fn touch_last_used(
         &self,
         token_id: Uuid,
-        used_at: DateTime<Utc>,
+        used_at: Timestamp,
     ) -> ApiTokenStoreFuture<'_, Result<(), ApiTokenStoreError>> {
         let mut state = self.lock();
         if let Some(failure) = state.failure.clone() {
@@ -159,7 +159,7 @@ impl ApiTokenStore for InMemoryApiTokenStore {
         &self,
         owner_id: Uuid,
         token_id: Uuid,
-        revoked_at: DateTime<Utc>,
+        revoked_at: Timestamp,
     ) -> ApiTokenStoreFuture<'_, Result<bool, ApiTokenStoreError>> {
         let mut state = self.lock();
         if let Some(failure) = state.failure.clone() {

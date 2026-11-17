@@ -9,7 +9,7 @@ use std::{
 use aws_lc_rs::{digest, signature};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use baukit_egress::{EgressClientError, EgressError, EgressOptionsError, GuardedClient};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use serde_json::Value;
@@ -35,7 +35,7 @@ const MAX_UNKNOWN_KEYS: usize = 128;
 pub struct Principal {
     subject: String,
     issuer: Option<String>,
-    authenticated_at: Option<DateTime<Utc>>,
+    authenticated_at: Option<Timestamp>,
     organization: Option<String>,
     tenant: Option<String>,
     client_id: Option<String>,
@@ -119,7 +119,7 @@ impl Principal {
 
     /// Adds the login time supplied by a trusted adapter.
     #[must_use]
-    pub fn with_authenticated_at(mut self, authenticated_at: DateTime<Utc>) -> Self {
+    pub fn with_authenticated_at(mut self, authenticated_at: Timestamp) -> Self {
         self.authenticated_at = Some(authenticated_at);
         self
     }
@@ -129,7 +129,7 @@ impl Principal {
     /// API tokens return their creation time. Absent claims and internal
     /// principals return `None`.
     #[must_use]
-    pub const fn authenticated_at(&self) -> Option<DateTime<Utc>> {
+    pub const fn authenticated_at(&self) -> Option<Timestamp> {
         self.authenticated_at
     }
 
@@ -1050,14 +1050,14 @@ fn authentication_time(
     value: Option<&Value>,
     now: u64,
     skew: u64,
-) -> Result<Option<DateTime<Utc>>, VerificationError> {
+) -> Result<Option<Timestamp>, VerificationError> {
     let Some(value) = value else {
         return Ok(None);
     };
     let seconds = value.as_u64().ok_or(VerificationError::MalformedToken)?;
     let timestamp = i64::try_from(seconds)
         .ok()
-        .and_then(|seconds| DateTime::from_timestamp(seconds, 0))
+        .and_then(|seconds| jiff::Timestamp::from_second(seconds).ok())
         .ok_or(VerificationError::MalformedToken)?;
     if seconds > now.saturating_add(skew) {
         return Err(VerificationError::NotYetValid);

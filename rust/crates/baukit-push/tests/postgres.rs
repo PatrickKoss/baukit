@@ -11,7 +11,7 @@ use baukit_push::{
     erase_owner_push_devices, poll_pending_receipts, purge_delivery_claims,
 };
 use baukit_test::PostgresTestContainer;
-use chrono::{DateTime, NaiveDate, TimeDelta, TimeZone as _, Utc};
+use jiff::{SignedDuration, Timestamp, civil::Date};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -25,15 +25,15 @@ const PURGE_BATCH: NonZeroU32 = NonZeroU32::new(1).expect("one is not zero");
 const CONCURRENT_POLLERS: usize = 6;
 const POLL_LIMIT: NonZeroU32 = NonZeroU32::new(10).expect("ten is not zero");
 
-fn at(minutes: i64) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 9, 27, 12, 0, 0)
-        .single()
+fn at(minutes: i64) -> Timestamp {
+    jiff::tz::TimeZone::UTC
+        .to_timestamp(jiff::civil::datetime(2026, 9, 27, 12, 0, 0, 0))
         .expect("valid test instant")
-        + TimeDelta::minutes(minutes)
+        + SignedDuration::from_mins(minutes)
 }
 
-fn date(day: u32) -> NaiveDate {
-    NaiveDate::from_ymd_opt(2026, 9, day).expect("valid test date")
+fn date(day: i8) -> Date {
+    jiff::civil::Date::new(2026, 9, day).expect("valid test date")
 }
 
 fn token(value: &str) -> DeviceToken {
@@ -467,10 +467,13 @@ async fn old_claims_purge_in_bounded_batches() -> Result<(), TestError> {
         }
     }
     assert_eq!(purged, [1, 1, 0]);
-    let kept: Vec<NaiveDate> =
+    let kept: Vec<Date> =
         sqlx::query_scalar("SELECT local_date FROM push_delivery_claims ORDER BY local_date")
             .fetch_all(&pool)
-            .await?;
+            .await?
+            .into_iter()
+            .map(jiff_sqlx::Date::to_jiff)
+            .collect();
     assert_eq!(kept, [date(26), date(27)]);
 
     let mut transaction = pool.begin().await?;

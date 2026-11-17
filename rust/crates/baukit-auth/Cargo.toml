@@ -15,7 +15,7 @@ readme = "README.md"
 workspace = true
 
 [features]
-sqlx-postgres = ["dep:sqlx"]
+sqlx-postgres = ["dep:sqlx", "dep:jiff-sqlx"]
 browser-session = [
   "sqlx-postgres",
   "dep:baukit-credential-vault",
@@ -30,7 +30,8 @@ baukit-credential-vault = { workspace = true, optional = true }
 baukit-egress.workspace = true
 baukit-http.workspace = true
 baukit-openapi.workspace = true
-chrono.workspace = true
+jiff.workspace = true
+jiff-sqlx = { workspace = true, optional = true }
 psl = { version = "2.1.244", optional = true }
 reqwest.workspace = true
 aws-lc-rs.workspace = true

@@ -1,4 +1,6 @@
 #![cfg(test)]
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 use std::{collections::HashSet, error::Error, path::PathBuf, sync::Arc, time::Duration};
 
 use baukit_jobs::{
@@ -7,7 +9,7 @@ use baukit_jobs::{
     POSTGRES_MIGRATION_0003_SQL, POSTGRES_MIGRATION_0004_SQL, POSTGRES_MIGRATION_SQL,
     PostgresJobStore, StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
-use chrono::{TimeDelta, Utc};
+use jiff::SignedDuration;
 use serde_json::json;
 use sqlx::PgPool;
 use tokio::sync::Barrier;
@@ -63,7 +65,7 @@ async fn postgres_claim_is_concurrent_skip_locked_and_increments_attempts()
             .enqueue(NewJob::new("batch.item", json!({"sequence": sequence}), 3))
             .await?;
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     let barrier = Arc::new(Barrier::new(17));
     let mut tasks = Vec::new();
@@ -112,7 +114,7 @@ async fn postgres_expired_lease_is_reclaimed_without_a_sweep_process() -> Result
         .enqueue(NewJob::new("lease.test", json!({}), 3))
         .await?
         .job;
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     let first = store
         .claim("worker-a", &["lease.test"], now, Duration::from_secs(1))
@@ -129,7 +131,7 @@ async fn postgres_expired_lease_is_reclaimed_without_a_sweep_process() -> Result
         .claim(
             "worker-b",
             &["lease.test"],
-            now + TimeDelta::seconds(2),
+            now + SignedDuration::from_secs(2),
             Duration::from_secs(10),
         )
         .await?
@@ -140,14 +142,14 @@ async fn postgres_expired_lease_is_reclaimed_without_a_sweep_process() -> Result
 
     assert!(
         store
-            .complete(reclaimed.id, "worker-b", now + TimeDelta::seconds(2))
+            .complete(reclaimed.id, "worker-b", now + SignedDuration::from_secs(2))
             .await?
     );
     let exhausted = store
         .enqueue(NewJob::new("lease.exhausted", json!({}), 1))
         .await?
         .job;
-    let exhausted_now = Utc::now();
+    let exhausted_now = Timestamp::now();
     store
         .claim(
             "worker-c",
@@ -162,7 +164,7 @@ async fn postgres_expired_lease_is_reclaimed_without_a_sweep_process() -> Result
             .claim(
                 "worker-d",
                 &["lease.exhausted"],
-                exhausted_now + TimeDelta::seconds(2),
+                exhausted_now + SignedDuration::from_secs(2),
                 Duration::from_secs(10),
             )
             .await?
@@ -189,12 +191,12 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
         .enqueue(NewJob::new("retry.test", json!({}), 2).idempotency_key("retry-terminal"))
         .await?
         .job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     store
         .claim("worker-a", &["retry.test"], now, Duration::from_secs(30))
         .await?
         .expect("first attempt");
-    let retry_at = now + TimeDelta::seconds(10);
+    let retry_at = now + SignedDuration::from_secs(10);
     assert_eq!(
         store
             .record_failure(retried.id, "worker-a", true, retry_at, "temporary", now,)
@@ -224,7 +226,7 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
                 retried.id,
                 "worker-b",
                 true,
-                retry_at + TimeDelta::seconds(20),
+                retry_at + SignedDuration::from_secs(20),
                 "still temporary",
                 retry_at,
             )
@@ -257,7 +259,7 @@ async fn assert_permanent_failure_is_terminal(
         .enqueue(NewJob::new("retry.permanent", json!({}), 8).idempotency_key("permanent-terminal"))
         .await?
         .job;
-    let permanent_now = Utc::now();
+    let permanent_now = Timestamp::now();
     store
         .claim(
             "worker-c",
@@ -300,7 +302,7 @@ async fn postgres_completion_is_atomic_lease_owned_and_not_duplicated() -> Resul
         .enqueue(NewJob::new("complete.test", json!({}), 3))
         .await?
         .job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     store
         .claim("worker-a", &["complete.test"], now, Duration::from_secs(30))
         .await?
@@ -355,9 +357,9 @@ async fn postgres_readiness_executes_the_claim_query_shape() -> Result<(), Box<d
 async fn postgres_terminal_cleanup_uses_independent_cutoffs_and_preserves_active_jobs()
 -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;
-    let now = Utc::now();
-    let old = now - TimeDelta::days(10);
-    let recent = now - TimeDelta::days(1);
+    let now = Timestamp::now();
+    let old = now - SignedDuration::from_hours(24 * 10);
+    let recent = now - SignedDuration::from_hours(24);
 
     let old_succeeded =
         terminal_job(&store, &pool, "cleanup.succeeded.old", "succeeded", old).await?;
@@ -404,9 +406,9 @@ async fn postgres_terminal_cleanup_uses_independent_cutoffs_and_preserves_active
     let outcome = store
         .cleanup_terminal_jobs(
             TerminalJobCutoffs {
-                succeeded_before: now - TimeDelta::days(5),
-                cancelled_before: now - TimeDelta::days(3),
-                failed_before: now - TimeDelta::days(7),
+                succeeded_before: now - SignedDuration::from_hours(24 * 5),
+                cancelled_before: now - SignedDuration::from_hours(24 * 3),
+                failed_before: now - SignedDuration::from_hours(24 * 7),
             },
             10,
         )
@@ -448,7 +450,7 @@ async fn postgres_terminal_cleanup_retains_kinds_in_every_terminal_status()
     let (fixture, pool, store) = fixture().await?;
     let kinds = ["history.deliver", "history.revoke"];
     let store = store.retain_kinds(&kinds);
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut retained = Vec::new();
     let mut ordinary = Vec::new();
     for terminal_status in ["succeeded", "cancelled", "failed"] {
@@ -458,7 +460,7 @@ async fn postgres_terminal_cleanup_retains_kinds_in_every_terminal_status()
                 &pool,
                 kind,
                 terminal_status,
-                now - TimeDelta::days(30),
+                now - SignedDuration::from_hours(24 * 30),
             )
             .await?;
             retained.push((id, terminal_status));
@@ -469,7 +471,7 @@ async fn postgres_terminal_cleanup_retains_kinds_in_every_terminal_status()
                 &pool,
                 "email.send",
                 terminal_status,
-                now - TimeDelta::days(10),
+                now - SignedDuration::from_hours(24 * 10),
             )
             .await?,
         );
@@ -479,9 +481,9 @@ async fn postgres_terminal_cleanup_retains_kinds_in_every_terminal_status()
         store
             .cleanup_terminal_jobs(
                 TerminalJobCutoffs {
-                    succeeded_before: now - TimeDelta::days(5),
-                    cancelled_before: now - TimeDelta::days(3),
-                    failed_before: now - TimeDelta::days(7),
+                    succeeded_before: now - SignedDuration::from_hours(24 * 5),
+                    cancelled_before: now - SignedDuration::from_hours(24 * 3),
+                    failed_before: now - SignedDuration::from_hours(24 * 7),
                 },
                 10,
             )
@@ -510,7 +512,7 @@ async fn postgres_terminal_cleanup_retained_kinds_do_not_consume_the_batch_limit
 -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;
     let store = store.retain_kinds(&["history.deliver"]);
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut retained = Vec::new();
     for terminal_status in ["succeeded", "cancelled", "failed"] {
         retained.push(
@@ -519,7 +521,7 @@ async fn postgres_terminal_cleanup_retained_kinds_do_not_consume_the_batch_limit
                 &pool,
                 "history.deliver",
                 terminal_status,
-                now - TimeDelta::days(30),
+                now - SignedDuration::from_hours(24 * 30),
             )
             .await?,
         );
@@ -532,7 +534,7 @@ async fn postgres_terminal_cleanup_retained_kinds_do_not_consume_the_batch_limit
                 &pool,
                 "email.send",
                 "succeeded",
-                now - TimeDelta::days(10),
+                now - SignedDuration::from_hours(24 * 10),
             )
             .await?,
         );
@@ -586,8 +588,8 @@ async fn postgres_terminal_cleanup_combines_all_status_and_failed_only_retention
                 .retain_kinds(&[retained_kind])
                 .retain_failed_kinds(&failed_kinds)
         };
-        let now = Utc::now();
-        let old = now - TimeDelta::days(30);
+        let now = Timestamp::now();
+        let old = now - SignedDuration::from_hours(24 * 30);
         let mut retained = Vec::new();
         let mut deleted = Vec::new();
         for terminal_status in ["succeeded", "cancelled", "failed"] {
@@ -636,14 +638,14 @@ async fn postgres_terminal_cleanup_combines_all_status_and_failed_only_retention
 async fn postgres_terminal_cleanup_is_one_bounded_batch_and_repeated_calls_converge()
 -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     for sequence in 0..5 {
         terminal_job(
             &store,
             &pool,
             &format!("cleanup.batch.{sequence}"),
             "succeeded",
-            now - TimeDelta::days(1),
+            now - SignedDuration::from_hours(24),
         )
         .await?;
     }
@@ -685,26 +687,26 @@ async fn postgres_terminal_cleanup_is_one_bounded_batch_and_repeated_calls_conve
 async fn postgres_terminal_cleanup_skips_concurrent_claim_and_completion()
 -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     let pending = store
         .enqueue(NewJob::new("cleanup.concurrent-claim", json!({}), 3))
         .await?
         .job;
-    let claim_now = Utc::now();
+    let claim_now = Timestamp::now();
     let mut claim_transaction = pool.begin().await?;
     sqlx::query(
         "UPDATE job_outbox SET status = 'running', attempts = 1, locked_by = 'claim-worker', locked_until = $2, updated_at = $3 WHERE id = $1",
     )
     .bind(pending.id)
-    .bind(claim_now + TimeDelta::minutes(1))
-    .bind(claim_now)
+    .bind((claim_now + SignedDuration::from_mins(1)).to_sqlx())
+    .bind(claim_now.to_sqlx())
     .execute(&mut *claim_transaction)
     .await?;
 
     let cutoffs = TerminalJobCutoffs {
-        succeeded_before: now + TimeDelta::days(1),
-        cancelled_before: now + TimeDelta::days(1),
-        failed_before: now + TimeDelta::days(1),
+        succeeded_before: now + SignedDuration::from_hours(24),
+        cancelled_before: now + SignedDuration::from_hours(24),
+        failed_before: now + SignedDuration::from_hours(24),
     };
     assert_eq!(
         store.cleanup_terminal_jobs(cutoffs, 10).await?,
@@ -717,7 +719,7 @@ async fn postgres_terminal_cleanup_skips_concurrent_claim_and_completion()
         .enqueue(NewJob::new("cleanup.concurrent-completion", json!({}), 3))
         .await?
         .job;
-    let completion_now = Utc::now();
+    let completion_now = Timestamp::now();
     store
         .claim(
             "complete-worker",
@@ -755,7 +757,7 @@ async fn postgres_terminal_cleanup_skips_concurrent_claim_and_completion()
 async fn postgres_recurring_slot_enqueue_is_restart_safe_and_failure_keeps_current_running()
 -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     let interval = FixedUtcInterval::new(Duration::from_secs(60 * 60))?;
     let current_slot = interval.slot_at(now)?;
     let next_slot = interval.next_slot(current_slot, now)?;
@@ -771,7 +773,7 @@ async fn postgres_recurring_slot_enqueue_is_restart_safe_and_failure_keeps_curre
         )
         .await?
         .job;
-    let claim_now = Utc::now();
+    let claim_now = Timestamp::now();
     store
         .claim(
             "recurring-worker",
@@ -845,7 +847,7 @@ async fn postgres_v051_schema_upgrades_to_failure_reasons() -> Result<(), Box<dy
         .enqueue(NewJob::new("current.failure", json!({}), 2).idempotency_key("upgrade-check"))
         .await?
         .job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     store
         .claim(
             "upgrade-worker",
@@ -884,11 +886,11 @@ async fn postgres_v051_schema_upgrades_to_failure_reasons() -> Result<(), Box<dy
 async fn terminal_cleanup_retains_failed_identity_deletions_only() -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;
     let identity_kind = "identity.account.delete";
-    let old = Utc::now() - TimeDelta::days(30);
+    let old = Timestamp::now() - SignedDuration::from_hours(24 * 30);
     let identity = terminal_job(&store, &pool, identity_kind, "failed", old).await?;
     let ordinary = terminal_job(&store, &pool, "email.send", "failed", old).await?;
     let successful_identity = terminal_job(&store, &pool, identity_kind, "succeeded", old).await?;
-    let now = Utc::now();
+    let now = Timestamp::now();
     let result = store
         .retain_failed_kinds(&[identity_kind])
         .cleanup_terminal_jobs(
@@ -941,7 +943,7 @@ async fn terminal_job(
     pool: &PgPool,
     job_type: &str,
     terminal_status: &str,
-    updated_at: chrono::DateTime<Utc>,
+    updated_at: jiff::Timestamp,
 ) -> Result<uuid::Uuid, Box<dyn Error>> {
     let mut new_job = NewJob::new(job_type, json!({}), 3);
     new_job.created_at = updated_at;
@@ -954,7 +956,7 @@ async fn terminal_job(
     .bind(job.id)
     .bind(terminal_status)
     .bind(failure_reason)
-    .bind(updated_at)
+    .bind(updated_at.to_sqlx())
     .execute(pool)
     .await?;
     Ok(job.id)

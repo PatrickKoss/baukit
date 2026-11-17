@@ -26,7 +26,7 @@ struct FakeOwner {
 
 struct FakeRow {
     revision: i64,
-    deleted_at: Option<DateTime<Utc>>,
+    deleted_at: Option<Timestamp>,
 }
 
 #[derive(Default)]
@@ -125,11 +125,7 @@ impl PurgeHorizonAdapter for FakeStore {
         })
     }
 
-    async fn write_tombstone(
-        &self,
-        owner: &u64,
-        deleted_at: DateTime<Utc>,
-    ) -> Result<i64, FakeError> {
+    async fn write_tombstone(&self, owner: &u64, deleted_at: Timestamp) -> Result<i64, FakeError> {
         self.with_owner(*owner, |entry| {
             entry.counter += 2;
             entry.rows.push(FakeRow {
@@ -140,11 +136,7 @@ impl PurgeHorizonAdapter for FakeStore {
         })
     }
 
-    async fn purge_batch(
-        &self,
-        cutoff: DateTime<Utc>,
-        limit: NonZeroU32,
-    ) -> Result<u64, FakeError> {
+    async fn purge_batch(&self, cutoff: Timestamp, limit: NonZeroU32) -> Result<u64, FakeError> {
         let mut state = self.state.lock().map_err(|_| FakeError)?;
         let mut expired = state
             .owners

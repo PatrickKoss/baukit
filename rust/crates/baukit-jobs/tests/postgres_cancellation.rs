@@ -1,8 +1,10 @@
 #![cfg(test)]
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 use std::{error::Error, path::PathBuf, time::Duration};
 
 use baukit_jobs::{CancellationOutcome, JobStore as _, NewJob, PostgresJobStore, StoreError};
-use chrono::{TimeDelta, Utc};
+use jiff::SignedDuration;
 use serde_json::json;
 use sqlx::PgPool;
 
@@ -18,7 +20,7 @@ async fn postgres_cancellation_covers_pending_and_running_lifecycle() -> Result<
         .enqueue(NewJob::new("cancel.pending", json!({}), 3))
         .await?
         .job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     assert!(store.request_cancellation(pending.id, now).await?);
     assert_eq!(status(&pool, pending.id).await?, "cancelled");
 
@@ -26,7 +28,7 @@ async fn postgres_cancellation_covers_pending_and_running_lifecycle() -> Result<
         .enqueue(NewJob::new("cancel.running", json!({}), 3))
         .await?
         .job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     store
         .claim(
             "worker-a",
@@ -93,7 +95,7 @@ impl KeyCancellationCase<'_> {
         let matching = self.keyed(&self.kind, &matching_key).await?;
         let untouched = self.untouched_jobs(&matching_key).await?;
         let before = job_state(self.pool, matching).await?;
-        let now = Utc::now();
+        let now = Timestamp::now();
         let expected = CancellationOutcome {
             cancelled_pending: u64::from(self.lifecycle == "pending"),
             cancellation_requested_running: u64::from(self.lifecycle == "running"),
@@ -156,7 +158,7 @@ impl KeyCancellationCase<'_> {
 
     async fn cancel_in_transaction(
         &self,
-        now: chrono::DateTime<Utc>,
+        now: jiff::Timestamp,
         matching: uuid::Uuid,
         before: &serde_json::Value,
         expected: &CancellationOutcome,
@@ -205,7 +207,7 @@ impl KeyCancellationCase<'_> {
         &self,
         matching: uuid::Uuid,
         before: &serde_json::Value,
-        now: chrono::DateTime<Utc>,
+        now: jiff::Timestamp,
     ) -> Result<(), Box<dyn Error>> {
         let after = job_state(self.pool, matching).await?;
         match self.lifecycle {
@@ -244,7 +246,7 @@ async fn postgres_prefix_cancellation_counts_multiple_jobs_and_rejects_invalid_i
     ] {
         keyed_job(&store, &pool, "cancel.batch", key, lifecycle).await?;
     }
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut transaction = pool.begin().await?;
     assert_invalid_cancellation_input_is_rejected(&store, &mut transaction, now).await;
     assert_eq!(
@@ -295,7 +297,7 @@ async fn postgres_prefix_cancellation_counts_multiple_jobs_and_rejects_invalid_i
 async fn assert_invalid_cancellation_input_is_rejected(
     store: &PostgresJobStore,
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    now: chrono::DateTime<Utc>,
+    now: jiff::Timestamp,
 ) {
     for prefix in ["", " ", &"x".repeat(501)] {
         assert!(matches!(
@@ -339,7 +341,7 @@ async fn postgres_transaction_lease_check_matches_completion_ownership()
         .enqueue(NewJob::new("lease.check", json!({}), 3))
         .await?
         .job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     let mut transaction = pool.begin().await?;
     assert!(
         !store
@@ -363,7 +365,7 @@ async fn postgres_transaction_lease_check_matches_completion_ownership()
             .check_lease_in_transaction(&mut transaction, job.id, "worker-b", now)
             .await?
     );
-    for expired in [deadline, deadline + TimeDelta::seconds(1)] {
+    for expired in [deadline, deadline + SignedDuration::from_secs(1)] {
         assert!(
             !store
                 .check_lease_in_transaction(&mut transaction, job.id, "worker-a", expired)
@@ -420,7 +422,7 @@ async fn assert_completed_job_has_no_lease(
         .enqueue(NewJob::new("lease.completed", json!({}), 3))
         .await?
         .job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     store
         .claim(
             "worker-a",
@@ -450,7 +452,7 @@ async fn postgres_transaction_lease_check_blocks_cancellation_until_commit()
         .enqueue(NewJob::new("lease.lock", json!({}), 3))
         .await?
         .job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     store
         .claim("worker-a", &["lease.lock"], now, Duration::from_secs(60))
         .await?
@@ -469,7 +471,7 @@ async fn postgres_transaction_lease_check_blocks_cancellation_until_commit()
             .claim(
                 "worker-b",
                 &["lease.lock"],
-                now + TimeDelta::seconds(60),
+                now + SignedDuration::from_secs(60),
                 Duration::from_secs(60)
             )
             .await?
@@ -537,10 +539,10 @@ async fn keyed_job(
         .enqueue(NewJob::new(kind, json!({}), 3).idempotency_key(key))
         .await?
         .job;
-    let now = Utc::now();
+    let now = Timestamp::now();
     sqlx::query(
         "UPDATE job_outbox SET status = $2, locked_by = CASE WHEN $2 = 'running' THEN 'cancel-worker' END, locked_until = CASE WHEN $2 = 'running' THEN $3 END, failure_reason = CASE WHEN $2 = 'failed' THEN 'permanent' END, updated_at = $4 WHERE id = $1",
-    ).bind(job.id).bind(lifecycle).bind(now + TimeDelta::minutes(5)).bind(now).execute(pool).await?;
+    ).bind(job.id).bind(lifecycle).bind((now + SignedDuration::from_mins(5)).to_sqlx()).bind(now.to_sqlx()).execute(pool).await?;
     Ok(job.id)
 }
 

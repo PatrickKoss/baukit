@@ -44,6 +44,7 @@ reqwest = { workspace = true, features = ["form"] }
 baukit-mcp = { path = ".", features = ["suite"] }
 async-trait = "0.1.92"
 jsonschema.workspace = true
+jiff.workspace = true
 baukit-test = { path = "../baukit-test", default-features = false }
 metrics-util.workspace = true
 rmcp = { workspace = true, features = ["client", "transport-streamable-http-client-reqwest"] }

@@ -1,9 +1,11 @@
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 use std::{error::Error, num::NonZeroU32, path::PathBuf};
 
 use baukit_sync::purge::{
     PullGuardError, TombstoneTable, guard_pull_cursor, purge_horizon, purge_tombstone_batch,
 };
-use chrono::{TimeDelta, Utc};
+use jiff::SignedDuration;
 use proptest::{
     prelude::*,
     test_runner::{Config, TestCaseError, TestRunner},
@@ -134,7 +136,7 @@ impl Case {
                     Actor::A => &LANE_A,
                     Actor::B => &LANE_B,
                 };
-                purge_tombstone_batch(&mut transaction, table, Utc::now(), LIMIT).await?;
+                purge_tombstone_batch(&mut transaction, table, Timestamp::now(), LIMIT).await?;
             }
             Operation::Pull { cursor } => pull(&mut transaction, owner, cursor).await?,
         }
@@ -155,7 +157,7 @@ async fn write(
         Actor::B => "b",
     };
     let revision = baukit_sync::next_revision(transaction, owner).await?;
-    let deleted_at = tombstone.then(|| Utc::now() - TimeDelta::hours(1));
+    let deleted_at = tombstone.then(|| Timestamp::now() - SignedDuration::from_hours(1));
     sqlx::query(
         "INSERT INTO isolated_records (owner_id, id, lane, deleted_at, revision)
          VALUES ($1, $2, $3, $4, $5)
@@ -166,7 +168,7 @@ async fn write(
     .bind(owner)
     .bind(id)
     .bind(lane)
-    .bind(deleted_at)
+    .bind(deleted_at.map(ToSqlx::to_sqlx))
     .bind(revision)
     .execute(&mut **transaction)
     .await?;

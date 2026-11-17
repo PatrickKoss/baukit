@@ -107,14 +107,14 @@ impl SuiteIngestService {
         link: &SuiteLink,
         h: &SignedHeaders,
         body: &[u8],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteServiceError> {
         let secret = self
             .context
             .cipher
             .decrypt(link.id, "link_secret", &link.secret)
             .map_err(|_| SuiteServiceError::SignatureInvalid)?;
-        if !signature_timestamp_valid(h.timestamp, now.timestamp())
+        if !signature_timestamp_valid(h.timestamp, now.as_second())
             || h.source != link.peer_app
             || !verify_webhook_hmac_sha256(
                 [secret.as_slice()],
@@ -136,7 +136,7 @@ impl SuiteIngestService {
         id: Uuid,
         h: &SignedHeaders,
         body: &[u8],
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLink, SuiteServiceError> {
         if body.len() > SUITE_MAX_BODY_BYTES {
             return Err(SuiteServiceError::PayloadInvalid);
@@ -171,7 +171,7 @@ impl SuiteIngestService {
         id: Uuid,
         h: SignedHeaders,
         body: Vec<u8>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<IngestResult, SuiteServiceError> {
         let result = self.ingest_inner(id, h, body, now).await;
         if let Err(error) = &result {
@@ -191,7 +191,7 @@ impl SuiteIngestService {
         id: Uuid,
         h: SignedHeaders,
         body: Vec<u8>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<IngestResult, SuiteServiceError> {
         let link = self.authenticate(id, &h, &body, now).await?;
         let envelope: EventEnvelope =
@@ -294,7 +294,7 @@ impl SuiteIngestService {
         &self,
         mut tx: SuiteTransaction,
         link: &SuiteLink,
-        now: DateTime<Utc>,
+        now: Timestamp,
         metric_outcome: &'static str,
         result: IngestResult,
     ) -> Result<IngestResult, SuiteServiceError> {
@@ -338,7 +338,7 @@ impl SuiteIngestService {
         id: Uuid,
         h: SignedHeaders,
         body: Vec<u8>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteServiceError> {
         if body.len() > SUITE_MAX_BODY_BYTES
             || h.replay

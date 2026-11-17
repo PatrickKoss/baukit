@@ -490,7 +490,7 @@ async fn issued_access_token_is_rejected_by_the_verifier_after_expiry() -> TestR
     let principal = verifier.verify(token).await?;
     assert_eq!(Some(principal.subject()), issued["subject"].as_str());
     let expires_at = issued["expiresAt"].as_i64().ok_or("no expiresAt")?;
-    let now = chrono::Utc::now().timestamp_millis();
+    let now = jiff::Timestamp::now().as_millisecond();
     let wait = u64::try_from(expires_at.saturating_sub(now)).unwrap_or(0) + 1_500;
     tokio::time::sleep(Duration::from_millis(wait)).await;
     assert!(verifier.verify(token).await.is_err());

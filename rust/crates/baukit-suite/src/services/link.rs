@@ -1,5 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::Duration;
+use jiff::SignedDuration;
 use rand::RngCore as _;
 use sha2::{Digest as _, Sha256};
 use url::Url;
@@ -54,7 +54,7 @@ impl SuiteLinkService {
         &self,
         user: SuiteUser,
         input: LinkStartRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<LinkStartResponse, SuiteServiceError> {
         let peer = validate_link_start(&self.context.registry, &input)?;
         let state = random_secret();
@@ -74,7 +74,7 @@ impl SuiteLinkService {
             return_url: input.return_url,
             link_id: None,
             exchange: None,
-            expires_at: now + Duration::seconds(SUITE_REQUEST_LIFETIME_SECONDS),
+            expires_at: now + SignedDuration::from_secs(SUITE_REQUEST_LIFETIME_SECONDS),
             consumed_at: None,
             created_at: now,
         };
@@ -116,7 +116,7 @@ impl SuiteLinkService {
     pub async fn callback(
         &self,
         input: LinkCallbackQuery,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<CallbackRedirect, SuiteServiceError> {
         let request = if let Some(state) = &input.state {
             self.context
@@ -141,7 +141,7 @@ impl SuiteLinkService {
         user: SuiteUser,
         id: Uuid,
         code: String,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLink, SuiteServiceError> {
         let mut tx = self.context.store.begin_transaction().await?;
         let request = self
@@ -279,7 +279,7 @@ impl SuiteLinkService {
         id: Uuid,
         peer_app: &str,
         link: &SuiteLink,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLink, SuiteServiceError> {
         let mut tx = self.context.store.begin_transaction().await?;
         self.context
@@ -359,7 +359,7 @@ impl SuiteLinkService {
         &self,
         user: SuiteUser,
         input: AuthorizationRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<AuthorizationResponse, SuiteServiceError> {
         let peer = self.context.active_peer(&input.client)?;
         if !token_valid(&input.state) || !token_valid(&input.code_challenge) {
@@ -381,7 +381,7 @@ impl SuiteLinkService {
             suite_subject: user.suite_subject,
             auto_approved: preview.auto_approve,
             link_id: None,
-            expires_at: now + Duration::seconds(SUITE_CODE_LIFETIME_SECONDS),
+            expires_at: now + SignedDuration::from_secs(SUITE_CODE_LIFETIME_SECONDS),
             consumed_at: None,
             created_at: now,
         };
@@ -429,7 +429,7 @@ impl SuiteLinkService {
     pub async fn exchange(
         &self,
         input: ExchangeRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<ExchangeResponse, SuiteServiceError> {
         if input.client.chars().count() > SUITE_MAX_PEER_ID_CHARACTERS {
             return Err(SuiteServiceError::PayloadInvalid);
@@ -454,7 +454,7 @@ impl SuiteLinkService {
         &self,
         peer: &ActivePeer,
         input: ExchangeRequest,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<ExchangeResponse, SuiteServiceError> {
         if !token_valid(&input.code)
             || !token_valid(&input.link_secret)
@@ -559,7 +559,7 @@ impl SuiteLinkService {
         &self,
         tx: &mut sqlx::PgConnection,
         link: &SuiteLink,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteServiceError> {
         if let Some(old) = self
             .context
@@ -586,9 +586,10 @@ impl SuiteLinkService {
         &self,
         tx: &mut sqlx::PgConnection,
         link: &SuiteLink,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteServiceError> {
-        let since = now.date_naive() - Duration::days(i64::from(self.context.initial_replay_days));
+        let since = now.to_zoned_datetime(jiff::tz::TimeZone::UTC).date()
+            - SignedDuration::from_hours(24 * i64::from(self.context.initial_replay_days));
         let events = self
             .context
             .replay
@@ -627,7 +628,7 @@ impl SuiteLinkService {
         id: Uuid,
         xp: Option<bool>,
         mode: Option<RewardMode>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLink, SuiteServiceError> {
         if mode.is_some_and(|m| !self.context.registry.own().reward_modes.contains(&m)) {
             return Err(SuiteServiceError::PayloadInvalid);
@@ -646,7 +647,7 @@ impl SuiteLinkService {
         &self,
         owner: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<(), SuiteServiceError> {
         self.get(owner, id).await?;
         let mut tx = self.context.store.begin_transaction().await?;
@@ -678,7 +679,7 @@ impl SuiteLinkService {
         &self,
         owner: Uuid,
         id: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SuiteLink, SuiteServiceError> {
         Ok(self.context.store.reenable(owner, id, now).await?)
     }
@@ -693,7 +694,7 @@ struct NewLink<'a> {
     display_name: Option<String>,
     shared: Option<String>,
     secret: String,
-    now: DateTime<Utc>,
+    now: Timestamp,
 }
 fn exchange_response(
     link: &SuiteLink,

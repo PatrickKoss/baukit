@@ -1,6 +1,7 @@
 //! PostgreSQL [`OAuthStateStore`]. Apply [`OAUTH_STATE_MIGRATION_SQL`] first.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
+use jiff_sqlx::ToSqlx;
 use sqlx::PgPool;
 
 use super::{
@@ -27,7 +28,7 @@ type ConsumedRow = (
     String,
     String,
     Option<String>,
-    DateTime<Utc>,
+    jiff_sqlx::Timestamp,
 );
 
 /// Pending flows in PostgreSQL. `state_hash` is the key, so queries are owner-agnostic.
@@ -59,7 +60,7 @@ impl PostgresOAuthStateStore {
                 provider,
                 redirect,
                 pkce_verifier: verifier.map(PkceVerifier::from_stored),
-                expires_at,
+                expires_at: expires_at.to_jiff(),
             }));
         }
         let used: Option<i32> =
@@ -74,13 +75,13 @@ impl PostgresOAuthStateStore {
         })
     }
 
-    async fn purge(&self, now: DateTime<Utc>) -> Result<u64, sqlx::Error> {
+    async fn purge(&self, now: Timestamp) -> Result<u64, sqlx::Error> {
         let pending = sqlx::query("DELETE FROM oauth_states WHERE expires_at <= $1")
-            .bind(now)
+            .bind(now.to_sqlx())
             .execute(&self.pool)
             .await?;
         let used = sqlx::query("DELETE FROM oauth_states_used WHERE expires_at <= $1")
-            .bind(now)
+            .bind(now.to_sqlx())
             .execute(&self.pool)
             .await?;
         Ok(pending.rows_affected().saturating_add(used.rows_affected()))
@@ -105,7 +106,7 @@ impl OAuthStateStore for PostgresOAuthStateStore {
             .bind(&flow.provider)
             .bind(&flow.redirect)
             .bind(flow.pkce_verifier.as_ref().map(PkceVerifier::expose))
-            .bind(flow.expires_at)
+            .bind(flow.expires_at.to_sqlx())
             .execute(&self.pool)
             .await
             .map_err(|error| store_error(&error))?;
@@ -124,10 +125,7 @@ impl OAuthStateStore for PostgresOAuthStateStore {
         })
     }
 
-    fn purge_expired(
-        &self,
-        now: DateTime<Utc>,
-    ) -> OAuthStateFuture<'_, Result<u64, OAuthStateError>> {
+    fn purge_expired(&self, now: Timestamp) -> OAuthStateFuture<'_, Result<u64, OAuthStateError>> {
         Box::pin(async move { self.purge(now).await.map_err(|error| store_error(&error)) })
     }
 }

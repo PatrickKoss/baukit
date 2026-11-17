@@ -34,7 +34,7 @@ impl UserService {
     pub async fn resolve_subject(
         &self,
         subject: &str,
-        authenticated_at: Option<chrono::DateTime<chrono::Utc>>,
+        authenticated_at: Option<jiff::Timestamp>,
     ) -> Result<InternalUser, ServiceError> {
         self.repository
             .resolve_subject(subject.to_owned(), authenticated_at)

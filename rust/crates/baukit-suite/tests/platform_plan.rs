@@ -110,7 +110,7 @@ fn sign(claims: &Value) -> String {
 }
 fn claims(features: &[&str], revision: u64, billing: Option<Value>) -> Value {
     let fixture: Fixture = serde_json::from_str(TICKETS).expect("fixture");
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     let mut claims = json!({
         "iss": fixture.issuer,
         "sub": SUBJECT,

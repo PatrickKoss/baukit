@@ -3,6 +3,8 @@
 mod logs;
 #[path = "support/postgres_fixture.rs"]
 mod postgres_fixture;
+use jiff::SignedDuration;
+use jiff_sqlx::ToSqlx;
 use postgres_fixture::{Product, count, database, fixture};
 
 use baukit_erasure::{
@@ -72,12 +74,12 @@ async fn preflight_replays_each_stored_outcome_before_checking_the_fence()
         ErasureState::Completed,
     ] {
         outcome.status = state;
-        outcome.completed_at = (state == ErasureState::Completed).then(chrono::Utc::now);
+        outcome.completed_at = (state == ErasureState::Completed).then(jiff::Timestamp::now);
         sqlx::query("UPDATE erasure_operations SET state = $2, response = $3, completed_at = $4 WHERE id = $1")
             .bind(outcome.operation_id)
             .bind(serde_json::to_value(state)?.as_str().ok_or("state")?)
             .bind(serde_json::to_value(&outcome)?)
-            .bind(outcome.completed_at)
+            .bind(outcome.completed_at.map(ToSqlx::to_sqlx))
             .execute(&pool)
             .await?;
         assert_eq!(
@@ -169,7 +171,7 @@ async fn retained_identity_completes_replays_and_fences_without_a_job() -> Resul
     assert_eq!(first.status, ErasureState::Completed);
     assert_eq!(first.status_code(), axum::http::StatusCode::OK);
     assert!(first.completed_at.is_some());
-    let row: (String, chrono::DateTime<chrono::Utc>, serde_json::Value) = sqlx::query_as(
+    let row: (String, jiff_sqlx::Timestamp, serde_json::Value) = sqlx::query_as(
         "SELECT state, completed_at, response FROM erasure_operations WHERE id = $1",
     )
     .bind(first.operation_id)
@@ -177,8 +179,8 @@ async fn retained_identity_completes_replays_and_fences_without_a_job() -> Resul
     .await?;
     assert_eq!(row.0, "completed");
     assert_eq!(
-        row.1.timestamp_micros(),
-        first.completed_at.expect("completed at").timestamp_micros()
+        row.1.to_jiff().as_microsecond(),
+        first.completed_at.expect("completed at").as_microsecond()
     );
     assert_eq!(row.2, serde_json::to_value(&first)?);
     assert_eq!(count(&pool, "profiles").await?, 1);
@@ -551,7 +553,7 @@ async fn final_expired_lease_fails_operation() -> Result<(), Box<dyn Error>> {
         .claim(
             "replacement",
             &[baukit_erasure::IDENTITY_DELETE_JOB_TYPE],
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
             Duration::from_secs(5),
         )
         .await?;
@@ -639,7 +641,7 @@ async fn inline_failures_log_operation_and_class_without_subjects() -> Result<()
 async fn assert_session_checks(
     store: &PostgresErasureStore,
     subject: &str,
-    authenticated_at: Option<chrono::DateTime<chrono::Utc>>,
+    authenticated_at: Option<jiff::Timestamp>,
     rejected: bool,
 ) -> Result<(), Box<dyn Error>> {
     assert_eq!(store.is_fenced(subject, authenticated_at).await?, rejected);
@@ -676,7 +678,7 @@ async fn assert_session_checks(
 async fn all_fence_checks_require_a_later_login_and_every_operation_completed()
 -> Result<(), Box<dyn Error>> {
     let (_container, pool, store, fake, service) = fixture().await?;
-    for authenticated_at in [None, chrono::DateTime::from_timestamp(0, 0)] {
+    for authenticated_at in [None, jiff::Timestamp::from_second(0).ok()] {
         assert_session_checks(&store, "alice", authenticated_at, false).await?;
     }
     fake.push_outcome(Err(IdentityDeletionError::Retryable));
@@ -684,16 +686,17 @@ async fn all_fence_checks_require_a_later_login_and_every_operation_completed()
         .erase("alice", None, "fence-matrix-key-01", &Product)
         .await?;
     assert_eq!(operation.status, ErasureState::Pending);
-    let erased_at: chrono::DateTime<chrono::Utc> =
+    let erased_at: jiff_sqlx::Timestamp =
         sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
             .bind(store.subject_hash("alice"))
             .fetch_one(&pool)
             .await?;
+    let erased_at = erased_at.to_jiff();
     let sessions = [
         (None, true),
-        (Some(erased_at - chrono::Duration::microseconds(1)), true),
+        (Some(erased_at - SignedDuration::from_micros(1)), true),
         (Some(erased_at), true),
-        (Some(erased_at + chrono::Duration::microseconds(1)), false),
+        (Some(erased_at + SignedDuration::from_micros(1)), false),
     ];
     for state in ["pending", "failed", "completed"] {
         sqlx::query("UPDATE erasure_operations SET state = $2, completed_at = CASE WHEN $2 = 'completed' THEN now() ELSE NULL END WHERE id = $1")
@@ -725,14 +728,16 @@ async fn reonboarding_can_erase_again_and_old_keys_keep_their_receipts()
     let first = service
         .erase("alice", None, "first-erasure-key-01", &Product)
         .await?;
-    let first_fence: chrono::DateTime<chrono::Utc> =
+    let first_fence: jiff_sqlx::Timestamp =
         sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
             .bind(store.subject_hash("alice"))
             .fetch_one(&pool)
             .await?;
-    let fresh: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+    let first_fence = first_fence.to_jiff();
+    let fresh: jiff_sqlx::Timestamp = sqlx::query_scalar("SELECT clock_timestamp()")
         .fetch_one(&pool)
         .await?;
+    let fresh = fresh.to_jiff();
     assert!(fresh > first_fence);
     let mut transaction = pool.begin().await?;
     store
@@ -750,16 +755,18 @@ async fn reonboarding_can_erase_again_and_old_keys_keep_their_receipts()
     assert_eq!(count(&pool, "profiles").await?, 1);
     assert_eq!(count(&pool, "erasure_operations").await?, 2);
     assert_eq!(count(&pool, "erasure_fences").await?, 1);
-    let second_fence: chrono::DateTime<chrono::Utc> =
+    let second_fence: jiff_sqlx::Timestamp =
         sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
             .bind(store.subject_hash("alice"))
             .fetch_one(&pool)
             .await?;
+    let second_fence = second_fence.to_jiff();
     assert!(second_fence > fresh);
     assert_session_checks(&store, "alice", Some(fresh), true).await?;
-    let newer: chrono::DateTime<chrono::Utc> = sqlx::query_scalar("SELECT clock_timestamp()")
+    let newer: jiff_sqlx::Timestamp = sqlx::query_scalar("SELECT clock_timestamp()")
         .fetch_one(&pool)
         .await?;
+    let newer = newer.to_jiff();
     assert_session_checks(&store, "alice", Some(newer), false).await?;
     for authenticated_at in [None, Some(fresh), Some(newer)] {
         assert_eq!(
@@ -775,11 +782,12 @@ async fn reonboarding_can_erase_again_and_old_keys_keep_their_receipts()
             second
         );
     }
-    let unchanged: chrono::DateTime<chrono::Utc> =
+    let unchanged: jiff_sqlx::Timestamp =
         sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
             .bind(store.subject_hash("alice"))
             .fetch_one(&pool)
             .await?;
+    let unchanged = unchanged.to_jiff();
     assert_eq!(unchanged, second_fence);
     Ok(())
 }
@@ -794,11 +802,12 @@ async fn clerk_sessions_pass_the_fence_only_with_a_sign_in_time_after_it()
         .erase("alice", None, "clerk-fence-key-01", &Product)
         .await?;
     assert_eq!(operation.status, ErasureState::Completed);
-    let erased_at: chrono::DateTime<chrono::Utc> =
+    let erased_at: jiff_sqlx::Timestamp =
         sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
             .bind(store.subject_hash("alice"))
             .fetch_one(&pool)
             .await?;
+    let erased_at = erased_at.to_jiff();
     let oidc = baukit_test::MockOidcServer::start().await?;
     let clerk = baukit_auth::ClerkVerifier::from_jwks_uri(
         oidc.issuer(),
@@ -808,7 +817,7 @@ async fn clerk_sessions_pass_the_fence_only_with_a_sign_in_time_after_it()
     let claims = oidc
         .claims("alice", "api", Duration::from_secs(300))?
         .claim("azp", "https://app.example");
-    let fence_seconds = erased_at.timestamp();
+    let fence_seconds = erased_at.as_second();
     for (signed_in, rejected) in [(fence_seconds + 1, false), (fence_seconds - 1, true)] {
         let token = oidc.mint(
             &claims

@@ -2,7 +2,7 @@
 
 use std::{fmt, future::Future, num::NonZeroU32, pin::Pin};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -158,7 +158,7 @@ pub struct DeviceRegistration {
     /// The time zone the device reported, if the product schedules by it.
     pub time_zone: Option<DeviceTimeZone>,
     /// The service instant of this registration.
-    pub registered_at: DateTime<Utc>,
+    pub registered_at: Timestamp,
 }
 
 impl DeviceRegistration {
@@ -168,7 +168,7 @@ impl DeviceRegistration {
         owner_id: Uuid,
         token: DeviceToken,
         platform: DevicePlatform,
-        registered_at: DateTime<Utc>,
+        registered_at: Timestamp,
     ) -> Self {
         Self {
             owner_id,
@@ -199,9 +199,9 @@ pub struct RegisteredDevice {
     /// The time zone from the latest registration.
     pub time_zone: Option<DeviceTimeZone>,
     /// When this owner first registered the token.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// The latest registration instant; eviction and invalidation compare it.
-    pub last_registered_at: DateTime<Utc>,
+    pub last_registered_at: Timestamp,
 }
 
 /// What a registration or rotation changed besides the registered device.
@@ -280,7 +280,7 @@ pub trait DeviceRegistry: Send + Sync {
     fn invalidate(
         &self,
         tokens: Vec<DeviceToken>,
-        sent_at: DateTime<Utc>,
+        sent_at: Timestamp,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>>;
 
     /// Removes every device of one owner; returns how many went.
@@ -293,7 +293,7 @@ pub trait DeviceRegistry: Send + Sync {
     fn invalidate_dead_tokens(
         &self,
         outcomes: &[PushOutcome],
-        sent_at: DateTime<Utc>,
+        sent_at: Timestamp,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         let tokens = dead_tokens(outcomes);
         if tokens.is_empty() {
@@ -349,7 +349,7 @@ mod tests {
             Uuid::nil(),
             token.clone(),
             DevicePlatform::Ios,
-            DateTime::UNIX_EPOCH,
+            Timestamp::UNIX_EPOCH,
         );
         assert!(!format!("{token:?}").contains("Exponent"));
         assert!(!format!("{registration:?}").contains("Exponent"));

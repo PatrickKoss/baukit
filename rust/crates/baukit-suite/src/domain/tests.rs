@@ -456,7 +456,7 @@ fn reward_modes_fallback_and_replay_and_test_exclusions_are_pinned() {
     let event = SuiteEvent {
         natural_key: "2026-10-06".into(),
         event_type: "alpha.activity.completed".into(),
-        occurred_at: Utc::now(),
+        occurred_at: Timestamp::now(),
         payload: serde_json::from_value(
             json!({"activityId": "0199ba71-6000-7000-8000-000000000001", "minutes": 3, "xp": 30}),
         )
@@ -744,7 +744,7 @@ fn enqueue_gate_and_delivery_preflight_respect_status_and_the_breaker() {
 
 #[test]
 fn replay_since_is_inclusive_at_365_days_and_rejects_future_dates() {
-    let today: NaiveDate = "2026-10-07".parse().expect("valid fixture");
+    let today: Date = "2026-10-07".parse().expect("valid fixture");
     for (since, expected) in [
         ("2026-10-07", Ok(())),
         ("2026-10-06", Ok(())),
@@ -758,11 +758,11 @@ fn replay_since_is_inclusive_at_365_days_and_rejects_future_dates() {
         );
     }
     assert_eq!(
-        validate_replay_since(NaiveDate::MIN, today),
+        validate_replay_since(Date::MIN, today),
         Err(ReplayWindowError::TooOld)
     );
     assert_eq!(
-        validate_replay_since(NaiveDate::MAX, today),
+        validate_replay_since(Date::MAX, today),
         Err(ReplayWindowError::Future)
     );
 }
@@ -852,7 +852,7 @@ fn callback_boundary_and_invalid_return_values_have_literal_results() {
         relay_callback(
             Some(&request),
             &query,
-            request.expires_at - chrono::TimeDelta::seconds(1)
+            request.expires_at - SignedDuration::from_secs(1)
         )
         .expect("valid fixture")
         .location,
@@ -1058,7 +1058,7 @@ fn completed_requests_still_hide_their_link_from_other_owners() {
         validate_complete(
             Some(&request),
             request.user_id,
-            request.expires_at - chrono::TimeDelta::seconds(1)
+            request.expires_at - SignedDuration::from_secs(1)
         ),
         Ok(CompleteDecision::CreateLink)
     );
@@ -1146,7 +1146,7 @@ fn assert_changed_requests_or_links_rejected(
     code: &LinkCode,
     request: &ExchangeRequest,
     link: &SuiteLink,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) {
     for (request, expected) in [
         (
@@ -1235,7 +1235,7 @@ fn exchange_retries_cannot_bypass_authentication_subjects_or_the_recorded_link()
             Some(&code),
             &request,
             Some(&link),
-            code.expires_at - chrono::TimeDelta::seconds(1)
+            code.expires_at - SignedDuration::from_secs(1)
         ),
         Ok(ExchangeDecision::ExistingLink(link.id))
     );
@@ -1863,14 +1863,14 @@ fn inbound_checks_every_envelope_rule_during_replay_and_protocol_tests() {
     for replay in [false, true] {
         assert_envelope_rules(&catalog, &envelope, &link, replay);
     }
-    let boundary = envelope.occurred_at + chrono::Duration::seconds(MAX_EVENT_AGE_SECONDS);
+    let boundary = envelope.occurred_at + SignedDuration::from_secs(MAX_EVENT_AGE_SECONDS);
     assert!(validate_inbound(&catalog, &envelope, &link, boundary, false).is_ok());
     assert_eq!(
         validate_inbound(
             &catalog,
             &envelope,
             &link,
-            boundary + chrono::Duration::seconds(1),
+            boundary + SignedDuration::from_secs(1),
             false
         ),
         Err(InboundValidationError::Envelope(Code::EventTooOld))
@@ -1880,7 +1880,7 @@ fn inbound_checks_every_envelope_rule_during_replay_and_protocol_tests() {
             &catalog,
             &envelope,
             &link,
-            boundary + chrono::Duration::seconds(1),
+            boundary + SignedDuration::from_secs(1),
             true
         )
         .is_ok()
@@ -1936,7 +1936,8 @@ fn versioned_jobs_and_exchange_values_use_the_exact_wire_shapes() {
         serde_json::to_value(response).expect("wire"),
         exchange["response"]
     );
-    let event = SuiteEvent::connection_test(Uuid::now_v7(), Utc::now()).envelope("owner", "alpha");
+    let event =
+        SuiteEvent::connection_test(Uuid::now_v7(), Timestamp::now()).envelope("owner", "alpha");
     let job = SuiteDeliverJobV1::new(Uuid::now_v7(), event, true);
     let wire = serde_json::to_value(&job).expect("wire");
     assert_eq!(wire["schema_version"], 1);
@@ -2064,7 +2065,7 @@ fn inbound_type_source_future_and_error_codes_are_explicit_for_live_and_replay()
         assert_eq!(error, InboundValidationError::SourceAppMismatch);
         assert_eq!(error.code(), "suite_event_type_unsupported");
         let future = EventEnvelope {
-            occurred_at: link.created_at + chrono::Duration::seconds(301),
+            occurred_at: link.created_at + SignedDuration::from_secs(301),
             ..envelope.clone()
         };
         let error = validate_inbound(&catalog, &future, &link, link.created_at, replay)

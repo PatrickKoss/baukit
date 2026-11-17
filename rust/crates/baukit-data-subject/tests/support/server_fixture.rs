@@ -1,3 +1,4 @@
+use jiff::Timestamp;
 use std::{
     error::Error,
     sync::{
@@ -31,7 +32,7 @@ use baukit_runtime::ShutdownToken;
 use baukit_test::{
     FakeIdentityAccountDeleter, InMemoryApiTokenStore, MockOidcServer, PostgresTestContainer,
 };
-use chrono::Utc;
+
 use serde_json::{Value, json};
 use sqlx::{PgConnection, PgPool};
 use tower::ServiceExt as _;
@@ -302,7 +303,7 @@ impl Fixture {
             &self
                 .issuer
                 .claims(subject, "fixture", Duration::from_secs(300))?
-                .claim("auth_time", Utc::now().timestamp() - 60),
+                .claim("auth_time", Timestamp::now().as_second() - 60),
         )?)
     }
 

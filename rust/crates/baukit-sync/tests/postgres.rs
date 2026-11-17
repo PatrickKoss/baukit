@@ -366,7 +366,7 @@ async fn a_stamped_row_pulls_back_in_revision_order() -> Result<(), Box<dyn Erro
     .await?;
     transaction.commit().await?;
 
-    let since_revision_2: Vec<(i64, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
+    let since_revision_2: Vec<(i64, Option<jiff_sqlx::Timestamp>)> = sqlx::query_as(
         "SELECT revision, deleted_at FROM product_records
          WHERE owner_id = $1 AND revision > 2
          ORDER BY revision",

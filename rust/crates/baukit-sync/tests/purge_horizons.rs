@@ -1,4 +1,5 @@
 #![cfg(test)]
+use jiff_sqlx::ToSqlx;
 use std::{error::Error, num::NonZeroU32, path::PathBuf, time::Duration};
 
 use baukit_sync::{
@@ -12,7 +13,7 @@ use baukit_test::{
     PostgresTestContainer, PullPause, PurgeHorizonAdapter, PurgeHorizonPull,
     assert_purge_horizon_conformance, check_purge_horizon_conformance,
 };
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -90,19 +91,11 @@ impl PurgeHorizonAdapter for Adapter {
         Ok(revision)
     }
 
-    async fn write_tombstone(
-        &self,
-        owner: &Uuid,
-        deleted_at: DateTime<Utc>,
-    ) -> Result<i64, TestError> {
+    async fn write_tombstone(&self, owner: &Uuid, deleted_at: Timestamp) -> Result<i64, TestError> {
         tombstone_record(&self.pool, *owner, deleted_at).await
     }
 
-    async fn purge_batch(
-        &self,
-        cutoff: DateTime<Utc>,
-        limit: NonZeroU32,
-    ) -> Result<u64, TestError> {
+    async fn purge_batch(&self, cutoff: Timestamp, limit: NonZeroU32) -> Result<u64, TestError> {
         let mut transaction = self.pool.begin().await?;
         let batch = purge_tombstone_batch(&mut transaction, &RECORDS, cutoff, limit).await?;
         transaction.commit().await?;
@@ -246,8 +239,8 @@ async fn a_horizon_read_outside_the_pull_transaction_fails_the_race_case() -> Re
 async fn purge_tombstones_follows_the_caller_table_order() -> Result<(), TestError> {
     let (fixture, pool) = fixture().await?;
     let owner = owner(&pool).await?;
-    let expired = Utc::now() - TimeDelta::days(2);
-    let cutoff = Utc::now() - TimeDelta::days(1);
+    let expired = Timestamp::now() - SignedDuration::from_hours(24 * 2);
+    let cutoff = Timestamp::now() - SignedDuration::from_hours(24);
     let (list, list_revision) = tombstone_list(&pool, owner, expired).await?;
     let mut item_revisions = Vec::new();
     for _ in 0..3 {
@@ -301,7 +294,7 @@ async fn purge_tombstones_follows_the_caller_table_order() -> Result<(), TestErr
 async fn a_selector_that_ignores_the_limit_is_rejected_before_deleting() -> Result<(), TestError> {
     let (fixture, pool) = fixture().await?;
     let owner = owner(&pool).await?;
-    let expired = Utc::now() - TimeDelta::days(2);
+    let expired = Timestamp::now() - SignedDuration::from_hours(24 * 2);
     for _ in 0..3 {
         tombstone_record(&pool, owner, expired).await?;
     }
@@ -315,7 +308,7 @@ async fn a_selector_that_ignores_the_limit_is_rejected_before_deleting() -> Resu
     );
 
     let mut transaction = pool.begin().await?;
-    let result = purge_tombstone_batch(&mut transaction, &unbounded, Utc::now(), LIMIT).await;
+    let result = purge_tombstone_batch(&mut transaction, &unbounded, Timestamp::now(), LIMIT).await;
     transaction.rollback().await?;
 
     assert!(matches!(
@@ -339,14 +332,19 @@ async fn a_selector_that_ignores_the_limit_is_rejected_before_deleting() -> Resu
 async fn an_owner_with_an_open_write_is_skipped_until_it_commits() -> Result<(), TestError> {
     let (fixture, pool) = fixture().await?;
     let owner = owner(&pool).await?;
-    let tombstone = tombstone_record(&pool, owner, Utc::now() - TimeDelta::days(2)).await?;
+    let tombstone = tombstone_record(
+        &pool,
+        owner,
+        Timestamp::now() - SignedDuration::from_hours(24 * 2),
+    )
+    .await?;
 
     let mut writer = pool.begin().await?;
     baukit_sync::next_revision(&mut writer, owner).await?;
     let mut purge = pool.begin().await?;
     let skipped = tokio::time::timeout(
         LOCK_WAIT,
-        purge_tombstone_batch(&mut purge, &RECORDS, Utc::now(), LIMIT),
+        purge_tombstone_batch(&mut purge, &RECORDS, Timestamp::now(), LIMIT),
     )
     .await??;
     purge.commit().await?;
@@ -356,7 +354,7 @@ async fn an_owner_with_an_open_write_is_skipped_until_it_commits() -> Result<(),
     writer.commit().await?;
 
     let mut purge = pool.begin().await?;
-    let purged = purge_tombstone_batch(&mut purge, &RECORDS, Utc::now(), LIMIT).await?;
+    let purged = purge_tombstone_batch(&mut purge, &RECORDS, Timestamp::now(), LIMIT).await?;
     purge.commit().await?;
     assert_eq!((purged.selected, purged.deleted), (1, 1));
     assert_eq!(horizon(&pool, owner).await?, Some(tombstone));
@@ -392,9 +390,19 @@ async fn an_open_pull_does_not_block_revision_allocation() -> Result<(), TestErr
 async fn the_guard_rejects_negative_and_stale_cursors() -> Result<(), TestError> {
     let (fixture, pool) = fixture().await?;
     let owner = owner(&pool).await?;
-    tombstone_record(&pool, owner, Utc::now() - TimeDelta::days(2)).await?;
-    let horizon_revision = tombstone_record(&pool, owner, Utc::now() - TimeDelta::days(2)).await?;
-    purge_tombstones(&pool, &[RECORDS], Utc::now(), LIMIT).await?;
+    tombstone_record(
+        &pool,
+        owner,
+        Timestamp::now() - SignedDuration::from_hours(24 * 2),
+    )
+    .await?;
+    let horizon_revision = tombstone_record(
+        &pool,
+        owner,
+        Timestamp::now() - SignedDuration::from_hours(24 * 2),
+    )
+    .await?;
+    purge_tombstones(&pool, &[RECORDS], Timestamp::now(), LIMIT).await?;
 
     let mut transaction = pool.begin().await?;
     let negative = guard_pull_cursor(&mut transaction, owner, -1).await;
@@ -494,7 +502,7 @@ async fn owner(pool: &PgPool) -> Result<Uuid, TestError> {
 async fn tombstone_record(
     pool: &PgPool,
     owner: Uuid,
-    deleted_at: DateTime<Utc>,
+    deleted_at: Timestamp,
 ) -> Result<i64, TestError> {
     let mut transaction = pool.begin().await?;
     let id = Uuid::new_v4();
@@ -507,7 +515,7 @@ async fn tombstone_record(
         .await?;
     let deleted = baukit_sync::next_revision(&mut transaction, owner).await?;
     sqlx::query("UPDATE product_records SET deleted_at = $1, revision = $2 WHERE id = $3")
-        .bind(deleted_at)
+        .bind(deleted_at.to_sqlx())
         .bind(deleted)
         .bind(id)
         .execute(&mut *transaction)
@@ -519,7 +527,7 @@ async fn tombstone_record(
 async fn tombstone_list(
     pool: &PgPool,
     owner: Uuid,
-    deleted_at: DateTime<Utc>,
+    deleted_at: Timestamp,
 ) -> Result<(Uuid, i64), TestError> {
     let mut transaction = pool.begin().await?;
     let id = Uuid::new_v4();
@@ -529,7 +537,7 @@ async fn tombstone_list(
     )
     .bind(id)
     .bind(owner)
-    .bind(deleted_at)
+    .bind(deleted_at.to_sqlx())
     .bind(revision)
     .execute(&mut *transaction)
     .await?;
@@ -541,7 +549,7 @@ async fn tombstone_item(
     pool: &PgPool,
     owner: Uuid,
     list: Uuid,
-    deleted_at: DateTime<Utc>,
+    deleted_at: Timestamp,
 ) -> Result<i64, TestError> {
     let mut transaction = pool.begin().await?;
     let revision = baukit_sync::next_revision(&mut transaction, owner).await?;
@@ -550,7 +558,7 @@ async fn tombstone_item(
     )
     .bind(Uuid::new_v4())
     .bind(list)
-    .bind(deleted_at)
+    .bind(deleted_at.to_sqlx())
     .bind(revision)
     .execute(&mut *transaction)
     .await?;

@@ -1,5 +1,5 @@
 use crate::error_codes::SuiteErrorCode;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 use std::fmt;
@@ -227,7 +227,7 @@ impl CallbackError {
 pub fn relay_callback(
     request: Option<&LinkRequest>,
     query: &LinkCallbackQuery,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<CallbackRedirect, CallbackError> {
     let request = request.ok_or(CallbackError::CodeInvalid)?;
     let valid = query.state.as_ref().is_some_and(|state| {
@@ -288,7 +288,7 @@ pub enum CompleteDecision {
 pub fn validate_complete(
     request: Option<&LinkRequest>,
     owner_id: Uuid,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<CompleteDecision, LinkProtocolError> {
     let request = request
         .filter(|request| request.user_id == owner_id)
@@ -321,7 +321,7 @@ pub fn validate_exchange(
     code: Option<&LinkCode>,
     request: &ExchangeRequest,
     existing_link: Option<&SuiteLink>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<ExchangeDecision, LinkProtocolError> {
     let code = code.ok_or(LinkProtocolError::CodeInvalid)?;
     if code.expires_at <= now

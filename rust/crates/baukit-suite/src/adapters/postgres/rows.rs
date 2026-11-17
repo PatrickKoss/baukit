@@ -1,6 +1,6 @@
 use crate::domain::*;
 use crate::ports::SuiteStoreError;
-use chrono::{DateTime, Utc};
+use jiff_sqlx::Timestamp as SqlTimestamp;
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -26,13 +26,13 @@ pub(super) struct LinkRow {
     pub(super) reward_mode: String,
     pub(super) delivery_health: String,
     pub(super) consecutive_failures: i32,
-    pub(super) last_delivery_at: Option<DateTime<Utc>>,
-    pub(super) last_failure_at: Option<DateTime<Utc>>,
+    pub(super) last_delivery_at: Option<SqlTimestamp>,
+    pub(super) last_failure_at: Option<SqlTimestamp>,
     pub(super) last_failure_code: Option<String>,
-    pub(super) last_received_at: Option<DateTime<Utc>>,
-    pub(super) created_at: DateTime<Utc>,
-    pub(super) updated_at: DateTime<Utc>,
-    pub(super) revoked_at: Option<DateTime<Utc>>,
+    pub(super) last_received_at: Option<SqlTimestamp>,
+    pub(super) created_at: SqlTimestamp,
+    pub(super) updated_at: SqlTimestamp,
+    pub(super) revoked_at: Option<SqlTimestamp>,
 }
 impl TryFrom<LinkRow> for SuiteLink {
     type Error = SuiteStoreError;
@@ -58,13 +58,13 @@ impl TryFrom<LinkRow> for SuiteLink {
             reward_mode: r.reward_mode.parse().map_err(invalid)?,
             delivery_health: r.delivery_health.parse().map_err(invalid)?,
             consecutive_failures: r.consecutive_failures.try_into().map_err(invalid)?,
-            last_delivery_at: r.last_delivery_at,
-            last_failure_at: r.last_failure_at,
+            last_delivery_at: r.last_delivery_at.map(SqlTimestamp::to_jiff),
+            last_failure_at: r.last_failure_at.map(SqlTimestamp::to_jiff),
             last_failure_code: r.last_failure_code,
-            last_received_at: r.last_received_at,
-            created_at: r.created_at,
-            updated_at: r.updated_at,
-            revoked_at: r.revoked_at,
+            last_received_at: r.last_received_at.map(SqlTimestamp::to_jiff),
+            created_at: r.created_at.to_jiff(),
+            updated_at: r.updated_at.to_jiff(),
+            revoked_at: r.revoked_at.map(SqlTimestamp::to_jiff),
         })
     }
 }
@@ -84,9 +84,9 @@ pub(super) struct RequestRow {
     pub(super) secret_ciphertext: Option<Vec<u8>>,
     pub(super) secret_nonce: Option<Vec<u8>>,
     pub(super) secret_key_version: Option<i32>,
-    pub(super) expires_at: DateTime<Utc>,
-    pub(super) consumed_at: Option<DateTime<Utc>>,
-    pub(super) created_at: DateTime<Utc>,
+    pub(super) expires_at: SqlTimestamp,
+    pub(super) consumed_at: Option<SqlTimestamp>,
+    pub(super) created_at: SqlTimestamp,
 }
 impl TryFrom<RequestRow> for LinkRequest {
     type Error = SuiteStoreError;
@@ -126,9 +126,9 @@ impl TryFrom<RequestRow> for LinkRequest {
             client_state_nonce: r.client_state_nonce,
             return_url: r.return_url,
             link_id: r.link_id,
-            expires_at: r.expires_at,
-            consumed_at: r.consumed_at,
-            created_at: r.created_at,
+            expires_at: r.expires_at.to_jiff(),
+            consumed_at: r.consumed_at.map(SqlTimestamp::to_jiff),
+            created_at: r.created_at.to_jiff(),
         })
     }
 }
@@ -141,9 +141,9 @@ pub(super) struct CodeRow {
     pub(super) suite_subject: Option<String>,
     pub(super) auto_approved: bool,
     pub(super) link_id: Option<Uuid>,
-    pub(super) expires_at: DateTime<Utc>,
-    pub(super) consumed_at: Option<DateTime<Utc>>,
-    pub(super) created_at: DateTime<Utc>,
+    pub(super) expires_at: SqlTimestamp,
+    pub(super) consumed_at: Option<SqlTimestamp>,
+    pub(super) created_at: SqlTimestamp,
 }
 impl TryFrom<CodeRow> for LinkCode {
     type Error = SuiteStoreError;
@@ -159,9 +159,9 @@ impl TryFrom<CodeRow> for LinkCode {
             suite_subject: r.suite_subject,
             auto_approved: r.auto_approved,
             link_id: r.link_id,
-            expires_at: r.expires_at,
-            consumed_at: r.consumed_at,
-            created_at: r.created_at,
+            expires_at: r.expires_at.to_jiff(),
+            consumed_at: r.consumed_at.map(SqlTimestamp::to_jiff),
+            created_at: r.created_at.to_jiff(),
         })
     }
 }

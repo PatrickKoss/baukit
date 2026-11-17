@@ -15,14 +15,14 @@ bound to the authenticated connection. An event exactly seven days old is
 valid. An older event returns `event_too_old` and must not change current state.
 
 ```rust
-use chrono::Utc;
 use baukit_events::{EventEnvelope, validate_event_envelope};
+use jiff::Timestamp;
 
 # fn check(
 #     envelope: &EventEnvelope,
 #     connection_subject: &str,
 # ) -> Result<(), baukit_events::EventValidationCode> {
-validate_event_envelope(envelope, connection_subject, Utc::now())?;
+validate_event_envelope(envelope, connection_subject, Timestamp::now())?;
 # Ok(())
 # }
 ```

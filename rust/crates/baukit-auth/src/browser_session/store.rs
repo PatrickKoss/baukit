@@ -1,6 +1,7 @@
 use std::{fmt, future::Future, pin::Pin};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
+use jiff_sqlx::{Timestamp as SqlTimestamp, ToSqlx};
 use sqlx::{PgExecutor, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -18,15 +19,15 @@ pub(crate) struct SessionRow {
     pub(crate) key_version: i32,
     pub(crate) refresh_token: Vec<u8>,
     pub(crate) id_token: Option<Vec<u8>>,
-    pub(crate) created_at: DateTime<Utc>,
-    pub(crate) last_used_at: DateTime<Utc>,
-    pub(crate) idle_expires_at: DateTime<Utc>,
-    pub(crate) absolute_expires_at: DateTime<Utc>,
-    pub(crate) revoked_at: Option<DateTime<Utc>>,
+    pub(crate) created_at: Timestamp,
+    pub(crate) last_used_at: Timestamp,
+    pub(crate) idle_expires_at: Timestamp,
+    pub(crate) absolute_expires_at: Timestamp,
+    pub(crate) revoked_at: Option<Timestamp>,
     pub(crate) rotated_to: Option<Uuid>,
     pub(crate) grace_access_token: Option<Vec<u8>>,
-    pub(crate) grace_expires_at: Option<DateTime<Utc>>,
-    pub(crate) grace_until: Option<DateTime<Utc>>,
+    pub(crate) grace_expires_at: Option<Timestamp>,
+    pub(crate) grace_until: Option<Timestamp>,
 }
 
 impl fmt::Debug for SessionRow {
@@ -69,9 +70,9 @@ pub(crate) trait SessionTransaction: Send {
         &'a mut self,
         id: Uuid,
         successor: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> StoreFuture<'a, ()>;
-    fn revoke_family<'a>(&'a mut self, family_id: Uuid, now: DateTime<Utc>) -> StoreFuture<'a, ()>;
+    fn revoke_family<'a>(&'a mut self, family_id: Uuid, now: Timestamp) -> StoreFuture<'a, ()>;
     fn delete_family<'a>(&'a mut self, family_id: Uuid) -> StoreFuture<'a, ()>;
     /// Returns the family's newest row that was not rotated.
     fn family_head<'a>(&'a mut self, family_id: Uuid) -> StoreFuture<'a, Option<SessionRow>>;
@@ -119,15 +120,15 @@ type RowTuple = (
     i32,
     Vec<u8>,
     Option<Vec<u8>>,
-    DateTime<Utc>,
-    DateTime<Utc>,
-    DateTime<Utc>,
-    DateTime<Utc>,
-    Option<DateTime<Utc>>,
+    SqlTimestamp,
+    SqlTimestamp,
+    SqlTimestamp,
+    SqlTimestamp,
+    Option<SqlTimestamp>,
     Option<Uuid>,
     Option<Vec<u8>>,
-    Option<DateTime<Utc>>,
-    Option<DateTime<Utc>>,
+    Option<SqlTimestamp>,
+    Option<SqlTimestamp>,
 );
 
 fn from_tuple(row: RowTuple) -> SessionRow {
@@ -157,15 +158,15 @@ fn from_tuple(row: RowTuple) -> SessionRow {
         key_version,
         refresh_token,
         id_token,
-        created_at,
-        last_used_at,
-        idle_expires_at,
-        absolute_expires_at,
-        revoked_at,
+        created_at: created_at.to_jiff(),
+        last_used_at: last_used_at.to_jiff(),
+        idle_expires_at: idle_expires_at.to_jiff(),
+        absolute_expires_at: absolute_expires_at.to_jiff(),
+        revoked_at: revoked_at.map(SqlTimestamp::to_jiff),
         rotated_to,
         grace_access_token,
-        grace_expires_at,
-        grace_until,
+        grace_expires_at: grace_expires_at.map(SqlTimestamp::to_jiff),
+        grace_until: grace_until.map(SqlTimestamp::to_jiff),
     }
 }
 
@@ -198,15 +199,15 @@ impl SessionTransaction for PostgresSessionTransaction {
             .bind(row.key_version)
             .bind(&row.refresh_token)
             .bind(row.id_token.as_ref())
-            .bind(row.created_at)
-            .bind(row.last_used_at)
-            .bind(row.idle_expires_at)
-            .bind(row.absolute_expires_at)
-            .bind(row.revoked_at)
+            .bind(row.created_at.to_sqlx())
+            .bind(row.last_used_at.to_sqlx())
+            .bind(row.idle_expires_at.to_sqlx())
+            .bind(row.absolute_expires_at.to_sqlx())
+            .bind(row.revoked_at.map(ToSqlx::to_sqlx))
             .bind(row.rotated_to)
             .bind(row.grace_access_token.as_ref())
-            .bind(row.grace_expires_at)
-            .bind(row.grace_until)
+            .bind(row.grace_expires_at.map(ToSqlx::to_sqlx))
+            .bind(row.grace_until.map(ToSqlx::to_sqlx))
             .execute(&mut *self.transaction)
             .await?;
             Ok(())
@@ -217,7 +218,7 @@ impl SessionTransaction for PostgresSessionTransaction {
         &'a mut self,
         id: Uuid,
         successor: Uuid,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> StoreFuture<'a, ()> {
         Box::pin(async move {
             sqlx::query(
@@ -228,14 +229,14 @@ impl SessionTransaction for PostgresSessionTransaction {
             )
             .bind(id)
             .bind(successor)
-            .bind(now)
+            .bind(now.to_sqlx())
             .execute(&mut *self.transaction)
             .await?;
             Ok(())
         })
     }
 
-    fn revoke_family<'a>(&'a mut self, family_id: Uuid, now: DateTime<Utc>) -> StoreFuture<'a, ()> {
+    fn revoke_family<'a>(&'a mut self, family_id: Uuid, now: Timestamp) -> StoreFuture<'a, ()> {
         Box::pin(async move {
             sqlx::query(
                 "UPDATE baukit_auth_browser_sessions
@@ -244,7 +245,7 @@ impl SessionTransaction for PostgresSessionTransaction {
                  WHERE family_id = $1 AND revoked_at IS NULL",
             )
             .bind(family_id)
-            .bind(now)
+            .bind(now.to_sqlx())
             .execute(&mut *self.transaction)
             .await?;
             Ok(())
@@ -293,7 +294,7 @@ impl SessionTransaction for PostgresSessionTransaction {
 /// Returns any database error unchanged.
 pub async fn purge_browser_sessions<'e, E>(
     executor: E,
-    cutoff: DateTime<Utc>,
+    cutoff: Timestamp,
     limit: std::num::NonZeroU32,
 ) -> Result<u64, sqlx::Error>
 where
@@ -310,7 +311,7 @@ where
              LIMIT $2
          )",
     )
-    .bind(cutoff)
+    .bind(cutoff.to_sqlx())
     .bind(i64::from(limit.get()))
     .execute(executor)
     .await?
@@ -343,14 +344,14 @@ where
 
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
+    use jiff::Timestamp;
     use uuid::Uuid;
 
     use super::SessionRow;
 
     #[test]
     fn debug_redacts_hash_and_token_columns() {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let row = SessionRow {
             id: Uuid::nil(),
             secret_hash: b"hash-bytes-xyz".to_vec(),

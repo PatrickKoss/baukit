@@ -23,7 +23,7 @@ pub mod retention {
         JobFuture, JobHandler, JobStore, NewJob, PostgresJobStore,
     };
 {% if context.platform %}    use baukit_suite::platform::PostgresPlatformInbox;
-{% endif %}    use chrono::{DateTime, Utc};
+{% endif %}    use jiff::Timestamp;
     use serde_json::json;
     use sqlx::PgPool;
 
@@ -55,10 +55,7 @@ pub mod retention {
         }
 
         /// Safe to call from every worker replica at startup.
-        pub async fn enqueue_initial(
-            &self,
-            now: DateTime<Utc>,
-        ) -> Result<EnqueueOutcome, JobError> {
+        pub async fn enqueue_initial(&self, now: Timestamp) -> Result<EnqueueOutcome, JobError> {
             let slot = self
                 .interval
                 .slot_at(now)
@@ -77,7 +74,8 @@ pub mod retention {
 {% if context.platform %}
         async fn purge_receipts(&self, cancellation: &JobCancellation) -> Result<(), JobError> {
             let inbox = PostgresPlatformInbox::new(self.pool.clone());
-            let cutoff = Utc::now() - chrono::TimeDelta::days(RECEIPT_RETENTION_DAYS);
+            let cutoff =
+                Timestamp::now() - jiff::SignedDuration::from_hours(24 * RECEIPT_RETENTION_DAYS);
             loop {
                 if cancellation.is_cancelled() {
                     return Err(JobError::retryable("retention purge was cancelled"));
@@ -96,7 +94,8 @@ pub mod retention {
             &self,
             cancellation: &JobCancellation,
         ) -> Result<(), JobError> {
-            let cutoff = Utc::now() - chrono::TimeDelta::days(BROWSER_SESSION_GRACE_DAYS);
+            let cutoff = Timestamp::now()
+                - jiff::SignedDuration::from_hours(24 * BROWSER_SESSION_GRACE_DAYS);
             let batch = NonZeroU32::new(PURGE_BATCH)
                 .ok_or_else(|| JobError::permanent("purge batch must not be zero"))?;
             loop {
@@ -122,7 +121,7 @@ pub mod retention {
                 .payload
                 .get("slot")
                 .ok_or_else(|| JobError::permanent("retention purge payload has no slot"))?;
-            let starts_at: DateTime<Utc> = serde_json::from_value(slot.clone())
+            let starts_at: Timestamp = serde_json::from_value(slot.clone())
                 .map_err(|_| JobError::permanent("invalid retention purge payload"))?;
             let slot = self
                 .interval
@@ -134,7 +133,7 @@ pub mod retention {
             self.purge_expired(&cancellation).await?;
             let next = self
                 .interval
-                .next_slot(slot, Utc::now())
+                .next_slot(slot, Timestamp::now())
                 .map_err(|_| JobError::permanent("invalid next retention purge slot"))?;
             let mut transaction =
                 self.pool.begin().await.map_err(|_| {
@@ -150,7 +149,7 @@ pub mod retention {
                     &mut transaction,
                     job.id,
                     cancellation.worker_id(),
-                    Utc::now(),
+                    Timestamp::now(),
                 )
                 .await
                 .map_err(|_| JobError::retryable("could not complete retention purge"))?;

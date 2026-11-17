@@ -402,7 +402,7 @@ async fn api_tokens_are_rechecked_for_revocation_and_expiry_on_every_request()
                     display_prefix: issued.token.display_prefix.clone(),
                     grants: issued.token.grants.clone(),
                     created_at: issued.token.created_at,
-                    expires_at: Some(SystemTime::now().into()),
+                    expires_at: Some(jiff::Timestamp::now()),
                 })
                 .await?;
         }

@@ -245,7 +245,7 @@ async fn every_token_profile_exposes_authentication_time() -> Result<(), Box<dyn
         let principal = verifier.verify(&server.mint(&claims)?).await?;
         assert_eq!(
             principal.authenticated_at(),
-            chrono::DateTime::from_timestamp(1_700_000_000, 0)
+            jiff::Timestamp::from_second(1_700_000_000).ok()
         );
         assert!(principal.profile_claim("auth_time").is_none());
         for invalid in [

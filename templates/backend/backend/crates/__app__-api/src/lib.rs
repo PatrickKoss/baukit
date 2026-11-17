@@ -146,7 +146,9 @@ impl From<ErasureOutcome> for ErasureDto {
                 baukit_erasure::ErasureState::Failed => ErasureStatusDto::Failed,
             },
             operation_id: outcome.operation_id,
-            completed_at: outcome.completed_at.map(|time| time.to_rfc3339()),
+            completed_at: outcome
+                .completed_at
+                .map(|time| time.display_with_offset(jiff::tz::Offset::UTC).to_string()),
         }
     }
 }

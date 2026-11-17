@@ -72,7 +72,8 @@ pub fn compose_with(
 /// Daily scheduler hook. The cutoff keeps at least 30 days of delivery receipts.
 pub async fn purge_receipts(pool: PgPool) -> Result<u64, baukit_suite::platform::PlatformError> {
     let inbox = PostgresPlatformInbox::new(pool);
-    let cutoff = chrono::Utc::now() - chrono::TimeDelta::days(RECEIPT_RETENTION_DAYS);
+    let cutoff =
+        jiff::Timestamp::now() - jiff::SignedDuration::from_hours(24 * RECEIPT_RETENTION_DAYS);
     let mut total = 0;
     loop {
         let removed = inbox.purge_received_before(cutoff, PURGE_BATCH).await?;

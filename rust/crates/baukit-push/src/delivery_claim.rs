@@ -2,7 +2,7 @@
 
 use std::num::NonZeroU32;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::{Timestamp, civil::Date};
 use uuid::Uuid;
 
 use crate::{PushStoreError, PushStoreFuture, PushValidationError};
@@ -54,7 +54,7 @@ pub struct DeliveryClaim {
     /// The account the notification is for.
     pub owner_id: Uuid,
     /// The date in the owner's time zone the notification belongs to.
-    pub local_date: NaiveDate,
+    pub local_date: Date,
     /// The kind of notification.
     pub kind: DeliveryKind,
 }
@@ -62,7 +62,7 @@ pub struct DeliveryClaim {
 impl DeliveryClaim {
     /// Creates a claim key.
     #[must_use]
-    pub const fn new(owner_id: Uuid, local_date: NaiveDate, kind: DeliveryKind) -> Self {
+    pub const fn new(owner_id: Uuid, local_date: Date, kind: DeliveryKind) -> Self {
         Self {
             owner_id,
             local_date,
@@ -83,7 +83,7 @@ pub trait DeliveryClaimStore: Send + Sync {
     fn claim(
         &self,
         claim: DeliveryClaim,
-        claimed_at: DateTime<Utc>,
+        claimed_at: Timestamp,
     ) -> PushStoreFuture<'_, Result<bool, PushStoreError>>;
 
     /// Drops a claim after a failed send; returns whether it existed.
@@ -95,7 +95,7 @@ pub trait DeliveryClaimStore: Send + Sync {
     /// Call it again until it returns less than `limit`.
     fn purge(
         &self,
-        before: NaiveDate,
+        before: Date,
         limit: NonZeroU32,
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>>;
 }

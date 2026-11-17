@@ -2,7 +2,8 @@ use crate::{
     IDENTITY_DELETE_JOB_TYPE, IdentityAccountDeleter, IdentityDeletionError, PostgresErasureStore,
 };
 use baukit_jobs::{ClaimedJob, JobCancellation, JobError, JobFuture, JobHandler, PostgresJobStore};
-use chrono::Utc;
+use jiff::Timestamp;
+
 use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -75,7 +76,7 @@ impl JobHandler for IdentityDeletionHandler {
                     &mut transaction,
                     job.id,
                     cancellation.worker_id(),
-                    Utc::now(),
+                    Timestamp::now(),
                 )
                 .await
                 .map_err(|_| JobError::retryable("erasure completion job store unavailable"))?;

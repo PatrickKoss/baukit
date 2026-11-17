@@ -984,7 +984,9 @@ async fn hub_mode_credits_require_a_matching_hub_client() -> TestResult {
 #[test]
 fn organization_and_credit_events_decode_with_their_owner() -> TestResult {
     let decoder = PlatformEventDecoder::new("schluesselbund".into(), None)?;
-    let now = chrono::DateTime::from_timestamp(1_800_000_000, 0).ok_or("time")?;
+    let now = jiff::Timestamp::from_second(1_800_000_000)
+        .ok()
+        .ok_or("time")?;
     let envelopes: Vec<Value> = serde_json::from_str(ENVELOPES)?;
     let find = |kind: &str| {
         envelopes

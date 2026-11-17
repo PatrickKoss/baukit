@@ -3,7 +3,7 @@
 
 use async_trait::async_trait;
 use baukit_suite::platform::*;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use std::{
     collections::BTreeMap,
     sync::{
@@ -73,7 +73,7 @@ async fn a_product_can_implement_the_inbox_and_invoke_a_handler() {
             fixture[0]["occurredAt"]
                 .as_str()
                 .expect("time")
-                .parse::<DateTime<Utc>>()
+                .parse::<Timestamp>()
                 .expect("clock"),
         )
         .expect("event");

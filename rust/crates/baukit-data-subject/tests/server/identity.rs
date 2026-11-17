@@ -1,4 +1,5 @@
 use super::*;
+use jiff::Timestamp;
 
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
@@ -12,24 +13,25 @@ async fn identity_finalization_checks_back_off_and_cap_at_sixty_seconds() -> Tes
             request_body(&["erase@example.invalid"]),
         )
         .await?;
-    let mut before = Utc::now();
+    let mut before = Timestamp::now();
     f.run_local_erasure(operation.operation_id).await?;
-    let mut after = Utc::now();
+    let mut after = Timestamp::now();
     for (count, seconds) in [1, 2, 4, 8, 16, 32, 60, 60].into_iter().enumerate() {
-        let (job_id, payload, run_after, attempts): (Uuid, Value, chrono::DateTime<Utc>, i32) =
+        let (job_id, payload, run_after, attempts): (Uuid, Value, jiff_sqlx::Timestamp, i32) =
             sqlx::query_as("SELECT id, payload, run_after, attempts FROM job_outbox WHERE job_type = $1 AND idempotency_key = $2")
                 .bind(FINALIZATION_JOB_TYPE).bind(operation.operation_id.to_string())
                 .fetch_one(&f.pool).await?;
+        let run_after = run_after.to_jiff();
         assert_eq!(
             payload,
             json!({"operationId": operation.operation_id, "checkCount": count})
         );
         assert_eq!(attempts, 0);
-        assert!(run_after >= before + TimeDelta::seconds(seconds));
-        assert!(run_after <= after + TimeDelta::seconds(seconds));
+        assert!(run_after >= before + SignedDuration::from_secs(seconds));
+        assert!(run_after <= after + SignedDuration::from_secs(seconds));
         assert_eq!(f.product.erases.load(Ordering::SeqCst), 1);
         if count < 7 {
-            before = Utc::now();
+            before = Timestamp::now();
             sqlx::query("UPDATE job_outbox SET run_after = now() WHERE id = $1")
                 .bind(job_id)
                 .execute(&f.pool)
@@ -47,7 +49,7 @@ async fn identity_finalization_checks_back_off_and_cap_at_sixty_seconds() -> Tes
                 },
             )
             .await?;
-            after = Utc::now();
+            after = Timestamp::now();
         }
     }
     let pending = f
@@ -65,7 +67,7 @@ async fn identity_finalization_checks_back_off_and_cap_at_sixty_seconds() -> Tes
 #[ignore = "requires Docker PostgreSQL"]
 async fn unfinished_identity_deletion_fails_at_the_configured_deadline() -> TestResult {
     let f = Fixture::with_config(true, |config| {
-        config.identity_deletion_timeout = TimeDelta::seconds(5);
+        config.identity_deletion_timeout = SignedDuration::from_secs(5);
     })
     .await?;
     let token = f.token("privacy", "data-subject.erase")?;
@@ -90,12 +92,13 @@ async fn unfinished_identity_deletion_fails_at_the_configured_deadline() -> Test
 }
 
 async fn assert_finalization_waits_for_deadline(f: &Fixture, operation_id: Uuid) -> TestResult {
-    let started_at: chrono::DateTime<Utc> = sqlx::query_scalar(
+    let started_at: jiff_sqlx::Timestamp = sqlx::query_scalar(
         "SELECT identity_deletion_started_at FROM data_subject_operations WHERE id = $1",
     )
     .bind(operation_id)
     .fetch_one(&f.pool)
     .await?;
+    let started_at = started_at.to_jiff();
     let job_id: Uuid = sqlx::query_scalar("UPDATE job_outbox SET run_after = now(), payload = jsonb_set(payload, '{checkCount}', '6') WHERE job_type = $1 AND idempotency_key = $2 RETURNING id")
         .bind(FINALIZATION_JOB_TYPE).bind(operation_id.to_string()).fetch_one(&f.pool).await?;
     f.run_handler_until(
@@ -110,14 +113,15 @@ async fn assert_finalization_waits_for_deadline(f: &Fixture, operation_id: Uuid)
         },
     )
     .await?;
-    let run_after: chrono::DateTime<Utc> = sqlx::query_scalar(
+    let run_after: jiff_sqlx::Timestamp = sqlx::query_scalar(
         "SELECT run_after FROM job_outbox WHERE job_type = $1 AND idempotency_key = $2",
     )
     .bind(FINALIZATION_JOB_TYPE)
     .bind(operation_id.to_string())
     .fetch_one(&f.pool)
     .await?;
-    assert_eq!(run_after, started_at + TimeDelta::seconds(5));
+    let run_after = run_after.to_jiff();
+    assert_eq!(run_after, started_at + SignedDuration::from_secs(5));
     assert_eq!(
         f.store
             .status("privacy", OperationKind::Erasure, operation_id)

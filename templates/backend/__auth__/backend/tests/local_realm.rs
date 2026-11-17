@@ -81,7 +81,7 @@ async fn local_realm_issues_{{ context.auth_provider }}_shaped_tokens_for_the_pr
     assert_eq!(principal.organization(), Some("org_local"));
     assert_eq!(principal.issuer(), Some(keycloak.issuer().as_str()));
 {% if context.auth_clerk %}    assert_eq!(
-        principal.authenticated_at().map(|at| at.timestamp()),
+        principal.authenticated_at().map(|at| at.as_second()),
         claims[baukit_auth::CLERK_SIGN_IN_TIME_CLAIM].as_i64()
     );
 {% endif %}

@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate};
+use jiff::civil::Date;
 use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -145,7 +145,7 @@ fn validate_value(key: &str, value: &Value, kind: FieldKind<'_>) -> Result<(), P
                 }
                 FieldKind::Uuid => parse_uuid(text).is_some(),
                 FieldKind::CivilDate => parse_civil_date(text).is_some(),
-                FieldKind::Timestamp => DateTime::parse_from_rfc3339(text).is_ok(),
+                FieldKind::Timestamp => is_rfc3339_timestamp(text),
                 _ => false,
             };
             if !valid {
@@ -164,12 +164,24 @@ fn valid_identifier(value: &str, max_length: usize) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || b"_-.:".contains(&byte))
 }
 
-fn parse_civil_date(value: &str) -> Option<NaiveDate> {
+fn parse_civil_date(value: &str) -> Option<Date> {
     if value.len() != 10 {
         return None;
     }
-    let date = NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()?;
-    (date.format("%Y-%m-%d").to_string() == value).then_some(date)
+    let date: Date = value.parse().ok()?;
+    (date.to_string() == value).then_some(date)
+}
+
+/// RFC 3339 `date-time`: full date, `T` or space, `HH:MM:SS` with optional fraction, and a `Z` or
+/// numeric offset. Jiff alone also accepts ISO 8601 forms without seconds and RFC 9557 annotations.
+fn is_rfc3339_timestamp(value: &str) -> bool {
+    const SEPARATORS: [(usize, &[u8]); 5] =
+        [(4, b"-"), (7, b"-"), (10, b"Tt "), (13, b":"), (16, b":")];
+    let bytes = value.as_bytes();
+    let shaped = SEPARATORS
+        .iter()
+        .all(|(index, allowed)| bytes.get(*index).is_some_and(|byte| allowed.contains(byte)));
+    shaped && !value.contains('[') && value.parse::<jiff::Timestamp>().is_ok()
 }
 
 /// # Errors
