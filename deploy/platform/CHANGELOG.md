@@ -4,6 +4,7 @@
 
 ## [0.27.4] - 2026-11-17
 
+- platform-e2e gives chainsaw cleanup 2 minutes instead of the 30 s default. Deleting a test namespace waits for pod termination and finalizers, and under gate load `ingress` and `traefik-edge` each failed cleanup with `context deadline exceeded` after their assertions passed.
 - The `posthog-migrate-*` Job no longer gets `ttlSecondsAfterFinished`. Chart 30.46.0 renders it as a regular release resource, not a Helm hook, so Kubernetes deleted it 300 s after it finished, helm-controller drift detection reported it removed and recreated it, and PostHog migrations reran on every drift check (4 DriftCorrected events in about 2 h on platform-local). The post-renderer TTL patch is gone. The migrate Job is the only Job the release renders, and it has no hooks. New convention rule `drift-job-ttl` fails a chart Job without a `helm.sh/hook` annotation that sets `ttlSecondsAfterFinished` in a HelmRelease with drift detection on.
 
 ## [0.27.3] - 2026-11-17
