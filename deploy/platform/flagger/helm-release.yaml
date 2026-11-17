@@ -28,6 +28,8 @@ spec:
     meshProvider: traefik
     metricsServer: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
     selectorLabels: baukit.dev/workload
+    # Flagger copies only these target labels onto the -primary Deployment; require-baukit-labels needs them.
+    includeLabelPrefix: "app.kubernetes.io/,baukit.dev/"
     serviceMonitor:
       enabled: true
     resources:
