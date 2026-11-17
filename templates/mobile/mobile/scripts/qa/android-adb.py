@@ -323,9 +323,9 @@ def wait_for_stop(
 ) -> int:
     """Waits until adb forgot the serial, its console port closed and the qemu process exited.
 
-    qemu closes the console before it flushes the AVD's qcow2 overlays, so only the
-    exit of `pid` makes the AVD safe for the next emulator. A probe that times out
-    under load is retried until the stop deadline.
+    qemu closes its console about a second before it exits and may take up to 20 s to
+    shut down, still holding the AVD's files, so the next emulator waits for `pid` to
+    exit. A probe that times out under load is retried until the stop deadline.
     """
     serial, pid = emulator.serial, emulator.pid
     started = timing.clock()
