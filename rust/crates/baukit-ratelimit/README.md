@@ -191,4 +191,6 @@ remaining units.
 Amount-budget decisions record
 `fixed_window_amount_budget_decisions_total`. Its labels are `namespace` and
 `outcome`. Outcome is one of `allowed`, `denied`, `released`, or `error`;
-subject values are never metric labels.
+subject values are never metric labels. Prometheus keeps the Kubernetes
+namespace in `namespace`, so the platform stores the budget namespace as
+`exported_namespace`.

@@ -1,0 +1,170 @@
+# A second Falco without a driver that receives the API server's audit webhook through the k8saudit
+# plugin. It runs unprivileged and apart from the syscall DaemonSet, so only this pod needs egress to
+# ghcr.io for the plugin. The API server reaches it on a fixed ClusterIP (k3s/audit-webhook.yaml).
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: falco-k8saudit
+  namespace: falco
+spec:
+  interval: 30m
+  timeout: 5m
+  chartRef:
+    kind: OCIRepository
+    name: falco
+    namespace: falco
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  driftDetection:
+    mode: enabled
+  test:
+    enable: true
+    filters:
+      # The chart's only test belongs to falcosidekick, which this release disables.
+      - name: falco-falcosidekick-test-connection
+        exclude: true
+  values:
+    image:
+      registry: docker.io
+      repository: falcosecurity/falco
+      tag: "0.45.2@sha256:1562a643953f938e02f47319b5214d93a235f11f646d60e9b8a516fd5a64698e"
+    podPriorityClassName: platform-standard
+    controller:
+      kind: deployment
+      deployment:
+        # The webhook kubeconfig names one ClusterIP; a second replica would split events, not add any.
+        replicas: 1
+    driver:
+      enabled: false
+    collectors:
+      enabled: false
+    rbac:
+      create: false
+    tolerations: []
+    podSecurityContext:
+      runAsNonRoot: true
+      runAsUser: 65534
+      runAsGroup: 65534
+      fsGroup: 65534
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+    falcoctl:
+      image:
+        registry: docker.io
+        repository: falcosecurity/falcoctl
+        tag: "0.14.3@sha256:2230fb4802aafe09455b58d38f8f1faedd8f09f042e9a18fffd397e63488c023"
+      artifact:
+        install:
+          enabled: true
+          # falcoctl verifies the plugin's cosign signature and caches the sigstore trust root in $HOME.
+          env:
+            - name: HOME
+              value: /tmp
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+          mounts:
+            volumeMounts:
+              - name: falcoctl-tmp
+                mountPath: /tmp
+        follow:
+          enabled: false
+      config:
+        # The reference carries its digest, so no index lookup and no unpinned download.
+        indexes: []
+        artifact:
+          allowedTypes: [plugin]
+          install:
+            resolveDeps: false
+            refs:
+              - ghcr.io/falcosecurity/plugins/plugin/k8saudit:0.18.0@sha256:ca794b24fee51095579b63b4e8a57030de6e3a8489bcd11d1960aa26a021308f
+    mounts:
+      volumes:
+        - name: falcoctl-tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: k8saudit-rules
+          configMap:
+            name: falco-k8saudit-rules
+      volumeMounts:
+        - name: k8saudit-rules
+          mountPath: /etc/falco/rules.d
+          readOnly: true
+    services:
+      - name: webhook
+        type: ClusterIP
+        # Inside the static Service band of the k3s default 10.43.0.0/16, next to kube-dns (10.43.0.10).
+        clusterIP: 10.43.0.60
+        ports:
+          - name: webhook
+            port: 9765
+            targetPort: 9765
+            protocol: TCP
+    metrics:
+      enabled: true
+      interval: 1m
+      outputRule: false
+      service:
+        create: true
+    serviceMonitor:
+      create: true
+    falco:
+      rules_files:
+        - /etc/falco/rules.d
+      plugins_hostinfo: false
+      plugins:
+        - name: k8saudit
+          library_path: libk8saudit.so
+          init_config: ""
+          open_params: "http://:9765/k8s-audit"
+      load_plugins: [k8saudit]
+      json_output: true
+      json_include_output_property: true
+      log_syslog: false
+      syslog_output:
+        enabled: false
+      http_output:
+        enabled: true
+        url: http://falco-falcosidekick.falco.svc.cluster.local:2801
+    falcosidekick:
+      enabled: false
+  postRenderers:
+    - kustomize:
+        patches:
+          - target:
+              kind: Deployment
+              name: falco-k8saudit
+            patch: |-
+              - op: add
+                path: /spec/template/spec/automountServiceAccountToken
+                value: false

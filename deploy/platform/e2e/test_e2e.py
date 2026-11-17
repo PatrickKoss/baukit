@@ -829,6 +829,32 @@ class FalcoEventsTests(unittest.TestCase):
         self.assertIn(f"{prefix.group(1)}-", excluded)
         self.assertIn("e2e-backup-", excluded)
 
+    def test_pod_filter_matches_the_exact_pod(self):
+        filters = ("--rule", SHADOW_RULE, "--pod", "shadow-reader")
+        self.assertEqual(len(self.rules(self.query("loki", "Warning", *filters))), 2)
+        self.assertIn("%7C%3D%20%22shadow-reader%22", self.calls)
+        self.assertEqual(self.rules(self.query("falco", "Warning", "--pod", "shadow")), [])
+
+    def test_trigger_checks_name_this_runs_pod(self):
+        chainsaw = (E2E / "tests/falco/chainsaw-test.yaml").read_text()
+        self.assertIn('--namespace e2e-tenant --pod "$pod")', chainsaw)
+        self.assertIn("--pod shadow-reader --process cat", chainsaw)
+
+    def test_kubernetes_only_drops_events_without_a_namespace(self):
+        host = falco_event("Critical", "Drop and execute new binary in container", None, "check")
+        self.EVENTS = [*FalcoEventsTests.EVENTS, host]
+        everything = self.rules(self.query("falco", "Warning"))
+        self.assertIn("Drop and execute new binary in container", everything)
+        cluster_only = self.rules(self.query("falco", "Warning", "--kubernetes-only", "true"))
+        self.assertEqual(cluster_only, [SHADOW_RULE, SHADOW_RULE, SHELL_RULE])
+
+    def test_only_the_persistent_profile_relaxes_the_noise_check(self):
+        chainsaw = (E2E / "tests/falco/chainsaw-test.yaml").read_text()
+        step = chainsaw.split("name: no-warning-events-outside-the-triggers", 1)[1]
+        self.assertEqual(step.count("--kubernetes-only true"), 1)
+        self.assertIn("case ${BAUKIT_E2E_PROFILE:-} in\n                persistent)", step)
+        self.assertNotIn("BAUKIT_E2E_PROFILE", (E2E / "run.sh").read_text())
+
     def test_excluded_prefix_drops_netpol_probe_execs(self):
         probe_exec = falco_event("Critical", EXEC_RULE, "postgres", "sh", "netpol-probe-19")
         self.EVENTS = [*FalcoEventsTests.EVENTS, probe_exec]

@@ -201,7 +201,12 @@ class CiGateTests(unittest.TestCase):
         gate = load_gate()
         settings = tomllib.loads((ROOT / "scripts/ci-gate.toml").read_text())
         globs = path_filter(workflow_jobs()["native-changes"], "platform")
-        self.assertEqual(globs, gate.shared_paths(settings))
+        mapped = [
+            glob
+            for glob, tokens in settings["quality"]["affected"].items()
+            if "platform-e2e" in tokens
+        ]
+        self.assertEqual(globs, gate.shared_paths(settings) + mapped)
 
     def test_path_filter_parser_reads_only_the_named_block(self):
         body = (

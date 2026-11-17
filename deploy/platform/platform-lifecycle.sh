@@ -244,7 +244,8 @@ ensure_cluster() {
     platform_check_network_in_node_cidr "k3d-$cluster_name" || exit 1
     k3d cluster start "$cluster_name" >/dev/null
   else
-    platform_check_free_subnet "$k3d_subnet" || exit 1
+    platform_check_free_subnet "$k3d_subnet" "k3d-$cluster_name" || exit 1
+    platform_check_cluster_network "k3d-$cluster_name" "$k3d_subnet" || exit 1
     printf 'Creating k3d cluster %s with %s on %s\n' "$cluster_name" "$k3s_image" "$k3d_subnet"
     local mirror_dir mirror_args=() etcd_args=()
     mapfile -t etcd_args < <(platform_local_etcd_args)

@@ -111,6 +111,14 @@ class RenovatePresetTests(unittest.TestCase):
         self.assertIn(("docker.io", "falcosecurity/falco"), found)
         self.assertIn(("docker.io", "falcosecurity/falcosidekick"), found)
 
+    def test_falco_plugin_artifacts_keep_their_digest(self):
+        found = {
+            groups["depName"]: groups for _, groups in matches(manager("Falco plugin artifacts"))
+        }
+        plugin = found["ghcr.io/falcosecurity/plugins/plugin/k8saudit"]
+        self.assertRegex(plugin["currentValue"], r"^\d+\.\d+\.\d+$")
+        self.assertRegex(plugin["currentDigest"], r"^sha256:[a-f0-9]{64}$")
+
     def test_helm_values_digest_key_shape_is_found(self):
         text = (
             "    image:\n      repository: ghcr.io/example/app\n"

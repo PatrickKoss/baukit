@@ -5,6 +5,14 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.26.4
+
+Last verified release train: `v0.26.4` (patch train on top of `v0.26.3`). New component: Falco k8saudit plugin `0.18.0`, installed by digest with cosign verification. No other component versions change.
+- Falco reads Kubernetes audit events through the `falco-k8saudit` HelmRelease. platform-infra clusters need the k3s audit flags listed in the platform CHANGELOG.
+- Breaking for tenants: Prometheus enforces the `namespace` label on tenant monitors, `restrict-tenant-servicemonitors` denies `honorLabels` and relabels that write `namespace`, MetricTemplate selectors must filter on `namespace="{{ namespace }}"`, and `restrict-tenant-traefik-routes` covers IngressRouteTCP and denies `HostRegexp`. baukit-app's ServiceMonitors set `honorLabels: false`.
+- Prometheus scrapes ServiceMonitors and PodMonitors in tenant namespaces.
+- The gate refuses to start below a free-disk floor and selects platform lanes per `deploy/` directory.
+
 ## v0.26.3
 
 Last verified release train: `v0.26.3` (patch train on top of `v0.26.2`). No component versions change.

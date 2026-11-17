@@ -5,12 +5,12 @@ set -euo pipefail
 usage() {
   cat >&2 <<USAGE
 usage: ${0##*/} --source falco|loki --since RFC3339 --min-priority PRIORITY
-       [--rule RULE] [--namespace NAMESPACE] [--process NAME] [--exclude-pod PREFIX]...
+       [--rule RULE] [--namespace NAMESPACE] [--process NAME] [--pod NAME] [--exclude-pod PREFIX]... [--kubernetes-only true]
 USAGE
   exit 2
 }
 
-source_name="" since="" min_priority="" rule="" namespace="" process="" exclude_pods=""
+source_name="" since="" min_priority="" rule="" namespace="" process="" pod="" exclude_pods="" kubernetes_only=""
 while (($# > 0)); do
   [[ $# -ge 2 ]] || usage
   case $1 in
@@ -20,7 +20,9 @@ while (($# > 0)); do
     --rule) rule=$2 ;;
     --namespace) namespace=$2 ;;
     --process) process=$2 ;;
+    --pod) pod=$2 ;;
     --exclude-pod) exclude_pods+="$2"$'\n' ;;
+    --kubernetes-only) kubernetes_only=$2 ;;
     *) usage ;;
   esac
   shift 2
@@ -37,7 +39,11 @@ falco_lines() {
 loki_lines() {
   local start_ns query
   start_ns=$(($(date -d "$since" +%s) * 1000000000))
+  # Line filters keep a busy cluster's other events from filling the 5000-line page first.
   query='{source="syscall"}'
+  [[ -z $rule ]] || query+=" |= \"$rule\""
+  [[ -z $namespace ]] || query+=" |= \"$namespace\""
+  [[ -z $pod ]] || query+=" |= \"$pod\""
   kubectl get --raw "/api/v1/namespaces/observability/services/loki:3100/proxy/loki/api/v1/query_range?limit=5000&direction=forward&start=$start_ns&query=$(
     python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$query"
   )" |
@@ -55,8 +61,8 @@ case $source_name in
   *) usage ;;
 esac
 
-"$lines" | MIN_PRIORITY=$min_priority RULE=$rule NAMESPACE=$namespace PROCESS=$process \
-  EXCLUDE_PODS=$exclude_pods python3 -c '
+"$lines" | MIN_PRIORITY=$min_priority RULE=$rule NAMESPACE=$namespace PROCESS=$process POD=$pod \
+  EXCLUDE_PODS=$exclude_pods KUBERNETES_ONLY=$kubernetes_only python3 -c '
 import json, os, sys
 order = ["Debug", "Informational", "Notice", "Warning", "Error", "Critical", "Alert", "Emergency"]
 floor = order.index(os.environ["MIN_PRIORITY"])
@@ -76,7 +82,11 @@ for line in sys.stdin:
     fields = event.get("output_fields") or {}
     if namespace and fields.get("k8s.ns.name") != namespace:
         continue
+    if os.environ["KUBERNETES_ONLY"] and not fields.get("k8s.ns.name"):
+        continue
     if process and fields.get("proc.name") != process:
+        continue
+    if os.environ["POD"] and fields.get("k8s.pod.name") != os.environ["POD"]:
         continue
     if excluded and str(fields.get("k8s.pod.name")).startswith(excluded):
         continue

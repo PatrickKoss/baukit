@@ -12,15 +12,16 @@ results:
   - isValidatingPolicy: true
     policy: restrict-tenant-metric-templates
     kind: MetricTemplate
-    resources: [platform-address, default-address]
+    resources: [platform-address, default-address, leitbild-like, compact-filter]
     result: pass
   - isValidatingPolicy: true
     policy: restrict-tenant-metric-templates
     kind: MetricTemplate
-    resources: [foreign-address, foreign-provider]
+    resources: [foreign-address, foreign-provider, no-filter, one-unfiltered, bare-range,
+      other-namespace, lookalike-label, no-selector]
     result: fail
   - isValidatingPolicy: true
     policy: restrict-tenant-metric-templates
     kind: MetricTemplate
-    resources: [platform-foreign]
+    resources: [platform-foreign, platform-unfiltered]
     result: skip

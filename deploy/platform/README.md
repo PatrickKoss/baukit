@@ -159,9 +159,11 @@ For application namespaces, include
 namespace, patch its quota when needed, and supply explicit ingress/egress
 allows in the same overlay. The component is not applied globally.
 
-An application namespace whose ServiceMonitor, PodMonitor or PrometheusRule
-should be scraped or loaded must carry `app.kubernetes.io/part-of:
-baukit-platform`. Without that label Prometheus ignores the namespace. The
+Prometheus scrapes ServiceMonitors and PodMonitors in every namespace and
+overwrites `namespace` on their series with the monitor's namespace. A
+PrometheusRule loads only from namespaces labelled `app.kubernetes.io/part-of:
+baukit-platform`, and a platform namespace that holds monitors or rules must be
+listed in `excludedFromEnforcement`. The
 shared `deploy/observability` rule and dashboard pack installs into
 `observability` and needs nothing extra.
 
@@ -241,7 +243,7 @@ owned and contain assignments only.
 | `PLATFORM_API_PORT` | `random` | Host port of the Kubernetes API, bound to `127.0.0.1`. |
 | `PLATFORM_HTTP_PORT` | `80` | Host port for HTTP ingress, bound to `127.0.0.1`. |
 | `PLATFORM_HTTPS_PORT` | `443` | Host port for HTTPS ingress, bound to `127.0.0.1`. |
-| `PLATFORM_SUBNET` | `10.89.1.0/24` | Docker network of a new cluster. Must sit inside the `10.89.0.0/16` nodeCIDR and overlap no Docker network; an existing cluster outside the nodeCIDR fails until `recreate`. |
+| `PLATFORM_SUBNET` | `10.89.1.0/24` | Docker network of a new cluster. Must sit inside the `10.89.0.0/16` nodeCIDR and overlap no Docker network; an existing cluster outside the nodeCIDR fails until `recreate`. A leftover `k3d-<cluster>` network on another subnet stops `up` before k3d, which would reuse it and ignore `--subnet`; the error prints the `docker network rm` command. |
 | `PLATFORM_STATE_DIR` | XDG state path | Disposable snapshot repository state. |
 
 GitHub mode uses the owner/repository fields to bootstrap and verifies desired
@@ -483,8 +485,12 @@ config in `k3s/pod-security.yaml` and `--protect-kernel-defaults`. `k3s/` is
 mounted read-only at `/etc/baukit/k3s`, so moving the checkout breaks a kept
 cluster's restart. The audit policy drops health probes, leases, Events and
 control plane reads, logs Secrets, ConfigMaps and token reviews at `Metadata` so
-no payload reaches Loki, keeps the request body of RBAC writes, and logs
-everything else at `Metadata`. `--protect-kernel-defaults` makes the kubelet
+no payload reaches Loki, logs exec, attach and port-forward at `Metadata`, keeps
+the request body of RBAC writes, drops other reads by service accounts and
+self access reviews, and logs everything else at `Metadata`. The policy skips the
+`RequestReceived` and `ResponseStarted` stages. The same events go to the Falco
+k8saudit plugin through the webhook in `k3s/audit-webhook.yaml`
+(`http://10.43.0.60:9765/k8s-audit`, batches every 5s); see `falco/README.md`. `--protect-kernel-defaults` makes the kubelet
 refuse to start unless the host already has `vm.overcommit_memory=1`,
 `vm.panic_on_oom=0`, `kernel.panic=10` and `kernel.panic_on_oops=1`;
 `k3d_create_local_cluster` checks them first, plus the minimums

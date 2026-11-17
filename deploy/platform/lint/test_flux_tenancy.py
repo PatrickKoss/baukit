@@ -446,6 +446,20 @@ class TenantAggregatedRolesTest(unittest.TestCase):
         self.assertIs(providers["kubernetesCRD"]["allowExternalNameServices"], False)
         self.assertIs(providers["kubernetesIngress"]["allowExternalNameServices"], False)
 
+    def test_only_kyverno_reads_ingressroutetcps(self) -> None:
+        roles = {
+            doc["metadata"]["name"]: doc
+            for doc in by_kind(rendered(PLATFORM / "traefik"), "ClusterRole")
+        }
+        role = roles["baukit-kyverno-traefik-tcp-view"]
+        labels = role["metadata"]["labels"]
+        self.assertFalse(any(key.startswith(AGGREGATE) for key in labels))
+        self.assertEqual(labels["rbac.kyverno.io/aggregate-to-admission-controller"], "true")
+        self.assertEqual(
+            role["rules"],
+            [{"apiGroups": ["traefik.io"], "resources": ["ingressroutetcps"], "verbs": VIEW_VERBS}],
+        )
+
     def test_no_other_base_aggregates_into_admin(self) -> None:
         for path in sorted(PLATFORM.glob("*/kustomization.yaml")):
             base = path.parent.name

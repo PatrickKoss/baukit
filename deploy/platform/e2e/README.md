@@ -52,7 +52,8 @@ with its condition message.
 - `components/kyverno-policies`: the policy library plus the registry allowlist, which admits the
   public registries the platform pulls from and `localhost/baukit-e2e/`;
 - `components/falco`: the falco base plus `../components/falco-shared-kernel`, because the e2e cluster
-  shares the host kernel with Docker and other clusters;
+  shares the host kernel with Docker and other clusters, and the node-cidr component for the k8saudit
+  webhook policy;
 - `components/tenant`: the `e2e-tenant` namespace built from `../components/tenant` and the echo
   app, deployed with `deploy/chart/baukit-app` from the image the runner builds in `echo/`.
 
@@ -107,6 +108,34 @@ and need a cluster that composes it.
 `networkPolicy.ingressController`, reaches it through the Traefik Service by Host header, and reuses
 the probe runner to show that Traefik's pods get in and a pod from another namespace does not, even
 with Traefik's labels.
+
+## Persistent clusters
+
+`persistent.sh` runs suites against a cluster that outlives the run, by default `k3d-platform-local`:
+
+```bash
+deploy/platform/e2e/persistent.sh                                   # admission, netpol, falco, alert-pipeline
+deploy/platform/e2e/persistent.sh --suite netpol --suite falco
+deploy/platform/e2e/persistent.sh --context k3d-other-cluster
+```
+
+It pins the context in a private kubeconfig, imports the echo image, suspends the Flux Kustomization
+`local-registry-allowlist` and adds `localhost/baukit-e2e/` to `kyverno/baukit-registry-allowlist`,
+then installs the `e2e-tenant` namespace (without its Flux objects) and the echo app with Helm. Chainsaw
+creates its own namespace per suite. On exit it uninstalls the echo app, deletes `e2e-tenant`, resumes
+the Kustomization, waits for it to be Ready and fails if the allowlist still admits `localhost/baukit-e2e/`.
+
+The suites read `BAUKIT_E2E_PROFILE=persistent`, which `persistent.sh` sets and `run.sh` does not:
+
+- netpol passes `--skip-absent-namespaces` to `probe.py`. A row whose source or destination namespace
+  does not exist prints a `SKIP` line naming the namespace and counts in the summary; local skips kured.
+- falco's noise check counts only events with `k8s.ns.name`. A shared host's other Docker containers
+  raise Critical events without Kubernetes metadata. The window opens when the suite creates its first
+  trigger instead of at Falco's start, because Falco outlives earlier runs. On the e2e cluster every
+  Warning+ event since Falco's start counts.
+
+`falco-events.sh` adds the rule and namespace as LogQL line filters, so a busy cluster's other events do
+not fill Loki's 5000-line page before the trigger's event.
 
 ## Adding a suite
 

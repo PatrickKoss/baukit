@@ -73,3 +73,25 @@ spec:
     ports:
     - protocol: TCP
       port: 9093
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-k8saudit-webhook-from-nodes
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/node-cidr-peer: ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: falco
+      app.kubernetes.io/instance: falco-k8saudit
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 192.0.2.0/32
+    ports:
+    - protocol: TCP
+      port: 9765

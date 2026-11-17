@@ -104,7 +104,12 @@ def collect(rendered: Path, chart_cache: Path, repo_root: Path) -> dict[str, Con
         if not chart_render.is_file():
             raise ContentsError(f"no chart render {chart_render.name}")
         tests = bool(TEST_HOOK.search(chart_render.read_text()))
-        contents[chart_key(name, version)] = Contents(crds, tests)
+        key = chart_key(name, version)
+        seen = contents.get(key)
+        if seen is not None:
+            # Releases of one chart render tests by their values; any release with tests counts.
+            tests = tests or seen.tests
+        contents[key] = Contents(crds, tests)
     return contents
 
 

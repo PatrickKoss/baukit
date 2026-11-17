@@ -427,22 +427,69 @@ spec:
                 requests:
                   storage: 30Gi
         ruleSelectorNilUsesHelmValues: false
-        # Rules, ServiceMonitors and PodMonitors are read from every namespace
-        # labelled app.kubernetes.io/part-of=baukit-platform.
+        # Rules stay platform-only: tenant reconcilers cannot create PrometheusRules, and
+        # Alertmanager routes to security-pager/-tickets on rule labels (component=falco|kyverno).
         ruleSelector: {}
         ruleNamespaceSelector:
           matchLabels:
             app.kubernetes.io/part-of: baukit-platform
+        # Monitors are read from every namespace. A label selector cannot OR platform and
+        # tenant namespaces, and a shared label would be one more thing for every tenant
+        # overlay to get right. Selecting all is safe because enforcedNamespaceLabel below
+        # pins `namespace` on every non-excluded monitor, restrict-tenant-servicemonitors
+        # rejects honorLabels and namespace relabels, and tenants cannot create PodMonitors.
         serviceMonitorSelectorNilUsesHelmValues: false
         serviceMonitorSelector: {}
-        serviceMonitorNamespaceSelector:
-          matchLabels:
-            app.kubernetes.io/part-of: baukit-platform
+        serviceMonitorNamespaceSelector: {}
         podMonitorSelectorNilUsesHelmValues: false
         podMonitorSelector: {}
-        podMonitorNamespaceSelector:
-          matchLabels:
-            app.kubernetes.io/part-of: baukit-platform
+        podMonitorNamespaceSelector: {}
+        # Series from tenant monitors carry the monitor's namespace in `namespace`, set after the
+        # tenant's relabelings, and tenant rules only see their own namespace. Platform monitors
+        # select kube-system or honor exporter labels such as kube-state-metrics' `namespace`, so
+        # every platform namespace that holds monitors or rules is excluded. e2e flux-tenancy
+        # fails when a non-tenant namespace holds one that this list misses.
+        enforcedNamespaceLabel: namespace
+        excludedFromEnforcement:
+          - {resource: servicemonitors, namespace: cert-manager}
+          - {resource: podmonitors, namespace: cert-manager}
+          - {resource: prometheusrules, namespace: cert-manager}
+          - {resource: servicemonitors, namespace: cnpg-system}
+          - {resource: podmonitors, namespace: cnpg-system}
+          - {resource: prometheusrules, namespace: cnpg-system}
+          - {resource: servicemonitors, namespace: falco}
+          - {resource: podmonitors, namespace: falco}
+          - {resource: prometheusrules, namespace: falco}
+          - {resource: servicemonitors, namespace: flagger-system}
+          - {resource: podmonitors, namespace: flagger-system}
+          - {resource: prometheusrules, namespace: flagger-system}
+          - {resource: servicemonitors, namespace: kube-system}
+          - {resource: podmonitors, namespace: kube-system}
+          - {resource: prometheusrules, namespace: kube-system}
+          - {resource: servicemonitors, namespace: kured}
+          - {resource: podmonitors, namespace: kured}
+          - {resource: prometheusrules, namespace: kured}
+          - {resource: servicemonitors, namespace: kyverno}
+          - {resource: podmonitors, namespace: kyverno}
+          - {resource: prometheusrules, namespace: kyverno}
+          - {resource: servicemonitors, namespace: observability}
+          - {resource: podmonitors, namespace: observability}
+          - {resource: prometheusrules, namespace: observability}
+          - {resource: servicemonitors, namespace: observability-agents}
+          - {resource: podmonitors, namespace: observability-agents}
+          - {resource: prometheusrules, namespace: observability-agents}
+          - {resource: servicemonitors, namespace: platform-redis}
+          - {resource: podmonitors, namespace: platform-redis}
+          - {resource: prometheusrules, namespace: platform-redis}
+          - {resource: servicemonitors, namespace: postgres}
+          - {resource: podmonitors, namespace: postgres}
+          - {resource: prometheusrules, namespace: postgres}
+          - {resource: servicemonitors, namespace: posthog}
+          - {resource: podmonitors, namespace: posthog}
+          - {resource: prometheusrules, namespace: posthog}
+          - {resource: servicemonitors, namespace: traefik}
+          - {resource: podmonitors, namespace: traefik}
+          - {resource: prometheusrules, namespace: traefik}
 
     thanosRuler:
       enabled: false

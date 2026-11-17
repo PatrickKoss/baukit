@@ -1,13 +1,14 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: admission-any-namespace
+  name: admission-namespace-relabel
   namespace: e2e-tenant
 spec:
-  namespaceSelector:
-    any: true
   selector:
     matchLabels:
       app.kubernetes.io/name: echo
   endpoints:
     - port: metrics
+      metricRelabelings:
+        - targetLabel: namespace
+          replacement: flagger-system

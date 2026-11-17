@@ -6,11 +6,37 @@ android_emulators = 2
 # 1477 to 2029 s and hit a SystemUI ANR, on 10 cores 947 s.
 emulator_steps = ["native-android", "expo-sqlite", "expo-notifications"]
 emulator_cores = 8
-shared = ["deploy/**", "fixtures/**", "rust/deny.toml", "rust/Cargo.toml", "renovate*.json"]
+# deploy/ is mapped per directory in [quality.affected]; only its shared tool pins and
+# helpers force the full gate.
+shared = [
+  "deploy/tools.toml",
+  "deploy/lib/**",
+  "deploy/smoke/**",
+  "fixtures/**",
+  "rust/deny.toml",
+  "rust/Cargo.toml",
+  "renovate*.json",
+]
 
 [quality.gate_budget_minutes]
 full = 30
 affected = 15
+
+# gate.py refuses to start below the highest floor of the planned steps. The 0.26.2 gate
+# failed at 91% disk: a full gate grows a worktree by about 19 GB, and platform-e2e's k3d
+# kubelet evicts pods below about 50 GiB free, so it needs that plus the build, cluster and
+# images. The fixture and Testcontainers steps build products and pull images. `--step` runs
+# skip the check because hosted CI runners have less space and run one step each.
+[quality.disk]
+floor_gb = 30
+
+[quality.disk.step_floor_gb]
+platform-e2e = 120
+rust-tests = 60
+fixture-1 = 60
+fixture-2 = 60
+affected-fixture = 60
+mcp-fixture = 60
 
 [quality.affected]
 "README.md" = []
@@ -36,3 +62,10 @@ affected = 15
 "templates/**/Dockerfile*" = ["platform-images"]
 "examples/**/Dockerfile*" = ["platform-images"]
 "scripts/platform-images.sh" = ["platform-images"]
+# The fast lane always runs platform-validate, the observability steps and media-grants, so
+# these paths add only the lanes that render or run them beyond that.
+"deploy/platform/**" = ["platform-e2e", "platform-images"]
+"deploy/observability/**" = ["platform-e2e"]
+"deploy/observability-platform/**" = ["platform-e2e"]
+"deploy/chart/**" = ["platform-e2e", "platform-images", "fixtures"]
+"deploy/media-grants/**" = []

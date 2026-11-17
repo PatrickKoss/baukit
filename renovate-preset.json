@@ -339,6 +339,17 @@
         "(?<depName>rancher/k3s):(?<currentValue>v[0-9][^\\s\"\\'`}@]*)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?"
       ],
       "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Falco plugin artifacts that falcoctl installs by digest",
+      "managerFilePatterns": [
+        "/^deploy/platform/falco/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "- (?<depName>ghcr\\.io/falcosecurity/plugins/plugin/[a-z0-9-]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
     }
   ]
 }

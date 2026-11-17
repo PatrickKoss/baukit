@@ -110,4 +110,7 @@ spec:
             timeout: 15m
             content: |
               set -eu
-              PYTHONDONTWRITEBYTECODE=1 python3 probe.py --matrix matrix.yaml
+              # BAUKIT_E2E_PROFILE=persistent skips rows whose namespace the cluster does not have, as SKIP lines.
+              skip=""
+              if [ "${BAUKIT_E2E_PROFILE:-}" = persistent ]; then skip=--skip-absent-namespaces; fi
+              PYTHONDONTWRITEBYTECODE=1 python3 probe.py --matrix matrix.yaml $skip

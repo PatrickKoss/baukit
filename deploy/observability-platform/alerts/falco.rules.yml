@@ -17,6 +17,20 @@ groups:
             The falco DaemonSet in namespace falco has had {{ $value }} scheduled pod(s) without
             a ready Falco for 10 minutes. Runtime detection is blind on those nodes.
           runbook_url: RUNBOOK_BASE_URL/falco-down
+      - alert: BaukitFalcoK8sAuditDown
+        expr: |
+          kube_deployment_status_replicas_available{namespace="falco",deployment="falco-k8saudit"} < 1
+        for: 10m
+        labels:
+          severity: critical
+          component: falco
+        annotations:
+          summary: Falco receives no Kubernetes audit events
+          description: >-
+            The falco-k8saudit Deployment in namespace falco has had no available replica for
+            10 minutes. The API server drops its audit webhook batches, so secret reads, exec
+            sessions and ClusterRoleBinding changes raise no alerts.
+          runbook_url: RUNBOOK_BASE_URL/falco-k8saudit-down
       - alert: BaukitFalcoEventsDropped
         expr: |
           sum by (namespace, pod) (increase(falcosecurity_scap_n_drops_total[10m])) > 0
