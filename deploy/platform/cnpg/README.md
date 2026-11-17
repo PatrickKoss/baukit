@@ -1,7 +1,7 @@
 # CloudNativePG operator base
 
 This Flux-native base creates `cnpg-system`, installs the CloudNativePG operator
-with the `cloudnative-pg` chart pinned to `0.29.1` (operator `1.30.1`), and
+with the `cloudnative-pg` chart pinned to `0.29.2` (operator `1.30.2`), and
 installs the Barman Cloud CNPG-I plugin pinned to `v0.16.0`. Both controllers
 have small, bounded resources. The plugin must run in the operator namespace and
 uses cert-manager for its client and server certificates.

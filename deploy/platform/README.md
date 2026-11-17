@@ -104,7 +104,7 @@ HelmRelease disagrees with this table.
 | `loki` | OCI `oci://ghcr.io/grafana-community/helm-charts/loki` | no | none |  | grafana-community pushes charts unsigned. |
 | `tempo` | OCI `oci://ghcr.io/grafana-community/helm-charts/tempo` | no | none |  | grafana-community pushes charts unsigned. |
 | `alloy` | OCI `oci://ghcr.io/grafana/helm-charts/alloy` | no | none |  | No signature or bundle for the 1.16.0 digest. |
-| `traefik` | OCI `oci://ghcr.io/traefik/helm/traefik` | no | none |  | No signature or bundle for the 42.4.0 digest. |
+| `traefik` | OCI `oci://ghcr.io/traefik/helm/traefik` | no | none |  | No signature or bundle for the 42.4.1 digest. |
 | `posthog` | HelmRepository `https://posthog.github.io/charts-clickhouse` | no | none |  | PostHog publishes the sunset chart only in the HTTPS index. |
 
 Every keyless identity uses the issuer and subject regexes shown. The subjects

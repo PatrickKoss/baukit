@@ -18,7 +18,7 @@ tests = false
 crds = false
 tests = false
 
-["cloudnative-pg@0.29.1"]
+["cloudnative-pg@0.29.2"]
 crds = false
 tests = false
 
@@ -70,6 +70,6 @@ tests = false
 crds = false
 tests = false
 
-["traefik@42.4.0"]
+["traefik@42.4.1"]
 crds = true
 tests = false

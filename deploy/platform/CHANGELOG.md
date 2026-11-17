@@ -3,6 +3,8 @@
 ## [Unreleased]
 
 - The ephemeral platform-e2e Falco noise check counts only events from this cluster: events with a Kubernetes namespace, plus events whose `container.id` is one of the run's k3d node containers (k3s and containerd run in the node's `docker-<id>.scope` cgroup). Falco sees every process on the host, and another session's Docker builds (`nvidia-cdi-hook` ldconfig, buildkitd's qemu check) failed the step with `k8s_ns_name=<NA>` events. `falco-events.sh` gains `--node-container-id`.
+- CloudNativePG chart 0.29.2 with operator 1.30.2 (`sha256:f96f6be3d81ec93819b443c665c575c609342fca840df90d4d87dae314a5b913`). The operator image no longer carries the five Go findings 1.30.1 had, so its `image-findings.toml` entry is gone. The chart change only rewords the single-namespace notes in its README.
+- Traefik chart 42.4.1. It renders the same objects as 42.4.0 apart from the chart label; Traefik stays on v3.7.19. Every other platform chart, image and tool in `deploy/tools.toml` is on its newest stable release as of 2026-11-17.
 
 ## [0.27.4] - 2026-11-17
 
