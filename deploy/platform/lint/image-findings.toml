@@ -3,8 +3,8 @@
 # reports, and on any entry past its expiry, so this list only shrinks.
 
 [images."curlimages/curl"]
-expires = 2026-12-12
-reason = "falcosidekick chart 0.14.1 hardcodes this untagged image in its helm test pod and offers no values key, so it cannot be pinned or bumped (see image-digest-exempt.toml); the HelmRelease test filter excludes falco-falcosidekick-test-connection, so Flux never runs this image; recheck with SC1/VR chart work"
+expires = 2027-01-16
+reason = "curlimages/curl: no fixed upstream release exists as of 2026-11-17. falcosidekick chart 0.14.1 hardcodes this untagged image in its helm test pod and offers no values key, so it cannot be pinned or bumped (see image-digest-exempt.toml); the HelmRelease test filter excludes falco-falcosidekick-test-connection, so Flux never runs this image. Follow-up RF29."
 ids = [
   "CVE-2026-107364",
   "CVE-2026-112315",
@@ -25,8 +25,8 @@ ids = [
 ]
 
 [images."docker.io/bats/bats:1.14.0@sha256:5322b877351fda0cc435de8c6116de7d0a2ec79d7c680132a0ef329a633bc66f"]
-expires = 2026-12-12
-reason = "1.14.0 is the newest bats image; the findings are Alpine openssl, musl, perl and zlib packages in the short-lived Grafana Helm test pod, which runs only against the in-cluster Grafana service; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "docker.io/bats/bats:1.14.0: no fixed upstream release exists as of 2026-11-17. 1.14.0 is the newest bats image; the findings are Alpine openssl, musl, perl and zlib packages in the short-lived Grafana Helm test pod, which runs only against the in-cluster Grafana service. Follow-up RF29."
 ids = [
   "CVE-2026-107891",
   "CVE-2026-13221",
@@ -42,16 +42,16 @@ ids = [
 ]
 
 [images."docker.io/falcosecurity/falcoctl:0.14.3@sha256:2230fb4802aafe09455b58d38f8f1faedd8f09f042e9a18fffd397e63488c023"]
-expires = 2026-12-12
-reason = "0.14.3 is the newest falcoctl release and :latest resolves to this digest; the findings are go-jose 4.1.5 and golang.org/x/net 0.61.0 compiled into the binary. falcoctl only runs as the falco-k8saudit init container, pulls one digest-pinned, cosign-verified plugin from ghcr.io and exits; it parses no HTML, and a crafted JWK needs a hostile ghcr.io or sigstore endpoint, so the worst case is a failed init that retries; Renovate (SC4) moves the pin once upstream releases"
+expires = 2027-01-16
+reason = "docker.io/falcosecurity/falcoctl:0.14.3: no fixed upstream release exists as of 2026-11-17. 0.14.3 is the newest falcoctl release and :latest resolves to this digest; the findings are go-jose 4.1.5 and golang.org/x/net 0.61.0 compiled into the binary. falcoctl only runs as the falco-k8saudit init container, pulls one digest-pinned, cosign-verified plugin from ghcr.io and exits; it parses no HTML, and a crafted JWK needs a hostile ghcr.io or sigstore endpoint, so the worst case is a failed init that retries. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
 [images."docker.io/falcosecurity/falcosidekick:2.35.1@sha256:a9bb60d2c7742febd912315ca1155839abc0199bf322c58d3adbb8b0849fadb9"]
-expires = 2026-12-12
-reason = "2.35.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "docker.io/falcosecurity/falcosidekick:2.35.1: no fixed upstream release exists as of 2026-11-17. 2.35.1 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
@@ -59,8 +59,8 @@ ids = [
 ]
 
 [images."docker.io/grafana/grafana:13.3.1-distroless@sha256:54e297ac67e2b72572f926892f4e06074dc4f79f2a56ed9a9ca9a88a46f28733"]
-expires = 2026-12-12
-reason = "13.3.1 is the newest upstream release and still ships these in its bundled datasource plugin binaries; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "docker.io/grafana/grafana:13.3.1-distroless: no fixed upstream release exists as of 2026-11-17. 13.3.1 is the newest upstream release and still ships these in its bundled datasource plugin binaries. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-21728",
@@ -72,30 +72,30 @@ ids = [
 ]
 
 [images."docker.io/grafana/tempo:3.1.1@sha256:64e2fbd56d9c2b3412a4b430a58ea59e91a670b1e75f920a0c702213ad145044"]
-expires = 2026-12-12
-reason = "3.1.1 is the newest upstream release and still ships go-jose v4.1.4 and golang.org/x/net v0.60.0; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "docker.io/grafana/tempo:3.1.1: no fixed upstream release exists as of 2026-11-17. 3.1.1 is the newest upstream release and still ships go-jose v4.1.4 and golang.org/x/net v0.60.0. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
 [images."docker.io/hetznercloud/hcloud-cloud-controller-manager:v1.39.3@sha256:9d739ba54a13f1de79d6dbb93cbda5a2ed4a5bdb9bf2936e2687e24fa9ccfaf7"]
-expires = 2026-12-12
-reason = "v1.39.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "docker.io/hetznercloud/hcloud-cloud-controller-manager:v1.39.3: no fixed upstream release exists as of 2026-11-17. v1.39.3 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."docker.io/hetznercloud/hcloud-csi-driver:v2.24.2@sha256:c231060c9d24d485c8ac25eeb3dd445994ce1abb7417c5a49b88301931a9fe29"]
-expires = 2026-12-12
-reason = "v2.24.2 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "docker.io/hetznercloud/hcloud-csi-driver:v2.24.2: no fixed upstream release exists as of 2026-11-17. v2.24.2 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1@sha256:923c267ec29636db3bee20f993d0ec4973fa22998e1adad37da79e4d32b5bc07"]
-expires = 2026-12-12
-reason = "1.30.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/cloudnative-pg/cloudnative-pg:1.30.1: no fixed upstream release exists as of 2026-11-17. 1.30.1 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
@@ -105,8 +105,8 @@ ids = [
 ]
 
 [images."ghcr.io/cloudnative-pg/plugin-barman-cloud:v0.16.0@sha256:6404a416718bd7aad943c67a25a7bb20d0558b43edfeab0bf167f013ca435882"]
-expires = 2026-12-12
-reason = "v0.16.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/cloudnative-pg/plugin-barman-cloud:v0.16.0: no fixed upstream release exists as of 2026-11-17. v0.16.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
@@ -116,8 +116,8 @@ ids = [
 ]
 
 [images."ghcr.io/fluxcd/flagger:1.45.0@sha256:15b372d35012f9ae450f9030bc82217369c0aee082ed5a5225830010cf972b2b"]
-expires = 2026-12-12
-reason = "1.45.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/fluxcd/flagger:1.45.0: no fixed upstream release exists as of 2026-11-17. 1.45.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-107891",
   "CVE-2026-111943",
@@ -136,15 +136,15 @@ ids = [
 ]
 
 [images."ghcr.io/fluxcd/helm-controller:v1.7.1@sha256:54526cc6ed1202d71d44c310676448065664f3255ad671d9a69ac26f904e617a"]
-expires = 2026-12-12
-reason = "Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/fluxcd/helm-controller:v1.7.1: no fixed upstream release exists as of 2026-11-17. Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."ghcr.io/fluxcd/kustomize-controller:v1.10.1@sha256:37db29b25dae35b881a5e064acedb0cc954442da453a39eaa0eab7a90dbecc4e"]
-expires = 2026-12-12
-reason = "Flux v2.10.0 is the newest release; kustomize-controller v1.10.1 ships Alpine 3.24.3 git 2.54.0-r0, libexpat 2.9.0-r0 and openssh 10.3_p1-r1 plus golang.org/x/net v0.61.0; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/fluxcd/kustomize-controller:v1.10.1: no fixed upstream release exists as of 2026-11-17. Flux v2.10.0 is the newest release; kustomize-controller v1.10.1 ships Alpine 3.24.3 git 2.54.0-r0, libexpat 2.9.0-r0 and openssh 10.3_p1-r1 plus golang.org/x/net v0.61.0. Follow-up RF29."
 ids = [
   "CVE-2026-105437",
   "CVE-2026-111760",
@@ -158,29 +158,29 @@ ids = [
 ]
 
 [images."ghcr.io/fluxcd/notification-controller:v1.10.0@sha256:9f58b9532ec9d3ccf539cd3ccdf283477a5dcb7777b922db5477d8bbd4d3767c"]
-expires = 2026-12-12
-reason = "Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/fluxcd/notification-controller:v1.10.0: no fixed upstream release exists as of 2026-11-17. Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."ghcr.io/fluxcd/source-controller:v1.10.1@sha256:611b6bca3eae95bcff471414d1fb14a4ab83d7f14e609cccef2bd389c121f37e"]
-expires = 2026-12-12
-reason = "Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/fluxcd/source-controller:v1.10.1: no fixed upstream release exists as of 2026-11-17. Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."ghcr.io/jkroepke/kube-webhook-certgen:1.11.1@sha256:8009b04f9873f7279b5adee37fdd03b6a9aa7b6751d4f69fde2683010e41cd1f"]
-expires = 2026-12-12
-reason = "1.11.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/jkroepke/kube-webhook-certgen:1.11.1: no fixed upstream release exists as of 2026-11-17. 1.11.1 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."ghcr.io/kubereboot/kured:1.23.0@sha256:8dfd3c2e889337595731d801afc5c031b545876a29427897b3f711d2983f30c4"]
-expires = 2026-12-12
-reason = "1.23.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/kubereboot/kured:1.23.0: no fixed upstream release exists as of 2026-11-17. 1.23.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-107891",
   "CVE-2026-111943",
@@ -204,22 +204,22 @@ ids = [
 ]
 
 [images."ghcr.io/kyverno/policy-reporter:3.11.2@sha256:2b33409d34be3195f16d9ed2c89f8b58001aeec986b254ba6bb45323d6d1e884"]
-expires = 2026-12-12
-reason = "3.11.2 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/kyverno/policy-reporter:3.11.2: no fixed upstream release exists as of 2026-11-17. 3.11.2 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."ghcr.io/kyverno/readiness-checker:v1.20.0@sha256:6079a30d75fe7ba868a5a7e5dfa71ee92a3a8bae97adcea1c8cfb1009280ee6c"]
-expires = 2026-12-12
-reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/kyverno/readiness-checker:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."mirror.gcr.io/clickhouse/clickhouse-server:22.8.21.38-alpine@sha256:d3c96b46a803e35f202b0cacb75e1966be1f5f9ea10a56d051bda7db3bf3cdea"]
-expires = 2026-12-12
-reason = "22.8 is the ClickHouse line PostHog 1.43 schema runs on; 22.12 fixes 2 of 65 but is outside PostHog's supported versions, revisit when PostHog leaves the platform (SC2 follow-up)"
+expires = 2027-01-16
+reason = "mirror.gcr.io/clickhouse/clickhouse-server:22.8.21.38-alpine: no fixed upstream release exists as of 2026-11-17. 22.8 is the ClickHouse line PostHog 1.43 schema runs on; 22.12 fixes 2 of 65 but is outside PostHog's supported versions, revisit when PostHog leaves the platform (SC2 follow-up). Follow-up RF29."
 ids = [
   "CVE-2022-27664",
   "CVE-2022-28131",
@@ -288,41 +288,9 @@ ids = [
   "CVE-2026-97031",
 ]
 
-[images."postgres:14.25-alpine@sha256:14078c4aa0db8e2e8492866138cafd796fc39afd5ecb5b1c6f26a912b07529f5"]
-expires = 2026-12-12
-reason = "14.25 is the newest PostgreSQL 14 release, the major PostHog 1.43 supports; the base OS packages wait for an upstream rebuild (SC4 Renovate)"
-ids = [
-  "CVE-2025-61726",
-  "CVE-2025-61729",
-  "CVE-2025-68121",
-  "CVE-2026-111943",
-  "CVE-2026-25679",
-  "CVE-2026-27145",
-  "CVE-2026-32280",
-  "CVE-2026-32281",
-  "CVE-2026-32283",
-  "CVE-2026-33811",
-  "CVE-2026-33814",
-  "CVE-2026-33818",
-  "CVE-2026-39820",
-  "CVE-2026-39821",
-  "CVE-2026-39822",
-  "CVE-2026-39836",
-  "CVE-2026-42499",
-  "CVE-2026-42504",
-  "CVE-2026-56853",
-  "CVE-2026-56858",
-  "CVE-2026-56859",
-  "CVE-2026-56860",
-  "CVE-2026-56862",
-  "CVE-2026-78667",
-  "CVE-2026-78669",
-  "CVE-2026-97031",
-]
-
 [images."posthog/posthog:release-1.43.1@sha256:36c2712b569ca5693d88117a20a588cc03f52f4e5962967f7c6781ed29e5ec84"]
-expires = 2026-12-12
-reason = "release-1.43.1 is the newest PostHog release and the last self-hosted line (chart 30.46.0, Kubernetes support ended 2023); no fixed build exists, revisit when PostHog leaves the platform (SC2 follow-up)"
+expires = 2027-01-16
+reason = "posthog/posthog:release-1.43.1: no fixed upstream release exists as of 2026-11-17. release-1.43.1 is the newest PostHog release and the last self-hosted line (chart 30.46.0, Kubernetes support ended 2023); no fixed build exists, revisit when PostHog leaves the platform (SC2 follow-up). Follow-up RF29."
 ids = [
   "CVE-2015-20107",
   "CVE-2020-10735",
@@ -1845,16 +1813,16 @@ ids = [
 ]
 
 [images."prom/pushgateway:v1.11.5@sha256:bf6442633f6129d3e3f9861fa14c77bc012d74b33a1dd213d7b458b89ce3cc5d"]
-expires = 2026-12-12
-reason = "v1.11.5 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "prom/pushgateway:v1.11.5: no fixed upstream release exists as of 2026-11-17. v1.11.5 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
   "CVE-2026-78669",
 ]
 
 [images."ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0@sha256:c669259e20ed1e11fad821f735c396c19d929985aa05b9544b13ecc8b5a386d0"]
-expires = 2026-12-12
-reason = "v0.16.0 is the newest plugin-barman-cloud release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0: no fixed upstream release exists as of 2026-11-17. v0.16.0 is the newest plugin-barman-cloud release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
@@ -1864,8 +1832,8 @@ ids = [
 ]
 
 [images."python:3.15.2-alpine3.24@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd"]
-expires = 2026-12-12
-reason = "3.15.2-alpine3.24 is the newest Python image; the findings sit in pip's vendored msgpack, setuptools and urllib3, which the stdlib-only alert sink never imports; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "python:3.15.2-alpine3.24: no fixed upstream release exists as of 2026-11-17. 3.15.2-alpine3.24 is the newest Python image; the findings sit in pip's vendored msgpack, setuptools and urllib3, which the stdlib-only alert sink never imports. Follow-up RF29."
 ids = [
   "CVE-2025-47273",
   "CVE-2026-114613",
@@ -1875,37 +1843,37 @@ ids = [
 ]
 
 [images."quay.io/jetstack/cert-manager-cainjector:v1.21.3@sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f"]
-expires = 2026-12-12
-reason = "v1.21.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "quay.io/jetstack/cert-manager-cainjector:v1.21.3: no fixed upstream release exists as of 2026-11-17. v1.21.3 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."quay.io/jetstack/cert-manager-controller:v1.21.3@sha256:9f4f96a33c7774cef24466fcd85031997531a03a8d117f151126baa8d1290dcc"]
-expires = 2026-12-12
-reason = "v1.21.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "quay.io/jetstack/cert-manager-controller:v1.21.3: no fixed upstream release exists as of 2026-11-17. v1.21.3 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
 [images."quay.io/jetstack/cert-manager-startupapicheck:v1.21.3@sha256:1c519d4afca1413d1e4ccd78bdc756184418ab55a34569a3b3de39d32f9974e1"]
-expires = 2026-12-12
-reason = "v1.21.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "quay.io/jetstack/cert-manager-startupapicheck:v1.21.3: no fixed upstream release exists as of 2026-11-17. v1.21.3 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."quay.io/jetstack/cert-manager-webhook:v1.21.3@sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458"]
-expires = 2026-12-12
-reason = "v1.21.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "quay.io/jetstack/cert-manager-webhook:v1.21.3: no fixed upstream release exists as of 2026-11-17. v1.21.3 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."quay.io/kiwigrid/k8s-sidecar:2.14.3@sha256:52d311dcedd587421a236c4d6c621f05614c40a51386e955e0699dca97ec0880"]
-expires = 2026-12-12
-reason = "2.14.3 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "quay.io/kiwigrid/k8s-sidecar:2.14.3: no fixed upstream release exists as of 2026-11-17. 2.14.3 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2025-47273",
   "CVE-2026-114613",
@@ -1915,15 +1883,15 @@ ids = [
 ]
 
 [images."quay.io/prometheus/alertmanager:v0.35.0@sha256:5f6e66c01bd610aef6dd671642a52eee775fd3a89bd8788ebada33efaf373d10"]
-expires = 2026-12-12
-reason = "v0.35.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "quay.io/prometheus/alertmanager:v0.35.0: no fixed upstream release exists as of 2026-11-17. v0.35.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."quay.io/prometheus/node-exporter:v1.12.1-distroless@sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106"]
-expires = 2026-12-12
-reason = "v1.12.1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "quay.io/prometheus/node-exporter:v1.12.1-distroless: no fixed upstream release exists as of 2026-11-17. v1.12.1 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-33818",
@@ -1943,80 +1911,71 @@ ids = [
 ]
 
 [images."quay.io/prometheus/prometheus:v3.16.0-distroless@sha256:9764044e09eb2c9e1abdb12d0f0188d4efb7384b0262d3c080f0fc59045c89ba"]
-expires = 2026-12-12
-reason = "v3.16.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "quay.io/prometheus/prometheus:v3.16.0-distroless: no fixed upstream release exists as of 2026-11-17. v3.16.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
 ]
 
 [images."rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332"]
-expires = 2026-12-12
-reason = "v1.37.2-k3s1 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "rancher/k3s:v1.37.2-k3s1: no fixed upstream release exists as of 2026-11-17. v1.37.2-k3s1 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-56854",
   "CVE-2026-78661",
 ]
 
-[images."redis:6.2.24-alpine@sha256:b362b5dff9d14d961dc3352db4776aba6a8c53ca2661d7c74ad2c121f82cdaea"]
-expires = 2026-12-12
-reason = "6.2.24 is the newest Redis 6.2 release, the line PostHog 1.43 documents; Redis 8 is a major jump for PostHog, revisit when PostHog leaves the platform (SC2 follow-up)"
-ids = [
-  "CVE-2026-107891",
-  "CVE-2026-84782",
-  "CVE-2026-85091",
-]
-
 [images."reg.kyverno.io/kyverno/background-controller:v1.20.0@sha256:c72df38320a48fc9de10f9d23d087a117853bb08207b7f60f6d1e8457fb3ddb7"]
-expires = 2026-12-12
-reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "reg.kyverno.io/kyverno/background-controller:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
 [images."reg.kyverno.io/kyverno/cleanup-controller:v1.20.0@sha256:0f9ce0c203561c52499e871a987ff987371f57385fcafe7af1a01dfd6db1feee"]
-expires = 2026-12-12
-reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "reg.kyverno.io/kyverno/cleanup-controller:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
 [images."reg.kyverno.io/kyverno/kyverno-cli:v1.20.0@sha256:bd2b8b7c9d550ecf04e0bacaf351adce2f82ce67fd3f291075edcee7f8ab4ab4"]
-expires = 2026-12-12
-reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "reg.kyverno.io/kyverno/kyverno-cli:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
 [images."reg.kyverno.io/kyverno/kyverno:v1.20.0@sha256:9de49c5416ea536f00a205527197ac048abdf32c5a75d633cd9afff8928f359d"]
-expires = 2026-12-12
-reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "reg.kyverno.io/kyverno/kyverno:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
 [images."reg.kyverno.io/kyverno/kyvernopre:v1.20.0@sha256:339067e083430e0c97007541bef9cfdbac89bee13f7228772c77ae8aead14b8b"]
-expires = 2026-12-12
-reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "reg.kyverno.io/kyverno/kyvernopre:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
 [images."reg.kyverno.io/kyverno/reports-controller:v1.20.0@sha256:f54e3cc106fadb1a615d0ec11c42f741f51d3580a5f70dfbe7bd7ec58864ef03"]
-expires = 2026-12-12
-reason = "v1.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "reg.kyverno.io/kyverno/reports-controller:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
 ]
 
 [images."registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b"]
-expires = 2026-12-12
-reason = "v2.20.0 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0: no fixed upstream release exists as of 2026-11-17. v2.20.0 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-56851",
@@ -2031,8 +1990,8 @@ ids = [
 ]
 
 [images."registry.k8s.io/sig-storage/csi-attacher:v4.13.0@sha256:d1a26170efed45491074ca4545c81844eee2b9043fb885ac01fb4aed6f8b72d2"]
-expires = 2026-12-12
-reason = "newest release of this CSI sidecar and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "registry.k8s.io/sig-storage/csi-attacher:v4.13.0: no fixed upstream release exists as of 2026-11-17. It is the newest release of this CSI sidecar and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
@@ -2042,8 +2001,8 @@ ids = [
 ]
 
 [images."registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.18.0@sha256:b7fefd08651f00ac4df1a196ed4c621c2451fbb899297fe9fad9e36c667af0c0"]
-expires = 2026-12-12
-reason = "newest release of this CSI sidecar and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.18.0: no fixed upstream release exists as of 2026-11-17. It is the newest release of this CSI sidecar and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
@@ -2053,8 +2012,8 @@ ids = [
 ]
 
 [images."registry.k8s.io/sig-storage/csi-provisioner:v6.4.0@sha256:6ebe60fd8ed67a7f8a90d34402e9e706b274e53612d6fa5fbb8285728db622e2"]
-expires = 2026-12-12
-reason = "newest release of this CSI sidecar and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "registry.k8s.io/sig-storage/csi-provisioner:v6.4.0: no fixed upstream release exists as of 2026-11-17. It is the newest release of this CSI sidecar and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
@@ -2064,8 +2023,8 @@ ids = [
 ]
 
 [images."registry.k8s.io/sig-storage/csi-resizer:v2.3.0@sha256:48fb3deb93cd848e3c8998b6368f4322c93bb5ce4a90d1307b6dda0dbefb9a0e"]
-expires = 2026-12-12
-reason = "newest release of this CSI sidecar and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "registry.k8s.io/sig-storage/csi-resizer:v2.3.0: no fixed upstream release exists as of 2026-11-17. It is the newest release of this CSI sidecar and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
@@ -2075,8 +2034,8 @@ ids = [
 ]
 
 [images."registry.k8s.io/sig-storage/livenessprobe:v2.20.0@sha256:19f2cf2f40e1987c7943945deca5f65cd4e4bf5cc0657fc78a5df131861578e8"]
-expires = 2026-12-12
-reason = "newest release of this CSI sidecar and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "registry.k8s.io/sig-storage/livenessprobe:v2.20.0: no fixed upstream release exists as of 2026-11-17. It is the newest release of this CSI sidecar and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
@@ -2086,8 +2045,8 @@ ids = [
 ]
 
 [images."zookeeper:3.9.7@sha256:7654645af057c76db8facc77c5d6fc0749f0f566bdd5c41efe6e3b824d1248c0"]
-expires = 2026-12-12
-reason = "3.9.7 is the newest upstream release and still ships these; Renovate (SC4) moves the pin once upstream rebuilds"
+expires = 2027-01-16
+reason = "zookeeper:3.9.7: no fixed upstream release exists as of 2026-11-17. 3.9.7 is the newest upstream release and still ships these. Follow-up RF29."
 ids = [
   "CVE-2026-10050",
   "CVE-2026-108106",
@@ -2096,7 +2055,41 @@ ids = [
   "CVE-2026-93451",
 ]
 
+[images."postgres:14.25-alpine@sha256:e7d9e6aac7fe3232f7661da103aebc0ce38b04105b46af5e9edd5ef6bc343f20"]
+expires = 2027-01-16
+reason = "postgres:14.25-alpine: no fixed upstream release exists as of 2026-11-17. 14.25 is the newest PostgreSQL 14 release, the major PostHog 1.43 supports; the 2026-11 rebuild clears the Alpine package findings and leaves Go standard library CVEs in the bundled gosu binary. Follow-up RF29."
+ids = [
+  "CVE-2025-61726",
+  "CVE-2025-61729",
+  "CVE-2025-68121",
+  "CVE-2026-111943",
+  "CVE-2026-25679",
+  "CVE-2026-27145",
+  "CVE-2026-32280",
+  "CVE-2026-32281",
+  "CVE-2026-32283",
+  "CVE-2026-33811",
+  "CVE-2026-33814",
+  "CVE-2026-33818",
+  "CVE-2026-39820",
+  "CVE-2026-39821",
+  "CVE-2026-39822",
+  "CVE-2026-39836",
+  "CVE-2026-42499",
+  "CVE-2026-42504",
+  "CVE-2026-56853",
+  "CVE-2026-56858",
+  "CVE-2026-56859",
+  "CVE-2026-56860",
+  "CVE-2026-56862",
+  "CVE-2026-78667",
+  "CVE-2026-78669",
+  "CVE-2026-97031",
+]
+
 [dockerfiles."templates/web/web/Dockerfile"]
 expires = 2026-12-12
 reason = "relies on uid 101 from nginx-unprivileged; an explicit USER changes the golden snapshots, pending in C2"
-ids = ["DS-0002"]
+ids = [
+  "DS-0002",
+]

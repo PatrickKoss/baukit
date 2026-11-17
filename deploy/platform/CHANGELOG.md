@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Pin bumps to the newest stable releases: kube-prometheus-stack chart 93.3.0 to 93.3.1 (Grafana subchart 14.4.2), Loki chart 21.2.3 to 21.3.1, rustfs 1.0.5 to 1.0.6, aws-cli 2.40.3 to 2.40.4, traefik/whoami v1.11.0 to v1.12.0 in the `traefik-edge` e2e suite, and the njs vector image nginx 1.31.6 to 1.31.8. The e2e echo image moves from `nginxinc/nginx-unprivileged:1.29.3-alpine` to `nginx/nginx-unprivileged:1.31.8-alpine`, the same image as the Loki gateway. `local-git-http.Dockerfile` pins `alpine:3.24.4` by digest instead of a bare tag.
+- busybox 1.38.0, `ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie`, `postgres:14.25-alpine` and `redis:6.2.24-alpine` move to upstream's rebuilt digests. The redis rebuild has no HIGH or CRITICAL findings left, so its allowlist entry is gone. The postgres rebuild clears the Alpine package findings and still carries 26 Go standard library CVEs in its bundled `gosu`.
+- `image-findings.toml` entries for findings with no fixed upstream release as of 2026-11-17 now expire on 2027-01-16 and name the image version. Rescanned against the Trivy DB of 2026-11-17. The `templates/web/web/Dockerfile` entry keeps its 2026-12-12 expiry because a template change fixes it (C2).
+- Compatibility matrix note for the next release: kube-prometheus-stack 93.3.1 and Loki chart 21.3.1; every other platform component, tool and the local k3s v1.37.2 were already on their newest stable release.
+
 ## [0.26.7] - 2026-11-17
 
 - The app pack's `BaukitServiceScrapeDown`, `BaukitServiceTargetsAbsent` and `BaukitBuildInfoAbsent` select `up{product!="", service!=""}`. Every ServiceMonitor target carries `service`, so `BaukitBuildInfoAbsent` fired for about 30 platform targets (coredns, kubelet, grafana, loki and others). Only the baukit-app chart's relabeling sets `product`. promtool cases cover a platform target with `service` and no `product`.
