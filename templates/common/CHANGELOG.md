@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The generated `<product>-backend` client lists the realm default scopes plus `kc-admin-api` in `defaultClientScopes`. Keycloak 26.8.2 rejects Admin REST API tokens whose audience does not name the admin API, so the account deletion and user lookups failed with 401. `scripts/keycloak_policy.py` now fails when a client whose service account holds a realm-management role lacks `kc-admin-api`, or when the realm declares `clientScopes` without it.
+
 ## [0.28.0] - 2026-11-17
 
 ## [0.27.4] - 2026-11-17
