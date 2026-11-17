@@ -7,8 +7,8 @@ spec:
   interval: 24h
   url: oci://ghcr.io/prometheus-community/charts/kube-prometheus-stack
   ref:
-    tag: "93.3.0"
-    digest: sha256:12b96b769049bbac5021d1bf544476ed3b1f42df7216d8eb7a70e98007a655a1
+    tag: "93.3.1"
+    digest: sha256:ffe8e72492d5bad79fc6468f69afa2f0303983195993f7bd26ae86721e2d8ebe
   layerSelector:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
@@ -22,8 +22,8 @@ spec:
   interval: 24h
   url: oci://ghcr.io/grafana-community/helm-charts/loki
   ref:
-    tag: "21.2.3"
-    digest: sha256:bd02e2e55cdc0f0ac0cfbb2e01a01b7eba5316787a8ec38a35f315bbd405eed6
+    tag: "21.3.1"
+    digest: sha256:9e305b0a49a71d6eec69b0caf63d6076734645b67c3117f6d39c1dfc1ac45f60
   layerSelector:
     mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
     operation: copy
