@@ -761,6 +761,16 @@ by then ride along).
 - [ ] **RF23 platform-local adopts FA6.** The audit webhook flags apply only when the lifecycle creates
   the cluster, so platform-local sends no audit events until `down --delete` and `up`. That drops its
   data; schedule it with the user.
+- [x] **RF24 Flagger kept the API placeholder locally.** Since 0.26.0 the flagger base ships the
+  fail-closed `192.0.2.0/32` API egress, and nothing wrapped it with the local node CIDR, so
+  platform-local's flagger crashlooped on `connection refused` and leitbild's Canary never left
+  Initializing. Done (0.26.5): `overlays/local/components/flagger` composes the node CIDR, and a lint
+  test fails when any base with the placeholder has no local wrapper. platform-infra points
+  `local-flagger` and `local-flagger-metrics` at the wrapper.
+- [ ] **RF25 Hetzner never replaces the node-CIDR placeholder.** platform-infra's Hetzner overlay
+  points Flux at the bare cert-manager, cnpg, traefik, kyverno, kured and observability-stack bases,
+  so every one of those namespaces would lose API access on a real cluster. Give Hetzner wrappers with
+  its node CIDR (or a baukit `overlays/hetzner`) before PI5 ends.
 
 ## Verification per change
 
@@ -1462,3 +1472,13 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   suites and the full e2e runs once on the release commit.
 - Open: RF22, RF23; the platform-infra pin to v0.26.4 with the audit webhook flags; leitbild's live
   rollout of `addcc502a3ed` on platform-local.
+
+### 2026-11-17 03:15
+
+- leitbild runs `7e3f4375ed76` on platform-local in testing and production: migrations embedded, the
+  loadtester passes the tenant policies, MetricTemplates filter on the namespace, ServiceMonitors no
+  longer honour target labels. The Canary waited on flagger, which crashlooped (RF24).
+- platform-infra pinned v0.26.4 with the audit webhook flags in the Terraform node module.
+- Main's CI went red after the 0.26.4 merge: Trivy's 2026-11-17 database added ten findings to the
+  frozen PostHog image (allowlisted, same entry) and a GitHub 502 broke the web fixture. The local gate
+  had passed on a database 18 hours older; `platform-images` only refreshes after `NextUpdate`.
