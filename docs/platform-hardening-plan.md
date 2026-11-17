@@ -809,6 +809,13 @@ by then ride along).
   1.43.1's lines although newer majors would fix some findings; they move with the PostHog
   replacement.
 
+- [ ] **RF30 Replace chrono with jiff.** RUSTSEC-2026-0543 (2026-11-17 in OSV) marks chrono
+  unmaintained, all versions, no fix; upstream winds it down and recommends jiff
+  (chronotope/chrono#1768). baukit-data-subject, -erasure, -integrations, -suite, -sync and -test use
+  chrono, partly in public types, plus the sqlx and utoipa chrono features and the backend template.
+  Moving is a breaking change for every product. Until then `osv-scanner.toml`, `rust/deny.toml` and
+  the backend template configs ignore the advisory until 2027-02-15.
+
 ## Verification per change
 
 | Change touches | Run |

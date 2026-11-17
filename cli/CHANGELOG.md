@@ -4,6 +4,8 @@
 
 ## [0.27.4] - 2026-11-17
 
+- Generated backends ignore RUSTSEC-2026-0543 (chrono unmaintained, no fix) in `osv-scanner.toml` until 2027-02-15 and in `backend/deny.toml`, like baukit itself. The jiff migration is RF30 in docs/platform-hardening-plan.md.
+
 ## [0.27.3] - 2026-11-17
 
 ## [0.27.2] - 2026-11-17
