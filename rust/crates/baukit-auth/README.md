@@ -443,7 +443,7 @@ let active: i64 = sqlx::query_scalar(
      AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > $2)",
 )
 .bind(owner_id)
-.bind(prepared.record().created_at)
+.bind(jiff_sqlx::Timestamp::from(prepared.record().created_at))
 .fetch_one(&mut *transaction)
 .await?;
 if active >= i64::from(maximum.get()) {

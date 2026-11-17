@@ -97,8 +97,9 @@ async fn retention_job_purges_expired_browser_sessions() -> Result<(), Box<dyn E
     let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
     let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
     let now = jiff::Timestamp::now();
-    insert_browser_session(&pool, "expired", now - jiff::SignedDuration::from_hours(24 * 3)).await?;
-    insert_browser_session(&pool, "active", now + jiff::SignedDuration::from_hours(24 * 3)).await?;
+    let three_days = jiff::SignedDuration::from_hours(72);
+    insert_browser_session(&pool, "expired", now - three_days).await?;
+    insert_browser_session(&pool, "active", now + three_days).await?;
 
     let handler = Arc::new(RetentionJobHandler::new(pool.clone())?);
     let job_id = handler.enqueue_initial(now).await?.job.id;

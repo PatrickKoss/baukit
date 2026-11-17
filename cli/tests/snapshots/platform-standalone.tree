@@ -28,7 +28,7 @@ a8e37b245f694d6d1bbac568d3043f732b947da05aa56986ad0c93f4138aa486  backend/crates
 84f3dec296e87d61628936ee1b79d6d233108a478b0b277acb643a354bd91f11  backend/crates/snapshot-app-bin/src/bin/platform-purge.rs
 4145744fe553cd256bb690838db6bf51affb4a0aabbaab7255e5a8d68f8fa789  backend/crates/snapshot-app-bin/src/config.rs
 3ed8c0e1796ff4822fd30b0c703690da0f1bea5950bc611cfb5a87c142d75311  backend/crates/snapshot-app-bin/src/lib.rs
-390d690734f5b7bbd149a104d9b3a701bbf4404ea1ce91efe0dc84462415492a  backend/crates/snapshot-app-bin/src/platform.rs
+b6e23a2ee09d6b9292542590012c3ae4e1b6ad463484a672fba8f279dfea96dc  backend/crates/snapshot-app-bin/src/platform.rs
 ffed605839a40bbc850de20623f6b1d8d7f511641909b1a415ef93d4a6e54f8e  backend/crates/snapshot-app-bin/src/rate_limits.rs
 9ebfe0e767170b56017d1b15fe330ebeb699779ec87300ec5b51ea702bf28c60  backend/crates/snapshot-app-domain/Cargo.toml
 8ad98982aa3d32370b04c52109a5dac6a51262d3fb7bee604d344e19517fb36c  backend/crates/snapshot-app-domain/src/lib.rs

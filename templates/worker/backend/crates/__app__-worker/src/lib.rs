@@ -55,10 +55,7 @@ pub mod retention {
         }
 
         /// Safe to call from every worker replica at startup.
-        pub async fn enqueue_initial(
-            &self,
-            now: Timestamp,
-        ) -> Result<EnqueueOutcome, JobError> {
+        pub async fn enqueue_initial(&self, now: Timestamp) -> Result<EnqueueOutcome, JobError> {
             let slot = self
                 .interval
                 .slot_at(now)
@@ -77,7 +74,8 @@ pub mod retention {
 {% if context.platform %}
         async fn purge_receipts(&self, cancellation: &JobCancellation) -> Result<(), JobError> {
             let inbox = PostgresPlatformInbox::new(self.pool.clone());
-            let cutoff = Timestamp::now() - jiff::SignedDuration::from_hours(24 * RECEIPT_RETENTION_DAYS);
+            let cutoff = Timestamp::now()
+                - jiff::SignedDuration::from_hours(24 * RECEIPT_RETENTION_DAYS);
             loop {
                 if cancellation.is_cancelled() {
                     return Err(JobError::retryable("retention purge was cancelled"));
@@ -96,7 +94,8 @@ pub mod retention {
             &self,
             cancellation: &JobCancellation,
         ) -> Result<(), JobError> {
-            let cutoff = Timestamp::now() - jiff::SignedDuration::from_hours(24 * BROWSER_SESSION_GRACE_DAYS);
+            let cutoff = Timestamp::now()
+                - jiff::SignedDuration::from_hours(24 * BROWSER_SESSION_GRACE_DAYS);
             let batch = NonZeroU32::new(PURGE_BATCH)
                 .ok_or_else(|| JobError::permanent("purge batch must not be zero"))?;
             loop {
