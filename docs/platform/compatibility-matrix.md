@@ -5,6 +5,14 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.27.0
+
+Last verified release train: `v0.27.0` (minor train on top of `v0.26.7`).
+- Component changes: kube-prometheus-stack chart 93.3.1 (Grafana subchart 14.4.2), Loki chart 21.3.1, rustfs 1.0.6, aws-cli 2.40.4, nginx and nginx-unprivileged 1.31.8, alpine 3.24.4. New: prom-label-proxy v0.16.2 in every tenant namespace. Every other platform component, tool and the local k3s v1.37.2 are unchanged and on their newest stable release.
+- Templates: Rust 1.100.0, distroless and Debian trixie rebuilt digests, `nginx/nginx-unprivileged:1.31.8-alpine` with `USER 101`, postgres 18.7, redis 8.10.3, Keycloak 26.8.2.
+- Breaking for tenants: a tenant MetricTemplate must use provider `prometheus` at `http://tenant-metrics-proxy.<namespace>.svc.cluster.local:8080`. Canaries may reference only templates in their own namespace and may not carry inline queries, so the shared `flagger-system/baukit-*` templates are platform-only.
+- platform-local turns on the observability pack's `wsl` component, which inhibits `AlertmanagerClusterCrashlooping` while btime drifts and no container restarted.
+
 ## v0.26.7
 
 Last verified release train: `v0.26.7` (patch train on top of `v0.26.6`). No component versions change.
