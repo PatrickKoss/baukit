@@ -17,7 +17,7 @@
   | `checked_add_signed` (Option) | `checked_add` (Result) |
   | `a.signed_duration_since(b)` | `a.duration_since(b)` |
   | `delta.to_std()` | `std::time::Duration::try_from(delta)` |
-  | `dt.to_rfc3339()` | `ts.to_string()` |
+  | `dt.to_rfc3339()` | `ts.display_with_offset(Offset::UTC).to_string()` keeps `+00:00`; `ts.to_string()` prints `Z` |
 - Fixture prebuilds (`native-android-gate`, `generated-fixture-gate.sh`, `mcp-remote-fixture.sh`) run `scripts/build-fixture-ts-packages.sh`, which builds the packages in `scripts/fixture-ts-packages.txt` with their workspace dependencies. The old hand-written lists missed `@baukit/preferences-core`, so a standalone `--step native-android` failed in Gradle on a missing `dist`.
 - Mobile QA: saving a quick-boot snapshot now deletes the qcow2 snapshot tags of pruned snapshots through the saving emulator's console (`emu avd snapshot delete`). Pruning used to delete only `snapshots/<name>`, so every tag and its VM state stayed in the AVD's overlays: the shared `baukit-native-qa` AVD had 32 tags, a 9.5 GB userdata overlay and a 2.3 GB cache overlay that each `-read-only` launch copies into the emulator temp directory. Existing overlays keep their size, and freed clusters are reused.
 
