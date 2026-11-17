@@ -784,11 +784,18 @@ by then ride along).
   ServiceMonitor target has, so the recreated platform-local fired for 31 platform targets.
   Done (0.26.7): they require `product`, which only the baukit-app ServiceMonitor sets; a promtool
   case keeps them quiet for platform targets.
-- [ ] **RF28 Alertmanager "crashlooping" on WSL.** On platform-local `process_start_time_seconds` of
+- [x] **RF28 Alertmanager "crashlooping" on WSL.** On platform-local `process_start_time_seconds` of
   alertmanager, its config-reloader and Prometheus advances with wall time (the process always looks
-  about 1060 s old) although nothing restarts and the host's `btime` is stable, so the upstream
-  `AlertmanagerClusterCrashlooping` fires. Find the kernel-side cause on WSL2 before deciding between
-  a local-only inhibition with a reason and leaving it.
+  about 1060 s old) although nothing restarts, so the upstream `AlertmanagerClusterCrashlooping`
+  fires. Cause: btime is not stable. The WSL2 kernel's wall clock runs ahead of `CLOCK_BOOTTIME` and
+  the kernel computes btime as wall minus boot time per read, so btime grows in 1 s steps
+  (`delta(node_boot_time_seconds[1h])` = 207 s, 16 changes per 10 min). `/proc/1/stat` field 22 of
+  alertmanager stays 2469727 and `timens_offsets` are zero. All 29 scraped jobs show the drift, and
+  only `AlertmanagerClusterCrashlooping` reads `process_start_time_seconds`. Baukit cannot change the
+  WSL2 clock. Fix: the platform pack's `wsl` component (local overlay only) adds
+  `BaukitWslStartTimeDriftInhibitor`, which inhibits that alert per namespace and service and goes
+  silent when a container restarts, the start time jumps more than 150 s in 10 min, or btime is
+  stable. Runbook `docs/runbooks/platform/wsl-start-time-drift.md`.
 
 ## Verification per change
 

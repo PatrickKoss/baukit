@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- On WSL2 the kernel's wall clock runs about 200 s per hour ahead of `CLOCK_BOOTTIME`, so `/proc/stat` btime grows and every Go exporter's `process_start_time_seconds` moves without a restart. That fired the upstream `AlertmanagerClusterCrashlooping` on platform-local. The platform pack has a `wsl` component, off by default and on in the local overlay, with `BaukitWslStartTimeDriftInhibitor`. The local routing inhibits the crashloop alert with it and drops it in `blackhole`. It stays silent once a container restarts, when the start time jumps further than CrashLoopBackOff allows, or when btime is stable, so a real crashloop still fires. The Alertmanager config check accepts a blackhole route for any alertname that only serves as an inhibit source.
+
 ## [0.26.7] - 2026-11-17
 
 - The app pack's `BaukitServiceScrapeDown`, `BaukitServiceTargetsAbsent` and `BaukitBuildInfoAbsent` select `up{product!="", service!=""}`. Every ServiceMonitor target carries `service`, so `BaukitBuildInfoAbsent` fired for about 30 platform targets (coredns, kubelet, grafana, loki and others). Only the baukit-app chart's relabeling sets `product`. promtool cases cover a platform target with `service` and no `product`.

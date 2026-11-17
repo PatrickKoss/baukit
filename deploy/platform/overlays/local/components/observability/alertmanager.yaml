@@ -21,6 +21,10 @@ route:
     - receiver: blackhole
       matchers:
         - alertname = "InfoInhibitor"
+    # BaukitWslStartTimeDriftInhibitor only feeds the inhibit rule below and is never sent.
+    - receiver: blackhole
+      matchers:
+        - alertname = "BaukitWslStartTimeDriftInhibitor"
     - receiver: security-pager
       matchers:
         - severity = "critical"
@@ -50,6 +54,15 @@ inhibit_rules:
       - severity = "info"
     equal:
       - namespace
+  # WSL2 btime drift moves process_start_time_seconds without a restart. The source alert is
+  # silent once a container restarts, so a real crashloop still fires.
+  - source_matchers:
+      - alertname = "BaukitWslStartTimeDriftInhibitor"
+    target_matchers:
+      - alertname = "AlertmanagerClusterCrashlooping"
+    equal:
+      - namespace
+      - service
 receivers:
   - name: heartbeat
     webhook_configs:

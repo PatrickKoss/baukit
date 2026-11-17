@@ -1,0 +1,71 @@
+rule_files:
+  - ../alerts/wsl.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: start time that moves only with btime fires BaukitWslStartTimeDriftInhibitor
+    interval: 1m
+    input_series:
+      - series: 'process_start_time_seconds{job="kube-prometheus-stack-alertmanager",container="alertmanager",namespace="observability",service="kube-prometheus-stack-alertmanager",pod="alertmanager-0"}'
+        values: '1000+1x30'
+      - series: 'node_boot_time_seconds{job="node-exporter",instance="node-1"}'
+        values: '500+1x30'
+      - series: 'kube_pod_container_status_restarts_total{container="alertmanager",namespace="observability",pod="alertmanager-0"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BaukitWslStartTimeDriftInhibitor
+        exp_alerts:
+          - exp_labels:
+              severity: info
+              component: wsl
+              namespace: observability
+              service: kube-prometheus-stack-alertmanager
+            exp_annotations:
+              summary: Alertmanager start time in observability follows WSL2 clock drift
+              description: >-
+                process_start_time_seconds of kube-prometheus-stack-alertmanager changes only because the WSL2
+                kernel's btime grows. No container restarted, so AlertmanagerClusterCrashlooping is
+                inhibited.
+              runbook_url: RUNBOOK_BASE_URL/wsl-start-time-drift
+
+  - name: a container restart keeps the crashloop alert uninhibited
+    interval: 1m
+    input_series:
+      - series: 'process_start_time_seconds{job="kube-prometheus-stack-alertmanager",container="alertmanager",namespace="observability",service="kube-prometheus-stack-alertmanager",pod="alertmanager-0"}'
+        values: '1000+1x30'
+      - series: 'node_boot_time_seconds{job="node-exporter",instance="node-1"}'
+        values: '500+1x30'
+      - series: 'kube_pod_container_status_restarts_total{container="alertmanager",namespace="observability",pod="alertmanager-0"}'
+        values: '0x10 1+1x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BaukitWslStartTimeDriftInhibitor
+        exp_alerts: []
+
+  - name: start times that jump like a crashloop keep the crashloop alert uninhibited
+    interval: 1m
+    input_series:
+      - series: 'process_start_time_seconds{job="kube-prometheus-stack-alertmanager",container="alertmanager",namespace="observability",service="kube-prometheus-stack-alertmanager",pod="alertmanager-0"}'
+        values: '1000+60x30'
+      - series: 'node_boot_time_seconds{job="node-exporter",instance="node-1"}'
+        values: '500+1x30'
+      - series: 'kube_pod_container_status_restarts_total{container="alertmanager",namespace="observability",pod="alertmanager-0"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BaukitWslStartTimeDriftInhibitor
+        exp_alerts: []
+
+  - name: start time changes with a stable btime keep the crashloop alert uninhibited
+    interval: 1m
+    input_series:
+      - series: 'process_start_time_seconds{job="kube-prometheus-stack-alertmanager",container="alertmanager",namespace="observability",service="kube-prometheus-stack-alertmanager",pod="alertmanager-0"}'
+        values: '1000+1x30'
+      - series: 'node_boot_time_seconds{job="node-exporter",instance="node-1"}'
+        values: '500x30'
+      - series: 'kube_pod_container_status_restarts_total{container="alertmanager",namespace="observability",pod="alertmanager-0"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BaukitWslStartTimeDriftInhibitor
+        exp_alerts: []
