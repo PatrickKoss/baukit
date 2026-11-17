@@ -63,7 +63,7 @@ tests:
               severity: critical
             exp_annotations:
               summary: No Baukit service targets are discoverable
-              description: 'Prometheus has no service-labeled targets, so every other Baukit alert has no data.'
+              description: 'Prometheus has no targets with product and service labels, so every other Baukit alert has no data.'
               runbook_url: RUNBOOK_BASE_URL/service-targets-absent
 
   - name: a healthy target without build_info fires BaukitBuildInfoAbsent after 10m
@@ -90,3 +90,41 @@ tests:
               summary: Build metadata is absent
               description: 'A healthy scrape target is not exposing build_info: 10.0.0.1:9000 of fixture-api in fixture.'
               runbook_url: RUNBOOK_BASE_URL/build-info-absent
+
+  - name: a platform target with a service label but no product keeps every readiness alert quiet
+    interval: 1m
+    input_series:
+      - series: 'up{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api"}'
+        values: '1x20'
+      - series: 'build_info{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",version="1.0.0"}'
+        values: '1x20'
+      - series: 'up{service="coredns",namespace="kube-system",instance="10.42.0.5:9153",job="coredns"}'
+        values: '1x20'
+      - series: 'up{service="grafana",namespace="observability",instance="10.42.0.9:3000",job="grafana"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitServiceScrapeDown
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitServiceTargetsAbsent
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitBuildInfoAbsent
+        exp_alerts: []
+
+  - name: platform targets with a service label but no product fire BaukitServiceTargetsAbsent after 5m
+    interval: 1m
+    input_series:
+      - series: 'up{service="coredns",namespace="kube-system",instance="10.42.0.5:9153",job="coredns"}'
+        values: '1x10'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BaukitServiceTargetsAbsent
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: No Baukit service targets are discoverable
+              description: 'Prometheus has no targets with product and service labels, so every other Baukit alert has no data.'
+              runbook_url: RUNBOOK_BASE_URL/service-targets-absent

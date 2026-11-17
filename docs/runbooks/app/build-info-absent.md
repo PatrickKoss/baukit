@@ -14,7 +14,7 @@ Dashboards cannot tell which version runs, and release correlation breaks. Traff
 Targets without the series:
 
 ```promql
-(up{service!=""} == 1) unless on (product, service, environment, namespace, instance, job) (build_info{service!=""} == 1)
+(up{product!="", service!=""} == 1) unless on (product, service, environment, namespace, instance, job) (build_info{product!="", service!=""} == 1)
 ```
 
 What the pod actually exports:

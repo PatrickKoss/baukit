@@ -52,7 +52,7 @@ groups:
   - name: baukit-readiness-alerts
     rules:
       - alert: BaukitServiceScrapeDown
-        expr: up{service!=""} == 0
+        expr: up{product!="", service!=""} == 0
         for: 2m
         labels:
           severity: critical
@@ -62,20 +62,20 @@ groups:
           runbook_url: RUNBOOK_BASE_URL/service-scrape-down
 
       - alert: BaukitServiceTargetsAbsent
-        expr: absent(up{service!=""})
+        expr: absent(up{product!="", service!=""})
         for: 5m
         labels:
           severity: critical
         annotations:
           summary: No Baukit service targets are discoverable
-          description: 'Prometheus has no service-labeled targets, so every other Baukit alert has no data.'
+          description: 'Prometheus has no targets with product and service labels, so every other Baukit alert has no data.'
           runbook_url: RUNBOOK_BASE_URL/service-targets-absent
 
       - alert: BaukitBuildInfoAbsent
         expr: |
-          (up{service!=""} == 1)
+          (up{product!="", service!=""} == 1)
           unless on (product, service, environment, namespace, instance, job)
-          (build_info{service!=""} == 1)
+          (build_info{product!="", service!=""} == 1)
         for: 10m
         labels:
           severity: warning
