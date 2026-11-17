@@ -219,7 +219,39 @@ class AlertmanagerConfigTest(unittest.TestCase):
                 '- alertname = "InfoInhibitor"\n    target', '- alertname = "X"\n    target'
             )
         )
-        self.assert_one_problem(case, "InfoInhibitor inhibits info")
+        problems = case.problems()
+        self.assertTrue(any("InfoInhibitor inhibits info" in p for p in problems), problems)
+        self.assertTrue(
+            any("routes[1] sends alerts to receiver 'blackhole'" in p for p in problems)
+        )
+
+    def test_route_for_other_inhibit_source_to_null_passes(self) -> None:
+        case = Case(self)
+        case.example.write_text(
+            CONFIG.replace(
+                "    - receiver: pager\n",
+                "    - receiver: blackhole\n      matchers:\n"
+                '        - alertname = "DriftInhibitor"\n'
+                "    - receiver: pager\n",
+            ).replace(
+                "receivers:\n",
+                '  - source_matchers:\n      - alertname = "DriftInhibitor"\n'
+                '    target_matchers:\n      - alertname = "Crashlooping"\n'
+                "    equal: [namespace]\nreceivers:\n",
+            )
+        )
+        self.assertEqual(case.problems(), [])
+
+    def test_route_for_alert_that_inhibits_nothing_to_null_fails(self) -> None:
+        case = Case(self)
+        case.example.write_text(
+            CONFIG.replace(
+                "    - receiver: pager\n",
+                '    - receiver: blackhole\n      matchers:\n        - alertname = "Quiet"\n'
+                "    - receiver: pager\n",
+            )
+        )
+        self.assert_one_problem(case, "routes[2] sends alerts to receiver 'blackhole'")
 
     def test_alertmanager_without_secret_mount_fails(self) -> None:
         case = Case(self)

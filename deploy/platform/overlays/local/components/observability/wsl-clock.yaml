@@ -1,0 +1,11 @@
+# Local clusters run on WSL2, whose btime grows with wall-clock drift. See
+# deploy/observability-platform/alerts/wsl.rules.yml.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: baukit-platform-observability
+  namespace: flux-system
+spec:
+  values:
+    components:
+      wsl: true

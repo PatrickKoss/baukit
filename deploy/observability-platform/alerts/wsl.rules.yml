@@ -1,0 +1,35 @@
+# Local WSL2 clusters only (components.wsl). The WSL2 kernel's wall clock runs ahead of
+# CLOCK_BOOTTIME (about 200 s per hour), so /proc/stat btime grows and every Go exporter's
+# process_start_time_seconds (btime + starttime jiffies) moves without a restart. That trips the
+# upstream AlertmanagerClusterCrashlooping. This alert only feeds an Alertmanager inhibit rule.
+# It stays silent if a container restarted, if the start time moved further than kubelet's
+# CrashLoopBackOff allows for five starts (10+20+40+80 s), or if btime did not move.
+groups:
+  - name: baukit-wsl
+    rules:
+      - alert: BaukitWslStartTimeDriftInhibitor
+        expr: |
+          count by (namespace, service) (
+            changes(process_start_time_seconds{job="kube-prometheus-stack-alertmanager",container="alertmanager"}[10m]) > 4
+            and
+            (
+              max_over_time(process_start_time_seconds{job="kube-prometheus-stack-alertmanager",container="alertmanager"}[10m])
+              - min_over_time(process_start_time_seconds{job="kube-prometheus-stack-alertmanager",container="alertmanager"}[10m])
+            ) < 150
+          )
+          and on ()
+          max(changes(node_boot_time_seconds[10m])) > 0
+          unless on (namespace)
+          sum by (namespace) (
+            increase(kube_pod_container_status_restarts_total{container="alertmanager"}[10m])
+          ) > 0
+        labels:
+          severity: info
+          component: wsl
+        annotations:
+          summary: Alertmanager start time in {{ $labels.namespace }} follows WSL2 clock drift
+          description: >-
+            process_start_time_seconds of {{ $labels.service }} changes only because the WSL2
+            kernel's btime grows. No container restarted, so AlertmanagerClusterCrashlooping is
+            inhibited.
+          runbook_url: RUNBOOK_BASE_URL/wsl-start-time-drift
