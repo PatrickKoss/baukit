@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `validate.sh` renders `lint/tenant-universe`, a tenant namespace with `components/tenant`, so platform-validate sees the `tenant-metrics-proxy` pods in a tenant namespace. With 0.27.0 a consumer overlay with tenants failed `validate.sh` twice, and baukit's own run had no tenant namespace to catch it.
+- The `default-deny-network-policy` convention rule counts a namespace labelled `baukit.dev/tenant: "true"` as covered for Ingress and Egress, since Kyverno `generate-tenant-defaults` creates its `default-deny`. A test reads that policy and checks it still generates a default-deny with an empty podSelector for both directions.
+- `protect-tenant-metrics-proxy` reads the username with `request.?userInfo.?username.orValue("")`. A request without a user now evaluates to untrusted and is denied, instead of erroring. New kyverno test `protect-tenant-metrics-proxy-anonymous`.
+- The offline cluster-policy run passes the applying identity to `kyverno apply --userinfo`: platform kustomize-controller for bases and overlays, helm-controller for charts, and the tenant's `flux-reconciler` for the baukit-app profiles. Only `protect-tenant-metrics-proxy` reads the user, and no other policy's counts change. It also finds the JSON report after the YAML that GeneratingPolicies print, which made `kyverno apply` on a universe with a tenant Namespace look like it exited without a report.
+
 ## [0.27.0] - 2026-11-17
 
 - On WSL2 the kernel's wall clock runs about 200 s per hour ahead of `CLOCK_BOOTTIME`, so `/proc/stat` btime grows and every Go exporter's `process_start_time_seconds` moves without a restart. That fired the upstream `AlertmanagerClusterCrashlooping` on platform-local. The platform pack has a `wsl` component, off by default and on in the local overlay, with `BaukitWslStartTimeDriftInhibitor`. The local routing inhibits the crashloop alert with it and drops it in `blackhole`. It stays silent once a container restarts, when the start time jumps further than CrashLoopBackOff allows, or when btime is stable, so a real crashloop still fires. The Alertmanager config check accepts a blackhole route for any alertname that only serves as an inhibit source.

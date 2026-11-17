@@ -485,6 +485,15 @@ if [[ -d "$platform_dir/overlays" ]]; then
   done
 fi
 
+# A tenant namespace with components/tenant, so the convention rules and the offline cluster
+# policies see the platform pods it runs there.
+printf '==> tenant universe: kustomize build\n'
+if kustomize build "$platform_dir/lint/tenant-universe" >"$rendered_dir/overlay-tenant-universe.yaml"; then
+  ((rendered_overlays += 1))
+else
+  status=1
+fi
+
 # The image scan and the image-digest convention rule read the Flux install platform-up applies.
 # shellcheck source=deploy/platform/flux-lockdown.sh
 . "$platform_dir/flux-lockdown.sh"
