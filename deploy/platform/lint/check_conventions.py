@@ -211,6 +211,22 @@ def rule_psa_labels(context: Context) -> Iterable[str]:
             yield f"Namespace {namespace.name} enforces privileged but is not on the allowlist"
 
 
+def rule_default_service_account(context: Context) -> Iterable[str]:
+    for universe, resources in context.universes.items():
+        quiet = {
+            account.namespace
+            for account in by_kind(resources, "ServiceAccount")
+            if account.name == "default"
+            and account.obj.get("automountServiceAccountToken") is False
+        }
+        for namespace in by_kind(resources, "Namespace"):
+            if namespace.name not in quiet:
+                yield (
+                    f"{universe}: Namespace {namespace.name} declares no default ServiceAccount "
+                    "with automountServiceAccountToken: false (CIS 5.1.5)"
+                )
+
+
 def denied_policy_types(policy: Resource) -> set[str]:
     selector = policy.spec.get("podSelector")
     if selector is None or selector.get("matchLabels") or selector.get("matchExpressions"):
@@ -773,6 +789,7 @@ def rule_kured_alert_filter(context: Context) -> Iterable[str]:
 RULES: dict[str, Rule] = {
     "psa-labels": rule_psa_labels,
     "default-deny-network-policy": rule_default_deny,
+    "default-service-account": rule_default_service_account,
     "metrics-enabled": rule_metrics_enabled,
     "exporters-scraped": rule_exporters_scraped,
     "alert-metadata": rule_alert_metadata,

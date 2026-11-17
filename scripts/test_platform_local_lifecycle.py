@@ -609,12 +609,17 @@ class SystemNamespaceLabelTest(unittest.TestCase):
             calls = Path(directory) / "calls"
             result = bash(
                 f'source "{HELPER}"\n'
-                f'kubectl() {{ printf "%s\\n" "$*" >>"{calls}"; }}\n'
+                f'kubectl() {{ printf "%s\\n" "$*" >>"{calls}"; '
+                f'[[ $1 != apply ]] || cat >>"{calls}"; }}\n'
                 "platform_label_system_namespaces"
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             lines = calls.read_text().splitlines()
-        levels = {line.split()[2]: line for line in lines}
+        levels = {line.split()[2]: line for line in lines if line.startswith("label ")}
+        self.assertEqual(lines.count("apply -f -"), 3)
+        self.assertEqual(lines.count("automountServiceAccountToken: false"), 3)
+        accounts = {line.split()[1] for line in lines if line.startswith("  namespace: ")}
+        self.assertEqual(accounts, {"default", "kube-public", "kube-node-lease"})
         self.assertEqual(set(levels), {"kube-system", "default", "kube-public", "kube-node-lease"})
         for namespace, line in levels.items():
             level = "privileged" if namespace == "kube-system" else "restricted"

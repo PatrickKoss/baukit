@@ -55,10 +55,8 @@ kube_bench_benchmark=k3s-cis-1.9
 #   platform manifests.
 # 5.1.3: upstream Flux, Flagger and Kubernetes aggregate ClusterRoles (admin, edit, view,
 #   storage-version-migrator) carry wildcards the k3s allowlist does not name.
-# 5.1.5: default ServiceAccounts keep automountServiceAccountToken unset; third-party charts (PostHog,
-#   RustFS, Kyverno test hooks) run on them.
 # 5.1.6: operators (Flux, Kyverno, cert-manager, CNPG, Falco, Alloy) need their tokens mounted.
-kube_bench_skips=1.1.20,5.1.1,5.1.3,5.1.5,5.1.6
+kube_bench_skips=1.1.20,5.1.1,5.1.3,5.1.6
 
 # k3d runs k3s as PID 1 without journald, so the audits' `journalctl -u k3s` finds nothing. This
 # journalctl prints the component lines k3s logged to Docker at start.
@@ -84,6 +82,39 @@ kube_bench_journal_configmap() {
     --from-literal=journalctl="$(printf '#!/bin/sh\ncat %s/k3s.log\n' "$kube_bench_journal_dir")"
 }
 
+# 5.1.5 lists ServiceAccounts with kubectl; nothing else the Job runs reads the API.
+kube_bench_rbac() {
+  cat <<YAML
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kube-bench
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kube-bench
+rules:
+  - apiGroups: [""]
+    resources: [serviceaccounts]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kube-bench
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kube-bench
+subjects:
+  - kind: ServiceAccount
+    name: kube-bench
+    namespace: kube-system
+YAML
+}
+
 # kube-system is the only namespace Pod Security leaves privileged, and kube-bench needs hostPID plus
 # the k3s state directories.
 kube_bench_job() {
@@ -100,7 +131,7 @@ spec:
     spec:
       hostPID: true
       restartPolicy: Never
-      automountServiceAccountToken: false
+      serviceAccountName: kube-bench
       containers:
         - name: kube-bench
           image: $kube_bench_image
@@ -149,6 +180,7 @@ kube_bench_report() {
   printf 'Running kube-bench %s (skipping %s)\n' "$kube_bench_benchmark" "$kube_bench_skips"
   journal=$(kube_bench_journal "$2") || return 1
   kube_bench_journal_configmap "$journal" | kubectl apply -f - >/dev/null
+  kube_bench_rbac | kubectl apply -f - >/dev/null
   kubectl -n kube-system delete job kube-bench --ignore-not-found >/dev/null
   kube_bench_job | kubectl apply -f - >/dev/null
   if ! kubectl -n kube-system wait job/kube-bench --for=condition=Complete --timeout=5m >/dev/null; then

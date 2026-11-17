@@ -685,6 +685,18 @@ class KubeBenchScoreTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "0 0 7 0\n")
 
+    def test_the_job_account_can_only_list_service_accounts(self):
+        script = f'source "{E2E / "k3s-checks.sh"}"\nkube_bench_rbac'
+        result = process_runner.run_process(
+            ["bash", "-c", script], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rules = result.stdout.split("rules:\n", 1)[1].split("---", 1)[0]
+        self.assertEqual(
+            rules,
+            '  - apiGroups: [""]\n    resources: [serviceaccounts]\n    verbs: [list]\n',
+        )
+
     def test_a_report_without_a_total_fails(self):
         result = self.score("== Summary master ==\n9 checks PASS\n")
         self.assertEqual(result.returncode, 1)
@@ -700,7 +712,8 @@ class KubeBenchScoreTests(unittest.TestCase):
             result.stdout, r"image: docker\.io/aquasec/kube-bench:v[\d.]+@sha256:[0-9a-f]{64}"
         )
         self.assertIn("--benchmark, k3s-cis-", result.stdout)
-        self.assertIn("--skip, '1.1.20,5.1.1,5.1.3,5.1.5,5.1.6'", result.stdout)
+        self.assertIn("--skip, '1.1.20,5.1.1,5.1.3,5.1.6'", result.stdout)
+        self.assertIn("serviceAccountName: kube-bench", result.stdout)
         self.assertIn("value: /opt/baukit-journal:", result.stdout)
         self.assertIn("configMap: {name: kube-bench-journal, defaultMode: 0555}", result.stdout)
 
