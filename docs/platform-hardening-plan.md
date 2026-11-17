@@ -758,9 +758,11 @@ by then ride along).
   bare metric name such as `sum(up)` without a PromQL parser, so a tenant canary query can still read
   other tenants' series (as a pass/fail result). Put prom-label-proxy with the namespace enforced in
   front of the provider address tenant MetricTemplates may use.
-- [ ] **RF23 platform-local adopts FA6.** The audit webhook flags apply only when the lifecycle creates
+- [x] **RF23 platform-local adopts FA6.** The audit webhook flags apply only when the lifecycle creates
   the cluster, so platform-local sends no audit events until `down --delete` and `up`. That drops its
   data; schedule it with the user.
+  Done (2026-11-17): recreated on v0.26.6; an exec into a tenant pod reaches Falco through the
+  webhook as `Pod exec (user=system:admin ...)`.
 - [x] **RF24 Flagger kept the API placeholder locally.** Since 0.26.0 the flagger base ships the
   fail-closed `192.0.2.0/32` API egress, and nothing wrapped it with the local node CIDR, so
   platform-local's flagger crashlooped on `connection refused` and leitbild's Canary never left
@@ -777,6 +779,16 @@ by then ride along).
   e2e Canary targeted a missing Deployment. Done (0.26.6): Flagger copies `app.kubernetes.io/` and
   `baukit.dev/` labels, and `flux-tenancy` runs a labelled Canary as the tenant until its primary
   exists.
+- [x] **RF27 App alerts matched every platform target.** `BaukitBuildInfoAbsent`,
+  `BaukitServiceScrapeDown` and `BaukitServiceTargetsAbsent` selected `up{service!=""}`, which every
+  ServiceMonitor target has, so the recreated platform-local fired for 31 platform targets.
+  Done (0.26.7): they require `product`, which only the baukit-app ServiceMonitor sets; a promtool
+  case keeps them quiet for platform targets.
+- [ ] **RF28 Alertmanager "crashlooping" on WSL.** On platform-local `process_start_time_seconds` of
+  alertmanager, its config-reloader and Prometheus advances with wall time (the process always looks
+  about 1060 s old) although nothing restarts and the host's `btime` is stable, so the upstream
+  `AlertmanagerClusterCrashlooping` fires. Find the kernel-side cause on WSL2 before deciding between
+  a local-only inhibition with a reason and leaving it.
 
 ## Verification per change
 
@@ -1488,3 +1500,12 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
 - Main's CI went red after the 0.26.4 merge: Trivy's 2026-11-17 database added ten findings to the
   frozen PostHog image (allowlisted, same entry) and a GitHub 502 broke the web fixture. The local gate
   had passed on a database 18 hours older; `platform-images` only refreshes after `NextUpdate`.
+
+### 2026-11-17 05:20
+
+- 0.26.5 (flagger node CIDR, PostHog allowlist) and 0.26.6 (flagger copies baukit labels onto
+  primaries) released; platform-infra pins v0.26.6. platform-local recreated (RF23): every Flux object
+  Ready, FA6 audit events reach Falco, leitbild's tenant database came back and both Canaries are
+  Initialized with primaries serving.
+- The fresh cluster showed RF27 (fixed in 0.26.7) and RF28. `PrometheusMissingRuleEvaluations` pends
+  after single misses that hit every group at once under host load 25 to 40; not a rule problem.
