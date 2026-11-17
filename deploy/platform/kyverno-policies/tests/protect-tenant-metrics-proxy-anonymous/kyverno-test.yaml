@@ -1,0 +1,16 @@
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: protect-tenant-metrics-proxy-anonymous
+policies:
+  - ../../policies/protect-tenant-metrics-proxy.yaml
+resources:
+  - resources.yaml
+clusterResources:
+  - cluster-resources.yaml
+results:
+  - isValidatingPolicy: true
+    policy: protect-tenant-metrics-proxy
+    kind: Deployment
+    resources: [tenant-metrics-proxy]
+    result: fail

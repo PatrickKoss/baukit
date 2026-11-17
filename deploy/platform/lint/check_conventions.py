@@ -218,12 +218,19 @@ def denied_policy_types(policy: Resource) -> set[str]:
     return denied
 
 
+TENANT_LABEL = "baukit.dev/tenant"
+
+
 def rule_default_deny(context: Context) -> Iterable[str]:
     for universe, resources in context.universes.items():
         pod_namespaces = {resource.namespace for resource in resources if runs_pods(resource)}
         covered: dict[str, set[str]] = {}
         for policy in by_kind(resources, "NetworkPolicy"):
             covered.setdefault(policy.namespace, set()).update(denied_policy_types(policy))
+        # Kyverno's generate-tenant-defaults creates default-deny in every tenant namespace.
+        for tenant in by_kind(resources, "Namespace"):
+            if tenant.labels.get(TENANT_LABEL) == "true":
+                covered.setdefault(tenant.name, set()).update({"Ingress", "Egress"})
         for namespace in sorted(pod_namespaces - context.network_policy_exempt):
             missing = {"Ingress", "Egress"} - covered.get(namespace, set())
             if missing:

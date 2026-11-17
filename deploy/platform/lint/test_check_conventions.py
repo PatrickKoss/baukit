@@ -9,8 +9,12 @@ import unittest
 from pathlib import Path
 
 import check_conventions as cc
+import helm_yaml
 
 PSA = "pod-security.kubernetes.io/"
+GENERATE_TENANT_DEFAULTS = (
+    Path(__file__).parents[1] / "kyverno-policies/policies/generate-tenant-defaults.yaml"
+)
 
 
 def resource(kind: str, name: str, namespace: str = "app", *, kustomize: bool = True, **fields):
@@ -124,6 +128,31 @@ class DefaultDenyTest(unittest.TestCase):
             deny_all("app", ["Egress"]),
         )
         self.assertEqual(violations("default-deny-network-policy", ctx), [])
+
+    def test_tenant_namespace_is_covered_by_the_generated_default_deny(self) -> None:
+        ctx = context(
+            namespace("shop", {cc.TENANT_LABEL: "true"}), resource("Deployment", "proxy", "shop")
+        )
+        self.assertEqual(violations("default-deny-network-policy", ctx), [])
+
+    def test_unlabelled_namespace_still_needs_a_default_deny(self) -> None:
+        ctx = context(namespace("shop", {}), resource("Deployment", "proxy", "shop"))
+        found = violations("default-deny-network-policy", ctx)
+        self.assertIn("for Egress, Ingress", found[0])
+
+    def test_generate_tenant_defaults_creates_the_default_deny(self) -> None:
+        [policy] = helm_yaml.parse_documents([GENERATE_TENANT_DEFAULTS.read_text()])
+        selector = policy["spec"]["matchConstraints"]["objectSelector"]["matchLabels"]
+        self.assertEqual(selector, {cc.TENANT_LABEL: "true"})
+        generated = [
+            cc.Resource(obj, "shop", True)
+            for rule in policy["spec"]["generate"]
+            for obj in helm_yaml.parse_documents(
+                helm_yaml.split_documents(rule["template"]["value"])
+            )
+        ]
+        types = set().union(*(cc.denied_policy_types(obj) for obj in generated))
+        self.assertEqual(types, {"Ingress", "Egress"})
 
     def test_exempt_namespace_passes(self) -> None:
         ctx = context(resource("DaemonSet", "ccm", "kube-system"))

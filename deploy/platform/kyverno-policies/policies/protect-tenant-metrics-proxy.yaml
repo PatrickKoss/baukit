@@ -54,7 +54,7 @@ spec:
     - name: prefix
       expression: "'tenant-metrics-proxy'"
     - name: user
-      expression: string(request.userInfo.username)
+      expression: string(request.?userInfo.?username.orValue(""))
     - name: trusted
       expression: >-
         request.userInfo.?groups.orValue([]).exists(g, g in ["system:masters", "system:nodes"]) ||

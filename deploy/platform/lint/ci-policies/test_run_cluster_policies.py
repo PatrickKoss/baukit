@@ -215,6 +215,41 @@ class ApplyGuardTest(unittest.TestCase):
         self.assertEqual(len(problems), 1)
 
 
+class ParseReportTest(unittest.TestCase):
+    def test_report_after_generated_yaml_is_found(self) -> None:
+        output = "policy generate applied:\nspec:\n  podSelector: {}\n" + json.dumps(
+            {"summary": {"pass": 1}, "results": []}
+        )
+        self.assertEqual(rcl.parse_report(output), {"summary": {"pass": 1}, "results": []})
+
+    def test_output_without_report_is_none(self) -> None:
+        self.assertIsNone(rcl.parse_report("podSelector: {}"))
+
+
+class ApplierTest(unittest.TestCase):
+    def test_platform_flux_applies_overlays_and_bases(self) -> None:
+        for universe in ("base-kyverno", "overlay-local"):
+            self.assertEqual(
+                rcl.applier(universe), "system:serviceaccount:flux-system:kustomize-controller"
+            )
+
+    def test_tenant_flux_applies_the_app_chart(self) -> None:
+        self.assertEqual(
+            rcl.applier("app-all-options"),
+            f"system:serviceaccount:{rcl.APP_NAMESPACE}:flux-reconciler",
+        )
+
+    def test_apply_passes_the_userinfo_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            work = Path(directory)
+            userinfo = rcl.write_userinfo(rcl.applier("overlay-local") or "", work)
+            paths = {key: work / key for key in ("policies", "crds", "values", "context")}
+            command = rcl.apply_command(paths, work, work / "r.yaml", userinfo)
+            body = json.loads(userinfo.read_text())
+        self.assertEqual(command[-2:], ["--userinfo", str(userinfo)])
+        self.assertIn("system:serviceaccounts:flux-system", body["userInfo"]["groups"])
+
+
 class KyvernoStageTest(unittest.TestCase):
     """Runs the pinned kyverno and helm from .tools/bin, as validate.sh puts them on PATH."""
 

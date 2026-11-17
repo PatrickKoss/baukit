@@ -69,6 +69,14 @@ CRD_CLUSTER_KIND = re.compile(
 COUNTED = run_ci_policies.COUNTED
 ENFORCING_ACTIONS = {"Deny", "Enforce"}
 APPLY_WORKERS = 4
+# The identity that admits each universe: platform Flux applies bases and overlays, helm-controller
+# installs charts, and a tenant's own flux-reconciler applies baukit-app.
+APPLIERS = {
+    "base-": "system:serviceaccount:flux-system:kustomize-controller",
+    "overlay-": "system:serviceaccount:flux-system:kustomize-controller",
+    "chart-": "system:serviceaccount:flux-system:helm-controller",
+    "app-": f"system:serviceaccount:{APP_NAMESPACE}:flux-reconciler",
+}
 
 Runner = run_ci_policies.Runner
 
@@ -332,7 +340,33 @@ def write_inputs(inputs: Inputs, work: Path) -> dict[str, Path]:
     return paths
 
 
-def apply_command(paths: dict[str, Path], ci_policies: Path, resources: Path) -> list[str]:
+def applier(universe: str) -> str | None:
+    return next((user for prefix, user in APPLIERS.items() if universe.startswith(prefix)), None)
+
+
+def write_userinfo(username: str, work: Path) -> Path:
+    namespace = username.split(":")[2]
+    userinfo = {
+        "apiVersion": "cli.kyverno.io/v1alpha1",
+        "kind": "UserInfo",
+        "metadata": {"name": "applier"},
+        "userInfo": {
+            "username": username,
+            "groups": [
+                "system:serviceaccounts",
+                f"system:serviceaccounts:{namespace}",
+                "system:authenticated",
+            ],
+        },
+    }
+    path = work / f"userinfo-{username.replace(':', '-')}.yaml"
+    path.write_text(json.dumps(userinfo, sort_keys=True))
+    return path
+
+
+def apply_command(
+    paths: dict[str, Path], ci_policies: Path, resources: Path, userinfo: Path | None = None
+) -> list[str]:
     command = [
         "kyverno",
         "apply",
@@ -350,18 +384,24 @@ def apply_command(paths: dict[str, Path], ci_policies: Path, resources: Path) ->
     ]
     if "exceptions" in paths:
         command += ["--exception", str(paths["exceptions"])]
+    if userinfo is not None:
+        command += ["--userinfo", str(userinfo)]
     return command
 
 
 def parse_report(output: str) -> dict | None:
+    """Return the policy report, skipping the YAML that GeneratingPolicies print before it."""
+    decoder = json.JSONDecoder()
     start = output.find("{")
-    if start < 0:
-        return None
-    try:
-        report = json.JSONDecoder().raw_decode(output[start:])[0]
-    except json.JSONDecodeError:
-        return None
-    return report if isinstance(report, dict) else None
+    while start >= 0:
+        try:
+            report = decoder.raw_decode(output[start:])[0]
+        except json.JSONDecodeError:
+            report = None
+        if isinstance(report, dict) and "summary" in report:
+            return report
+        start = output.find("{", start + 1)
+    return None
 
 
 def policy_modes(inputs: Inputs, ci_policies: Path) -> dict[str, str]:
@@ -386,7 +426,9 @@ def apply_policies(
         if universe.objects:
             resources = work / f"{universe.name}.yaml"
             resources.write_text(json_documents(universe.objects))
-            commands[universe.name] = apply_command(paths, ci_policies, resources)
+            username = applier(universe.name)
+            userinfo = write_userinfo(username, work) if username else None
+            commands[universe.name] = apply_command(paths, ci_policies, resources, userinfo)
     with ThreadPoolExecutor(max_workers=APPLY_WORKERS) as pool:
         outputs = dict(zip(commands, pool.map(run, commands.values()), strict=True))
     for name, (code, output) in outputs.items():
