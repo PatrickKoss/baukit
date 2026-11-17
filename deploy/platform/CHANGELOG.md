@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `BaukitCnpgWalArchiveStale` no longer fires on an idle database. It needs the last archival older than 15 minutes and WAL waiting for it: a pending `.ready` file (`cnpg_collector_pg_wal_archive_status{value="ready"}`) or a failed attempt newer than the last success. PostgreSQL skips the `archive_timeout` switch when nothing was written, so platform-local fired with `failed_count` 0 and an empty archive queue.
+- `BaukitPostgresRestoreTestStale` counts a missing restore proof only once `kube_cronjob_created` for `postgres/postgres-restore-test` is older than 35 days. A recreated cluster fired for up to a month before the first monthly run. A stale proof, and a missing one on an older cluster, still fire.
+
 ## [0.27.1] - 2026-11-17
 
 - `validate.sh` renders `lint/tenant-universe`, a tenant namespace with `components/tenant`, so platform-validate sees the `tenant-metrics-proxy` pods in a tenant namespace. With 0.27.0 a consumer overlay with tenants failed `validate.sh` twice, and baukit's own run had no tenant namespace to catch it.

@@ -128,7 +128,7 @@ restarts; losing the pod intentionally makes the metric absent and therefore
 alerts until the proof runs again. The `ServiceMonitor` exposes it to the
 kube-prometheus-stack base, and `BaukitPostgresRestoreTestStale` in the platform
 pack (`deploy/observability-platform/alerts/cnpg.rules.yml`) fires when the
-metric is absent or older than 35 days. The platform e2e suite
+metric is older than 35 days, or absent once the CronJob itself is older than 35 days. The platform e2e suite
 `deploy/platform/e2e/tests/backup-restore` runs the same round trip on a
 throwaway cluster, deletes it and restores it. `restore-test-cronjob` runs this
 CronJob once, in parallel with it.

@@ -30,17 +30,27 @@ groups:
           runbook_url: RUNBOOK_BASE_URL/cnpg-wal-archiving-failing
       - alert: BaukitCnpgWalArchiveStale
         expr: |
-          cnpg_pg_stat_archiver_seconds_since_last_archival > 900
+          (
+            max by (namespace, pod) (cnpg_pg_stat_archiver_seconds_since_last_archival) > 900
+          )
+          and on (namespace, pod)
+          (
+            max by (namespace, pod) (cnpg_collector_pg_wal_archive_status{value="ready"}) > 0
+            or
+            max by (namespace, pod) (cnpg_pg_stat_archiver_last_failed_time)
+            > on (namespace, pod)
+            max by (namespace, pod) (cnpg_pg_stat_archiver_last_archived_time)
+          )
         for: 5m
         labels:
           severity: warning
           component: cnpg
         annotations:
-          summary: The last archived WAL on {{ $labels.namespace }}/{{ $labels.pod }} is older than 15 minutes
+          summary: WAL on {{ $labels.namespace }}/{{ $labels.pod }} waits for archiving for over 15 minutes
           description: >-
             PostgreSQL in {{ $labels.namespace }}/{{ $labels.pod }} last archived a WAL segment
-            {{ $value | humanizeDuration }} ago. CNPG switches WAL every 5 minutes, so recovery
-            would lose more data than the platform promises.
+            {{ $value | humanizeDuration }} ago while segments wait in archive_status or the last
+            attempt failed. Recovery would lose more data than the platform promises.
           runbook_url: RUNBOOK_BASE_URL/cnpg-wal-archive-stale
       - alert: BaukitCnpgBackupStale
         expr: |
@@ -96,7 +106,11 @@ groups:
       - alert: BaukitPostgresRestoreTestStale
         expr: |
           (time() - baukit_restore_test_last_success_timestamp_seconds > 3024000)
-          or absent(baukit_restore_test_last_success_timestamp_seconds)
+          or (
+            absent(baukit_restore_test_last_success_timestamp_seconds)
+            and on ()
+            (time() - min(kube_cronjob_created{namespace="postgres", cronjob="postgres-restore-test"}) > 3024000)
+          )
         for: 1h
         labels:
           severity: critical
@@ -104,6 +118,7 @@ groups:
         annotations:
           summary: The PostgreSQL restore test has not succeeded in 35 days
           description: >-
-            The monthly recovery proof is absent or older than 35 days. Check
+            The monthly recovery proof is older than 35 days, or absent although the CronJob
+            exists for longer than that. Check
             the postgres-restore-test CronJob and the CNPG backup object store.
           runbook_url: RUNBOOK_BASE_URL/postgres-restore-test-stale
