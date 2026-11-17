@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.26.5] - 2026-11-17
+
+- New local wrapper `overlays/local/components/flagger` composes the flagger base with `cluster-network` and `components/network-policy/node-cidr`. Before, the flagger base kept the fail-closed placeholder `192.0.2.0/32` in `allow-apiserver-egress`, so on a local cluster flagger could not reach the API server and crashlooped. Local Flux Kustomizations for flagger and flagger-metrics must point at `./deploy/platform/overlays/local/components/flagger`.
+- `lint/test_network_policy_node_cidr.py` fails when a base under `deploy/platform/` renders the placeholder and no `overlays/local/components/*` wrapper builds it.
+
 ## [0.26.4] - 2026-11-16
 
 - `platform-lifecycle.sh up` refuses a leftover Docker network `k3d-<cluster>` whose subnet is not `PLATFORM_SUBNET`, because k3d would reuse it and ignore `--subnet`. The error prints `docker network rm k3d-<cluster>`; the script never removes the network itself. A leftover on the right subnet is reused as before.

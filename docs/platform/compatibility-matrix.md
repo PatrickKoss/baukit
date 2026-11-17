@@ -5,6 +5,12 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.26.5
+
+Last verified release train: `v0.26.5` (patch train on top of `v0.26.4`). No component versions change.
+- Local clusters run flagger through `overlays/local/components/flagger`, which gives it the node CIDR for API egress. platform-infra's `local-flagger` and `local-flagger-metrics` must point at that path.
+- The PostHog 1.43.1 image allowlist gains ten findings from Trivy's 2026-11-17 database; no fixed build exists.
+
 ## v0.26.4
 
 Last verified release train: `v0.26.4` (patch train on top of `v0.26.3`). New component: Falco k8saudit plugin `0.18.0`, installed by digest with cosign verification. No other component versions change.

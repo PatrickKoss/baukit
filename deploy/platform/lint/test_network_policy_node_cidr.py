@@ -16,6 +16,7 @@ APISERVER_EGRESS = PLATFORM / "components/network-policy/apiserver-egress"
 LOCAL_COMPONENTS = PLATFORM / "overlays/local/components"
 PLACEHOLDER = "192.0.2.0/32"
 NODE_CIDR_LABEL = "baukit.dev/node-cidr-peer"
+LIST_ENTRY = re.compile(r"^\s+- (\S+)$", re.MULTILINE)
 OVERLAYS = [PLATFORM / "overlays/everything", *sorted(LOCAL_COMPONENTS.iterdir())]
 
 
@@ -23,6 +24,23 @@ def build(path: Path):
     return helm_yaml.process_runner.run_process(
         [str(KUSTOMIZE), "build", str(path)], capture_output=True, text=True
     )
+
+
+def bases_with_placeholder() -> list[Path]:
+    return [
+        base
+        for base in sorted(PLATFORM.iterdir())
+        if (base / "kustomization.yaml").is_file() and PLACEHOLDER in build(base).stdout
+    ]
+
+
+def bases_wrapped_locally() -> set[Path]:
+    entries = {
+        (wrapper / entry).resolve()
+        for wrapper in LOCAL_COMPONENTS.iterdir()
+        for entry in LIST_ENTRY.findall((wrapper / "kustomization.yaml").read_text())
+    }
+    return {entry for entry in entries if entry.is_dir()}
 
 
 def write_overlay(directory: Path, *, with_value: bool) -> None:
@@ -58,6 +76,14 @@ class NodeCidrReplacementTest(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertNotIn(PLACEHOLDER, result.stdout)
                 self.assertNotIn("baukit-cluster-network", result.stdout)
+
+    def test_every_placeholder_base_has_a_local_wrapper(self) -> None:
+        wrapped = bases_wrapped_locally()
+        for base in bases_with_placeholder():
+            with self.subTest(base=base.name):
+                self.assertTrue(
+                    base in wrapped, f"no overlays/local/components wrapper builds {base.name}"
+                )
 
     def test_overlay_value_reaches_the_policy(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
