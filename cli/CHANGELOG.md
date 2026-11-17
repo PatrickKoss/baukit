@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+- BREAKING: baukit and generated backends use jiff 1.0 instead of chrono. Every public baukit type that held a chrono value now holds the jiff type below, with no compatibility shim. JSON stays RFC 3339 and OpenAPI stays `date-time` or `date`. jiff prints the fewest fractional second digits needed (`.5Z`, not `.500Z`). Generated backends depend on `jiff` and, for SQLx binds in tests, `jiff-sqlx`. SQLx 0.9 has no jiff feature, so bind with `jiff_sqlx::ToSqlx::to_sqlx` and decode into `jiff_sqlx::Timestamp` or `jiff_sqlx::Date`, then call `to_jiff()`. Only the MCP flavor still carries the RUSTSEC-2026-0543 ignore, because rmcp pulls chrono in through schemars.
+
+  | chrono | jiff |
+  |---|---|
+  | `DateTime<Utc>` | `jiff::Timestamp` |
+  | `NaiveDate` | `jiff::civil::Date` |
+  | `TimeDelta` / `chrono::Duration` | `jiff::SignedDuration` |
+  | `Utc::now()` | `Timestamp::now()` |
+  | `TimeDelta::days(n)` | `SignedDuration::from_hours(24 * n)` |
+  | `dt.timestamp()` / `timestamp_millis()` | `ts.as_second()` / `as_millisecond()` |
+  | `DateTime::from_timestamp(s, 0)` (Option) | `Timestamp::from_second(s)` (Result) |
+  | `dt.date_naive()` | `ts.to_zoned_datetime(TimeZone::UTC).date()` |
+  | `checked_add_signed` (Option) | `checked_add` (Result) |
+  | `a.signed_duration_since(b)` | `a.duration_since(b)` |
+  | `delta.to_std()` | `std::time::Duration::try_from(delta)` |
+  | `dt.to_rfc3339()` | `ts.to_string()` |
 - Fixture prebuilds (`native-android-gate`, `generated-fixture-gate.sh`, `mcp-remote-fixture.sh`) run `scripts/build-fixture-ts-packages.sh`, which builds the packages in `scripts/fixture-ts-packages.txt` with their workspace dependencies. The old hand-written lists missed `@baukit/preferences-core`, so a standalone `--step native-android` failed in Gradle on a missing `dist`.
 - Mobile QA: saving a quick-boot snapshot now deletes the qcow2 snapshot tags of pruned snapshots through the saving emulator's console (`emu avd snapshot delete`). Pruning used to delete only `snapshots/<name>`, so every tag and its VM state stayed in the AVD's overlays: the shared `baukit-native-qa` AVD had 32 tags, a 9.5 GB userdata overlay and a 2.3 GB cache overlay that each `-read-only` launch copies into the emulator temp directory. Existing overlays keep their size, and freed clusters are reused.
 

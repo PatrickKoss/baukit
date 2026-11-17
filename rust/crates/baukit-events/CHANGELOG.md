@@ -4,6 +4,8 @@ All notable changes to `baukit-events` are documented here.
 
 ## [Unreleased]
 
+- BREAKING: chrono is replaced by jiff 1.0. `EventEnvelope::occurred_at` and the `now` argument of `validate_event_envelope` are `jiff::Timestamp`. Serialized envelopes keep RFC 3339 strings. See the type mapping in `cli/CHANGELOG.md`.
+
 ## [0.27.4] - 2026-11-17
 
 ## [0.27.3] - 2026-11-17

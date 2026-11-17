@@ -28,4 +28,4 @@ reason = "No fix available: astral-tokio-tar is unmaintained with no patched rel
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0543"
 ignoreUntil = 2027-02-15
-reason = "No fix available: chrono is unmaintained (RustSec informational, all versions); baukit crates, sqlx and utoipa expose its types. Migration to jiff is tracked in docs/platform-hardening-plan.md."
+reason = "No fix available: chrono is unmaintained (RustSec informational, all versions); reached only through rmcp 3.9.0 (schemars chrono04) in baukit-mcp. Baukit itself uses jiff."

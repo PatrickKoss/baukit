@@ -71,14 +71,14 @@ port owns the tokens and removes dead ones in one call after each send:
 
 ```rust
 use baukit_push::{DeviceRegistry, PushMessage, PushSender};
-use chrono::Utc;
+use jiff::Timestamp;
 
 async fn deliver(
     sender: &impl PushSender,
     registry: &impl DeviceRegistry,
     messages: Vec<PushMessage>,
 ) -> Result<u64, Box<dyn std::error::Error>> {
-    let sent_at = Utc::now();
+    let sent_at = Timestamp::now();
     let outcomes = sender.send(messages).await?;
     Ok(registry.invalidate_dead_tokens(&outcomes, sent_at).await?)
 }
@@ -143,10 +143,10 @@ separate `DeliveryClaimStore` port with its own table.
 
 ```rust,ignore
 let claim = DeliveryClaim::new(owner_id, local_date, DeliveryKind::new("daily_reminder")?);
-if !claims.claim(claim.clone(), Utc::now()).await? {
+if !claims.claim(claim.clone(), Timestamp::now()).await? {
     return Ok(());
 }
-let sent_at = Utc::now();
+let sent_at = Timestamp::now();
 match sender.send(messages).await {
     Ok(outcomes) => {
         registry.invalidate_dead_tokens(&outcomes, sent_at).await?;
@@ -183,7 +183,7 @@ Record the accepted tickets after each send:
 
 ```rust
 use baukit_push::{DeviceRegistry, PendingReceiptStore, PushMessage, PushSender};
-use chrono::Utc;
+use jiff::Timestamp;
 use uuid::Uuid;
 
 async fn deliver(
@@ -193,7 +193,7 @@ async fn deliver(
     owner_id: Uuid,
     messages: Vec<PushMessage>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let sent_at = Utc::now();
+    let sent_at = Timestamp::now();
     let outcomes = sender.send(messages).await?;
     registry.invalidate_dead_tokens(&outcomes, sent_at).await?;
     pending.record_accepted(owner_id, &outcomes, sent_at).await?;
@@ -236,7 +236,7 @@ use baukit_push::{
     ExpoPushSender, PendingReceiptStore, PostgresDeviceRegistry, PostgresPendingReceiptStore,
     RECEIPT_RETENTION, ReceiptPollError, poll_pending_receipts,
 };
-use chrono::Utc;
+use jiff::Timestamp;
 
 const RECEIPT_BATCH: NonZeroU32 = NonZeroU32::new(1000).expect("not zero");
 
@@ -257,7 +257,7 @@ impl JobHandler for PollPushReceipts {
         _cancellation: JobCancellation,
     ) -> JobFuture<'a, Result<(), JobError>> {
         Box::pin(async move {
-            let now = Utc::now();
+            let now = Timestamp::now();
             self.pending
                 .purge(now - RECEIPT_RETENTION, RECEIPT_BATCH)
                 .await

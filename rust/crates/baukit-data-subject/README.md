@@ -161,7 +161,7 @@ records stay erased and sessions stay fenced. Identity deletion jobs remain
 queued after a timeout. Later provider success cannot change the failed data
 subject operation. Retain and monitor failed identity jobs for operator repair.
 
-Call `store.purge_expired(chrono::Utc::now(), 1_000).await?` in a product recurring
+Call `store.purge_expired(jiff::Timestamp::now(), 1_000).await?` in a product recurring
 job. Use `baukit_jobs::FixedUtcInterval` for daily slots, include the slot
 identifier in that job's idempotency key, and enqueue its next slot through
 `PostgresJobStore::enqueue_in_transaction`. Each purge call deletes at most the
@@ -207,7 +207,7 @@ impl DataSubjectExportProduct for BillingProduct {
 fn enable_exports(config: DataSubjectConfig, product: Arc<BillingProduct>) -> DataSubjectConfig {
     let mut config = config.with_export(product);
     config.limits.max_export_part_bytes = 8_388_608;
-    config.export_retention = chrono::TimeDelta::days(7);
+    config.export_retention = jiff::SignedDuration::from_hours(7 * 24);
     config
 }
 ```
