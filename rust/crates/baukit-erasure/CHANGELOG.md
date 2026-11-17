@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The Keycloak erasure tests run Keycloak 26.8.2 pinned by digest instead of 26.7.0.
+
 ## [0.28.0] - 2026-11-17
 
 - BREAKING: chrono is replaced by jiff 1.0. `ErasureOutcome::completed_at` and the `authenticated_at` argument of `guard_subject` use `jiff::Timestamp`. See the type mapping in `cli/CHANGELOG.md`.

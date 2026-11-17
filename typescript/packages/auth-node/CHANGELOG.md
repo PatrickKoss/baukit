@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The Keycloak device-flow conformance script runs Keycloak 26.8.2 pinned by digest instead of 26.7.0.
+
 ## 0.28.0
 
 ### Minor Changes

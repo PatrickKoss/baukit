@@ -226,8 +226,8 @@ async fn check_sso_and_refresh(base: &str, root: &std::path::Path) -> Result<(),
 #[ignore = "requires Docker Keycloak"]
 async fn deletes_user_treats_404_as_success_and_requires_manage_users() -> Result<(), Box<dyn Error>>
 {
-    let image = GenericBuildableImage::new("baukit-erasure-keycloak-test", "26.7.0")
-        .with_dockerfile_string("FROM quay.io/keycloak/keycloak:26.7.0\nENV JAVA_OPTS_KC_HEAP=\"-Xms128m -Xmx512m\"\nRUN /opt/keycloak/bin/kc.sh build\n")
+    let image = GenericBuildableImage::new("baukit-erasure-keycloak-test", "26.8.2")
+        .with_dockerfile_string("FROM quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0\nENV JAVA_OPTS_KC_HEAP=\"-Xms128m -Xmx512m\"\nRUN /opt/keycloak/bin/kc.sh build\n")
         .build_image().await?;
     let container = image
         .with_exposed_port(8080.tcp())

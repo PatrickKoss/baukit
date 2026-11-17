@@ -107,7 +107,7 @@ type ServerHandle = tokio::task::JoinHandle<std::io::Result<()>>;
 const POLICY_CACHE_TTL: Duration = Duration::from_secs(1);
 
 async fn start_keycloak() -> Result<(KeycloakContainer, String), Box<dyn Error>> {
-    let image = GenericBuildableImage::new("baukit-mcp-keycloak-test", "26.8.0")
+    let image = GenericBuildableImage::new("baukit-mcp-keycloak-test", "26.8.2")
         .with_dockerfile_string(include_str!("keycloak.Dockerfile"))
         .build_image()
         .await?;

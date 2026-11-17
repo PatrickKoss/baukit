@@ -10,7 +10,8 @@ import { chromium } from '@playwright/test';
 import { DeviceFlowClient } from '../dist/index.js';
 import { keycloakStack, signInWithKeycloak } from '../dist/keycloak-testing.js';
 
-const KEYCLOAK_IMAGE = 'quay.io/keycloak/keycloak:26.7.0';
+const KEYCLOAK_IMAGE =
+  'quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0';
 const REALM = 'baukit-auth-node-conformance';
 const CLIENT_ID = 'baukit-auth-node-conformance';
 const USERNAME = 'conformance-user';

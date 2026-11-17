@@ -18,7 +18,7 @@ use baukit_test::StartContainer as _;
 use testcontainers::{GenericImage, ImageExt, core::{IntoContainerPort, WaitFor}};
 
 # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-let container = GenericImage::new("redis", "8.10.2-alpine")
+let container = GenericImage::new("redis", "8.10.3-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3")
     .with_exposed_port(6379_u16.tcp())
     .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
     .with_labels(baukit_test::container_labels())
@@ -245,7 +245,7 @@ Enable the timer with `sudo systemctl enable --now baukit-reap-test-containers.t
 ### PostgreSQL options
 
 `PostgresTestOptions` builds the same container with three extra choices. `with_image` swaps the
-image, for example `postgres` at `18.6-alpine3.23`. `with_app_role` creates a login role
+image, for example `postgres` at `18.7-alpine3.23`. `with_app_role` creates a login role
 without superuser or `BYPASSRLS` before migrations run, so row-level security policies apply to the
 connection the product's code uses. `with_migrations` applies SQLx migrations as the `postgres`
 superuser.
@@ -255,7 +255,7 @@ superuser.
 use baukit_test::{PostgresAppRole, PostgresTestOptions};
 
 let postgres = PostgresTestOptions::new()
-    .with_image("postgres", "18.6-alpine3.23")
+    .with_image("postgres", "18.7-alpine3.23@sha256:60aac580d8dbe3093c097bb1d11f9e62999814d3a1da2c1aaf729c0b7db117f2")
     .with_app_role(PostgresAppRole::new("app_user", "app-secret")?)
     .with_migrations("migrations")
     .start()

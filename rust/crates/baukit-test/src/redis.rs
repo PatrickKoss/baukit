@@ -11,7 +11,8 @@ use testcontainers::{
 const REDIS_PORT: u16 = 6379;
 
 /// Image tag matching the Redis version pinned across the deploy surface.
-const REDIS_IMAGE_TAG: &str = "8.10.2-alpine";
+const REDIS_IMAGE_TAG: &str =
+    "8.10.3-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3";
 
 /// Port that Redis Sentinel listens on inside its container.
 const REDIS_SENTINEL_PORT: u16 = 26379;
@@ -403,7 +404,7 @@ pub async fn start_redis() -> Result<RedisTestContainer, RedisTestError> {
 
 /// Starts a disposable Redis Sentinel topology asynchronously.
 ///
-/// The fixture uses Redis `8.10.2-alpine` for one master, one replica, and one
+/// The fixture uses Redis `8.10.3-alpine` for one master, one replica, and one
 /// quorum-one Sentinel named `mymaster`. Its failure-detection interval and
 /// explicit failover trigger are intended for failover tests, not production
 /// configuration. The local Docker
