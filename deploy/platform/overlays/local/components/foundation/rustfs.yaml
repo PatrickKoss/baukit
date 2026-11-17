@@ -118,6 +118,9 @@ kind: Job
 metadata:
   name: rustfs-create-bucket
   namespace: postgres
+  annotations:
+    # The pod template is immutable; Flux recreates the idempotent Job when it changes.
+    kustomize.toolkit.fluxcd.io/force: enabled
   labels:
     app.kubernetes.io/name: rustfs-create-bucket
     app.kubernetes.io/part-of: baukit-platform

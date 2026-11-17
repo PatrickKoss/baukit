@@ -525,6 +525,25 @@ class PruneDisabledTest(unittest.TestCase):
         self.assertEqual(violations("prune-disabled", ctx), [])
 
 
+class FluxJobForceTest(unittest.TestCase):
+    force = {cc.FORCE_ANNOTATION: cc.FORCE_ENABLED}
+
+    def test_flux_job_without_force_fails(self) -> None:
+        job = resource("Job", "seed", apiVersion="batch/v1")
+        self.assertEqual(
+            violations("flux-job-force", context(job)),
+            ["bases: Job app/seed lacks kustomize.toolkit.fluxcd.io/force: enabled"],
+        )
+
+    def test_flux_job_with_force_passes(self) -> None:
+        job = resource("Job", "seed", apiVersion="batch/v1", annotations=self.force)
+        self.assertEqual(violations("flux-job-force", context(job)), [])
+
+    def test_chart_job_is_ignored(self) -> None:
+        job = resource("Job", "hook", apiVersion="batch/v1", kustomize=False)
+        self.assertEqual(violations("flux-job-force", context(job)), [])
+
+
 DIGEST = "@sha256:" + "a" * 64
 
 
@@ -928,7 +947,7 @@ CONFIG = """\
 [rules]
 active = ["policy-exception-budget", "dashboards-selected", "metrics-enabled", "alert-metadata",
   "alert-runbook", "alert-tested", "rules-selected", "prune-disabled", "exporters-scraped",
-  "image-digest", "priority-class", "pdb-multi-replica", "kured-alert-filter"]
+  "image-digest", "priority-class", "pdb-multi-replica", "kured-alert-filter", "flux-job-force"]
 [rules.pending]
 psa-labels = "N1"
 default-deny-network-policy = "N2"
@@ -1004,7 +1023,7 @@ class MainTest(unittest.TestCase):
         code, stdout, stderr = self.run_main(budget=1)
         self.assertEqual(code, 0, stderr)
         self.assertIn(
-            "Conventions: 13 active, 2 pending "
+            "Conventions: 14 active, 2 pending "
             "[default-deny-network-policy (N2): 1; psa-labels (N1): 1]",
             stdout,
         )

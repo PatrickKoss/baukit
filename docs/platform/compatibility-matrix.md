@@ -5,6 +5,11 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.27.2
+
+Last verified release train: `v0.27.2` (patch train on top of `v0.27.1`). No component versions change.
+- Running clusters that applied v0.27.0 or v0.27.1 can roll forward again: the local `rustfs-create-bucket` Job carries `kustomize.toolkit.fluxcd.io/force: enabled`, so Flux recreates it when its pod template changes instead of stalling every Kustomization behind local-foundation. Clusters stuck on the immutable Job can also delete it once; it is idempotent.
+
 ## v0.27.1
 
 Last verified release train: `v0.27.1` (patch train on top of `v0.27.0`). No component versions change.
