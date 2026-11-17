@@ -7,7 +7,7 @@ from pathlib import Path
 PLATFORM = Path(__file__).resolve().parent.parent
 LIFECYCLE = PLATFORM / "platform-lifecycle.sh"
 K3S_IMAGE_SOURCE = PLATFORM / "local-git-http.sh"
-SKIPPED_DIRS = {".helm-cache", "tests", "lint"}
+SKIPPED_DIRS = {".helm-cache", ".local-state", "tests", "lint"}
 PSA_POLICY = PLATFORM / "kyverno-policies/policies/require-psa-labels.yaml"
 ALLOWLIST_EXPRESSION = re.compile(r"name: privilegedAllowlist\n\s+expression: '\[(.*)\]'")
 LEVELS = {"privileged", "baseline", "restricted"}
