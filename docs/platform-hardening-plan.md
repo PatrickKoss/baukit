@@ -771,6 +771,12 @@ by then ride along).
   points Flux at the bare cert-manager, cnpg, traefik, kyverno, kured and observability-stack bases,
   so every one of those namespaces would lose API access on a real cluster. Give Hetzner wrappers with
   its node CIDR (or a baukit `overlays/hetzner`) before PI5 ends.
+- [x] **RF26 Flagger primaries fail the tenant label policy.** Flagger copies a target's metadata
+  labels onto the `-primary` Deployment only for `includeLabelPrefix`, which baukit left empty, so
+  `require-baukit-labels` denied every tenant primary and Canaries stayed in Initializing. The only
+  e2e Canary targeted a missing Deployment. Done (0.26.6): Flagger copies `app.kubernetes.io/` and
+  `baukit.dev/` labels, and `flux-tenancy` runs a labelled Canary as the tenant until its primary
+  exists.
 
 ## Verification per change
 
