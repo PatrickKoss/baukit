@@ -5,6 +5,11 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.27.3
+
+Last verified release train: `v0.27.3` (patch train on top of `v0.27.2`). No component versions change.
+- `BaukitCnpgWalArchiveStale` stays quiet on an idle database and `BaukitPostgresRestoreTestStale` gives a fresh cluster 35 days before a missing restore proof counts. Falco lets Flagger read the Secrets it copies to a canary's primary. PostHog web, events, plugins and the migrate Job run restricted, and the chart's unused Grafana annotation hook Job is dropped.
+
 ## v0.27.2
 
 Last verified release train: `v0.27.2` (patch train on top of `v0.27.1`). No component versions change.

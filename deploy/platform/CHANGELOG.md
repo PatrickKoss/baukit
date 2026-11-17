@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.27.3] - 2026-11-17
+
 - `BaukitCnpgWalArchiveStale` no longer fires on an idle database. It needs the last archival older than 15 minutes and WAL waiting for it: a pending `.ready` file (`cnpg_collector_pg_wal_archive_status{value="ready"}`) or a failed attempt newer than the last success. PostgreSQL skips the `archive_timeout` switch when nothing was written, so platform-local fired with `failed_count` 0 and an empty archive queue.
 - `BaukitPostgresRestoreTestStale` counts a missing restore proof only once `kube_cronjob_created` for `postgres/postgres-restore-test` is older than 35 days. A recreated cluster fired for up to a month before the first monthly run. A stale proof, and a missing one on an older cluster, still fire.
 - Falco `Baukit secret read by unexpected service account` lets `flagger-system:flagger` get Secrets outside the platform namespaces. Flagger reads the Secrets a canary target references to copy them for the `-primary` workload, and on platform-local it was the only service account that fired the rule in 12 h (203 gets on `leitbild-runtime`). A list or watch by Flagger, or a get in a platform namespace, still fires. A replay test covers both cases.
