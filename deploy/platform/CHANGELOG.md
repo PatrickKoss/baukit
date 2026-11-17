@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `BaukitCnpgWalArchiveStale` no longer fires on an idle database. It needs the last archival older than 15 minutes and WAL waiting for it: a pending `.ready` file (`cnpg_collector_pg_wal_archive_status{value="ready"}`) or a failed attempt newer than the last success. PostgreSQL skips the `archive_timeout` switch when nothing was written, so platform-local fired with `failed_count` 0 and an empty archive queue.
+- `BaukitPostgresRestoreTestStale` counts a missing restore proof only once `kube_cronjob_created` for `postgres/postgres-restore-test` is older than 35 days. A recreated cluster fired for up to a month before the first monthly run. A stale proof, and a missing one on an older cluster, still fire.
+
 ## [0.27.2] - 2026-11-17
 
 - `Job/postgres/rustfs-create-bucket` carries `kustomize.toolkit.fluxcd.io/force: enabled`. The 0.27.0 aws-cli bump changed its immutable pod template, Flux failed to apply it on running clusters, and every Kustomization depending on local-foundation stalled. Flux now deletes and recreates the Job, which is idempotent. New convention rule `flux-job-force` requires that annotation on every `batch/v1` Job that Flux applies from a base or overlay. Jobs rendered by Helm charts are exempt.

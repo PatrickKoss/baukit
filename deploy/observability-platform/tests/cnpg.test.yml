@@ -67,11 +67,17 @@ tests:
         alertname: BaukitCnpgWalArchivingFailing
         exp_alerts: []
 
-  - name: no archived WAL for over 15 minutes fires BaukitCnpgWalArchiveStale
+  - name: pending WAL not archived for over 15 minutes fires BaukitCnpgWalArchiveStale
     interval: 1m
     input_series:
       - series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="postgres",pod="postgres-cluster-1"}'
         values: '1000x20'
+      - series: 'cnpg_collector_pg_wal_archive_status{namespace="postgres",pod="postgres-cluster-1",value="ready"}'
+        values: '2x20'
+      - series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '-1x20'
+      - series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '100x20'
     alert_rule_test:
       - eval_time: 10m
         alertname: BaukitCnpgWalArchiveStale
@@ -82,17 +88,61 @@ tests:
               namespace: postgres
               pod: postgres-cluster-1
             exp_annotations:
-              summary: The last archived WAL on postgres/postgres-cluster-1 is older than 15 minutes
+              summary: WAL on postgres/postgres-cluster-1 waits for archiving for over 15 minutes
               description: >-
                 PostgreSQL in postgres/postgres-cluster-1 last archived a WAL segment
-                16m 40s ago. CNPG switches WAL every 5 minutes, so recovery
-                would lose more data than the platform promises.
+                16m 40s ago while segments wait in archive_status or the last
+                attempt failed. Recovery would lose more data than the platform promises.
               runbook_url: RUNBOOK_BASE_URL/cnpg-wal-archive-stale
+  - name: a failed archive attempt after the last success fires BaukitCnpgWalArchiveStale
+    interval: 1m
+    input_series:
+      - series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '1000x20'
+      - series: 'cnpg_collector_pg_wal_archive_status{namespace="postgres",pod="postgres-cluster-1",value="ready"}'
+        values: '0x20'
+      - series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '500x20'
+      - series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '100x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BaukitCnpgWalArchiveStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: cnpg
+              namespace: postgres
+              pod: postgres-cluster-1
+            exp_annotations:
+              summary: WAL on postgres/postgres-cluster-1 waits for archiving for over 15 minutes
+              description: >-
+                PostgreSQL in postgres/postgres-cluster-1 last archived a WAL segment
+                16m 40s ago while segments wait in archive_status or the last
+                attempt failed. Recovery would lose more data than the platform promises.
+              runbook_url: RUNBOOK_BASE_URL/cnpg-wal-archive-stale
+  - name: an idle database with nothing to archive stays quiet
+    interval: 1m
+    input_series:
+      - series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '2700x20'
+      - series: 'cnpg_collector_pg_wal_archive_status{namespace="postgres",pod="postgres-cluster-1",value="ready"}'
+        values: '0x20'
+      - series: 'cnpg_pg_stat_archiver_last_failed_time{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '-1x20'
+      - series: 'cnpg_pg_stat_archiver_last_archived_time{namespace="postgres",pod="postgres-cluster-1"}'
+        values: '100x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitCnpgWalArchiveStale
+        exp_alerts: []
   - name: a recently archived WAL stays quiet
     interval: 1m
     input_series:
       - series: 'cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="postgres",pod="postgres-cluster-1"}'
         values: '120x20'
+      - series: 'cnpg_collector_pg_wal_archive_status{namespace="postgres",pod="postgres-cluster-1",value="ready"}'
+        values: '1x20'
     alert_rule_test:
       - eval_time: 20m
         alertname: BaukitCnpgWalArchiveStale
