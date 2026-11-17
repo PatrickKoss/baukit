@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Falco `Baukit secret read by unexpected service account` lets `flagger-system:flagger` get Secrets outside the platform namespaces. Flagger reads the Secrets a canary target references to copy them for the `-primary` workload, and on platform-local it was the only service account that fired the rule in 12 h (203 gets on `leitbild-runtime`). A list or watch by Flagger, or a get in a platform namespace, still fires. A replay test covers both cases.
+- PostHog web, events and plugins pass the restricted Kyverno policies. A post-renderer patch sets the pod to `runAsNonRoot` as uid 999 and gid 1000, the `posthog` user the image already runs as, with seccomp `RuntimeDefault`. Every container, init containers included, drops `ALL` capabilities and disallows privilege escalation. The `wait-for-service-dependencies` and `wait-for-migrations` init containers get requests and limits, which the chart cannot set.
+
 ## [0.27.1] - 2026-11-17
 
 - `validate.sh` renders `lint/tenant-universe`, a tenant namespace with `components/tenant`, so platform-validate sees the `tenant-metrics-proxy` pods in a tenant namespace. With 0.27.0 a consumer overlay with tenants failed `validate.sh` twice, and baukit's own run had no tenant namespace to catch it.
