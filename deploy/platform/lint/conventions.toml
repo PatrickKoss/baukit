@@ -15,6 +15,7 @@ active = [
   "dashboards-selected",
   "default-deny-network-policy",
   "exporters-scraped",
+  "flux-job-force",
   "image-digest",
   "kured-alert-filter",
   "metrics-enabled",

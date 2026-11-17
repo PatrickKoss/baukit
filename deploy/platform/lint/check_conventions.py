@@ -40,6 +40,8 @@ PSA_LEVELS = {"privileged", "baseline", "restricted"}
 SEVERITIES = {"critical", "warning", "info"}
 PRUNE_ANNOTATION = "kustomize.toolkit.fluxcd.io/prune"
 PRUNE_DISABLED = "disabled"
+FORCE_ANNOTATION = "kustomize.toolkit.fluxcd.io/force"
+FORCE_ENABLED = "enabled"
 WORKLOAD_KINDS = {"Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Pod"}
 MONITOR_KINDS = {"ServiceMonitor", "PodMonitor"}
 CNPG_GROUP = "postgresql.cnpg.io/"
@@ -558,6 +560,15 @@ def rule_prune_disabled(context: Context) -> Iterable[str]:
                 yield f"{universe}: {resource.ref()} lacks {PRUNE_ANNOTATION}: {PRUNE_DISABLED}"
 
 
+def rule_flux_job_force(context: Context) -> Iterable[str]:
+    for universe, resources in context.universes.items():
+        for job in by_kind(resources, "Job"):
+            if not job.managed_by_kustomize or job.api_version != "batch/v1":
+                continue
+            if job.annotations.get(FORCE_ANNOTATION) != FORCE_ENABLED:
+                yield f"{universe}: {job.ref()} lacks {FORCE_ANNOTATION}: {FORCE_ENABLED}"
+
+
 def rule_image_digest(context: Context) -> Iterable[str]:
     sources = {
         universe: [(resource.ref(), resource.obj) for resource in resources]
@@ -748,6 +759,7 @@ RULES: dict[str, Rule] = {
     "dashboards-selected": rule_dashboards_selected,
     "policy-exception-budget": rule_policy_exception_budget,
     "prune-disabled": rule_prune_disabled,
+    "flux-job-force": rule_flux_job_force,
     "image-digest": rule_image_digest,
     "priority-class": rule_priority_class,
     "pdb-multi-replica": rule_pdb_multi_replica,

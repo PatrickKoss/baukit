@@ -482,6 +482,20 @@ if [[ -d "$platform_dir/overlays" ]]; then
       continue
     fi
     ((rendered_overlays += 1))
+    # The spec.path of each Flux Kustomization the overlay renders, built together: what Flux applies.
+    if ! applied_paths="$(PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/flux_applied.py" \
+      "$rendered_dir/overlay-${overlay##*/}.yaml" | tr '\0' '\n')"; then
+      status=1
+      continue
+    fi
+    [[ -n $applied_paths ]] || continue
+    applied_file="$rendered_dir/overlay-${overlay##*/}-applied.yaml"
+    : >"$applied_file"
+    while IFS= read -r applied_path; do
+      printf '==> %s applies %s: kustomize build\n' "$overlay_name" "${applied_path#"$platform_dir"/}"
+      { printf -- '---\n'; kustomize build "$applied_path"; } >>"$applied_file" || status=1
+    done <<<"$applied_paths"
+    ((rendered_overlays += 1))
   done
 fi
 
