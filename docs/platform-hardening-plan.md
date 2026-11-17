@@ -1574,3 +1574,22 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   `CPUThrottlingHigh` are suppressed by the WSL inhibitors. D6 (image signatures) stays parked, so
   leitbild's `loadtester-digest` branch stays unmerged and `verify-baukit-images` stays in Audit.
   RF25 (Hetzner) stays open by choice.
+
+### 2026-11-17 14:50
+
+- 0.27.4 shipped (tag v0.27.4) and platform-infra pins it (7f126c0). It also carries the time-boxed
+  RUSTSEC-2026-0543 (chrono unmaintained) ignore until 2027-02-15, tracked as RF30. Live check: the
+  13:12 UTC reconcile logged the PostHog release in sync with no `DriftDetected`, and the 12:40 migrate
+  Job stayed in place without a TTL.
+- The Android cold snapshot path segfaulted in 3 of 3 full gates, but in none of 13 runs outside the
+  full gate. Core dumps put the crash inside the emulator binary while it set up the userdata drive for
+  a read-only launch. `--prune-snapshots` had only ever deleted snapshot directories, so the shared
+  AVD's qcow2 overlays carried 32 snapshot tags (userdata 8.7 GB, cache 2.2 GB, copied on every
+  read-only launch). Saving a snapshot now deletes the tags of pruned snapshots through the saving
+  emulator's console. The next full gate took the cold path with the cleanup (31 tags deleted) and
+  passed. The crash cause itself is not proven; if it returns, recreate the shared AVD first.
+- Fixture prebuilds build one list, `scripts/fixture-ts-packages.txt`, with its workspace dependencies.
+  The Makefile, both fixture scripts and CLAUDE.md each had their own copy, and `native-android-gate`
+  run alone missed `@baukit/preferences-core`.
+- The ephemeral platform-e2e Falco noise check counts only pod events and this cluster's k3d node
+  containers. Another session's `docker build` on the same host had turned it red.
