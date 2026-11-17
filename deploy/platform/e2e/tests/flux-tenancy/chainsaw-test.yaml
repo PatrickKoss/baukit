@@ -10,7 +10,8 @@ spec:
     itself with targetNamespace flux-system is forbidden, and a remote base is refused. The reconciler
     manages the Flagger, Traefik and ServiceMonitor kinds baukit-app products ship, and the tenant
     Kyverno guards refuse a ServiceMonitor, MetricTemplate, IngressRoute or forwardAuth that reaches
-    out of the namespace or spoofs its namespace label. Prometheus writes the tenant's namespace
+    out of the namespace or spoofs its namespace label. Flagger's -primary copy of a labelled tenant
+    Deployment passes require-baukit-labels. Prometheus writes the tenant's namespace
     label after the tenant's relabelings, and every non-tenant namespace with monitors or rules is
     excluded from that enforcement. A tenant ServiceMonitor in a namespace without the platform label
     is scraped, and a spoofed exporter namespace label is stored as the tenant namespace. Needs the
@@ -274,6 +275,86 @@ spec:
               printf '%d' "$count"
             check:
               ($stdout): "6"
+    - name: flagger-primary-passes-tenant-policies
+      try:
+        - script:
+            content: |
+              set -eu
+              kubectl -n "$NAMESPACE" apply --as="system:serviceaccount:$NAMESPACE:flux-reconciler" -f - >/dev/null <<YAML
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: labelled
+                labels:
+                  app.kubernetes.io/name: labelled
+                  app.kubernetes.io/part-of: e2e-flux-tenancy
+                  baukit.dev/process: api
+              spec:
+                selector:
+                  matchLabels:
+                    baukit.dev/workload: labelled
+                template:
+                  metadata:
+                    labels:
+                      baukit.dev/workload: labelled
+                  spec:
+                    automountServiceAccountToken: false
+                    securityContext:
+                      runAsNonRoot: true
+                      runAsUser: 101
+                      seccompProfile:
+                        type: RuntimeDefault
+                    containers:
+                      - name: app
+                        image: localhost/baukit-e2e/echo:local
+                        imagePullPolicy: Never
+                        ports:
+                          - name: http
+                            containerPort: 8080
+                        resources:
+                          requests: {cpu: 10m, memory: 16Mi}
+                          limits: {cpu: 50m, memory: 32Mi}
+                        securityContext:
+                          allowPrivilegeEscalation: false
+                          capabilities:
+                            drop: [ALL]
+                        readinessProbe:
+                          httpGet: {path: /ready, port: http}
+                        livenessProbe:
+                          httpGet: {path: /live, port: http}
+              ---
+              apiVersion: flagger.app/v1beta1
+              kind: Canary
+              metadata:
+                name: labelled
+              spec:
+                provider: traefik
+                targetRef:
+                  apiVersion: apps/v1
+                  kind: Deployment
+                  name: labelled
+                service:
+                  port: 80
+                  targetPort: http
+                analysis:
+                  interval: 1m
+                  threshold: 1
+                  stepWeights: [50]
+              YAML
+              deadline=$(($(date +%s) + 180))
+              while ! kubectl -n "$NAMESPACE" get deployment labelled-primary >/dev/null 2>&1; do
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  printf 'Flagger created no labelled-primary Deployment\n' >&2
+                  kubectl -n flagger-system logs deployment/flagger --since=5m 2>&1 |
+                    grep -F "labelled-primary.$NAMESPACE" | tail -n 3 >&2 || true
+                  exit 1
+                fi
+                sleep 5
+              done
+              kubectl -n "$NAMESPACE" get deployment labelled-primary \
+                -o jsonpath='{.metadata.labels.app\.kubernetes\.io/name}/{.metadata.labels.app\.kubernetes\.io/part-of}/{.metadata.labels.baukit\.dev/process}'
+            check:
+              ($stdout): labelled/e2e-flux-tenancy/api
     - name: tenant-guards-deny-escapes
       try:
         - script:
