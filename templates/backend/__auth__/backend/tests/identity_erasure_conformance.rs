@@ -348,11 +348,12 @@ async fn retained_identity_reonboards_with_a_new_profile_and_rejects_old_session
         )
         .await?;
     assert_eq!(erased.status, 200);
-    let fence: jiff::Timestamp =
+    let fence: jiff_sqlx::Timestamp =
         sqlx::query_scalar("SELECT erased_at FROM erasure_fences WHERE subject_hash = $1")
             .bind(adapter.store.subject_hash("returning-subject"))
             .fetch_one(&adapter.pool)
             .await?;
+    let fence = fence.to_jiff();
     let old = jiff::Timestamp::from_second(fence.as_second()).map_err(|_| "old login timestamp")?;
     for authenticated_at in [None, Some(old)] {
         let response = adapter
