@@ -64,7 +64,8 @@ def needs_build(manifest: dict) -> bool:
 class FixtureTypescriptPackagesTest(unittest.TestCase):
     def test_prebuild_selection_covers_fixture_packages_and_their_closure(self) -> None:
         workspace = workspace_packages()
-        required = {name for name in closure(fixture_packages(), workspace) if needs_build(workspace[name])}
+        imported = closure(fixture_packages(), workspace)
+        required = {name for name in imported if needs_build(workspace[name])}
         selected = closure(listed_packages(), workspace)
         self.assertEqual(set(), required - selected)
 
