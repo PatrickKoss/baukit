@@ -246,7 +246,7 @@ fn backend_generation_matches_golden_tree_and_is_deterministic() -> anyhow::Resu
     let expected = include_str!("snapshots/backend.tree");
     assert_eq!(actual, expected, "generated backend tree changed");
     let compose = fs::read_to_string(first.join("compose.yaml"))?;
-    assert!(compose.contains("image: postgres:18.6-alpine"));
+    assert!(compose.contains("image: postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015"));
     assert!(compose.contains("postgres-data:/var/lib/postgresql\n"));
     let dockerfile = fs::read_to_string(first.join("backend/Dockerfile"))?;
     assert!(dockerfile.contains("ARG GIT_COMMIT=unknown"));
@@ -1380,9 +1380,9 @@ fn assert_oidc_compose_and_theme_runner(first: &Path) -> anyhow::Result<()> {
     let compose = fs::read_to_string(first.join("compose.yaml"))?;
     assert!(compose.contains("keycloak-data:"));
     assert!(compose.contains("./keycloak/themes:/opt/keycloak/themes:ro"));
-    assert!(compose.contains("KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8.0"));
+    assert!(compose.contains("KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0"));
     let theme_runner = fs::read_to_string(first.join("scripts/test-keycloak-theme-patches.sh"))?;
-    assert!(theme_runner.contains("in 26.7.5 26.8.0"));
+    assert!(theme_runner.contains("in 26.7.5 26.8.2"));
     assert!(theme_runner.contains("127.0.0.1::8080"));
     assert!(theme_runner.contains("compose port keycloak 8080"));
     let reconcile = fs::read_to_string(first.join("keycloak/reconcile.json"))?;
@@ -2584,7 +2584,7 @@ fn doctor_accepts_loopback_compose_ports_and_checks_configured_offsets() -> anyh
     let root = generate_new(&local)?;
     let compose = root.join("compose.yaml");
     let source = fs::read_to_string(&compose)?.replace("5532:5432", "127.0.0.1:5532:5432");
-    let source = source.replace("volumes:\n  postgres-data:", "  cache:\n    image: redis:8.10.2-alpine\n    ports:\n      - \"127.0.0.1:6379:6379\"\n\nvolumes:\n  postgres-data:");
+    let source = source.replace("volumes:\n  postgres-data:", "  cache:\n    image: redis:8.10.3-alpine\n    ports:\n      - \"127.0.0.1:6379:6379\"\n\nvolumes:\n  postgres-data:");
     fs::write(&compose, &source)?;
     doctor(&root)?;
     fs::write(

@@ -5,9 +5,9 @@ This Flux-native base installs a deliberately non-HA observability stack in the
 and Alloy need host access, so they run in the privileged `observability-agents`
 namespace:
 
-- kube-prometheus-stack 93.3.0: Prometheus Operator, one Prometheus, one
+- kube-prometheus-stack 93.3.1: Prometheus Operator, one Prometheus, one
   Alertmanager, Grafana, kube-state-metrics, and node-exporter;
-- Loki 21.2.3 in monolithic mode with one filesystem-backed replica;
+- Loki 21.3.1 in monolithic mode with one filesystem-backed replica;
 - Tempo 3.2.1 (Tempo 3.1.1) in monolithic mode with one filesystem-backed replica and OTLP
   gRPC/HTTP receivers;
 - Alloy 1.16.0 as a DaemonSet that sends Kubernetes pod logs and the k3s API server

@@ -32,7 +32,7 @@ spec:
       clusterWide: true
       maxConcurrentReconciles: 4
       data:
-        POSTGRES_IMAGE_NAME: ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie@sha256:5a5dfbde88d5909fd4938189c141f53fb153f53c519f14907dce9e7c04baa153
+        POSTGRES_IMAGE_NAME: ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie@sha256:13f5dc1b42c5d96233724be976740df031136ca013f98a56a2877a62b362b453
     monitoring:
       podMonitorEnabled: true
       grafanaDashboard:
