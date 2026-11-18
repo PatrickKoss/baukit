@@ -35,5 +35,8 @@ patches:
         path: /spec/podSelector
         value:
           matchLabels:
-            app.kubernetes.io/component: admission-controller
             app.kubernetes.io/instance: kyverno
+          matchExpressions:
+            - key: app.kubernetes.io/component
+              operator: In
+              values: [admission-controller, reports-controller]

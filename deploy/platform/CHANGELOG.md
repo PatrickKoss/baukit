@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Kyverno's reports controller may open HTTPS connections to the internet, like the admission controller. Background scans of `verify-baukit-images` fetch signatures from GHCR, and without egress every policy report entry for a product image was an error.
+
 ## [0.28.0] - 2026-11-17
 
 - BREAKING: `verify-baukit-images` and `require-image-digest` deny instead of audit. Tenant Pods with `ghcr.io/patrickkoss/*` images need a digest pin and a cosign signature from the product key (plan D6). The key comes from the overlay-owned ConfigMap `kyverno/baukit-image-signing-key` (`cosign.pub`), and Kyverno reads GHCR with the dockerconfigjson Secret `kyverno/baukit-image-verify-registry`. Before pinning this release: sign and digest-pin every deployed product image, add both objects to the cluster overlay, and label production tenant namespaces `baukit.dev/environment: production`. `require-image-digest` still covers only those namespaces.
