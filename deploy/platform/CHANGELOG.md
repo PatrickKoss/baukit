@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `platform-images` downloads trivy's vulnerability and Java databases and the checks bundle into each run's work directory, as a fresh CI runner does, and shares only the layer cache in `~/.cache/baukit/trivy/fanal`. trivy skips a download until the cached database's NextUpdate, a day for the vulnerability DB and three for the Java DB, so the local step passed on a DB from 2026-11-17 19:04 while CI's DB from 2026-11-18 13:03 reported CVE-2026-64544 and CVE-2026-64549 in the PostHog image. A local run now downloads about 1.6 GB more, roughly two minutes. The old `db` and `java-db` directories in the shared cache are no longer read and can be deleted.
+- `posthog/posthog:release-1.43.1` allows CVE-2026-64544 and CVE-2026-64549 in `linux-libc-dev`. release-1.43.1 is still the newest PostHog release, so there is no fixed image.
+- redis-ha keeps the Sentinel config on a memory-backed `emptyDir` (1 Mi). Sentinel fsyncs `sentinel.conf` when it votes for itself and sends the vote request to the other Sentinel only after that write returns. Killing the master also kills its Sentinel, so the two left must both vote for the same leader. In hosted run 44098804721 the self-vote write took 67 to 485 ms, the second Sentinel started its own election before the request arrived, and both elections at 14:13:52 and 14:14:53 ended in `-failover-abort-not-elected`. No replica was promoted within the suite's 120 s. The config is rewritten at every container start, so it needs no disk.
+- The platform-e2e `smoke` suite skips `chainsaw-*` namespaces when it checks Flux objects and pod restarts. Suites run in parallel, and `flux-tenancy` creates Kustomizations in its test namespace that fail on purpose, so smoke failed in runs 43920161681 and 44291934770 (after 5 s in the second).
+
 ## [0.28.2] - 2026-11-18
 
 ## [0.28.1] - 2026-11-18
