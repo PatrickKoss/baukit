@@ -818,6 +818,67 @@ by then ride along).
   Done in 0.28.0: every baukit crate, example and the backend template use jiff 1.0 and jiff-sqlx;
   chrono remains only through rmcp 3.9.0 (schemars `chrono04`), so the ignore names that path.
 
+## Phase GT: gate throughput
+
+Half the product gate results in the F5 log (84 of 165 on 2026-11-18) are nonzero, most of them host
+starvation, and a wave of eleven full product gates runs one after another for about seven hours. The
+order below fixes the flakes first and then lets more gates run at once. Each item measures before and
+after with the GT1 samples and `timings.txt`.
+
+What exists: `gate_locks.py` gives strict products machine-wide flock resources
+(`BAUKIT_GATE_LOCK_DIR`) and a shared core pool (`BAUKIT_GATE_CORE_POOL`). `[quality.waits_for]` starts
+android-e2e after the backend, fuzz and images lanes. platform-e2e takes a heavy slot
+(`BAUKIT_HEAVY_SLOT_DIR`) for its own step only. The template already turns Android animations off.
+What is missing: the orchestrator holds one heavy slot for a product's whole gate, a flock resource
+admits one holder, and nothing looks at host pressure before a heavy step starts.
+
+- [ ] **GT1 Pressure samples in every gate.** The strict gate and `scripts/ci-gate.sh` sample
+  `/proc/pressure/cpu` and `/proc/pressure/memory` (`some avg10`), MemAvailable, load and the top five
+  processes every 15 s into `.quality-gate/host.log` or `.ci-gate/host.log`, and print the worst sample
+  in a failed heavy step's summary line. A red Maestro or Playwright step then shows whether the host
+  was starved. Replaces the orchestrator's separate load sampler, which was dead from 11-14 to 11-18.
+  Tests: a fake `/proc` root, the summary line on a failed step.
+- [ ] **GT2 Lease heavy steps, not gates.** Add counted resources to `gate_locks.py`: a resource with
+  `capacity = N` takes one of N slot files under a machine-wide directory, the way platform-e2e's heavy
+  slot does. The default mapping puts android-e2e, the Playwright steps and webkit-repeats on
+  `emulator-browser` and testcontainers and k3d steps on `docker-heavy`; `[quality.resources]` can
+  extend it. Baukit's `ci-gate.sh` maps native-android, expo-sqlite, expo-notifications, ts-browser
+  and platform-e2e the same way, and platform-e2e's own slot code moves onto it. The orchestrator
+  wrapper then runs gates without a whole-gate slot, under `nice`/`ionice`, and sets the slot directory
+  and capacity. Tests: capacity is honoured across processes, a crashed holder frees its slot,
+  affected plans take no lease for steps they do not run.
+- [ ] **GT3 Admit by pressure.** Before a step takes a GT2 lease it waits until cpu `some avg10` and
+  MemAvailable are inside limits from `[quality.admission]`, with a hysteresis band so two gates do not
+  start together on one good sample. The lease capacity stays the hard cap. The limits come from the
+  GT1 samples of passing and starved runs, not from a guess. The wait counts toward the step's
+  queue time, not its run time, and the summary prints it.
+- [ ] **GT4 Cheaper emulators, measured.** Read what the `bench-720`, `bench-1080` and `bench-fresh-*`
+  AVDs from 2026-11-03 measured, then benchmark the template AVD at 1080x2400 against 720x1280, and
+  `hw.cpu.ncore` 4 against 2, on three products' full Maestro suites under a fixed background load.
+  Adopt a smaller profile in `android-env.sh` only if every product flow stays green, since scroll
+  flows depend on screen height. Shard across two emulators only when GT3 reports spare capacity.
+- [ ] **GT5 Free target/ after a passed gate.** The orchestrator wrapper deletes a product
+  worktree's `target/` directories as soon as its gate passes, before the merge. On 2026-11-18 the
+  waiting bump worktrees held 7 to 34 GB each and pushed free space under the 120 GB gate floor.
+- [ ] **GT6 Stop platform-local during gate waves.** `k3d-platform-local` holds about 1 core and
+  9.3 GB all day. The orchestrator stops it before a product wave when no session is deploying to it,
+  starts it afterwards and checks that every Flux kustomization is Ready again.
+- [ ] **GT7 One target directory for the fixture flavors.** Measure whether
+  `generated-fixture-gate.sh` builds each flavor's backend from scratch. If it does, share
+  `CARGO_TARGET_DIR` across flavors in a lane, so the fixture lanes (1348 s and 1415 s in the last full
+  gate) compile only what differs.
+- [ ] **GT8 Measure fuzz.** Record time per fuzz target in baukit (1224 s lane) and the products.
+  Shorter fuzz runs trade coverage for time; propose numbers to the user, change nothing without a
+  decision.
+
+Order: GT1, then GT2 and GT3 together (one agent owns `gate.py`, `gate_locks.py`, `ci-gate.sh` and the
+template docs), GT5 and GT6 in the orchestrator scripts alongside, GT4 after GT3 because the benchmark
+needs a quiet host, then GT7 and GT8. GT1 to GT4 change the strict template and ship in a baukit
+release; products adopt them on the next bump.
+
+User action, not an agent task: `.wslconfig` sets no `memory=`, so WSL gets the default half of host
+RAM (46 GB). If Windows can spare more, raise it and run `wsl --shutdown` at a quiet moment.
+
 ## Verification per change
 
 | Change touches | Run |
@@ -1677,3 +1738,18 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
 - All eleven products and schlauzug's branch-only task/bump-0.280 move to 0.28.2 (agents, gates under
   the slot).
 - Still open: RF25 (Hetzner, by choice). Product follow-ups are in the final report.
+
+### 2026-11-18 19:37
+
+- Hosted CI on main went red after the ci-green merge (32515668, run 44345176837): only Platform
+  e2e failed, in `chainsaw/netpol`, where `iptables-save` on the node said "Set with index 248 in
+  kernel doesn't exist". With nf_tables it reads sets and rules in separate calls, so a set that
+  kube-router swaps in between tears the dump. The probe now treats that dump as not fenced yet and
+  reads again on the next poll (7b39b04b, riding on task/qa-gate-load).
+- task/qa-gate-load carries the template fixes from schlauzug's report: Android boot and stop waits
+  honour `BAUKIT_QA_POLL_SECONDS`, `auth_conformance` runs only the four generated Keycloak tool
+  tests, and `[quality.waits_for]` starts android-e2e after the backend, fuzz and images lanes.
+  Its first full gate refused to start at 106.7 GB free (floor 120 GB).
+- Product hosted CI fails unstarted on the Actions spending limit. The user decided only baukit's
+  hosted CI must be green; products are gated locally.
+- Added Phase GT (gate throughput) after reviewing the gate setup with the user.
