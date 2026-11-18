@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.28.2] - 2026-11-18
+{% if context.mobile %}- `mobile/scripts/qa/android-adb.py` waits `BAUKIT_QA_POLL_SECONDS` between probes in `--wait-for-boot` and `--wait-for-stop` too. Both slept a fixed 2 s, so a run that set a shorter interval still waited 2 s per probe there. `mobile/scripts/qa/test_android.py` pins both waits. Copy both files from the template.
+
+{% endif %}## [0.28.2] - 2026-11-18
 
 {% if context.quality_strict %}- The `fuzz` step copies `backend/Cargo.lock` to `backend/fuzz/Cargo.lock` before it builds. The fuzz lockfile is not committed, so a fresh checkout resolved the newest Baukit patch while the backend pinned the older one, and `baukit doctor` failed on the mismatched pins once a new patch was published. Copy `scripts/quality-gate.sh` and `docs/quality-gate.md` from the template.
 

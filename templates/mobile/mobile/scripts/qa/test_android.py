@@ -1,3 +1,6 @@
+import contextlib
+import importlib.util
+import io
 import os
 import shlex
 import shutil
@@ -7,11 +10,20 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SCRIPTS = Path(__file__).resolve().parent
 AUTH_ENABLED: bool = "{{ context.auth_enabled }}".lower() == "true"
 AUTH_OIDC: bool = "{{ context.auth_oidc }}".lower() == "true"
 HAS_BACKEND: bool = "{{ context.backend }}".lower() == "true"
+
+
+def load_android_adb():
+    spec = importlib.util.spec_from_file_location("android_adb", SCRIPTS / "android-adb.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class AndroidScriptsTest(unittest.TestCase):
@@ -1208,6 +1220,64 @@ if [[ "$*" == *'getprop sys.boot_completed' ]]; then echo 1; fi
                 self.assertEqual(self.events.read_text().splitlines(), ["services"])
                 self.assertTrue(owned.exists())
                 self.assertTrue(serial.exists())
+
+
+class AndroidPollIntervalTest(unittest.TestCase):
+    POLL_SECONDS = 0.25
+
+    def setUp(self) -> None:
+        self.android_adb = load_android_adb()
+        poll = patch.dict(os.environ, {"BAUKIT_QA_POLL_SECONDS": str(self.POLL_SECONDS)})
+        poll.start()
+        self.addCleanup(poll.stop)
+
+    def test_boot_wait_polls_at_the_configured_interval(self) -> None:
+        command = ["adb", "-s", "emulator-5556", "shell", "getprop", "sys.boot_completed"]
+        probes = [
+            subprocess.CompletedProcess(command, 0, stdout="0\n"),
+            subprocess.CompletedProcess(command, 0, stdout="1\n"),
+        ]
+        with (
+            patch.object(self.android_adb.subprocess, "run", side_effect=probes),
+            patch.object(self.android_adb.time, "sleep") as sleep,
+        ):
+            status = self.android_adb.wait_for_boot("adb", "emulator-5556", 10, 60)
+        self.assertEqual(status, 0)
+        sleep.assert_called_once_with(self.POLL_SECONDS)
+
+    def test_stop_wait_polls_at_the_configured_interval(self) -> None:
+        listings = ["List of devices attached\nR5CT1234\tdevice\n", "List of devices attached\n"]
+        probes = [
+            subprocess.CompletedProcess(["adb", "devices"], 0, stdout=listing)
+            for listing in listings
+        ]
+        clock = FakeClock()
+        with (
+            patch.object(self.android_adb.subprocess, "run", side_effect=probes),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            status = self.android_adb.wait_for_stop(
+                "adb",
+                self.android_adb.Emulator("R5CT1234"),
+                10,
+                60,
+                timing=self.android_adb.Timing(clock=clock, sleep=clock.sleep),
+            )
+        self.assertEqual(status, 0)
+        self.assertEqual(clock.sleeps, [self.POLL_SECONDS])
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
 
 
 if __name__ == "__main__":
