@@ -279,7 +279,7 @@ ids = [
 
 [images."posthog/posthog:release-1.43.1@sha256:36c2712b569ca5693d88117a20a588cc03f52f4e5962967f7c6781ed29e5ec84"]
 expires = 2027-01-16
-reason = "posthog/posthog:release-1.43.1: no fixed upstream release exists as of 2026-11-17. release-1.43.1 is the newest PostHog release and the last self-hosted line (chart 30.46.0, Kubernetes support ended 2023); no fixed build exists, revisit when PostHog leaves the platform (SC2 follow-up). Follow-up RF29."
+reason = "posthog/posthog:release-1.43.1: no fixed upstream release exists as of 2026-11-18. release-1.43.1 is the newest PostHog release and the last self-hosted line (chart 30.46.0, Kubernetes support ended 2023); no fixed build exists, revisit when PostHog leaves the platform (SC2 follow-up). Follow-up RF29."
 ids = [
   "CVE-2015-20107",
   "CVE-2020-10735",
@@ -1747,6 +1747,8 @@ ids = [
   "CVE-2026-64471",
   "CVE-2026-64487",
   "CVE-2026-64534",
+  "CVE-2026-64544",
+  "CVE-2026-64549",
   "CVE-2026-64560",
   "CVE-2026-6473",
   "CVE-2026-6477",
