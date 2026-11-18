@@ -430,6 +430,68 @@ class EmulatorReserveTests(unittest.TestCase):
         self.assertEqual(runner.budget.available(), 24)
 
 
+class WaitsForTests(unittest.TestCase):
+    def waits(self, settings=None, steps=STEPS):
+        return gate.step_waits(steps, gate.waits_for_settings(settings or {}))
+
+    def test_android_e2e_waits_for_the_compile_and_image_lanes_by_default(self):
+        self.assertEqual(self.waits(), {"android-e2e": ("rust-clippy", "rust-tests", "images")})
+
+    def test_settings_replace_a_default_and_add_steps(self):
+        settings = {"quality": {"waits_for": {"android-e2e": [], "playwright": ["backend"]}}}
+        self.assertEqual(self.waits(settings), {"playwright": ("rust-clippy", "rust-tests")})
+
+    def test_a_step_never_waits_for_its_own_lane(self):
+        settings = {"quality": {"waits_for": {"android-e2e": ["mobile", "images"]}}}
+        self.assertEqual(self.waits(settings), {"android-e2e": ("images",)})
+
+    def test_affected_runs_wait_only_for_planned_steps(self):
+        mobile = gate.plan(STEPS, gate.Selection(False, [], {"mobile"}))
+        self.assertEqual(
+            self.waits(steps=[item.step for item in mobile]), {"android-e2e": ("rust-clippy",)}
+        )
+        docs = gate.plan(STEPS, gate.Selection(False, [], set()))
+        self.assertEqual(self.waits(steps=[item.step for item in docs]), {})
+
+    def test_unknown_names_fast_steps_and_cycles_are_rejected(self):
+        def error(waits_for):
+            return gate.waits_for_error(STEPS, {"quality": {"waits_for": waits_for}})
+
+        self.assertIsNone(error({}))
+        self.assertIn("names nope, which is no step", error({"nope": ["backend"]}))
+        self.assertIn("names rust-fmt, which is no step", error({"rust-fmt": ["backend"]}))
+        self.assertIn(
+            "quality.waits_for.playwright names unknown lanes or steps: gone",
+            error({"playwright": ["backend", "gone"]}),
+        )
+        self.assertIsNone(error({"rust-tests": ["mobile"], "android-e2e": []}))
+        self.assertEqual(
+            error({"rust-tests": ["mobile"]}),
+            "gate: rust-tests waits for android-e2e, which runs after rust-tests",
+        )
+        self.assertEqual(
+            error({"images": ["playwright"], "web-unit": ["images"]}),
+            "gate: images waits for playwright, which runs after images",
+        )
+
+    def test_reserve_waits_until_the_waited_steps_finished(self):
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(directory, ignore_errors=True))
+        planned = gate.plan(STEPS, gate.Selection(True, []))
+        runner = gate.Runner(
+            planned,
+            gate.RunContext([], directory, {}),
+            budget=gate.CoreBudget(24, None, 1024, gate.EmulatorReserve(8)),
+            sharing=gate.HostSharing(waits=self.waits()),
+        )
+        runner.record("mobile-unit", 5, "passed")
+        runner.record("rust-clippy", 5, "passed")
+        runner.record("images", 5, "failed with exit 1")
+        self.assertEqual(runner.budget.reserved, 0)
+        runner.record("rust-tests", 5, "passed")
+        self.assertEqual(runner.budget.reserved, 8)
+
+
 class RunnerTests(unittest.TestCase):
     def run_gate(self, steps, failing, *extra, settings_text="", script_body=""):
         with tempfile.TemporaryDirectory() as directory:
@@ -537,6 +599,42 @@ class RunnerTests(unittest.TestCase):
             r"gate: \[web\] b started with 2 cores, at \+\d+ s after waiting \d+ s, "
             r"\d+ of \d+ cores free",
         )
+
+    def test_android_e2e_starts_after_the_waited_lanes_finish(self):
+        body = textwrap.dedent("""\
+            case "$2" in build|fuzz) sleep 0.5 ;; esac
+            echo "end $2" >> "$(dirname "$0")/ran"
+        """)
+        steps = [
+            "a fast - always -",
+            "build backend - selected -",
+            "fuzz fuzz - selected -",
+            "android-e2e mobile a selected -",
+        ]
+        for failing in ([], ["build"]):
+            with self.subTest(failing=failing):
+                result, ran, _, _ = self.run_gate(steps, failing, script_body=body)
+                self.assertIn("gate: waits: android-e2e starts after build, fuzz", result.stdout)
+                self.assertRegex(
+                    result.stdout,
+                    r"gate: \[mobile\] android-e2e waits for (build, )?fuzz to finish",
+                )
+                self.assertRegex(result.stdout, r"android-e2e stopped waiting after \d+ s")
+                started = ran.index("ran android-e2e")
+                self.assertLess(ran.index("ran fuzz"), started)
+                self.assertLess(ran.index("end fuzz"), started)
+                self.assertLess(ran.index("ran build"), started)
+                self.assertIn("end android-e2e", ran)
+
+    def test_waits_for_settings_with_unknown_names_fail(self):
+        result, ran, _, _ = self.run_gate(
+            ["a fast - always -", "b web - selected -"],
+            [],
+            settings_text='[quality.waits_for]\nb = ["nope"]\n',
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("quality.waits_for.b names unknown lanes or steps: nope", result.stderr)
+        self.assertEqual(ran, [])
 
     def test_unknown_light_names_fail(self):
         result, ran, _, _ = self.run_gate(

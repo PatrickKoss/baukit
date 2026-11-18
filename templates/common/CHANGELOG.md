@@ -2,7 +2,13 @@
 
 ## [Unreleased]
 
-## [0.28.2] - 2026-11-18
+{% if context.mobile %}- `mobile/scripts/qa/android-adb.py` waits `BAUKIT_QA_POLL_SECONDS` between probes in `--wait-for-boot` and `--wait-for-stop` too. Both slept a fixed 2 s, so a run that set a shorter interval still waited 2 s per probe there. `mobile/scripts/qa/test_android.py` pins both waits. Copy both files from the template.
+
+{% endif %}{% if context.auth_enabled %}- `generated_keycloak_tools_pass_their_offline_checks` in `backend/tests/auth_conformance.rs` runs the four generated Keycloak tool suites by path: `test_erasure_roles.py`, `test_keycloak_policy.py`, `test_pkce_login.py` and `test_reconcile_keycloak.py` under `scripts/tests`. It ran `unittest discover -s scripts/tests`, which also picked up every product test kept in that directory, and under load one of those hit its own timeout inside the Rust test. A product that adds a Keycloak tool test lists it in `KEYCLOAK_TOOL_TESTS`. Copy the file from the template.
+
+{% endif %}{% if context.quality_strict %}- `scripts/gate.py` starts `android-e2e` only after the `backend`, `fuzz` and `images` lanes finished, pass or fail. Under a full gate the emulator shared the host with Rust compiles, fuzzing and image builds, the guest load reached 72 on 24 cores, and Android typed key repeats such as `tteest` into Chrome Custom Tabs. The emulator core reserve starts once the wait is over. `[quality.waits_for]` in `baukit.toml` maps a step to the lanes or steps it starts after and replaces the default per step: `android-e2e = []` turns it off, `playwright = ["backend", "fuzz", "images"]` adds Playwright. The gate exits with status 2 on unknown names, `fast`-lane steps and waits that would never end. Copy `scripts/gate.py`, `scripts/gate.test.py` and `docs/quality-gate.md` from the template.
+
+{% endif %}## [0.28.2] - 2026-11-18
 
 {% if context.quality_strict %}- The `fuzz` step copies `backend/Cargo.lock` to `backend/fuzz/Cargo.lock` before it builds. The fuzz lockfile is not committed, so a fresh checkout resolved the newest Baukit patch while the backend pinned the older one, and `baukit doctor` failed on the mismatched pins once a new patch was published. Copy `scripts/quality-gate.sh` and `docs/quality-gate.md` from the template.
 

@@ -193,6 +193,21 @@ class HelperTests(unittest.TestCase):
         self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
         self.assertEqual(container["readinessProbe"]["exec"]["command"], ["false"])
 
+    def test_a_dump_torn_by_a_set_change_reads_as_not_fenced_yet(self):
+        torn = "iptables-save v1.8.11 (nf_tables): Set with index 248 in kernel doesn't exist."
+        results = iter([(1, "", torn), (0, RULES, "")])
+        cluster = probe.Cluster(lambda *_, **__: subprocess.CompletedProcess([], *next(results)))
+        with mock.patch.object(probe.time, "monotonic", side_effect=[10.0, 10.0, 12.0, 12.0]):
+            self.assertEqual(cluster.node_rules("k3d-node"), "")
+            self.assertEqual(cluster.node_rules("k3d-node"), RULES)
+
+    def test_any_other_dump_failure_is_an_error(self):
+        cluster = probe.Cluster(
+            lambda *_, **__: subprocess.CompletedProcess([], 1, "", "permission denied")
+        )
+        with self.assertRaises(probe.ProbeError):
+            cluster.node_rules("k3d-node")
+
     def test_exec_without_an_exit_status_is_an_error(self):
         cluster = probe.Cluster(lambda *_, **__: subprocess.CompletedProcess([], 0, "garbage", ""))
         with self.assertRaises(probe.ProbeError):

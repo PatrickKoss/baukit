@@ -45,6 +45,7 @@ DEFAULT_WORKER_MEMORY_MB = 1024
 DEFAULT_ANDROID_EMULATORS = 2
 CORES_PER_EMULATOR = 2
 EMULATOR_STEPS = frozenset({"android-e2e"})
+DEFAULT_WAITS_FOR = {"android-e2e": ("backend", "fuzz", "images")}
 FAILURE_TAIL_LINES = 40
 NOT_RUN = "not run"
 FAST_LANE = "fast"
@@ -97,6 +98,7 @@ class Step:
 class HostSharing:
     locks: ResourceLocks | None = None
     resources: list[ResourceRule] = field(default_factory=list)
+    waits: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 @dataclass
@@ -472,6 +474,72 @@ def emulator_steps(settings: dict) -> frozenset[str]:
     return EMULATOR_STEPS | frozenset(settings.get("quality", {}).get("emulator_steps", []))
 
 
+def waits_for_settings(settings: dict) -> dict[str, tuple[str, ...]]:
+    configured = settings.get("quality", {}).get("waits_for", {})
+    return {**DEFAULT_WAITS_FOR, **{name: tuple(members) for name, members in configured.items()}}
+
+
+def step_waits(
+    steps: list[Step], waits_for: dict[str, tuple[str, ...]]
+) -> dict[str, tuple[str, ...]]:
+    """Map each step to the steps of other lanes it starts after, whether they pass or not."""
+    waits = {}
+    for step in steps:
+        members = set(waits_for.get(step.name, ()))
+        waited = tuple(
+            other.name
+            for other in steps
+            if other.lane != step.lane and {other.name, other.lane} & members
+        )
+        if waited:
+            waits[step.name] = waited
+    return waits
+
+
+def predecessors(steps: list[Step], waits: dict[str, tuple[str, ...]]) -> dict[str, list[str]]:
+    """Map each step to the steps that must end before it starts: lane order, after and waits."""
+    before: dict[str, list[str]] = {}
+    last_in_lane: dict[str, str] = {}
+    for step in steps:
+        before[step.name] = [*step.after, *waits.get(step.name, ())]
+        if step.lane in last_in_lane:
+            before[step.name].append(last_in_lane[step.lane])
+        last_in_lane[step.lane] = step.name
+    return before
+
+
+def runs_after(start: str, target: str, before: dict[str, list[str]]) -> bool:
+    seen: set[str] = set()
+    pending = [start]
+    while pending:
+        name = pending.pop()
+        if name == target:
+            return True
+        if name not in seen:
+            seen.add(name)
+            pending.extend(before.get(name, ()))
+    return False
+
+
+def waits_for_error(steps: list[Step], settings: dict) -> str | None:
+    configured = settings.get("quality", {}).get("waits_for", {})
+    by_name = {step.name: step for step in steps}
+    lanes = {step.lane for step in steps}
+    for name, members in configured.items():
+        if by_name.get(name) is None or by_name[name].lane == FAST_LANE:
+            return f"gate: quality.waits_for names {name}, which is no step outside the fast lane"
+        unknown = ", ".join(sorted(set(members) - by_name.keys() - lanes))
+        if unknown:
+            return f"gate: quality.waits_for.{name} names unknown lanes or steps: {unknown}"
+    waits = step_waits(steps, waits_for_settings(settings))
+    before = predecessors(steps, waits)
+    for name, waited in waits.items():
+        cycle = next((other for other in waited if runs_after(other, name, before)), None)
+        if cycle:
+            return f"gate: {name} waits for {cycle}, which runs after {name}"
+    return None
+
+
 def budget_minutes(settings: dict, mode: str) -> int:
     configured = settings.get("quality", {}).get("gate_budget_minutes", {})
     return int(configured.get(mode, DEFAULT_BUDGET_MINUTES[mode]))
@@ -491,6 +559,7 @@ class Runner:
         sharing = sharing or HostSharing()
         self.locks = sharing.locks
         self.resources = sharing.resources
+        self.waits = sharing.waits
         self.fast_done = threading.Event()
         self.fast_passed = True
         if FAST_LANE not in {item.step.lane for item in planned}:
@@ -539,10 +608,14 @@ class Runner:
 
     def emulator_ready(self, name: str) -> bool:
         step = next(item.step for item in self.planned if item.step.name == name)
-        return name not in self.status and all(
-            self.status.get(dependency) == "passed"
-            for dependency in step.after
-            if dependency in self.names
+        return (
+            name not in self.status
+            and all(
+                self.status.get(dependency) == "passed"
+                for dependency in step.after
+                if dependency in self.names
+            )
+            and all(waited in self.status for waited in self.waits.get(name, ()))
         )
 
     def update_reserve(self) -> None:
@@ -566,6 +639,20 @@ class Runner:
             if self.status[dependency] != "passed":
                 return dependency
         return None
+
+    def wait_for_quiet(self, lane: str, step: Step) -> None:
+        busy = [name for name in self.waits.get(step.name, ()) if not self.done[name].is_set()]
+        if not busy:
+            return
+        print(f"gate: [{lane}] {step.name} waits for {', '.join(busy)} to finish", flush=True)
+        started = time.monotonic()
+        for name in busy:
+            self.done[name].wait()
+        print(
+            f"gate: [{lane}] {step.name} stopped waiting after "
+            f"{round(time.monotonic() - started)} s",
+            flush=True,
+        )
 
     def step_resources(self, step: Step) -> list[Need]:
         if self.locks is None:
@@ -617,6 +704,7 @@ class Runner:
                 self.done[step.name].set()
                 failed = True
                 continue
+            self.wait_for_quiet(lane, step)
             failed = not self.run_step(lane, step, log)
         return failed
 
@@ -920,6 +1008,23 @@ def lock_lines(planned: list[PlannedStep], sharing: HostSharing) -> list[str]:
     return lines
 
 
+def wait_lines(waits: dict[str, tuple[str, ...]]) -> list[str]:
+    return [f"waits: {name} starts after {', '.join(waited)}" for name, waited in waits.items()]
+
+
+def host_sharing(
+    planned: list[PlannedStep], settings: dict, environment: dict[str, str], extras: list[str]
+) -> HostSharing:
+    sharing = HostSharing(
+        ResourceLocks.from_environment(environment),
+        resource_map(settings),
+        step_waits([item.step for item in planned], waits_for_settings(settings)),
+    )
+    extras.extend(lock_lines(planned, sharing))
+    extras.extend(wait_lines(sharing.waits))
+    return sharing
+
+
 def plan_or_disk_exit(
     plan_only: bool, settings: dict, planned: list[PlannedStep], environment: dict[str, str]
 ) -> int | None:
@@ -941,8 +1046,10 @@ def run_command(arguments: argparse.Namespace) -> int:
     settings = load_settings(Path(arguments.settings))
     mode = "affected" if arguments.affected else "full"
     light = light_settings(settings)
-    name_error = unknown_names_error(settings, light, steps) or fast_lane_wait_error(
-        steps, resource_map(settings)
+    name_error = (
+        unknown_names_error(settings, light, steps)
+        or fast_lane_wait_error(steps, resource_map(settings))
+        or waits_for_error(steps, settings)
     )
     if name_error:
         print(name_error, file=sys.stderr)
@@ -973,8 +1080,7 @@ def run_command(arguments: argparse.Namespace) -> int:
     extras = [packages] if packages else []
     budget = worker_budget(planned, light, settings, environment, extras)
     extras.extend(cache_environment(environment))
-    sharing = HostSharing(ResourceLocks.from_environment(environment), resource_map(settings))
-    extras.extend(lock_lines(planned, sharing))
+    sharing = host_sharing(planned, settings, environment, extras)
     print_plan(mode, arguments.affected, selection, planned, extras)
     if (stop := plan_or_disk_exit(arguments.plan, settings, planned, environment)) is not None:
         return stop

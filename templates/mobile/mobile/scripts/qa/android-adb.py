@@ -95,7 +95,7 @@ def wait_for_boot(
         if exited:
             print(f"qa: emulator process {pid} exited before {serial} booted", file=sys.stderr)
             return 1
-        time.sleep(min(POLL_INTERVAL, max(0, deadline - time.monotonic())))
+        time.sleep(min(poll_interval(), max(0, deadline - time.monotonic())))
     return 124
 
 
@@ -358,7 +358,7 @@ def wait_for_stop(
         if listed is False and not console and not running:
             print(f"qa: {serial} stopped after {timing.clock() - started:.1f} s", file=sys.stderr)
             return 0
-        timing.sleep(min(POLL_INTERVAL, max(0, deadline - timing.clock())))
+        timing.sleep(min(poll_interval(), max(0, deadline - timing.clock())))
     state = "adb probes timed out" if listed is None else "still listed by adb"
     if console:
         state = "still holding its console port"

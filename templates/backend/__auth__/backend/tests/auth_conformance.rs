@@ -28,12 +28,20 @@ use {{ context.app_crate }}_services::UserService;
 
 const AUDIENCE: &str = "{{ context.app_name }}-backend";
 const WEB_ORIGIN: &str = "https://app.example.com";
+const KEYCLOAK_TOOL_TESTS: [&str; 6] = [
+    "-m",
+    "unittest",
+    "scripts/tests/test_erasure_roles.py",
+    "scripts/tests/test_keycloak_policy.py",
+    "scripts/tests/test_pkce_login.py",
+    "scripts/tests/test_reconcile_keycloak.py",
+];
 
 #[test]
 fn generated_keycloak_tools_pass_their_offline_checks() -> Result<(), Box<dyn Error>> {
     let product_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
     for arguments in [
-        vec!["-m", "unittest", "discover", "-s", "scripts/tests"],
+        KEYCLOAK_TOOL_TESTS.to_vec(),
         vec![
             "scripts/keycloak_policy.py",
             "--environment-class",
