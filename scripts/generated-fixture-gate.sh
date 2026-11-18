@@ -47,9 +47,11 @@ for flavor in "${flavors[@]}"; do
     echo "Checking generated fixture: $flavor"
     cli/target/debug/baukit new "$name" "${flags[@]}" --dir "$fixture_parent/$flavor" --baukit-path rust
     fixture="$fixture_parent/$flavor/$name"
-    mise trust --quiet "$fixture/mise.toml"
+    # The fixture sits inside this checkout; stop mise at its parent so it reads only the fixture's mise.toml.
+    mise_ceiling="$fixture_parent/$flavor"
+    MISE_CEILING_PATHS="$mise_ceiling" mise trust --quiet "$fixture/mise.toml"
     for step in workflow-lint secret-scan osv python-lint shell-lint; do
-        (cd "$fixture" && mise exec -- sh scripts/repo-lint.sh "$step")
+        (cd "$fixture" && MISE_CEILING_PATHS="$mise_ceiling" mise exec -- sh scripts/repo-lint.sh "$step")
     done
     if "$backend"; then
         cargo fmt --manifest-path "$fixture/backend/Cargo.toml" --all --check
