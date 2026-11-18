@@ -5017,6 +5017,31 @@ fn auth_conformance_does_not_wait_for_access_token_expiry() -> anyhow::Result<()
 }
 
 #[test]
+fn keycloak_tool_check_runs_exactly_the_generated_keycloak_tests() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut product = options(parent.path(), "auth-tools");
+    product.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&product)?;
+    let test = fs::read_to_string(root.join("backend/tests/auth_conformance.rs"))?;
+    assert!(!test.contains("\"discover\""));
+    let listed: Vec<&str> = test
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("\"scripts/tests/"))
+        .map(|rest| rest.trim_end_matches("\","))
+        .collect();
+    let mut generated = Vec::new();
+    for entry in fs::read_dir(root.join("scripts/tests"))? {
+        let name = entry?.file_name().to_string_lossy().into_owned();
+        if name.starts_with("test_") && name.ends_with(".py") {
+            generated.push(name);
+        }
+    }
+    generated.sort();
+    assert_eq!(listed, generated);
+    Ok(())
+}
+
+#[test]
 fn pwa_requires_an_app_and_selects_the_web_host_first() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
     let mut backend = options(parent.path(), "pwa-backend");
