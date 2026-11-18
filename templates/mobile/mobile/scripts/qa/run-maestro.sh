@@ -47,6 +47,11 @@ stall_seconds="${BAUKIT_QA_MAESTRO_STALL_SECONDS:-300}"
   echo "qa: BAUKIT_QA_MAESTRO_STALL_SECONDS must be a positive integer" >&2
   exit 2
 }
+detach_grace_seconds="${BAUKIT_QA_DETACH_GRACE_SECONDS:-30}"
+[[ "$detach_grace_seconds" =~ ^[0-9]+$ ]] || {
+  echo "qa: BAUKIT_QA_DETACH_GRACE_SECONDS must be a non-negative integer" >&2
+  exit 2
+}
 deadline_seconds="${BAUKIT_QA_MAESTRO_DEADLINE_SECONDS:-}"
 [[ -z "$deadline_seconds" || "$deadline_seconds" =~ ^[1-9][0-9]*$ ]] || {
   echo "qa: BAUKIT_QA_MAESTRO_DEADLINE_SECONDS must be a positive integer" >&2
@@ -129,11 +134,19 @@ trap 'exit 143' TERM
 trap 'exit 130' INT
 start_device_evidence
 
+detached_since=()
+
 all_attached() {
-  local device
-  for device in "${devices[@]}"; do
-    if ! python3 "$mobile_dir/scripts/qa/android-adb.py" --attached "$adb" "$device"; then
-      echo "qa: emulator $device died $1" >&2
+  local index device
+  for index in "${!devices[@]}"; do
+    device="${devices[index]}"
+    if python3 "$mobile_dir/scripts/qa/android-adb.py" --attached "$adb" "$device"; then
+      detached_since[index]=""
+      continue
+    fi
+    [[ -n "${detached_since[index]:-}" ]] || detached_since[index]=$SECONDS
+    if ((SECONDS - detached_since[index] >= detach_grace_seconds)); then
+      echo "qa: emulator $device died $1; adb has not listed it as a device for $detach_grace_seconds s" >&2
       return 1
     fi
   done
