@@ -5,6 +5,14 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.28.1
+
+Last verified release train: `v0.28.1` (patch train on top of `v0.28.0`). No component versions change.
+- Keycloak 26.8.2 rejects admin API calls whose token lacks the built-in `kc-admin-api` client scope. Generated realms give the backend service account that scope and declare it in `clientScopes`, and the erasure tests do the same. Test containers pin Keycloak 26.8.2, postgres 18.7 and redis 8.10.3 by digest, so Rust tests run the versions the templates ship.
+- The Kyverno reports controller may reach the registry, so `verify-baukit-images` policy reports show pass instead of an image-fetch error.
+- Falco's k8saudit Deployment gets a 512 Mi memory limit. At 256 Mi it was OOM-killed five times in 27 hours.
+- A sharded Maestro run stops only after adb has not listed an emulator for 30 s (`BAUKIT_QA_DETACH_GRACE_SECONDS`), not on the first missed check.
+
 ## v0.28.0
 
 Last verified release train: `v0.28.0` (minor train on top of `v0.27.4`). CloudNativePG chart 0.29.2 with operator 1.30.2, and Traefik chart 42.4.1; every other component is unchanged.
