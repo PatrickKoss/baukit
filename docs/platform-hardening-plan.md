@@ -850,7 +850,11 @@ admits one holder, and nothing looks at host pressure before a heavy step starts
   affected plans take no lease for steps they do not run. The slot files use the same layout as
   `/tmp/claude-heavy-slots`, so a gate's lease and other sessions' wrappers count against one
   capacity. schlauzug asked for pre and post hooks per `[quality.resources]` entry instead; a shared
-  slot directory covers that without running wrapper code inside the gate.
+  slot directory covers that without running wrapper code inside the gate. A wrapper that still holds
+  a slot for the whole gate counts twice, and at capacity 1 deadlocks the gate's own lease. The gate
+  therefore skips its leases when `BAUKIT_HEAVY_SLOT_HELD` names a slot the caller already holds, and
+  the release's CHANGELOG entry tells product wrappers (schlauzug's `heavy.sh`, the orchestrator's
+  `heavy-product-gate.sh`) to stop wrapping the whole gate.
 - [ ] **GT3 Admit by pressure.** Before a step takes a GT2 lease, and before the lane scheduler starts
   any step with cores, it waits until the runnable count and 1-minute load per core (PSI where
   present) and MemAvailable are inside limits from `[quality.admission]`, with a hysteresis band so two gates do not
