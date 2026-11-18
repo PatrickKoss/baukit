@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.28.1] - 2026-11-18
+{% if context.quality_strict %}- The `fuzz` step copies `backend/Cargo.lock` to `backend/fuzz/Cargo.lock` before it builds. The fuzz lockfile is not committed, so a fresh checkout resolved the newest Baukit patch while the backend pinned the older one, and `baukit doctor` failed on the mismatched pins once a new patch was published. Copy `scripts/quality-gate.sh` and `docs/quality-gate.md` from the template.
+
+{% endif %}## [0.28.1] - 2026-11-18
 
 - `run-maestro.sh` stops a sharded run only after adb has not listed an emulator as a device for `BAUKIT_QA_DETACH_GRACE_SECONDS` (30 s by default, 0 restores the immediate stop). A single `adb get-state` that timed out under load used to end the run as `died during the sharded run` while the emulator kept running.
 - The generated `<product>-backend` client lists the realm default scopes plus `kc-admin-api` in `defaultClientScopes`. Keycloak 26.8.2 rejects Admin REST API tokens whose audience does not name the admin API, so the account deletion and user lookups failed with 401. `scripts/keycloak_policy.py` now fails when a client whose service account holds a realm-management role lacks `kc-admin-api`, or when the realm declares `clientScopes` without it.
