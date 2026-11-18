@@ -4,6 +4,7 @@
 
 - `platform-images` downloads trivy's vulnerability and Java databases and the checks bundle into each run's work directory, as a fresh CI runner does, and shares only the layer cache in `~/.cache/baukit/trivy/fanal`. trivy skips a download until the cached database's NextUpdate, a day for the vulnerability DB and three for the Java DB, so the local step passed on a DB from 2026-11-17 19:04 while CI's DB from 2026-11-18 13:03 reported CVE-2026-64544 and CVE-2026-64549 in the PostHog image. A local run now downloads about 1.6 GB more, roughly two minutes. The old `db` and `java-db` directories in the shared cache are no longer read and can be deleted.
 - `posthog/posthog:release-1.43.1` allows CVE-2026-64544 and CVE-2026-64549 in `linux-libc-dev`. release-1.43.1 is still the newest PostHog release, so there is no fixed image.
+- The platform-e2e `smoke` suite skips `chainsaw-*` namespaces when it checks Flux objects and pod restarts. Suites run in parallel, and `flux-tenancy` creates Kustomizations in its test namespace that fail on purpose, so smoke failed in runs 43920161681 and 44291934770 (after 5 s in the second).
 
 ## [0.28.2] - 2026-11-18
 

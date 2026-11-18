@@ -4,7 +4,10 @@ kind: Test
 metadata:
   name: smoke
 spec:
-  description: Every Flux object is Ready and no pod restarted more than once.
+  description: >-
+    Every Flux object is Ready and no pod restarted more than once. Namespaces named chainsaw-* belong
+    to the suites running beside this one, and flux-tenancy's are Not Ready on purpose, so both checks
+    skip them.
   steps:
     - name: flux-objects-ready
       try:
@@ -13,7 +16,7 @@ spec:
               set -eu
               not_ready=$(kubectl get gitrepositories,helmrepositories,kustomizations,helmreleases -A --no-headers \
                 -o 'custom-columns=KIND:.kind,NAMESPACE:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status' |
-                awk '$4 != "True"')
+                awk '$2 !~ /^chainsaw-/ && $4 != "True"')
               if [ -n "$not_ready" ]; then
                 printf 'Flux objects not Ready:\n%s\n' "$not_ready" >&2
                 exit 1
@@ -25,7 +28,7 @@ spec:
               set -eu
               restarted=$(kubectl get pods -A --no-headers \
                 -o 'custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,INIT:.status.initContainerStatuses[*].restartCount,MAIN:.status.containerStatuses[*].restartCount' |
-                awk '{ split($3 "," $4, counts, ","); for (i in counts) if (counts[i] + 0 > 1) { print; break } }')
+                awk '$1 !~ /^chainsaw-/ { split($3 "," $4, counts, ","); for (i in counts) if (counts[i] + 0 > 1) { print; break } }')
               if [ -n "$restarted" ]; then
                 printf 'Pods with a container restarted more than once:\n%s\n' "$restarted" >&2
                 exit 1
