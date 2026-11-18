@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-{% if context.mobile %}- `mobile/scripts/qa/android-adb.py` waits `BAUKIT_QA_POLL_SECONDS` between probes in `--wait-for-boot` and `--wait-for-stop` too. Both slept a fixed 2 s, so a run that set a shorter interval still waited 2 s per probe there. `mobile/scripts/qa/test_android.py` pins both waits. Copy both files from the template.
+{% if context.mobile %}- `run-maestro.sh` gives a run a longer stall window when one of its flows declares a longer wait. The new `mobile/scripts/qa/maestro-waits.py` reads the longest `timeout:` of any command in the flows, following `runFlow` files, and the window becomes that wait plus 60 s when that exceeds `BAUKIT_QA_MAESTRO_STALL_SECONDS`. The script prints the command that set it. Maestro prints nothing while a command waits, so an `extendedWaitUntil` with `timeout: 600000` that seeded 100,000 rows was stopped after 300 s as `the sharded run made no progress`. A `timeout:` that is not whole milliseconds, or a `runFlow` file that is missing or named by a variable, now fails the run with exit 2 before Maestro starts. Copy both files from the template.
+
+{% endif %}{% if context.mobile %}- `mobile/scripts/qa/android-adb.py` waits `BAUKIT_QA_POLL_SECONDS` between probes in `--wait-for-boot` and `--wait-for-stop` too. Both slept a fixed 2 s, so a run that set a shorter interval still waited 2 s per probe there. `mobile/scripts/qa/test_android.py` pins both waits. Copy both files from the template.
 
 {% endif %}{% if context.auth_enabled %}- `generated_keycloak_tools_pass_their_offline_checks` in `backend/tests/auth_conformance.rs` runs the four generated Keycloak tool suites by path: `test_erasure_roles.py`, `test_keycloak_policy.py`, `test_pkce_login.py` and `test_reconcile_keycloak.py` under `scripts/tests`. It ran `unittest discover -s scripts/tests`, which also picked up every product test kept in that directory, and under load one of those hit its own timeout inside the Rust test. A product that adds a Keycloak tool test lists it in `KEYCLOAK_TOOL_TESTS`. Copy the file from the template.
 
