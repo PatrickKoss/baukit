@@ -283,6 +283,8 @@ step_fuzz() {
   rm -rf "$fuzz_scratch"
   (
     cd backend/fuzz
+    # The fuzz lockfile is not committed: start from the backend's resolution, not the newest crates.
+    cp ../Cargo.lock Cargo.lock
     # cargo-fuzz defaults --target to the triple it was built for; prebuilt binaries are musl.
     host=$(rustc +nightly -vV | sed -n 's/^host: //p')
     cargo +nightly fuzz build --target "$host"
