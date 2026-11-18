@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.28.2] - 2026-11-18
+
 ## [0.28.1] - 2026-11-18
 
 - `KeycloakTestContainer` runs Keycloak 26.8.2 pinned by digest instead of 26.8.0. The PostgreSQL default moves from `18.6-alpine` to `18.7-alpine` and Redis from `8.10.2-alpine` to `8.10.3-alpine`, both pinned by digest.

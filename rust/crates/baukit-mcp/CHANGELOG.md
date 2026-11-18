@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.2] - 2026-11-18
+
 ## [0.28.1] - 2026-11-18
 
 - The Keycloak introspection tests run Keycloak 26.8.2 pinned by digest instead of 26.8.0.

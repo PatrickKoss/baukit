@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.2] - 2026-11-18
+
 {% if context.quality_strict %}- The `fuzz` step copies `backend/Cargo.lock` to `backend/fuzz/Cargo.lock` before it builds. The fuzz lockfile is not committed, so a fresh checkout resolved the newest Baukit patch while the backend pinned the older one, and `baukit doctor` failed on the mismatched pins once a new patch was published. Copy `scripts/quality-gate.sh` and `docs/quality-gate.md` from the template.
 
 {% endif %}## [0.28.1] - 2026-11-18
