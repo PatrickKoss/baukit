@@ -832,9 +832,10 @@ android-e2e after the backend, fuzz and images lanes. platform-e2e takes a heavy
 What is missing: the orchestrator holds one heavy slot for a product's whole gate, a flock resource
 admits one holder, and nothing looks at host pressure before a heavy step starts.
 
-- [ ] **GT1 Pressure samples in every gate.** The strict gate and `scripts/ci-gate.sh` sample
-  `/proc/pressure/cpu` and `/proc/pressure/memory` (`some avg10`), MemAvailable, load and the top five
-  processes every 15 s into `.quality-gate/host.log` or `.ci-gate/host.log`, and print the worst sample
+- [ ] **GT1 Pressure samples in every gate.** The WSL kernel here has no PSI (`CONFIG_PSI is not
+  set`, no `/proc/pressure`). The strict gate and `scripts/ci-gate.sh` sample `/proc/loadavg` (the
+  1-minute load against `nproc` and the instantaneous runnable count), MemAvailable, and the top five
+  processes every 15 s, plus PSI `some avg10` where the kernel has it, into `.quality-gate/host.log` or `.ci-gate/host.log`, and print the worst sample
   in a failed heavy step's summary line. A red Maestro or Playwright step then shows whether the host
   was starved. Replaces the orchestrator's separate load sampler, which was dead from 11-14 to 11-18.
   Tests: a fake `/proc` root, the summary line on a failed step.
@@ -846,12 +847,18 @@ admits one holder, and nothing looks at host pressure before a heavy step starts
   and platform-e2e the same way, and platform-e2e's own slot code moves onto it. The orchestrator
   wrapper then runs gates without a whole-gate slot, under `nice`/`ionice`, and sets the slot directory
   and capacity. Tests: capacity is honoured across processes, a crashed holder frees its slot,
-  affected plans take no lease for steps they do not run.
-- [ ] **GT3 Admit by pressure.** Before a step takes a GT2 lease it waits until cpu `some avg10` and
-  MemAvailable are inside limits from `[quality.admission]`, with a hysteresis band so two gates do not
+  affected plans take no lease for steps they do not run. The slot files use the same layout as
+  `/tmp/claude-heavy-slots`, so a gate's lease and other sessions' wrappers count against one
+  capacity. schlauzug asked for pre and post hooks per `[quality.resources]` entry instead; a shared
+  slot directory covers that without running wrapper code inside the gate.
+- [ ] **GT3 Admit by pressure.** Before a step takes a GT2 lease, and before the lane scheduler starts
+  any step with cores, it waits until the runnable count and 1-minute load per core (PSI where
+  present) and MemAvailable are inside limits from `[quality.admission]`, with a hysteresis band so two gates do not
   start together on one good sample. The lease capacity stays the hard cap. The limits come from the
   GT1 samples of passing and starved runs, not from a guess. The wait counts toward the step's
-  queue time, not its run time, and the summary prints it.
+  queue time, not its run time, and the summary prints it. Today the scheduler counts only its own
+  core pool: schlauzug's d55db6e0 gate started Playwright with 0 of 24 pool cores free while the host
+  load outside the gate was about 20.
 - [ ] **GT4 Cheaper emulators, measured.** Read what the `bench-720`, `bench-1080` and `bench-fresh-*`
   AVDs from 2026-11-03 measured, then benchmark the template AVD at 1080x2400 against 720x1280, and
   `hw.cpu.ncore` 4 against 2, on three products' full Maestro suites under a fixed background load.
@@ -867,13 +874,18 @@ admits one holder, and nothing looks at host pressure before a heavy step starts
   `generated-fixture-gate.sh` builds each flavor's backend from scratch. If it does, share
   `CARGO_TARGET_DIR` across flavors in a lane, so the fixture lanes (1348 s and 1415 s in the last full
   gate) compile only what differs.
+- [ ] **GT9 Playwright is the long pole once fuzz is short.** schlauzug's d55db6e0 gate: Playwright
+  2173 s for 6500 tests, android-e2e 1273 s, rust-tests 957 s, images 874 s, fuzz 223 s. Measure
+  whether a separate WebKit step that starts when web-build is done, or a Playwright worker count that
+  grows as other lanes free their cores, shortens the path; tiefgang's stack lane (2127 s) is the
+  second data point.
 - [ ] **GT8 Measure fuzz.** Record time per fuzz target in baukit (1224 s lane) and the products.
   Shorter fuzz runs trade coverage for time; propose numbers to the user, change nothing without a
   decision.
 
 Order: GT1, then GT2 and GT3 together (one agent owns `gate.py`, `gate_locks.py`, `ci-gate.sh` and the
 template docs), GT5 and GT6 in the orchestrator scripts alongside, GT4 after GT3 because the benchmark
-needs a quiet host, then GT7 and GT8. GT1 to GT4 change the strict template and ship in a baukit
+needs a quiet host, then GT9, GT7 and GT8. GT1 to GT4 and GT9 change the strict template and ship in a baukit
 release; products adopt them on the next bump.
 
 User action, not an agent task: `.wslconfig` sets no `memory=`, so WSL gets the default half of host
