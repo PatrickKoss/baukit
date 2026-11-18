@@ -11,6 +11,14 @@ from process_runner import run_process, start_process
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates/mobile/mobile"
 HANG_WATCHDOG_SECONDS = 120
+SEED_WAIT_FLOW = """appId: test
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: perf-(pass|fail)
+    timeout: 600000  # seeds 100,000 rows
+"""
 
 
 def render(source: str, backend: bool) -> str:
@@ -43,7 +51,13 @@ class AndroidQaTests(unittest.TestCase):
         self.mobile = self.root / "mobile"
         self.scripts = self.mobile / "scripts/qa"
         self.scripts.mkdir(parents=True)
-        for name in ("android-env.sh", "services.sh", "android-adb.py", "run-maestro.sh"):
+        for name in (
+            "android-env.sh",
+            "services.sh",
+            "android-adb.py",
+            "maestro-waits.py",
+            "run-maestro.sh",
+        ):
             (self.scripts / name).write_text(
                 render((TEMPLATES / "scripts/qa" / name).read_text(), True)
             )
@@ -628,7 +642,12 @@ wait
 
     def test_a_slow_flow_that_keeps_making_progress_passes(self):
         self.flows("a-first.yaml")
-        for progress in ('echo "step $step"', 'touch "${*: -2:1}/commands-$step.json"'):
+        for progress in (
+            'echo "step $step"',
+            'touch "${*: -2:1}/commands-$step.json"',
+            'logs="${*: -2:1}/.maestro/tests/run/flow/logs" && mkdir -p "$logs"\n'
+            '  echo "command $step RUNNING" >> "$logs/maestro.log"',
+        ):
             with self.subTest(progress=progress):
                 result = self.run_watched(f"""
 for step in $(seq 40); do
@@ -652,6 +671,103 @@ echo finished >> "$EVENTS"
         result = self.run_watched("sleep 60\n")
         self.assertEqual(result.returncode, 124, result.stdout + result.stderr)
         self.assertIn("qa: the sharded run made no progress for 1 s", result.stderr)
+
+    def flow_tree(self, tree):
+        for name, body in tree.items():
+            path = self.mobile / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body)
+
+    def test_a_declared_wait_widens_the_sharded_stall_window(self):
+        (self.state / "android-owned").touch()
+        (self.state / "android-serial").write_text("emulator-5556\nemulator-5558\n")
+        self.attached.touch()
+        self.flow_tree(
+            {".maestro/a-smoke.yaml": "appId: test\n", ".maestro/b-perf.yaml": SEED_WAIT_FLOW}
+        )
+        self.executable(self.tools / "maestro", "exit 0\n")
+        result = self.run_script("run-maestro.sh", "android")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "qa: extendedWaitUntil in .maestro/b-perf.yaml:7 may wait 600 s, so the sharded run"
+            " gets a 660 s stall window instead of 300 s",
+            result.stderr,
+        )
+
+    def test_a_silent_flow_inside_its_declared_wait_is_not_stopped(self):
+        self.owned()
+        wait = "appId: test\n---\n- waitForAnimationToEnd:\n    timeout: 3000\n"
+        self.flow_tree({".maestro/a-first.yaml": wait})
+        result = self.run_watched('sleep 2\necho finished >> "$EVENTS"\n')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("finished", self.events.read_text())
+        self.assertIn("so a-first.yaml gets a 63 s stall window instead of 1 s", result.stderr)
+
+    def test_waits_inside_the_configured_window_keep_it(self):
+        self.owned()
+        self.executable(self.tools / "maestro", "exit 0\n")
+        for milliseconds, message in (
+            (240000, ""),
+            (240001, "so a-first.yaml gets a 301 s stall window instead of 300 s"),
+        ):
+            with self.subTest(milliseconds=milliseconds):
+                self.flow_tree(
+                    {
+                        ".maestro/a-first.yaml": "appId: test\n---\n- extendedWaitUntil:\n"
+                        f"    visible: Ready\n    timeout: {milliseconds}\n"
+                    }
+                )
+                result = self.run_script("run-maestro.sh", "android")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if message:
+                    self.assertIn(message, result.stderr)
+                else:
+                    self.assertNotIn("stall window", result.stderr)
+
+    def test_nested_run_flows_are_followed(self):
+        self.owned()
+        self.executable(self.tools / "maestro", "exit 0\n")
+        self.flow_tree(
+            {
+                ".maestro/a-first.yaml": "appId: test\nonFlowStart:\n"
+                "  - runFlow: ../.maestro-support/launch.yaml\n---\n"
+                "- runFlow:\n    when:\n      platform: Android\n"
+                "    file: ../.maestro-support/sign-in.yaml\n"
+                "- runScript:\n    file: not-a-flow.js\n",
+                ".maestro-support/launch.yaml": "appId: test\n---\n- launchApp\n",
+                ".maestro-support/sign-in.yaml": "appId: test\n---\n- runFlow: 'seed.yaml'\n"
+                "- extendedWaitUntil: {visible: Signed in, timeout: 30000}\n",
+                ".maestro-support/seed.yaml": "appId: test\n---\n- runFlow: sign-in.yaml\n"
+                "- extendedWaitUntil:\n    visible:\n      id: seeded\n    timeout: 600000\n",
+            }
+        )
+        result = self.run_script("run-maestro.sh", "android")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "qa: extendedWaitUntil in .maestro-support/seed.yaml:7 may wait 600 s,"
+            " so a-first.yaml gets a 660 s stall window instead of 300 s",
+            result.stderr,
+        )
+
+    def test_an_unreadable_wait_fails_before_maestro_runs(self):
+        self.owned()
+        self.executable(self.tools / "maestro", 'echo maestro >> "$EVENTS"\n')
+        wait = "appId: test\n---\n- extendedWaitUntil:\n    visible: Ready\n    timeout: {}\n"
+        for body, message in (
+            (wait.format("10s"), "timeout must be whole milliseconds, got '10s'"),
+            (wait.format('"${WAIT}"'), "timeout must be whole milliseconds, got '${WAIT}'"),
+            (wait.format("1.5"), "timeout must be whole milliseconds, got '1.5'"),
+            ("appId: test\n---\n- runFlow: missing.yaml\n", "missing.yaml does not exist"),
+            ("appId: test\n---\n- runFlow: ${FLOW}\n", "cannot follow runFlow ${FLOW}"),
+        ):
+            with self.subTest(body=body):
+                self.flow_tree({".maestro/a-first.yaml": body})
+                result = self.run_script("run-maestro.sh", "android")
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertRegex(result.stderr, r"qa: \.maestro/a-first\.yaml:\d+: ")
+                self.assertIn(message, result.stderr)
+                events = self.events.read_text() if self.events.exists() else ""
+                self.assertNotIn("maestro", events)
 
     def test_stall_deadline_must_be_a_positive_integer(self):
         self.flows("a-first.yaml")
