@@ -1622,3 +1622,58 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   GHSA-gcqx-w48m-w2h4 (deepmerge), so its ignore is gone.
 - Products move to 0.28.0 in wave F13 (briefs in the orchestrator's platform-hardening/prompts/F13),
   each migrating its own code from chrono to jiff. schlauzug is left to the session working there.
+
+### 2026-11-18 12:40
+
+- D6 is live. platform-infra merged the signing key, the production label and Kyverno's read-only GHCR
+  credential, then pinned v0.28.0 (e12735a) and v0.28.1 (fc7fa63). Every live tenant image is pinned
+  by digest and passes `verify-baukit-images`. The only fails came from zero-replica ReplicaSets left
+  over from tag-pinned rollouts on 2026-11-17; they were deleted.
+- 0.28.1 shipped (tag v0.28.1, crates.io and npm through the release workflow). It carries four fixes
+  the F13 wave found:
+  - Keycloak 26.8.2 rejects Admin REST tokens without the built-in `kc-admin-api` scope (401,
+    "Expected audience not available"). The backend template's service account gets the scope, the
+    realm declares it when it has a `clientScopes` array, and `keycloak_policy.py` fails a realm that
+    misses either. Rust test containers now pin Keycloak 26.8.2, postgres 18.7 and redis 8.10.3 by
+    digest; they had run an unpinned 26.8.0, so only full-stack e2e caught the break. The chart's
+    redis default moved to 8.10.3 with a digest.
+  - Kyverno's reports controller had no HTTPS egress, so every `verify-baukit-images` background
+    result was an error ("connection refused" to ghcr.io), not a verdict.
+  - Falco's k8saudit Deployment was OOM-killed 5 times in 27 h at 256 Mi; it settles at 180 to 230 MB
+    and peaks above 256 Mi. The limit is 512 Mi.
+  - `run-maestro.sh` ended a sharded run when one `adb get-state` timed out under load, while the
+    emulator kept running. It now waits until adb has not listed the emulator for 30 s.
+- Products on 0.28.0 with jiff: tiefgang, leitbild, redemut, kassensturz, bauvisite, laufbefund,
+  schluesselbund, lesezeichen, eigenruhe and hebkit. schlauzug has a branch-only bump
+  (task/bump-0.280 in its own worktree) for the session working there to merge. heldengang went
+  straight to 0.28.1 (47e96bd0). Its smoke and delete-profile flows had failed three times on 0.28.0
+  with emulator-5664 going "device offline" right after the Keycloak tab closed; the 0.28.1 full gate
+  passed both without the adb grace firing, so that cause is still unexplained.
+- Gate findings worth keeping:
+  - Most red product runs in F13 were host load, not code. At load 25 to 63 on 24 cores, Maestro
+    hierarchy dumps took 6 to 8 s and scrolls ran out of time (eigenruhe, hebkit raised single
+    timeouts), and baukit's native-android lane saw a 20 s systemui ANR during a 202 s cold boot.
+    The full baukit gate boots its emulator while the other nine lanes peak; the lane passed alone.
+  - Emulator 37.2.13 segfaulted once in qemu on eigenruhe right after Chrome was force-stopped (dump
+    kept in the orchestrator's evidence directory). It is the known gfxstream crash listed in the
+    compatibility matrix; the rerun passed all flows.
+  - A `docker image prune` at 09:02:19 from an unknown source deleted seaweedfs 3 s after compose
+    pulled it. Compose pulls `tag@digest` references by digest only, so those images stay untagged
+    and any plain prune removes them. Pull by tag, check the digest, then gate.
+  - eigenruhe's rerun steps need `images android-build android-e2e`; its teardown removes the e2e
+    images.
+  - The product gates do not run cargo with `--locked`, so several stale lockfiles only surfaced in
+    review.
+- RUSTSEC-2026-0560 to 0565 (lettre 0.11.23, fixed in 0.11.24) appeared during the wave. Baukit and
+  its templates do not use lettre; heldengang and schluesselbund do and take 0.11.24.
+- Publishing 0.28.1 broke `baukit doctor` in strict products still on 0.28.0. The uncommitted
+  `backend/fuzz/Cargo.lock` resolved the newest patch while `backend/Cargo.lock` pinned the older
+  one; heldengang showed the reverse with a stale local copy. The template's fuzz step now copies the
+  backend lockfile first; released as v0.28.2 (ecfc98b6, release run 44320461520). The 0.28.2 full
+  gate went red in fixtures-1, fixtures-2, android and platform-e2e while host load peaked at 91
+  (schlauzug round plus our lanes); the Falco test pod stayed Pending past chainsaw's 30 s assert.
+  The seven failed steps reran one by one under the slot and passed. platform-infra pins v0.28.2
+  (b8f6f7a); deploy/ is unchanged since v0.28.1.
+- All eleven products and schlauzug's branch-only task/bump-0.280 move to 0.28.2 (agents, gates under
+  the slot).
+- Still open: RF25 (Hetzner, by choice). Product follow-ups are in the final report.
