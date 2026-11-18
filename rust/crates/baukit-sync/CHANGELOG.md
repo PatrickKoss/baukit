@@ -4,6 +4,8 @@ All notable changes to `baukit-sync` are documented here.
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-18
+
 ## [0.28.0] - 2026-11-17
 
 - BREAKING: chrono is replaced by jiff 1.0. `purge_tombstones` and the other `purge` functions take a `jiff::Timestamp` cutoff. The `sqlx-postgres` feature pulls in `jiff` and `jiff-sqlx` instead of `chrono`. See the type mapping in `cli/CHANGELOG.md`.

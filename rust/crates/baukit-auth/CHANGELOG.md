@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-18
+
 ## [0.28.0] - 2026-11-17
 
 - BREAKING: chrono is replaced by jiff 1.0. `ApiToken`, `ApiTokenRecord` and `NewApiToken` timestamps (`created_at`, `expires_at`, `last_used_at`, `revoked_at`), `ApiToken::is_active_at`, `NewApiToken::expiring_at`, `Principal::with_authenticated_at` and `authenticated_at`, and the browser-session store and service `now` arguments use `jiff::Timestamp`. See the type mapping in `cli/CHANGELOG.md`.

@@ -2,7 +2,15 @@
 
 ## Unreleased
 
+## 0.28.1
+
 - The Keycloak device-flow conformance script runs Keycloak 26.8.2 pinned by digest instead of 26.7.0.
+
+### Patch Changes
+
+- Release the coordinated baukit 0.28.1 train.
+- Updated dependencies
+  - @baukit/type-guards@0.28.1
 
 ## 0.28.0
 

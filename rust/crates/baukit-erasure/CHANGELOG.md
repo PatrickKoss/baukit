@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-18
+
 - The Keycloak erasure tests run Keycloak 26.8.2 pinned by digest instead of 26.7.0.
 
 ## [0.28.0] - 2026-11-17

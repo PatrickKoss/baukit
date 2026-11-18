@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-18
+
 - The Falco k8saudit Deployment requests 256 Mi and may use 512 Mi (was 64 Mi and 256 Mi). On platform-local it settles at 180 to 230 MB of anonymous memory within two hours of a start and peaks above 256 MB while gates drive the API server, so the kernel OOM-killed it every few hours (five restarts in 27 h).
 - Kyverno's reports controller may open HTTPS connections to the internet, like the admission controller. Background scans of `verify-baukit-images` fetch signatures from GHCR, and without egress every policy report entry for a product image was an error.
 
