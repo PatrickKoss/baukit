@@ -197,6 +197,8 @@ spec:
         - name: data
           emptyDir: {}
         - name: sentinel-config
-          emptyDir: {}
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
         - name: tmp
           emptyDir: {}

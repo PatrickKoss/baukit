@@ -37,6 +37,7 @@ START_TIMEOUT_SECONDS = 180
 FENCE_TIMEOUT_SECONDS = 120
 SENTINEL_TIMEOUT_SECONDS = 60
 POLL_SECONDS = 1
+TORN_DUMP = "in kernel doesn't exist"
 POD_DEADLINE_SECONDS = 900
 RC_MARKER = "probe-rc="
 
@@ -94,10 +95,14 @@ class Cluster:
                 text=True,
                 check=False,
             )
-            if result.returncode != 0:
+            if result.returncode == 0:
+                rules = result.stdout
+            elif TORN_DUMP in result.stderr:
+                rules = ""
+            else:
                 raise ProbeError(f"iptables-save on node {node} failed: {result.stderr.strip()}")
-            self.rules[node] = (time.monotonic(), result.stdout)
-            return result.stdout
+            self.rules[node] = (time.monotonic(), rules)
+            return rules
 
 
 def fenced(rules: str, namespace: str, pod: str, address: str) -> bool:

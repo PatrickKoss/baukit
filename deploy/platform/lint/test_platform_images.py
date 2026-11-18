@@ -349,6 +349,19 @@ class MainTests(unittest.TestCase):
         self.assertEqual(self.run_main("ghcr.io/example/clean:1.0"), 0)
         self.assertNotIn("--config", self.calls.read_text())
 
+    def test_scans_download_databases_into_the_run_and_share_layers(self):
+        shared = self.directory / "cache"
+        (shared / "db").mkdir(parents=True)
+        (shared / "db" / "metadata.json").write_text('{"NextUpdate": "2999-01-01T00:00:00Z"}')
+        self.assertEqual(self.run_main("ghcr.io/example/clean:1.0"), 0)
+        run_cache = self.directory / "work" / "trivy-cache"
+        calls = self.calls.read_text().splitlines()
+        self.assertIn(f"image --cache-dir {run_cache} --quiet --download-db-only", calls)
+        for call in calls:
+            with self.subTest(call=call):
+                self.assertIn(f"--cache-dir {run_cache} ", call)
+        self.assertEqual((run_cache / "fanal").resolve(), (shared / "fanal").resolve())
+
     def test_trivy_error_fails_the_step(self):
         self.assertEqual(self.run_main("ghcr.io/example/broken:1.0"), 1)
 

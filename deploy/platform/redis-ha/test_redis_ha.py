@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("redis-ha.sh")
+STATEFULSET = Path(__file__).with_name("statefulset.yaml")
 PROCESS_RUNNER = Path(__file__).resolve().parents[3] / "scripts" / "process_runner.py"
 
 
@@ -182,6 +183,13 @@ class SentinelConfigTest(RedisHaScript, unittest.TestCase):
         result = self.decide("redis-0", {}, mode="sentinel", local_info=info)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"sentinel monitor mymaster {fqdn(0)} 6379 2", result.stdout)
+
+
+class SentinelConfigVolumeTests(unittest.TestCase):
+    def test_sentinel_config_lives_in_memory(self) -> None:
+        # Sentinel fsyncs its config on every vote before the vote request leaves the event loop.
+        volume = "- name: sentinel-config\n          emptyDir:\n            medium: Memory\n"
+        self.assertIn(volume, STATEFULSET.read_text())
 
 
 if __name__ == "__main__":

@@ -254,6 +254,21 @@ def report_ids(report: dict, field: str, id_key: str) -> dict[str, set[str]]:
     return found
 
 
+def run_cache(layers: Path, work: Path) -> Path:
+    """A cache dir with this run's own databases and checks, like a fresh CI runner.
+
+    trivy skips a download until the cached database's NextUpdate, up to a day for the vuln DB and
+    three for the Java DB, so a long-lived cache misses findings CI already reports. Layer analysis
+    does not depend on the databases and stays shared across runs.
+    """
+    cache, shared = work / "trivy-cache", layers / "fanal"
+    cache.mkdir(parents=True, exist_ok=True)
+    shared.mkdir(parents=True, exist_ok=True)
+    if not (cache / "fanal").is_symlink():
+        (cache / "fanal").symlink_to(shared.resolve(), target_is_directory=True)
+    return cache
+
+
 def scan_images(
     images: Sequence[str], cache: Path, run: Runner, config: Path | None = None
 ) -> dict[str, set[str]]:
@@ -302,7 +317,9 @@ def main(argv: list[str] | None = None, run: Runner = run_command) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rendered", type=Path, required=True)
     parser.add_argument("--repo-root", type=Path, required=True)
-    parser.add_argument("--cache", type=Path, required=True)
+    parser.add_argument(
+        "--cache", type=Path, required=True, help="trivy layer cache shared across runs"
+    )
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--allowlist", type=Path, required=True)
     parser.add_argument(
@@ -319,10 +336,11 @@ def main(argv: list[str] | None = None, run: Runner = run_command) -> int:
         if not images:
             raise ScanError(f"no container images found under {args.rendered}")
         print(f"==> {len(images)} images", flush=True)
-        image_findings = scan_images(images, args.cache, run, args.trivy_config)
+        cache = run_cache(args.cache, args.work)
+        image_findings = scan_images(images, cache, run, args.trivy_config)
         stage = args.work / "dockerfiles"
         staged = stage_dockerfiles(tracked_dockerfiles(args.repo_root), args.repo_root, stage)
-        dockerfile_findings = scan_dockerfiles(staged, stage, args.cache, run)
+        dockerfile_findings = scan_dockerfiles(staged, stage, cache, run)
     except (ScanError, helm_yaml.YamlError, OSError, tomllib.TOMLDecodeError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

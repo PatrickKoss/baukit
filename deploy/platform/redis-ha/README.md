@@ -33,7 +33,11 @@ other pods for the current master:
   restarts it.
 
 Sentinel waits for the local Redis and monitors the master that Redis chose,
-so on a cold start no Sentinel monitors a guess. Both containers have a startup
+so on a cold start no Sentinel monitors a guess. Sentinel rewrites and fsyncs
+its config on every vote, and the vote request to the other Sentinel leaves
+only after that write, so the config sits on a memory-backed `emptyDir`. On
+disk, a slow fsync held the request back until the other Sentinel had voted
+for itself. Both containers have a startup
 probe that allows 3 minutes for this before the liveness probe takes over.
 
 Every pod announces its stable headless name
