@@ -92,7 +92,10 @@ status, NetworkPolicies, Jobs, pod logs and `docker-stats.log`, sampled every 15
 `tests/netpol/probe.py` runs each row of `tests/netpol/matrix.yaml` from its own pod: the echo image with
 the row's labels, in the row's source namespace, 16 rows at a time. kube-router admits a new pod late,
 so a probe waits until the pod's firewall chain exists on its node (`iptables-save` through
-`docker exec`) and a DNS lookup from the pod works. Only then does it connect. A destination Service
+`docker exec`) and a DNS lookup from the pod works. With the nf_tables backend `iptables-save` reads
+sets and rules in separate calls, so a set that kube-router swaps in between fails the dump with "Set with
+index N in kernel doesn't exist". The probe counts such a dump as not fenced yet and reads again on the next
+poll. Only then does it connect. A destination Service
 without a ready endpoint, a failed DNS lookup or a pod that never got that far is an ERROR line, not a
 verdict. An allow row gets three attempts and a deny row gets one.
 
