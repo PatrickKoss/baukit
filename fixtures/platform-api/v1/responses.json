@@ -4,7 +4,7 @@
   "responses": {
     "token": {
       "status": 200,
-      "source": "docs/platform-api.md#get-a-token and e2e/fake-product/unit.rs token mock (Keycloak 26.8.0 client-credentials response)",
+      "source": "docs/platform-api.md#get-a-token and e2e/fake-product/unit.rs token mock (Keycloak 26.8.2 client-credentials response)",
       "body": {
         "access_token": "recorded-platform-token",
         "expires_in": 300,

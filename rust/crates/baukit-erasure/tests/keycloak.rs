@@ -226,8 +226,8 @@ async fn check_sso_and_refresh(base: &str, root: &std::path::Path) -> Result<(),
 #[ignore = "requires Docker Keycloak"]
 async fn deletes_user_treats_404_as_success_and_requires_manage_users() -> Result<(), Box<dyn Error>>
 {
-    let image = GenericBuildableImage::new("baukit-erasure-keycloak-test", "26.7.0")
-        .with_dockerfile_string("FROM quay.io/keycloak/keycloak:26.7.0\nENV JAVA_OPTS_KC_HEAP=\"-Xms128m -Xmx512m\"\nRUN /opt/keycloak/bin/kc.sh build\n")
+    let image = GenericBuildableImage::new("baukit-erasure-keycloak-test", "26.8.2")
+        .with_dockerfile_string("FROM quay.io/keycloak/keycloak:26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0\nENV JAVA_OPTS_KC_HEAP=\"-Xms128m -Xmx512m\"\nRUN /opt/keycloak/bin/kc.sh build\n")
         .build_image().await?;
     let container = image
         .with_exposed_port(8080.tcp())
@@ -253,7 +253,7 @@ async fn deletes_user_treats_404_as_success_and_requires_manage_users() -> Resul
     reconcile_generated_realm(&client, &base, &token).await?;
     client.post(format!("{base}/admin/realms")).bearer_auth(&token)
         .json(&json!({"realm":"erasure", "enabled":true,
-            "clients":[{"clientId":"backend", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true}, {"clientId":"unprivileged", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true}],
+            "clients":[{"clientId":"backend", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true, "defaultClientScopes":["web-origins", "acr", "profile", "roles", "basic", "email", "kc-admin-api"]}, {"clientId":"unprivileged", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true, "defaultClientScopes":["web-origins", "acr", "profile", "roles", "basic", "email", "kc-admin-api"]}],
             "users":[{"username":"service-account-backend", "serviceAccountClientId":"backend", "enabled":true, "clientRoles":{"realm-management":["manage-users"]}}]
         })).send().await?.error_for_status()?;
     let subject = create_user(&client, &base, &token).await?;

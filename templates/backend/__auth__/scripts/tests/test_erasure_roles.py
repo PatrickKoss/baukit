@@ -60,6 +60,7 @@ class ErasureRoleTests(unittest.TestCase):
                 "publicClient": False,
                 "directAccessGrantsEnabled": False,
                 "serviceAccountsEnabled": True,
+                "defaultClientScopes": ["kc-admin-api"],
             }
         )
         self.assertTrue(

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-18
+
 ## [0.28.0] - 2026-11-17
 
 - BREAKING: chrono is replaced by jiff 1.0. Every suite and platform timestamp field (`occurred_at`, `received_at`, `created_at`, `updated_at`, `expires_at`, `consumed_at`, `revoked_at`, `last_*_at`), `PlatformEventDecoder::decode`, `SuiteDeliveryService::cleanup` and the store `now` arguments use `jiff::Timestamp`. `validate_replay_since`, `replay_earliest`, `SuiteReplaySource::replay_since` and `replay_earliest` fields use `jiff::civil::Date`. OpenAPI keeps `format: date-time` and `format: date` through utoipa's `jiff_0_2` feature. Wire timestamps print the fewest fractional digits needed, so `...T10:00:00.5Z` replaces `...T10:00:00.500Z`; both are RFC 3339 and inbound validation still requires RFC 3339. See the type mapping in `cli/CHANGELOG.md`.

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-18
+
+- The default Redis image is `8.10.3-alpine`, and `redis.image.digest` pins it by digest, so the rendered image is `redis@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3`.
+
 ## [0.28.0] - 2026-11-17
 
 ## [0.27.4] - 2026-11-17

@@ -13,6 +13,7 @@ from urllib.parse import SplitResult, urlsplit
 
 ENVIRONMENT_CLASSES = ("development",)
 TLS_LEVELS = {"none": 0, "external": 1, "all": 2}
+ADMIN_API_SCOPE = "kc-admin-api"
 POLICY_EXPRESSION = re.compile(r"^([A-Za-z][A-Za-z0-9]*)(?:\(([^)]*)\))?$")
 
 
@@ -243,6 +244,52 @@ def service_account_failures(
     return failures
 
 
+def admin_api_client_ids(users: list[Any]) -> list[str]:
+    client_ids: list[str] = []
+    for user in users:
+        if not isinstance(user, dict):
+            continue
+        client_id = user.get("serviceAccountClientId")
+        mappings = user.get("clientRoles")
+        roles = mappings.get("realm-management") if isinstance(mappings, dict) else None
+        if isinstance(client_id, str) and isinstance(roles, list) and roles:
+            client_ids.append(client_id)
+    return client_ids
+
+
+def admin_api_scope_failures(
+    realm: dict[str, Any], clients: list[Any], users: list[Any]
+) -> list[str]:
+    client_ids = admin_api_client_ids(users)
+    if not client_ids:
+        return []
+    failures: list[str] = []
+    scopes = realm.get("clientScopes")
+    if isinstance(scopes, list) and not any(
+        isinstance(scope, dict) and scope.get("name") == ADMIN_API_SCOPE for scope in scopes
+    ):
+        failures.append(
+            f"realm declares clientScopes without {ADMIN_API_SCOPE!r}, so Keycloak drops it from "
+            "imported clients"
+        )
+    for client_id in client_ids:
+        client = next(
+            (
+                value
+                for value in clients
+                if isinstance(value, dict) and value.get("clientId") == client_id
+            ),
+            {},
+        )
+        default_scopes = client.get("defaultClientScopes")
+        if not isinstance(default_scopes, list) or ADMIN_API_SCOPE not in default_scopes:
+            failures.append(
+                f"client {client_id!r} calls the admin API but lacks the {ADMIN_API_SCOPE} scope "
+                "Keycloak 26.8.2 requires"
+            )
+    return failures
+
+
 def validate_realm(
     realm: dict[str, Any], policy: dict[str, Any], environment_class: str
 ) -> list[str]:
@@ -256,9 +303,9 @@ def validate_realm(
         return failures
     failures.extend(client_failures(clients, policy))
     users = realm.get("users", [])
-    failures.extend(
-        service_account_failures(clients, users if isinstance(users, list) else [], policy)
-    )
+    users = users if isinstance(users, list) else []
+    failures.extend(service_account_failures(clients, users, policy))
+    failures.extend(admin_api_scope_failures(realm, clients, users))
     return failures
 
 

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-18
+
+- `run-maestro.sh` stops a sharded run only after adb has not listed an emulator as a device for `BAUKIT_QA_DETACH_GRACE_SECONDS` (30 s by default, 0 restores the immediate stop). A single `adb get-state` that timed out under load used to end the run as `died during the sharded run` while the emulator kept running.
+- The generated `<product>-backend` client lists the realm default scopes plus `kc-admin-api` in `defaultClientScopes`. Keycloak 26.8.2 rejects Admin REST API tokens whose audience does not name the admin API, so the account deletion and user lookups failed with 401. `scripts/keycloak_policy.py` now fails when a client whose service account holds a realm-management role lacks `kc-admin-api`, or when the realm declares `clientScopes` without it.
+
 ## [0.28.0] - 2026-11-17
 
 ## [0.27.4] - 2026-11-17

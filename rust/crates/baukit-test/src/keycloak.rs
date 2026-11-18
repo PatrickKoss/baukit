@@ -15,7 +15,8 @@ use testcontainers::{
 use thiserror::Error;
 
 const KEYCLOAK_IMAGE: &str = "quay.io/keycloak/keycloak";
-const KEYCLOAK_TAG: &str = "26.8.0";
+const KEYCLOAK_TAG: &str =
+    "26.8.2@sha256:c68e286cacd87b942ac1939a0a1481461109d6acd3a57dc496969a319a76bbf0";
 const KEYCLOAK_PORT: u16 = 8080;
 const IMPORT_PATH: &str = "/opt/keycloak/data/import/realm.json";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(180);

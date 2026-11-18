@@ -173,8 +173,8 @@ redis:
   replicas: 1
   image:
     repository: redis
-    tag: 8.10.2-alpine
-    digest: ""
+    tag: 8.10.3-alpine
+    digest: "sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3"
     pullPolicy: IfNotPresent
   resources:
     requests:

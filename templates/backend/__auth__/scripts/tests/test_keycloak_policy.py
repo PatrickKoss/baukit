@@ -76,6 +76,67 @@ class KeycloakPolicyTests(unittest.TestCase):
         self.assertTrue(any("wildcard the host" in failure for failure in failures))
         self.assertTrue(any("outside an allowed" in failure for failure in failures))
 
+    def admin_api_realm(self):
+        realm = self.fixture("development-realm.json")
+        realm["users"] = [
+            {
+                "username": "service-account-fixture-backend",
+                "serviceAccountClientId": "fixture-backend",
+                "clientRoles": {"realm-management": ["manage-users"]},
+            }
+        ]
+        realm["clients"][0]["defaultClientScopes"] = ["basic", "kc-admin-api"]
+        return realm
+
+    def test_admin_api_client_with_the_scope_passes(self):
+        realm = self.admin_api_realm()
+        realm["clientScopes"] = [{"name": "basic"}, {"name": "kc-admin-api"}]
+        failures = keycloak_policy.validate_realm(
+            realm, self.fixture("development-policy.json"), "development"
+        )
+        self.assertEqual(failures, [])
+
+    def test_admin_api_client_without_the_scope_is_rejected(self):
+        realm = self.admin_api_realm()
+        realm["clients"][0]["defaultClientScopes"] = ["basic"]
+        failures = keycloak_policy.validate_realm(
+            realm, self.fixture("development-policy.json"), "development"
+        )
+        self.assertEqual(
+            failures,
+            [
+                "client 'fixture-backend' calls the admin API but lacks the kc-admin-api "
+                "scope Keycloak 26.8.2 requires"
+            ],
+        )
+
+    def test_admin_api_client_without_default_scopes_is_rejected(self):
+        realm = self.admin_api_realm()
+        del realm["clients"][0]["defaultClientScopes"]
+        failures = keycloak_policy.validate_realm(
+            realm, self.fixture("development-policy.json"), "development"
+        )
+        self.assertTrue(any("lacks the kc-admin-api scope" in failure for failure in failures))
+
+    def test_declared_client_scopes_must_include_the_admin_api_scope(self):
+        realm = self.admin_api_realm()
+        realm["clientScopes"] = [{"name": "basic"}]
+        failures = keycloak_policy.validate_realm(
+            realm, self.fixture("development-policy.json"), "development"
+        )
+        self.assertEqual(len(failures), 1)
+        self.assertIn("clientScopes without 'kc-admin-api'", failures[0])
+
+    def test_service_account_without_realm_management_roles_needs_no_scope(self):
+        realm = self.admin_api_realm()
+        realm["users"][0]["clientRoles"] = {}
+        realm["clients"][0]["defaultClientScopes"] = ["basic"]
+        realm["clientScopes"] = [{"name": "basic"}]
+        failures = keycloak_policy.validate_realm(
+            realm, self.fixture("development-policy.json"), "development"
+        )
+        self.assertEqual(failures, [])
+
 
 if __name__ == "__main__":
     unittest.main()

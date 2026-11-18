@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-18
+
+- The backend client holds the `kc-admin-api` client scope, which Keycloak 26.8.2 requires for Admin REST API tokens. MCP realms declare the scope in `clientScopes`.
+
 ## [0.28.0] - 2026-11-17
 
 ## [0.27.4] - 2026-11-17

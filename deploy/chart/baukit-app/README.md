@@ -10,7 +10,7 @@ The migration hook only starts the migrate process. Advisory locking, lock timeo
 # Chart.yaml in a product repository
 dependencies:
   - name: baukit-app
-    version: 0.28.0
+    version: 0.28.1
     repository: oci://ghcr.io/patrickkoss/charts
     alias: application
 ```
@@ -186,7 +186,7 @@ Migration uses `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`
 |---|---:|---|
 | `redis.enabled` | `false` | Create non-persistent Redis for expendable product state. |
 | `redis.replicas` | `1` | `1` creates a Deployment; odd values `>= 3` create Redis + Sentinel pods in a StatefulSet. `2` and even values fail rendering. |
-| `redis.image.repository` / `tag` / `digest` / `pullPolicy` | `redis` / `8.10.2-alpine` / `""` / `IfNotPresent` | Redis image settings; the default tag is an exact Redis 8 Alpine patch release. |
+| `redis.image.repository` / `tag` / `digest` / `pullPolicy` | `redis` / `8.10.3-alpine` / `sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3` / `IfNotPresent` | Redis image settings; the default pins an exact Redis 8 Alpine patch release by digest, and the rendered image uses the digest. |
 | `redis.resources.requests.cpu` / `memory` | `10m` / `16Mi` | Minimal Redis resource requests for expendable rate-limit state. |
 | `redis.resources.limits.cpu` / `memory` | `100m` / `64Mi` | Redis resource limits. |
 | `redis.livenessProbe.*` | `5s` initial delay, `10s` period, `2s` timeout, `3` failures | `redis-cli ping` liveness settings. |

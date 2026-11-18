@@ -484,7 +484,7 @@ RENDERER
             2,
         )
 
-    def sharded(self, maestro):
+    def sharded(self, maestro, **environment):
         (self.state / "android-owned").touch()
         (self.state / "android-serial").write_text("emulator-5556\nemulator-5558\n")
         self.attached.touch()
@@ -493,7 +493,7 @@ RENDERER
         for name in ("config.yaml", "a-first.yaml", "b-second.yaml", "c-third.yaml"):
             (flows / name).write_text("appId: test\n")
         self.executable(self.tools / "maestro", maestro)
-        return self.run_script("run-maestro.sh", "android")
+        return self.run_script("run-maestro.sh", "android", **environment)
 
     def test_maestro_shards_flows_across_every_emulator(self):
         result = self.sharded('echo "maestro $*" >> "$EVENTS"\n')
@@ -511,10 +511,38 @@ RENDERER
             self.assertIn(f"adb -s {serial} shell dumpsys activity lastanr", events)
 
     def test_sharded_run_stops_when_an_emulator_dies(self):
-        result = self.sharded('rm -f "$ATTACHED"\nsleep 3\necho finished >> "$EVENTS"\n')
+        result = self.sharded(
+            'rm -f "$ATTACHED"\nsleep 5\necho finished >> "$EVENTS"\n',
+            BAUKIT_QA_DETACH_GRACE_SECONDS="1",
+        )
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertIn("died during the sharded run", result.stderr)
+        self.assertIn(
+            "died during the sharded run; adb has not listed it as a device for 1 s", result.stderr
+        )
         self.assertNotIn("finished", self.events.read_text())
+
+    def test_sharded_run_survives_a_detach_shorter_than_the_grace(self):
+        result = self.sharded(
+            'rm -f "$ATTACHED"\nsleep 1\ntouch "$ATTACHED"\nsleep 1\necho finished >> "$EVENTS"\n',
+            BAUKIT_QA_DETACH_GRACE_SECONDS="4",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("died", result.stderr)
+        self.assertIn("finished", self.events.read_text())
+
+    def test_detach_grace_must_be_a_non_negative_integer(self):
+        self.flows("a-first.yaml")
+        self.executable(self.tools / "maestro", 'echo maestro >> "$EVENTS"\n')
+        for value in ("-1", "1.5", "soon"):
+            with self.subTest(value=value):
+                result = self.run_script(
+                    "run-maestro.sh", "android", BAUKIT_QA_DETACH_GRACE_SECONDS=value
+                )
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertIn(
+                    "BAUKIT_QA_DETACH_GRACE_SECONDS must be a non-negative integer", result.stderr
+                )
+        self.assertFalse(self.events.exists() and "maestro" in self.events.read_text())
 
     def test_maestro_stops_when_the_emulator_dies_between_flows(self):
         self.owned()

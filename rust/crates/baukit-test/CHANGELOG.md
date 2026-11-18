@@ -4,6 +4,10 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-18
+
+- `KeycloakTestContainer` runs Keycloak 26.8.2 pinned by digest instead of 26.8.0. The PostgreSQL default moves from `18.6-alpine` to `18.7-alpine` and Redis from `8.10.2-alpine` to `8.10.3-alpine`, both pinned by digest.
+
 ## [0.28.0] - 2026-11-17
 
 - BREAKING: chrono is replaced by jiff 1.0. `PurgeHorizonAdapter::write_tombstone` and `purge_batch` take `jiff::Timestamp`, and the data-subject conformance clock uses `jiff`. See the type mapping in `cli/CHANGELOG.md`.

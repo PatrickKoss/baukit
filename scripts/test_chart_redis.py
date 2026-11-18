@@ -7,7 +7,8 @@ from pathlib import Path
 from process_runner import run_process
 
 CHART = Path(__file__).resolve().parent.parent / "deploy/chart/baukit-app"
-REDIS_IMAGE = "redis:8.10.2-alpine"
+REDIS_DIGEST = "sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3"
+REDIS_IMAGE = f"redis@{REDIS_DIGEST}"
 
 
 class RedisChartImageTest(unittest.TestCase):
@@ -31,9 +32,10 @@ class RedisChartImageTest(unittest.TestCase):
                     text=True,
                     check=True,
                 )
-                images = re.findall(r'image: ["\']?(redis:[^"\'\s]+)', result.stdout)
+                images = re.findall(r'image: ["\']?(redis[:@][^"\'\s]+)', result.stdout)
                 self.assertEqual(images, [REDIS_IMAGE] * expected_count)
-        self.assertIn("`redis` / `8.10.2-alpine`", (CHART / "README.md").read_text())
+        readme = (CHART / "README.md").read_text()
+        self.assertIn(f"`redis` / `8.10.3-alpine` / `{REDIS_DIGEST}`", readme)
 
 
 if __name__ == "__main__":

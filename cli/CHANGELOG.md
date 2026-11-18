@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-18
+
+- Generated MCP realms declare the `kc-admin-api` client scope. A realm import with its own `clientScopes` array otherwise drops that built-in scope from imported clients, and Keycloak 26.8.2 answers the backend's Admin REST API calls with 401.
+
 ## [0.28.0] - 2026-11-17
 
 - Generated `osv-scanner.toml` ignores GHSA-fc5q-39xc-vjpf (picomatch ReDoS) for web and mobile products until 2027-02-15. Every picomatch release through 4.0.7, the latest, is affected, and only build and test tooling reaches it. The ignore for GHSA-gcqx-w48m-w2h4 (deepmerge) is gone because GitHub withdrew the advisory.

@@ -35,7 +35,7 @@ Example invocation shape:
 ```sh
 BAUKIT_SMOKE_PRODUCT=my-product \
 BAUKIT_SMOKE_VALUES_FILE="$PWD/deploy/environments/local.yaml" \
-BAUKIT_SMOKE_IMAGES='my-product:smoke postgres:18.6-alpine' \
+BAUKIT_SMOKE_IMAGES='my-product:smoke postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015' \
 BAUKIT_SMOKE_DEPENDENCIES_FILE="$PWD/deploy/local/dependencies.yaml" \
 BAUKIT_SMOKE_DEPENDENCY_DEPLOYMENTS=postgres \
 BAUKIT_SMOKE_WORKER_ENABLED=true \

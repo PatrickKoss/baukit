@@ -21,6 +21,8 @@ Settings that matter:
   background, cleanup and reports controllers.
 - `PolicyException` objects are accepted only in the `kyverno` namespace, which tenants cannot write.
 - the admission webhook timeout is 5 seconds (`--webhookTimeout=5`).
+- the admission and reports controllers may open HTTPS connections to the internet. Both fetch
+  image signatures for `verify-baukit-images`, at admission and in background scans.
 - webhooks skip `kube-system`, `flux-system` and `kyverno`, so a broken policy cannot block the
   controllers that would repair it.
 

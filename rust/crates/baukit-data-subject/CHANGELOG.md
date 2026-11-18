@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-11-18
+
 ## [0.28.0] - 2026-11-17
 
 - BREAKING: chrono is replaced by jiff 1.0. `DataSubjectConfig::export_retention`, `operation_retention` and `identity_deletion_timeout` are `jiff::SignedDuration`. Operation and export `created_at` and `completed_at` are `jiff::Timestamp`, `retain_until` is `jiff::civil::Date`, and `purge_expired` takes a `jiff::Timestamp`. See the type mapping in `cli/CHANGELOG.md`.
