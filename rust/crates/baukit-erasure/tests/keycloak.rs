@@ -253,7 +253,7 @@ async fn deletes_user_treats_404_as_success_and_requires_manage_users() -> Resul
     reconcile_generated_realm(&client, &base, &token).await?;
     client.post(format!("{base}/admin/realms")).bearer_auth(&token)
         .json(&json!({"realm":"erasure", "enabled":true,
-            "clients":[{"clientId":"backend", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true}, {"clientId":"unprivileged", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true}],
+            "clients":[{"clientId":"backend", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true, "defaultClientScopes":["web-origins", "acr", "profile", "roles", "basic", "email", "kc-admin-api"]}, {"clientId":"unprivileged", "secret":"test-secret", "publicClient":false, "serviceAccountsEnabled":true, "defaultClientScopes":["web-origins", "acr", "profile", "roles", "basic", "email", "kc-admin-api"]}],
             "users":[{"username":"service-account-backend", "serviceAccountClientId":"backend", "enabled":true, "clientRoles":{"realm-management":["manage-users"]}}]
         })).send().await?.error_for_status()?;
     let subject = create_user(&client, &base, &token).await?;
