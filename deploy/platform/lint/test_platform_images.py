@@ -165,8 +165,8 @@ def allowance(ids, expires=datetime.date(2026, 11, 28), reason="bump pending in 
 
 
 class CompareTests(unittest.TestCase):
-    def compare(self, reported, allowed):
-        return platform_images.compare(reported, allowed, TODAY)
+    def compare(self, reported, allowed, known=None):
+        return platform_images.compare(reported, allowed, TODAY, known)
 
     def test_listed_findings_pass(self):
         self.assertEqual(self.compare({"img:1": {"CVE-1"}}, {"img:1": allowance(["CVE-1"])}), [])
@@ -185,6 +185,14 @@ class CompareTests(unittest.TestCase):
     def test_stale_id_fails_so_the_list_only_shrinks(self):
         problems = self.compare({"img:1": {"CVE-1"}}, {"img:1": allowance(["CVE-1", "CVE-2"])})
         self.assertEqual(problems, ["img:1: CVE-2 is no longer reported; remove it from the list"])
+
+    def test_listed_id_rescored_below_the_gate_is_not_stale(self):
+        problems = self.compare({}, {"img:1": allowance(["CVE-1"])}, {"img:1": {"CVE-1"}})
+        self.assertEqual(problems, [])
+
+    def test_listed_id_gone_at_every_severity_is_stale(self):
+        problems = self.compare({}, {"img:1": allowance(["CVE-1"])}, {"img:1": {"CVE-2"}})
+        self.assertEqual(problems, ["img:1: CVE-1 is no longer reported; remove it from the list"])
 
     def test_entry_for_an_image_that_is_gone_fails(self):
         problems = self.compare({}, {"img:1": allowance(["CVE-1"])})
@@ -263,7 +271,11 @@ case " $* " in
     exit 0 ;;
   *vulnerable*)
     printf '{"Results":[{"Target":"x","Vulnerabilities":'
-    printf '[{"VulnerabilityID":"CVE-2026-1","Status":"fixed"}]}]}'
+    printf '[{"VulnerabilityID":"CVE-2026-1","Status":"fixed","Severity":"HIGH"}]}]}'
+    exit 0 ;;
+  *rescored*)
+    printf '{"Results":[{"Target":"x","Vulnerabilities":'
+    printf '[{"VulnerabilityID":"CVE-2026-1","Status":"fixed","Severity":"MEDIUM"}]}]}'
     exit 0 ;;
   *broken*) exit 1 ;;
 esac
@@ -319,6 +331,22 @@ class MainTests(unittest.TestCase):
 
     def test_unlisted_image_finding_fails(self):
         self.assertEqual(self.run_main("ghcr.io/example/vulnerable:1.0"), 1)
+
+    def test_image_scans_read_every_severity(self):
+        self.run_main("ghcr.io/example/clean:1.0")
+        image_calls = [line for line in self.calls.read_text().splitlines() if "clean:1.0" in line]
+        self.assertEqual(len(image_calls), 1)
+        self.assertNotIn("--severity", image_calls[0])
+
+    def test_unlisted_finding_below_the_gate_passes(self):
+        self.assertEqual(self.run_main("ghcr.io/example/rescored:1.0"), 0)
+
+    def test_listed_finding_rescored_below_the_gate_passes(self):
+        self.allowlist.write_text(
+            '[images."ghcr.io/example/rescored:1.0"]\n'
+            'expires = 2026-11-28\nreason = "bump pending in SC2"\nids = ["CVE-2026-1"]\n'
+        )
+        self.assertEqual(self.run_main("ghcr.io/example/rescored:1.0"), 0)
 
     def test_listed_image_finding_passes(self):
         self.allowlist.write_text(

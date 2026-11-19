@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- `platform-images` scans images at every severity. Only HIGH and CRITICAL findings must be listed, and a listed ID counts as stale only when Trivy no longer reports it at any severity. Trivy's database moved CVE-2026-97054 from HIGH to MEDIUM and back to HIGH within a day, and each move failed hosted CI: first on 48 stale entries, then on 48 unlisted findings (run 44552590745). The 48 entries are back, expiring 2027-01-16, and a later rescore no longer breaks the step.
 ## [0.28.4] - 2026-11-19
 
 - `image-findings.toml` no longer allows CVE-2026-97054. Trivy's database now rates it MEDIUM (CVSS 5.9, as NVD and the CNA score it), below the HIGH and CRITICAL findings `platform-images` gates on, so the 48 entries became stale. The six images that had only this finding lose their entry again.
