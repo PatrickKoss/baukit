@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.3] - 2026-11-19
+
 {% if context.mobile %}- `run-maestro.sh` gives a run a longer stall window when one of its flows declares a longer wait. The new `mobile/scripts/qa/maestro-waits.py` reads the longest `timeout:` of any command in the flows, following `runFlow` files, and the window becomes that wait plus 60 s when that exceeds `BAUKIT_QA_MAESTRO_STALL_SECONDS`. The script prints the command that set it. Maestro prints nothing while a command waits, so an `extendedWaitUntil` with `timeout: 600000` that seeded 100,000 rows was stopped after 300 s as `the sharded run made no progress`. A `timeout:` that is not whole milliseconds, or a `runFlow` file that is missing or named by a variable, now fails the run with exit 2 before Maestro starts. Copy both files from the template.
 
 {% endif %}{% if context.mobile %}- `mobile/scripts/qa/android-adb.py` waits `BAUKIT_QA_POLL_SECONDS` between probes in `--wait-for-boot` and `--wait-for-stop` too. Both slept a fixed 2 s, so a run that set a shorter interval still waited 2 s per probe there. `mobile/scripts/qa/test_android.py` pins both waits. Copy both files from the template.
