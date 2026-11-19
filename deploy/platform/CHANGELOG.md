@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `image-findings.toml` no longer allows CVE-2026-97054. Trivy's database now rates it MEDIUM (CVSS 5.9, as NVD and the CNA score it), below the HIGH and CRITICAL findings `platform-images` gates on, so the 48 entries became stale. The six images that had only this finding lose their entry again.
+
 ## [0.28.3] - 2026-11-19
 
 - `platform-images` downloads trivy's vulnerability and Java databases and the checks bundle into each run's work directory, as a fresh CI runner does, and shares only the layer cache in `~/.cache/baukit/trivy/fanal`. trivy skips a download until the cached database's NextUpdate, a day for the vulnerability DB and three for the Java DB, so the local step passed on a DB from 2026-11-17 19:04 while CI's DB from 2026-11-18 13:03 reported CVE-2026-64544 and CVE-2026-64549 in the PostHog image. A local run now downloads about 1.6 GB more, roughly two minutes. The old `db` and `java-db` directories in the shared cache are no longer read and can be deleted.
