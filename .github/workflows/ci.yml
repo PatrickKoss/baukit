@@ -15,6 +15,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   MISE_HTTP_TIMEOUT: 120s
+  MISE_FETCH_REMOTE_VERSIONS_TIMEOUT: 60s
 
 jobs:
   native-changes:
