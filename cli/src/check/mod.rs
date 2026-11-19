@@ -7,6 +7,7 @@ mod bulk_ruff;
 mod comments;
 mod config;
 mod file_size;
+mod fuzz_lockfile;
 mod hash_comments;
 mod lints;
 mod markup_comments;
@@ -115,6 +116,7 @@ fn all_rules() -> Vec<Box<dyn Rule>> {
         Box::new(agent_docs::AgentDocs),
         Box::new(observability::Observability),
         Box::new(template_files::TemplateFiles),
+        Box::new(fuzz_lockfile::FuzzLockfile),
     ]
 }
 

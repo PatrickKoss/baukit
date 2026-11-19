@@ -227,6 +227,26 @@ class WorkerTests(unittest.TestCase):
             self.assertEqual(gate.total_memory_mb(meminfo), 46080)
 
 
+    def test_worker_caps_clamp_their_variables(self):
+        environment = {}
+        gate.worker_environment(environment, 9, {"E2E_WORKERS": 4, "CARGO_BUILD_JOBS": 12})
+        self.assertEqual(environment["E2E_WORKERS"], "4")
+        self.assertEqual(environment["CARGO_BUILD_JOBS"], "9")
+        self.assertEqual(environment["VITEST_MAX_WORKERS"], "9")
+        gate.worker_environment(environment, 0, {"E2E_WORKERS": 4})
+        self.assertEqual(environment["E2E_WORKERS"], "1")
+
+    def test_worker_caps_reject_unknown_names_and_non_positive_values(self):
+        def error(caps):
+            return gate.worker_caps_error({"gate": {"worker-caps": caps}})
+
+        self.assertIsNone(error({"E2E_WORKERS": 4}))
+        self.assertIn("unknown variable PLAYWRIGHT", error({"PLAYWRIGHT": 4}))
+        for value in (0, -1, "4", True):
+            with self.subTest(value=value):
+                self.assertIn("must be a positive integer", error({"E2E_WORKERS": value}))
+
+
 class BudgetTests(unittest.TestCase):
     def test_within_budget(self):
         report = gate.budget_report(
@@ -634,6 +654,26 @@ class RunnerTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2)
         self.assertIn("quality.waits_for.b names unknown lanes or steps: nope", result.stderr)
+        self.assertEqual(ran, [])
+
+    def test_worker_caps_reach_every_step(self):
+        body = 'echo "env $2 $E2E_WORKERS" >> "$(dirname "$0")/ran"\n'
+        result, ran, _, _ = self.run_gate(
+            ["a fast - always -", "b web - selected -"],
+            [],
+            settings_text="[gate.worker-caps]\nE2E_WORKERS = 1\n",
+            script_body=body,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("env a 1", ran)
+        self.assertIn("env b 1", ran)
+
+    def test_unknown_worker_cap_fails(self):
+        result, ran, _, _ = self.run_gate(
+            ["a fast - always -"], [], settings_text="[gate.worker-caps]\nNOPE = 2\n"
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("gate.worker-caps names unknown variable NOPE", result.stderr)
         self.assertEqual(ran, [])
 
     def test_unknown_light_names_fail(self):
