@@ -1806,3 +1806,33 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   `MISE_FETCH_REMOTE_VERSIONS_TIMEOUT: 60s` (6dd99252, hosted CI green, run 44490409046). No Android
   build ran on main since the Gradle cache change, so its first save is still to be seen.
 - Still open: RF25 (Hetzner, by choice). Follow-ups are in the final report.
+
+### 2026-11-19 16:30
+
+- Released v0.28.4 (bd374719, tag pushed, npm and crates.io published). It carries the adb
+  transport wait, `[gate.worker-caps]`, the `fuzz-lockfile` check, chart `repository:tag@digest`,
+  `signInWithKeycloak` in auth-node, `adoptEntitlement` in purchases-core, and an auth-web `logout`
+  that forces a fresh login and can stay on the page (`endIdpSession: false`). The release gate's
+  android lane failed on a systemui ANR during boot at high load and passed on the affected re-gate.
+  Hosted CI failed once on Maven Central 429s in Expo SQLite conformance and passed on rerun.
+- Maestro's "requested, but it is not connected" is upstream issue mobile-dev-inc/Maestro#3706
+  (open, with a repro, fix pending in dadb). No duplicate was filed; the template's adb wait covers
+  it.
+- Products merged on 0.28.4 after a green local gate: hebkit db43429e (worker cap `E2E_WORKERS = 4`,
+  clamps removed, real-time chat tests on a manual clock), eigenruhe 3119da02, kassensturz 9660eb8b,
+  laufbefund 521aea3c (from 0.28.2), tiefgang 56eebc7. All five stop committing
+  `backend/fuzz/Cargo.lock`. lesezeichen needed no change.
+- tiefgang's account switch calls `logout({ endIdpSession: false })` and starts a new authorize with
+  `prompt=login`. The e2e spec checks that no end-session request goes out and that Keycloak shows an
+  empty, editable username field with no `#kc-attempted-username`, so the old user is not
+  pre-selected. baukit-auth needs no end-session return path for this. tiefgang also reads `/me`
+  once per cold load through `ConfirmedProfileProvider`; the exact call count was not re-measured.
+- eigenruhe's web lanes failed with "Executable doesn't exist": `playwright install` in any project
+  removes browsers from the shared `~/.cache/ms-playwright` that no installed project still links,
+  and eigenruhe's `e2e/` package relied on a browser some earlier run had left there. Its
+  `e2e-install` step now installs chromium and webkit (fcdeaed0). The other products install before
+  use already.
+- Still on 0.28.2 or 0.28.3: bauvisite, heldengang, leitbild, lesezeichen, redemut, schluesselbund
+  (schlauzug moves on its own branch). They keep the now unused GHSA-fc5q-39xc-vjpf ignore until
+  they take the 0.28.4 template. laufbefund keeps its RUSTSEC-2026-0543 entry, which has no fix.
+- Still open: RF25 (Hetzner, by choice).
