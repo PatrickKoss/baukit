@@ -185,6 +185,7 @@ async function approveInBrowser(page, verificationUriComplete) {
       realm: REALM,
       webClientId: CLIENT_ID,
     }),
+    { theme: 'keycloak' },
   );
   await page.waitForLoadState('networkidle');
   const consent = page.getByRole('button', { name: 'Yes' });
@@ -225,6 +226,7 @@ async function checkLoginForms(page, baseUrl) {
       page,
       { username: USERNAME, password: PASSWORD },
       keycloakStack({ url: baseUrl, realm: REALM, webClientId: CLIENT_ID }),
+      { theme: 'keycloak' },
     );
     await page.waitForURL((url) => url.origin === baseUrl && url.pathname === '/callback');
     assert(page.url().includes('code='), 'Login did not return an authorization code.');

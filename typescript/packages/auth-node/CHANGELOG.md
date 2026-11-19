@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Minor Changes
+
+- `signInWithKeycloak` now waits for `#kc-form-login[data-baukit-accessibility-initialized]` and a focused `autofocus` input before it types, then checks that the username and password fields kept their values. Before, the `baukit-accessible` theme script could re-render the fields after the helper typed, and the typed text got lost. A password-only reauthentication form must show the user in `#kc-attempted-username`. Pass `theme: 'keycloak'` for a realm on a stock login theme. Structural page locators now need `count` and `inputValue`; `isVisible` is no longer used.
+
 ## 0.28.3
 
 ### Patch Changes

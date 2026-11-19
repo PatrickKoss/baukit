@@ -46,20 +46,32 @@ export interface KeycloakRequestOptions {
   readonly timeoutMs?: number;
 }
 
+/** The part of a Playwright `Locator` that {@link signInWithKeycloak} uses. */
+export interface KeycloakLoginLocator {
+  waitFor(options: { state: 'visible'; timeout?: number }): Promise<unknown>;
+  count(): Promise<number>;
+  fill(value: string): Promise<unknown>;
+  inputValue(): Promise<string>;
+  click(): Promise<unknown>;
+}
+
 /** The part of a Playwright `Page` that {@link signInWithKeycloak} uses. */
 export interface KeycloakLoginPage {
   waitForURL(url: (url: URL) => boolean, options?: { timeout?: number }): Promise<unknown>;
-  locator(selector: string): {
-    waitFor(options: { state: 'visible'; timeout?: number }): Promise<unknown>;
-    isVisible(): Promise<boolean>;
-    fill(value: string): Promise<unknown>;
-    click(): Promise<unknown>;
-  };
+  locator(selector: string): KeycloakLoginLocator;
 }
+
+/**
+ * `baukit-accessible` waits until the theme's accessibility script has set up the form.
+ * `keycloak` is for a realm on a stock Keycloak login theme, which has no such script.
+ */
+export type KeycloakLoginTheme = 'baukit-accessible' | 'keycloak';
 
 export interface KeycloakSignInOptions {
   /** How long to wait for the login page. Defaults to the page's own timeout. */
   readonly timeoutMs?: number;
+  /** Defaults to `baukit-accessible`, the theme (or parent theme) of every generated realm. */
+  readonly theme?: KeycloakLoginTheme;
 }
 
 export const DEFAULT_KEYCLOAK_REQUEST_TIMEOUT_MS = 30_000;
@@ -219,6 +231,11 @@ export async function allowKeycloakWebOrigin(
   }
 }
 
+const LOGIN_FORM_SELECTORS: Readonly<Record<KeycloakLoginTheme, string>> = {
+  'baukit-accessible': '#kc-form-login[data-baukit-accessibility-initialized]',
+  keycloak: '#kc-form-login',
+};
+
 /** Submits the Keycloak login or password-only reauthentication form. */
 export async function signInWithKeycloak(
   loginPage: KeycloakLoginPage,
@@ -228,20 +245,40 @@ export async function signInWithKeycloak(
 ): Promise<void> {
   const origin = new URL(stack.url).origin;
   const isKeycloak = (url: URL): boolean => url.origin === origin;
-  await (options.timeoutMs === undefined
-    ? loginPage.waitForURL(isKeycloak)
-    : loginPage.waitForURL(isKeycloak, { timeout: options.timeoutMs }));
-  const password = loginPage.locator('#password');
-  await password.waitFor({
-    state: 'visible',
-    ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
-  });
-  const username = loginPage.locator('#username');
-  if (await username.isVisible()) {
-    await username.fill(user.username);
+  const timeout = options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs };
+  await loginPage.waitForURL(isKeycloak, timeout);
+  const form = LOGIN_FORM_SELECTORS[options.theme ?? 'baukit-accessible'];
+  await loginPage.locator(form).waitFor({ state: 'visible', ...timeout });
+  await loginPage
+    .locator(`${form} input[autofocus]:focus`)
+    .waitFor({ state: 'visible', ...timeout });
+  const username = loginPage.locator(`${form} #username`);
+  if ((await username.count()) === 0) {
+    await expectValue(loginPage.locator('#kc-attempted-username'), user.username, 'username');
+  } else {
+    await fillAndCheck(username, user.username, 'username');
   }
-  await password.fill(user.password);
-  await loginPage.locator('#kc-login').click();
+  await fillAndCheck(loginPage.locator(`${form} #password`), user.password, 'password');
+  await loginPage.locator(`${form} #kc-login`).click();
+}
+
+async function fillAndCheck(
+  field: KeycloakLoginLocator,
+  value: string,
+  name: string,
+): Promise<void> {
+  await field.fill(value);
+  await expectValue(field, value, name);
+}
+
+async function expectValue(
+  field: KeycloakLoginLocator,
+  value: string,
+  name: string,
+): Promise<void> {
+  if ((await field.inputValue()) !== value) {
+    throw new Error(`The Keycloak ${name} field does not hold the expected value.`);
+  }
 }
 
 interface AdminRequest {
