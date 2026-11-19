@@ -1835,4 +1835,9 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
 - Still on 0.28.2 or 0.28.3: bauvisite, heldengang, leitbild, lesezeichen, redemut, schluesselbund
   (schlauzug moves on its own branch). They keep the now unused GHSA-fc5q-39xc-vjpf ignore until
   they take the 0.28.4 template. laufbefund keeps its RUSTSEC-2026-0543 entry, which has no fix.
+- Hosted CI on the log merge (3213d30d, run 44552590745) failed platform-images: Trivy's database
+  had moved CVE-2026-97054 back to HIGH, the second flip in a day. `platform_images.py` now scans
+  every severity, requires a listing only for HIGH and CRITICAL, and treats a listed ID as stale
+  only when Trivy reports it at no severity. The 48 entries are back until 2027-01-16 (974d4081,
+  hosted CI green, run 44573748093).
 - Still open: RF25 (Hetzner, by choice).
