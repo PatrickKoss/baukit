@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Minor Changes
+
+- Add `PurchaseFlow.adoptEntitlement(body)`. A product that already read `GET /me/entitlement` before `identify` hands that body to the flow instead of calling `refreshEntitlement()`, so a cold load makes one request instead of two. The flow parses the body, refuses another subject, keeps the highest revision, and ignores calls after `dispose()`.
+
 ## 0.28.3
 
 ### Patch Changes
