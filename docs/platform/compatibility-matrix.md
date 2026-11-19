@@ -13,6 +13,7 @@ Last verified release train: `v0.28.4` (patch train on top of `v0.28.3`). No com
 - The `baukit-app` chart renders `repository:tag@digest` when both are set.
 - `signInWithKeycloak` waits for the initialized login form and checks the typed values; `PurchaseFlow.adoptEntitlement` takes an entitlement the product already read.
 - `image-findings.toml` drops CVE-2026-97054 again after Trivy rescored it MEDIUM, and the withdrawn picomatch advisory GHSA-fc5q-39xc-vjpf leaves the osv ignores.
+- `@baukit/auth-web` `logout()` forces `prompt=login` on the next sign-in, and `logout({ endIdpSession: false })` lets `switchSuiteAccount` sign out without a race against the IdP end-session navigation.
 
 ## v0.28.3
 
