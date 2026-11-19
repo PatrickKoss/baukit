@@ -3,6 +3,7 @@ import type {
   EntitlementBackend,
   VerifiedEntitlement,
 } from './entitlement.js';
+import { parseEntitlement } from './entitlement-parse.js';
 import { isPurchaseError, PurchaseError } from './errors.js';
 import type { PurchaseOfferings, PurchasePackage, PurchasesPort } from './port.js';
 
@@ -80,6 +81,7 @@ export class PurchaseFlow {
   #state: PurchaseState = SIGNED_OUT;
   #generation = 0;
   #busy = false;
+  #disposed = false;
 
   constructor(options: PurchaseFlowOptions) {
     this.#port = options.port;
@@ -138,6 +140,23 @@ export class PurchaseFlow {
     return this.#state.entitlement;
   }
 
+  /**
+   * Accepts an entitlement the product already read from `GET /me/entitlement` for the
+   * identified subject, so the flow skips its own first read. A lower revision than the one
+   * held is ignored. Throws `TypeError` for a malformed body, `not_identified` before
+   * `identify` resolves, and `subject_mismatch` for another subject. Does nothing after
+   * `dispose`.
+   */
+  adoptEntitlement(entitlement: unknown): VerifiedEntitlement | null {
+    if (this.#disposed) return this.#state.entitlement;
+    const verified = parseEntitlement(entitlement);
+    this.#accept(this.#identity(), verified, 'entitlement');
+    if (this.#state.entitlementStatus !== 'ready') {
+      this.#setState({ ...this.#state, entitlementStatus: 'ready' });
+    }
+    return this.#state.entitlement;
+  }
+
   async refreshCreditBalance(): Promise<CreditBalanceSnapshot | null> {
     const identity = this.#identity();
     const read = this.#backend.creditBalance?.bind(this.#backend);
@@ -184,6 +203,7 @@ export class PurchaseFlow {
   }
 
   dispose(): void {
+    this.#disposed = true;
     this.#stopCustomerUpdates();
     this.#listeners.clear();
   }

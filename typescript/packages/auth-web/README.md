@@ -21,11 +21,15 @@ await auth.restore(); // on load: one refresh when this browser signed in before
 const accessToken = await auth.getAccessToken(); // send as `Authorization: Bearer`
 ```
 
-| Call                            | Request                                                                  | What the client does                                                                                                                                                        |
-| ------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `handleCallback()`              | `POST /auth/session/exchange` with `{ code, codeVerifier, redirectUri }` | Checks state and issuer, strips the callback parameters, stores the token in memory and the account hint. Repeated calls share one promise.                                 |
-| `getAccessToken()`, `restore()` | `POST /auth/session/refresh`                                             | Returns the memory token until `expiresAt - min(refreshLeewaySeconds, lifetime / 2)`, then refreshes. `{ forceRefresh: true }` refreshes now, for example after an API 401. |
-| `logout()`                      | `POST /auth/session/logout`                                              | Signs out every tab first, then navigates to the `endSessionUrl` the backend returns (http or https only). Resolves `false` on `204`.                                       |
+| Call                            | Request                                                                  | What the client does                                                                                                                                                                                                          |
+| ------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `handleCallback()`              | `POST /auth/session/exchange` with `{ code, codeVerifier, redirectUri }` | Checks state and issuer, strips the callback parameters, stores the token in memory and the account hint. Repeated calls share one promise.                                                                                   |
+| `getAccessToken()`, `restore()` | `POST /auth/session/refresh`                                             | Returns the memory token until `expiresAt - min(refreshLeewaySeconds, lifetime / 2)`, then refreshes. `{ forceRefresh: true }` refreshes now, for example after an API 401.                                                   |
+| `logout(options?)`              | `POST /auth/session/logout`                                              | Signs out every tab, marks the next `login()` as `prompt=login`, then navigates to the `endSessionUrl` the backend returns (http or https only). `{ endIdpSession: false }` skips that navigation. Resolves `false` on `204`. |
+
+After a default `logout()` that resolves `true` the page is leaving for the IdP, so do not call
+`login()` or navigate. To switch accounts, call `logout({ endIdpSession: false })` and then
+`login()`; the forced `prompt=login` keeps the IdP from signing the old user back in.
 
 Session calls are the only calls with `credentials: 'include'`. Each sends `X-Baukit-Session: 1`
 (`BROWSER_SESSION_HEADER`) and `cache: 'no-store'`. API calls should keep the default

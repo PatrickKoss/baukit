@@ -17,6 +17,7 @@ mod doctor_screens;
 #[cfg(test)]
 mod doctor_tests;
 mod gate_settings;
+mod gate_worker_caps;
 mod generate;
 mod identity;
 mod manifest;

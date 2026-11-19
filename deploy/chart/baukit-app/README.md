@@ -10,7 +10,7 @@ The migration hook only starts the migrate process. Advisory locking, lock timeo
 # Chart.yaml in a product repository
 dependencies:
   - name: baukit-app
-    version: 0.28.3
+    version: 0.28.4
     repository: oci://ghcr.io/patrickkoss/charts
     alias: application
 ```
@@ -23,7 +23,7 @@ helm template minimal-api . -f ../examples/minimal-api-values.yaml
 
 ## Images
 
-Every image needs `image.tag` or `image.digest`. The chart has no default tag, and `latest` fails both the schema and the render. With `digest` set (`sha256:` plus 64 hex characters) the chart renders `repository@digest` and ignores `tag`. Generated products write the placeholder tag `0.0.0-unset`; the release pipeline replaces it with the built tag or sets the digest, for example `--set api.image.tag=$GIT_SHA`.
+Every image needs `image.tag` or `image.digest`. The chart has no default tag, and `latest` fails both the schema and the render. With `digest` set (`sha256:` plus 64 hex characters) the chart renders `repository:tag@digest`, or `repository@digest` without a tag. The runtime pulls by the digest; the tag keeps the reference readable. Generated products write the placeholder tag `0.0.0-unset`; the release pipeline replaces it with the built tag or sets the digest, for example `--set api.image.tag=$GIT_SHA`.
 
 `values.schema.json` describes every value. Unknown keys fail `helm lint`, `helm template` and `helm install`.
 
@@ -186,7 +186,7 @@ Migration uses `helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded`
 |---|---:|---|
 | `redis.enabled` | `false` | Create non-persistent Redis for expendable product state. |
 | `redis.replicas` | `1` | `1` creates a Deployment; odd values `>= 3` create Redis + Sentinel pods in a StatefulSet. `2` and even values fail rendering. |
-| `redis.image.repository` / `tag` / `digest` / `pullPolicy` | `redis` / `8.10.3-alpine` / `sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3` / `IfNotPresent` | Redis image settings; the default pins an exact Redis 8 Alpine patch release by digest, and the rendered image uses the digest. |
+| `redis.image.repository` / `tag` / `digest` / `pullPolicy` | `redis` / `8.10.3-alpine` / `sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3` / `IfNotPresent` | Redis image settings; the default pins an exact Redis 8 Alpine patch release by digest, and the rendered image is `redis:8.10.3-alpine@<digest>`. |
 | `redis.resources.requests.cpu` / `memory` | `10m` / `16Mi` | Minimal Redis resource requests for expendable rate-limit state. |
 | `redis.resources.limits.cpu` / `memory` | `100m` / `64Mi` | Redis resource limits. |
 | `redis.livenessProbe.*` | `5s` initial delay, `10s` period, `2s` timeout, `3` failures | `redis-cli ping` liveness settings. |

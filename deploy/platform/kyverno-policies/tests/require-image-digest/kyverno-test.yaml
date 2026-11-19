@@ -12,7 +12,7 @@ results:
   - isValidatingPolicy: true
     policy: require-image-digest
     kind: Pod
-    resources: [digest]
+    resources: [digest, tag-and-digest]
     result: pass
   - isValidatingPolicy: true
     policy: require-image-digest

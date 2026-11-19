@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.28.4] - 2026-11-19
+
+- `baukit-app.image` renders `repository:tag@digest` when an image sets both `tag` and `digest`. It rendered `repository@digest` and dropped the tag, unlike the platform's own pins. The runtime still pulls by the digest. Without a tag the reference stays `repository@digest`, and without a digest `repository:tag`.
+
 ## [0.28.3] - 2026-11-19
 
 ## [0.28.2] - 2026-11-18

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## 0.28.4
+
+### Patch Changes
+
+- `switchSuiteAccount` documents that `logout` must stay on the page and force re-authentication, for example `BrowserSessionClient.logout({ endIdpSession: false })`.
+- Release the coordinated baukit 0.28.4 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.28.4
+  - @baukit/localization-core@0.28.4
+  - @baukit/type-guards@0.28.4
+
 ## 0.28.3
 
 ### Patch Changes

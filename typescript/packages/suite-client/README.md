@@ -49,7 +49,10 @@ notice by request id. The session redeems the code once even if both paths fire.
 Use `parseSuiteAuthorizeQuery` before constructing `SuiteAuthorizeMachine`.
 Its states cover login, consent, auto-approval, account hint mismatch, denial,
 framed-page refusal and native consent that must open the web page. Render those
-states in the product UI. `switchSuiteAccount` logs out before starting login.
+states in the product UI. `switchSuiteAccount` logs out before starting login. The `logout` you pass must sign out
+without leaving the page and make the next login force re-authentication. With
+`@baukit/auth-web` pass `() => client.logout({ endIdpSession: false }).then(() => undefined)`;
+the default `logout()` navigates to the IdP and cancels or loses the login that follows.
 
 `SuiteLinkedMachine` keeps the callback URL in memory and asks the product to scrub
 codes from history. Wait for identity restoration, then call `restore`. Completion
@@ -81,7 +84,11 @@ const peer = {
 };
 validateSuiteAuthorizePeer(peer);
 const url = suiteAuthorizeUrl(peer, {
-  client: 'alpha', state, codeChallenge, hint, hintDomain,
+  client: 'alpha',
+  state,
+  codeChallenge,
+  hint,
+  hintDomain,
 });
 ```
 

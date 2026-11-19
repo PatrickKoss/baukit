@@ -24,8 +24,3 @@ reason = "No fix available: astral-tokio-tar is unmaintained with no patched rel
 id = "RUSTSEC-2026-0543"
 ignoreUntil = 2027-02-15
 reason = "No fix available: chrono is unmaintained (RustSec informational, all versions); reached only through rmcp 3.9.0 (schemars chrono04) in baukit-mcp. Baukit itself uses jiff."
-
-[[IgnoredVulns]]
-id = "GHSA-fc5q-39xc-vjpf"
-ignoreUntil = 2027-02-15
-reason = "No fix available: every picomatch release through 4.0.7 (the latest) is affected. Reached only through build and test tooling (vite, vitest, tinyglobby, jest, micromatch, anymatch, metro, @expo/cli, changesets) in typescript/ and both expo examples; glob patterns come from repo config, not user input."

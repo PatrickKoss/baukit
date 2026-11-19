@@ -139,7 +139,12 @@ export function suiteAuthorizationReturnPath(
   if (input.hintDomain !== undefined) query.set('hint_domain', input.hintDomain);
   return `/suite/authorize?${query.toString()}`;
 }
-/** Logout must finish before login starts, so auto-approval cannot use the old session. */
+/**
+ * Logout must finish before login starts, so auto-approval cannot use the old session.
+ * `logout` must sign out without leaving the page and make the next login force
+ * re-authentication. With `@baukit/auth-web` that is
+ * `BrowserSessionClient.logout({ endIdpSession: false })`.
+ */
 export async function switchSuiteAccount(
   input: AuthorizationInput & { readonly hintDomain?: string },
   auth: {

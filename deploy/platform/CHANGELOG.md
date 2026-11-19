@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.4] - 2026-11-19
+
 - `image-findings.toml` no longer allows CVE-2026-97054. Trivy's database now rates it MEDIUM (CVSS 5.9, as NVD and the CNA score it), below the HIGH and CRITICAL findings `platform-images` gates on, so the 48 entries became stale. The six images that had only this finding lose their entry again.
 
 ## [0.28.3] - 2026-11-19

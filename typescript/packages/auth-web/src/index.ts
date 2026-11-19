@@ -30,6 +30,7 @@ export { OidcError, safeAuthErrorMessage, type OidcErrorCode } from './oidc-erro
 export { buildAuthorizationUrl, normalizeIssuer } from './oidc-helpers.js';
 export type {
   ClearSessionOptions,
+  LogoutOptions,
   SessionExpiredEvent,
   SessionExpiredListener,
   SessionExpiredReason,
