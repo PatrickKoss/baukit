@@ -36,6 +36,7 @@ JINJA_STATEMENT = re.compile(r"\{%-?.*?-?%\}", re.DOTALL)
 JINJA_EXPRESSION = re.compile(r"\{\{-?.*?-?\}\}", re.DOTALL)
 JINJA_PLACEHOLDER = "placeholder"
 SEVERITIES = "HIGH,CRITICAL"
+GATED_SEVERITIES = frozenset(SEVERITIES.split(","))
 SCAN_TIMEOUT = "20m"
 RAW_ROOTS = ("deploy/platform",)
 DOCKERFILE_ROOTS = ("deploy", "templates", "examples")
@@ -167,16 +168,24 @@ def allowance_problems(key: str, allowance: Allowance, today: datetime.date) -> 
 
 
 def compare(
-    reported: dict[str, set[str]], allowed: dict[str, Allowance], today: datetime.date
+    reported: dict[str, set[str]],
+    allowed: dict[str, Allowance],
+    today: datetime.date,
+    known: dict[str, set[str]] | None = None,
 ) -> list[str]:
-    """Fail on unlisted findings, stale listed IDs and listed targets that are gone."""
+    """Fail on unlisted findings, stale listed IDs and listed targets that are gone.
+
+    `reported` holds the findings that gate; `known` holds every finding at any severity. A listed
+    ID is stale only when it is gone from `known`, so a rescore across the gate does not flip it.
+    """
+    known = reported if known is None else known
     problems = []
     for key, allowance in sorted(allowed.items()):
         problems.extend(allowance_problems(key, allowance, today))
-        if key not in reported:
+        if key not in known:
             problems.append(f"{key}: no findings left; remove the entry")
             continue
-        for stale in sorted(allowance.ids - reported[key]):
+        for stale in sorted(allowance.ids - known[key]):
             problems.append(f"{key}: {stale} is no longer reported; remove it from the list")
     for key, found in sorted(reported.items()):
         listed = allowed[key].ids if key in allowed else frozenset()
@@ -254,6 +263,19 @@ def report_ids(report: dict, field: str, id_key: str) -> dict[str, set[str]]:
     return found
 
 
+def vulnerability_ids(report: dict) -> tuple[set[str], set[str]]:
+    """Vulnerability IDs at a gated severity, and at any severity."""
+    gated: set[str] = set()
+    known: set[str] = set()
+    for result in report.get("Results") or []:
+        for item in result.get("Vulnerabilities") or []:
+            identifier = str(item["VulnerabilityID"])
+            known.add(identifier)
+            if item.get("Severity") in GATED_SEVERITIES:
+                gated.add(identifier)
+    return gated, known
+
+
 def run_cache(layers: Path, work: Path) -> Path:
     """A cache dir with this run's own databases and checks, like a fresh CI runner.
 
@@ -271,24 +293,24 @@ def run_cache(layers: Path, work: Path) -> Path:
 
 def scan_images(
     images: Sequence[str], cache: Path, run: Runner, config: Path | None = None
-) -> dict[str, set[str]]:
+) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """Per image, the gated finding IDs and the IDs at any severity."""
     common = ["--cache-dir", str(cache), "--quiet"]
     if config is not None:
         common += ["--config", str(config)]
     for database in ("--download-db-only", "--download-java-db-only"):
         if run(["trivy", "image", *common, database])[0] != 0:
             raise ScanError(f"trivy {database} failed")
-    reported = {}
+    gated, known = {}, {}
     for image in images:
         command = [
             "trivy", "image", *common,
             "--skip-db-update", "--skip-java-db-update",
             "--scanners", "vuln", "--timeout", SCAN_TIMEOUT,
-            "--severity", SEVERITIES, "--ignore-unfixed", "--format", "json", image,
+            "--ignore-unfixed", "--format", "json", image,
         ]  # fmt: skip
-        per_target = report_ids(trivy_json(command, run), "Vulnerabilities", "VulnerabilityID")
-        reported[image] = set().union(*per_target.values()) if per_target else set()
-    return reported
+        gated[image], known[image] = vulnerability_ids(trivy_json(command, run))
+    return gated, known
 
 
 def scan_dockerfiles(
@@ -337,14 +359,16 @@ def main(argv: list[str] | None = None, run: Runner = run_command) -> int:
             raise ScanError(f"no container images found under {args.rendered}")
         print(f"==> {len(images)} images", flush=True)
         cache = run_cache(args.cache, args.work)
-        image_findings = scan_images(images, cache, run, args.trivy_config)
+        image_findings, image_known = scan_images(images, cache, run, args.trivy_config)
         stage = args.work / "dockerfiles"
         staged = stage_dockerfiles(tracked_dockerfiles(args.repo_root), args.repo_root, stage)
         dockerfile_findings = scan_dockerfiles(staged, stage, cache, run)
     except (ScanError, helm_yaml.YamlError, OSError, tomllib.TOMLDecodeError) as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
-    problems = compare(drop_clean(image_findings), allowlist["images"], args.today)
+    problems = compare(
+        drop_clean(image_findings), allowlist["images"], args.today, drop_clean(image_known)
+    )
     problems += compare(drop_clean(dockerfile_findings), allowlist["dockerfiles"], args.today)
     for problem in problems:
         print(f"ERROR: {args.allowlist.name}: {problem}", file=sys.stderr)
