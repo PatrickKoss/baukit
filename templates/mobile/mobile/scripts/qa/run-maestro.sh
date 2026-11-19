@@ -51,6 +51,7 @@ stall_seconds="${BAUKIT_QA_MAESTRO_STALL_SECONDS:-300}"
 # between two Maestro log lines at host load 15 to 30 was 7 s.
 declared_wait_margin_seconds=60
 detach_grace_seconds="${BAUKIT_QA_DETACH_GRACE_SECONDS:-30}"
+foreign_unready_status=3
 [[ "$detach_grace_seconds" =~ ^[0-9]+$ ]] || {
   echo "qa: BAUKIT_QA_DETACH_GRACE_SECONDS must be a non-negative integer" >&2
   exit 2
@@ -155,13 +156,30 @@ all_attached() {
   done
 }
 
+await_maestro_devices() {
+  local label="$1" status=0
+  shift
+  [[ "$platform" == android ]] || return 0
+  python3 "$mobile_dir/scripts/qa/android-adb.py" --await-devices "$adb" "$detach_grace_seconds" "$@" ||
+    status=$?
+  ((status != 0)) || return 0
+  if ((status == foreign_unready_status)); then
+    echo "qa: $label did not start; adb is not ready for Maestro" >&2
+  else
+    echo "qa: emulator $(IFS=,; printf '%s' "$*") died before $label" >&2
+  fi
+  return 1
+}
+
+report_unready_devices() {
+  [[ "$platform" == android ]] || return 0
+  python3 "$mobile_dir/scripts/qa/android-adb.py" --report-unready "$adb" "$@"
+}
+
 prepare_flow_device() {
   local device="$1" flow="$2"
   [[ "$platform" == android ]] || return 0
-  if ! python3 "$mobile_dir/scripts/qa/android-adb.py" --attached "$adb" "$device"; then
-    echo "qa: emulator $device died before $flow" >&2
-    return 1
-  fi
+  await_maestro_devices "$flow" "$device" || return 1
   bash "$mobile_dir/scripts/qa/android-env.sh" reverse "$device"
 }
 
@@ -196,9 +214,12 @@ stop_maestro() {
 }
 
 run_maestro() {
-  local label="$1" check="$2" window="$3" last="" now since=$SECONDS started=$SECONDS pid
-  shift 3
+  local label="$1" check="$2" window="$3" last="" now since=$SECONDS started=$SECONDS pid status=0
+  local -a targets
+  IFS=, read -ra targets <<<"$4"
+  shift 4
   : > "$maestro_log"
+  await_maestro_devices "$label" "${targets[@]}" || return 1
   set -m
   "$maestro_bin" "$@" > >(tee -a "$maestro_log") 2>&1 &
   pid=$!
@@ -224,7 +245,9 @@ run_maestro() {
     fi
     sleep "${BAUKIT_QA_POLL_SECONDS:-5}"
   done
-  wait "$pid"
+  wait "$pid" || status=$?
+  ((status == 0)) || report_unready_devices "${targets[@]}"
+  return "$status"
 }
 
 count() { echo "$#"; }
@@ -237,7 +260,7 @@ run_declared_shard() {
   window="$(stall_window "${qa_maestro_shards[index]}" "${qa_maestro_shards[index]}")" ||
     fail_device "${devices[index]}" "$?"
   prepare_flow_device "${devices[index]}" "${qa_maestro_shards[index]}" || fail_device "${devices[index]}" "$?"
-  run_maestro "${qa_maestro_shards[index]}" "" "$window" test \
+  run_maestro "${qa_maestro_shards[index]}" "" "$window" "${devices[index]}" test \
     --platform "$platform" \
     --device "${devices[index]}" \
     --env "APP_ID=$app_id" \
@@ -273,7 +296,7 @@ run_device_flows() {
   for flow in "${device_flows[@]}"; do
     window="$(stall_window "$flow" "$flow")" || fail_device "${devices[index]}" "$?"
     prepare_flow_device "${devices[index]}" "$flow" || fail_device "${devices[index]}" "$?"
-    run_maestro "$flow" "" "$window" test \
+    run_maestro "$flow" "" "$window" "${devices[index]}" test \
       --platform "$platform" \
       --device "${devices[index]}" \
       --env "APP_ID=$app_id" \
@@ -331,7 +354,7 @@ if ((shards < 2)); then
   for flow in "${flows[@]}"; do
     window="$(stall_window "${flow#.maestro/}" "$flow")" || exit
     prepare_flow_device "${devices[0]}" "${flow#.maestro/}" || exit 1
-    run_maestro "${flow#.maestro/}" "" "$window" test \
+    run_maestro "${flow#.maestro/}" "" "$window" "${devices[0]}" test \
       --platform "$platform" \
       --device "${devices[0]}" \
       --env "APP_ID=$app_id" \
@@ -346,7 +369,7 @@ devices=("${devices[@]:0:shards}")
 device_list="$(IFS=,; printf '%s' "${devices[*]}")"
 window="$(stall_window "the sharded run" "${flows[@]}")" || exit
 echo "qa: sharding $flow_count flows across $device_list"
-run_maestro "the sharded run" "during the sharded run" "$window" test \
+run_maestro "the sharded run" "during the sharded run" "$window" "$device_list" test \
   --platform "$platform" \
   --env "APP_ID=$app_id" \
   --debug-output "$debug_dir" \

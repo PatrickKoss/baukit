@@ -154,8 +154,9 @@ class AndroidQaLifecycleTests(unittest.TestCase):
         self.executable(
             self.tools / "maestro", 'echo "maestro ${*: -1}" >> "$EVENTS"\nrm -f "$ATTACHED"\n'
         )
-        result = self.run_script("run-maestro.sh", "android")
+        result = self.run_script("run-maestro.sh", "android", BAUKIT_QA_DETACH_GRACE_SECONDS="0")
         self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("emulator-5556 is not listed on adb after 0 s", result.stderr)
         self.assertIn("emulator emulator-5556 died before b.yaml", result.stderr)
 
     def test_flows_hook_runs_each_devices_list_sequentially(self):

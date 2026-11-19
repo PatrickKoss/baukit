@@ -76,6 +76,8 @@ class AndroidQaTests(unittest.TestCase):
             "ANDROID_AVD_HOME": str(self.root / "avd"),
             "EVENTS": str(self.events),
             "ATTACHED": str(self.attached),
+            "FOREIGN": str(self.root / "foreign"),
+            "QA_STATE": str(self.state),
             "FAILURE": "",
             "BAUKIT_QA_ADB_TIMEOUT_SECONDS": "10",
             "BAUKIT_QA_STOP_TIMEOUT_SECONDS": "0.5",
@@ -90,7 +92,16 @@ printf 'adb %s\n' "$*" >> "$EVENTS"
 case "$*" in
   devices)
     [[ "$FAILURE" != devices ]] || exit 7
-    if [[ -f "$ATTACHED" ]]; then echo 'emulator-5556 device'; fi ;;
+    if [[ -f "$ATTACHED" ]]; then
+      { echo emulator-5556; cat "$QA_STATE/android-serial" 2>/dev/null || true; } |
+        sort -u | awk '{ print $1 "\tdevice" }'
+    fi
+    if [[ -f "$FOREIGN" ]]; then
+      printf 'emulator-5700\toffline\n'
+      left="$(cat "$FOREIGN")"
+      if [[ "$left" == 1 ]]; then rm -f "$FOREIGN"
+      elif [[ "$left" != forever ]]; then echo $((left - 1)) > "$FOREIGN"; fi
+    fi ;;
   *'emu avd name')
     [[ "$FAILURE" != avd ]] || exit 8
     if [[ "$FAILURE" == foreign ]]; then echo other-product; else echo test-qa; fi ;;
@@ -567,13 +578,94 @@ RENDERER
         self.executable(
             self.tools / "maestro", 'echo "maestro ${*: -1}" >> "$EVENTS"\nrm -f "$ATTACHED"\n'
         )
-        result = self.run_script("run-maestro.sh", "android")
+        result = self.run_script("run-maestro.sh", "android", BAUKIT_QA_DETACH_GRACE_SECONDS="0")
         self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("emulator-5556 is not listed on adb after 0 s", result.stderr)
         self.assertIn("emulator emulator-5556 died before b-second.yaml", result.stderr)
         runs = [
             event for event in self.events.read_text().splitlines() if event.startswith("maestro")
         ]
         self.assertEqual(runs, ["maestro .maestro/a-first.yaml"])
+
+    def maestro_runs(self):
+        return [
+            event for event in self.events.read_text().splitlines() if event.startswith("maestro")
+        ]
+
+    def test_maestro_waits_for_another_sessions_transport_before_each_flow(self):
+        self.flows("a-first.yaml", "b-second.yaml")
+        foreign = self.root / "foreign"
+        self.executable(
+            self.tools / "maestro", f'echo "maestro ${{*: -1}}" >> "$EVENTS"\necho 2 > {foreign}\n'
+        )
+        foreign.write_text("2\n")
+        result = self.run_script("run-maestro.sh", "android")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            result.stderr.count("qa: waiting for emulator-5700 (offline, not this run's) on adb"),
+            2,
+        )
+        self.assertEqual(
+            self.maestro_runs(), ["maestro .maestro/a-first.yaml", "maestro .maestro/b-second.yaml"]
+        )
+        events = self.events.read_text().splitlines()
+        self.assertEqual(events[events.index("maestro .maestro/b-second.yaml") - 1], "adb devices")
+
+    def test_a_transport_that_never_gets_ready_fails_before_maestro_starts(self):
+        self.flows("a-first.yaml")
+        self.executable(self.tools / "maestro", 'echo maestro >> "$EVENTS"\n')
+        (self.root / "foreign").write_text("forever\n")
+        result = self.run_script(
+            "run-maestro.sh",
+            "android",
+            BAUKIT_QA_BOOT_TIMEOUT_SECONDS="1",
+            BAUKIT_QA_POLL_SECONDS="0.1",
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            "qa: adb still lists emulator-5700 (offline, not this run's) after 1 s;", result.stderr
+        )
+        self.assertIn("qa: a-first.yaml did not start; adb is not ready for Maestro", result.stderr)
+        self.assertEqual(self.maestro_runs(), [])
+
+    def test_an_emulator_back_on_adb_within_the_grace_runs_the_next_flow(self):
+        self.flows("a-first.yaml", "b-second.yaml")
+        self.executable(
+            self.tools / "maestro",
+            'echo "maestro ${*: -1}" >> "$EVENTS"\nrm -f "$ATTACHED"\n'
+            '(sleep 1; touch "$ATTACHED") > /dev/null 2>&1 &\n',
+        )
+        result = self.run_script(
+            "run-maestro.sh",
+            "android",
+            BAUKIT_QA_DETACH_GRACE_SECONDS="5",
+            BAUKIT_QA_POLL_SECONDS="0.1",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("died", result.stderr)
+        self.assertEqual(len(self.maestro_runs()), 2)
+
+    def test_the_sharded_run_waits_for_every_transport_to_be_ready(self):
+        (self.root / "foreign").write_text("2\n")
+        result = self.sharded('echo "maestro $*" >> "$EVENTS"\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("qa: waiting for emulator-5700 (offline, not this run's)", result.stderr)
+        self.assertEqual(len(self.maestro_runs()), 1)
+        self.assertFalse((self.root / "foreign").exists())
+
+    def test_a_not_connected_failure_reports_the_transports_adb_lists(self):
+        self.flows("a-first.yaml")
+        self.executable(
+            self.tools / "maestro",
+            f"echo forever > {self.root / 'foreign'}\n"
+            "echo 'Device emulator-5556 was requested, but it is not connected.'\nexit 1\n",
+        )
+        result = self.run_script("run-maestro.sh", "android")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            "qa: adb now reports emulator-5700 (offline, not this run's); Maestro reports",
+            result.stderr,
+        )
 
     def test_maestro_runs_every_flow_once_while_attached(self):
         self.owned()

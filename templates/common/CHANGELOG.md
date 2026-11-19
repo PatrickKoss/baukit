@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.28.3] - 2026-11-19
+{% if context.mobile %}- `run-maestro.sh` waits until `adb devices` lists every serial in state `device` right before each Maestro start, through the new `--await-devices` mode of `mobile/scripts/qa/android-adb.py`. Maestro 2.8.0 opens a transport to every serial the shared adb server on port 5037 lists and, when one of them is booting or offline, reports every Android device as not connected. A gate printed `Device emulator-5662 was requested, but it is not connected.` while that emulator kept streaming logcat. The run's own emulators get `BAUKIT_QA_DETACH_GRACE_SECONDS` to return, other sessions' emulators `BAUKIT_QA_BOOT_TIMEOUT_SECONDS`, and the failure names the serial and its adb state. After a failed Maestro run the script also prints any serial that is not ready. Copy `run-maestro.sh`, `android-adb.py`, `test_android.py` and, in strict products, `docs/quality-gate.md` from the template.
+
+{% endif %}## [0.28.3] - 2026-11-19
 
 {% if context.mobile %}- `run-maestro.sh` gives a run a longer stall window when one of its flows declares a longer wait. The new `mobile/scripts/qa/maestro-waits.py` reads the longest `timeout:` of any command in the flows, following `runFlow` files, and the window becomes that wait plus 60 s when that exceeds `BAUKIT_QA_MAESTRO_STALL_SECONDS`. The script prints the command that set it. Maestro prints nothing while a command waits, so an `extendedWaitUntil` with `timeout: 600000` that seeded 100,000 rows was stopped after 300 s as `the sharded run made no progress`. A `timeout:` that is not whole milliseconds, or a `runFlow` file that is missing or named by a variable, now fails the run with exit 2 before Maestro starts. Copy both files from the template.
 
