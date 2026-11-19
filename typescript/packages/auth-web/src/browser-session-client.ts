@@ -17,6 +17,7 @@ import { OidcError } from './oidc-errors.js';
 import { requiredUrl } from './oidc-helpers.js';
 import type {
   ClearSessionOptions,
+  LogoutOptions,
   SessionExpiredEvent,
   SessionExpiredListener,
   SessionExpiredReason,
@@ -152,11 +153,14 @@ export class BrowserSessionClient {
   }
 
   /**
-   * Signs out every tab, ends the backend session and navigates to the IdP
-   * end-session URL when the backend returns one.
+   * Signs out every tab, ends the backend session and makes the next `login()` send
+   * `prompt=login`. By default it then navigates to the IdP end-session URL the backend returns
+   * and resolves `true`; the page is leaving, so the caller must not start another navigation.
+   * Pass `{ endIdpSession: false }` to stay on the page, for example before switching accounts.
    */
-  public async logout(): Promise<boolean> {
+  public async logout(options: LogoutOptions = {}): Promise<boolean> {
     this.clearSession();
+    this.oidc.requireFreshLogin();
     let response: Response;
     try {
       response = await this.post('logout');
@@ -168,6 +172,9 @@ export class BrowserSessionClient {
     }
     if (!response.ok) {
       throw new OidcError('logout_failed', { status: response.status });
+    }
+    if (options.endIdpSession === false) {
+      return false;
     }
     const endSessionUrl = readEndSessionUrl(await readJson(response));
     if (endSessionUrl === undefined) {

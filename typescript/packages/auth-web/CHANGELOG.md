@@ -6,6 +6,7 @@
 
 ### Patch Changes
 
+- `BrowserSessionClient.logout()` makes the next login send `prompt=login`, and `logout({ endIdpSession: false })` ends the backend session without navigating to the IdP, so an account switch can start the new login safely.
 - Release the coordinated baukit 0.28.4 train.
 - Updated dependencies
   - @baukit/type-guards@0.28.4
