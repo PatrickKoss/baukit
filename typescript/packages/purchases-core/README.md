@@ -13,7 +13,11 @@ import {
 
 const flow = new PurchaseFlow({
   port: createNoopPurchasesPort(),
-  backend: createAccountPlanBackend({ baseUrl: `${apiOrigin}/api/v1`, fetch, headers: authHeaders }),
+  backend: createAccountPlanBackend({
+    baseUrl: `${apiOrigin}/api/v1`,
+    fetch,
+    headers: authHeaders,
+  }),
 });
 
 await flow.identify(suiteSubject);
@@ -30,6 +34,8 @@ const outcome = await flow.purchase(current!.packages[0]!);
 - Failures are `PurchaseError` with `code` `cancelled`, `pending`, `network`, `store`, `unavailable`, `not_identified`, `identity_changed`, `subject_mismatch`, `invalid_subject`, `not_credit_pack` or `busy`.
 
 `createAccountPlanBackend` reads the `GET /me/entitlement` and `GET /me/credits` routes that `baukit-suite`'s `account_plan_router` serves. It treats `suite_identity_missing` as no entitlement and raises `AccountPlanError` with `code` and `retryAfterSeconds` otherwise. A client that verifies tickets itself uses `entitlementFromTicket(claims, plansUrl)`.
+
+`flow.adoptEntitlement(body)` hands the flow an entitlement the product already read from `GET /me/entitlement`, so a cold load does not read it twice. Call it after `identify` resolves, in place of the first `refreshEntitlement()`. It parses `body` with the same checks as `createAccountPlanBackend` and throws `TypeError` for a malformed body, `PurchaseError('not_identified')` before `identify`, and `PurchaseError('subject_mismatch')` for another suite subject. Like a refresh, it keeps the highest revision, so stale data or a slower in-flight refresh never replaces a newer entitlement. After `dispose()` it changes nothing. It returns the entitlement the flow now holds.
 
 `@baukit/purchases-core/react` has `PurchasesProvider` (with `flow` and `productId`), `usePurchaseFlow`, `usePurchaseState`, `useEntitlement`, `useFeature(key)` and `LockedFeature`. `useFeature` returns `loading`, `unavailable`, `granted`, or `locked` with a paywall. Loading and unavailable show neither the feature nor a purchase, and a failed refresh keeps the last verified entitlement. `paywallFor` turns the ticket's `billing` claim into `purchase`, `manage` (web and store plans, never a second purchase), `covered` (family and organization) or `none` (standalone). `plansLink` builds the Schlüsselbund C17 link `/plans?from=<product id>&feature=<feature key>` and drops `feature` without `from`.
 
