@@ -74,12 +74,18 @@ class ImageTest(unittest.TestCase):
         self.assertIn("image.tag or", result.stderr)
         self.assertIn("image.digest is required", result.stderr)
 
-    def test_digest_wins_over_tag(self) -> None:
+    def test_digest_keeps_the_tag_when_both_are_set(self) -> None:
         result = render("--set", f"api.image.digest={DIGEST}")
         self.assertEqual(result.returncode, 0, result.stderr)
         found = containers(result.stdout)
-        self.assertEqual(found["api"]["image"], f"ghcr.io/example/minimal-api@{DIGEST}")
+        self.assertEqual(found["api"]["image"], f"ghcr.io/example/minimal-api:1.0.0@{DIGEST}")
         self.assertEqual(found["migrate"]["image"], "ghcr.io/example/minimal-migrate:1.0.0")
+
+    def test_digest_without_a_tag_renders_repository_at_digest(self) -> None:
+        result = render("--set", "api.image.tag=", "--set", f"api.image.digest={DIGEST}")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        found = containers(result.stdout)
+        self.assertEqual(found["api"]["image"], f"ghcr.io/example/minimal-api@{DIGEST}")
 
     def test_malformed_digest_fails(self) -> None:
         result = render("--skip-schema-validation", "--set", "api.image.digest=sha256:abc")
