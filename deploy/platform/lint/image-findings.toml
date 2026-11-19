@@ -43,24 +43,33 @@ ids = [
 
 [images."docker.io/falcosecurity/falcoctl:0.14.3@sha256:2230fb4802aafe09455b58d38f8f1faedd8f09f042e9a18fffd397e63488c023"]
 expires = 2027-01-16
-reason = "docker.io/falcosecurity/falcoctl:0.14.3: no fixed upstream release exists as of 2026-11-17. 0.14.3 is the newest falcoctl release and :latest resolves to this digest; the findings are go-jose 4.1.5 and golang.org/x/net 0.61.0 compiled into the binary. falcoctl only runs as the falco-k8saudit init container, pulls one digest-pinned, cosign-verified plugin from ghcr.io and exits; it parses no HTML, and a crafted JWK needs a hostile ghcr.io or sigstore endpoint, so the worst case is a failed init that retries. Follow-up RF29."
+reason = "docker.io/falcosecurity/falcoctl:0.14.3: no fixed upstream release exists as of 2026-11-19. 0.14.3 is the newest falcoctl release and :latest resolves to this digest; the findings are go-jose 4.1.5 and golang.org/x/net 0.61.0 compiled into the binary. falcoctl only runs as the falco-k8saudit init container, pulls one digest-pinned, cosign-verified plugin from ghcr.io and exits; it parses no HTML, and a crafted JWK needs a hostile ghcr.io or sigstore endpoint, so the worst case is a failed init that retries. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."docker.io/falcosecurity/falcosidekick:2.35.1@sha256:a9bb60d2c7742febd912315ca1155839abc0199bf322c58d3adbb8b0849fadb9"]
 expires = 2027-01-16
-reason = "docker.io/falcosecurity/falcosidekick:2.35.1: no fixed upstream release exists as of 2026-11-17. 2.35.1 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "docker.io/falcosecurity/falcosidekick:2.35.1: no fixed upstream release exists as of 2026-11-19. 2.35.1 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
   "CVE-2026-78669",
+  "CVE-2026-97054",
+]
+
+[images."docker.io/grafana/alloy@sha256:9acc2529bc1edb7f5b2bd801dd8334ebc80c158e3a9e5526ecd7c9a273d43189"]
+expires = 2027-01-16
+reason = "docker.io/grafana/alloy:v1.22.0: no fixed upstream release exists as of 2026-11-19. v1.22.0 is the newest upstream release and still ships this. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
+ids = [
+  "CVE-2026-97054",
 ]
 
 [images."docker.io/grafana/grafana:13.3.1-distroless@sha256:54e297ac67e2b72572f926892f4e06074dc4f79f2a56ed9a9ca9a88a46f28733"]
 expires = 2027-01-16
-reason = "docker.io/grafana/grafana:13.3.1-distroless: no fixed upstream release exists as of 2026-11-17. 13.3.1 is the newest upstream release and still ships these in its bundled datasource plugin binaries. Follow-up RF29."
+reason = "docker.io/grafana/grafana:13.3.1-distroless: no fixed upstream release exists as of 2026-11-19. 13.3.1 is the newest upstream release and still ships these in its bundled datasource plugin binaries. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.7 and 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-21728",
@@ -69,44 +78,63 @@ ids = [
   "CVE-2026-78667",
   "CVE-2026-78669",
   "CVE-2026-97031",
+  "CVE-2026-97054",
+]
+
+[images."docker.io/grafana/loki@sha256:b43c257ccfc925d4a50b8717cac61a3b51df8c48d01847936057e5c4075a24a7"]
+expires = 2027-01-16
+reason = "docker.io/grafana/loki:3.7.10: no fixed upstream release exists as of 2026-11-19. 3.7.10 is the newest upstream release and still ships this. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
+ids = [
+  "CVE-2026-97054",
 ]
 
 [images."docker.io/grafana/tempo:3.1.1@sha256:64e2fbd56d9c2b3412a4b430a58ea59e91a670b1e75f920a0c702213ad145044"]
 expires = 2027-01-16
-reason = "docker.io/grafana/tempo:3.1.1: no fixed upstream release exists as of 2026-11-17. 3.1.1 is the newest upstream release and still ships go-jose v4.1.4 and golang.org/x/net v0.60.0. Follow-up RF29."
+reason = "docker.io/grafana/tempo:3.1.1: no fixed upstream release exists as of 2026-11-19. 3.1.1 is the newest upstream release and still ships go-jose v4.1.4 and golang.org/x/net v0.60.0. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."docker.io/hetznercloud/hcloud-cloud-controller-manager:v1.39.3@sha256:9d739ba54a13f1de79d6dbb93cbda5a2ed4a5bdb9bf2936e2687e24fa9ccfaf7"]
 expires = 2027-01-16
-reason = "docker.io/hetznercloud/hcloud-cloud-controller-manager:v1.39.3: no fixed upstream release exists as of 2026-11-17. v1.39.3 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "docker.io/hetznercloud/hcloud-cloud-controller-manager:v1.39.3: no fixed upstream release exists as of 2026-11-19. v1.39.3 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."docker.io/hetznercloud/hcloud-csi-driver:v2.24.2@sha256:c231060c9d24d485c8ac25eeb3dd445994ce1abb7417c5a49b88301931a9fe29"]
 expires = 2027-01-16
-reason = "docker.io/hetznercloud/hcloud-csi-driver:v2.24.2: no fixed upstream release exists as of 2026-11-17. v2.24.2 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "docker.io/hetznercloud/hcloud-csi-driver:v2.24.2: no fixed upstream release exists as of 2026-11-19. v2.24.2 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
+]
+
+[images."docker.io/oliver006/redis_exporter:v1.97.0@sha256:f5f903fbe77571d455ede0453b084d6840bc62fc105efac001034421cab83b99"]
+expires = 2027-01-16
+reason = "docker.io/oliver006/redis_exporter:v1.97.0: no fixed upstream release exists as of 2026-11-19. v1.97.0 is the newest upstream release and still ships this. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
+ids = [
+  "CVE-2026-97054",
 ]
 
 [images."ghcr.io/cloudnative-pg/plugin-barman-cloud:v0.16.0@sha256:6404a416718bd7aad943c67a25a7bb20d0558b43edfeab0bf167f013ca435882"]
 expires = 2027-01-16
-reason = "ghcr.io/cloudnative-pg/plugin-barman-cloud:v0.16.0: no fixed upstream release exists as of 2026-11-17. v0.16.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "ghcr.io/cloudnative-pg/plugin-barman-cloud:v0.16.0: no fixed upstream release exists as of 2026-11-19. v0.16.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
 
 [images."ghcr.io/fluxcd/flagger:1.45.0@sha256:15b372d35012f9ae450f9030bc82217369c0aee082ed5a5225830010cf972b2b"]
 expires = 2027-01-16
-reason = "ghcr.io/fluxcd/flagger:1.45.0: no fixed upstream release exists as of 2026-11-17. 1.45.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "ghcr.io/fluxcd/flagger:1.45.0: no fixed upstream release exists as of 2026-11-19. 1.45.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.7, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-107891",
   "CVE-2026-111943",
@@ -122,18 +150,20 @@ ids = [
   "CVE-2026-84445",
   "CVE-2026-85091",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
 
 [images."ghcr.io/fluxcd/helm-controller:v1.7.1@sha256:54526cc6ed1202d71d44c310676448065664f3255ad671d9a69ac26f904e617a"]
 expires = 2027-01-16
-reason = "ghcr.io/fluxcd/helm-controller:v1.7.1: no fixed upstream release exists as of 2026-11-17. Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these. Follow-up RF29."
+reason = "ghcr.io/fluxcd/helm-controller:v1.7.1: no fixed upstream release exists as of 2026-11-19. Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."ghcr.io/fluxcd/kustomize-controller:v1.10.1@sha256:37db29b25dae35b881a5e064acedb0cc954442da453a39eaa0eab7a90dbecc4e"]
 expires = 2027-01-16
-reason = "ghcr.io/fluxcd/kustomize-controller:v1.10.1: no fixed upstream release exists as of 2026-11-17. Flux v2.10.0 is the newest release; kustomize-controller v1.10.1 ships Alpine 3.24.3 git 2.54.0-r0, libexpat 2.9.0-r0 and openssh 10.3_p1-r1 plus golang.org/x/net v0.61.0. Follow-up RF29."
+reason = "ghcr.io/fluxcd/kustomize-controller:v1.10.1: no fixed upstream release exists as of 2026-11-19. Flux v2.10.0 is the newest release; kustomize-controller v1.10.1 ships Alpine 3.24.3 git 2.54.0-r0, libexpat 2.9.0-r0 and openssh 10.3_p1-r1 plus golang.org/x/net v0.61.0. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-105437",
   "CVE-2026-111760",
@@ -144,32 +174,43 @@ ids = [
   "CVE-2026-118370",
   "CVE-2026-123158",
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."ghcr.io/fluxcd/notification-controller:v1.10.0@sha256:9f58b9532ec9d3ccf539cd3ccdf283477a5dcb7777b922db5477d8bbd4d3767c"]
 expires = 2027-01-16
-reason = "ghcr.io/fluxcd/notification-controller:v1.10.0: no fixed upstream release exists as of 2026-11-17. Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these. Follow-up RF29."
+reason = "ghcr.io/fluxcd/notification-controller:v1.10.0: no fixed upstream release exists as of 2026-11-19. Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."ghcr.io/fluxcd/source-controller:v1.10.1@sha256:611b6bca3eae95bcff471414d1fb14a4ab83d7f14e609cccef2bd389c121f37e"]
 expires = 2027-01-16
-reason = "ghcr.io/fluxcd/source-controller:v1.10.1: no fixed upstream release exists as of 2026-11-17. Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these. Follow-up RF29."
+reason = "ghcr.io/fluxcd/source-controller:v1.10.1: no fixed upstream release exists as of 2026-11-19. Flux v2.10.0 is the newest release; its controllers are built with golang.org/x/net v0.61.0 and still ship these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
+]
+
+[images."ghcr.io/jkroepke/access-log-exporter@sha256:9709581d7e6693663fdcb70e67993679b1d116329c6fc62bf318bd461bd28b14"]
+expires = 2027-01-16
+reason = "ghcr.io/jkroepke/access-log-exporter:1.0.2: no fixed upstream release exists as of 2026-11-19. 1.0.2 is the newest upstream release and still ships this. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
+ids = [
+  "CVE-2026-97054",
 ]
 
 [images."ghcr.io/jkroepke/kube-webhook-certgen:1.11.1@sha256:8009b04f9873f7279b5adee37fdd03b6a9aa7b6751d4f69fde2683010e41cd1f"]
 expires = 2027-01-16
-reason = "ghcr.io/jkroepke/kube-webhook-certgen:1.11.1: no fixed upstream release exists as of 2026-11-17. 1.11.1 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "ghcr.io/jkroepke/kube-webhook-certgen:1.11.1: no fixed upstream release exists as of 2026-11-19. 1.11.1 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."ghcr.io/kubereboot/kured:1.23.0@sha256:8dfd3c2e889337595731d801afc5c031b545876a29427897b3f711d2983f30c4"]
 expires = 2027-01-16
-reason = "ghcr.io/kubereboot/kured:1.23.0: no fixed upstream release exists as of 2026-11-17. 1.23.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "ghcr.io/kubereboot/kured:1.23.0: no fixed upstream release exists as of 2026-11-19. 1.23.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.4, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-107891",
   "CVE-2026-111943",
@@ -190,25 +231,28 @@ ids = [
   "CVE-2026-78669",
   "CVE-2026-85091",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
 
 [images."ghcr.io/kyverno/policy-reporter:3.11.2@sha256:2b33409d34be3195f16d9ed2c89f8b58001aeec986b254ba6bb45323d6d1e884"]
 expires = 2027-01-16
-reason = "ghcr.io/kyverno/policy-reporter:3.11.2: no fixed upstream release exists as of 2026-11-17. 3.11.2 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "ghcr.io/kyverno/policy-reporter:3.11.2: no fixed upstream release exists as of 2026-11-19. 3.11.2 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."ghcr.io/kyverno/readiness-checker:v1.20.0@sha256:6079a30d75fe7ba868a5a7e5dfa71ee92a3a8bae97adcea1c8cfb1009280ee6c"]
 expires = 2027-01-16
-reason = "ghcr.io/kyverno/readiness-checker:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "ghcr.io/kyverno/readiness-checker:v1.20.0: no fixed upstream release exists as of 2026-11-19. v1.20.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."mirror.gcr.io/clickhouse/clickhouse-server:22.8.21.38-alpine@sha256:d3c96b46a803e35f202b0cacb75e1966be1f5f9ea10a56d051bda7db3bf3cdea"]
 expires = 2027-01-16
-reason = "mirror.gcr.io/clickhouse/clickhouse-server:22.8.21.38-alpine: no fixed upstream release exists as of 2026-11-17. 22.8 is the ClickHouse line PostHog 1.43 schema runs on; 22.12 fixes 2 of 65 but is outside PostHog's supported versions, revisit when PostHog leaves the platform (SC2 follow-up). Follow-up RF29."
+reason = "mirror.gcr.io/clickhouse/clickhouse-server:22.8.21.38-alpine: no fixed upstream release exists as of 2026-11-19. 22.8 is the ClickHouse line PostHog 1.43 schema runs on; 22.12 fixes 2 of 65 but is outside PostHog's supported versions, revisit when PostHog leaves the platform (SC2 follow-up). Follow-up RF29."
 ids = [
   "CVE-2022-27664",
   "CVE-2022-28131",
@@ -275,11 +319,12 @@ ids = [
   "CVE-2026-78667",
   "CVE-2026-78669",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
 
 [images."posthog/posthog:release-1.43.1@sha256:36c2712b569ca5693d88117a20a588cc03f52f4e5962967f7c6781ed29e5ec84"]
 expires = 2027-01-16
-reason = "posthog/posthog:release-1.43.1: no fixed upstream release exists as of 2026-11-18. release-1.43.1 is the newest PostHog release and the last self-hosted line (chart 30.46.0, Kubernetes support ended 2023); no fixed build exists, revisit when PostHog leaves the platform (SC2 follow-up). Follow-up RF29."
+reason = "posthog/posthog:release-1.43.1: no fixed upstream release exists as of 2026-11-19. release-1.43.1 is the newest PostHog release and the last self-hosted line (chart 30.46.0, Kubernetes support ended 2023); no fixed build exists, revisit when PostHog leaves the platform (SC2 follow-up). Follow-up RF29."
 ids = [
   "CVE-2015-20107",
   "CVE-2020-10735",
@@ -1746,6 +1791,7 @@ ids = [
   "CVE-2026-64470",
   "CVE-2026-64471",
   "CVE-2026-64487",
+  "CVE-2026-64495",
   "CVE-2026-64534",
   "CVE-2026-64544",
   "CVE-2026-64549",
@@ -1769,6 +1815,7 @@ ids = [
   "CVE-2026-73088",
   "CVE-2026-73089",
   "CVE-2026-73566",
+  "CVE-2026-73864",
   "CVE-2026-74394",
   "CVE-2026-78667",
   "CVE-2026-78669",
@@ -1792,6 +1839,7 @@ ids = [
   "CVE-2026-96642",
   "CVE-2026-96644",
   "CVE-2026-97031",
+  "CVE-2026-97054",
   "CVE-2026-97687",
   "CVE-2026-97689",
   "GHSA-537c-gmf6-5ccf",
@@ -1805,21 +1853,23 @@ ids = [
 
 [images."prom/pushgateway:v1.11.5@sha256:bf6442633f6129d3e3f9861fa14c77bc012d74b33a1dd213d7b458b89ce3cc5d"]
 expires = 2027-01-16
-reason = "prom/pushgateway:v1.11.5: no fixed upstream release exists as of 2026-11-17. v1.11.5 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "prom/pushgateway:v1.11.5: no fixed upstream release exists as of 2026-11-19. v1.11.5 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
   "CVE-2026-78669",
+  "CVE-2026-97054",
 ]
 
 [images."ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0@sha256:c669259e20ed1e11fad821f735c396c19d929985aa05b9544b13ecc8b5a386d0"]
 expires = 2027-01-16
-reason = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0: no fixed upstream release exists as of 2026-11-17. v0.16.0 is the newest plugin-barman-cloud release and still ships these. Follow-up RF29."
+reason = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0: no fixed upstream release exists as of 2026-11-19. v0.16.0 is the newest plugin-barman-cloud release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
 
 [images."python:3.15.2-alpine3.24@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd"]
@@ -1835,31 +1885,35 @@ ids = [
 
 [images."quay.io/jetstack/cert-manager-cainjector:v1.21.3@sha256:083d0e906f8eb44e255fe4ff817ae54e49f9ed82e22f1011bb4e9e4f4b8a641f"]
 expires = 2027-01-16
-reason = "quay.io/jetstack/cert-manager-cainjector:v1.21.3: no fixed upstream release exists as of 2026-11-17. v1.21.3 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "quay.io/jetstack/cert-manager-cainjector:v1.21.3: no fixed upstream release exists as of 2026-11-19. v1.21.3 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."quay.io/jetstack/cert-manager-controller:v1.21.3@sha256:9f4f96a33c7774cef24466fcd85031997531a03a8d117f151126baa8d1290dcc"]
 expires = 2027-01-16
-reason = "quay.io/jetstack/cert-manager-controller:v1.21.3: no fixed upstream release exists as of 2026-11-17. v1.21.3 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "quay.io/jetstack/cert-manager-controller:v1.21.3: no fixed upstream release exists as of 2026-11-19. v1.21.3 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."quay.io/jetstack/cert-manager-startupapicheck:v1.21.3@sha256:1c519d4afca1413d1e4ccd78bdc756184418ab55a34569a3b3de39d32f9974e1"]
 expires = 2027-01-16
-reason = "quay.io/jetstack/cert-manager-startupapicheck:v1.21.3: no fixed upstream release exists as of 2026-11-17. v1.21.3 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "quay.io/jetstack/cert-manager-startupapicheck:v1.21.3: no fixed upstream release exists as of 2026-11-19. v1.21.3 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."quay.io/jetstack/cert-manager-webhook:v1.21.3@sha256:055ac8e9de6a0ba6763794838fe38944acc650f68ebe1b01dd8be079e580f458"]
 expires = 2027-01-16
-reason = "quay.io/jetstack/cert-manager-webhook:v1.21.3: no fixed upstream release exists as of 2026-11-17. v1.21.3 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "quay.io/jetstack/cert-manager-webhook:v1.21.3: no fixed upstream release exists as of 2026-11-19. v1.21.3 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."quay.io/kiwigrid/k8s-sidecar:2.14.3@sha256:52d311dcedd587421a236c4d6c621f05614c40a51386e955e0699dca97ec0880"]
@@ -1873,21 +1927,39 @@ ids = [
   "GHSA-6v7p-g79w-8964",
 ]
 
+[images."quay.io/prometheus-operator/prometheus-config-reloader@sha256:cc74ddedad4ab1c49446971f6d51302ad4303d8660a2018af925c7f62c114304"]
+expires = 2027-01-16
+reason = "quay.io/prometheus-operator/prometheus-config-reloader:v0.95.2: no fixed upstream release exists as of 2026-11-19. v0.95.2 is the newest upstream release and still ships this. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
+ids = [
+  "CVE-2026-97054",
+]
+
+[images."quay.io/prometheus-operator/prometheus-operator:v0.95.2@sha256:7986c2afa118c9dea07d01c5e1a29555824582e92f6ee8607591d1a7178acf29"]
+expires = 2027-01-16
+reason = "quay.io/prometheus-operator/prometheus-operator:v0.95.2: no fixed upstream release exists as of 2026-11-19. v0.95.2 is the newest upstream release and still ships this. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
+ids = [
+  "CVE-2026-97054",
+]
+
 [images."quay.io/prometheuscommunity/prom-label-proxy:v0.16.2@sha256:9812cce38fa78c39250c9c59c78bbe75895ef9126952a098cd44adef2e21dbc5"]
 expires = 2027-01-16
-reason = "v0.16.2 is the newest prom-label-proxy release as of 2026-11-17 (follow-up RF29) and links golang.org/x/net v0.61.0 indirectly; the finding is in x/net/html, and the proxy parses PromQL and Prometheus JSON, never HTML, from the platform Prometheus only, behind a NetworkPolicy that admits Flagger alone; Renovate (SC4) moves the pin once upstream releases with x/net 0.62.0"
-ids = ["CVE-2026-78661"]
+reason = "quay.io/prometheuscommunity/prom-label-proxy:v0.16.2: no fixed upstream release exists as of 2026-11-19. v0.16.2 is the newest upstream release and links golang.org/x/net v0.61.0 indirectly; the x/net finding is in x/net/html, and the proxy parses PromQL and Prometheus JSON, never HTML, from the platform Prometheus only, behind a NetworkPolicy that admits Flagger alone; Renovate (SC4) moves the pin once upstream releases with x/net 0.62.0. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
+ids = [
+  "CVE-2026-78661",
+  "CVE-2026-97054",
+]
 
 [images."quay.io/prometheus/alertmanager:v0.35.0@sha256:5f6e66c01bd610aef6dd671642a52eee775fd3a89bd8788ebada33efaf373d10"]
 expires = 2027-01-16
-reason = "quay.io/prometheus/alertmanager:v0.35.0: no fixed upstream release exists as of 2026-11-17. v0.35.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "quay.io/prometheus/alertmanager:v0.35.0: no fixed upstream release exists as of 2026-11-19. v0.35.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."quay.io/prometheus/node-exporter:v1.12.1-distroless@sha256:8c9bac11973b94b59be88d6e11fee4429aa743c8846cdc75d65b18db33f6a106"]
 expires = 2027-01-16
-reason = "quay.io/prometheus/node-exporter:v1.12.1-distroless: no fixed upstream release exists as of 2026-11-17. v1.12.1 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "quay.io/prometheus/node-exporter:v1.12.1-distroless: no fixed upstream release exists as of 2026-11-19. v1.12.1 is the newest published image and still ships these; v1.13.0 was tagged on GitHub on 2026-11-18 but has no image on quay.io or Docker Hub yet. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.5, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-33818",
@@ -1904,74 +1976,83 @@ ids = [
   "CVE-2026-78667",
   "CVE-2026-78669",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
 
 [images."quay.io/prometheus/prometheus:v3.16.0-distroless@sha256:9764044e09eb2c9e1abdb12d0f0188d4efb7384b0262d3c080f0fc59045c89ba"]
 expires = 2027-01-16
-reason = "quay.io/prometheus/prometheus:v3.16.0-distroless: no fixed upstream release exists as of 2026-11-17. v3.16.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "quay.io/prometheus/prometheus:v3.16.0-distroless: no fixed upstream release exists as of 2026-11-19. v3.16.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332"]
 expires = 2027-01-16
-reason = "rancher/k3s:v1.37.2-k3s1: no fixed upstream release exists as of 2026-11-17. v1.37.2-k3s1 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "rancher/k3s:v1.37.2-k3s1: no fixed upstream release exists as of 2026-11-19. v1.37.2-k3s1 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-56854",
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."reg.kyverno.io/kyverno/background-controller:v1.20.0@sha256:c72df38320a48fc9de10f9d23d087a117853bb08207b7f60f6d1e8457fb3ddb7"]
 expires = 2027-01-16
-reason = "reg.kyverno.io/kyverno/background-controller:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "reg.kyverno.io/kyverno/background-controller:v1.20.0: no fixed upstream release exists as of 2026-11-19. v1.20.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."reg.kyverno.io/kyverno/cleanup-controller:v1.20.0@sha256:0f9ce0c203561c52499e871a987ff987371f57385fcafe7af1a01dfd6db1feee"]
 expires = 2027-01-16
-reason = "reg.kyverno.io/kyverno/cleanup-controller:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "reg.kyverno.io/kyverno/cleanup-controller:v1.20.0: no fixed upstream release exists as of 2026-11-19. v1.20.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."reg.kyverno.io/kyverno/kyverno-cli:v1.20.0@sha256:bd2b8b7c9d550ecf04e0bacaf351adce2f82ce67fd3f291075edcee7f8ab4ab4"]
 expires = 2027-01-16
-reason = "reg.kyverno.io/kyverno/kyverno-cli:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "reg.kyverno.io/kyverno/kyverno-cli:v1.20.0: no fixed upstream release exists as of 2026-11-19. v1.20.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."reg.kyverno.io/kyverno/kyverno:v1.20.0@sha256:9de49c5416ea536f00a205527197ac048abdf32c5a75d633cd9afff8928f359d"]
 expires = 2027-01-16
-reason = "reg.kyverno.io/kyverno/kyverno:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "reg.kyverno.io/kyverno/kyverno:v1.20.0: no fixed upstream release exists as of 2026-11-19. v1.20.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."reg.kyverno.io/kyverno/kyvernopre:v1.20.0@sha256:339067e083430e0c97007541bef9cfdbac89bee13f7228772c77ae8aead14b8b"]
 expires = 2027-01-16
-reason = "reg.kyverno.io/kyverno/kyvernopre:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "reg.kyverno.io/kyverno/kyvernopre:v1.20.0: no fixed upstream release exists as of 2026-11-19. v1.20.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."reg.kyverno.io/kyverno/reports-controller:v1.20.0@sha256:f54e3cc106fadb1a615d0ec11c42f741f51d3580a5f70dfbe7bd7ec58864ef03"]
 expires = 2027-01-16
-reason = "reg.kyverno.io/kyverno/reports-controller:v1.20.0: no fixed upstream release exists as of 2026-11-17. v1.20.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "reg.kyverno.io/kyverno/reports-controller:v1.20.0: no fixed upstream release exists as of 2026-11-19. v1.20.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
   "CVE-2026-78661",
+  "CVE-2026-97054",
 ]
 
 [images."registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0@sha256:42cfe3723a5f058171c627537fb57a3ea0f26e4380fa18555a95cb1a1b4cfc5b"]
 expires = 2027-01-16
-reason = "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0: no fixed upstream release exists as of 2026-11-17. v2.20.0 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.20.0: no fixed upstream release exists as of 2026-11-19. v2.20.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-56851",
@@ -1982,62 +2063,68 @@ ids = [
   "CVE-2026-84304",
   "CVE-2026-84445",
   "CVE-2026-97031",
+  "CVE-2026-97054",
   "GHSA-hrxh-6v49-42gf",
 ]
 
 [images."registry.k8s.io/sig-storage/csi-attacher:v4.13.0@sha256:d1a26170efed45491074ca4545c81844eee2b9043fb885ac01fb4aed6f8b72d2"]
 expires = 2027-01-16
-reason = "registry.k8s.io/sig-storage/csi-attacher:v4.13.0: no fixed upstream release exists as of 2026-11-17. It is the newest release of this CSI sidecar and still ships these. Follow-up RF29."
+reason = "registry.k8s.io/sig-storage/csi-attacher:v4.13.0: no fixed upstream release exists as of 2026-11-19. It is the newest release of this CSI sidecar and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
 
 [images."registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.18.0@sha256:b7fefd08651f00ac4df1a196ed4c621c2451fbb899297fe9fad9e36c667af0c0"]
 expires = 2027-01-16
-reason = "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.18.0: no fixed upstream release exists as of 2026-11-17. It is the newest release of this CSI sidecar and still ships these. Follow-up RF29."
+reason = "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.18.0: no fixed upstream release exists as of 2026-11-19. It is the newest release of this CSI sidecar and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
 
 [images."registry.k8s.io/sig-storage/csi-provisioner:v6.4.0@sha256:6ebe60fd8ed67a7f8a90d34402e9e706b274e53612d6fa5fbb8285728db622e2"]
 expires = 2027-01-16
-reason = "registry.k8s.io/sig-storage/csi-provisioner:v6.4.0: no fixed upstream release exists as of 2026-11-17. It is the newest release of this CSI sidecar and still ships these. Follow-up RF29."
+reason = "registry.k8s.io/sig-storage/csi-provisioner:v6.4.0: no fixed upstream release exists as of 2026-11-19. It is the newest release of this CSI sidecar and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
 
 [images."registry.k8s.io/sig-storage/csi-resizer:v2.3.0@sha256:48fb3deb93cd848e3c8998b6368f4322c93bb5ce4a90d1307b6dda0dbefb9a0e"]
 expires = 2027-01-16
-reason = "registry.k8s.io/sig-storage/csi-resizer:v2.3.0: no fixed upstream release exists as of 2026-11-17. It is the newest release of this CSI sidecar and still ships these. Follow-up RF29."
+reason = "registry.k8s.io/sig-storage/csi-resizer:v2.3.0: no fixed upstream release exists as of 2026-11-19. It is the newest release of this CSI sidecar and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
 
 [images."registry.k8s.io/sig-storage/livenessprobe:v2.20.0@sha256:19f2cf2f40e1987c7943945deca5f65cd4e4bf5cc0657fc78a5df131861578e8"]
 expires = 2027-01-16
-reason = "registry.k8s.io/sig-storage/livenessprobe:v2.20.0: no fixed upstream release exists as of 2026-11-17. It is the newest release of this CSI sidecar and still ships these. Follow-up RF29."
+reason = "registry.k8s.io/sig-storage/livenessprobe:v2.20.0: no fixed upstream release exists as of 2026-11-19. It is the newest release of this CSI sidecar and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
 ids = [
   "CVE-2026-111943",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
 
 [images."zookeeper:3.9.7@sha256:7654645af057c76db8facc77c5d6fc0749f0f566bdd5c41efe6e3b824d1248c0"]
@@ -2053,7 +2140,7 @@ ids = [
 
 [images."postgres:14.25-alpine@sha256:e7d9e6aac7fe3232f7661da103aebc0ce38b04105b46af5e9edd5ef6bc343f20"]
 expires = 2027-01-16
-reason = "postgres:14.25-alpine: no fixed upstream release exists as of 2026-11-17. 14.25 is the newest PostgreSQL 14 release, the major PostHog 1.43 supports; the 2026-11 rebuild clears the Alpine package findings and leaves Go standard library CVEs in the bundled gosu binary. Follow-up RF29."
+reason = "postgres:14.25-alpine: no fixed upstream release exists as of 2026-11-19. 14.25 is the newest PostgreSQL 14 release, the major PostHog 1.43 supports; the 2026-11 rebuild clears the Alpine package findings and leaves Go standard library CVEs in the bundled gosu binary. Follow-up RF29."
 ids = [
   "CVE-2025-61726",
   "CVE-2025-61729",
@@ -2081,4 +2168,5 @@ ids = [
   "CVE-2026-78667",
   "CVE-2026-78669",
   "CVE-2026-97031",
+  "CVE-2026-97054",
 ]
