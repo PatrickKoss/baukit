@@ -226,7 +226,6 @@ class WorkerTests(unittest.TestCase):
             meminfo.write_text("MemTotal:       47185920 kB\nCommitted_AS:   99999999 kB\n")
             self.assertEqual(gate.total_memory_mb(meminfo), 46080)
 
-
     def test_worker_caps_clamp_their_variables(self):
         environment = {}
         gate.worker_environment(environment, 9, {"E2E_WORKERS": 4, "CARGO_BUILD_JOBS": 12})
