@@ -221,6 +221,26 @@ class AndroidQaHookTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 9, result.stderr)
 
+    def test_declared_shards_and_hooked_flows_widen_their_own_stall_window(self):
+        self.flows("a.yaml")
+        (self.mobile / ".maestro/b.yaml").write_text(test_android_qa.SEED_WAIT_FLOW)
+        (self.state / "android-serial").write_text("emulator-5556\nemulator-5558\n")
+        self.executable(self.tools / "maestro", "exit 0\n")
+        for hooks in (
+            "qa_maestro_shards=(.maestro/a.yaml .maestro/b.yaml)\n",
+            'qa_maestro_flows() { flows=(a b); echo ".maestro/${flows[$1]}.yaml"; }\n',
+        ):
+            with self.subTest(hooks=hooks):
+                self.hooks(hooks)
+                result = self.run_script("run-maestro.sh", "android")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(
+                    "qa: extendedWaitUntil in .maestro/b.yaml:7 may wait 600 s,"
+                    " so .maestro/b.yaml gets a 660 s stall window instead of 300 s",
+                    result.stderr,
+                )
+                self.assertNotIn(".maestro/a.yaml gets", result.stderr)
+
     def test_more_declared_shards_than_devices_fail_before_running_maestro(self):
         result = self.sharded_maestro(
             "qa_maestro_shards=(.maestro/a.yaml .maestro/b.yaml .maestro/c.yaml)\n"

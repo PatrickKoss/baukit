@@ -47,6 +47,9 @@ stall_seconds="${BAUKIT_QA_MAESTRO_STALL_SECONDS:-300}"
   echo "qa: BAUKIT_QA_MAESTRO_STALL_SECONDS must be a positive integer" >&2
   exit 2
 }
+# Covers the last hierarchy poll of a timed-out wait and the poll interval; the longest gap
+# between two Maestro log lines at host load 15 to 30 was 7 s.
+declared_wait_margin_seconds=60
 detach_grace_seconds="${BAUKIT_QA_DETACH_GRACE_SECONDS:-30}"
 [[ "$detach_grace_seconds" =~ ^[0-9]+$ ]] || {
   echo "qa: BAUKIT_QA_DETACH_GRACE_SECONDS must be a non-negative integer" >&2
@@ -166,6 +169,22 @@ progress() {
   { wc -c < "$maestro_log"; find "$debug_dir" -type f ! -name maestro-output.log -exec ls -ln {} + 2>/dev/null; } | cksum
 }
 
+stall_window() {
+  local label="$1" declared milliseconds where seconds window
+  shift
+  declared="$(python3 "$mobile_dir/scripts/qa/maestro-waits.py" "$@")" || return
+  milliseconds="${declared%%$'\t'*}"
+  where="${declared#*$'\t'}"
+  seconds=$(((milliseconds + 999) / 1000))
+  window=$((seconds + declared_wait_margin_seconds))
+  if ((milliseconds == 0 || window <= stall_seconds)); then
+    echo "$stall_seconds"
+    return 0
+  fi
+  echo "qa: $where may wait $seconds s, so $label gets a $window s stall window instead of $stall_seconds s" >&2
+  echo "$window"
+}
+
 stop_maestro() {
   kill -TERM -- "-$1" 2>/dev/null || true
   for _ in 1 2 3 4 5 6 7 8 9 10; do
@@ -177,8 +196,8 @@ stop_maestro() {
 }
 
 run_maestro() {
-  local label="$1" check="$2" last="" now since=$SECONDS started=$SECONDS pid
-  shift 2
+  local label="$1" check="$2" window="$3" last="" now since=$SECONDS started=$SECONDS pid
+  shift 3
   : > "$maestro_log"
   set -m
   "$maestro_bin" "$@" > >(tee -a "$maestro_log") 2>&1 &
@@ -198,8 +217,8 @@ run_maestro() {
     if [[ "$now" != "$last" ]]; then
       last="$now"
       since=$SECONDS
-    elif ((SECONDS - since > stall_seconds)); then
-      echo "qa: $label made no progress for $stall_seconds s; stopped it and kept $debug_dir" >&2
+    elif ((SECONDS - since > window)); then
+      echo "qa: $label made no progress for $window s; stopped it and kept $debug_dir" >&2
       stop_maestro "$pid"
       return 124
     fi
@@ -211,12 +230,14 @@ run_maestro() {
 count() { echo "$#"; }
 
 run_declared_shard() {
-  local index="$1" debug_dir="$2/shard-$1" maestro_log
+  local index="$1" debug_dir="$2/shard-$1" maestro_log window
   qa_maestro_env "$index"
   mkdir -p "$debug_dir"
   maestro_log="$debug_dir/maestro-output.log"
+  window="$(stall_window "${qa_maestro_shards[index]}" "${qa_maestro_shards[index]}")" ||
+    fail_device "${devices[index]}" "$?"
   prepare_flow_device "${devices[index]}" "${qa_maestro_shards[index]}" || fail_device "${devices[index]}" "$?"
-  run_maestro "${qa_maestro_shards[index]}" "" test \
+  run_maestro "${qa_maestro_shards[index]}" "" "$window" test \
     --platform "$platform" \
     --device "${devices[index]}" \
     --env "APP_ID=$app_id" \
@@ -244,14 +265,15 @@ run_declared_shards() {
 }
 
 run_device_flows() {
-  local index="$1" flow device_flows debug_dir="$2/shard-$1" maestro_log
+  local index="$1" flow device_flows debug_dir="$2/shard-$1" maestro_log window
   mapfile -t device_flows < <(qa_maestro_flows "$index")
   qa_maestro_env "$index"
   mkdir -p "$debug_dir"
   maestro_log="$debug_dir/maestro-output.log"
   for flow in "${device_flows[@]}"; do
+    window="$(stall_window "$flow" "$flow")" || fail_device "${devices[index]}" "$?"
     prepare_flow_device "${devices[index]}" "$flow" || fail_device "${devices[index]}" "$?"
-    run_maestro "$flow" "" test \
+    run_maestro "$flow" "" "$window" test \
       --platform "$platform" \
       --device "${devices[index]}" \
       --env "APP_ID=$app_id" \
@@ -307,8 +329,9 @@ if ((shards > flow_count)); then
 fi
 if ((shards < 2)); then
   for flow in "${flows[@]}"; do
+    window="$(stall_window "${flow#.maestro/}" "$flow")" || exit
     prepare_flow_device "${devices[0]}" "${flow#.maestro/}" || exit 1
-    run_maestro "${flow#.maestro/}" "" test \
+    run_maestro "${flow#.maestro/}" "" "$window" test \
       --platform "$platform" \
       --device "${devices[0]}" \
       --env "APP_ID=$app_id" \
@@ -321,8 +344,9 @@ fi
 
 devices=("${devices[@]:0:shards}")
 device_list="$(IFS=,; printf '%s' "${devices[*]}")"
+window="$(stall_window "the sharded run" "${flows[@]}")" || exit
 echo "qa: sharding $flow_count flows across $device_list"
-run_maestro "the sharded run" "during the sharded run" test \
+run_maestro "the sharded run" "during the sharded run" "$window" test \
   --platform "$platform" \
   --env "APP_ID=$app_id" \
   --debug-output "$debug_dir" \
