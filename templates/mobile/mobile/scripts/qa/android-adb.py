@@ -33,6 +33,11 @@ MIN_EVENT_FIELDS = 3
 HEALTH_BASE_ARGUMENTS = 4
 BOOT_BASE_ARGUMENTS = 4
 POLL_INTERVAL = 2
+READY_STATE = "device"
+FOREIGN_UNREADY_STATUS = 3
+MAESTRO_LISTING = (
+    "Maestro reports every Android device as not connected while any adb transport is not ready"
+)
 SYSTEMUI = "com.android.systemui"
 CRITICAL_PACKAGES = {
     SYSTEMUI,
@@ -307,6 +312,101 @@ def attached(adb: str, serial: str, timeout: float) -> int:
     return 0 if result.returncode == 0 and result.stdout.strip() == "device" else 1
 
 
+@dataclass(frozen=True)
+class MaestroTargets:
+    """Serials one Maestro run requests, how long they may be off adb, and how long others may."""
+
+    serials: tuple[str, ...]
+    grace: float
+    foreign_limit: float
+
+
+def transport_states(adb: str, timeout: float) -> dict[str, str] | None:
+    try:
+        result = run_command([adb, "devices"], capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return None
+    if result.returncode != 0:
+        return None
+    states = {}
+    for line in result.stdout.splitlines():
+        serial, separator, state = line.partition("\t")
+        if separator:
+            states[serial] = state.strip()
+    return states
+
+
+def unready_transports(
+    states: dict[str, str] | None, serials: tuple[str, ...]
+) -> tuple[list[str], list[str]]:
+    if states is None:
+        return ["adb devices did not answer"], []
+    own = [
+        f"{serial} is {states.get(serial, 'not listed')} on adb"
+        for serial in serials
+        if states.get(serial) != READY_STATE
+    ]
+    foreign = [
+        f"{serial} ({state}, not this run's)"
+        for serial, state in sorted(states.items())
+        if serial not in serials and state != READY_STATE
+    ]
+    return own, foreign
+
+
+def await_maestro_devices(
+    adb: str, targets: MaestroTargets, probe_timeout: float, *, timing: Timing = SYSTEM_TIMING
+) -> int:
+    """Waits until every transport the shared adb server lists is in state `device`.
+
+    Maestro 2.8.0 opens a transport to every serial adb lists. One that is offline, for example
+    another session's emulator while it boots or stops, makes it report every Android device as
+    not connected. The run's own serials may be off adb for `grace`, other transports for
+    `foreign_limit`.
+    """
+    started = timing.clock()
+    own_since = None
+    announced = False
+    while True:
+        own, foreign = unready_transports(transport_states(adb, probe_timeout), targets.serials)
+        if not own and not foreign:
+            return 0
+        now = timing.clock()
+        if not own:
+            own_since = None
+        elif own_since is None:
+            own_since = now
+        limit, elapsed = (
+            (targets.grace, now - own_since)
+            if own_since is not None
+            else (targets.foreign_limit, now - started)
+        )
+        if elapsed >= limit:
+            break
+        if foreign and not announced:
+            print(
+                f"qa: waiting for {', '.join(foreign)} on adb; {MAESTRO_LISTING}", file=sys.stderr
+            )
+            announced = True
+        timing.sleep(min(poll_interval(), limit - elapsed))
+    for problem in own:
+        print(f"qa: {problem} after {limit:g} s; Maestro needs state device", file=sys.stderr)
+    if own:
+        return 1
+    print(
+        f"qa: adb still lists {', '.join(foreign)} after {limit:g} s; {MAESTRO_LISTING}",
+        file=sys.stderr,
+    )
+    return FOREIGN_UNREADY_STATUS
+
+
+def report_unready_transports(adb: str, serials: tuple[str, ...], probe_timeout: float) -> int:
+    own, foreign = unready_transports(transport_states(adb, probe_timeout), serials)
+    if own or foreign:
+        print(f"qa: adb now reports {', '.join(own + foreign)}; {MAESTRO_LISTING}", file=sys.stderr)
+    return 0
+
+
 def console_port_open(serial: str) -> bool:
     match = SERIAL_PATTERN.match(serial)
     if match is None:
@@ -491,6 +591,16 @@ def attached_mode(probe_timeout: float) -> int:
     return attached(sys.argv[2], sys.argv[3], probe_timeout)
 
 
+def await_devices_mode(probe_timeout: float) -> int:
+    foreign_limit = timeout_setting("BAUKIT_QA_BOOT_TIMEOUT_SECONDS", DEFAULT_BOOT_TIMEOUT)
+    targets = MaestroTargets(tuple(sys.argv[4:]), float(sys.argv[3]), foreign_limit)
+    return await_maestro_devices(sys.argv[2], targets, probe_timeout)
+
+
+def report_unready_mode(probe_timeout: float) -> int:
+    return report_unready_transports(sys.argv[2], tuple(sys.argv[3:]), probe_timeout)
+
+
 MODES = dict(
     [
         ("--check-health", check_health_mode),
@@ -508,6 +618,8 @@ MODES = dict(
             wait_for_wifi_route,
         ),
         ("--attached", attached_mode),
+        ("--await-devices", await_devices_mode),
+        ("--report-unready", report_unready_mode),
         ("--wait-for-stop", wait_for_stop_mode),
         ("--wait-for-boot", wait_for_boot_mode),
     ]

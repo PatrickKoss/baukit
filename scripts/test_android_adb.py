@@ -354,6 +354,90 @@ class AndroidHealthTests(unittest.TestCase):
         self.assertFalse(android_adb.console_port_open("R5CT1234"))
 
 
+OWN_READY = "List of devices attached\nemulator-5662\tdevice\nemulator-5664\tdevice\n"
+FOREIGN_OFFLINE = OWN_READY + "emulator-5700\toffline\n"
+OWN_OFFLINE = OWN_READY.replace("emulator-5662\tdevice", "emulator-5662\toffline")
+
+
+class AndroidMaestroDeviceTests(unittest.TestCase):
+    def await_devices(self, listings, grace=30, foreign_limit=360):
+        clock = FakeClock()
+        listings = list(listings)
+
+        def run(command, **options):
+            outcome = listings.pop(0) if len(listings) > 1 else listings[0]
+            if outcome == "timeout":
+                clock.now += options["timeout"]
+                raise subprocess.TimeoutExpired(command, options["timeout"])
+            return subprocess.CompletedProcess(command, 0, stdout=outcome)
+
+        stderr = io.StringIO()
+        serials = ("emulator-5662", "emulator-5664")
+        targets = android_adb.MaestroTargets(serials, grace, foreign_limit)
+        with (
+            patch.object(android_adb, "run_command", side_effect=run),
+            patch.dict(os.environ, {"BAUKIT_QA_POLL_SECONDS": "2"}),
+            contextlib.redirect_stderr(stderr),
+        ):
+            status = android_adb.await_maestro_devices(
+                "adb", targets, 10, timing=android_adb.Timing(clock=clock, sleep=clock.sleep)
+            )
+        return status, stderr.getvalue(), clock.now
+
+    def test_ready_devices_pass_without_waiting(self):
+        status, stderr, elapsed = self.await_devices(["* daemon started\n" + OWN_READY])
+        self.assertEqual((status, stderr, elapsed), (0, "", 0))
+
+    def test_a_foreign_transport_that_is_not_ready_delays_maestro_until_it_is(self):
+        status, stderr, elapsed = self.await_devices([FOREIGN_OFFLINE] * 3 + [OWN_READY])
+        self.assertEqual((status, elapsed), (0, 6))
+        self.assertEqual(
+            stderr,
+            "qa: waiting for emulator-5700 (offline, not this run's) on adb;"
+            f" {android_adb.MAESTRO_LISTING}\n",
+        )
+
+    def test_a_foreign_transport_that_never_gets_ready_fails_after_the_boot_timeout(self):
+        status, stderr, elapsed = self.await_devices([FOREIGN_OFFLINE], foreign_limit=60)
+        self.assertEqual((status, elapsed), (3, 60))
+        self.assertIn(
+            "qa: adb still lists emulator-5700 (offline, not this run's) after 60 s;", stderr
+        )
+
+    def test_an_own_device_that_returns_within_the_grace_passes(self):
+        status, _, elapsed = self.await_devices([OWN_OFFLINE, "timeout", OWN_READY])
+        self.assertEqual((status, elapsed), (0, 14))
+
+    def test_an_own_device_off_adb_past_the_grace_names_its_serial_and_state(self):
+        status, stderr, elapsed = self.await_devices([OWN_OFFLINE], grace=30)
+        self.assertEqual((status, elapsed), (1, 30))
+        self.assertEqual(
+            stderr, "qa: emulator-5662 is offline on adb after 30 s; Maestro needs state device\n"
+        )
+        missing = "List of devices attached\nemulator-5664\tdevice\n"
+        status, stderr, _ = self.await_devices([missing], grace=0)
+        self.assertEqual(status, 1)
+        self.assertIn("qa: emulator-5662 is not listed on adb after 0 s", stderr)
+
+    def test_an_adb_server_that_does_not_answer_counts_against_the_grace(self):
+        status, stderr, _ = self.await_devices(["timeout"], grace=30)
+        self.assertEqual(status, 1)
+        self.assertIn("qa: adb devices did not answer after 30 s", stderr)
+
+    def test_report_names_every_transport_that_is_not_ready(self):
+        stderr = io.StringIO()
+        listing = subprocess.CompletedProcess(["adb", "devices"], 0, stdout=FOREIGN_OFFLINE)
+        with (
+            patch.object(android_adb, "run_command", return_value=listing),
+            contextlib.redirect_stderr(stderr),
+        ):
+            status = android_adb.report_unready_transports("adb", ("emulator-5662",), 10)
+        self.assertEqual(status, 0)
+        self.assertIn(
+            "qa: adb now reports emulator-5700 (offline, not this run's);", stderr.getvalue()
+        )
+
+
 def stat(busy: int, idle: int, cores: int = 4) -> str:
     lines = [f"cpu  {busy} 0 0 {idle} 0 0 0 0 0 0"]
     lines += [f"cpu{index} 0 0 0 0 0 0 0 0 0 0" for index in range(cores)]

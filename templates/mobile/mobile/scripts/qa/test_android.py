@@ -883,6 +883,7 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             self.sdk / "platform-tools/adb",
             r"""
 case "$*" in
+  devices) printf '%s\tdevice\n' $ADB_SERIALS ;;
   *get-state*) echo device ;;
   *"logcat -v threadtime"*)
     echo "$$" >> "$LOGCAT_PIDS"
@@ -907,6 +908,7 @@ done
         self.environment["PATH"] = f"{self.root / 'bin'}:{self.environment['PATH']}"
         self.environment["BAUKIT_QA_POLL_SECONDS"] = "0"
         self.environment["LOGCAT_PIDS"] = str(self.root / "logcat-pids")
+        self.environment["ADB_SERIALS"] = " ".join(devices)
         mobile = self.root / "mobile"
         (mobile / ".maestro").mkdir(parents=True)
         (mobile / ".maestro/one.yaml").write_text("appId: x\n")
