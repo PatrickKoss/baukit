@@ -1769,3 +1769,34 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
 - Product hosted CI fails unstarted on the Actions spending limit. The user decided only baukit's
   hosted CI must be green; products are gated locally.
 - Added Phase GT (gate throughput) after reviewing the gate setup with the user.
+
+### 2026-11-19 08:30
+
+- Released v0.28.3 (17955314, release run 44471944774). It carries the task/qa-gate-load template
+  fixes, a Maestro stall window that grows to the longest declared `timeout:` plus 60 s, and the
+  image allowlist below. Its first release gate failed platform-images on a new Trivy DB, which the
+  allowlist fixed, and native-android on an inputmethod ANR at load 45, which passed on rerun.
+- Image allowlist (7ce1af50): Go stdlib CVE-2026-97054 in 48 third-party images (fixed only in Go
+  1.26.11 and 1.27.4, which no upstream image uses yet) and two PostHog release-1.43.1 findings.
+  Entries expire on 2027-01-16.
+- Maestro said "Device X was requested, but it is not connected" whenever any serial on the shared
+  adb server was not ready. Maestro 2.11.0 bundles dadb 2.0.0, which lists every transport without a
+  state filter, and `DeviceService` swallows the error and returns an empty list. `run-maestro.sh`
+  now waits until every serial reports `device` before each start (caa0d567, hosted CI green, run
+  44472875013). It ships in the next patch.
+- Products on 0.28.2, merged after a green local gate: schluesselbund 669e704a, laufbefund b954e7d4,
+  lesezeichen d27dfd7f, bauvisite 6fcb2fa8, eigenruhe f2527e39, leitbild 82c5619, hebkit e1690a61,
+  redemut e9c044a5, heldengang 077727d8, tiefgang d1aaa6e. kassensturz needed the new stall window
+  for its 600 s `transactions-perf.yaml` wait and went straight to 0.28.3 (19b08ee2, full gate
+  1609 s). schlauzug reached 0.28.2 through its own session; the branch-only task/bump-0.280 there is
+  obsolete and stays untouched.
+- tiefgang's Keycloak login helper typed into the form before the theme script had finished; it now
+  waits for the form-ready attribute and the autofocused field and asserts the typed values.
+  heldengang's desktop header now reserves its height while the session restores, so the
+  preferences test no longer clicks into a shifting layout.
+- Hosted Android fixture jobs failed now and then with "Could not find kotlin-stdlib:2.2.21". Every
+  failure started from an empty Gradle home: the repository sat at 11.5 GB against its 10 GB cache
+  limit, setup-gradle kept one 1.4 to 1.9 GB home per flavor, and it saved 170 MB partial homes from
+  failed builds. ci.yml now keeps one shared Gradle home, written only by a successful clerk build
+  on main, and one pnpm store for the fixture matrix (816b3ea7).
+- Still open: RF25 (Hetzner, by choice). Follow-ups are in the final report.
