@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.3] - 2026-11-19
+
 - `platform-images` downloads trivy's vulnerability and Java databases and the checks bundle into each run's work directory, as a fresh CI runner does, and shares only the layer cache in `~/.cache/baukit/trivy/fanal`. trivy skips a download until the cached database's NextUpdate, a day for the vulnerability DB and three for the Java DB, so the local step passed on a DB from 2026-11-17 19:04 while CI's DB from 2026-11-18 13:03 reported CVE-2026-64544 and CVE-2026-64549 in the PostHog image. A local run now downloads about 1.6 GB more, roughly two minutes. The old `db` and `java-db` directories in the shared cache are no longer read and can be deleted.
 - `posthog/posthog:release-1.43.1` allows CVE-2026-64544 and CVE-2026-64549 in `linux-libc-dev`. release-1.43.1 is still the newest PostHog release, so there is no fixed image.
 - `image-findings.toml` allows CVE-2026-97054 in 48 images. It is a Go standard library `net/http` race (an HTTP/1 handler that reads the body behind `MaxBytesReader` while it writes the response can panic) fixed in Go 1.26.11 and 1.27.4 on 2026-11-10. Every affected image is on its newest upstream release, and none of them is built with a fixed Go yet. node-exporter v1.13.0 is tagged on GitHub but has no image. Six images get their first entry: Alloy v1.22.0, Loki 3.7.10, the Loki access-log-exporter 1.0.2, redis_exporter v1.97.0, prometheus-operator and prometheus-config-reloader v0.95.2. PostHog release-1.43.1 also allows CVE-2026-64495 (`linux-libc-dev`) and CVE-2026-73864 (`install-artifact-from-github` 1.3.1 in the plugin server's `node_modules`). Rescanned against the Trivy DB of 2026-11-19.

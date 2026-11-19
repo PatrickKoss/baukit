@@ -5,6 +5,14 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.28.3
+
+Last verified release train: `v0.28.3` (patch train on top of `v0.28.2`). No component versions change.
+- Generated mobile QA: `run-maestro.sh` widens its stall window to the longest declared `timeout:` plus 60 s, and `android-adb.py` boot and stop waits use `BAUKIT_QA_POLL_SECONDS`.
+- The strict `gate.py` starts `android-e2e` after the `backend`, `fuzz` and `images` lanes (`[quality.waits_for]`), and the generated Keycloak tool check runs its four suites by path.
+- Platform e2e reads a NetworkPolicy dump torn by a concurrent kube-router set swap as not fenced yet instead of failing.
+- `image-findings.toml` allows Go stdlib CVE-2026-97054 in 48 third-party images and two more PostHog findings; no upstream image is built with Go 1.26.11 or 1.27.4 yet.
+
 ## v0.28.2
 
 Last verified release train: `v0.28.2` (patch train on top of `v0.28.1`). No component versions change.
