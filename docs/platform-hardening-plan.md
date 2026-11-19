@@ -1799,4 +1799,10 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   limit, setup-gradle kept one 1.4 to 1.9 GB home per flavor, and it saved 170 MB partial homes from
   failed builds. ci.yml now keeps one shared Gradle home, written only by a successful clerk build
   on main, and one pnpm store for the fixture matrix (816b3ea7).
+- The same day Trivy's database rescored CVE-2026-97054 to MEDIUM (CVSS 5.9), below the HIGH and
+  CRITICAL findings platform-images gates on, and hosted CI failed on the 48 stale entries. The
+  allowlist went back to its state before 0247bb06 except for the two PostHog findings. A generated
+  fixture job also failed on mise's 3 s GitHub lookup timeout; CI now sets
+  `MISE_FETCH_REMOTE_VERSIONS_TIMEOUT: 60s` (6dd99252, hosted CI green, run 44490409046). No Android
+  build ran on main since the Gradle cache change, so its first save is still to be seen.
 - Still open: RF25 (Hetzner, by choice). Follow-ups are in the final report.
