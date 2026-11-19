@@ -171,7 +171,11 @@ baukit.dev/process: {{ .process }}
 {{- if not (regexMatch "^sha256:[a-f0-9]{64}$" $digest) -}}
 {{- fail (printf "%s.image.digest must look like sha256:<64 hex characters>" .name) -}}
 {{- end -}}
+{{- if $tag -}}
+{{- printf "%s:%s@%s" $repository $tag $digest -}}
+{{- else -}}
 {{- printf "%s@%s" $repository $digest -}}
+{{- end -}}
 {{- else if $tag -}}
 {{- printf "%s:%s" $repository $tag -}}
 {{- else -}}

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- New `baukit check fuzz-lockfile` rule fails when a strict product tracks `backend/fuzz/Cargo.lock` in git.
+- Generated `osv-scanner.toml` no longer ignores GHSA-fc5q-39xc-vjpf (picomatch ReDoS); osv.dev withdrew it on 2026-11-18.
+- `baukit doctor` validates `[gate.worker-caps]` in `baukit.toml`: every key must be a worker variable the strict gate sets, and every cap a positive integer.
+
 ## [0.28.3] - 2026-11-19
 
 ## [0.28.2] - 2026-11-18

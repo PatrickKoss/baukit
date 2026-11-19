@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     components::Components, dockerfile, dockerfile::BackendManifest, doctor_layout::DoctorPaths,
-    gate_settings, ports::PortDeclaration,
+    gate_settings, gate_worker_caps::GateManifest, ports::PortDeclaration,
 };
 
 pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
@@ -48,6 +48,8 @@ pub struct Manifest {
     pub app: AppManifest,
     #[serde(default)]
     pub quality: QualityManifest,
+    #[serde(default, skip_serializing_if = "GateManifest::is_empty")]
+    pub gate: GateManifest,
     #[serde(default)]
     pub auth: AuthManifest,
     pub capabilities: Capabilities,
@@ -239,5 +241,6 @@ pub fn read_manifest(root: &Path) -> Result<Manifest> {
     let manifest: Manifest =
         toml::from_str(&source).with_context(|| format!("could not parse {}", path.display()))?;
     dockerfile::validate(&manifest)?;
+    manifest.gate.validate()?;
     Ok(manifest)
 }

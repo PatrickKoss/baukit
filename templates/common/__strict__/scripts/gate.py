@@ -83,6 +83,7 @@ class RunContext:
     command: list[str]
     log_directory: Path
     environment: dict[str, str]
+    worker_caps: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -572,6 +573,7 @@ class Runner:
         self.command = context.command
         self.log_directory = context.log_directory
         self.environment = context.environment
+        self.worker_caps = context.worker_caps
         self.names = {item.step.name for item in planned}
         self.done = {item.step.name: threading.Event() for item in planned}
         self.status: dict[str, str] = {}
@@ -762,7 +764,7 @@ class Runner:
         asked = time.monotonic()
         cores, drawn = self.cores_for(step)
         environment = dict(self.environment)
-        worker_environment(environment, cores)
+        worker_environment(environment, cores, self.worker_caps)
         print(
             f"gate: [{lane}] {step.name} started with {cores} "
             f"{'cores' if drawn else 'cores, light'}, "
@@ -855,18 +857,40 @@ def cache_environment(environment: dict[str, str]) -> list[str]:
     return [f"cache: {line}" for line in lines]
 
 
-def worker_environment(environment: dict[str, str], workers: int) -> None:
-    for name in (
-        "BAUKIT_GATE_WORKERS",
-        "CARGO_BUILD_JOBS",
-        "NEXTEST_TEST_THREADS",
-        "RUST_TEST_THREADS",
-        "VITEST_MAX_WORKERS",
-        "E2E_WORKERS",
-        "BAUKIT_QA_GRADLE_WORKERS",
-        "BAUKIT_QA_NATIVE_JOBS",
-    ):
-        environment[name] = str(workers)
+WORKER_VARIABLES = (
+    "BAUKIT_GATE_WORKERS",
+    "CARGO_BUILD_JOBS",
+    "NEXTEST_TEST_THREADS",
+    "RUST_TEST_THREADS",
+    "VITEST_MAX_WORKERS",
+    "E2E_WORKERS",
+    "BAUKIT_QA_GRADLE_WORKERS",
+    "BAUKIT_QA_NATIVE_JOBS",
+)
+
+
+def worker_caps(settings: dict) -> dict[str, int]:
+    return dict(settings.get("gate", {}).get("worker-caps", {}))
+
+
+def worker_caps_error(settings: dict) -> str | None:
+    for name, cap in worker_caps(settings).items():
+        if name not in WORKER_VARIABLES:
+            return (
+                f"gate: gate.worker-caps names unknown variable {name}; "
+                f"known: {', '.join(WORKER_VARIABLES)}"
+            )
+        if isinstance(cap, bool) or not isinstance(cap, int) or cap < 1:
+            return f"gate: gate.worker-caps.{name} must be a positive integer, got {cap!r}"
+    return None
+
+
+def worker_environment(
+    environment: dict[str, str], workers: int, caps: dict[str, int] | None = None
+) -> None:
+    caps = caps or {}
+    for name in WORKER_VARIABLES:
+        environment[name] = str(max(1, min(workers, caps.get(name, workers))))
 
 
 def rust_packages(
@@ -927,7 +951,7 @@ def worker_budget(
     if pool is not None:
         extras.append(f"cores: {budget.cores} slots shared through {pool.directory}")
     workers = budget.share(len(lanes))
-    worker_environment(environment, workers)
+    worker_environment(environment, workers, worker_caps(settings))
     extras.append(
         f"workers: {cores} cores across {len(lanes)} lanes "
         f"({', '.join(lanes) or 'none'}): {workers} per lane"
@@ -1050,6 +1074,7 @@ def run_command(arguments: argparse.Namespace) -> int:
         unknown_names_error(settings, light, steps)
         or fast_lane_wait_error(steps, resource_map(settings))
         or waits_for_error(steps, settings)
+        or worker_caps_error(settings)
     )
     if name_error:
         print(name_error, file=sys.stderr)
@@ -1089,7 +1114,7 @@ def run_command(arguments: argparse.Namespace) -> int:
     started = time.monotonic()
     runner = Runner(
         planned,
-        RunContext([*script, "--step"], log_directory, environment),
+        RunContext([*script, "--step"], log_directory, environment, worker_caps(settings)),
         budget=budget,
         light=light,
         sharing=sharing,

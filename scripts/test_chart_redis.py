@@ -8,7 +8,7 @@ from process_runner import run_process
 
 CHART = Path(__file__).resolve().parent.parent / "deploy/chart/baukit-app"
 REDIS_DIGEST = "sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3"
-REDIS_IMAGE = f"redis@{REDIS_DIGEST}"
+REDIS_IMAGE = f"redis:8.10.3-alpine@{REDIS_DIGEST}"
 
 
 class RedisChartImageTest(unittest.TestCase):
