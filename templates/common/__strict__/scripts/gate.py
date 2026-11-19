@@ -870,10 +870,15 @@ WORKER_VARIABLES = (
 
 
 def worker_caps(settings: dict) -> dict[str, int]:
-    return dict(settings.get("gate", {}).get("worker-caps", {}))
+    gate = settings.get("gate", {})
+    caps = gate.get("worker-caps", {}) if isinstance(gate, dict) else {}
+    return dict(caps) if isinstance(caps, dict) else {}
 
 
 def worker_caps_error(settings: dict) -> str | None:
+    gate = settings.get("gate", {})
+    if not isinstance(gate, dict) or not isinstance(gate.get("worker-caps", {}), dict):
+        return "gate: gate.worker-caps must be a table of variable names to positive integers"
     for name, cap in worker_caps(settings).items():
         if name not in WORKER_VARIABLES:
             return (

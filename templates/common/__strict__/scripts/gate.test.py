@@ -245,6 +245,12 @@ class WorkerTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertIn("must be a positive integer", error({"E2E_WORKERS": value}))
 
+    def test_worker_caps_reject_a_non_table(self):
+        for settings in ({"gate": {"worker-caps": 4}}, {"gate": 4}):
+            with self.subTest(settings=settings):
+                self.assertIn("must be a table", gate.worker_caps_error(settings))
+                self.assertEqual(gate.worker_caps(settings), {})
+
 
 class BudgetTests(unittest.TestCase):
     def test_within_budget(self):
