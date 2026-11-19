@@ -5,6 +5,15 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.28.4
+
+Last verified release train: `v0.28.4` (patch train on top of `v0.28.3`). No component versions change.
+- Generated mobile QA waits until every adb transport reports `device` before each Maestro start. Maestro 2.x drops every device when one row is `offline` (upstream mobile-dev-inc/Maestro#3706).
+- The strict `gate.py` reads `[gate.worker-caps]` from `baukit.toml` and caps each worker variable, and `baukit check` gains the `fuzz-lockfile` rule.
+- The `baukit-app` chart renders `repository:tag@digest` when both are set.
+- `signInWithKeycloak` waits for the initialized login form and checks the typed values; `PurchaseFlow.adoptEntitlement` takes an entitlement the product already read.
+- `image-findings.toml` drops CVE-2026-97054 again after Trivy rescored it MEDIUM, and the withdrawn picomatch advisory GHSA-fc5q-39xc-vjpf leaves the osv ignores.
+
 ## v0.28.3
 
 Last verified release train: `v0.28.3` (patch train on top of `v0.28.2`). No component versions change.

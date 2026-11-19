@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.4] - 2026-11-19
+
 {% if context.mobile %}- `run-maestro.sh` waits until `adb devices` lists every serial in state `device` right before each Maestro start, through the new `--await-devices` mode of `mobile/scripts/qa/android-adb.py`. Maestro 2.8.0 opens a transport to every serial the shared adb server on port 5037 lists and, when one of them is booting or offline, reports every Android device as not connected. A gate printed `Device emulator-5662 was requested, but it is not connected.` while that emulator kept streaming logcat. The run's own emulators get `BAUKIT_QA_DETACH_GRACE_SECONDS` to return, other sessions' emulators `BAUKIT_QA_BOOT_TIMEOUT_SECONDS`, and the failure names the serial and its adb state. After a failed Maestro run the script also prints any serial that is not ready. Copy `run-maestro.sh`, `android-adb.py`, `test_android.py` and, in strict products, `docs/quality-gate.md` from the template.
 
 {% endif %}{% if context.quality_strict %}- `scripts/gate.py` reads `[gate.worker-caps]` from `baukit.toml` and exports the smaller of the lane's share and the cap for each listed variable, at least 1. A product whose Playwright allows at most 4 workers sets `E2E_WORKERS = 4` once instead of clamping in every step; hebkit's gate failed with `E2E_WORKERS must be an integer between 1 and 4, got '9'` where a step missed the clamp. The gate exits with status 2, and `baukit doctor` fails, on an unknown variable or a cap below 1. Copy `scripts/gate.py`, `scripts/gate.test.py` and `docs/quality-gate.md` from the template.
