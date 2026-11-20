@@ -1841,3 +1841,36 @@ Directory ownership must stay disjoint inside each step. Agents that touch the s
   only when Trivy reports it at no severity. The 48 entries are back until 2027-01-16 (974d4081,
   hosted CI green, run 44573748093).
 - Still open: RF25 (Hetzner, by choice).
+
+### 2026-11-20 01:30
+
+- The rest of the products moved to 0.28.4 after a green local gate: heldengang 362af59a, redemut
+  849ae611, lesezeichen 234ebd23, schluesselbund a3426ed9, bauvisite 7dbc8c42, leitbild
+  6458c22.
+  All drop the withdrawn GHSA-fc5q-39xc-vjpf ignore and take `fuzz-lockfile`. None clamps a worker
+  count by hand, so none sets `[gate.worker-caps]`. lesezeichen and schluesselbund have the generated
+  Keycloak tool test and run it by path. The other four do not.
+- The previous entry said the other products install their Playwright browsers before use. Two did
+  not: leitbild's `web-install` only checked for browsers, and schluesselbund's identity consent
+  suite ran on whatever sat in the shared cache. Both install now.
+- Bump fallout, each fixed in the product: schluesselbund's `maestro-runner.test.ts` copied
+  `run-maestro.sh` without the new `maestro-waits.py`. leitbild's `render-gitops.py` expected the
+  Redis image as `redis@sha256:…`, but the 0.28.4 chart renders `redis:8.10.3-alpine@sha256:…`.
+  Other products that assert a rendered chart image should expect `repository:tag@digest`.
+- Test races found by the gates: bauvisite's `workspaceRoute` helper read a navigation group's
+  `aria-expanded` and then clicked it. `useNavigationState` opens the active route's group in an
+  effect after a route change, and on loaded WebKit that effect landed between the read and the
+  click, which closed the group again. The helper now clicks until the group stays open. laufbefund's
+  policy form test checked focus right after `findByRole('alert')`, before `SpendFormError`'s
+  effect moved it, and now waits for it.
+- leitbild's `android-e2e` needed two reruns, and neither failure traces back to 0.28.4. In the
+  first run the emulator's qemu died on SIGSEGV at load 66. In the second, `journal-lifecycle` got
+  the OAuth redirect back into the app and still showed the signed-out screen, with no error in
+  logcat. auth-native has no code change between 0.28.2 and 0.28.4. The third run passed all six
+  flows at load 6. If the lost sign-in comes back, it needs its own investigation.
+- tiefgang's cold load reads `/api/v1/me` exactly once (`cold-load-identity.spec.ts`, f7e11bd).
+  The only other `/me` path in the load is `/api/v1/me/entitlement`.
+- laufbefund's RUSTSEC-2026-0543 (chrono, unmaintained) ignore now says why it has no fix: the agent
+  builds chrono through oci-client 0.18.0 and prometheus-parse 0.2.5, both the newest releases
+  (60d8616c).
+- Still open: RF25 (Hetzner, by choice). schlauzug moves on its own branch.
