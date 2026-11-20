@@ -1989,9 +1989,10 @@ ids = [
 
 [images."rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332"]
 expires = 2027-01-16
-reason = "rancher/k3s:v1.37.2-k3s1: no fixed upstream release exists as of 2026-11-19. v1.37.2-k3s1 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
+reason = "rancher/k3s:v1.37.2-k3s1: no fixed upstream release exists as of 2026-11-19. v1.37.2-k3s1 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. CVE-2026-58213 is nats-server 2.14.0, which bin/k3s compiles in for kine's NATS datastore; nats-server 2.14.1 fixed it on 2026-05-20, but no k3s release after v1.37.2+k3s1 (2026-11-03) takes it, and the platform runs k3s on embedded etcd, so the NATS code path does not run. Follow-up RF29."
 ids = [
   "CVE-2026-56854",
+  "CVE-2026-58213",
   "CVE-2026-78661",
   "CVE-2026-97054",
 ]
