@@ -160,6 +160,22 @@
       "groupSlug": "platform-hcloud"
     },
     {
+      "description": "One PR per platform base: keycloak",
+      "matchFileNames": [
+        "deploy/platform/keycloak/**"
+      ],
+      "groupName": "platform keycloak",
+      "groupSlug": "platform-keycloak"
+    },
+    {
+      "description": "keycloak-config-cli tags end in the Keycloak build they target; only releases for that same build are proposed, and moving the suffix is a manual change made with a Keycloak bump",
+      "matchPackageNames": [
+        "docker.io/adorsys/keycloak-config-cli",
+        "adorsys/keycloak-config-cli"
+      ],
+      "versioning": "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<compatibility>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
       "description": "One PR per platform base: kured",
       "matchFileNames": [
         "deploy/platform/kured/**"
