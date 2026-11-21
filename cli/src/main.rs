@@ -4,7 +4,7 @@ use anyhow::Result;
 use baukit_cli::{
     AuthProvider, Component, Components, NewOptions, QualityProfile,
     check::{CheckOptions, CheckRequest, run_check},
-    doctor, generate_dockerfile, generate_new, generate_openapi_client,
+    doctor, generate_dockerfile, generate_gitops, generate_new, generate_openapi_client,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -137,6 +137,8 @@ enum GenerateCommand {
     },
     /// Generate TypeScript declarations from the committed OpenAPI schema.
     OpenapiClient,
+    /// Add the deploy/gitops overlays and the release and promote workflows that are missing.
+    Gitops,
 }
 
 fn main() -> ExitCode {
@@ -208,6 +210,7 @@ fn generate(command: &GenerateCommand) -> Result<Vec<String>> {
             let verb = if check { "checked" } else { "generated" };
             Ok(vec![format!("{verb} {}", path.display())])
         }
+        GenerateCommand::Gitops => generate_gitops(&env::current_dir()?),
         GenerateCommand::OpenapiClient => {
             generate_openapi_client(&env::current_dir()?)?;
             Ok(vec![

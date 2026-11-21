@@ -9,4 +9,5 @@ rust = { version = "1.100.0", components = "clippy,rustfmt" }
 "aqua:koalaman/shellcheck" = "0.11.0"
 "aqua:ast-grep/ast-grep" = "0.51.1"
 {% if context.backend %}"aqua:EmbarkStudios/cargo-deny" = "0.20.2"
+"aqua:sigstore/cosign" = "3.1.4"
 {% endif -%}

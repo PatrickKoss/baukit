@@ -1,0 +1,16 @@
+# scripts/release.sh writes testing pins; scripts/promote.sh copies them to production.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: {{ context.app_name }}
+spec:
+  values:
+    api:
+      image:
+        tag: "000000000000" # api image
+{% if context.worker %}    worker:
+      image:
+        tag: "000000000000" # worker image
+{% endif %}    migration:
+      image:
+        tag: "000000000000" # migrate image

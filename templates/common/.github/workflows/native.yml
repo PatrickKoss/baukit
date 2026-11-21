@@ -41,7 +41,7 @@ jobs:
   android:
     name: Android prebuild and assembleDebug
     if: {% raw %}github.event_name != 'schedule' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'android'){% endraw %}
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     defaults:
       run:
         working-directory: mobile
@@ -167,7 +167,7 @@ permissions:
 
 jobs:
   unavailable:
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     steps:
       - name: Report missing mobile capability
         run: |

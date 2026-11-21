@@ -34,7 +34,7 @@ pub use dockerfile::{
 };
 pub use doctor::doctor;
 pub use doctor_layout::{DoctorPaths, DoctorWaiver};
-pub use generate::{NewOptions, generate_new};
+pub use generate::{NewOptions, generate_gitops, generate_new};
 pub use manifest::{
     AnalyticsAdapter, AppManifest, AuthProvider, BaukitDependency, Capabilities, Dependencies,
     MANIFEST_SCHEMA_VERSION, Manifest, OpenApiCompatibility, OpenApiPaths, PlatformManifest,

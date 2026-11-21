@@ -1,0 +1,8 @@
+# Replace each recipient with the tenant's public age key from platform-infra.
+creation_rules:
+  - path_regex: testing/.*\.enc\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: REPLACE_WITH_TESTING_AGE_RECIPIENT
+  - path_regex: production/.*\.enc\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    age: REPLACE_WITH_PRODUCTION_AGE_RECIPIENT

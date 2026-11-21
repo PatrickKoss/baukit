@@ -1,8 +1,10 @@
 mod dependencies;
+mod gitops;
 mod manifest_source;
 mod render;
 mod template_files;
 
+pub use gitops::generate_gitops;
 pub(crate) use template_files::render_template_owned;
 
 use std::{
@@ -22,7 +24,7 @@ use crate::{
     doctor_layout, gate_settings,
     generate::dependencies::dependency_context,
     generate::render::{
-        AuthContext, CiEnvEntry, DeclaredPorts, RENDERED_SYMLINKS, TemplateContext,
+        AuthContext, CiEnvEntry, DeclaredPorts, GitopsContext, RENDERED_SYMLINKS, TemplateContext,
         product_description, render_product,
     },
     manifest::{AuthProvider, Manifest, QualityProfile},
@@ -212,6 +214,20 @@ fn template_context(
         },
         api_container_port: ports.api_container,
         ops_container_port: ports.ops_container,
+        gitops: gitops_context(options, manifest)?,
+    })
+}
+
+fn gitops_context(options: &NewOptions, manifest: Option<&Manifest>) -> Result<GitopsContext> {
+    let gitops = manifest
+        .and_then(|manifest| manifest.gitops.clone())
+        .unwrap_or_default();
+    gitops.validate()?;
+    Ok(GitopsContext {
+        identity_url: gitops.resolved_identity_url(),
+        realm: gitops.realm.unwrap_or_else(|| options.name.clone()),
+        domain: gitops.domain,
+        registry: gitops.registry,
     })
 }
 

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `baukit new` generates `deploy/gitops/{base,testing,production}` for backend products: a HelmRelease of the baukit chart, an IngressRoute with a headers Middleware, SOPS placeholders for the runtime and pull Secrets, and image pins in `release.yaml`. Hosts, image registry, identity URL and realm come from the new `[gitops]` table in `baukit.toml` (`domain`, `registry`, optional `identity_url` and `realm`), which new backend products get with placeholder values. Unsafe characters in those fields fail generation.
+- Backend products get `.github/workflows/release.yml` and `promote.yml` with `scripts/release.sh`, `scripts/promote.sh`, `scripts/image-signing.sh`, `scripts/gitops-git.sh` and `scripts/gitops-pins.py`, lifted from leitbild's release flow.
+- New `baukit generate gitops` adds those overlays, workflows and scripts to an existing backend product from its `baukit.toml`. It writes only missing files and lists every existing file that differs from the template as kept.
+- Every generated Linux job reads `runs-on` from the repository variable `BAUKIT_RUNS_ON`, and the strict gate job from `BAUKIT_GATE_RUNS_ON`, with `ubuntu-latest` as fallback.
+
 ## [0.28.4] - 2026-11-19
 
 - New `baukit check fuzz-lockfile` rule fails when a strict product tracks `backend/fuzz/Cargo.lock` in git.

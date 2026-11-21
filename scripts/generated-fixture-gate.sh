@@ -60,6 +60,9 @@ for flavor in "${flavors[@]}"; do
         cargo test --manifest-path "$fixture/backend/Cargo.toml" -p "$name-bin" --test openapi_drift
         helm lint --strict deploy/chart/baukit-app -f "$fixture/deploy/values.yaml"
         helm template "$name" deploy/chart/baukit-app -f "$fixture/deploy/values.yaml" >/dev/null
+        python3 scripts/check-gitops-fixture.py "$fixture"
+        python3 "$fixture/scripts/gitops-pins.test.py"
+        python3 "$fixture/scripts/release-dry-run.test.py"
     fi
     if [[ "$flavor" == platform* ]]; then
         cp "$fixture/generated/openapi.d.ts" "$fixture_parent/openapi-before.d.ts"

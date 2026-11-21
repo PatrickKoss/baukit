@@ -1,0 +1,15 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: baukit
+  labels:
+    baukit.dev/product: {{ context.app_name }}
+spec:
+  interval: 1h
+  timeout: 2m
+  url: https://github.com/PatrickKoss/baukit.git
+  ref:
+    tag: v{{ context.template_version }}
+  ignore: |
+    /*
+    !/deploy/chart/baukit-app/

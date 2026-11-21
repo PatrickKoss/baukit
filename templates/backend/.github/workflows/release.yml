@@ -1,0 +1,46 @@
+name: Release
+
+# Pushes the backend images for main, signs them by digest and pins them in deploy/gitops/testing.
+# The pin commit only touches deploy/gitops, so it does not start another release.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "deploy/gitops/**"
+
+# Jobs widen this only as far as they need.
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build, sign and pin in testing
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
+    timeout-minutes: 60
+    environment: release
+    permissions:
+      # Read the source; write the GHCR images. The pin push uses the deploy key, not this token.
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.8.11
+          cache: false
+          install_args: aqua:sigstore/cosign
+      - name: Build, push, sign and pin the images
+        env:
+          COSIGN_PRIVATE_KEY: {% raw %}${{ secrets.COSIGN_PRIVATE_KEY }}{% endraw %}
+          COSIGN_PASSWORD: {% raw %}${{ secrets.COSIGN_PASSWORD }}{% endraw %}
+          GITOPS_DEPLOY_KEY: {% raw %}${{ secrets.GITOPS_DEPLOY_KEY }}{% endraw %}
+          REGISTRY_USER: {% raw %}${{ github.actor }}{% endraw %}
+          REGISTRY_TOKEN: {% raw %}${{ github.token }}{% endraw %}
+        run: bash scripts/release.sh
