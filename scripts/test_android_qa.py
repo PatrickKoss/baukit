@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -11,6 +12,28 @@ from process_runner import run_process, start_process
 
 TEMPLATES = Path(__file__).resolve().parents[1] / "templates/mobile/mobile"
 HANG_WATCHDOG_SECONDS = 120
+FIRST_TEST_CONSOLE_PORT = 5600
+LAST_EMULATOR_CONSOLE_PORT = 5682
+PORTS_PER_EMULATOR = 2
+
+
+def port_in_use(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+            return True
+    except OSError:
+        return False
+
+
+def free_console_ports(count: int, start: int = FIRST_TEST_CONSOLE_PORT) -> int:
+    """First even console port of `count` emulators whose ports no real emulator holds."""
+    span = count * PORTS_PER_EMULATOR
+    for first in range(start, LAST_EMULATOR_CONSOLE_PORT - span + 2, PORTS_PER_EMULATOR):
+        if not any(port_in_use(port) for port in range(first, first + span)):
+            return first
+    raise AssertionError(f"no free block of {count} emulator console ports from {start}")
+
+
 SEED_WAIT_FLOW = """appId: test
 ---
 - launchApp
@@ -458,16 +481,20 @@ RENDERER
 
     def test_port_comes_from_manifest_and_environment_overrides_it(self):
         self.prepare_start()
-        (self.root / "baukit.toml").write_text("[quality]\nandroid_emulator_port = 5600\n")
-        for environment, serial in (
-            ({}, "emulator-5600"),
-            ({"BAUKIT_QA_ANDROID_PORT": "5610"}, "emulator-5610"),
+        manifest_port = free_console_ports(2)
+        override_port = free_console_ports(2, manifest_port + 2 * PORTS_PER_EMULATOR)
+        (self.root / "baukit.toml").write_text(
+            f"[quality]\nandroid_emulator_port = {manifest_port}\n"
+        )
+        for environment, port in (
+            ({}, manifest_port),
+            ({"BAUKIT_QA_ANDROID_PORT": str(override_port)}, override_port),
         ):
+            serial = f"emulator-{port}"
             with self.subTest(serial=serial):
                 self.events.unlink(missing_ok=True)
                 result = self.run_script("android-env.sh", "start", **environment)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                port = int(serial.removeprefix("emulator-"))
                 self.assertEqual(
                     (self.state / "android-serial").read_text(), f"{serial}\nemulator-{port + 2}\n"
                 )
@@ -477,8 +504,10 @@ RENDERER
 
     def test_emulator_count_comes_from_manifest_and_extra_emulators_are_read_only(self):
         self.prepare_start()
+        port = free_console_ports(3)
+        serials = [f"emulator-{port + offset}" for offset in (0, 2, 4)]
         (self.root / "baukit.toml").write_text(
-            "[quality]\nandroid_emulator_port = 5600\nandroid_emulators = 3\n"
+            f"[quality]\nandroid_emulator_port = {port}\nandroid_emulators = 3\n"
         )
         self.executable(
             self.sdk / "emulator/emulator",
@@ -488,20 +517,20 @@ RENDERER
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(
             (self.state / "android-serial").read_text(),
-            "emulator-5600\nemulator-5602\nemulator-5604\n",
+            "".join(f"{serial}\n" for serial in serials),
         )
         events = self.events.read_text().splitlines()
         launches = [json.loads(event)["args"] for event in events if event.startswith("{")]
         self.assertEqual(len(launches), 4)
         self.assertNotIn("-read-only", launches[0])
         self.assertIn("-no-snapshot-load", launches[0])
-        kill = next(i for i, event in enumerate(events) if "emulator-5600 emu kill" in event)
+        kill = next(i for i, event in enumerate(events) if f"{serials[0]} emu kill" in event)
         save = next(i for i, event in enumerate(events) if "snapshot save" in event)
         self.assertLess(save, kill)
         for launch in launches[1:]:
             self.assertIn("-read-only", launch)
             self.assertIn("-snapshot baukit-clean", launch)
-        for serial in ("emulator-5600", "emulator-5602", "emulator-5604"):
+        for serial in serials:
             self.assertIn(f"adb -s {serial} install -r", self.events.read_text())
             self.assertTrue(any(serial in event and "lastanr" in event for event in events), serial)
         self.assertEqual(
