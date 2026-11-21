@@ -113,6 +113,13 @@ ids = [
   "CVE-2026-97054",
 ]
 
+[images."docker.io/nginx/nginx-unprivileged@sha256:0ec17b0dac55776357d46d882bed7f3d504b0e4a0bc7379c7dbb74bd12b9d4da"]
+expires = 2027-01-16
+reason = "nginx/nginx-unprivileged:1.31.8-alpine (Loki gateway): no fixed upstream release exists as of 2026-11-21. CVE-2026-86144 is Alpine 3.24 libxml2 2.13.9-r2, fixed in 2.13.9-r3 (https://security.alpinelinux.org/vuln/CVE-2026-86144); the newest 1.31.9-alpine build still ships 2.13.9-r2 and nginx-unprivileged publishes no Alpine 3.23 variant. The gateway only proxies HTTP to Loki and loads no XML or XSLT module, so libxml2 is not on its request path. Recheck on the next nginx-unprivileged rebuild. Follow-up RF29."
+ids = [
+  "CVE-2026-86144",
+]
+
 [images."docker.io/oliver006/redis_exporter:v1.97.0@sha256:f5f903fbe77571d455ede0453b084d6840bc62fc105efac001034421cab83b99"]
 expires = 2027-01-16
 reason = "docker.io/oliver006/redis_exporter:v1.97.0: no fixed upstream release exists as of 2026-11-19. v1.97.0 is the newest upstream release and still ships this. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.27.3, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
@@ -1989,11 +1996,13 @@ ids = [
 
 [images."rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332"]
 expires = 2027-01-16
-reason = "rancher/k3s:v1.37.2-k3s1: no fixed upstream release exists as of 2026-11-19. v1.37.2-k3s1 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. CVE-2026-58213 is nats-server 2.14.0, which bin/k3s compiles in for kine's NATS datastore; nats-server 2.14.1 fixed it on 2026-05-20, but no k3s release after v1.37.2+k3s1 (2026-11-03) takes it, and the platform runs k3s on embedded etcd, so the NATS code path does not run. Follow-up RF29."
+reason = "rancher/k3s:v1.37.2-k3s1: no fixed upstream release exists as of 2026-11-19. v1.37.2-k3s1 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. CVE-2026-58213 and CVE-2026-58210 are nats-server 2.14.0, which bin/k3s compiles in for kine's NATS datastore; nats-server 2.14.1 and 2.14.3 fixed them (https://github.com/nats-io/nats-server/security/advisories), but no k3s release after v1.37.2+k3s1 (2026-11-03) takes them, and the platform runs k3s on embedded etcd, so the NATS code path, MQTT included, does not run. CVE-2026-95839 is containerd v2.3.7-k3s1, k3s's fork of the containerd 2.3.7 release trivy lists as fixed; trivy orders the -k3s1 suffix as a prerelease below 2.3.7, and only a k3s release on containerd 2.3.8 or later clears the match (https://github.com/k3s-io/k3s/releases). Recheck both on the next k3s v1.37 release. Follow-up RF29."
 ids = [
   "CVE-2026-56854",
+  "CVE-2026-58210",
   "CVE-2026-58213",
   "CVE-2026-78661",
+  "CVE-2026-95839",
   "CVE-2026-97054",
 ]
 
@@ -2139,9 +2148,9 @@ ids = [
   "CVE-2026-93451",
 ]
 
-[images."postgres:14.25-alpine@sha256:e7d9e6aac7fe3232f7661da103aebc0ce38b04105b46af5e9edd5ef6bc343f20"]
+[images."postgres:14.25-alpine3.23@sha256:cbc8ffe87bbf8118c4a211ffa57801b0dbb6f7e13a381a1fea449d47fb1abe0c"]
 expires = 2027-01-16
-reason = "postgres:14.25-alpine: no fixed upstream release exists as of 2026-11-19. 14.25 is the newest PostgreSQL 14 release, the major PostHog 1.43 supports; the 2026-11 rebuild clears the Alpine package findings and leaves Go standard library CVEs in the bundled gosu binary. Follow-up RF29."
+reason = "postgres:14.25-alpine3.23: no fixed upstream release exists as of 2026-11-21. 14.25 is the newest PostgreSQL 14 release, the major PostHog 1.43 supports; the Alpine 3.23 build carries no Alpine package findings, while the Alpine 3.24 build still ships libxml2 2.13.9-r2 (CVE-2026-86144, fixed in 2.13.9-r3), so the pin stays on alpine3.23 until a 3.24 rebuild takes the fix, and leaves Go standard library CVEs in the bundled gosu binary. Follow-up RF29."
 ids = [
   "CVE-2025-61726",
   "CVE-2025-61729",

@@ -204,7 +204,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: postgres
-          image: postgres:14.25-alpine@sha256:e7d9e6aac7fe3232f7661da103aebc0ce38b04105b46af5e9edd5ef6bc343f20
+          image: postgres:14.25-alpine3.23@sha256:cbc8ffe87bbf8118c4a211ffa57801b0dbb6f7e13a381a1fea449d47fb1abe0c
           imagePullPolicy: IfNotPresent
           env:
             - name: POSTGRES_DB
