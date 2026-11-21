@@ -346,6 +346,8 @@ spec:
         - protocol: TCP
           port: 9093
         - protocol: TCP
+          port: 9000
+        - protocol: TCP
           port: 9100
         - protocol: TCP
           port: 9121

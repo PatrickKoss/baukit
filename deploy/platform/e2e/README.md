@@ -55,7 +55,11 @@ with its condition message.
   shares the host kernel with Docker and other clusters, and the node-cidr component for the k8saudit
   webhook policy;
 - `components/tenant`: the `e2e-tenant` namespace built from `../components/tenant` and the echo
-  app, deployed with `deploy/chart/baukit-app` from the image the runner builds in `echo/`.
+  app, deployed with `deploy/chart/baukit-app` from the image the runner builds in `echo/`;
+- `components/keycloak`: the keycloak base with the in-cluster URL as `KC_HOSTNAME` and an `e2e`
+  realm that passes `keycloak_policy.py --environment-class lab`. `run.sh` creates its database,
+  admin and realm Secrets, and `tests/keycloak` imports the realm and fetches its discovery
+  document.
 
 `redis` is left out because it and `redis-ha` own the same objects in `platform-redis`; the overlay
 composes `redis-ha`.
