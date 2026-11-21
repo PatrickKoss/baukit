@@ -2171,3 +2171,57 @@ ids = [
   "CVE-2026-97031",
   "CVE-2026-97054",
 ]
+
+[images."docker.io/adorsys/keycloak-config-cli:6.5.1-26.5.5@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274"]
+expires = 2027-01-20
+reason = "keycloak-config-cli 6.5.1-26.5.5: no fixed upstream release exists as of 2026-11-21. 6.5.1 is the newest release; the findings are its bundled Jackson, Spring Boot and Spring Expression jars and Ubuntu 26.04 openssl, curl, apt and brotli packages. The image runs only as the keycloak-realm-import Job, as uid 65534 on a read-only root, with egress limited to Keycloak on 8080 and DNS, and reads only the realm ConfigMap. Follow-up K2."
+ids = [
+  "CVE-2026-109518",
+  "CVE-2026-111497",
+  "CVE-2026-111943",
+  "CVE-2026-25681",
+  "CVE-2026-27136",
+  "CVE-2026-27145",
+  "CVE-2026-29062",
+  "CVE-2026-33811",
+  "CVE-2026-33814",
+  "CVE-2026-33818",
+  "CVE-2026-39820",
+  "CVE-2026-39821",
+  "CVE-2026-39822",
+  "CVE-2026-39836",
+  "CVE-2026-40973",
+  "CVE-2026-41850",
+  "CVE-2026-42499",
+  "CVE-2026-42504",
+  "CVE-2026-45447",
+  "CVE-2026-46600",
+  "CVE-2026-54512",
+  "CVE-2026-54513",
+  "CVE-2026-56853",
+  "CVE-2026-56858",
+  "CVE-2026-56859",
+  "CVE-2026-56860",
+  "CVE-2026-56862",
+  "CVE-2026-68494",
+  "CVE-2026-68497",
+  "CVE-2026-78661",
+  "CVE-2026-78667",
+  "CVE-2026-78669",
+  "CVE-2026-84782",
+  "CVE-2026-89407",
+  "CVE-2026-89425",
+  "CVE-2026-91776",
+  "CVE-2026-91777",
+  "CVE-2026-92392",
+  "CVE-2026-97031",
+  "CVE-2026-97054",
+  "GHSA-2m67-wjpj-xhg9",
+]
+
+[images."quay.io/keycloak/keycloak:26.8.2@sha256:7e66a96e4739239070aeaf72e4c5decf0f7f682cfc725b9f7ea2b336eaba38b3"]
+expires = 2027-01-20
+reason = "quay.io/keycloak/keycloak:26.8.2: no fixed upstream release exists as of 2026-11-21. 26.8.2 is the newest Keycloak; the finding is its bundled Guava 33.6.0. Keycloak runs in the keycloak namespace behind default-deny NetworkPolicies. Follow-up K1."
+ids = [
+  "CVE-2026-102554",
+]

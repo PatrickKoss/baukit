@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- New optional base `keycloak/`: Keycloak 26.8.2 as a single-replica StatefulSet in a PSA `restricted` namespace, with its database through a CNPG `DatabaseRole` and `Database`, a ServiceMonitor, default-deny NetworkPolicies with named allows, and a keycloak-config-cli 6.5.1 Job that applies the realm files an overlay merges into `ConfigMap/keycloak-realms`. Nothing changes for an overlay that does not compose it. See `keycloak/README.md` for the Secrets and the `KC_HOSTNAME` patch an overlay supplies.
+- The platform alert pack gains a `keycloak` component with `BaukitKeycloakServerErrors`, `BaukitKeycloakLoginFailuresHigh` and `BaukitKeycloakDatabasePoolExhausted`. The rules select `container="keycloak"` and stay quiet without the base.
+- `observability-stack` lists the `keycloak` namespace in `excludedFromEnforcement`.
 - `platform-images` scans images at every severity. Only HIGH and CRITICAL findings must be listed, and a listed ID counts as stale only when Trivy no longer reports it at any severity. Trivy's database moved CVE-2026-97054 from HIGH to MEDIUM and back to HIGH within a day, and each move failed hosted CI: first on 48 stale entries, then on 48 unlisted findings (run 44552590745). The 48 entries are back, expiring 2027-01-16, and a later rescore no longer breaks the step.
 ## [0.28.4] - 2026-11-19
 

@@ -307,6 +307,21 @@ apply_runtime_identity() {
     "$(openssl rand -hex 18)" admin "$(openssl rand -hex 18)"
 }
 
+# The keycloak base reads these overlay-owned Secrets; the DatabaseRole reads the postgres copy.
+apply_keycloak_identity() {
+  local db_password namespace
+  db_password=$(openssl rand -hex 18)
+  platform_ensure_namespace keycloak
+  for namespace in keycloak postgres; do
+    platform_apply_secret "$namespace" keycloak-db-credentials --type=kubernetes.io/basic-auth \
+      --from-literal=username=keycloak_owner --from-literal=password="$db_password"
+  done
+  platform_apply_secret keycloak keycloak-bootstrap-admin \
+    --from-literal=username=e2e-admin --from-literal=password="$(openssl rand -hex 18)"
+  platform_apply_secret keycloak keycloak-realm-secrets \
+    --from-literal=E2E_USER_PASSWORD="$(openssl rand -hex 18)"
+}
+
 # The platform is a dependsOn chain, and each hop otherwise waits the controllers' 30s default.
 shorten_dependency_requeue() {
   local controller
@@ -493,6 +508,7 @@ main() {
   check_pod_security_default
   install_flux
   apply_runtime_identity
+  apply_keycloak_identity
   wait_for_platform
   printf 'Platform Ready after %ss\n' "$((SECONDS - started))"
   run_tests

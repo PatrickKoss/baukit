@@ -1,0 +1,37 @@
+{
+  "realm": "e2e",
+  "enabled": true,
+  "sslRequired": "external",
+  "passwordPolicy": "length(12) and notUsername and notEmail and maxLength(128)",
+  "bruteForceProtected": true,
+  "clients": [
+    {
+      "clientId": "e2e-web",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["https://e2e.lab.example.test/*"],
+      "webOrigins": ["https://e2e.lab.example.test"],
+      "attributes": {"pkce.code.challenge.method": "S256"},
+      "protocolMappers": [
+        {
+          "name": "MCP resource audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {"included.custom.audience": "https://api.e2e.lab.example.test/mcp", "access.token.claim": "true", "id.token.claim": "false"}
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "e2e-user",
+      "enabled": true,
+      "email": "e2e-user@example.test",
+      "emailVerified": true,
+      "firstName": "E2E",
+      "lastName": "User",
+      "credentials": [{"type": "password", "value": "$(env:E2E_USER_PASSWORD)", "temporary": false}]
+    }
+  ]
+}

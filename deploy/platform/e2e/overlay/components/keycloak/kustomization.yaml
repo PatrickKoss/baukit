@@ -1,0 +1,25 @@
+# The e2e cluster has no public issuer, so Keycloak names its in-cluster Service. run.sh creates
+# keycloak-db-credentials (keycloak and postgres), keycloak-bootstrap-admin and keycloak-realm-secrets.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../../keycloak
+configMapGenerator:
+  - name: keycloak-realms
+    namespace: keycloak
+    behavior: merge
+    files:
+      - e2e.json=realm.json
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: StatefulSet
+      name: keycloak
+    patch: |-
+      - op: test
+        path: /spec/template/spec/containers/0/env/13/name
+        value: KC_HOSTNAME
+      - op: replace
+        path: /spec/template/spec/containers/0/env/13/value
+        value: http://keycloak.keycloak.svc.cluster.local:8080

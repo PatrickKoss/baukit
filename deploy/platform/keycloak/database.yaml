@@ -1,0 +1,34 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: keycloak-owner
+  namespace: postgres
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: identity
+spec:
+  cluster:
+    name: postgres-cluster
+  name: keycloak_owner
+  login: true
+  superuser: false
+  createdb: false
+  createrole: false
+  databaseRoleReclaimPolicy: retain
+  passwordSecret:
+    name: keycloak-db-credentials
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: keycloak
+  namespace: postgres
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: identity
+spec:
+  cluster:
+    name: postgres-cluster
+  name: keycloak
+  owner: keycloak_owner
+  databaseReclaimPolicy: retain

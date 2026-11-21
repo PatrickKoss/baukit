@@ -463,6 +463,9 @@ spec:
           - {resource: servicemonitors, namespace: flagger-system}
           - {resource: podmonitors, namespace: flagger-system}
           - {resource: prometheusrules, namespace: flagger-system}
+          - {resource: servicemonitors, namespace: keycloak}
+          - {resource: podmonitors, namespace: keycloak}
+          - {resource: prometheusrules, namespace: keycloak}
           - {resource: servicemonitors, namespace: kube-system}
           - {resource: podmonitors, namespace: kube-system}
           - {resource: prometheusrules, namespace: kube-system}

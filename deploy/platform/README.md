@@ -33,6 +33,7 @@ The conventional namespaces are:
 | ingress | `traefik` |
 | progressive delivery | `flagger-system` |
 | product analytics | `posthog` |
+| identity for shared non-production clusters (optional) | `keycloak` |
 | admission policy | `kyverno` |
 | coordinated reboot | `kured` |
 | cloud provider drivers | `kube-system` (owned by k3s, not managed by a base) |
@@ -51,7 +52,7 @@ PodMonitors only from namespaces with that label, and Grafana loads dashboard
 ConfigMaps labelled `grafana_dashboard: "1"` from every namespace, filed into
 the folder named by their `grafana_folder` annotation. Namespaces that hold
 volumes or a database (`postgres`, `observability`, `platform-redis`,
-`posthog`), the CNPG `Cluster` and Flux-applied PVCs carry
+`posthog`, `keycloak`), the CNPG `Cluster` and Flux-applied PVCs carry
 `kustomize.toolkit.fluxcd.io/prune: disabled`, so removing a base from a Flux
 Kustomization never deletes data.
 
@@ -122,7 +123,7 @@ everywhere, so a gap shows up as a warning even where `enforce` is looser.
 
 | Level | Namespaces |
 |---|---|
-| `restricted` | `cert-manager`, `cnpg-system`, `flagger-system`, `flux-system`, `kyverno`, `observability`, `platform-redis`, `platform-system`, `postgres`, `traefik`, tenants |
+| `restricted` | `cert-manager`, `cnpg-system`, `flagger-system`, `flux-system`, `keycloak`, `kyverno`, `observability`, `platform-redis`, `platform-system`, `postgres`, `traefik`, tenants |
 | `baseline` | `posthog` |
 | `privileged` | `kube-system`, `kured`, `observability-agents`, `falco` |
 

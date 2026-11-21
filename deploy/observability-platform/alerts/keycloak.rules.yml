@@ -1,0 +1,49 @@
+groups:
+  - name: baukit-keycloak
+    rules:
+      - alert: BaukitKeycloakServerErrors
+        expr: |
+          (
+            sum by (namespace, pod) (rate(http_server_requests_seconds_count{container="keycloak", outcome="SERVER_ERROR"}[5m]))
+            /
+            sum by (namespace, pod) (rate(http_server_requests_seconds_count{container="keycloak"}[5m]))
+          ) > 0.05
+          and on (namespace, pod)
+          sum by (namespace, pod) (rate(http_server_requests_seconds_count{container="keycloak"}[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          component: keycloak
+        annotations:
+          summary: Keycloak {{ $labels.namespace }}/{{ $labels.pod }} answers over 5% of requests with 5xx
+          description: >-
+            {{ $value | humanizePercentage }} of the requests Keycloak in
+            {{ $labels.namespace }}/{{ $labels.pod }} served returned 5xx for 10 minutes.
+          runbook_url: RUNBOOK_BASE_URL/keycloak-server-errors
+      - alert: BaukitKeycloakLoginFailuresHigh
+        expr: |
+          sum by (namespace, realm) (rate(keycloak_user_events_total{event="login", error!=""}[10m])) * 60 > 10
+        for: 10m
+        labels:
+          severity: warning
+          component: keycloak
+        annotations:
+          summary: Realm {{ $labels.realm }} sees over 10 failed logins a minute
+          description: >-
+            Keycloak in {{ $labels.namespace }} recorded {{ $value | humanize }} failed logins a
+            minute in realm {{ $labels.realm }} for 10 minutes. That is a password-guessing run or
+            a client sending stale credentials.
+          runbook_url: RUNBOOK_BASE_URL/keycloak-login-failures-high
+      - alert: BaukitKeycloakDatabasePoolExhausted
+        expr: |
+          max by (namespace, pod) (agroal_awaiting_count{container="keycloak"}) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: keycloak
+        annotations:
+          summary: Keycloak {{ $labels.namespace }}/{{ $labels.pod }} waits for database connections
+          description: >-
+            {{ $value }} requests in Keycloak {{ $labels.namespace }}/{{ $labels.pod }} have waited
+            for a free database connection for 5 minutes. Logins and token refreshes stall.
+          runbook_url: RUNBOOK_BASE_URL/keycloak-database-pool-exhausted
