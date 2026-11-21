@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: keycloak
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: identity
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak
+      baukit.dev/service: management
+  endpoints:
+    - port: management
+      path: /metrics

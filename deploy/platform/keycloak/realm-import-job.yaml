@@ -1,0 +1,99 @@
+# keycloak-config-cli applies every realm file in ConfigMap keycloak-realms. The generator's hash
+# suffix changes the pod template when a realm changes, and Flux's force replaces the Job.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-realm-import
+  namespace: keycloak
+  labels:
+    app.kubernetes.io/name: keycloak-realm-import
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: identity
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+spec:
+  backoffLimit: 4
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak-realm-import
+        app.kubernetes.io/part-of: baukit-platform
+        baukit.dev/component: identity
+    spec:
+      restartPolicy: Never
+      priorityClassName: platform-standard
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: import
+          image: docker.io/adorsys/keycloak-config-cli:6.5.1-26.5.5@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274
+          imagePullPolicy: IfNotPresent
+          # keycloak-config-cli fails on an empty location, and the base ships no realm.
+          command:
+            - /bin/sh
+            - -c
+            - >-
+              set -- /config/*.json;
+              if [ ! -e "$1" ]; then echo "keycloak-realms holds no realm file"; exit 0; fi;
+              exec java $JAVA_OPTS -jar /app/keycloak-config-cli.jar
+          env:
+            - name: KEYCLOAK_URL
+              value: http://keycloak.keycloak.svc.cluster.local:8080
+            - name: KEYCLOAK_USER
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-bootstrap-admin
+                  key: username
+            - name: KEYCLOAK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-bootstrap-admin
+                  key: password
+            - name: KEYCLOAK_AVAILABILITYCHECK_ENABLED
+              value: "true"
+            - name: KEYCLOAK_AVAILABILITYCHECK_TIMEOUT
+              value: 600s
+            - name: IMPORT_FILES_LOCATIONS
+              value: file:/config/*.json
+            - name: IMPORT_VARSUBSTITUTION_ENABLED
+              value: "true"
+            - name: IMPORT_MANAGED_REQUIRED_ACTION
+              value: no-delete
+            - name: JAVA_OPTS
+              value: -XX:MaxRAMPercentage=70 -Djava.io.tmpdir=/tmp
+          envFrom:
+            - secretRef:
+                name: keycloak-realm-secrets
+                optional: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 192Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: realms
+              mountPath: /config
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: realms
+          configMap:
+            name: keycloak-realms
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi

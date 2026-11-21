@@ -162,6 +162,18 @@ class RenovatePresetTests(unittest.TestCase):
         }
         self.assertEqual(grouped, directories)
 
+    def test_keycloak_config_cli_keeps_its_keycloak_build(self):
+        rule = next(
+            rule
+            for rule in PRESET["packageRules"]
+            if "docker.io/adorsys/keycloak-config-cli" in rule.get("matchPackageNames", [])
+        )
+        versioning = python_pattern(rule["versioning"].removeprefix("regex:"))
+        image = (PLATFORM / "keycloak/realm-import-job.yaml").read_text()
+        tag = re.search(r"keycloak-config-cli:([^@\s]+)@", image).group(1)
+        self.assertEqual(versioning.fullmatch(tag).group("compatibility"), "26.5.5")
+        self.assertIsNone(versioning.fullmatch("6.5.1"))
+
     def test_base_groups_override_the_shared_group_and_majors_stay_isolated(self):
         rules = PRESET["packageRules"]
         names = [rule.get("groupName") for rule in rules]

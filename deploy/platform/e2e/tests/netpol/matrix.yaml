@@ -301,3 +301,21 @@
 - from: {namespace: observability, labels: {app.kubernetes.io/name: alertmanager}}
   to: {service: alert-sink.observability, port: 8080}
   expect: allow
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: keycloak.keycloak, port: 8080}
+  expect: deny
+- from: {namespace: traefik, labels: {app.kubernetes.io/name: traefik}}
+  to: {service: keycloak.keycloak, port: 8080}
+  expect: allow
+- from: {namespace: keycloak, labels: {app.kubernetes.io/name: keycloak-realm-import}}
+  to: {service: keycloak.keycloak, port: 8080}
+  expect: allow
+- from: {namespace: netpol-tenant-open, labels: {}}
+  to: {service: keycloak-management.keycloak, port: 9000}
+  expect: deny
+- from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
+  to: {service: keycloak-management.keycloak, port: 9000}
+  expect: allow
+- from: {namespace: keycloak, labels: {app.kubernetes.io/name: keycloak, baukit.dev/postgres-client: "true"}}
+  to: {service: postgres-cluster-rw.postgres, port: 5432}
+  expect: allow

@@ -183,6 +183,27 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: e2e-keycloak
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: e2e-postgres
+    - name: e2e-observability
+    - name: e2e-kyverno-policies
+  interval: 10m
+  retryInterval: 30s
+  timeout: 15m
+  path: ./deploy/platform/e2e/overlay/components/keycloak
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: e2e-kured
   namespace: flux-system
 spec:

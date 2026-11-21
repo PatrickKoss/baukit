@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: keycloak
+spec:
+  description: >-
+    The keycloak base runs against the shared CNPG cluster, the import Job applied the e2e realm
+    from the overlay's keycloak-realms ConfigMap, and the realm's OpenID discovery document names
+    the configured issuer.
+  timeouts:
+    exec: 5m
+  steps:
+    - name: realm-imported
+      try:
+        - assert:
+            resource:
+              apiVersion: batch/v1
+              kind: Job
+              metadata:
+                name: keycloak-realm-import
+                namespace: keycloak
+              status:
+                succeeded: 1
+        - assert:
+            resource:
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Database
+              metadata:
+                name: keycloak
+                namespace: postgres
+              status:
+                applied: true
+    - name: discovery
+      try:
+        - script:
+            timeout: 3m
+            content: |
+              set -eu
+              dir=$(mktemp -d)
+              kubectl -n keycloak port-forward svc/keycloak :8080 >"$dir/pf.log" 2>&1 &
+              pf=$!
+              trap 'kill "$pf" 2>/dev/null; rm -rf "$dir"' EXIT
+              deadline=$(($(date +%s) + 30))
+              until port=$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$dir/pf.log" | head -n 1) && [ -n "$port" ]; do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo 'port-forward to keycloak never started' >&2; cat "$dir/pf.log" >&2; exit 1; }
+                sleep 1
+              done
+              url="http://127.0.0.1:$port/realms/e2e/.well-known/openid-configuration"
+              curl -sSf "$url" >"$dir/discovery.json"
+              issuer=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["issuer"])' "$dir/discovery.json")
+              want=http://keycloak.keycloak.svc.cluster.local:8080/realms/e2e
+              [ "$issuer" = "$want" ] || { echo "issuer $issuer, want $want" >&2; exit 1; }
+              echo "realm e2e discovery names issuer $issuer"
+              code=$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port/realms/absent/.well-known/openid-configuration")
+              [ "$code" = 404 ] || { echo "an unknown realm answered $code, want 404" >&2; exit 1; }
+    - name: footprint
+      try:
+        - script:
+            timeout: 2m
+            content: |
+              set -eu
+              restarts=$(kubectl -n keycloak get pod keycloak-0 -o jsonpath='{.status.containerStatuses[0].restartCount}')
+              [ "$restarts" = 0 ] || { echo "keycloak-0 restarted $restarts times" >&2; exit 1; }
+              deadline=$(($(date +%s) + 90))
+              until usage=$(kubectl -n keycloak top pod keycloak-0 --containers --no-headers 2>/dev/null) && [ -n "$usage" ]; do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo 'metrics-server reported no usage for keycloak-0'; exit 0; }
+                sleep 5
+              done
+              echo "keycloak footprint: $usage"
+      catch:
+        - script:
+            content: |
+              kubectl -n keycloak get pods,jobs -o wide || true
+              kubectl -n keycloak logs statefulset/keycloak --tail=100 || true
+              kubectl -n keycloak logs job/keycloak-realm-import --tail=100 || true

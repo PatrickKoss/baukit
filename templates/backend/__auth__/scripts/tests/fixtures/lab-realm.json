@@ -1,0 +1,41 @@
+{
+  "realm": "fixture",
+  "sslRequired": "external",
+  "passwordPolicy": "length(12) and notUsername and notEmail and maxLength(128)",
+  "bruteForceProtected": true,
+  "clients": [
+    {
+      "clientId": "fixture-backend",
+      "publicClient": false,
+      "directAccessGrantsEnabled": false
+    },
+    {
+      "clientId": "fixture-web",
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["https://fixture.lab.example.test/*", "fixture://oauth"],
+      "attributes": {"pkce.code.challenge.method": "S256"}
+    },
+    {
+      "clientId": "fixture-mcp",
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["https://claude.ai/api/mcp/auth_callback"],
+      "attributes": {"pkce.code.challenge.method": "S256"},
+      "protocolMappers": [
+        {
+          "name": "MCP resource audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {"included.custom.audience": "https://api.fixture.lab.example.test/mcp"}
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "fixture-user",
+      "credentials": [{"type": "password", "value": "$(env:FIXTURE_USER_PASSWORD)"}]
+    }
+  ]
+}

@@ -11,10 +11,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import SplitResult, urlsplit
 
-ENVIRONMENT_CLASSES = ("development",)
+ENVIRONMENT_CLASSES = ("development", "lab")
 TLS_LEVELS = {"none": 0, "external": 1, "all": 2}
 ADMIN_API_SCOPE = "kc-admin-api"
 POLICY_EXPRESSION = re.compile(r"^([A-Za-z][A-Za-z0-9]*)(?:\(([^)]*)\))?$")
+LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
+KNOWN_PASSWORDS = frozenset(
+    {"admin", "changeme", "development-password", "keycloak", "password", "secret", "test"}
+)
+SUBSTITUTION = re.compile(r"^\$\((env|file):[^)]+\)$")
+AUDIENCE_MAPPER = "oidc-audience-mapper"
+MCP_PATH = "/mcp"
 
 
 class PolicyError(ValueError):
@@ -115,7 +122,34 @@ def validate_policy_document(policy: dict[str, Any], environment_class: str) -> 
     failures.extend(redirect_policy_failures(policy.get("redirectUris")))
     if not service_account_roles_valid(policy.get("serviceAccountRoles", {})):
         failures.append("policy serviceAccountRoles must map client ids to non-empty role arrays")
+    if environment_class == "lab" and not failures:
+        failures.extend(lab_policy_failures(policy))
     return failures
+
+
+def is_lab_https_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlsplit(value)
+    return parsed.scheme == "https" and bool(parsed.hostname) and not is_loopback(parsed)
+
+
+def lab_policy_failures(policy: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    if policy["redirectUris"]["allowDevelopmentLoopbackHttp"] is not False:
+        failures.append("lab policy redirectUris.allowDevelopmentLoopbackHttp must be false")
+    if TLS_LEVELS[policy["minimumTls"]] < TLS_LEVELS["external"]:
+        failures.append("lab policy minimumTls must be external or all")
+    resource = policy.get("mcpResourceUrl")
+    if resource is not None and not (
+        is_lab_https_url(resource) and urlsplit(resource).path == MCP_PATH
+    ):
+        failures.append("lab policy mcpResourceUrl must be a non-loopback https URL ending in /mcp")
+    return failures
+
+
+def is_loopback(parsed: SplitResult) -> bool:
+    return parsed.hostname in LOOPBACK_HOSTS
 
 
 def http_redirect_problem(
@@ -127,8 +161,7 @@ def http_redirect_problem(
         return "cannot wildcard the host or port"
     if "*" in candidate:
         return "has an unbounded wildcard"
-    loopback = parsed.hostname in ("localhost", "127.0.0.1", "::1")
-    if parsed.scheme == "http" and not (allow_loopback_http and loopback):
+    if parsed.scheme == "http" and not (allow_loopback_http and is_loopback(parsed)):
         return "uses HTTP outside an allowed development loopback address"
     return None
 
@@ -142,9 +175,12 @@ def validate_redirect_uri(uri: object, policy: dict[str, Any]) -> str | None:
         return "must be an absolute URI without user information or a fragment"
     redirect_policy = policy["redirectUris"]
     if parsed.scheme in ("http", "https"):
-        return http_redirect_problem(
+        problem = http_redirect_problem(
             parsed, candidate, redirect_policy["allowDevelopmentLoopbackHttp"]
         )
+        if problem is None and policy["environmentClass"] == "lab" and is_loopback(parsed):
+            return "points at a loopback host, which a lab realm cannot use"
+        return problem
     if parsed.scheme not in redirect_policy["allowedCustomSchemes"]:
         return f"uses custom scheme {parsed.scheme!r}, which the policy does not allow"
     return "has an unbounded wildcard" if "*" in candidate else None
@@ -290,6 +326,68 @@ def admin_api_scope_failures(
     return failures
 
 
+def credential_problem(username: object, value: object) -> str | None:
+    if not isinstance(value, str) or not value:
+        return "has no password value"
+    if SUBSTITUTION.fullmatch(value):
+        return None
+    if value.lower() in KNOWN_PASSWORDS or value == username:
+        return "uses a default or known password"
+    return "stores a literal password; use $(env:NAME) or $(file:PATH) substitution"
+
+
+def lab_credential_failures(users: list[Any]) -> list[str]:
+    failures: list[str] = []
+    for index, user in enumerate(users):
+        if not isinstance(user, dict):
+            continue
+        username = user.get("username")
+        label = username if isinstance(username, str) else f"users[{index}]"
+        credentials = user.get("credentials", [])
+        for credential in credentials if isinstance(credentials, list) else []:
+            if not isinstance(credential, dict) or credential.get("type") != "password":
+                continue
+            problem = credential_problem(username, credential.get("value"))
+            if problem:
+                failures.append(f"user {label!r} {problem}")
+    return failures
+
+
+def mcp_audiences(clients: list[Any]) -> list[tuple[str, object]]:
+    found: list[tuple[str, object]] = []
+    for client in clients:
+        if not isinstance(client, dict):
+            continue
+        mappers = client.get("protocolMappers", [])
+        for mapper in mappers if isinstance(mappers, list) else []:
+            if not isinstance(mapper, dict) or mapper.get("protocolMapper") != AUDIENCE_MAPPER:
+                continue
+            config = mapper.get("config")
+            audience = config.get("included.custom.audience") if isinstance(config, dict) else None
+            if isinstance(audience, str) and urlsplit(audience).path == MCP_PATH:
+                found.append((str(client.get("clientId")), audience))
+    return found
+
+
+def lab_mcp_failures(clients: list[Any], policy: dict[str, Any]) -> list[str]:
+    expected = policy.get("mcpResourceUrl")
+    audiences = mcp_audiences(clients)
+    if expected is None:
+        return [
+            f"client {client_id!r} maps MCP audience {audience!r}, but the lab policy sets no "
+            "mcpResourceUrl"
+            for client_id, audience in audiences
+        ]
+    failures = [
+        f"client {client_id!r} MCP audience {audience!r} must be {expected!r}"
+        for client_id, audience in audiences
+        if audience != expected
+    ]
+    if not any(audience == expected for _, audience in audiences):
+        failures.append(f"no client maps the MCP audience {expected!r}")
+    return failures
+
+
 def validate_realm(
     realm: dict[str, Any], policy: dict[str, Any], environment_class: str
 ) -> list[str]:
@@ -306,6 +404,9 @@ def validate_realm(
     users = users if isinstance(users, list) else []
     failures.extend(service_account_failures(clients, users, policy))
     failures.extend(admin_api_scope_failures(realm, clients, users))
+    if environment_class == "lab":
+        failures.extend(lab_credential_failures(users))
+        failures.extend(lab_mcp_failures(clients, policy))
     return failures
 
 

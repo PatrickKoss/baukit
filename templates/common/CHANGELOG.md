@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.28.4] - 2026-11-19
+{% if context.auth_enabled %}- `scripts/keycloak_policy.py` accepts `--environment-class lab` for a realm on a shared cluster. A lab policy must set `minimumTls` to `external` or `all` and `allowDevelopmentLoopbackHttp` to false. The check rejects default, known and literal user passwords (reference them as `$(env:NAME)` or `$(file:PATH)` for keycloak-config-cli), loopback redirect URIs, and an MCP audience mapper that does not name the policy's `mcpResourceUrl`. Copy the script and `scripts/tests/test_keycloak_policy.py` from the template; the `development` class is unchanged.
+
+{% endif %}## [0.28.4] - 2026-11-19
 
 {% if context.mobile %}- `run-maestro.sh` waits until `adb devices` lists every serial in state `device` right before each Maestro start, through the new `--await-devices` mode of `mobile/scripts/qa/android-adb.py`. Maestro 2.8.0 opens a transport to every serial the shared adb server on port 5037 lists and, when one of them is booting or offline, reports every Android device as not connected. A gate printed `Device emulator-5662 was requested, but it is not connected.` while that emulator kept streaming logcat. The run's own emulators get `BAUKIT_QA_DETACH_GRACE_SECONDS` to return, other sessions' emulators `BAUKIT_QA_BOOT_TIMEOUT_SECONDS`, and the failure names the serial and its adb state. After a failed Maestro run the script also prints any serial that is not ready. Copy `run-maestro.sh`, `android-adb.py`, `test_android.py` and, in strict products, `docs/quality-gate.md` from the template.
 

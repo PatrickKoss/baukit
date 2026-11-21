@@ -17,6 +17,8 @@ components:
   kyverno: true
   observability: true
   kured: true
+  # Inert without the keycloak base: every rule selects container="keycloak".
+  keycloak: true
   # Local WSL2 clusters only: inhibits start-time drift alerts, see alerts/wsl.rules.yml.
   wsl: false
 
