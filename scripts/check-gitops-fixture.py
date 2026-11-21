@@ -43,6 +43,16 @@ def host(app: str, environment: str, domain: str) -> str:
     return f"{app}-testing.{domain}" if environment == "testing" else f"{app}.{domain}"
 
 
+def check_route_tls(route: dict, environment: str, domain: str) -> list[str]:
+    expected = [{"main": domain, "sans": [f"*.{domain}"]}]
+    tls = route["spec"].get("tls")
+    if not tls:
+        return [f"{environment}: tls is empty; Flux server-side apply nulls it"]
+    if tls.get("domains") != expected:
+        return [f"{environment}: IngressRoute tls.domains is {tls.get('domains')}, want {expected}"]
+    return []
+
+
 def check_environment(root: Path, manifest: dict, environment: str) -> list[str]:
     app = manifest["app"]["name"]
     domain = manifest["gitops"]["domain"]
@@ -58,6 +68,7 @@ def check_environment(root: Path, manifest: dict, environment: str) -> list[str]
     route = next(document for document in documents if document["kind"] == "IngressRoute")
     if route["spec"]["routes"][0]["match"] != f"Host(`{expected_host}`)":
         errors.append(f"{environment}: route matches {route['spec']['routes'][0]['match']}")
+    errors.extend(check_route_tls(route, environment, domain))
     release = next(document for document in documents if document["kind"] == "HelmRelease")
     values = release["spec"]["values"]
     if values["deploymentEnvironment"] != environment:

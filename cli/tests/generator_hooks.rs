@@ -123,6 +123,13 @@ fn gitops_overlays_take_domain_registry_and_realm_from_the_manifest() -> anyhow:
     let environment = fs::read_to_string(root.join("deploy/gitops/production/environment.yaml"))?;
     assert!(environment.contains("value: https://id.lab.home.test/realms/shared"));
     assert!(environment.contains("value: lab-app-production"));
+    let edge = fs::read_to_string(root.join("deploy/gitops/base/edge.yaml"))?;
+    assert!(
+        edge.contains(
+            "      - main: lab.home.test\n        sans:\n          - \"*.lab.home.test\"\n"
+        )
+    );
+    assert!(!edge.contains("tls: {}"));
     let base = fs::read_to_string(root.join("deploy/gitops/base/helmrelease.yaml"))?;
     assert!(base.contains("repository: ghcr.io/owner/lab-app-api"));
     let release = fs::read_to_string(root.join("scripts/release.sh"))?;

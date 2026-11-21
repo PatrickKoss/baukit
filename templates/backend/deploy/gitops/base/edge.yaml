@@ -32,4 +32,8 @@ spec:
         - kind: Service
           name: {{ context.app_name }}
           port: 80
-  tls: {}
+  tls:
+    domains:
+      - main: {{ context.gitops.domain }}
+        sans:
+          - "*.{{ context.gitops.domain }}"

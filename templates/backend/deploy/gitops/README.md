@@ -4,7 +4,8 @@ Flux applies `testing/` and `production/` as the tenant's `flux-reconciler`, whi
 the tenant namespace only. Both overlays share `base/`, which holds the HelmRelease of the baukit
 chart, its tenant-local `GitRepository/baukit` source, the IngressRoute and a headers Middleware.
 TLS comes from the platform wildcard in Traefik's default TLSStore, so no route names a
-Certificate. The tenant itself (namespace, Flux registration, database, age identity) lives in the
+Certificate. The route still lists `tls.domains` for `{{ context.gitops.domain }}`, because Flux's
+server-side apply turns an empty `tls: {}` into `null`, which the IngressRoute CRD rejects. The tenant itself (namespace, Flux registration, database, age identity) lives in the
 platform repository.
 
 | Environment | Namespace | Host |
