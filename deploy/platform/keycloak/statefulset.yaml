@@ -33,11 +33,37 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        # kc.sh build rewrites lib/quarkus, so it gets a writable copy of the image's files.
-        - name: seed
-          image: quay.io/keycloak/keycloak:26.8.2@sha256:7e66a96e4739239070aeaf72e4c5decf0f7f682cfc725b9f7ea2b336eaba38b3
+        # The Database and DatabaseRole apply with this StatefulSet, so CNPG may not have created them yet.
+        - name: wait-for-database
+          image: ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie@sha256:13f5dc1b42c5d96233724be976740df031136ca013f98a56a2877a62b362b453
           imagePullPolicy: IfNotPresent
-          command: [/bin/sh, -c, cp -R /opt/keycloak/lib/quarkus/. /seed/]
+          command: [/bin/sh, -ec]
+          args:
+            - |
+              deadline=$(( $(date +%s) + WAIT_SECONDS ))
+              until psql -XtAq -v ON_ERROR_STOP=1 -c 'select 1' >/dev/null; do
+                [ "$(date +%s)" -lt "${deadline}" ] || { printf 'database %s not reachable as %s after %ss\n' "${PGDATABASE}" "${PGUSER}" "${WAIT_SECONDS}" >&2; exit 1; }
+                sleep 2
+              done
+          env:
+            - name: WAIT_SECONDS
+              value: "300"
+            - name: PGHOST
+              value: postgres-cluster-rw.postgres.svc.cluster.local
+            - name: PGDATABASE
+              value: keycloak
+            - name: PGCONNECT_TIMEOUT
+              value: "3"
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-db-credentials
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-db-credentials
+                  key: password
           resources:
             requests: {cpu: 10m, memory: 16Mi}
             limits: {cpu: 200m, memory: 64Mi}
@@ -46,6 +72,15 @@ spec:
             capabilities:
               drop: [ALL]
             readOnlyRootFilesystem: true
+        # kc.sh build rewrites lib/quarkus, so it gets a writable copy of the image's files.
+        - name: seed
+          image: quay.io/keycloak/keycloak:26.8.2@sha256:7e66a96e4739239070aeaf72e4c5decf0f7f682cfc725b9f7ea2b336eaba38b3
+          imagePullPolicy: IfNotPresent
+          command: [/bin/sh, -c, cp -R /opt/keycloak/lib/quarkus/. /seed/]
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 200m, memory: 64Mi}
+          securityContext: *container-security
           volumeMounts:
             - name: quarkus
               mountPath: /seed
