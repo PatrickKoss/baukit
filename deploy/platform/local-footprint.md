@@ -42,6 +42,11 @@ the replacement RustFS pod. It also leaves out Keycloak (3m, 645 MiB) and the
 Keycloak operator (5m, 261 MiB), which the local cluster no longer runs since
 Baukit 0.18.0. The node total below still includes them.
 
+The optional `keycloak` base (Keycloak 26.8.2, `KC_CACHE=local`, one realm) measured **448m CPU and
+648 MiB** in platform-e2e on 2026-11-21, sampled by `kubectl top` seconds after the realm import,
+so the CPU figure still includes startup work. It runs with 100m/640Mi requests and a 1 CPU/1 GiB
+limit.
+
 On 2026-10-04, the isolated RustFS 1.0.1 proof cluster reported **5m CPU and
 67 MiB** for RustFS after AWS CLI object round trips, Barman WAL archive and
 restore, and a Loki chunk flush. It used the committed 50m/128Mi requests and
