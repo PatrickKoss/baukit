@@ -1,0 +1,10 @@
+# Placeholder node network from the RFC 5737 documentation range, so a cluster that skips the
+# consumer's nodeCIDR patch fails closed: the API server cannot reach any webhook. See ../README.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: baukit-cluster-network
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  nodeCIDR: 192.0.2.0/24

@@ -1,0 +1,12 @@
+# Bare-metal k3s with three servers. A fixture of the Flux objects a consumer applies; the consumer
+# keeps its own copy with its source, nodeCIDR and identity (see README.md).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - source.yaml
+  - reconciliation.yaml
+patches:
+  - path: node-cidr.yaml
+    target:
+      group: kustomize.toolkit.fluxcd.io
+      kind: Kustomization

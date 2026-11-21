@@ -1,0 +1,219 @@
+# kured is absent on purpose: the host playbook drains, reboots and uncordons one node at a time.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: baremetal-baseline
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  interval: 10m
+  retryInterval: 30s
+  timeout: 5m
+  path: ./deploy/platform/cluster-baseline
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: baremetal-kyverno
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: baremetal-baseline
+  interval: 10m
+  retryInterval: 30s
+  timeout: 15m
+  path: ./deploy/platform/overlays/baremetal/components/kyverno
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: baremetal-kyverno-policies
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: baremetal-kyverno
+  interval: 10m
+  retryInterval: 30s
+  timeout: 5m
+  path: ./deploy/platform/kyverno-policies
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: baremetal-observability
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: baremetal-kyverno-policies
+  interval: 10m
+  retryInterval: 30s
+  timeout: 20m
+  path: ./deploy/platform/overlays/baremetal/components/observability
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: baremetal-falco
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: baremetal-kyverno-policies
+    - name: baremetal-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/overlays/baremetal/components/falco
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: baremetal-cert-manager
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: baremetal-kyverno-policies
+    - name: baremetal-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/overlays/baremetal/components/cert-manager
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: baremetal-cnpg
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: baremetal-cert-manager
+    - name: baremetal-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 15m
+  path: ./deploy/platform/overlays/baremetal/components/cnpg
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: baremetal-postgres
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: baremetal-cnpg
+    - name: baremetal-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 20m
+  path: ./deploy/platform/overlays/baremetal/components/postgres
+  prune: true
+  wait: true
+  # kstatus counts a CNPG Cluster without conditions as current; wait for Ready instead.
+  healthCheckExprs:
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Cluster
+      current: has(status.conditions) && status.conditions.exists(e, e.type == 'Ready' && e.status == 'True')
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: baremetal-traefik
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: baremetal-cert-manager
+    - name: baremetal-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 15m
+  path: ./deploy/platform/overlays/baremetal/components/traefik
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: baremetal-flagger
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: baremetal-traefik
+    - name: baremetal-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/overlays/baremetal/components/flagger
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: baremetal-kyverno-monitoring
+  namespace: flux-system
+spec:
+  serviceAccountName: kustomize-controller
+  dependsOn:
+    - name: baremetal-kyverno-policies
+    - name: baremetal-observability
+  interval: 10m
+  retryInterval: 30s
+  timeout: 10m
+  path: ./deploy/platform/kyverno-monitoring
+  prune: true
+  wait: true
+  sourceRef:
+    kind: GitRepository
+    name: baukit

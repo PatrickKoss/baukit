@@ -563,13 +563,15 @@ fi
 
 printf '==> monitor CRD ordering\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_monitor_order.py" --rendered "$rendered_dir" \
-  "$platform_dir/overlays/local/reconciliation.yaml" "$platform_dir/e2e/overlay/reconciliation.yaml"; then
+  "$platform_dir/overlays/local/reconciliation.yaml" "$platform_dir/overlays/baremetal/reconciliation.yaml" \
+  "$platform_dir/e2e/overlay/reconciliation.yaml"; then
   status=1
 fi
 
 printf '==> admission ordering\n'
 if ! PYTHONDONTWRITEBYTECODE=1 python3 "$platform_dir/lint/check_admission_order.py" --kustomize "$(command -v kustomize)" \
-  "$platform_dir/overlays/local/reconciliation.yaml" "$platform_dir/e2e/overlay/reconciliation.yaml"; then
+  "$platform_dir/overlays/local/reconciliation.yaml" "$platform_dir/overlays/baremetal/reconciliation.yaml" \
+  "$platform_dir/e2e/overlay/reconciliation.yaml"; then
   status=1
 fi
 

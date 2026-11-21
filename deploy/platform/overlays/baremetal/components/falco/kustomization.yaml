@@ -1,0 +1,10 @@
+# The base driver is modern_ebpf with least privilege: it needs a kernel with BTF, which
+# linux-cachyos-lts ships, and no kernel module build or falco-driver-loader. Each node has its own
+# kernel, so falco-shared-kernel (k3d only) stays out.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../../falco
+  - ../../cluster-network
+components:
+  - ../../../../components/network-policy/node-cidr
