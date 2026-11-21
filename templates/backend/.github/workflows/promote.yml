@@ -1,0 +1,46 @@
+name: Promote
+
+# Copies the signed testing pins to deploy/gitops/production. The production environment's
+# required reviewers approve each run.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 12-character Git SHA that testing pins now; empty promotes whatever testing pins
+        required: false
+        default: ""
+
+# Jobs widen this only as far as they need.
+permissions:
+  contents: read
+
+concurrency:
+  group: promote
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote testing pins to production
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      # Read the source and the GHCR signatures. The pin push uses the deploy key, not this token.
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.8.11
+          cache: false
+          install_args: aqua:sigstore/cosign
+      - name: Verify the testing images and pin them in production
+        env:
+          GITOPS_DEPLOY_KEY: {% raw %}${{ secrets.GITOPS_DEPLOY_KEY }}{% endraw %}
+          REGISTRY_USER: {% raw %}${{ github.actor }}{% endraw %}
+          REGISTRY_TOKEN: {% raw %}${{ github.token }}{% endraw %}
+          PROMOTE_TAG: {% raw %}${{ inputs.tag }}{% endraw %}
+        run: bash scripts/promote.sh "$PROMOTE_TAG"

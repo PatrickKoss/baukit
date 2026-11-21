@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- Every Linux job in `.github/workflows/ci.yml`{% if context.mobile %} and `native.yml`{% endif %} takes `runs-on` from the repository variable `BAUKIT_RUNS_ON`, a JSON label array such as `["self-hosted","lab","x64"]`, and falls back to `ubuntu-latest` when it is unset.{% if context.quality_strict %} The strict gate job reads `BAUKIT_GATE_RUNS_ON` instead, because it boots emulators and moves to self-hosted runners separately.{% endif %}{% if context.mobile %} The iOS job stays on `macos-15`.{% endif %} Run `baukit check template-files --update` after copying the workflows from the template.
+
+{% if context.backend %}- New `deploy/gitops/{base,testing,production}` overlays and `release.yml`/`promote.yml` workflows. A push to `main` builds the backend images, pushes `<registry>/<app>-<process>:<sha12>`, signs them by digest with cosign and commits the pins to `deploy/gitops/testing/release.yaml` with the `GITOPS_DEPLOY_KEY` deploy key; the manual promote workflow verifies the signatures and copies the pins to production. Add `[gitops]` with `domain` and `registry` to `baukit.toml`, run `baukit generate gitops` to add the missing files, then `baukit check template-files --update`, and follow `deploy/gitops/README.md` for the GitHub environments, secrets and SOPS encryption. `baukit generate gitops` never overwrites a file; it lists the ones that differ from the template as kept.
+
+{% endif %}
 ## [0.28.4] - 2026-11-19
 
 {% if context.mobile %}- `run-maestro.sh` waits until `adb devices` lists every serial in state `device` right before each Maestro start, through the new `--await-devices` mode of `mobile/scripts/qa/android-adb.py`. Maestro 2.8.0 opens a transport to every serial the shared adb server on port 5037 lists and, when one of them is booting or offline, reports every Android device as not connected. A gate printed `Device emulator-5662 was requested, but it is not connected.` while that emulator kept streaming logcat. The run's own emulators get `BAUKIT_QA_DETACH_GRACE_SECONDS` to return, other sessions' emulators `BAUKIT_QA_BOOT_TIMEOUT_SECONDS`, and the failure names the serial and its adb state. After a failed Maestro run the script also prints any serial that is not ready. Copy `run-maestro.sh`, `android-adb.py`, `test_android.py` and, in strict products, `docs/quality-gate.md` from the template.

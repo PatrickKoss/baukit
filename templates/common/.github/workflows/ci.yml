@@ -11,7 +11,7 @@ permissions:
 jobs:
   generated-scripts:
     name: Generated repository scripts
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -19,7 +19,9 @@ jobs:
       - run: python3 scripts/reconcile-env.test.py
       - run: python3 scripts/lockfiles.test.py
       - run: python3 scripts/rust-toolchain-pin.test.py
-{% if context.quality_strict %}      - run: python3 scripts/check-markdown-links.test.py
+{% if context.backend %}      - run: python3 scripts/gitops-pins.test.py
+      - run: python3 scripts/release-dry-run.test.py
+{% endif %}{% if context.quality_strict %}      - run: python3 scripts/check-markdown-links.test.py
       - run: python3 scripts/check-markdown-links.py README.md CLAUDE.md AGENTS.md docs
 {% else %}      - name: Product steps from scripts/quality-gate.local.sh
         if: {% raw %}${{ hashFiles('scripts/quality-gate.local.sh') != '' }}{% endraw %}
@@ -32,7 +34,7 @@ jobs:
 {% endif %}
 {% if not context.quality_strict %}  repository-lint:
     name: Supply chain and script lint
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,7 +57,7 @@ jobs:
 
   baukit-doctor:
     name: Baukit doctor
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -77,7 +79,8 @@ jobs:
 
 {% endif %}{% if context.quality_strict %}  strict-quality:
     name: Strict quality profile
-    runs-on: ubuntu-latest
+    # The monolithic gate boots emulators, so it moves to self-hosted runners on its own variable.
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_GATE_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     timeout-minutes: {{ context.ci_timeout_minutes }}
 {% if context.ci_env %}    env:
 {% for entry in context.ci_env %}      {{ entry.name }}: {{ entry.value }}
@@ -160,7 +163,7 @@ jobs:
           retention-days: 7
 {% endif -%}
 {% else %}{% if context.backend %}  backend:
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -182,7 +185,7 @@ jobs:
 {% endif %}
   backend-msrv:
     name: Backend minimum supported Rust version
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -214,7 +217,7 @@ jobs:
 
   api-drift:
     name: OpenAPI specification and consumers
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -254,7 +257,7 @@ jobs:
 {% endif %}
   docker-build:
     name: Production backend image
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -271,7 +274,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=backend-production
 
 {% endif %}{% if context.web %}  web:
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     defaults:
       run:
         working-directory: web
@@ -291,7 +294,7 @@ jobs:
 
   web-coverage:
     name: Web coverage thresholds
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     defaults:
       run:
         working-directory: web
@@ -317,7 +320,7 @@ jobs:
 
   e2e-web:
     name: Browser QA ({% raw %}${{ matrix.browser }}{% endraw %})
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -367,7 +370,7 @@ jobs:
           retention-days: 7
 
 {% endif %}{% if context.mobile %}  mobile:
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     defaults:
       run:
         working-directory: mobile
@@ -396,7 +399,7 @@ jobs:
 {% endif %}
   mobile-coverage:
     name: Mobile coverage thresholds
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     defaults:
       run:
         working-directory: mobile
@@ -424,7 +427,7 @@ jobs:
 
 {% endif %}  observability-lint:
     name: Observability metric names
-    runs-on: ubuntu-latest
+    runs-on: {% raw %}${{ fromJSON(vars.BAUKIT_RUNS_ON || '"ubuntu-latest"') }}{% endraw %}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

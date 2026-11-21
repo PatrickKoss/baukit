@@ -112,6 +112,16 @@ pub(crate) struct TemplateContext {
     pub(crate) declared_ports: DeclaredPorts,
     pub(crate) api_container_port: u16,
     pub(crate) ops_container_port: u16,
+    pub(crate) gitops: GitopsContext,
+}
+
+/// `[gitops]` from `baukit.toml`, resolved for the `deploy/gitops` templates.
+#[derive(Debug, Serialize)]
+pub(crate) struct GitopsContext {
+    pub(crate) domain: String,
+    pub(crate) registry: String,
+    pub(crate) identity_url: String,
+    pub(crate) realm: String,
 }
 
 pub(crate) type RenderedFiles = BTreeMap<PathBuf, Vec<u8>>;
@@ -496,6 +506,12 @@ mod generator_tests {
             },
             api_container_port: 8080,
             ops_container_port: 9090,
+            gitops: super::GitopsContext {
+                domain: "lab.example.com".to_owned(),
+                registry: "ghcr.io/example".to_owned(),
+                identity_url: "https://id.lab.example.com".to_owned(),
+                realm: "cache-test".to_owned(),
+            },
         };
         let mut rendered = BTreeMap::new();
 

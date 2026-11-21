@@ -1,0 +1,35 @@
+# TLS comes from the platform wildcard in Traefik's default TLSStore, so the route names no secret.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ context.app_name }}-headers
+  labels:
+    app.kubernetes.io/part-of: {{ context.app_name }}
+    baukit.dev/product: {{ context.app_name }}
+spec:
+  headers:
+    stsSeconds: 31536000
+    stsIncludeSubdomains: true
+    contentTypeNosniff: true
+    frameDeny: true
+    referrerPolicy: strict-origin-when-cross-origin
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ context.app_name }}
+  labels:
+    app.kubernetes.io/part-of: {{ context.app_name }}
+    baukit.dev/product: {{ context.app_name }}
+spec:
+  entryPoints: [websecure]
+  routes:
+    - kind: Rule
+      match: Host(`{{ context.app_name }}.invalid`)
+      middlewares:
+        - name: {{ context.app_name }}-headers
+      services:
+        - kind: Service
+          name: {{ context.app_name }}
+          port: 80
+  tls: {}

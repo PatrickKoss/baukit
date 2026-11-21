@@ -41,6 +41,12 @@ fn owned_set() -> Result<GlobSet> {
 /// Renders the template-owned files `baukit new` would write for the product at `root`, keyed by
 /// product-relative path.
 pub(crate) fn render_template_owned(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
+    render_matching(root, &owned_set()?)
+}
+
+/// Renders what `baukit new` would write for the product at `root` from its `baukit.toml`, keeping
+/// only the paths `filter` matches.
+pub(crate) fn render_matching(root: &Path, filter: &GlobSet) -> Result<BTreeMap<String, Vec<u8>>> {
     let manifest = read_manifest(root)?;
     let options = NewOptions {
         name: manifest.app.name,
@@ -54,11 +60,10 @@ pub(crate) fn render_template_owned(root: &Path) -> Result<BTreeMap<String, Vec<
         port_offset: manifest.port_offset,
         quality: manifest.quality.profile,
     };
-    let owned = owned_set()?;
     Ok(render_for_destination(&options, root)?
         .into_iter()
-        .filter(|(path, _)| owned.is_match(path))
         .map(|(path, contents)| (path.to_string_lossy().replace('\\', "/"), contents))
+        .filter(|(path, _)| filter.is_match(path))
         .collect())
 }
 

@@ -1,0 +1,115 @@
+# Environment identity, hosts, auth and image pins come from the testing and production overlays.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: {{ context.app_name }}
+  labels:
+    baukit.dev/product: {{ context.app_name }}
+spec:
+  serviceAccountName: flux-reconciler
+  releaseName: {{ context.app_name }}
+  interval: 10m
+  timeout: 10m
+  chart:
+    spec:
+      chart: ./deploy/chart/baukit-app
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: baukit
+      interval: 10m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  values:
+    nameOverride: {{ context.app_name }}
+    product: {{ context.app_name }}
+    deploymentEnvironment: testing
+    imagePullSecrets:
+      - name: {{ context.app_name }}-ghcr
+    podLabels:
+      baukit.dev/environment: testing
+      baukit.dev/postgres-client: "true"
+    config:
+      otlpEndpoint: http://tempo.observability.svc.cluster.local:4317
+{% if context.worker %}      overrides:
+        WORKER__CONCURRENCY: "5"
+        WORKER__LEASE_DURATION_SECONDS: "900"
+        WORKER__JOB_TIMEOUT_SECONDS: "600"
+        WORKER__POLL_INTERVAL_MILLISECONDS: "250"
+{% endif %}      existingSecretRefs:
+        - name: {{ context.app_name }}-runtime
+    api:
+      replicas: 1
+      image:
+        repository: {{ context.gitops.registry }}/{{ context.app_name }}-api
+        pullPolicy: IfNotPresent
+      command: [/app/api]
+      networkPolicy:
+        additionalEgress: &egress
+          - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: postgres
+                podSelector:
+                  matchLabels:
+                    cnpg.io/cluster: postgres-cluster
+            ports:
+              - {protocol: TCP, port: 5432}
+          - to:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+                  except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+            ports:
+              - {protocol: TCP, port: 443}
+          - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: observability
+                podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: tempo
+            ports:
+              - {protocol: TCP, port: 4317}
+    worker:
+      enabled: {{ "true" if context.worker else "false" }}
+{% if context.worker %}      replicas: 1
+      image:
+        repository: {{ context.gitops.registry }}/{{ context.app_name }}-worker
+        pullPolicy: IfNotPresent
+      command: [/app/worker]
+      networkPolicy:
+        additionalEgress: *egress
+{% endif %}    migration:
+      enabled: true
+      image:
+        repository: {{ context.gitops.registry }}/{{ context.app_name }}-migrate
+        pullPolicy: IfNotPresent
+      command: [/app/migrate]
+      networkPolicy:
+        additionalEgress: *egress
+{% if context.mcp %}    mcp:
+      enabled: true
+      allowedOrigins: []
+{% endif %}    ingress:
+      enabled: false
+    serviceMonitor:
+      enabled: true
+      interval: 30s
+      scrapeTimeout: 10s
+    networkPolicy:
+      enabled: true
+      ingressController:
+        namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: traefik
+        podSelector:
+          matchLabels:
+            app.kubernetes.io/name: traefik
+      dns:
+        k3sCompatible: true
+    autoscaling:
+      enabled: false

@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: {{ context.app_name }}-testing
+resources:
+  - ../base
+  - ghcr-pull-secret.enc.yaml
+  - runtime-secret.enc.yaml
+patches:
+  - path: environment.yaml
+  - path: release.yaml
+  - target:
+      group: traefik.io
+      version: v1alpha1
+      kind: IngressRoute
+      name: {{ context.app_name }}
+    patch: |-
+      - op: replace
+        path: /spec/routes/0/match
+        value: Host(`{{ context.app_name }}-testing.{{ context.gitops.domain }}`)

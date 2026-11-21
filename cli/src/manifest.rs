@@ -61,6 +61,92 @@ pub struct Manifest {
     pub doctor: DoctorPaths,
     #[serde(default, skip_serializing_if = "BackendManifest::is_empty")]
     pub backend: BackendManifest,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gitops: Option<GitopsManifest>,
+}
+
+pub const DEFAULT_GITOPS_DOMAIN: &str = "lab.example.com";
+pub const DEFAULT_GITOPS_REGISTRY: &str = "ghcr.io/example";
+
+/// Where the `deploy/gitops` overlays point: the lab domain, the image registry and the realm.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct GitopsManifest {
+    /// Testing serves `<app>-testing.<domain>`, production `<app>.<domain>`.
+    pub domain: String,
+    /// Image prefix; images are `<registry>/<app>-<process>`.
+    pub registry: String,
+    /// Keycloak base URL; defaults to `https://id.<domain>`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity_url: Option<String>,
+    /// Realm name; defaults to the app name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub realm: Option<String>,
+}
+
+impl Default for GitopsManifest {
+    fn default() -> Self {
+        Self {
+            domain: DEFAULT_GITOPS_DOMAIN.to_owned(),
+            registry: DEFAULT_GITOPS_REGISTRY.to_owned(),
+            identity_url: None,
+            realm: None,
+        }
+    }
+}
+
+impl GitopsManifest {
+    /// # Errors
+    ///
+    /// Fails when the domain or registry holds characters that are unsafe in hostnames, YAML or
+    /// shell, or the identity URL is not https.
+    pub fn validate(&self) -> Result<()> {
+        let hostname = |value: &str| {
+            !value.is_empty()
+                && value.bytes().all(|byte| {
+                    byte.is_ascii_lowercase()
+                        || byte.is_ascii_digit()
+                        || matches!(byte, b'.' | b'-')
+                })
+        };
+        anyhow::ensure!(
+            hostname(&self.domain),
+            "gitops.domain `{}` must be a lowercase DNS name",
+            self.domain
+        );
+        anyhow::ensure!(
+            self.registry.split('/').all(hostname),
+            "gitops.registry `{}` must be a lowercase registry path such as ghcr.io/owner",
+            self.registry
+        );
+        if let Some(url) = &self.identity_url {
+            let valid = url
+                .strip_prefix("https://")
+                .and_then(|rest| rest.split('/').next())
+                .is_some_and(hostname)
+                && url.bytes().all(|byte| {
+                    byte.is_ascii_graphic() && !matches!(byte, b'"' | b'\'' | b'`' | b'$' | b'\\')
+                });
+            anyhow::ensure!(
+                valid,
+                "gitops.identity_url `{url}` must be an https URL with a lowercase host"
+            );
+        }
+        if let Some(realm) = &self.realm {
+            anyhow::ensure!(
+                hostname(realm),
+                "gitops.realm `{realm}` must hold lowercase letters, digits, `.` and `-`"
+            );
+        }
+        Ok(())
+    }
+
+    pub fn resolved_identity_url(&self) -> String {
+        self.identity_url.clone().map_or_else(
+            || format!("https://id.{}", self.domain),
+            |url| url.trim_end_matches('/').to_owned(),
+        )
+    }
 }
 
 /// Generation metadata only. Hub settings belong in backend runtime config.
