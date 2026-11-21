@@ -1,0 +1,17 @@
+{
+  "environmentClass": "lab",
+  "password": {
+    "minimumLength": 12,
+    "maximumLength": 128,
+    "excludeUsername": true,
+    "excludeEmail": true
+  },
+  "requireBruteForceProtection": true,
+  "minimumTls": "external",
+  "mcpResourceUrl": "https://api.fixture.lab.example.test/mcp",
+  "redirectUris": {
+    "maximumPerClient": 4,
+    "allowDevelopmentLoopbackHttp": false,
+    "allowedCustomSchemes": ["fixture"]
+  }
+}

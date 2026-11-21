@@ -138,5 +138,159 @@ class KeycloakPolicyTests(unittest.TestCase):
         self.assertEqual(failures, [])
 
 
+class LabPolicyTests(unittest.TestCase):
+    def fixture(self, name: str):
+        return keycloak_policy.load_json(TEST_DIRECTORY / "fixtures" / name)
+
+    def validate(self, realm=None, policy=None):
+        return keycloak_policy.validate_realm(
+            realm or self.fixture("lab-realm.json"),
+            policy or self.fixture("lab-policy.json"),
+            "lab",
+        )
+
+    def client(self, realm, client_id: str):
+        return next(client for client in realm["clients"] if client["clientId"] == client_id)
+
+    def test_lab_fixture_passes(self):
+        self.assertEqual(self.validate(), [])
+
+    def test_development_policy_is_not_a_lab_policy(self):
+        failures = keycloak_policy.validate_realm(
+            self.fixture("lab-realm.json"), self.fixture("development-policy.json"), "lab"
+        )
+        self.assertTrue(any("environmentClass must be 'lab'" in failure for failure in failures))
+
+    def test_lab_policy_cannot_allow_loopback_http_or_skip_tls(self):
+        policy = self.fixture("lab-policy.json")
+        policy["redirectUris"]["allowDevelopmentLoopbackHttp"] = True
+        policy["minimumTls"] = "none"
+        failures = self.validate(policy=policy)
+        self.assertIn(
+            "lab policy redirectUris.allowDevelopmentLoopbackHttp must be false", failures
+        )
+        self.assertIn("lab policy minimumTls must be external or all", failures)
+
+    def test_lab_policy_mcp_resource_must_be_a_lab_https_mcp_url(self):
+        for resource in ("http://localhost:8080/mcp", "https://api.example.test/other"):
+            policy = self.fixture("lab-policy.json")
+            policy["mcpResourceUrl"] = resource
+            self.assertEqual(
+                self.validate(policy=policy),
+                ["lab policy mcpResourceUrl must be a non-loopback https URL ending in /mcp"],
+            )
+
+    def test_default_and_known_passwords_are_rejected(self):
+        for value in ("development-password", "Password", "fixture-user"):
+            realm = self.fixture("lab-realm.json")
+            realm["users"][0]["credentials"][0]["value"] = value
+            self.assertEqual(
+                self.validate(realm),
+                ["user 'fixture-user' uses a default or known password"],
+            )
+
+    def test_literal_passwords_must_use_substitution(self):
+        realm = self.fixture("lab-realm.json")
+        realm["users"][0]["credentials"][0]["value"] = "Correct-Horse-Battery-9"
+        failures = self.validate(realm)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("stores a literal password", failures[0])
+
+    def test_file_substitution_and_other_credential_types_pass(self):
+        realm = self.fixture("lab-realm.json")
+        realm["users"][0]["credentials"] = [
+            {"type": "password", "value": "$(file:/run/secrets/user-password)"},
+            {"type": "otp", "value": "development-password"},
+        ]
+        self.assertEqual(self.validate(realm), [])
+
+    def test_loopback_redirect_uris_are_rejected(self):
+        realm = self.fixture("lab-realm.json")
+        self.client(realm, "fixture-web")["redirectUris"] = [
+            "http://localhost:5173/*",
+            "https://127.0.0.1:8443/callback",
+        ]
+        failures = self.validate(realm)
+        self.assertEqual(len(failures), 2)
+        self.assertIn("uses HTTP outside an allowed development loopback address", failures[0])
+        self.assertIn("points at a loopback host", failures[1])
+
+    def test_plain_http_lab_redirect_is_rejected(self):
+        realm = self.fixture("lab-realm.json")
+        self.client(realm, "fixture-web")["redirectUris"] = ["http://fixture.lab.example.test/*"]
+        failures = self.validate(realm)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("uses HTTP", failures[0])
+
+    def test_public_client_without_pkce_s256_is_rejected(self):
+        realm = self.fixture("lab-realm.json")
+        self.client(realm, "fixture-mcp")["attributes"] = {"pkce.code.challenge.method": "plain"}
+        self.assertEqual(
+            self.validate(realm), ["public client 'fixture-mcp' must require PKCE S256"]
+        )
+
+    def test_mcp_audience_must_point_at_the_lab_url(self):
+        realm = self.fixture("lab-realm.json")
+        mapper = self.client(realm, "fixture-mcp")["protocolMappers"][0]
+        mapper["config"]["included.custom.audience"] = "http://localhost:8080/mcp"
+        self.assertEqual(
+            self.validate(realm),
+            [
+                "client 'fixture-mcp' MCP audience 'http://localhost:8080/mcp' must be "
+                "'https://api.fixture.lab.example.test/mcp'",
+                "no client maps the MCP audience 'https://api.fixture.lab.example.test/mcp'",
+            ],
+        )
+
+    def test_missing_mcp_audience_mapper_is_rejected(self):
+        realm = self.fixture("lab-realm.json")
+        del self.client(realm, "fixture-mcp")["protocolMappers"]
+        self.assertEqual(
+            self.validate(realm),
+            ["no client maps the MCP audience 'https://api.fixture.lab.example.test/mcp'"],
+        )
+
+    def test_mcp_audience_without_a_policy_url_is_rejected(self):
+        policy = self.fixture("lab-policy.json")
+        del policy["mcpResourceUrl"]
+        failures = self.validate(policy=policy)
+        self.assertEqual(len(failures), 1)
+        self.assertIn("the lab policy sets no mcpResourceUrl", failures[0])
+
+    def test_realm_without_mcp_passes_without_a_policy_url(self):
+        realm = self.fixture("lab-realm.json")
+        realm["clients"] = [c for c in realm["clients"] if c["clientId"] != "fixture-mcp"]
+        policy = self.fixture("lab-policy.json")
+        del policy["mcpResourceUrl"]
+        self.assertEqual(self.validate(realm, policy), [])
+
+    def test_development_class_keeps_literal_passwords_and_loopback(self):
+        realm = self.fixture("development-realm.json")
+        realm["users"] = [
+            {
+                "username": "dev",
+                "credentials": [{"type": "password", "value": "development-password"}],
+            }
+        ]
+        failures = keycloak_policy.validate_realm(
+            realm, self.fixture("development-policy.json"), "development"
+        )
+        self.assertEqual(failures, [])
+
+    def test_cli_accepts_the_lab_class(self):
+        fixtures = TEST_DIRECTORY / "fixtures"
+        status = keycloak_policy.main(
+            [
+                "--realm",
+                str(fixtures / "lab-realm.json"),
+                "--policy",
+                str(fixtures / "lab-policy.json"),
+                "--environment-class",
+                "lab",
+            ]
+        )
+        self.assertEqual(status, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
