@@ -134,6 +134,14 @@ class SecretImageTests(unittest.TestCase):
         }
         self.assertEqual(platform_images.extract_images([secret]), ["busybox:1.38.0", sidecar])
 
+    def test_image_env_vars_are_found(self):
+        proxy = f"tailscale/tailscale{DIGEST}"
+        container = {
+            "image": "busybox:1.38.0",
+            "env": [{"name": "PROXY_IMAGE", "value": proxy}, {"name": "PROXY_TAGS", "value": "a:b"}],
+        }
+        self.assertEqual(platform_images.extract_images([container]), ["busybox:1.38.0", proxy])
+
     def test_image_keys_outside_a_secret_are_not_decoded(self):
         config = {"kind": "ConfigMap", "data": {"SIDECAR_IMAGE": "cmVkaXM6OA=="}}
         self.assertEqual(platform_images.extract_images([config]), [])

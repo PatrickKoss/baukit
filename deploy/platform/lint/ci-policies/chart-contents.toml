@@ -66,6 +66,10 @@ tests = false
 crds = true
 tests = false
 
+["tailscale-operator@1.104.7"]
+crds = false
+tests = false
+
 ["tempo@3.2.1"]
 crds = false
 tests = false

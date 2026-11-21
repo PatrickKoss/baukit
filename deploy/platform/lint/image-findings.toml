@@ -2137,6 +2137,20 @@ ids = [
   "CVE-2026-97054",
 ]
 
+[images."tailscale/k8s-operator@sha256:51ba104ff02afcc39f93189415c8b2f44fb6037e8592d626bfa52c3c8afc02f6"]
+expires = 2027-01-16
+reason = "tailscale/k8s-operator 1.104.7: no fixed upstream release exists as of 2026-11-21. Tailscale 1.104.7 is the newest release (2026-11-12) and its binaries are built with golang.org/x/net 0.60.0; the fix is in 0.62.0. The vulnerable package is x/net/html, a parser for HTML documents, and the operator talks only to the Kubernetes API and the Tailscale control plane, and parses no HTML from untrusted peers. Only an upstream rebuild clears it, because the platform runs upstream's published images. Follow-up RF29."
+ids = [
+  "CVE-2026-78661",
+]
+
+[images."tailscale/tailscale@sha256:72c1e19e0aedca96b8533bbb0b4368564410ff20b17e53b804eb6c1f04a31be4"]
+expires = 2027-01-16
+reason = "tailscale/tailscale 1.104.7 (operator proxies): no fixed upstream release exists as of 2026-11-21. Tailscale 1.104.7 is the newest release (2026-11-12) and its binaries are built with golang.org/x/net 0.60.0; the fix is in 0.62.0. The vulnerable package is x/net/html, a parser for HTML documents, and containerboot, tailscale and tailscaled forward TCP and parse no HTML from untrusted peers. Only an upstream rebuild clears it, because the platform runs upstream's published images. Follow-up RF29."
+ids = [
+  "CVE-2026-78661",
+]
+
 [images."zookeeper:3.9.7@sha256:7654645af057c76db8facc77c5d6fc0749f0f566bdd5c41efe6e3b824d1248c0"]
 expires = 2027-01-16
 reason = "zookeeper:3.9.7: no fixed upstream release exists as of 2026-11-17. 3.9.7 is the newest upstream release and still ships these. Follow-up RF29."

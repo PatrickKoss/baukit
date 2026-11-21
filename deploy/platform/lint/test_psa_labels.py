@@ -112,7 +112,7 @@ class ViolationsTest(unittest.TestCase):
             self.check(GOOD.format(name="traefik", level="privileged")),
             [
                 "traefik: privileged is reserved for "
-                "['falco', 'kube-system', 'kured', 'observability-agents']"
+                "['falco', 'kube-system', 'kured', 'observability-agents', 'tailscale']"
             ],
         )
 

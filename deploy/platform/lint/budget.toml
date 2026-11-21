@@ -1,1 +1,2 @@
-policy_exceptions = 11
+# 12: tailscale-proxies admits the operator's privileged kernel-mode proxy pods.
+policy_exceptions = 12

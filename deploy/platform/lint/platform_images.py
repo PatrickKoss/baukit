@@ -69,12 +69,20 @@ def secret_images(value: dict) -> Iterable[str]:
             yield plain.strip()
 
 
+def env_image(value: dict) -> str | None:
+    """An image a container env var carries, such as the Tailscale operator's PROXY_IMAGE."""
+    name, image = value.get("name"), value.get("value")
+    if isinstance(name, str) and IMAGE_DATA_KEY.search(name) and isinstance(image, str):
+        return image.strip()
+    return None
+
+
 def images_in(value: object) -> Iterable[str]:
     if isinstance(value, dict):
         yield from secret_images(value)
-        patched = patched_image(value)
-        if patched is not None:
-            yield patched
+        for found in (patched_image(value), env_image(value)):
+            if found is not None:
+                yield found
         for key, child in value.items():
             if key in IMAGE_KEYS and isinstance(child, str):
                 yield child

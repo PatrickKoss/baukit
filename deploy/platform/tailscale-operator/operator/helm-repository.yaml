@@ -1,0 +1,10 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: tailscale
+  namespace: tailscale
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  interval: 24h
+  url: https://pkgs.tailscale.com/helmcharts

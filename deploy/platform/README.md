@@ -33,6 +33,7 @@ The conventional namespaces are:
 | ingress | `traefik` |
 | progressive delivery | `flagger-system` |
 | product analytics | `posthog` |
+| tailnet entry (Tailscale operator) | `tailscale` |
 | admission policy | `kyverno` |
 | coordinated reboot | `kured` |
 | cloud provider drivers | `kube-system` (owned by k3s, not managed by a base) |
@@ -106,6 +107,7 @@ HelmRelease disagrees with this table.
 | `alloy` | OCI `oci://ghcr.io/grafana/helm-charts/alloy` | no | none |  | No signature or bundle for the 1.16.0 digest. |
 | `traefik` | OCI `oci://ghcr.io/traefik/helm/traefik` | no | none |  | No signature or bundle for the 42.4.1 digest. |
 | `posthog` | HelmRepository `https://posthog.github.io/charts-clickhouse` | no | none |  | PostHog publishes the sunset chart only in the HTTPS index. |
+| `tailscale-operator` | HelmRepository `https://pkgs.tailscale.com/helmcharts` | no | none |  | Tailscale publishes the chart only in its HTTPS index, unsigned. |
 
 Every keyless identity uses the issuer and subject regexes shown. The subjects
 were read from the signing certificate of the pinned digest, not from docs.
@@ -124,7 +126,7 @@ everywhere, so a gap shows up as a warning even where `enforce` is looser.
 |---|---|
 | `restricted` | `cert-manager`, `cnpg-system`, `flagger-system`, `flux-system`, `kyverno`, `observability`, `platform-redis`, `platform-system`, `postgres`, `traefik`, tenants |
 | `baseline` | `posthog` |
-| `privileged` | `kube-system`, `kured`, `observability-agents`, `falco` |
+| `privileged` | `kube-system`, `kured`, `observability-agents`, `falco`, `tailscale` |
 
 A namespace without labels gets the cluster default from `k3s/pod-security.yaml`:
 `enforce: baseline`, `audit` and `warn` `restricted`, with only `kube-system`

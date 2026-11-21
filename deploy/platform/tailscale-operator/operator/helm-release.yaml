@@ -1,0 +1,63 @@
+# The chart ships no Helm tests and keeps its CRDs in templates/. The consumer supplies Secret
+# operator-oauth with client_id and client_secret.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tailscale-operator
+  namespace: tailscale
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  interval: 30m
+  timeout: 10m
+  chart:
+    spec:
+      chart: tailscale-operator
+      version: "1.104.7"
+      sourceRef:
+        kind: HelmRepository
+        name: tailscale
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+  driftDetection:
+    mode: enabled
+  values:
+    installCRDs: true
+    ingressClass:
+      enabled: false
+    operatorConfig:
+      defaultTags:
+        - tag:k8s-operator
+      image:
+        repository: tailscale/k8s-operator
+        digest: sha256:51ba104ff02afcc39f93189415c8b2f44fb6037e8592d626bfa52c3c8afc02f6
+        pullPolicy: IfNotPresent
+      priorityClassName: platform-standard
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      podSecurityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
+    proxyConfig:
+      image:
+        repository: tailscale/tailscale
+        digest: sha256:72c1e19e0aedca96b8533bbb0b4368564410ff20b17e53b804eb6c1f04a31be4
+      defaultTags: tag:k8s
+      defaultProxyClass: baukit
+    apiServerProxyConfig:
+      mode: "false"

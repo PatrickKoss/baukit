@@ -1,6 +1,8 @@
 # Rules that today's bases still violate stay pending on the plan task that fixes them.
 # A pending rule that passes must move to active.
-privileged_namespaces = ["kube-system", "observability-agents", "kured", "falco"]
+# tailscale: kernel-mode LoadBalancer proxies, since containerboot refuses TS_DEST_IP in userspace mode and
+# the operator adds a privileged sysctler init container; the proxy also needs /dev/net/tun and NET_ADMIN.
+privileged_namespaces = ["kube-system", "observability-agents", "kured", "falco", "tailscale"]
 # k3s runs CoreDNS, metrics-server and the cloud controllers here; N3 gives them no policies.
 network_policy_exempt_namespaces = ["kube-system"]
 # exporters-scraped: a base workload running one of these image repositories needs a PodMonitor
