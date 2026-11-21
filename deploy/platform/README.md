@@ -356,6 +356,49 @@ Use `PLATFORM_BAUKIT_SOURCE_MODE=github-tag` and change the overlay's Baukit
 release tag. Remote storage, ingress, DNS, certificates, and cloud identity
 remain overlay concerns; the publishable bases do not acquire those values.
 
+## Bare-metal flavor (three k3s servers)
+
+`overlays/baremetal` composes the platform for three k3s servers with embedded
+etcd on their own hardware. `overlays/baremetal/components/*` sit next to
+`overlays/local/components/*`, and a consumer points one Flux Kustomization at
+each, as `overlays/baremetal/reconciliation.yaml` shows. It differs from
+`overlays/local` in these ways:
+
+- The nodeCIDR is a consumer parameter. `cluster-network` holds the placeholder
+  `192.0.2.0/24` (RFC 5737), so a cluster that forgets it reaches no webhook.
+  The consumer adds the two Flux `spec.patches` from `overlays/baremetal/node-cidr.yaml`
+  to every Kustomization, with its node network in place of `10.0.0.0/24`.
+- `postgres-cluster` runs 2 instances with a PodDisruptionBudget and required
+  pod anti-affinity on `kubernetes.io/hostname`. The consumer still replaces the
+  ObjectStore `destinationPath` and sets its endpoint and credentials.
+- kured is absent. The host playbook drains, reboots and uncordons nodes one at a time.
+- Falco keeps the base `modern_ebpf` driver, which needs kernel BTF (shipped by
+  `linux-cachyos-lts`) and builds no kernel module. `falco-shared-kernel` stays out.
+- No rustfs, self-signed issuer or WSL clock patch, and the bases keep their
+  sizes, which fit three 32 GiB nodes. The consumer brings issuers, the Traefik
+  default certificate and the `alertmanager-routing` Secret.
+
+`k3s/baremetal/` is the k3s config set. Install `config.yaml` as
+`/etc/rancher/k3s/config.yaml` and the other files into
+`/etc/rancher/k3s/config.yaml.d/`: `init.yaml` on the first server, `join.yaml`
+on the others, `host.yaml` on every server. Copy `k3s/audit-policy.yaml`,
+`k3s/pod-security.yaml`, `k3s/audit-webhook.yaml` and the cluster token (mode
+0600, as `token`) to `/etc/baukit/k3s/`. Etcd snapshots run every 6 hours and
+keep 28, compressed. The service CIDR stays the k3s default because the audit
+webhook targets `10.43.0.60`. The drop-ins carry `${NAME}` placeholders that the
+host tooling fills:
+
+| Parameter | Example | File |
+|---|---|---|
+| `K3S_INIT_SERVER` | `10.0.0.11` | `join.yaml` |
+| `K3S_NODE_NAME` | `node-2` | `host.yaml` |
+| `K3S_NODE_IP` | `10.0.0.12` | `host.yaml` |
+| `K3S_API_ADDRESS` | `k3s.example.internal` | `host.yaml` |
+| `K3S_SYSTEM_RESERVED_MEMORY` | `10Gi` | `host.yaml` |
+
+`scripts/test_k3s_baremetal_config.py` checks every key against `k3s server --help`
+of the pinned k3s and keeps the API server flags equal to the local ones.
+
 ## Local integration flavor (development harness)
 
 `overlays/local` composes the platform's own development environment. It uses

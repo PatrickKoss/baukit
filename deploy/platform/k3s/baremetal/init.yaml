@@ -1,0 +1,2 @@
+# The first server only: it creates the embedded etcd cluster.
+cluster-init: true

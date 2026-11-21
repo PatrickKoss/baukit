@@ -1,0 +1,2 @@
+# Every other server: it joins through the first server's supervisor port.
+server: https://${K3S_INIT_SERVER}:6443

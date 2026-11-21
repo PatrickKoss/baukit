@@ -1,0 +1,18 @@
+# Sets the node network on every NetworkPolicy the node-cidr component fills, after kustomize build.
+- op: add
+  path: /spec/patches
+  value:
+    - target:
+        kind: NetworkPolicy
+        labelSelector: baukit.dev/node-cidr-peer=egress
+      patch: |-
+        - op: replace
+          path: /spec/egress/0/to/0/ipBlock/cidr
+          value: 10.0.0.0/24
+    - target:
+        kind: NetworkPolicy
+        labelSelector: baukit.dev/node-cidr-peer=ingress
+      patch: |-
+        - op: replace
+          path: /spec/ingress/0/from/0/ipBlock/cidr
+          value: 10.0.0.0/24

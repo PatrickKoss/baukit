@@ -1,0 +1,7 @@
+# Per host. kubelet-arg+ appends to the shared list instead of replacing it.
+node-name: ${K3S_NODE_NAME}
+node-ip: ${K3S_NODE_IP}
+tls-san:
+  - ${K3S_API_ADDRESS}
+kubelet-arg+:
+  - system-reserved=memory=${K3S_SYSTEM_RESERVED_MEMORY}
