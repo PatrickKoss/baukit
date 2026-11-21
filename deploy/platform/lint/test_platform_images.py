@@ -138,7 +138,10 @@ class SecretImageTests(unittest.TestCase):
         proxy = f"tailscale/tailscale{DIGEST}"
         container = {
             "image": "busybox:1.38.0",
-            "env": [{"name": "PROXY_IMAGE", "value": proxy}, {"name": "PROXY_TAGS", "value": "a:b"}],
+            "env": [
+                {"name": "PROXY_IMAGE", "value": proxy},
+                {"name": "PROXY_TAGS", "value": "a:b"},
+            ],
         }
         self.assertEqual(platform_images.extract_images([container]), ["busybox:1.38.0", proxy])
 
