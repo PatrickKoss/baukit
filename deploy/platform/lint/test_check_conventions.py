@@ -927,7 +927,7 @@ class ActivationTest(unittest.TestCase):
         activation = cc.load_activation(config)
         self.assertEqual(
             set(config["privileged_namespaces"]),
-            {"kube-system", "observability-agents", "kured", "falco"},
+            {"kube-system", "observability-agents", "kured", "falco", "tailscale"},
         )
         self.assertIn("policy-exception-budget", activation.active)
 

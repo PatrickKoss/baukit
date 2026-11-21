@@ -1,0 +1,35 @@
+# Default class of the tailscale-operator base, applied after it because the chart installs the CRD.
+# Both containers keep the operator's privileged securityContext: the sysctler init container writes
+# /proc/sys/net/ipv4/ip_forward, and the kernel-mode proxy needs /dev/net/tun and NET_ADMIN. Userspace
+# mode is available only to Ingress proxies, not to LoadBalancer Services.
+apiVersion: tailscale.com/v1alpha1
+kind: ProxyClass
+metadata:
+  name: baukit
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  statefulSet:
+    pod:
+      labels:
+        app.kubernetes.io/part-of: baukit-platform
+      priorityClassName: platform-critical
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      tailscaleContainer:
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 500m
+            memory: 128Mi
+      tailscaleInitContainer:
+        resources:
+          requests:
+            cpu: 1m
+            memory: 8Mi
+          limits:
+            cpu: 50m
+            memory: 32Mi

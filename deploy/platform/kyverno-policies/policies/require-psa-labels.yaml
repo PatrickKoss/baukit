@@ -25,7 +25,7 @@ spec:
     - name: enforce
       expression: variables.labels[?"pod-security.kubernetes.io/enforce"].orValue("")
     - name: privilegedAllowlist
-      expression: '["kube-system", "observability-agents", "kured", "falco"]'
+      expression: '["kube-system", "observability-agents", "kured", "falco", "tailscale"]'
     - name: isTenant
       expression: variables.labels[?"baukit.dev/tenant"].orValue("") == "true"
   validations:
@@ -37,7 +37,7 @@ spec:
         variables.enforce != "privileged" || object.metadata.name in variables.privilegedAllowlist
       messageExpression: >-
         "Namespace " + object.metadata.name + " may not enforce privileged. Only kube-system, " +
-        "observability-agents, kured and falco may; use restricted or baseline."
+        "observability-agents, kured, falco and tailscale may; use restricted or baseline."
     - expression: "!variables.isTenant || variables.enforce == 'restricted'"
       message: >-
         Tenant namespaces (baukit.dev/tenant=true) must enforce restricted. Include the tenant

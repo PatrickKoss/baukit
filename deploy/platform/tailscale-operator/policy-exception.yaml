@@ -1,0 +1,30 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: tailscale-proxies
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      Kernel-mode Tailscale proxies need privileged containers for ip_forward, /dev/net/tun and NET_ADMIN, and tailscaled runs as root. The operator labels every proxy it owns tailscale.com/managed=true.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-capabilities
+    - kind: ValidatingPolicy
+      name: disallow-capabilities-strict
+    - kind: ValidatingPolicy
+      name: disallow-privileged-containers
+    - kind: ValidatingPolicy
+      name: disallow-privilege-escalation
+    - kind: ValidatingPolicy
+      name: require-run-as-nonroot
+    - kind: ValidatingPolicy
+      name: require-run-as-non-root-user
+  matchConditions:
+    - name: proxy
+      expression: >-
+        object.metadata.?namespace.orValue("") == "tailscale" &&
+        object.kind in ["StatefulSet", "Pod"] &&
+        object.metadata.?labels[?"tailscale.com/managed"].orValue("") == "true"

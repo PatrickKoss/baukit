@@ -256,6 +256,22 @@
       "groupSlug": "platform-redis-ha"
     },
     {
+      "description": "One PR per platform base: tailscale-operator",
+      "matchFileNames": [
+        "deploy/platform/tailscale-operator/**"
+      ],
+      "groupName": "platform tailscale-operator",
+      "groupSlug": "platform-tailscale-operator"
+    },
+    {
+      "description": "One PR per platform base: tailscale-proxy-class",
+      "matchFileNames": [
+        "deploy/platform/tailscale-proxy-class/**"
+      ],
+      "groupName": "platform tailscale-proxy-class",
+      "groupSlug": "platform-tailscale-proxy-class"
+    },
+    {
       "description": "One PR per platform base: traefik",
       "matchFileNames": [
         "deploy/platform/traefik/**"

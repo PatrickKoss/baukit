@@ -14,7 +14,8 @@ PLATFORM = E2E.parent
 REPO = PLATFORM.parent.parent
 RECONCILIATION = E2E / "overlay/reconciliation.yaml"
 NOT_BASES = {"components", "e2e", "lib", "lint", "overlays", "schemas"}
-LEFT_OUT = {"hcloud", "posthog", "redis"}
+# tailscale-operator needs a real tailnet OAuth client, which e2e does not have.
+LEFT_OUT = {"hcloud", "posthog", "redis", "tailscale-operator", "tailscale-proxy-class"}
 NODE_CIDR_PLACEHOLDER = "192.0.2.0/32"
 
 
@@ -117,7 +118,8 @@ class OverlayTests(unittest.TestCase):
     def test_a_base_with_a_local_component_is_composed_through_it(self):
         local = PLATFORM / "overlays/local/components"
         paths = set(re.findall(r"^  path: \./(\S+)$", RECONCILIATION.read_text(), re.M))
-        for component in sorted(path.parent for path in local.glob("*/kustomization.yaml")):
+        components = [path.parent for path in local.glob("*/kustomization.yaml")]
+        for component in sorted(c for c in components if c.name not in LEFT_OUT):
             with self.subTest(base=component.name):
                 own = E2E / "overlay/components" / component.name / "kustomization.yaml"
                 via_local = str(component.relative_to(REPO)) in paths
