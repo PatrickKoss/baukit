@@ -1,0 +1,11 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: baukit
+  namespace: flux-system
+spec:
+  interval: 10m
+  timeout: 2m
+  url: https://git.example.invalid/baukit.git
+  ref:
+    branch: main

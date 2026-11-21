@@ -1,0 +1,22 @@
+# Shared server flags for every server of a three-server embedded etcd cluster. Install as
+# /etc/rancher/k3s/config.yaml; the role and host drop-ins go to /etc/rancher/k3s/config.yaml.d/.
+# The audit, admission and webhook files are ../audit-policy.yaml, ../pod-security.yaml and
+# ../audit-webhook.yaml, copied to /etc/baukit/k3s/. The webhook targets 10.43.0.60, so the
+# service CIDR stays at the k3s default.
+token-file: /etc/baukit/k3s/token
+disable:
+  - traefik
+secrets-encryption: true
+protect-kernel-defaults: true
+kube-apiserver-arg:
+  - admission-control-config-file=/etc/baukit/k3s/pod-security.yaml
+  - audit-policy-file=/etc/baukit/k3s/audit-policy.yaml
+  - audit-log-path=/var/log/kubernetes/audit/audit.log
+  - audit-log-maxage=7
+  - audit-log-maxbackup=3
+  - audit-log-maxsize=100
+  - audit-webhook-config-file=/etc/baukit/k3s/audit-webhook.yaml
+  - audit-webhook-batch-max-wait=5s
+etcd-snapshot-schedule-cron: "0 */6 * * *"
+etcd-snapshot-retention: 28
+etcd-snapshot-compress: true
