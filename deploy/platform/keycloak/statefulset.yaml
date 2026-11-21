@@ -37,7 +37,7 @@ spec:
         - name: seed
           image: quay.io/keycloak/keycloak:26.8.2@sha256:7e66a96e4739239070aeaf72e4c5decf0f7f682cfc725b9f7ea2b336eaba38b3
           imagePullPolicy: IfNotPresent
-          command: [/bin/sh, -c, cp -a /opt/keycloak/lib/quarkus/. /seed/]
+          command: [/bin/sh, -c, cp -R /opt/keycloak/lib/quarkus/. /seed/]
           resources:
             requests: {cpu: 10m, memory: 16Mi}
             limits: {cpu: 200m, memory: 64Mi}
