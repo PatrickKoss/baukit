@@ -5,6 +5,12 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.28.8
+
+Last verified release train: `v0.28.8` (patch train on top of `v0.28.7`). No component or dependency versions change.
+- Tenants may create namespaced CNPG `imagecatalogs` (`cnpg/tenant-rbac.yaml`), so a dedicated Cluster can use `imageCatalogRef` for images such as `timescale/timescaledb-ha` whose tag CNPG cannot parse.
+- Platform e2e `tenant-postgres` creates an ImageCatalog as the tenant `flux-reconciler`.
+
 ## v0.28.7
 
 Last verified release train: `v0.28.7` (patch train on top of `v0.28.6`). No component versions change; `url` moves to 2.5.9 in the workspace lockfiles.

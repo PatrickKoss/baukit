@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.8] - 2026-11-22
+
 ## [0.28.7] - 2026-11-22
 
 - Generated `deploy/gitops` overlays pick Postgres and Redis per environment. Each overlay has `components: []` and `backing/postgres-dedicated`, `backing/redis-shared` and `backing/redis-dedicated` next to it; listing one is the whole switch. The dedicated Postgres component adds a CNPG `Cluster`, a Barman Cloud `ObjectStore`, a daily `ScheduledBackup` and their NetworkPolicy, with `prune: disabled` on the Cluster. The app reads `<APP>__DATABASE__URL` and `<APP>__RATE_LIMIT__REDIS_URL` in every mode. The default output still runs shared Postgres and no Redis; the base HelmRelease now sets `backing.postgres.mode: shared` instead of its own postgres-client label and egress rule, and the rendered pods and effective egress are the same.

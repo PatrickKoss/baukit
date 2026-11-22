@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.8] - 2026-11-22
+
 - Tenants can manage namespaced `imagecatalogs` (`postgresql.cnpg.io`). `cnpg/tenant-rbac.yaml` adds them to `baukit-tenant-cnpg-edit` and `baukit-tenant-cnpg-view`, so a tenant Cluster can set `imageCatalogRef` when CNPG cannot read the Postgres major from the image tag, as with `timescale/timescaledb-ha:pg18.7-ts2.32.1`. Before, the tenant's `flux-reconciler` got Forbidden on `imagecatalogs`. e2e `tenant-postgres` copies the platform `postgresql` ImageCatalog into the tenant namespace as `flux-reconciler`.
 
 ## [0.28.7] - 2026-11-22
