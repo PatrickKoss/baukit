@@ -1,0 +1,42 @@
+# Tenant namespaces bind ClusterRole admin to their flux-reconciler. These rules aggregate into
+# admin, edit and view, so a tenant can run its own CNPG Cluster with Barman backups.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: baukit-tenant-cnpg-edit
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    app.kubernetes.io/component: flux-tenant
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+rules:
+  - apiGroups: [postgresql.cnpg.io]
+    resources:
+      - clusters
+      - scheduledbackups
+    verbs: [create, delete, deletecollection, patch, update]
+  - apiGroups: [barmancloud.cnpg.io]
+    resources:
+      - objectstores
+    verbs: [create, delete, deletecollection, patch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: baukit-tenant-cnpg-view
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    app.kubernetes.io/component: flux-tenant
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+  - apiGroups: [postgresql.cnpg.io]
+    resources:
+      - clusters
+      - scheduledbackups
+    verbs: [get, list, watch]
+  - apiGroups: [barmancloud.cnpg.io]
+    resources:
+      - objectstores
+    verbs: [get, list, watch]

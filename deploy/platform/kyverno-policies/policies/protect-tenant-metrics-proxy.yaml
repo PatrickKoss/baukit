@@ -68,8 +68,8 @@ spec:
       expression: >-
         variables.objects.map(o, [
           o.metadata.?labels.orValue({}),
-          o.spec.?template.?metadata.?labels.orValue({}),
-          o.spec.?jobTemplate.?spec.?template.?metadata.?labels.orValue({})
+          o.?spec.?template.?metadata.?labels.orValue({}),
+          o.?spec.?jobTemplate.?spec.?template.?metadata.?labels.orValue({})
         ])
     - name: touchesProxy
       expression: >-

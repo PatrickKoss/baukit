@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- New `backing.postgres.mode` and `backing.redis.mode` (`shared` or `dedicated`, empty by default). `shared` adds the platform client label and egress; `dedicated` Postgres reads `<PREFIX>__DATABASE__URL` from the CNPG Secret `<cluster>-app` and allows egress to that cluster's pods; `dedicated` Redis turns on the chart's Redis and sets `<PREFIX>__RATE_LIMIT__REDIS_URL`. With either Redis mode the API gets `<PREFIX>__RATE_LIMIT__REDIS_KEY_NAMESPACE`, `<product>-<deploymentEnvironment>:` unless `backing.redis.keyNamespace` or an override sets it. The backing egress goes into a separate `<release>-<process>-backing-egress` NetworkPolicy. With empty modes the output is unchanged.
+
 ## [0.28.6] - 2026-11-22
 
 ## [0.28.5] - 2026-11-22

@@ -1,0 +1,152 @@
+# Replace the object store and API server placeholders before listing this component.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: {{ context.app_name }}-postgres-backups
+  labels:
+    app.kubernetes.io/part-of: {{ context.app_name }}
+    baukit.dev/product: {{ context.app_name }}
+spec:
+  retentionPolicy: 30d
+  instanceSidecarConfiguration:
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+  configuration:
+    destinationPath: s3://REPLACE_ME/{{ context.app_name }}-production
+    endpointURL: https://REPLACE_ME
+    s3Credentials:
+      accessKeyId:
+        name: {{ context.app_name }}-postgres-backup
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: {{ context.app_name }}-postgres-backup
+        key: ACCESS_SECRET_KEY
+    wal:
+      compression: gzip
+      maxParallel: 2
+    data:
+      compression: gzip
+      jobs: 1
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ context.app_name }}-postgres
+  labels:
+    app.kubernetes.io/part-of: {{ context.app_name }}
+    baukit.dev/product: {{ context.app_name }}
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+spec:
+  instances: 1
+  # A single instance cannot move during a drain, so its PDB stays off until 2+ instances.
+  enablePDB: false
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie@sha256:13f5dc1b42c5d96233724be976740df031136ca013f98a56a2877a62b362b453
+  enableSuperuserAccess: false
+  inheritedMetadata:
+    labels:
+      app.kubernetes.io/part-of: {{ context.app_name }}
+      baukit.dev/product: {{ context.app_name }}
+      baukit.dev/process: postgres
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: {{ context.app_name }}-postgres-backups
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  storage:
+    size: 5Gi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ context.app_name }}-postgres-daily
+  labels:
+    app.kubernetes.io/part-of: {{ context.app_name }}
+    baukit.dev/product: {{ context.app_name }}
+spec:
+  schedule: "0 0 2 * * *"
+  immediate: true
+  backupOwnerReference: self
+  method: plugin
+  cluster:
+    name: {{ context.app_name }}-postgres
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ context.app_name }}-postgres
+  labels:
+    app.kubernetes.io/part-of: {{ context.app_name }}
+    baukit.dev/product: {{ context.app_name }}
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: {{ context.app_name }}-postgres
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ context.app_name }}
+            matchExpressions:
+              - {key: baukit.dev/process, operator: In, values: [api, worker, migrate, seed]}
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ context.app_name }}-postgres
+      ports:
+        - {protocol: TCP, port: 5432}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cnpg-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudnative-pg
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 8000}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: {{ context.app_name }}-postgres
+      ports:
+        - {protocol: TCP, port: 5432}
+    # The API server: the node CIDR on 6443 and the kubernetes Service IP on 443.
+    - to:
+        - ipBlock:
+            cidr: 192.0.2.0/32
+      ports:
+        - {protocol: TCP, port: 6443}
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - {protocol: TCP, port: 443}
+    # The object store. Replace with its namespace and pods when it runs in the cluster.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16]
+      ports:
+        - {protocol: TCP, port: 443}

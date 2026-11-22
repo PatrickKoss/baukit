@@ -423,6 +423,75 @@
       },
       "additionalProperties": false
     },
+    "backing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "postgres": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "",
+                "shared",
+                "dedicated"
+              ]
+            },
+            "shared": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$"
+                },
+                "clusterName": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$"
+                }
+              }
+            },
+            "dedicated": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "clusterName": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$"
+                }
+              }
+            }
+          }
+        },
+        "redis": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "enum": [
+                "",
+                "shared",
+                "dedicated"
+              ]
+            },
+            "keyNamespace": {
+              "type": "string"
+            },
+            "shared": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "namespace": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "api": {
       "type": "object",
       "properties": {

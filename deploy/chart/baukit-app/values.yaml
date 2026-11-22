@@ -44,6 +44,32 @@ config:
   # Existing Secrets are mounted with envFrom. Secret values never belong here.
   existingSecretRefs: []
 
+# Backing services per environment. An empty mode leaves the wiring to the
+# values above. Every mode yields the same <PREFIX>__DATABASE__URL and
+# <PREFIX>__RATE_LIMIT__REDIS_URL names, so switching is a value change.
+backing:
+  postgres:
+    # shared: the platform CNPG cluster; <PREFIX>__DATABASE__URL comes from
+    # config.existingSecretRefs. dedicated: a CNPG Cluster in the release
+    # namespace, created outside this release; the URL comes from its
+    # <clusterName>-app Secret.
+    mode: ""
+    shared:
+      namespace: postgres
+      clusterName: postgres-cluster
+    dedicated:
+      # Defaults to <release>-postgres.
+      clusterName: ""
+  redis:
+    # shared: the platform redis-ha; the redis+sentinel URL with the tenant's
+    # ACL user comes from config.existingSecretRefs. dedicated: turns on the
+    # chart's Redis below and points the API at it.
+    mode: ""
+    # Defaults to <product>-<deploymentEnvironment>:.
+    keyNamespace: ""
+    shared:
+      namespace: platform-redis
+
 api:
   replicas: 1
   image:

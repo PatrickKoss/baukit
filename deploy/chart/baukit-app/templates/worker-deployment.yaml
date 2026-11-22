@@ -18,8 +18,8 @@ spec:
       {{- end }}
       labels:
         {{- include "baukit-app.processLabels" (dict "root" . "process" "worker") | nindent 8 }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
+        {{- with include "baukit-app.podLabels" (dict "root" . "process" "worker") }}
+        {{- . | nindent 8 }}
         {{- end }}
     spec:
       {{- include "baukit-app.podIdentity" (dict "root" . "process" "worker") | nindent 6 }}

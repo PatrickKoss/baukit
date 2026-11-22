@@ -73,6 +73,7 @@ or a ClusterRole by name. `../lint/budget.toml` holds their count, which may onl
 | `kured` | kured DaemonSet | it reboots the node through `nsenter` in the host PID namespace |
 | `alloy` | Alloy DaemonSet | it reads root-owned logs under `/var/log/pods` |
 | `node-exporter` | node-exporter DaemonSet | host metrics need the host network, PID namespace and filesystems |
+| `cnpg-tenant-pods` | CNPG instance and job pods in tenant namespaces | the instance manager uses the mounted service account token and the operator leaves `automountServiceAccountToken` unset; only pods the CNPG operator or the Job controller creates, whose service account is named after their `cnpg.io/cluster`, qualify |
 | `prometheus-operator-rbac`, `flagger-rbac`, `kyverno-migrate-rbac` | chart ClusterRoles | upstream RBAC with `*` verbs or resources, see each reason |
 
 `tests/policy-exceptions` proves that an exception lifts only its own workload.

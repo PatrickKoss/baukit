@@ -1,4 +1,4 @@
-{{- if .Values.redis.enabled }}
+{{- if include "baukit-app.redisEnabled" . }}
 {{- $replicasText := printf "%v" .Values.redis.replicas -}}
 {{- if not (regexMatch "^[0-9]+$" $replicasText) -}}
 {{- fail "redis.replicas must be 1 or an odd integer greater than or equal to 3" -}}

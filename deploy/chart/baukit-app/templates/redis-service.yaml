@@ -1,4 +1,4 @@
-{{- if .Values.redis.enabled }}
+{{- if include "baukit-app.redisEnabled" . }}
 {{- $replicas := int .Values.redis.replicas }}
 apiVersion: v1
 kind: Service
