@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `[gitops]` in `baukit.toml` takes an optional `lab_registry`, such as `registry.lab.example.com/owner`. With it set, `scripts/release.sh` still pushes and signs each image in `registry`, then copies it with its signature by digest to `lab_registry` with `cosign copy`, logging in with the `LAB_REGISTRY_USER` variable and `LAB_REGISTRY_TOKEN` secret. The `deploy/gitops` overlays pull from the lab registry and drop the GHCR pull Secret and `imagePullSecrets`. Without it, the output is unchanged.
+
 ## [0.28.6] - 2026-11-22
 
 ## [0.28.5] - 2026-11-22

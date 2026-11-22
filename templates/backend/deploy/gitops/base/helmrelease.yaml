@@ -28,9 +28,9 @@ spec:
     nameOverride: {{ context.app_name }}
     product: {{ context.app_name }}
     deploymentEnvironment: testing
-    imagePullSecrets:
+{% if context.gitops.ghcr_pull_secret %}    imagePullSecrets:
       - name: {{ context.app_name }}-ghcr
-    podLabels:
+{% endif %}    podLabels:
       baukit.dev/environment: testing
       baukit.dev/postgres-client: "true"
     config:
@@ -45,7 +45,7 @@ spec:
     api:
       replicas: 1
       image:
-        repository: {{ context.gitops.registry }}/{{ context.app_name }}-api
+        repository: {{ context.gitops.pull_registry }}/{{ context.app_name }}-api
         pullPolicy: IfNotPresent
       command: [/app/api]
       networkPolicy:
@@ -78,7 +78,7 @@ spec:
       enabled: {{ "true" if context.worker else "false" }}
 {% if context.worker %}      replicas: 1
       image:
-        repository: {{ context.gitops.registry }}/{{ context.app_name }}-worker
+        repository: {{ context.gitops.pull_registry }}/{{ context.app_name }}-worker
         pullPolicy: IfNotPresent
       command: [/app/worker]
       networkPolicy:
@@ -86,7 +86,7 @@ spec:
 {% endif %}    migration:
       enabled: true
       image:
-        repository: {{ context.gitops.registry }}/{{ context.app_name }}-migrate
+        repository: {{ context.gitops.pull_registry }}/{{ context.app_name }}-migrate
         pullPolicy: IfNotPresent
       command: [/app/migrate]
       networkPolicy:

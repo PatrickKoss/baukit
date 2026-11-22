@@ -3,8 +3,8 @@ kind: Kustomization
 namespace: {{ context.app_name }}-production
 resources:
   - ../base
-  - ghcr-pull-secret.enc.yaml
-  - runtime-secret.enc.yaml
+{% if context.gitops.ghcr_pull_secret %}  - ghcr-pull-secret.enc.yaml
+{% endif %}  - runtime-secret.enc.yaml
 patches:
   - path: environment.yaml
   - path: release.yaml

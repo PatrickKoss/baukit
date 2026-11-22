@@ -138,6 +138,57 @@ fn gitops_overlays_take_domain_registry_and_realm_from_the_manifest() -> anyhow:
 }
 
 #[test]
+fn gitops_default_registry_keeps_the_ghcr_pull_secret() -> anyhow::Result<()> {
+    let root = render_with_gitops(
+        "ghcr-app",
+        "[gitops]\ndomain = \"lab.example.com\"\nregistry = \"ghcr.io/example\"\n",
+    )?;
+    for environment in ["testing", "production"] {
+        let overlay = root.join("deploy/gitops").join(environment);
+        assert!(overlay.join("ghcr-pull-secret.enc.yaml").is_file());
+        let kustomization = fs::read_to_string(overlay.join("kustomization.yaml"))?;
+        assert!(kustomization.contains("  - ghcr-pull-secret.enc.yaml\n"));
+    }
+    let base = fs::read_to_string(root.join("deploy/gitops/base/helmrelease.yaml"))?;
+    assert!(base.contains("      - name: ghcr-app-ghcr\n"));
+    assert!(base.contains("repository: ghcr.io/example/ghcr-app-api"));
+    let release = fs::read_to_string(root.join("scripts/release.sh"))?;
+    assert!(!release.contains("lab_registry"));
+    let workflow = fs::read_to_string(root.join(".github/workflows/release.yml"))?;
+    assert!(!workflow.contains("LAB_REGISTRY"));
+    Ok(())
+}
+
+#[test]
+fn gitops_lab_registry_pulls_from_the_lab_and_still_publishes_to_ghcr() -> anyhow::Result<()> {
+    let root = render_with_gitops(
+        "lab-reg-app",
+        "[gitops]\ndomain = \"lab.home.test\"\nregistry = \"ghcr.io/owner\"\nlab_registry = \"registry.lab.home.test/owner\"\n",
+    )?;
+    for environment in ["testing", "production"] {
+        let overlay = root.join("deploy/gitops").join(environment);
+        assert!(!overlay.join("ghcr-pull-secret.enc.yaml").exists());
+        let kustomization = fs::read_to_string(overlay.join("kustomization.yaml"))?;
+        assert!(!kustomization.contains("ghcr-pull-secret"));
+    }
+    let base = fs::read_to_string(root.join("deploy/gitops/base/helmrelease.yaml"))?;
+    assert!(!base.contains("imagePullSecrets"));
+    assert!(base.contains("repository: registry.lab.home.test/owner/lab-reg-app-api"));
+    assert!(base.contains("repository: registry.lab.home.test/owner/lab-reg-app-migrate"));
+    let release = fs::read_to_string(root.join("scripts/release.sh"))?;
+    assert!(release.contains("registry=ghcr.io/owner\n"));
+    assert!(release.contains("lab_registry=registry.lab.home.test/owner\n"));
+    assert!(release.contains("run cosign copy --force"));
+    let workflow = fs::read_to_string(root.join(".github/workflows/release.yml"))?;
+    assert!(workflow.contains("LAB_REGISTRY_USER: ${{ vars.LAB_REGISTRY_USER }}"));
+    assert!(workflow.contains("LAB_REGISTRY_TOKEN: ${{ secrets.LAB_REGISTRY_TOKEN }}"));
+    assert!(workflow.contains("REGISTRY_TOKEN: ${{ github.token }}"));
+    let manifest = fs::read_to_string(root.join("baukit.toml"))?;
+    assert!(manifest.contains("lab_registry = \"registry.lab.home.test/owner\""));
+    Ok(())
+}
+
+#[test]
 fn gitops_identity_url_overrides_the_default_host() -> anyhow::Result<()> {
     let root = render_with_gitops(
         "idp-app",
@@ -158,6 +209,10 @@ fn gitops_values_with_unsafe_characters_are_rejected() -> anyhow::Result<()> {
         (
             "[gitops]\ndomain = \"lab.test\"\nregistry = \"ghcr.io/$(id)\"\n",
             "gitops.registry",
+        ),
+        (
+            "[gitops]\ndomain = \"lab.test\"\nregistry = \"ghcr.io/owner\"\nlab_registry = \"Registry.lab\"\n",
+            "gitops.lab_registry",
         ),
         (
             "[gitops]\ndomain = \"lab.test\"\nregistry = \"ghcr.io/owner\"\nidentity_url = \"http://id.lab.test\"\n",
