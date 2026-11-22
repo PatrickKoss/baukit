@@ -83,7 +83,7 @@ spec:
               deadline=$(($(date +%s) + 90))
               while [ "$(date +%s)" -lt "$deadline" ]; do
                 alerts=$(kubectl -n observability exec "$pod" -c alertmanager -- \
-                  wget -qO- "http://127.0.0.1:9093/api/v2/alerts?filter=alertname=%22BaukitE2eInhibit%22")
+                  wget -qO- "http://127.0.0.1:9093/api/v2/alerts?filter=alertname=%22BaukitE2eInhibit%22") || alerts='[]'
                 if printf '%s' "$alerts" | NAMESPACE=$NAMESPACE python3 -c '
               import json, os, sys
               alerts = [a for a in json.load(sys.stdin) if a["labels"].get("namespace") == os.environ["NAMESPACE"]]
@@ -108,7 +108,7 @@ spec:
               deadline=$(($(date +%s) + 180))
               while [ "$(date +%s)" -lt "$deadline" ]; do
                 notifications=$(kubectl -n observability exec "$pod" -c alertmanager -- \
-                  wget -qO- http://alert-sink.observability.svc.cluster.local:8080/alerts)
+                  wget -qO- http://alert-sink.observability.svc.cluster.local:8080/alerts) || notifications='[]'
                 if printf '%s' "$notifications" | NAMESPACE=$NAMESPACE python3 -c '
               import json, os, sys
               seen = set()
