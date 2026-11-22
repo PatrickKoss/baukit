@@ -2,8 +2,8 @@ apiVersion: v2
 name: baukit-platform-observability
 description: Alerts, recording rules and dashboards for the Baukit platform components
 type: application
-version: 0.28.5
-appVersion: "0.28.5"
+version: 0.28.6
+appVersion: "0.28.6"
 kubeVersion: ">=1.25.0-0"
 annotations:
   artifacthub.io/license: MIT

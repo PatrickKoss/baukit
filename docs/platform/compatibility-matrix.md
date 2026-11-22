@@ -5,6 +5,13 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.28.6
+
+Last verified release train: `v0.28.6` (patch train on top of `v0.28.5`). New optional component; no component versions change.
+- Optional `components/redis-ha-acl` turns on Redis ACLs in `redis-ha` from a consumer Secret. The rate-limit store takes `rate_limit.redis_key_namespace` and `redis+sentinel://user:pass@` credentials, so products share one Redis with a key prefix and a per-tenant ACL user.
+- The restore-test `write-sentinel` init container waits up to 300 s for `select 1` as the product owner.
+- Platform e2e: `redis-0` waits 60 s for peer Sentinels before bootstrapping as master, `alert-pipeline` retries failed fetches, `smoke/flux-objects-ready` retries for 180 s, and `alert-sink` logs one line per alert so kubelet log rotation cannot drop them. Three consecutive green CI runs on `main` at `bde80052`.
+
 ## v0.28.5
 
 Last verified release train: `v0.28.5` (patch train on top of `v0.28.4`). New optional components; existing component versions change only for the image CVE fixes.

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.6] - 2026-11-22
+
 ## [0.28.5] - 2026-11-22
 
 - `baukit new` generates `deploy/gitops/{base,testing,production}` for backend products: a HelmRelease of the baukit chart, an IngressRoute with a headers Middleware, SOPS placeholders for the runtime and pull Secrets, and image pins in `release.yaml`. Hosts, image registry, identity URL and realm come from the new `[gitops]` table in `baukit.toml` (`domain`, `registry`, optional `identity_url` and `realm`), which new backend products get with placeholder values. Unsafe characters in those fields fail generation.
