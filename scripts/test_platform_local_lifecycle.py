@@ -685,44 +685,46 @@ class RestoreTestScriptTest(unittest.TestCase):
             PGDATABASE="product",
             PGUSER="product_owner",
             PGPASSWORD="secret",
+            WAIT_SECONDS="300",
         )
 
-    def stub_pg_isready(self, failures: int) -> Path:
-        calls = self.work / "pg_isready.calls"
+    def stub_psql(self, probe_failures: int = 0) -> Path:
+        probes = self.work / "psql-probe.calls"
         write_stub(
             self.work,
-            "pg_isready",
-            f'echo x >> "{calls}"\n[ "$(wc -l < "{calls}")" -gt {failures} ]\n',
+            "psql",
+            f"""case "$*" in
+  *"select 1"*)
+    echo x >> "{probes}"
+    [ "$(wc -l < "{probes}")" -gt {probe_failures} ] ;;
+  *)
+    printf "%s\\n" "$*" > "{self.sql}.args"
+    cat > "{self.sql}" ;;
+esac
+""",
         )
         write_stub(self.work, "sleep", "")
-        return calls
-
-    def stub_psql(self) -> None:
-        write_stub(
-            self.work, "psql", f'printf "%s\\n" "$*" > "{self.sql}.args"\ncat > "{self.sql}"\n'
-        )
+        return probes
 
     def write_sentinel(self) -> str:
-        self.stub_pg_isready(failures=0)
         self.stub_psql()
         result = self.run_script(self.writer, self.writer_env())
         self.assertEqual(result.returncode, 0, result.stderr)
         return self.sentinel_file.read_text().strip()
 
-    def test_writer_waits_until_postgres_accepts_connections(self):
-        calls = self.stub_pg_isready(failures=2)
-        self.stub_psql()
+    def test_writer_waits_until_the_database_accepts_queries(self):
+        probes = self.stub_psql(probe_failures=2)
         result = self.run_script(self.writer, self.writer_env())
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(calls.read_text().splitlines()), 3)
+        self.assertEqual(len(probes.read_text().splitlines()), 3)
         self.assertTrue(self.sql.exists())
 
-    def test_writer_gives_up_when_postgres_stays_unreachable(self):
-        self.stub_pg_isready(failures=1000)
-        self.stub_psql()
-        result = self.run_script(self.writer, self.writer_env())
+    def test_writer_gives_up_when_the_database_stays_unreachable(self):
+        self.stub_psql(probe_failures=1000)
+        env = {**self.writer_env(), "WAIT_SECONDS": "0"}
+        result = self.run_script(self.writer, env)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("postgres unreachable after 30 tries", result.stderr)
+        self.assertIn("database product not reachable as product_owner after 0s", result.stderr)
         self.assertFalse(self.sql.exists())
 
     def run_restore(
