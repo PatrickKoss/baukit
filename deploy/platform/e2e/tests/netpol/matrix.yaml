@@ -124,7 +124,7 @@
   to: {service: traefik-metrics.traefik, port: 9100}
   expect: allow
 - from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
-  to: {pod: {namespace: postgres, labels: {cnpg.io/podRole: instance}}, port: 9187}
+  to: {pod: {namespace: postgres, labels: {cnpg.io/cluster: postgres-cluster, cnpg.io/podRole: instance}}, port: 9187}
   expect: allow
 - from: {namespace: observability, labels: {app.kubernetes.io/name: prometheus}}
   to: {service: restore-test-pushgateway.postgres, port: 9091}
@@ -216,7 +216,7 @@
 
 # PostgreSQL and the restore test
 - from: {namespace: cnpg-system, labels: {app.kubernetes.io/name: cloudnative-pg}}
-  to: {pod: {namespace: postgres, labels: {cnpg.io/podRole: instance}}, port: 8000}
+  to: {pod: {namespace: postgres, labels: {cnpg.io/cluster: postgres-cluster, cnpg.io/podRole: instance}}, port: 8000}
   expect: allow
 - from: {namespace: cnpg-system, labels: {app.kubernetes.io/name: cloudnative-pg}}
   to: {service: postgres-cluster-rw.postgres, port: 5432}
