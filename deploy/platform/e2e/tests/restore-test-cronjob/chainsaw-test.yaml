@@ -25,7 +25,12 @@ spec:
                 failed="$(kubectl -n "$ns" get job "$job" -o jsonpath='{.status.failed}')"
                 [ "$succeeded" != 1 ] || break
                 if [ -n "$failed" ] || [ "$(date +%s)" -ge "$deadline" ]; then
-                  kubectl -n "$ns" logs job/"$job" --all-containers >&2 || true
+                  for pod in $(kubectl -n "$ns" get pods -l job-name="$job" -o name); do
+                    for c in $(kubectl -n "$ns" get "$pod" -o jsonpath='{.spec.initContainers[*].name} {.spec.containers[*].name}'); do
+                      printf '== %s %s\n' "$pod" "$c" >&2
+                      kubectl -n "$ns" logs "$pod" -c "$c" >&2 || true
+                    done
+                  done
                   kubectl -n "$ns" describe job "$job" >&2 || true
                   exit 1
                 fi
