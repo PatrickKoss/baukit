@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Tenants can manage namespaced `imagecatalogs` (`postgresql.cnpg.io`). `cnpg/tenant-rbac.yaml` adds them to `baukit-tenant-cnpg-edit` and `baukit-tenant-cnpg-view`, so a tenant Cluster can set `imageCatalogRef` when CNPG cannot read the Postgres major from the image tag, as with `timescale/timescaledb-ha:pg18.7-ts2.32.1`. Before, the tenant's `flux-reconciler` got Forbidden on `imagecatalogs`. e2e `tenant-postgres` copies the platform `postgresql` ImageCatalog into the tenant namespace as `flux-reconciler`.
+
 ## [0.28.7] - 2026-11-22
 
 - Tenants can run their own CNPG Cluster. `cnpg/tenant-rbac.yaml` aggregates `clusters` and `scheduledbackups` (`postgresql.cnpg.io`) and `objectstores` (`barmancloud.cnpg.io`) into `admin`, `edit` and `view`. `cnpg-system/allow-operator-to-instances` also allows egress to `cnpg.io/podRole: instance` pods in namespaces labelled `baukit.dev/tenant: "true"` on 5432 and 8000. The PolicyException `cnpg-tenant-pods` lifts `disallow-sa-token-automount` only for CNPG Jobs the operator creates and pods the operator or the job controller creates for a Cluster, whose ServiceAccount is the cluster's own. Kyverno autogen hands a Job to the exception with `object.spec` set to the pod template spec, so the Job branch reads `object.spec.serviceAccountName` too. New e2e suite `tenant-postgres` creates a Cluster, ObjectStore and ScheduledBackup as the tenant's `flux-reconciler` and waits for WAL archiving and a completed backup.

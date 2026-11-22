@@ -416,7 +416,7 @@ TENANT_GRANTS = {
     "traefik": [("traefik.io", ["ingressroutes", "middlewares", "traefikservices"])],
     "observability-stack": [("monitoring.coreos.com", ["servicemonitors"])],
     "cnpg": [
-        ("postgresql.cnpg.io", ["clusters", "scheduledbackups"]),
+        ("postgresql.cnpg.io", ["clusters", "imagecatalogs", "scheduledbackups"]),
         ("barmancloud.cnpg.io", ["objectstores"]),
     ],
 }
