@@ -101,7 +101,90 @@ baukit.dev/redis-client: "true"
 
 Redis pods may reach each other on 6379 and 26379 for replication and Sentinel
 gossip, plus cluster DNS for peer-name resolution. No Secret, credentials,
-product labels, or product configuration live in this base.
+product labels, or product configuration live in this base; the ACL component
+below reads a Secret the consumer provides.
+
+## ACL users (opt-in)
+
+Without further composition Redis accepts every command from any client that
+the NetworkPolicy lets in. To share one Redis between products, compose
+`deploy/platform/components/redis-ha-acl` next to this base and give each
+product its own key namespace and ACL user:
+
+```yaml
+resources:
+  - ../../baukit/deploy/platform/redis-ha
+  - redis-ha-acl.enc.yaml   # Secret platform-redis/redis-ha-acl
+components:
+  - ../../baukit/deploy/platform/components/redis-ha-acl
+```
+
+The consumer provides Secret `redis-ha-acl` in `platform-redis` with four keys:
+
+| Key | Content |
+|---|---|
+| `users.acl` | The Redis ACL file, one `user` line per user, see below. |
+| `replication-password` | Cleartext password of user `replication`. |
+| `sentinel-password` | Cleartext password of user `sentinel`. |
+| `monitor-password` | Cleartext password of user `monitor`. |
+
+The user names are fixed. The passwords in `users.acl` can be cleartext
+(`>password`) or SHA-256 hashes (`#<hex>`); the three separate keys must be
+cleartext because Redis and Sentinel send them. `users.acl` must contain:
+
+```text
+user default on nopass resetkeys resetchannels -@all +ping +info
+user replication on >REPLICATION_PASSWORD resetkeys resetchannels -@all +psync +replconf +ping
+user sentinel on >SENTINEL_PASSWORD resetkeys resetchannels &__sentinel__:hello -@all +multi +exec +slaveof +replicaof +ping +info +role +publish +subscribe +config|rewrite +client|setname +client|kill +script|kill
+user monitor on >MONITOR_PASSWORD resetkeys resetchannels -@all +ping +info +config|get +client|setname +slowlog|get +slowlog|len +latency|latest +latency|histogram
+```
+
+and one line per tenant, with its namespace from
+`rate_limit.redis_key_namespace`:
+
+```text
+user <tenant> on ><password> resetkeys ~<namespace>* resetchannels -@all +eval +role +time +hmget +hset +pexpire +get +set +incrby +pexpireat
+```
+
+- `default` keeps only `PING` and `INFO` without a password. The probes run
+  `redis-cli ping`, and the Sentinel container reads `INFO replication` from
+  its local Redis before it writes its config. Any key access as `default`
+  gets `NOPERM`.
+- `replication` is what every replica sends as `masteruser`/`masterauth`.
+  `PSYNC` and `REPLCONF` are the replication handshake.
+- `sentinel` is the user Sentinel authenticates with (`sentinel auth-user`,
+  `auth-pass`). The list is the one the Redis Sentinel documentation gives:
+  `INFO`, `ROLE` and `PING` to monitor, `SLAVEOF`/`REPLICAOF`, `MULTI`, `EXEC`,
+  `CONFIG REWRITE`, `CLIENT KILL` and `SCRIPT KILL` to fail over, and
+  `PUBLISH`/`SUBSCRIBE` on `__sentinel__:hello` to find the other Sentinels.
+- `monitor` is the exporter's read-only user. It reads no keys.
+- A tenant reaches only keys under its namespace. `EVAL` runs the rate-limit
+  scripts, and Redis also checks the commands a script calls (`TIME`, `HMGET`,
+  `HSET`, `PEXPIRE`, `GET`, `SET`, `INCRBY`, `PEXPIREAT`). `ROLE` lets the
+  Sentinel client check that it reached the master. There is no `FLUSHALL`,
+  `FLUSHDB`, `CONFIG`, `KEYS`, `SCAN` or `DEBUG`.
+
+An operator user such as `user admin on >PASSWORD ~* &* +@all` is optional.
+The e2e overlay has one because its test writes a key and waits for
+replication.
+
+Clients authenticate through the Sentinel URL. The credentials apply to the
+Redis data nodes; Sentinel itself stays unauthenticated:
+
+```text
+redis+sentinel://<tenant>:<password>@redis-sentinel.platform-redis.svc:26379/mymaster
+```
+
+Sentinel stays open because Sentinel ACLs would need the same user on every
+Sentinel plus `sentinel sentinel-user`/`sentinel-pass` for Sentinel-to-Sentinel
+traffic, and a client that can reach Sentinel learns only the master's
+address. The NetworkPolicy still limits who reaches port 26379, and nothing
+behind Sentinel is readable without a data-node password.
+
+Redis reads `users.acl` at start. After the Secret changes, restart the pods
+one at a time (`kubectl -n platform-redis rollout restart statefulset/redis`).
+`ACL SAVE` fails because the file is mounted read-only, so do not change users
+with `ACL SETUSER` at runtime; they would be lost on restart.
 
 ## Metrics
 

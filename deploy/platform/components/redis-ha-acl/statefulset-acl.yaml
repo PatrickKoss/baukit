@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: platform-redis
+spec:
+  template:
+    spec:
+      containers:
+        - name: redis
+          env:
+            - name: REDIS_ACL_DIR
+              value: /acl
+          volumeMounts:
+            - name: acl
+              mountPath: /acl
+              readOnly: true
+        - name: sentinel
+          env:
+            - name: REDIS_ACL_DIR
+              value: /acl
+          volumeMounts:
+            - name: acl
+              mountPath: /acl
+              readOnly: true
+        - name: redis-exporter
+          env:
+            - name: REDIS_USER
+              value: monitor
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-ha-acl
+                  key: monitor-password
+      volumes:
+        - name: acl
+          secret:
+            secretName: redis-ha-acl
+            defaultMode: 0440

@@ -7,10 +7,83 @@ spec:
   description: >-
     Killing the Redis master triggers a Sentinel failover. The restarted old master rejoins as a replica of
     the promoted pod instead of coming back as an empty master, and a key written before the kill survives on
-    both.
+    both. The e2e overlay composes components/redis-ha-acl: a tenant ACL user runs the rate-limit script
+    under its own namespace and gets NOPERM for another tenant's keys and for FLUSHALL.
   timeouts:
     exec: 5m
   steps:
+    - name: tenant-acl
+      try:
+        - script:
+            timeout: 3m
+            content: |
+              set -eu
+              ns=platform-redis
+              kubectl -n "$ns" rollout status statefulset/redis --timeout=180s
+              master="$(kubectl -n "$ns" exec redis-0 -c sentinel -- \
+                redis-cli -p 26379 --raw SENTINEL get-master-addr-by-name mymaster | head -n 1)"
+              master="${master%%.*}"
+              as_user() {
+                user="$1"; shift
+                kubectl -n "$ns" exec "$master" -c redis -- \
+                  redis-cli --no-auth-warning --user "$user" --pass "e2e-$user-password" "$@" 2>&1
+              }
+              # TOKEN_BUCKET_SCRIPT from rust/crates/baukit-ratelimit/src/redis_store.rs.
+              script="$(cat <<'LUA'
+              local current = redis.call('TIME')
+              local now_ms = (current[1] * 1000) + math.floor(current[2] / 1000)
+              local capacity = tonumber(ARGV[1])
+              local requests = tonumber(ARGV[2])
+              local period_ms = tonumber(ARGV[3])
+              local ttl_ms = tonumber(ARGV[4])
+              local values = redis.call('HMGET', KEYS[1], 'tokens', 'last_refill_ms')
+              local tokens = tonumber(values[1]) or capacity
+              local last_refill_ms = tonumber(values[2]) or now_ms
+              local elapsed_ms = math.max(0, now_ms - last_refill_ms)
+              tokens = math.min(capacity, tokens + (elapsed_ms * requests / period_ms))
+              local allowed = 0
+              local retry_ms = 0
+              if tokens >= 1 then
+                allowed = 1
+                tokens = tokens - 1
+              else
+                retry_ms = math.ceil((1 - tokens) * period_ms / requests)
+              end
+              redis.call('HSET', KEYS[1], 'tokens', tokens, 'last_refill_ms', now_ms)
+              redis.call('PEXPIRE', KEYS[1], ttl_ms)
+              return {allowed, math.floor(tokens), retry_ms}
+              LUA
+              )"
+              expect_noperm() {
+                printf '%s\n' "$2"
+                case "$2" in
+                  *NOPERM*) printf 'PASS: %s refused\n' "$1" ;;
+                  *) printf 'FAIL: %s was not refused\n' "$1" >&2; exit 1 ;;
+                esac
+              }
+
+              own="$(as_user tenant-a --raw EVAL "$script" 1 tenant-a:rl:id:e2e 5 5 60000 60000)"
+              printf '%s\n' "$own"
+              [ "$(printf '%s\n' "$own" | head -n 1)" = 1 ] || { printf 'FAIL: own namespace\n' >&2; exit 1; }
+              printf 'PASS: tenant-a ran the rate-limit script on tenant-a:rl:id:e2e\n'
+              [ "$(as_user tenant-a --raw HMGET tenant-a:rl:id:e2e tokens | head -n 1)" = 4 ]
+              printf 'PASS: tenant-a read its bucket back\n'
+
+              expect_noperm "tenant-a EVAL on tenant-b:rl:id:e2e" \
+                "$(as_user tenant-a EVAL "$script" 1 tenant-b:rl:id:e2e 5 5 60000 60000)"
+              expect_noperm "tenant-a FLUSHALL" "$(as_user tenant-a FLUSHALL)"
+              expect_noperm "tenant-a CONFIG GET" "$(as_user tenant-a CONFIG GET maxmemory)"
+              expect_noperm "tenant-a KEYS" "$(as_user tenant-a KEYS '*')"
+              expect_noperm "default user GET" \
+                "$(kubectl -n "$ns" exec "$master" -c redis -- redis-cli GET tenant-a:rl:id:e2e 2>&1)"
+              [ "$(as_user tenant-b --raw EXISTS tenant-a:rl:id:e2e 2>&1 | grep -c NOPERM)" = 1 ]
+              printf 'PASS: tenant-b cannot see tenant-a keys\n'
+
+              for pod in redis-0 redis-1 redis-2; do
+                kubectl -n "$ns" exec "$pod" -c redis -- \
+                  wget -qO- http://127.0.0.1:9121/metrics | grep -qx 'redis_up 1'
+              done
+              printf 'PASS: exporter on every pod reports redis_up 1 as monitor\n'
     - name: failover-and-rejoin
       try:
         - script:
@@ -20,13 +93,17 @@ spec:
               ns=platform-redis
               key=baukit-e2e-redis-ha
               value="written-$(date +%s)"
-              cli() { pod="$1"; shift; kubectl -n "$ns" exec "$pod" -c redis -- redis-cli "$@"; }
+              cli() {
+                pod="$1"; shift
+                kubectl -n "$ns" exec "$pod" -c redis -- \
+                  redis-cli --no-auth-warning --user admin --pass e2e-admin-password "$@"
+              }
               sentinel_master() {
                 kubectl -n "$ns" exec "$1" -c sentinel -- \
                   redis-cli -p 26379 --raw SENTINEL get-master-addr-by-name mymaster | head -n 1
               }
               pod_of() { printf '%s' "${1%%.*}"; }
-              role() { kubectl -n "$ns" exec "$1" -c redis -- redis-cli --raw ROLE | head -n 1; }
+              role() { cli "$1" --raw ROLE | head -n 1; }
               wait_until() {
                 deadline=$(($(date +%s) + $1)); shift
                 while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -43,8 +120,8 @@ spec:
               survivor=redis-0
               [ "$old_master" != redis-0 ] || survivor=redis-1
 
-              kubectl -n "$ns" exec "$old_master" -c redis -- redis-cli SET "$key" "$value"
-              kubectl -n "$ns" exec "$old_master" -c redis -- redis-cli WAIT 2 5000
+              cli "$old_master" SET "$key" "$value"
+              cli "$old_master" WAIT 2 5000
 
               kubectl -n "$ns" delete pod "$old_master" --grace-period=0 --force --wait=false
 
@@ -59,7 +136,7 @@ spec:
               kubectl -n "$ns" wait pod "$old_master" --for=condition=Ready --timeout=180s
               rejoined() {
                 [ "$(role "$old_master" 2>/dev/null)" = slave ] &&
-                  kubectl -n "$ns" exec "$old_master" -c redis -- redis-cli INFO replication |
+                  cli "$old_master" INFO replication |
                   grep -q '^master_link_status:up'
               }
               wait_until 120 rejoined || { printf '%s did not rejoin as a replica\n' "$old_master" >&2; exit 1; }

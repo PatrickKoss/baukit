@@ -8,6 +8,9 @@ headless="${REDIS_HEADLESS:-redis-headless}"
 namespace="${POD_NAMESPACE:-platform-redis}"
 cluster_domain="${CLUSTER_DOMAIN:-cluster.local}"
 sentinel_conf="${SENTINEL_CONF:-/sentinel/sentinel.conf}"
+# Set by components/redis-ha-acl to the mounted redis-ha-acl Secret; empty keeps Redis unauthenticated.
+acl_dir="${REDIS_ACL_DIR:-}"
+acl_conf="${REDIS_ACL_CONF:-/tmp/redis-acl.conf}"
 no_answer_attempts="${NO_ANSWER_ATTEMPTS:-3}"
 local_wait_attempts="${LOCAL_WAIT_ATTEMPTS:-24}"
 retry_seconds="${RETRY_SECONDS:-5}"
@@ -101,12 +104,33 @@ decide_master() {
   done
 }
 
+acl_secret() {
+  cat "$acl_dir/$1"
+}
+
+# Writes the ACL file path and replication credentials to a private config file, so the password never
+# appears on the redis-server command line.
+write_acl_conf() {
+  (
+    umask 077
+    printf '%s\n' \
+      "aclfile $acl_dir/users.acl" \
+      'masteruser replication' \
+      "masterauth $(acl_secret replication-password)" \
+      >"$acl_conf"
+  )
+}
+
 run_server() {
   master="$(decide_master "$no_answer_attempts" "$self_wait_attempts")"
   set -- --save "" --appendonly no --maxmemory 48mb --maxmemory-policy allkeys-lru \
     --replica-announce-ip "$self"
   if [ "$master" != "self" ]; then
     set -- "$@" --replicaof "$master" 6379
+  fi
+  if [ -n "$acl_dir" ]; then
+    write_acl_conf
+    set -- "$acl_conf" "$@"
   fi
   exec redis-server "$@"
 }
@@ -154,6 +178,12 @@ run_sentinel() {
     "sentinel failover-timeout $master_name $failover_timeout_ms" \
     "sentinel parallel-syncs $master_name 1" \
     >"$sentinel_conf"
+  if [ -n "$acl_dir" ]; then
+    printf '%s\n' \
+      "sentinel auth-user $master_name sentinel" \
+      "sentinel auth-pass $master_name $(acl_secret sentinel-password)" \
+      >>"$sentinel_conf"
+  fi
   exec redis-sentinel "$sentinel_conf"
 }
 

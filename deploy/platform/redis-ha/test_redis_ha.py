@@ -66,6 +66,9 @@ class RedisHaScript:
             sentinel = stub_dir / "redis-sentinel"
             sentinel.write_text('#!/bin/sh\ncat "$1"\n')
             sentinel.chmod(0o755)
+            server = stub_dir / "redis-server"
+            server.write_text('#!/bin/sh\nprintf \'arg %s\\n\' "$@"\n[ ! -f "$1" ] || cat "$1"\n')
+            server.chmod(0o755)
             for ordinal, answer in answers.items():
                 (stub_dir / fqdn(ordinal)).write_text(answer)
             if local_info is not None:
@@ -80,6 +83,7 @@ class RedisHaScript:
                 "NO_ANSWER_ATTEMPTS": "2",
                 "LOCAL_WAIT_ATTEMPTS": "1",
                 "SENTINEL_CONF": str(stub_dir / "sentinel.conf"),
+                "REDIS_ACL_CONF": str(stub_dir / "redis-acl.conf"),
                 **(extra_env or {}),
             }
             return process_runner.run_process(
@@ -183,6 +187,45 @@ class SentinelConfigTest(RedisHaScript, unittest.TestCase):
         result = self.decide("redis-0", {}, mode="sentinel", local_info=info)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"sentinel monitor mymaster {fqdn(0)} 6379 2", result.stdout)
+
+
+class AclConfigTest(RedisHaScript, unittest.TestCase):
+    def acl_env(self, acl_dir: Path) -> dict[str, str]:
+        (acl_dir / "replication-password").write_text("replication-secret")
+        (acl_dir / "sentinel-password").write_text("sentinel-secret")
+        return {"REDIS_ACL_DIR": str(acl_dir)}
+
+    def test_server_without_acl_dir_starts_without_config_file(self) -> None:
+        result = self.decide("redis-0", {}, mode="server")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("aclfile", result.stdout)
+        self.assertIn("arg --save", result.stdout.splitlines()[0])
+
+    def test_server_with_acl_dir_loads_acl_and_replication_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as acl:
+            result = self.decide("redis-2", {}, mode="server", extra_env=self.acl_env(Path(acl)))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"aclfile {acl}/users.acl", result.stdout)
+            self.assertIn("masteruser replication", result.stdout)
+            self.assertIn("masterauth replication-secret", result.stdout)
+            self.assertNotIn("arg replication-secret", result.stdout)
+            self.assertIn(f"arg {fqdn(0)}", result.stdout)
+
+    def test_sentinel_without_acl_dir_has_no_auth(self) -> None:
+        result = self.decide("redis-0", {1: f"{fqdn(1)}\n6379\n"}, mode="sentinel")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("auth-", result.stdout)
+
+    def test_sentinel_with_acl_dir_authenticates_as_sentinel_user(self) -> None:
+        with tempfile.TemporaryDirectory() as acl:
+            env = self.acl_env(Path(acl))
+            answers = {1: f"{fqdn(1)}\n6379\n"}
+            result = self.decide("redis-0", answers, mode="sentinel", extra_env=env)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            lines = result.stdout.splitlines()
+            monitor = lines.index(f"sentinel monitor mymaster {fqdn(1)} 6379 2")
+            self.assertGreater(lines.index("sentinel auth-user mymaster sentinel"), monitor)
+            self.assertIn("sentinel auth-pass mymaster sentinel-secret", lines)
 
 
 class SentinelConfigVolumeTests(unittest.TestCase):
