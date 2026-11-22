@@ -32,6 +32,10 @@ STUB = textwrap.dedent(
       shift
     done
     answer="$STUB_DIR/$host"
+    refused="$answer.refused"
+    count=$(($(cat "$refused" 2>/dev/null || echo 0) + 1))
+    echo "$count" >"$refused"
+    [ "$count" -gt "${STUB_REFUSALS:-0}" ] || exit 1
     [ -f "$answer" ] || exit 1
     cat "$answer"
     """
@@ -106,6 +110,13 @@ class DecideMasterTest(RedisHaScript, unittest.TestCase):
 
     def test_other_pod_follows_redis_0_when_no_sentinel_answers(self) -> None:
         self.assert_decision("redis-2", {}, fqdn(0))
+
+    def test_restarted_redis_0_waits_for_peers_its_network_still_rejects(self) -> None:
+        answers = {1: f"{fqdn(1)}\n6379\n", 2: f"{fqdn(1)}\n6379\n"}
+        late_network = {"NO_ANSWER_ATTEMPTS": "", "STUB_REFUSALS": "5"}
+        result = self.decide("redis-0", answers, extra_env=late_network)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), fqdn(1))
 
     def test_restarted_old_master_follows_promoted_replica(self) -> None:
         answers = {1: f"{fqdn(1)}\n6379\n", 2: f"{fqdn(1)}\n6379\n"}

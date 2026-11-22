@@ -17,8 +17,12 @@ the `redis-ha-scripts` ConfigMap. On start the script asks the Sentinels in the
 other pods for the current master:
 
 - One master reported: Redis starts as its replica and Sentinel monitors it.
-- No answer after three tries 5 seconds apart: `redis-0` starts as master and
-  the other pods replicate from it. This is the cold-start path.
+- No answer: `redis-0` starts as master after 60 seconds of tries 5 seconds
+  apart, the other pods replicate from it after three tries. This is the
+  cold-start path. `redis-0` waits longer because kube-router rejects a new
+  pod's traffic until it programs the pod IP, which took over 15 seconds on CI
+  runners. A restarted `redis-0` that gave up earlier started as an empty
+  master, and the replicas resynced to it.
 - This pod reported as master: the pod was master and restarted before the
   failover finished. Redis waits up to 125 seconds for the Sentinels to promote
   another pod and starts as master only if they still agree on this pod. A

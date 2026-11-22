@@ -11,7 +11,6 @@ sentinel_conf="${SENTINEL_CONF:-/sentinel/sentinel.conf}"
 # Set by components/redis-ha-acl to the mounted redis-ha-acl Secret; empty keeps Redis unauthenticated.
 acl_dir="${REDIS_ACL_DIR:-}"
 acl_conf="${REDIS_ACL_CONF:-/tmp/redis-acl.conf}"
-no_answer_attempts="${NO_ANSWER_ATTEMPTS:-3}"
 local_wait_attempts="${LOCAL_WAIT_ATTEMPTS:-24}"
 retry_seconds="${RETRY_SECONDS:-5}"
 down_after_ms=5000
@@ -29,6 +28,17 @@ self_wait_attempts=$((self_wait_seconds / poll_seconds + 1))
 pod_name="${POD_NAME:-$(hostname)}"
 statefulset="${pod_name%-*}"
 ordinal="${pod_name##*-}"
+
+# kube-router rejects a new pod's traffic until it programs the pod IP, which took over 15 s on CI runners.
+# redis-0 starting as master while the peers are unreachable would make them resync to an empty data set,
+# so it waits longer than the other pods, which only pick a master to follow.
+bootstrap_wait_seconds="${BOOTSTRAP_WAIT_SECONDS:-60}"
+if [ "$ordinal" = "0" ]; then
+  default_no_answer_attempts=$((bootstrap_wait_seconds / poll_seconds + 1))
+else
+  default_no_answer_attempts=3
+fi
+no_answer_attempts="${NO_ANSWER_ATTEMPTS:-$default_no_answer_attempts}"
 
 fqdn() {
   printf '%s-%s.%s.%s.svc.%s' "$statefulset" "$1" "$headless" "$namespace" "$cluster_domain"
