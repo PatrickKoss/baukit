@@ -23,7 +23,10 @@ StatefulSet passes the current Kyverno policy set without an exception.
 | `ConfigMap/keycloak-realms` | generated, empty in the base; the overlay merges realm files into it |
 | NetworkPolicies | default deny, DNS, the allows below |
 
-Two init containers prepare the read-only pod. `seed` copies the image's `lib/quarkus` into an
+Three init containers prepare the read-only pod. `wait-for-database` runs `select 1` against
+database `keycloak` as the Keycloak user, every 2 s for up to 5 minutes, because the `Database` and
+`DatabaseRole` apply together with the StatefulSet and CNPG creates them a few seconds later. It
+uses the CNPG PostgreSQL image the platform already pins. `seed` copies the image's `lib/quarkus` into an
 `emptyDir`, and `build` runs `kc.sh build` with the build-time options (PostgreSQL, health, metrics,
 user event metrics, local cache) into it. The server then starts with `--optimized` and writes only
 to its three `emptyDir` volumes. `KC_CACHE=local` keeps the single instance off JGroups, so the
