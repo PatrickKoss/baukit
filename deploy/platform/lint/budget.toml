@@ -1,2 +1,3 @@
 # 12: tailscale-proxies admits the operator's privileged kernel-mode proxy pods.
-policy_exceptions = 12
+# 13: cnpg-tenant-pods lets CNPG instance and job pods in tenant namespaces mount their token.
+policy_exceptions = 13

@@ -5,6 +5,9 @@ resources:
   - ../base
 {% if context.gitops.ghcr_pull_secret %}  - ghcr-pull-secret.enc.yaml
 {% endif %}  - runtime-secret.enc.yaml
+# Backing services (README.md): Postgres is shared and Redis is off. To switch, add
+# backing/postgres-dedicated, backing/redis-shared or backing/redis-dedicated.
+components: []
 patches:
   - path: environment.yaml
   - path: release.yaml

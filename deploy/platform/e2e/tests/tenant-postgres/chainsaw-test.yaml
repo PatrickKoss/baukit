@@ -1,0 +1,217 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: tenant-postgres
+spec:
+  description: >-
+    The e2e-tenant flux-reconciler creates a dedicated CNPG Cluster with a Barman ObjectStore, a
+    ScheduledBackup and the NetworkPolicy of the generated backing/postgres-dedicated component. The
+    operator reaches the instance, the instance archives WAL to rustfs, its CNPG app Secret carries a
+    uri, and an on-demand backup completes, all under the tenant's Kyverno policies and default-deny.
+  timeouts:
+    exec: 25m
+  steps:
+    - name: dedicated-cluster-in-tenant
+      try:
+        - script:
+            timeout: 20m
+            content: |
+              set -eu
+              ns=e2e-tenant
+              name=e2e-dedicated
+              as=system:serviceaccount:$ns:flux-reconciler
+              image="$(kubectl -n postgres get cluster postgres-cluster -o jsonpath='{.spec.imageName}')"
+              endpoint="$(kubectl -n postgres get objectstore postgres-backups -o jsonpath='{.spec.configuration.endpointURL}')"
+              bucket="$(kubectl -n postgres get objectstore postgres-backups -o jsonpath='{.spec.configuration.destinationPath}' |
+                sed -E 's#^(s3://[^/]+)/.*#\1#')"
+              node_ip="$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')"
+
+              # rustfs is platform-owned; the test admits the tenant instance for its own lifetime.
+              kubectl apply -f - <<YAML
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: e2e-tenant-postgres-to-rustfs
+                namespace: postgres
+              spec:
+                podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: rustfs
+                policyTypes: [Ingress]
+                ingress:
+                  - from:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: $ns
+                        podSelector:
+                          matchLabels:
+                            cnpg.io/cluster: $name
+                    ports:
+                      - {protocol: TCP, port: 9000}
+              YAML
+
+              kubectl -n postgres get secret postgres-backup-credentials -o json |
+                python3 -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({"apiVersion":"v1","kind":"Secret","metadata":{"name":"'"$name"'-backup"},"type":"Opaque","data":s["data"]}))' |
+                kubectl -n "$ns" --as="$as" apply -f -
+
+              kubectl -n "$ns" --as="$as" apply -f - <<YAML
+              apiVersion: barmancloud.cnpg.io/v1
+              kind: ObjectStore
+              metadata:
+                name: $name-backups
+              spec:
+                instanceSidecarConfiguration:
+                  env:
+                    - name: AWS_DEFAULT_REGION
+                      value: us-east-1
+                  resources:
+                    requests: {cpu: 25m, memory: 64Mi}
+                    limits: {cpu: 200m, memory: 256Mi}
+                configuration:
+                  destinationPath: $bucket/e2e-tenant-postgres-$(date -u +%Y%m%dT%H%M%SZ)
+                  endpointURL: $endpoint
+                  s3Credentials:
+                    accessKeyId: {name: $name-backup, key: ACCESS_KEY_ID}
+                    secretAccessKey: {name: $name-backup, key: ACCESS_SECRET_KEY}
+                  wal:
+                    compression: gzip
+                    archiveAdditionalCommandArgs: ["--addressing-style=path"]
+                  data:
+                    compression: gzip
+                    additionalCommandArgs: ["--addressing-style=path"]
+              ---
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata:
+                name: $name
+              spec:
+                instances: 1
+                enablePDB: false
+                imageName: $image
+                enableSuperuserAccess: false
+                inheritedMetadata:
+                  labels:
+                    app.kubernetes.io/part-of: e2e
+                    baukit.dev/product: e2e
+                    baukit.dev/process: postgres
+                bootstrap:
+                  initdb:
+                    database: app
+                    owner: app
+                plugins:
+                  - name: barman-cloud.cloudnative-pg.io
+                    isWALArchiver: true
+                    parameters:
+                      barmanObjectName: $name-backups
+                resources:
+                  requests: {cpu: 50m, memory: 192Mi}
+                  limits: {cpu: 300m, memory: 384Mi}
+                storage:
+                  size: 1Gi
+              ---
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: $name
+              spec:
+                podSelector:
+                  matchLabels:
+                    cnpg.io/cluster: $name
+                policyTypes: [Ingress, Egress]
+                ingress:
+                  - from:
+                      - podSelector:
+                          matchLabels:
+                            cnpg.io/cluster: $name
+                    ports:
+                      - {protocol: TCP, port: 5432}
+                  - from:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: cnpg-system
+                        podSelector:
+                          matchLabels:
+                            app.kubernetes.io/name: cloudnative-pg
+                    ports:
+                      - {protocol: TCP, port: 5432}
+                      - {protocol: TCP, port: 8000}
+                egress:
+                  - to:
+                      - podSelector:
+                          matchLabels:
+                            cnpg.io/cluster: $name
+                    ports:
+                      - {protocol: TCP, port: 5432}
+                  - to:
+                      - ipBlock:
+                          cidr: $node_ip/32
+                    ports:
+                      - {protocol: TCP, port: 6443}
+                  - to:
+                      - ipBlock:
+                          cidr: 10.43.0.1/32
+                    ports:
+                      - {protocol: TCP, port: 443}
+                  - to:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: postgres
+                        podSelector:
+                          matchLabels:
+                            app.kubernetes.io/name: rustfs
+                    ports:
+                      - {protocol: TCP, port: 9000}
+              YAML
+
+              kubectl -n "$ns" wait cluster/"$name" --for=condition=Ready --timeout=12m
+              kubectl -n "$ns" wait cluster/"$name" --for=condition=ContinuousArchiving --timeout=5m
+              kubectl -n "$ns" --as="$as" get secret "$name-app" -o jsonpath='{.data.uri}' | base64 -d |
+                grep -q "^postgresql://app:.*@$name-rw.$ns:5432/app$"
+              printf 'cluster ready, WAL archiving, %s-app carries the uri\n' "$name"
+
+              kubectl -n "$ns" --as="$as" apply -f - <<YAML
+              apiVersion: postgresql.cnpg.io/v1
+              kind: ScheduledBackup
+              metadata:
+                name: $name
+              spec:
+                schedule: "0 0 2 * * *"
+                immediate: true
+                backupOwnerReference: self
+                method: plugin
+                cluster:
+                  name: $name
+                pluginConfiguration:
+                  name: barman-cloud.cloudnative-pg.io
+              YAML
+              deadline=$(($(date +%s) + 600))
+              until kubectl -n "$ns" get backup -l cnpg.io/scheduled-backup="$name" \
+                -o jsonpath='{.items[*].status.phase}' | grep -qw completed; do
+                if kubectl -n "$ns" get backup -l cnpg.io/scheduled-backup="$name" \
+                  -o jsonpath='{.items[*].status.phase}' | grep -qw failed || [ "$(date +%s)" -ge "$deadline" ]; then
+                  kubectl -n "$ns" get backup -o yaml >&2
+                  exit 1
+                fi
+                sleep 5
+              done
+              printf 'immediate scheduled backup completed\n'
+      catch:
+        - script:
+            content: |
+              kubectl -n e2e-tenant get cluster,pods,jobs -o wide
+              kubectl -n e2e-tenant describe cluster e2e-dedicated | tail -40
+              kubectl -n e2e-tenant get events --sort-by=.lastTimestamp | tail -40
+              kubectl -n e2e-tenant get pods -l cnpg.io/cluster=e2e-dedicated -o name |
+                xargs -r -n1 kubectl -n e2e-tenant logs --all-containers --prefix --tail=40
+      finally:
+        - script:
+            timeout: 5m
+            content: |
+              kubectl -n e2e-tenant delete scheduledbackup e2e-dedicated --ignore-not-found
+              kubectl -n e2e-tenant delete backup -l cnpg.io/scheduled-backup=e2e-dedicated --ignore-not-found
+              kubectl -n e2e-tenant delete cluster e2e-dedicated --ignore-not-found --wait=true --timeout=4m
+              kubectl -n e2e-tenant delete objectstore e2e-dedicated-backups --ignore-not-found
+              kubectl -n e2e-tenant delete networkpolicy e2e-dedicated --ignore-not-found
+              kubectl -n e2e-tenant delete secret e2e-dedicated-backup --ignore-not-found
+              kubectl -n postgres delete networkpolicy e2e-tenant-postgres-to-rustfs --ignore-not-found

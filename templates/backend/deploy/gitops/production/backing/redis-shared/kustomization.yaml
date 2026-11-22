@@ -1,0 +1,26 @@
+# Lists in ../../kustomization.yaml `components` to use the platform redis-ha as this
+# environment's ACL user. Create redis-secret.enc.yaml first, see deploy/gitops/README.md.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - redis-secret.enc.yaml
+patches:
+  - patch: |-
+      apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      metadata:
+        name: {{ context.app_name }}
+      spec:
+        values:
+          backing:
+            redis:
+              mode: shared
+  - target:
+      group: helm.toolkit.fluxcd.io
+      kind: HelmRelease
+      name: {{ context.app_name }}
+    patch: |-
+      - op: add
+        path: /spec/values/config/existingSecretRefs/-
+        value:
+          name: {{ context.app_name }}-redis

@@ -134,7 +134,28 @@ spec:
     {{- with .Values.networkPolicy.additionalEgress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
-{{- if .Values.redis.enabled }}
+{{- range $process := list "api" "worker" "migrate" "seed" }}
+{{- $enabled := or (eq $process "api") (and (eq $process "worker") $.Values.worker.enabled) (and (eq $process "migrate") $.Values.migration.enabled) (and (eq $process "seed") $.Values.seed.enabled) }}
+{{- $egress := include "baukit-app.backingEgress" (dict "root" $ "process" $process) }}
+{{- if and $enabled $egress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "baukit-app.fullname" $ }}-{{ $process }}-backing-egress
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" $ "process" $process) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "baukit-app.processSelectorLabels" (dict "root" $ "process" $process) | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- $egress | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- if include "baukit-app.redisEnabled" . }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

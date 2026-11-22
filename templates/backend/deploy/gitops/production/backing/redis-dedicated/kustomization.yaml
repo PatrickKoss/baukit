@@ -1,0 +1,15 @@
+# Lists in ../../kustomization.yaml `components` to run the chart's own Redis in this environment.
+# Set spec.values.redis.replicas to an odd 3 or more for Sentinel.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - patch: |-
+      apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      metadata:
+        name: {{ context.app_name }}
+      spec:
+        values:
+          backing:
+            redis:
+              mode: dedicated

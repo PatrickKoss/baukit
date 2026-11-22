@@ -412,9 +412,13 @@ class PlatformUnderLockdownTest(unittest.TestCase):
 EDIT_VERBS = ["create", "delete", "deletecollection", "patch", "update"]
 VIEW_VERBS = ["get", "list", "watch"]
 TENANT_GRANTS = {
-    "flagger": ("flagger.app", ["canaries", "metrictemplates"]),
-    "traefik": ("traefik.io", ["ingressroutes", "middlewares", "traefikservices"]),
-    "observability-stack": ("monitoring.coreos.com", ["servicemonitors"]),
+    "flagger": [("flagger.app", ["canaries", "metrictemplates"])],
+    "traefik": [("traefik.io", ["ingressroutes", "middlewares", "traefikservices"])],
+    "observability-stack": [("monitoring.coreos.com", ["servicemonitors"])],
+    "cnpg": [
+        ("postgresql.cnpg.io", ["clusters", "scheduledbackups"]),
+        ("barmancloud.cnpg.io", ["objectstores"]),
+    ],
 }
 AGGREGATE = "rbac.authorization.k8s.io/aggregate-to-"
 
@@ -429,14 +433,19 @@ def aggregated_roles(docs: list[dict]) -> dict[str, dict]:
 
 class TenantAggregatedRolesTest(unittest.TestCase):
     def test_each_crd_base_grants_tenant_admins_exactly_the_chart_kinds(self) -> None:
-        for base, (group, resources) in TENANT_GRANTS.items():
+        for base, grants in TENANT_GRANTS.items():
             with self.subTest(base=base):
                 roles = list(aggregated_roles(rendered(PLATFORM / base)).values())
                 rules = [rule for role in roles for rule in role["rules"]]
-                self.assertEqual(sorted(rule["verbs"] for rule in rules), [EDIT_VERBS, VIEW_VERBS])
-                for rule in rules:
-                    self.assertEqual(rule["apiGroups"], [group])
-                    self.assertEqual(rule["resources"], resources)
+                expected = sorted(
+                    (verbs, [group], resources)
+                    for group, resources in grants
+                    for verbs in (EDIT_VERBS, VIEW_VERBS)
+                )
+                self.assertEqual(
+                    sorted((rule["verbs"], rule["apiGroups"], rule["resources"]) for rule in rules),
+                    expected,
+                )
                 for role in roles:
                     labels = role["metadata"]["labels"]
                     self.assertEqual(labels[f"{AGGREGATE}admin"], "true")

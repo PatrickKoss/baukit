@@ -5,6 +5,7 @@ resources:
   - oci-repository.yaml
   - helmrelease.yaml
   - plugin-barman-cloud-v0.16.0.yaml
+  - tenant-rbac.yaml
   - network-policy.yaml
   - podmonitor.yaml
 namespace: cnpg-system

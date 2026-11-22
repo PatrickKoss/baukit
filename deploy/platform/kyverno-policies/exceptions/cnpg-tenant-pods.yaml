@@ -1,0 +1,36 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: cnpg-tenant-pods
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      CloudNativePG instance and job pods talk to the API server through their mounted service
+      account token, and the operator does not set automountServiceAccountToken. Only Jobs the operator
+      and pods the operator or the Job controller create for a CNPG Cluster qualify. Kyverno
+      autogen evaluates a Job with object.spec set to its pod template spec.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-sa-token-automount
+  matchConditions:
+    - name: cnpg-workload
+      expression: >-
+        object.metadata.?labels[?"cnpg.io/cluster"].orValue("") != "" &&
+        (
+          (object.kind == "Pod" &&
+            object.spec.?serviceAccountName.orValue("") == object.metadata.labels["cnpg.io/cluster"] &&
+            (
+              (string(request.?userInfo.?username.orValue("")) == "system:serviceaccount:cnpg-system:cloudnative-pg" &&
+                object.metadata.?ownerReferences.orValue([]).exists(o, o.kind == "Cluster" && o.apiVersion == "postgresql.cnpg.io/v1")) ||
+              (string(request.?userInfo.?username.orValue("")) == "system:serviceaccount:kube-system:job-controller" &&
+                object.metadata.?labels[?"cnpg.io/jobRole"].orValue("") != "")
+            )) ||
+          (object.kind == "Job" &&
+            object.metadata.?labels[?"cnpg.io/jobRole"].orValue("") != "" &&
+            object.spec.?serviceAccountName.orValue("") == object.metadata.labels["cnpg.io/cluster"] &&
+            string(request.?userInfo.?username.orValue("")) == "system:serviceaccount:cnpg-system:cloudnative-pg" &&
+            object.metadata.?ownerReferences.orValue([]).exists(o, o.kind == "Cluster" && o.apiVersion == "postgresql.cnpg.io/v1"))
+        )

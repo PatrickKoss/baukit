@@ -17,8 +17,8 @@ spec:
     metadata:
       labels:
         {{- include "baukit-app.processLabels" (dict "root" . "process" "migrate") | nindent 8 }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
+        {{- with include "baukit-app.podLabels" (dict "root" . "process" "migrate") }}
+        {{- . | nindent 8 }}
         {{- end }}
       {{- with .Values.podAnnotations }}
       annotations:

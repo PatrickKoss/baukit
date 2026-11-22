@@ -32,7 +32,9 @@ spec:
       - name: {{ context.app_name }}-ghcr
 {% endif %}    podLabels:
       baukit.dev/environment: testing
-      baukit.dev/postgres-client: "true"
+    backing:
+      postgres:
+        mode: shared
     config:
       otlpEndpoint: http://tempo.observability.svc.cluster.local:4317
 {% if context.worker %}      overrides:
@@ -50,15 +52,6 @@ spec:
       command: [/app/api]
       networkPolicy:
         additionalEgress: &egress
-          - to:
-              - namespaceSelector:
-                  matchLabels:
-                    kubernetes.io/metadata.name: postgres
-                podSelector:
-                  matchLabels:
-                    cnpg.io/cluster: postgres-cluster
-            ports:
-              - {protocol: TCP, port: 5432}
           - to:
               - ipBlock:
                   cidr: 0.0.0.0/0

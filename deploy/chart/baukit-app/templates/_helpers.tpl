@@ -78,12 +78,18 @@ baukit.dev/process: {{ .process }}
 {{- end -}}
 - name: {{ printf "%s_ENVIRONMENT" $prefix }}
   value: {{ $root.Values.deploymentEnvironment | quote }}
+{{- include "baukit-app.backingEnv" . }}
 {{- with $root.Values.config.otlpEndpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ . | quote }}
 {{- end }}
 {{- $overrides := deepCopy $root.Values.config.overrides -}}
 {{- if eq $process "api" }}
+{{- if include "baukit-app.redisMode" $root }}
+{{- if not (hasKey $overrides "RATE_LIMIT__REDIS_KEY_NAMESPACE") }}
+{{- $_ := set $overrides "RATE_LIMIT__REDIS_KEY_NAMESPACE" (include "baukit-app.redisKeyNamespace" $root) -}}
+{{- end }}
+{{- end }}
 {{- if $root.Values.mcp.enabled }}
 {{- if empty $root.Values.mcp.allowedHosts }}
 {{- fail "mcp.allowedHosts must not be empty when MCP is enabled" }}
