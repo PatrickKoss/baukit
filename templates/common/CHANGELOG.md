@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.28.5] - 2026-11-22
+
 {% if context.auth_enabled %}- `scripts/keycloak_policy.py` accepts `--environment-class lab` for a realm on a shared cluster. A lab policy must set `minimumTls` to `external` or `all` and `allowDevelopmentLoopbackHttp` to false. The check rejects default, known and literal user passwords (reference them as `$(env:NAME)` or `$(file:PATH)` for keycloak-config-cli), loopback redirect URIs, and an MCP audience mapper that does not name the policy's `mcpResourceUrl`. Copy the script and `scripts/tests/test_keycloak_policy.py` from the template; the `development` class is unchanged.
 
 {% endif %}## [0.28.4] - 2026-11-19
