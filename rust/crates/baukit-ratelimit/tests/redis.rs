@@ -379,3 +379,107 @@ fn group_request() -> Request<Body> {
     request.extensions_mut().insert(Principal::new("subject"));
     request
 }
+
+const TENANT_ACL_COMMANDS: &str =
+    "-@all +eval +role +time +hmget +hset +pexpire +get +set +incrby +pexpireat";
+
+async fn create_tenant_user<C>(admin: &mut C) -> redis::RedisResult<()>
+where
+    C: redis::aio::ConnectionLike + Send,
+{
+    let mut rule = redis::cmd("ACL");
+    rule.arg("SETUSER")
+        .arg("tenant-a")
+        .arg("reset")
+        .arg("on")
+        .arg(">tenant-a-password")
+        .arg("~tenant-a:*")
+        .arg("resetchannels");
+    for command in TENANT_ACL_COMMANDS.split_whitespace() {
+        rule.arg(command);
+    }
+    rule.query_async::<()>(admin).await
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn namespaced_store_stays_inside_its_tenant_acl() -> Result<(), Box<dyn Error>> {
+    let fixture = baukit_test::start_redis().await?;
+    let admin = redis::Client::open(fixture.connection_url())?;
+    let mut admin = admin.get_multiplexed_async_connection().await?;
+    create_tenant_user(&mut admin).await?;
+
+    let tenant_url =
+        fixture
+            .connection_url()
+            .replacen("redis://", "redis://tenant-a:tenant-a-password@", 1);
+    let store = RedisRateLimitStore::connect(&tenant_url)
+        .await?
+        .with_key_namespace("tenant-a:")?;
+    let quota = Quota::new(5, Duration::from_secs(60), 0)?;
+    let now = SystemTime::now();
+    let reset_at = now + Duration::from_secs(60);
+    assert!(store.check_and_consume("rl:id:alice", quota).await?.allowed);
+    assert!(
+        store
+            .check_and_consume_amount("amount-budget:ns:w:alice", 3, 10, now, reset_at)
+            .await?
+            .allowed
+    );
+    store
+        .release_amount("amount-budget:ns:w:alice", 1, 10, now, reset_at)
+        .await?;
+
+    let mut keys: Vec<String> = redis::cmd("KEYS").arg("*").query_async(&mut admin).await?;
+    keys.sort();
+    assert_eq!(
+        keys,
+        ["tenant-a:amount-budget:ns:w:alice", "tenant-a:rl:id:alice"]
+    );
+
+    let outside = RedisRateLimitStore::connect(&tenant_url).await?;
+    let error = outside
+        .check_and_consume("rl:id:alice", quota)
+        .await
+        .expect_err("keys outside the namespace must be refused");
+    assert!(error.to_string().contains("NoPerm"), "{error}");
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
+async fn sentinel_url_credentials_authenticate_the_data_node() -> Result<(), Box<dyn Error>> {
+    let fixture = baukit_test::start_redis_sentinel().await?;
+    let (sentinel, master_name) = fixture
+        .connection_url()
+        .trim_start_matches("redis+sentinel://")
+        .split_once('/')
+        .ok_or("fixture URL has no master name")?;
+    let mut sentinel_client = redis::sentinel::SentinelClient::build(
+        vec![format!("redis://{sentinel}/")],
+        master_name.to_owned(),
+        None,
+        redis::sentinel::SentinelServerType::Master,
+    )?;
+    let mut admin = sentinel_client.get_async_connection().await?;
+    create_tenant_user(&mut admin).await?;
+
+    let tenant_url = fixture.connection_url().replacen(
+        "redis+sentinel://",
+        "redis+sentinel://tenant-a:tenant-a-password@",
+        1,
+    );
+    let quota = Quota::new(5, Duration::from_secs(60), 0)?;
+    let store = RedisRateLimitStore::connect(&tenant_url)
+        .await?
+        .with_key_namespace("tenant-a:")?;
+    assert!(store.check_and_consume("rl:id:alice", quota).await?.allowed);
+
+    let wrong_password = fixture.connection_url().replacen(
+        "redis+sentinel://",
+        "redis+sentinel://tenant-a:wrong@",
+        1,
+    );
+    assert!(RedisRateLimitStore::connect(&wrong_password).await.is_err());
+    Ok(())
+}

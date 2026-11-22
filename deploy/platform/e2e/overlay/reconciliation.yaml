@@ -173,7 +173,7 @@ spec:
   interval: 10m
   retryInterval: 30s
   timeout: 10m
-  path: ./deploy/platform/redis-ha
+  path: ./deploy/platform/e2e/overlay/components/redis-ha
   prune: true
   wait: true
   sourceRef:

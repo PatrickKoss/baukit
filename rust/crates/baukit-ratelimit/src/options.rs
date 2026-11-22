@@ -30,6 +30,7 @@ pub struct RateLimitOptions {
     /// Number of trusted reverse-proxy hops, including the socket peer.
     pub trusted_proxy_hops: usize,
     key_prefix: String,
+    redis_key_namespace: String,
 }
 
 impl RateLimitOptions {
@@ -48,7 +49,16 @@ impl RateLimitOptions {
             fail_mode: config.fail_mode,
             trusted_proxy_hops: config.trusted_proxy_hops,
             key_prefix: config.key_prefix.clone(),
+            redis_key_namespace: config.redis_key_namespace.clone(),
         })
+    }
+
+    /// Returns the tenant namespace the Redis store prepends to every key.
+    ///
+    /// Empty means keys are written unchanged.
+    #[must_use]
+    pub fn redis_key_namespace(&self) -> &str {
+        &self.redis_key_namespace
     }
 
     /// Returns the Redis connection URL.
@@ -106,6 +116,7 @@ impl fmt::Debug for RateLimitOptions {
             .field("fail_mode", &self.fail_mode)
             .field("trusted_proxy_hops", &self.trusted_proxy_hops)
             .field("key_prefix", &self.key_prefix)
+            .field("redis_key_namespace", &self.redis_key_namespace)
             .finish()
     }
 }

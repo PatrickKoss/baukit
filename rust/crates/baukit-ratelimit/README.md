@@ -61,9 +61,40 @@ redis+sentinel://sentinel-1:26379,sentinel-2:26379,sentinel-3:26379/mymaster
 `RedisRateLimitStore::connect` selects the mode from the URL alone. Callers that
 already hold the endpoints separately can use
 `RedisRateLimitStore::connect_sentinel(["sentinel-1:26379"], "mymaster")`.
-Sentinel URLs intentionally do not accept authentication, database paths, query
-strings, fragments, or TLS; unsupported forms fail during connection setup
-instead of being partially applied.
+Sentinel URLs accept credentials for the data nodes:
+`redis+sentinel://user:password@sentinel-1:26379,sentinel-2:26379/mymaster`
+authenticates to the discovered master as ACL user `user`, and `:password@`
+uses the `default` user. The Sentinel nodes themselves are contacted without
+credentials. Credentials are read verbatim, without percent-decoding, and must
+not contain `@ / , % ? #` or whitespace. Sentinel URLs do not accept database
+paths, query strings, fragments, or TLS; unsupported forms fail during
+connection setup instead of being partially applied.
+
+## Shared Redis and key namespaces
+
+Several products can share one Redis. Set `rate_limit.redis_key_namespace`
+(`<PREFIX>__RATE_LIMIT__REDIS_KEY_NAMESPACE`) to a per-product value such as
+`leitbild:` and `RedisRateLimitStore::connect_if_enabled` prepends it to every
+key of every store operation: token buckets, amount budgets, and amount
+releases, whichever crate built the key (`rate_limit.key_prefix`,
+`amount-budget:`, `suite:`, `mcp:`). The default is empty, which leaves existing
+keys unchanged. A non-empty value must end with `:` and contain no whitespace or
+`* ? [ ]`, so it can be used verbatim in a Redis ACL key pattern
+`~<namespace>*`. Callers that build the store themselves use
+`RedisRateLimitStore::with_key_namespace`.
+
+A tenant ACL user needs only these commands:
+
+```text
+user <tenant> on ><password> resetkeys ~<namespace>* resetchannels -@all +eval +role +time +hmget +hset +pexpire +get +set +incrby +pexpireat
+```
+
+`EVAL` runs the three Lua scripts. Redis checks the commands a script calls
+against the caller's ACL too, so the scripts need `TIME`, `HMGET`, `HSET`,
+`PEXPIRE` (token bucket), `GET`, `INCRBY`, `PEXPIREAT` (amount budget), and
+`SET` (amount release). `ROLE` is how the Sentinel mode verifies that the
+discovered node is the master. The client's `CLIENT SETINFO` on connect may be
+refused; the redis crate ignores that reply.
 
 Sentinel mode resolves and verifies the writable master at startup. If a token
 bucket `EVAL` fails, the store asks Sentinel for the master again and retries the

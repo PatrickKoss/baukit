@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# redis-ha with the ACL component and a test-only redis-ha-acl Secret. The passwords are fixtures.
+resources:
+  - ../../../../redis-ha
+components:
+  - ../../../../components/redis-ha-acl
+secretGenerator:
+  - name: redis-ha-acl
+    namespace: platform-redis
+    files:
+      - users.acl
+    literals:
+      - replication-password=e2e-replication-password
+      - sentinel-password=e2e-sentinel-password
+      - monitor-password=e2e-monitor-password
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/component: redis

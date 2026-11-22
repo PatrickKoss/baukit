@@ -216,6 +216,12 @@ pub struct RateLimitConfig {
     pub trusted_proxy_hops: usize,
     /// Prefix prepended to all Redis and in-memory keys.
     pub key_prefix: String,
+    /// Tenant namespace the Redis store prepends to every key it touches.
+    ///
+    /// Empty by default. When set it must end with `:` and contain no
+    /// whitespace or Redis glob characters (`*`, `?`, `[`, `]`), so it can be
+    /// used verbatim as a Redis ACL key pattern `~<namespace>*`.
+    pub redis_key_namespace: String,
 }
 
 fn deserialize_ip_rate_limit_scope<'de, D>(
@@ -253,6 +259,7 @@ impl Default for RateLimitConfig {
             fail_mode: RateLimitFailMode::Open,
             trusted_proxy_hops: 1,
             key_prefix: "rl:".to_owned(),
+            redis_key_namespace: String::new(),
         }
     }
 }
@@ -267,6 +274,9 @@ impl Validate for RateLimitConfig {
         }
         if self.key_prefix.trim().is_empty() {
             errors.push(ValidationError::new("key_prefix", "must not be empty"));
+        }
+        if let Err(message) = validate_redis_key_namespace(&self.redis_key_namespace) {
+            errors.push(ValidationError::new("redis_key_namespace", message));
         }
         if self.trusted_proxy_hops > 32 {
             errors.push(ValidationError::new(
@@ -954,6 +964,8 @@ fn extend_validation(
 mod http;
 
 pub use http::{DEFAULT_HSTS_MAX_AGE, HttpConfig};
+mod redis_namespace;
+pub use redis_namespace::validate_redis_key_namespace;
 
 mod duration_seconds {
     use std::time::Duration;

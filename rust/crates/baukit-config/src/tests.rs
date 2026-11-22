@@ -177,6 +177,10 @@ fn rate_limit_environment_overrides_use_standard_nested_path() {
             ("RATE_LIMIT_APP__RATE_LIMIT__IDENTITY__PERIOD", "30"),
             ("RATE_LIMIT_APP__RATE_LIMIT__FAIL_MODE", "closed"),
             ("RATE_LIMIT_APP__RATE_LIMIT__TRUSTED_PROXY_HOPS", "2"),
+            (
+                "RATE_LIMIT_APP__RATE_LIMIT__REDIS_KEY_NAMESPACE",
+                "leitbild:",
+            ),
         ],
     );
 }
@@ -315,6 +319,31 @@ fn rate_limit_environment_helper() {
     assert_eq!(config.rate_limit.identity.period, Duration::from_secs(30));
     assert_eq!(config.rate_limit.fail_mode, RateLimitFailMode::Closed);
     assert_eq!(config.rate_limit.trusted_proxy_hops, 2);
+    assert_eq!(config.rate_limit.redis_key_namespace, "leitbild:");
+}
+
+#[test]
+fn redis_key_namespace_defaults_empty_and_rejects_unsafe_values() {
+    assert!(RateLimitConfig::default().redis_key_namespace.is_empty());
+    assert!(validate_redis_key_namespace("tenant-a:").is_ok());
+    for namespace in [
+        "tenant",
+        "ten ant:",
+        "ten*:",
+        "ten?:",
+        "ten[a]:",
+        "\ttenant:",
+    ] {
+        let config = RateLimitConfig {
+            redis_key_namespace: namespace.to_owned(),
+            ..RateLimitConfig::default()
+        };
+        let error = config.validate().expect_err(namespace);
+        assert!(
+            error.to_string().contains("redis_key_namespace"),
+            "{namespace}"
+        );
+    }
 }
 
 #[test]

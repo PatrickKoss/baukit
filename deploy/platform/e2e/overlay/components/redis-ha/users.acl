@@ -1,0 +1,7 @@
+user default on nopass resetkeys resetchannels -@all +ping +info
+user replication on >e2e-replication-password resetkeys resetchannels -@all +psync +replconf +ping
+user sentinel on >e2e-sentinel-password resetkeys resetchannels &__sentinel__:hello -@all +multi +exec +slaveof +replicaof +ping +info +role +publish +subscribe +config|rewrite +client|setname +client|kill +script|kill
+user monitor on >e2e-monitor-password resetkeys resetchannels -@all +ping +info +config|get +client|setname +slowlog|get +slowlog|len +latency|latest +latency|histogram
+user admin on >e2e-admin-password ~* &* +@all
+user tenant-a on >e2e-tenant-a-password resetkeys ~tenant-a:* resetchannels -@all +eval +role +time +hmget +hset +pexpire +get +set +incrby +pexpireat
+user tenant-b on >e2e-tenant-b-password resetkeys ~tenant-b:* resetchannels -@all +eval +role +time +hmget +hset +pexpire +get +set +incrby +pexpireat

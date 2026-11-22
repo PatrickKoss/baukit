@@ -1,12 +1,14 @@
 use std::{
+    borrow::Cow,
     fmt,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use redis::{
+    RedisConnectionInfo,
     aio::{ConnectionManager, MultiplexedConnection},
-    sentinel::{SentinelClient, SentinelServerType},
+    sentinel::{SentinelClient, SentinelNodeConnectionInfo, SentinelServerType},
 };
 use tokio::sync::{Mutex, RwLock};
 
@@ -76,9 +78,14 @@ return {1, limit - math.min(current, limit)}
 /// Direct `redis://` connections use Redis' reconnecting connection manager.
 /// `redis+sentinel://` connections discover the named master through Sentinel
 /// and re-resolve it once after a failed decision.
+///
+/// An optional key namespace is prepended to every key of every operation, so
+/// a tenant restricted by a Redis ACL pattern `~<namespace>*` never touches
+/// keys outside it.
 #[derive(Clone)]
 pub struct RedisRateLimitStore {
     connection: StoreConnection,
+    namespace: Option<Arc<str>>,
 }
 
 #[derive(Clone)]
@@ -107,32 +114,89 @@ enum RedisTarget<'a> {
 struct SentinelTarget {
     sentinels: Vec<String>,
     master_name: String,
+    credentials: Option<NodeCredentials>,
+}
+
+#[derive(Eq, PartialEq)]
+struct NodeCredentials {
+    username: Option<String>,
+    password: String,
+}
+
+impl fmt::Debug for NodeCredentials {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("NodeCredentials")
+            .field("username", &self.username)
+            .field("password", &"[redacted]")
+            .finish()
+    }
+}
+
+impl NodeCredentials {
+    fn connection_info(&self) -> SentinelNodeConnectionInfo {
+        let mut info = RedisConnectionInfo::default().set_password(&self.password);
+        if let Some(username) = &self.username {
+            info = info.set_username(username);
+        }
+        SentinelNodeConnectionInfo::default().set_redis_connection_info(info)
+    }
 }
 
 impl RedisRateLimitStore {
     /// Connects only when at least one request-limit scope is enabled.
     ///
     /// Fully disabled request limiting returns `None` without parsing the Redis
-    /// URL or opening a connection.
+    /// URL or opening a connection. The store uses
+    /// [`RateLimitOptions::redis_key_namespace`] as its key namespace.
     ///
     /// # Errors
     ///
-    /// The errors of [`Self::connect`] when limiting is enabled.
+    /// The errors of [`Self::connect`] and [`Self::with_key_namespace`] when
+    /// limiting is enabled.
     pub async fn connect_if_enabled(
         options: &RateLimitOptions,
     ) -> Result<Option<Self>, RateLimitStoreError> {
         if !options.is_enabled() {
             return Ok(None);
         }
-        Self::connect(options.redis_url()).await.map(Some)
+        Self::connect(options.redis_url())
+            .await?
+            .with_key_namespace(options.redis_key_namespace())
+            .map(Some)
+    }
+
+    /// Prepends `namespace` to every key this store reads or writes.
+    ///
+    /// The empty string removes the namespace. A non-empty namespace must end
+    /// with `:` and contain no whitespace or Redis glob characters.
+    ///
+    /// # Errors
+    ///
+    /// [`RateLimitStoreError`] when `namespace` is invalid.
+    pub fn with_key_namespace(mut self, namespace: &str) -> Result<Self, RateLimitStoreError> {
+        baukit_config::validate_redis_key_namespace(namespace).map_err(|reason| {
+            configuration_error(format!("invalid Redis key namespace: {reason}"))
+        })?;
+        self.namespace = (!namespace.is_empty()).then(|| Arc::from(namespace));
+        Ok(self)
+    }
+
+    fn store_key<'k>(&self, key: &'k str) -> Cow<'k, str> {
+        namespaced_key(self.namespace.as_deref(), key)
     }
 
     /// Connects to the Redis target selected by `redis_url`.
     ///
     /// `redis://` retains the direct reconnecting connection-manager mode.
     /// `redis+sentinel://host1:26379,host2:26379/mymaster` discovers the
-    /// writable master through the listed Sentinel nodes. Sentinel URLs do not
-    /// support authentication, database selection, query strings, or fragments.
+    /// writable master through the listed Sentinel nodes.
+    /// `redis+sentinel://user:password@host1:26379/mymaster` authenticates to
+    /// the discovered data nodes as that ACL user; `:password@` uses the
+    /// `default` user. Sentinel nodes themselves are contacted without
+    /// credentials. Credentials are taken verbatim (no percent-decoding) and
+    /// must not contain `@`, `/`, `,`, `%`, `?`, `#` or whitespace. Sentinel
+    /// URLs do not support database selection, query strings, or fragments.
     ///
     /// # Errors
     ///
@@ -149,7 +213,11 @@ impl RedisRateLimitStore {
                 Ok(Self::from_connection_manager(connection))
             }
             RedisTarget::Sentinel(target) => {
-                Self::connect_sentinel(target.sentinels, &target.master_name).await
+                let node_info = target
+                    .credentials
+                    .as_ref()
+                    .map(NodeCredentials::connection_info);
+                Self::connect_sentinel_nodes(target.sentinels, &target.master_name, node_info).await
             }
         }
     }
@@ -172,6 +240,18 @@ impl RedisRateLimitStore {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        Self::connect_sentinel_nodes(sentinels, master_name, None).await
+    }
+
+    async fn connect_sentinel_nodes<I, S>(
+        sentinels: I,
+        master_name: &str,
+        node_info: Option<SentinelNodeConnectionInfo>,
+    ) -> Result<Self, RateLimitStoreError>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         validate_master_name(master_name)?;
         let sentinels = sentinels
             .into_iter()
@@ -186,7 +266,7 @@ impl RedisRateLimitStore {
         let mut client = SentinelClient::build(
             sentinels,
             master_name.to_owned(),
-            None,
+            node_info,
             SentinelServerType::Master,
         )
         .map_err(RateLimitStoreError::new)?;
@@ -202,6 +282,7 @@ impl RedisRateLimitStore {
                     generation: 0,
                 }),
             })),
+            namespace: None,
         })
     }
 
@@ -210,6 +291,7 @@ impl RedisRateLimitStore {
     pub const fn from_connection_manager(connection: ConnectionManager) -> Self {
         Self {
             connection: StoreConnection::Direct(connection),
+            namespace: None,
         }
     }
 }
@@ -223,6 +305,7 @@ impl fmt::Debug for RedisRateLimitStore {
         formatter
             .debug_struct("RedisRateLimitStore")
             .field("mode", &mode)
+            .field("namespace", &self.namespace)
             .finish_non_exhaustive()
     }
 }
@@ -240,6 +323,8 @@ impl RateLimitStore for RedisRateLimitStore {
         >,
     > {
         Box::pin(async move {
+            let key = self.store_key(key);
+            let key = key.as_ref();
             let period_ms = duration_millis_ceil(quota.period());
             let ttl_ms = duration_millis_ceil(quota.idle_ttl());
             let (allowed, remaining, retry_ms) = match &self.connection {
@@ -289,6 +374,8 @@ impl AmountBudgetStore for RedisRateLimitStore {
                 RateLimitStoreError::unavailable("amount-budget limit exceeds Redis integer range")
             })?;
             let reset_at_ms = system_time_millis_ceil(reset_at)?;
+            let key = self.store_key(key);
+            let key = key.as_ref();
             let (allowed, remaining) = match &self.connection {
                 StoreConnection::Direct(connection) => {
                     let mut connection = connection.clone();
@@ -333,6 +420,8 @@ impl AmountBudgetStore for RedisRateLimitStore {
                 RateLimitStoreError::unavailable("amount-budget limit exceeds Redis integer range")
             })?;
             let reset_at_ms = system_time_millis_ceil(reset_at)?;
+            let key = self.store_key(key);
+            let key = key.as_ref();
             let (allowed, remaining) = match &self.connection {
                 StoreConnection::Direct(connection) => {
                     let mut connection = connection.clone();
@@ -499,6 +588,13 @@ where
         .await
 }
 
+fn namespaced_key<'k>(namespace: Option<&str>, key: &'k str) -> Cow<'k, str> {
+    match namespace {
+        Some(namespace) => Cow::Owned(format!("{namespace}{key}")),
+        None => Cow::Borrowed(key),
+    }
+}
+
 fn parse_redis_target(redis_url: &str) -> Result<RedisTarget<'_>, RateLimitStoreError> {
     let Some((scheme, remainder)) = redis_url.split_once("://") else {
         return Err(configuration_error(
@@ -525,11 +621,10 @@ fn parse_sentinel_url(remainder: &str) -> Result<SentinelTarget, RateLimitStoreE
             "Redis Sentinel URL must end with a non-empty /<master-name>",
         ));
     };
-    if authority.contains('@') {
-        return Err(configuration_error(
-            "Redis Sentinel URLs do not support authentication",
-        ));
-    }
+    let (credentials, authority) = match authority.rsplit_once('@') {
+        Some((userinfo, hosts)) => (Some(parse_node_credentials(userinfo)?), hosts),
+        None => (None, authority),
+    };
     if master_name.contains('/') {
         return Err(configuration_error(
             "Redis Sentinel URLs support only one master-name path segment; database paths are unsupported",
@@ -551,6 +646,31 @@ fn parse_sentinel_url(remainder: &str) -> Result<SentinelTarget, RateLimitStoreE
     Ok(SentinelTarget {
         sentinels,
         master_name: master_name.to_owned(),
+        credentials,
+    })
+}
+
+fn parse_node_credentials(userinfo: &str) -> Result<NodeCredentials, RateLimitStoreError> {
+    if userinfo.contains(['@', '/', ',', '%', '?', '#'])
+        || userinfo.chars().any(char::is_whitespace)
+    {
+        return Err(configuration_error(
+            "Redis Sentinel URL credentials must not contain @ / , % ? # or whitespace",
+        ));
+    }
+    let Some((username, password)) = userinfo.split_once(':') else {
+        return Err(configuration_error(
+            "Redis Sentinel URL credentials must be user:password@ or :password@",
+        ));
+    };
+    if password.is_empty() {
+        return Err(configuration_error(
+            "Redis Sentinel URL credentials require a non-empty password",
+        ));
+    }
+    Ok(NodeCredentials {
+        username: (!username.is_empty()).then(|| username.to_owned()),
+        password: password.to_owned(),
     })
 }
 
@@ -685,6 +805,7 @@ mod tests {
                     "sentinel-3:26381".to_owned(),
                 ],
                 master_name: "mymaster".to_owned(),
+                credentials: None,
             })
         );
         Ok(())
@@ -697,6 +818,7 @@ mod tests {
             RedisTarget::Sentinel(SentinelTarget {
                 sentinels: vec!["127.0.0.1:26379".to_owned()],
                 master_name: "mymaster".to_owned(),
+                credentials: None,
             })
         );
         Ok(())
@@ -724,9 +846,55 @@ mod tests {
     }
 
     #[test]
+    fn parses_sentinel_url_with_data_node_credentials() -> Result<(), RateLimitStoreError> {
+        let RedisTarget::Sentinel(target) =
+            parse_redis_target("redis+sentinel://tenant-a:s3cret@s1:26379,s2:26379/mymaster")?
+        else {
+            panic!("expected Sentinel target");
+        };
+        assert_eq!(target.sentinels, ["s1:26379", "s2:26379"]);
+        assert_eq!(
+            target.credentials,
+            Some(NodeCredentials {
+                username: Some("tenant-a".to_owned()),
+                password: "s3cret".to_owned(),
+            })
+        );
+        assert!(!format!("{target:?}").contains("s3cret"));
+        Ok(())
+    }
+
+    #[test]
+    fn parses_password_only_sentinel_credentials() -> Result<(), RateLimitStoreError> {
+        let RedisTarget::Sentinel(target) =
+            parse_redis_target("redis+sentinel://:s3cret@s1:26379/mymaster")?
+        else {
+            panic!("expected Sentinel target");
+        };
+        assert_eq!(
+            target
+                .credentials
+                .and_then(|credentials| credentials.username),
+            None
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn namespace_prefixes_store_keys() {
+        assert_eq!(
+            namespaced_key(Some("tenant-a:"), "rl:id:alice"),
+            "tenant-a:rl:id:alice"
+        );
+        assert_eq!(namespaced_key(None, "rl:id:alice"), "rl:id:alice");
+    }
+
+    #[test]
     fn rejects_unsupported_sentinel_url_parts() {
         for url in [
             "redis+sentinel://user@127.0.0.1:26379/mymaster",
+            "redis+sentinel://user:@127.0.0.1:26379/mymaster",
+            "redis+sentinel://us%40er:pw@127.0.0.1:26379/mymaster",
             "redis+sentinel://127.0.0.1:26379/mymaster/2",
             "redis+sentinel://127.0.0.1:26379/mymaster?password=secret",
             "redis+sentinel:///mymaster",
