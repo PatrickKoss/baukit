@@ -12,15 +12,21 @@ spec:
     - name: flux-objects-ready
       try:
         - script:
+            timeout: 4m
             content: |
               set -eu
-              not_ready=$(kubectl get gitrepositories,helmrepositories,kustomizations,helmreleases -A --no-headers \
-                -o 'custom-columns=KIND:.kind,NAMESPACE:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status' |
-                awk '$2 !~ /^chainsaw-/ && $4 != "True"')
-              if [ -n "$not_ready" ]; then
-                printf 'Flux objects not Ready:\n%s\n' "$not_ready" >&2
-                exit 1
-              fi
+              # A periodic reconcile sets Ready to Unknown for a few seconds, so only a lasting state fails.
+              deadline=$(($(date +%s) + 180))
+              while :; do
+                not_ready=$(kubectl get gitrepositories,helmrepositories,kustomizations,helmreleases -A --no-headers \
+                  -o 'custom-columns=KIND:.kind,NAMESPACE:.metadata.namespace,NAME:.metadata.name,READY:.status.conditions[?(@.type=="Ready")].status' |
+                  awk '$2 !~ /^chainsaw-/ && $4 != "True"')
+                [ -n "$not_ready" ] || exit 0
+                [ "$(date +%s)" -lt "$deadline" ] || break
+                sleep 5
+              done
+              printf 'Flux objects not Ready after 180s:\n%s\n' "$not_ready" >&2
+              exit 1
     - name: pods-restarted-at-most-once
       try:
         - script:
