@@ -5,10 +5,11 @@ metadata:
   name: tenant-postgres
 spec:
   description: >-
-    The e2e-tenant flux-reconciler creates a dedicated CNPG Cluster with a Barman ObjectStore, a
-    ScheduledBackup and the NetworkPolicy of the generated backing/postgres-dedicated component. The
-    operator reaches the instance, the instance archives WAL to rustfs, its CNPG app Secret carries a
-    uri, and an on-demand backup completes, all under the tenant's Kyverno policies and default-deny.
+    The e2e-tenant flux-reconciler creates a dedicated CNPG Cluster with a Barman ObjectStore, an
+    ImageCatalog, a ScheduledBackup and the NetworkPolicy of the generated backing/postgres-dedicated
+    component. The operator reaches the instance, the instance archives WAL to rustfs, its CNPG app
+    Secret carries a uri, and an on-demand backup completes, all under the tenant's Kyverno policies
+    and default-deny.
   timeouts:
     exec: 25m
   steps:
@@ -54,6 +55,20 @@ spec:
               kubectl -n postgres get secret postgres-backup-credentials -o json |
                 python3 -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({"apiVersion":"v1","kind":"Secret","metadata":{"name":"'"$name"'-backup"},"type":"Opaque","data":s["data"]}))' |
                 kubectl -n "$ns" --as="$as" apply -f -
+
+              major="$(kubectl -n postgres get imagecatalog postgresql -o jsonpath='{.spec.images[0].major}')"
+              catalog_image="$(kubectl -n postgres get imagecatalog postgresql -o jsonpath='{.spec.images[0].image}')"
+              kubectl -n "$ns" --as="$as" apply -f - <<YAML
+              apiVersion: postgresql.cnpg.io/v1
+              kind: ImageCatalog
+              metadata:
+                name: $name
+              spec:
+                images:
+                  - major: $major
+                    image: $catalog_image
+              YAML
+              kubectl -n "$ns" --as="$as" get imagecatalog "$name" -o name
 
               kubectl -n "$ns" --as="$as" apply -f - <<YAML
               apiVersion: barmancloud.cnpg.io/v1
@@ -212,6 +227,7 @@ spec:
               kubectl -n e2e-tenant delete backup -l cnpg.io/scheduled-backup=e2e-dedicated --ignore-not-found
               kubectl -n e2e-tenant delete cluster e2e-dedicated --ignore-not-found --wait=true --timeout=4m
               kubectl -n e2e-tenant delete objectstore e2e-dedicated-backups --ignore-not-found
+              kubectl -n e2e-tenant delete imagecatalog e2e-dedicated --ignore-not-found
               kubectl -n e2e-tenant delete networkpolicy e2e-dedicated --ignore-not-found
               kubectl -n e2e-tenant delete secret e2e-dedicated-backup --ignore-not-found
               kubectl -n postgres delete networkpolicy e2e-tenant-postgres-to-rustfs --ignore-not-found

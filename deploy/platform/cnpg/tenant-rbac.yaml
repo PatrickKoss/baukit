@@ -13,6 +13,7 @@ rules:
   - apiGroups: [postgresql.cnpg.io]
     resources:
       - clusters
+      - imagecatalogs
       - scheduledbackups
     verbs: [create, delete, deletecollection, patch, update]
   - apiGroups: [barmancloud.cnpg.io]
@@ -34,6 +35,7 @@ rules:
   - apiGroups: [postgresql.cnpg.io]
     resources:
       - clusters
+      - imagecatalogs
       - scheduledbackups
     verbs: [get, list, watch]
   - apiGroups: [barmancloud.cnpg.io]
