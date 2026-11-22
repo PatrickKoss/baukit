@@ -30,8 +30,10 @@ pub(crate) fn render_manifest(context: &TemplateContext, options: &NewOptions) -
     };
     let gitops_manifest = if options.components.backend() {
         format!(
-            "\n[gitops]\ndomain = \"{}\"\nregistry = \"{}\"\n",
-            context.gitops.domain, context.gitops.registry
+            "\n[gitops]\ndomain = \"{}\"\nregistry = \"{}\"\n{}",
+            context.gitops.domain,
+            context.gitops.registry,
+            lab_registry_line(&context.gitops.lab_registry)
         )
     } else {
         String::new()
@@ -120,4 +122,11 @@ pwa = {}\n\
         components.web(),
         components.pwa(),
     )
+}
+
+fn lab_registry_line(lab_registry: &str) -> String {
+    if lab_registry.is_empty() {
+        return String::new();
+    }
+    format!("lab_registry = \"{lab_registry}\"\n")
 }

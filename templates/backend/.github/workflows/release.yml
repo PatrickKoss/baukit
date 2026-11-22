@@ -43,4 +43,6 @@ jobs:
           GITOPS_DEPLOY_KEY: {% raw %}${{ secrets.GITOPS_DEPLOY_KEY }}{% endraw %}
           REGISTRY_USER: {% raw %}${{ github.actor }}{% endraw %}
           REGISTRY_TOKEN: {% raw %}${{ github.token }}{% endraw %}
-        run: bash scripts/release.sh
+{% if context.gitops.lab_registry %}          LAB_REGISTRY_USER: {% raw %}${{ vars.LAB_REGISTRY_USER }}{% endraw %}
+          LAB_REGISTRY_TOKEN: {% raw %}${{ secrets.LAB_REGISTRY_TOKEN }}{% endraw %}
+{% endif %}        run: bash scripts/release.sh

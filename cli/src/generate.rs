@@ -218,6 +218,8 @@ fn template_context(
     })
 }
 
+const GHCR_HOST: &str = "ghcr.io";
+
 fn gitops_context(options: &NewOptions, manifest: Option<&Manifest>) -> Result<GitopsContext> {
     let gitops = manifest
         .and_then(|manifest| manifest.gitops.clone())
@@ -225,9 +227,12 @@ fn gitops_context(options: &NewOptions, manifest: Option<&Manifest>) -> Result<G
     gitops.validate()?;
     Ok(GitopsContext {
         identity_url: gitops.resolved_identity_url(),
+        ghcr_pull_secret: gitops.pull_registry().split('/').next() == Some(GHCR_HOST),
+        pull_registry: gitops.pull_registry().to_owned(),
         realm: gitops.realm.unwrap_or_else(|| options.name.clone()),
         domain: gitops.domain,
         registry: gitops.registry,
+        lab_registry: gitops.lab_registry.unwrap_or_default(),
     })
 }
 

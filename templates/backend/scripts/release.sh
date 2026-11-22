@@ -12,7 +12,8 @@ case "${1:-}" in
   *) printf 'usage: %s [--dry-run]\n' "$0" >&2; exit 2 ;;
 esac
 registry={{ context.gitops.registry }}
-app={{ context.app_name }}
+{% if context.gitops.lab_registry %}lab_registry={{ context.gitops.lab_registry }}
+{% endif %}app={{ context.app_name }}
 processes=(api migrate{% if context.worker %} worker{% endif %})
 release_file=deploy/gitops/testing/release.yaml
 # shellcheck source=scripts/image-signing.sh
@@ -46,7 +47,11 @@ if [[ -n ${REGISTRY_TOKEN:-} ]]; then
   printf '%s' "$REGISTRY_TOKEN" | run docker login "${registry%%/*}" \
     -u "${REGISTRY_USER:?REGISTRY_USER must name the registry user}" --password-stdin
 fi
-
+{% if context.gitops.lab_registry %}if [[ -n ${LAB_REGISTRY_TOKEN:-} ]]; then
+  printf '%s' "$LAB_REGISTRY_TOKEN" | run cosign login "${lab_registry%%/*}" \
+    -u "${LAB_REGISTRY_USER:?LAB_REGISTRY_USER must name the lab registry user}" --password-stdin
+fi
+{% endif %}
 pins=()
 for process in "${processes[@]}"; do
   image="${registry}/${app}-${process}:${tag}"
@@ -55,8 +60,13 @@ for process in "${processes[@]}"; do
     --file "$repo_root/backend/Dockerfile" --target "$process" \
     --build-arg BACKEND_CONTEXT=backend --build-arg "GIT_COMMIT=$commit" \
     --tag "$image" --push "$repo_root"
-  pins+=("${process}=$(sign_image "$image")")
-done
+{% if context.gitops.lab_registry %}  pin=$(sign_image "$image")
+  # cosign copy keeps the digest, so the signature and the pin stay valid in the lab registry.
+  run cosign copy --force "${image%:*}@${pin#*@}" "${lab_registry}/${app}-${process}:${tag}" >&2
+  verify_image "${lab_registry}/${app}-${process}@${pin#*@}"
+  pins+=("${process}=${pin}")
+{% else %}  pins+=("${process}=$(sign_image "$image")")
+{% endif %}done
 
 python3 "$repo_root/scripts/gitops-pins.py" set "$repo_root/$release_file" "${pins[@]}"
 if git -C "$repo_root" diff --quiet -- "$release_file"; then

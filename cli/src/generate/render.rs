@@ -120,6 +120,10 @@ pub(crate) struct TemplateContext {
 pub(crate) struct GitopsContext {
     pub(crate) domain: String,
     pub(crate) registry: String,
+    /// Empty unless `[gitops] lab_registry` is set.
+    pub(crate) lab_registry: String,
+    pub(crate) pull_registry: String,
+    pub(crate) ghcr_pull_secret: bool,
     pub(crate) identity_url: String,
     pub(crate) realm: String,
 }
@@ -322,6 +326,9 @@ pub(crate) fn render_directory(
         if is_python_cache_artifact(relative) {
             continue;
         }
+        if is_ghcr_pull_secret(relative) && !context.gitops.ghcr_pull_secret {
+            continue;
+        }
         if is_auth_only(relative) && (!context.auth.enabled() || !auth_overlay) {
             continue;
         }
@@ -418,6 +425,11 @@ pub(crate) fn is_provider_shaped_realm_only(path: &Path) -> bool {
         })
 }
 
+fn is_ghcr_pull_secret(path: &Path) -> bool {
+    path.file_name()
+        .is_some_and(|name| name == "ghcr-pull-secret.enc.yaml")
+}
+
 pub(crate) fn is_auth_only(path: &Path) -> bool {
     path.components()
         .any(|component| component.as_os_str() == "__auth__")
@@ -509,6 +521,9 @@ mod generator_tests {
             gitops: super::GitopsContext {
                 domain: "lab.example.com".to_owned(),
                 registry: "ghcr.io/example".to_owned(),
+                lab_registry: String::new(),
+                pull_registry: "ghcr.io/example".to_owned(),
+                ghcr_pull_secret: true,
                 identity_url: "https://id.lab.example.com".to_owned(),
                 realm: "cache-test".to_owned(),
             },

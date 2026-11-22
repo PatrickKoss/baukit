@@ -40,7 +40,11 @@ metadata.
 `deploy/gitops/`. It builds the `api`, `migrate`{% if context.worker %} and `worker`{% endif %} images, pushes
 `{{ context.gitops.registry }}/{{ context.app_name }}-<process>:<sha12>`, signs each by digest with cosign and
 commits the `<sha12>@sha256:<digest>` pins to `testing/release.yaml`.
-`.github/workflows/promote.yml` (manual) verifies those signatures with `deploy/cosign.pub` and
+{% if context.gitops.lab_registry %}With `lab_registry` set in `[gitops]`, the release then copies each image and its signature by digest with `cosign copy` to
+`{{ context.gitops.lab_registry }}/{{ context.app_name }}-<process>:<sha12>`. The digest does not change, so
+the pins and signatures hold in both registries. Both overlays pull from the lab registry, so they
+ship no GHCR pull secret; give the lab cluster pull access to that registry outside this repository.
+{% endif %}`.github/workflows/promote.yml` (manual) verifies those signatures with `deploy/cosign.pub` and
 copies the pins to `production/release.yaml`. Run either locally with `--dry-run` to see the
 commands without building, pushing or signing.
 
@@ -54,5 +58,7 @@ Repository setup:
 - A deploy key with write access whose private half is `GITOPS_DEPLOY_KEY`, allowed to bypass the
   branch protection on `main`.
 - `deploy/cosign.pub`, the public half of the cosign key.
-- Optional repository variables `BAUKIT_RUNS_ON` and `BAUKIT_GATE_RUNS_ON`, each a JSON runner
+{% if context.gitops.lab_registry %}- Repository variable `LAB_REGISTRY_USER` and secret `LAB_REGISTRY_TOKEN` in the `release`
+  environment, a push credential for the lab registry.
+{% endif %}- Optional repository variables `BAUKIT_RUNS_ON` and `BAUKIT_GATE_RUNS_ON`, each a JSON runner
   label array such as `["self-hosted","lab","x64"]`. Unset, jobs run on `ubuntu-latest`.

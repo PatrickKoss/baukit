@@ -76,6 +76,10 @@ pub struct GitopsManifest {
     pub domain: String,
     /// Image prefix; images are `<registry>/<app>-<process>`.
     pub registry: String,
+    /// Optional lab registry prefix; when set the overlays pull `<lab_registry>/<app>-<process>`
+    /// and the release copies each signed image there by digest after pushing to `registry`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lab_registry: Option<String>,
     /// Keycloak base URL; defaults to `https://id.<domain>`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity_url: Option<String>,
@@ -89,6 +93,7 @@ impl Default for GitopsManifest {
         Self {
             domain: DEFAULT_GITOPS_DOMAIN.to_owned(),
             registry: DEFAULT_GITOPS_REGISTRY.to_owned(),
+            lab_registry: None,
             identity_url: None,
             realm: None,
         }
@@ -119,6 +124,12 @@ impl GitopsManifest {
             "gitops.registry `{}` must be a lowercase registry path such as ghcr.io/owner",
             self.registry
         );
+        if let Some(lab_registry) = &self.lab_registry {
+            anyhow::ensure!(
+                lab_registry.split('/').all(hostname),
+                "gitops.lab_registry `{lab_registry}` must be a lowercase registry path such as registry.lab.example.com/owner"
+            );
+        }
         if let Some(url) = &self.identity_url {
             let valid = url
                 .strip_prefix("https://")
@@ -139,6 +150,11 @@ impl GitopsManifest {
             );
         }
         Ok(())
+    }
+
+    /// The registry the overlays pull from: the lab registry when set, else `registry`.
+    pub fn pull_registry(&self) -> &str {
+        self.lab_registry.as_deref().unwrap_or(&self.registry)
     }
 
     pub fn resolved_identity_url(&self) -> String {
