@@ -9,7 +9,7 @@ spec:
     alertmanager-routing Secret: Watchdog to heartbeat, a critical falco alert to security-pager and a
     warning platform alert to platform-tickets. A critical alert inhibits a warning with the same
     alertname and namespace, so only the critical one is delivered. The sink is alert-sink in
-    observability from the local observability component; it also logs each notification to stdout.
+    observability from the local observability component; it also logs one line per alert to stdout.
   timeouts:
     exec: 5m
   steps:
@@ -146,7 +146,7 @@ spec:
               set -eu
               logs=$(kubectl -n observability logs deploy/alert-sink -c sink)
               for alertname in BaukitE2eRouteCritical BaukitE2eRouteWarning; do
-                if ! printf '%s\n' "$logs" | grep -F "\"$alertname\"" | grep -qF "\"$NAMESPACE\""; then
+                if ! printf '%s\n' "$logs" | grep -F "\"alertname\": \"$alertname\"" | grep -qF "\"namespace\": \"$NAMESPACE\""; then
                   printf 'alert-sink logged no notification for %s in %s\n' "$alertname" "$NAMESPACE" >&2
                   exit 1
                 fi

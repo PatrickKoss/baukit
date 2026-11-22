@@ -1,4 +1,4 @@
-"""Logs each Alertmanager webhook post to stdout and serves the latest ones on GET /alerts."""
+"""Logs one line per alert of each Alertmanager post and serves the latest posts on GET /alerts."""
 
 import json
 import threading
@@ -11,6 +11,19 @@ KEPT_NOTIFICATIONS = 500
 
 lock = threading.Lock()
 notifications = deque(maxlen=KEPT_NOTIFICATIONS)
+
+
+def log_alerts(notification):
+    for alert in notification.get("alerts", []):
+        labels = alert.get("labels", {})
+        line = {
+            "receiver": notification.get("receiver"),
+            "status": alert.get("status"),
+            "alertname": labels.get("alertname"),
+            "namespace": labels.get("namespace"),
+            "severity": labels.get("severity"),
+        }
+        print(json.dumps(line), flush=True)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -50,7 +63,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         with lock:
             notifications.append(notification)
-        print(json.dumps(notification), flush=True)
+        log_alerts(notification)
         self.reply(200, b"{}")
 
 
