@@ -2,8 +2,12 @@
 
 ## [Unreleased]
 
+## [0.28.7] - 2026-11-22
+
 - Tenants can run their own CNPG Cluster. `cnpg/tenant-rbac.yaml` aggregates `clusters` and `scheduledbackups` (`postgresql.cnpg.io`) and `objectstores` (`barmancloud.cnpg.io`) into `admin`, `edit` and `view`. `cnpg-system/allow-operator-to-instances` also allows egress to `cnpg.io/podRole: instance` pods in namespaces labelled `baukit.dev/tenant: "true"` on 5432 and 8000. The PolicyException `cnpg-tenant-pods` lifts `disallow-sa-token-automount` only for CNPG Jobs the operator creates and pods the operator or the job controller creates for a Cluster, whose ServiceAccount is the cluster's own. Kyverno autogen hands a Job to the exception with `object.spec` set to the pod template spec, so the Job branch reads `object.spec.serviceAccountName` too. New e2e suite `tenant-postgres` creates a Cluster, ObjectStore and ScheduledBackup as the tenant's `flux-reconciler` and waits for WAL archiving and a completed backup.
 - `protect-tenant-metrics-proxy` no longer denies every exec and attach in a tenant namespace by a user outside the platform. On CONNECT the object is a `PodExecOptions` with `metadata` and no `spec`, so `o.spec.?template` failed with `no such key: spec` and the error denied the request. The CNPG operator's backup exec into a tenant instance hit this. Exec into `tenant-metrics-proxy` pods is still denied by name.
+
+- e2e `netpol`: the two Postgres pod probes also select `cnpg.io/cluster: postgres-cluster`. They took the first ready instance pod in `postgres`, which could be a cluster that `backup-restore` deletes while the probe runs.
 
 ## [0.28.6] - 2026-11-22
 

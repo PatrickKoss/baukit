@@ -5,6 +5,15 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.28.7
+
+Last verified release train: `v0.28.7` (patch train on top of `v0.28.6`). No component versions change; `url` moves to 2.5.9 in the workspace lockfiles.
+- Generated gitops overlays choose `shared` or `dedicated` Postgres and Redis per environment through `backing/*` components, and the `baukit-app` chart takes `backing.postgres.mode` and `backing.redis.mode`. Dedicated Postgres is a CNPG Cluster in the tenant namespace with Barman backups, which tenants may now create (`cnpg/tenant-rbac.yaml`, PolicyException `cnpg-tenant-pods`).
+- `[gitops] lab_registry` publishes each release image to a second registry under the same digest and signature.
+- `protect-tenant-metrics-proxy` no longer denies exec and attach in tenant namespaces.
+- `url` 2.5.9 for RUSTSEC-2026-0592 (`Url::origin()` stack overflow on nested `blob:` URLs).
+- Platform e2e: the netpol Postgres probes select `cnpg.io/cluster: postgres-cluster`, so a parallel backup-restore cluster cannot be the target.
+
 ## v0.28.6
 
 Last verified release train: `v0.28.6` (patch train on top of `v0.28.5`). New optional component; no component versions change.
