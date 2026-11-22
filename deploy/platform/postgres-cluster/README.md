@@ -102,7 +102,9 @@ that a restored cluster turns `Ready`:
 1. The `write-sentinel` init container connects to `postgres-cluster-rw` as the
    product owner from `product-db-credentials` (never the superuser) and upserts
    one row into `baukit_restore_sentinel` in the `product` database. The token is
-   the UTC time plus the pod name.
+   the UTC time plus the pod name. It first retries `select 1` for up to
+   `WAIT_SECONDS` (300), because a new pod's traffic is dropped until kube-router
+   programs its IP and CNPG may not have created the role or database yet.
 2. The main container creates a plugin `Backup` of `postgres-cluster` and waits
    up to `BACKUP_TIMEOUT_SECONDS` for phase `completed`. Phase `failed` or a
    timeout fails the job.

@@ -106,12 +106,11 @@ spec:
                 - -ec
               args:
                 - |
-                  # kube-router rejects a new pod's traffic until it programs the pod IP.
-                  attempts=0
-                  until pg_isready -q -t 2; do
-                    attempts=$((attempts + 1))
-                    [ "${attempts}" -lt 30 ] || { printf 'postgres unreachable after %s tries\n' "${attempts}" >&2; exit 1; }
-                    sleep 1
+                  # Retries cover kube-router programming the pod IP and CNPG creating the role and database.
+                  deadline=$(( $(date +%s) + WAIT_SECONDS ))
+                  until psql -XtAq -v ON_ERROR_STOP=1 -c 'select 1' >/dev/null; do
+                    [ "$(date +%s)" -lt "${deadline}" ] || { printf 'database %s not reachable as %s after %ss\n' "${PGDATABASE}" "${PGUSER}" "${WAIT_SECONDS}" >&2; exit 1; }
+                    sleep 2
                   done
                   token="$(date -u +%Y%m%dT%H%M%SZ)-${POD_NAME}"
                   psql -v ON_ERROR_STOP=1 -v token="${token}" <<'SQL'
@@ -129,6 +128,10 @@ spec:
                   valueFrom:
                     fieldRef:
                       fieldPath: metadata.name
+                - name: WAIT_SECONDS
+                  value: "300"
+                - name: PGCONNECT_TIMEOUT
+                  value: "3"
                 - name: SENTINEL_FILE
                   value: /work/sentinel
                 - name: PGHOST
