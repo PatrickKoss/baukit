@@ -6,6 +6,8 @@ All notable changes to `baukit-config` are documented here.
 
 - `RateLimitConfig` gains `redis_key_namespace` (`<PREFIX>__RATE_LIMIT__REDIS_KEY_NAMESPACE`), empty by default. A non-empty value must end with `:` and contain no whitespace or Redis glob characters (`* ? [ ]`); `validate_redis_key_namespace` holds the rule.
 
+## [0.28.5] - 2026-11-22
+
 ## [0.28.4] - 2026-11-19
 
 ## [0.28.3] - 2026-11-19

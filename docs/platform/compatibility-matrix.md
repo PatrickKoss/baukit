@@ -5,6 +5,16 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.28.5
+
+Last verified release train: `v0.28.5` (patch train on top of `v0.28.4`). New optional components; existing component versions change only for the image CVE fixes.
+- Optional `keycloak` platform base: Keycloak 26.8.2 as a StatefulSet on the shared CNPG cluster, realm import through keycloak-config-cli 6.5.1-26.5.5, and a `lab` environment class in `keycloak_policy.py`. Keycloak waits for its CNPG database before starting.
+- Optional `tailscale-operator` base (chart 1.104.7) with a `baukit` ProxyClass, in a privileged namespace with its own NetworkPolicies.
+- `overlays/baremetal` with a node-CIDR parameter and a three-server k3s config set.
+- Product templates gain `deploy/gitops/{base,testing,production}`, `release.yml` and `promote.yml`, and runners from a repository variable with an `ubuntu-latest` fallback.
+- PostHog's Postgres moves to `14.25-alpine3.23`; CVE-2026-86144 (Loki gateway nginx) and CVE-2026-58210, CVE-2026-95839 (k3s v1.37.2) are allowlisted until 2027-01-16, and k3s's unreleased nats-server fix for CVE-2026-58213 is allowed.
+- The scripts suite's android-qa tests pick free emulator console ports instead of 5600 to 5610.
+
 ## v0.28.4
 
 Last verified release train: `v0.28.4` (patch train on top of `v0.28.3`). No component versions change.

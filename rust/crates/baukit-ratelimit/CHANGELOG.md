@@ -7,6 +7,8 @@ All notable changes to `baukit-ratelimit` are documented here.
 - `RedisRateLimitStore` can prepend a key namespace to every key it reads or writes, in `check_and_consume`, `check_and_consume_amount` and `release_amount`. `connect_if_enabled` takes it from the new `rate_limit.redis_key_namespace` (empty by default, so existing keys stay where they are); `with_key_namespace` sets it on a store built by hand. This also covers keys that do not use `rate_limit.key_prefix`, such as `amount-budget:`, `suite:` and `mcp:`. Products that share one Redis set a distinct namespace each and give each a Redis ACL user restricted to `~<namespace>*`; the README lists the commands that user needs.
 - `redis+sentinel://` URLs accept `user:password@` or `:password@` before the Sentinel hosts. The credentials authenticate to the discovered data nodes; Sentinel nodes are still contacted without credentials. Before, any `@` in a Sentinel URL was rejected.
 
+## [0.28.5] - 2026-11-22
+
 ## [0.28.4] - 2026-11-19
 
 ## [0.28.3] - 2026-11-19
