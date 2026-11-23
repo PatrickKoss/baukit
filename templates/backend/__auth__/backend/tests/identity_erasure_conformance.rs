@@ -224,12 +224,23 @@ impl IdentityErasureAdapter for EndpointAdapter {
         })
     }
 }
+
+async fn migrated_postgres() -> Result<(baukit_test::PostgresTestContainer, PgPool), TestError> {
+    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    let fixture = baukit_test::start_postgres_with_owner_migrations(
+        &migrations,
+        baukit_test::PostgresMigrationOwner::default(){% if context.postgres_owner_create_role %}.with_create_role(){% endif %},
+    )
+    .await?;
+    let owner_url = fixture.owner_connection_url().ok_or("missing owner URL")?;
+    let pool = PgPool::connect(owner_url).await?;
+    Ok((fixture, pool))
+}
+
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn endpoint_identity_erasure_conforms() -> Result<(), TestError> {
-    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-    let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
-    let pool = PgPool::connect(fixture.connection_url()).await?;
+    let (_fixture, pool) = migrated_postgres().await?;
     let mut adapter = EndpointAdapter {
         store: PostgresErasureStore::new(
             pool.clone(),
@@ -401,9 +412,7 @@ async fn retained_identity_reonboards_with_a_new_profile_and_rejects_old_session
 
 async fn retaining_adapter()
 -> Result<(baukit_test::PostgresTestContainer, EndpointAdapter), TestError> {
-    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-    let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
-    let pool = PgPool::connect(fixture.connection_url()).await?;
+    let (fixture, pool) = migrated_postgres().await?;
     let store = PostgresErasureStore::new(
         pool.clone(),
         Secret::new("test-hash-key-with-at-least-32-bytes".into()),

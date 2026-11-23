@@ -62,7 +62,7 @@ def backend_environment(name: str) -> dict[str, str]:
     environment.update(
         {
             f"{prefix}__DATABASE__URL": (
-                f"postgres://postgres:postgres@postgres:5432/{name.replace('-', '_')}"
+                f"postgres://app:app@postgres:5432/{name.replace('-', '_')}"
             ),
             f"{prefix}__RATE_LIMIT__REDIS_URL": "redis://redis:6379/",
             # Clerk and WorkOS fixtures need any admin secret to start; sign-in never uses it.

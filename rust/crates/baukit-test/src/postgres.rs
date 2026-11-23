@@ -11,7 +11,9 @@ use testcontainers::{
 
 use crate::StartContainer as _;
 #[cfg(feature = "sqlx-postgres")]
-use crate::postgres_database::{PostgresAppRole, PostgresTestDatabase, PostgresTestDatabases};
+use crate::postgres_database::{
+    PostgresAppRole, PostgresMigrationOwner, PostgresTestDatabase, PostgresTestDatabases,
+};
 #[cfg(feature = "sqlx-postgres")]
 use crate::{CleanupKind, OwnedResourceCheck};
 
@@ -28,6 +30,8 @@ pub struct PostgresTestContainer {
     connection_url: String,
     #[cfg(feature = "sqlx-postgres")]
     app_connection_url: Option<String>,
+    #[cfg(feature = "sqlx-postgres")]
+    owner_connection_url: Option<String>,
     #[cfg(feature = "sqlx-postgres")]
     databases: PostgresTestDatabases,
     container: ContainerAsync<GenericImage>,
@@ -47,6 +51,16 @@ impl PostgresTestContainer {
     #[must_use]
     pub fn app_connection_url(&self) -> Option<&str> {
         self.app_connection_url.as_deref()
+    }
+
+    /// Returns the URL for the migration owner on the `postgres` database.
+    ///
+    /// `None` unless [`PostgresTestOptions::with_migration_owner`] was set. Connect the
+    /// application under test with it to run as the owner, as it does in a CNPG cluster.
+    #[cfg(feature = "sqlx-postgres")]
+    #[must_use]
+    pub fn owner_connection_url(&self) -> Option<&str> {
+        self.owner_connection_url.as_deref()
     }
 
     /// Creates a separate database on this container for one test.
@@ -96,6 +110,8 @@ pub struct PostgresTestOptions {
     #[cfg(feature = "sqlx-postgres")]
     app_role: Option<PostgresAppRole>,
     #[cfg(feature = "sqlx-postgres")]
+    migration_owner: Option<PostgresMigrationOwner>,
+    #[cfg(feature = "sqlx-postgres")]
     migrations: Option<PathBuf>,
 }
 
@@ -106,6 +122,8 @@ impl Default for PostgresTestOptions {
             image_tag: POSTGRES_IMAGE_TAG.to_owned(),
             #[cfg(feature = "sqlx-postgres")]
             app_role: None,
+            #[cfg(feature = "sqlx-postgres")]
+            migration_owner: None,
             #[cfg(feature = "sqlx-postgres")]
             migrations: None,
         }
@@ -138,11 +156,24 @@ impl PostgresTestOptions {
         self
     }
 
-    /// Applies SQLx migrations from `path` as the superuser after the app role exists.
+    /// Applies SQLx migrations from `path` after the app role exists, as the migration owner
+    /// when one is set and as the superuser otherwise.
     #[cfg(feature = "sqlx-postgres")]
     #[must_use]
     pub fn with_migrations(mut self, path: impl Into<PathBuf>) -> Self {
         self.migrations = Some(path.into());
+        self
+    }
+
+    /// Makes `owner` the owner of the `postgres` database and applies migrations as it.
+    ///
+    /// The owner has the rights CloudNativePG gives an application owner, so a migration that
+    /// needs a superuser fails here instead of in the cluster's migrate Job. The superuser
+    /// still creates the roles and test databases.
+    #[cfg(feature = "sqlx-postgres")]
+    #[must_use]
+    pub fn with_migration_owner(mut self, owner: PostgresMigrationOwner) -> Self {
+        self.migration_owner = Some(owner);
         self
     }
 
@@ -181,13 +212,17 @@ impl PostgresTestOptions {
             if let Some(role) = self.app_role {
                 databases = databases.with_app_role(role);
             }
+            if let Some(owner) = self.migration_owner {
+                databases = databases.with_migration_owner(owner);
+            }
             if let Some(path) = self.migrations {
                 databases = databases.with_migrations(path);
             }
-            let app_connection_url = databases.prepare_server_database().await?;
+            let urls = databases.prepare_server_database().await?;
             Ok(PostgresTestContainer {
                 connection_url,
-                app_connection_url,
+                app_connection_url: urls.app,
+                owner_connection_url: urls.owner,
                 databases,
                 container,
             })
@@ -214,7 +249,8 @@ pub enum PostgresTestError {
     #[cfg(feature = "sqlx-postgres")]
     #[error("could not apply PostgreSQL test migrations: {0}")]
     Migrate(#[from] sqlx::migrate::MigrateError),
-    /// An app role name or password is not accepted, or an existing role bypasses RLS.
+    /// An app role or migration owner name or password is not accepted, or an existing role
+    /// has more rights than the fixture allows.
     #[cfg(feature = "sqlx-postgres")]
     #[error("invalid PostgreSQL test app role: {0}")]
     InvalidAppRole(&'static str),
@@ -272,6 +308,28 @@ pub async fn start_postgres_with_migrations(
     migrations_path: impl AsRef<Path>,
 ) -> Result<PostgresTestContainer, PostgresTestError> {
     PostgresTestOptions::new()
+        .with_migrations(migrations_path.as_ref())
+        .start()
+        .await
+}
+
+/// Starts PostgreSQL 18.7 and applies SQLx migrations from `migrations_path` as `owner`.
+///
+/// Shorthand for [`PostgresTestOptions::with_migration_owner`] plus
+/// [`PostgresTestOptions::with_migrations`]. Connect the code under test with
+/// [`PostgresTestContainer::owner_connection_url`].
+///
+/// # Errors
+///
+/// Fails like [`PostgresTestOptions::start`], including [`PostgresTestError::Migrate`] when a
+/// migration needs rights the owner does not have.
+#[cfg(feature = "sqlx-postgres")]
+pub async fn start_postgres_with_owner_migrations(
+    migrations_path: impl AsRef<Path>,
+    owner: PostgresMigrationOwner,
+) -> Result<PostgresTestContainer, PostgresTestError> {
+    PostgresTestOptions::new()
+        .with_migration_owner(owner)
         .with_migrations(migrations_path.as_ref())
         .start()
         .await
@@ -511,6 +569,197 @@ mod tests {
         let app_url = fixture.app_connection_url().ok_or("missing app URL")?;
         assert!(app_url.starts_with("postgres://app_user:app-secret@"));
         assert_app_role_is_bound_by_rls(fixture.connection_url(), app_url).await
+    }
+
+    #[cfg(feature = "sqlx-postgres")]
+    fn migrations(files: &[(&str, &str)]) -> Result<tempfile::TempDir, std::io::Error> {
+        let directory = tempfile::tempdir()?;
+        for (name, sql) in files {
+            std::fs::write(directory.path().join(name), sql)?;
+        }
+        Ok(directory)
+    }
+
+    #[cfg(feature = "sqlx-postgres")]
+    async fn start_as_owner(
+        owner: PostgresMigrationOwner,
+        files: &[(&str, &str)],
+    ) -> Result<PostgresTestContainer, Box<dyn std::error::Error>> {
+        let directory = migrations(files)?;
+        Ok(start_postgres_with_owner_migrations(directory.path(), owner).await?)
+    }
+
+    #[cfg(feature = "sqlx-postgres")]
+    const CREATE_ROLE_MIGRATION: (&str, &str) =
+        ("0001_roles.sql", "CREATE ROLE fixture_reader NOLOGIN;");
+
+    #[cfg(feature = "sqlx-postgres")]
+    #[tokio::test]
+    #[ignore = "requires a reachable Docker daemon and may pull the PostgreSQL image"]
+    async fn migration_owner_owns_what_migrations_create() -> Result<(), Box<dyn std::error::Error>>
+    {
+        let fixture = start_as_owner(
+            PostgresMigrationOwner::default(),
+            &[(
+                "0001_notes.sql",
+                "CREATE TABLE notes (id BIGINT PRIMARY KEY);",
+            )],
+        )
+        .await?;
+        let owner_url = fixture.owner_connection_url().ok_or("missing owner URL")?;
+        assert!(owner_url.starts_with("postgres://app:app@"));
+        let mut owner = sqlx::PgConnection::connect(owner_url).await?;
+        let row = sqlx::query(
+            "SELECT r.rolsuper, r.rolcreaterole, r.rolcreatedb, r.rolbypassrls, \
+                    pg_get_userbyid(d.datdba) AS database_owner, \
+                    (SELECT tableowner FROM pg_tables WHERE tablename = 'notes') AS table_owner \
+             FROM pg_roles r, pg_database d \
+             WHERE r.rolname = current_user AND d.datname = current_database()",
+        )
+        .fetch_one(&mut owner)
+        .await?;
+        for attribute in ["rolsuper", "rolcreaterole", "rolcreatedb", "rolbypassrls"] {
+            assert!(!row.try_get::<bool, _>(attribute)?, "{attribute}");
+        }
+        assert_eq!(row.try_get::<String, _>("database_owner")?, "app");
+        assert_eq!(row.try_get::<String, _>("table_owner")?, "app");
+        owner.close().await?;
+        Ok(())
+    }
+
+    #[cfg(feature = "sqlx-postgres")]
+    #[tokio::test]
+    #[ignore = "requires a reachable Docker daemon and may pull the PostgreSQL image"]
+    async fn superuser_only_migrations_fail_under_the_owner()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let statements = [
+            "CREATE ROLE fixture_reader NOLOGIN;",
+            "CREATE EXTENSION file_fdw;",
+            "ALTER ROLE CURRENT_USER BYPASSRLS;",
+        ];
+        let superuser = migrations(&[("0001_su.sql", &statements.concat())])?;
+        start_postgres_with_migrations(superuser.path()).await?;
+
+        for sql in statements {
+            let result =
+                start_as_owner(PostgresMigrationOwner::default(), &[("0001_su.sql", sql)]).await;
+            let error = result.err().ok_or(format!("owner ran {sql}"))?;
+            assert!(
+                matches!(
+                    error.downcast_ref::<PostgresTestError>(),
+                    Some(PostgresTestError::Migrate(_))
+                ),
+                "{sql}: {error}"
+            );
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "sqlx-postgres")]
+    #[tokio::test]
+    #[ignore = "requires a reachable Docker daemon and may pull the PostgreSQL image"]
+    async fn create_role_owner_follows_the_documented_migration_rules()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let owner = || PostgresMigrationOwner::default().with_create_role();
+        start_as_owner(
+            owner(),
+            &[
+                CREATE_ROLE_MIGRATION,
+                (
+                    "0002_handover.sql",
+                    "CREATE TABLE notes (id BIGINT PRIMARY KEY); \
+                     GRANT fixture_reader TO CURRENT_USER; \
+                     GRANT CREATE ON SCHEMA public TO fixture_reader; \
+                     ALTER TABLE notes OWNER TO fixture_reader; \
+                     SET ROLE fixture_reader; \
+                     RESET ROLE;",
+                ),
+            ],
+        )
+        .await?;
+
+        let self_grant = "SET createrole_self_grant = 'set, inherit'; \
+                          CREATE ROLE fixture_writer NOLOGIN; \
+                          SET ROLE fixture_writer; \
+                          RESET ROLE;";
+        start_as_owner(owner(), &[("0001_self_grant.sql", self_grant)]).await?;
+
+        for (name, sql) in [
+            (
+                "without a self-grant",
+                "CREATE ROLE fixture_reader NOLOGIN; SET ROLE fixture_reader;",
+            ),
+            (
+                "without CREATE on the schema",
+                "CREATE ROLE fixture_reader NOLOGIN; \
+                 GRANT fixture_reader TO CURRENT_USER; \
+                 CREATE TABLE notes (id BIGINT PRIMARY KEY); \
+                 ALTER TABLE notes OWNER TO fixture_reader;",
+            ),
+        ] {
+            let result = start_as_owner(owner(), &[("0001_rule.sql", sql)]).await;
+            let error = result.err().ok_or(format!("{name} passed"))?;
+            assert!(
+                matches!(
+                    error.downcast_ref::<PostgresTestError>(),
+                    Some(PostgresTestError::Migrate(_))
+                ),
+                "{name}: {error}"
+            );
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "sqlx-postgres")]
+    #[tokio::test]
+    #[ignore = "requires a reachable Docker daemon and may pull the PostgreSQL image"]
+    async fn app_role_reaches_owner_tables_in_new_databases()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let directory = rls_migrations()?;
+        let fixture = PostgresTestOptions::new()
+            .with_app_role(PostgresAppRole::new("app_user", "app-secret")?)
+            .with_migration_owner(PostgresMigrationOwner::new(
+                "product_owner",
+                "owner-secret",
+            )?)
+            .with_migrations(directory.path())
+            .start()
+            .await?;
+        let database = fixture.create_database().await?;
+        let owner_url = database.owner_connection_url().ok_or("missing owner URL")?;
+        assert!(owner_url.starts_with("postgres://product_owner:owner-secret@"));
+        let mut owner = sqlx::PgConnection::connect(owner_url).await?;
+        let table_owner: String =
+            sqlx::query_scalar("SELECT tableowner::text FROM pg_tables WHERE tablename = 'notes'")
+                .fetch_one(&mut owner)
+                .await?;
+        assert_eq!(table_owner, "product_owner");
+        owner.close().await?;
+        assert_app_role_is_bound_by_rls(
+            database.connection_url(),
+            database.app_connection_url().ok_or("missing app URL")?,
+        )
+        .await
+    }
+
+    #[cfg(feature = "sqlx-postgres")]
+    #[tokio::test]
+    #[ignore = "requires a reachable Docker daemon and may pull the PostgreSQL image"]
+    async fn rejects_an_existing_owner_with_other_attributes()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let server = start_postgres().await?;
+        let databases = PostgresTestDatabases::new(server.connection_url());
+        databases
+            .clone()
+            .with_migration_owner(PostgresMigrationOwner::default())
+            .create()
+            .await?;
+        let result = databases
+            .with_migration_owner(PostgresMigrationOwner::default().with_create_role())
+            .create()
+            .await;
+        assert!(matches!(result, Err(PostgresTestError::InvalidAppRole(_))));
+        Ok(())
     }
 
     #[cfg(feature = "sqlx-postgres")]

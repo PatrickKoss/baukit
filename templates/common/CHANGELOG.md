@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.29.0] - 2026-11-23
+{% if context.backend %}- Migrations run as a non-superuser owner in the dev stack and the tests, as the migrate Job does on CNPG. Copy `postgres/initdb/10-owner.sql` and the `./postgres/initdb:/docker-entrypoint-initdb.d:ro` mount on the `postgres` service in `compose.yaml` from the template, switch local `__DATABASE__URL` values{% if context.mcp %} in `compose.yaml`{% endif %}{% if context.platform %}, `.env.example`{% endif %}{% if context.mobile %}, `mobile/scripts/qa/services.sh`{% endif %} and your `.env` to `postgres://app:app@...`, and run `docker compose down -v` once, because the init script runs only on an empty volume. Postgres tests call `baukit_test::start_postgres_with_owner_migrations(&migrations, baukit_test::PostgresMigrationOwner::default())` and connect with `owner_connection_url()`. Fix any migration that then fails: it needed a superuser and would fail in the cluster too. A migration that creates roles needs `[postgres] owner_create_role = true` and dedicated Postgres; `deploy/gitops/README.md` under "Migrations and roles" lists the rules. Run `baukit check template-files --update` after copying the files.
+
+{% endif %}## [0.29.0] - 2026-11-23
 
 {% if context.worker %}- A worker can opt in to the backing Redis the baukit-app chart gives the API: set `worker.redis.enabled: true` in the HelmRelease values. The worker then gets the URL in dedicated mode, the key namespace and `baukit.dev/redis-client` label in either mode, and the NetworkPolicy path to Redis. The default is `false`, so the chart renders your worker as before until you opt in. When you opt in, remove any `<APP>__RATE_LIMIT__REDIS_URL` entry from `worker.env` and any NetworkPolicy you added for worker Redis traffic in the same change; a second env entry with the same name fails server-side apply.
 

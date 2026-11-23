@@ -14,12 +14,18 @@ The development database uses PostgreSQL 18.6 Alpine. Its named volume mounts
 switching PostgreSQL major versions. New clusters keep data checksums enabled
 and use SCRAM password encryption.
 
+The API and `make migrate` connect as `app`, which owns the database and is not
+a superuser, like the owner of a CNPG cluster. `postgres/initdb/10-owner.sql`
+creates it when the volume is new; on a volume from an older template, run
+`docker compose down -v` once. Migrations follow the rules in
+`deploy/gitops/README.md` under "Migrations and roles".
+
 ## Run locally
 
 The unauthenticated API uses the in-memory repository when `{{ context.app_env }}__DATABASE__URL` is absent. To use PostgreSQL, configure the standard database section and run migrations explicitly:
 
 ```sh
-export {{ context.app_env }}__DATABASE__URL=postgres://postgres:postgres@localhost{% if context.port_offset > 0 %}:{{ context.postgres_host_port }}{% endif %}/{{ context.app_crate }}
+export {{ context.app_env }}__DATABASE__URL=postgres://app:app@localhost{% if context.port_offset > 0 %}:{{ context.postgres_host_port }}{% endif %}/{{ context.app_crate }}
 make migrate
 make run
 ```

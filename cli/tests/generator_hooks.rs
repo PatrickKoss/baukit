@@ -226,6 +226,97 @@ fn gitops_values_with_unsafe_characters_are_rejected() -> anyhow::Result<()> {
     Ok(())
 }
 
+const OWNER_INITDB: &str = "postgres/initdb/10-owner.sql";
+const OWNER_TEST: &str = "backend/tests/postgres_integration.rs";
+
+fn dedicated_cluster(root: &Path, environment: &str) -> anyhow::Result<String> {
+    Ok(fs::read_to_string(root.join(format!(
+        "deploy/gitops/{environment}/backing/postgres-dedicated/postgres.yaml"
+    )))?)
+}
+
+#[test]
+fn migrations_run_as_a_non_superuser_owner_by_default() -> anyhow::Result<()> {
+    let seed = tempfile::tempdir()?;
+    let root = generate_new(&strict_auth_options(seed.path(), "owner-app"))?;
+    let initdb = fs::read_to_string(root.join(OWNER_INITDB))?;
+    assert!(initdb.contains("CREATE ROLE app LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOREPLICATION NOBYPASSRLS NOCREATEROLE;"));
+    assert!(initdb.contains("ALTER DATABASE owner_app OWNER TO app;"));
+    let compose = fs::read_to_string(root.join("compose.yaml"))?;
+    assert!(compose.contains("./postgres/initdb:/docker-entrypoint-initdb.d:ro"));
+    assert!(!compose.contains("postgres://postgres:postgres@"));
+    let test = fs::read_to_string(root.join(OWNER_TEST))?;
+    assert!(test.contains("baukit_test::PostgresMigrationOwner::default(),"));
+    assert!(test.contains("owner_connection_url()"));
+    for environment in ["testing", "production"] {
+        let cluster = dedicated_cluster(&root, environment)?;
+        assert!(cluster.contains("      owner: app\n  plugins:\n"));
+        assert!(!cluster.contains("postInitApplicationSQL"));
+    }
+    assert!(!fs::read_to_string(root.join("baukit.toml"))?.contains("[postgres]"));
+    Ok(())
+}
+
+#[test]
+fn owner_create_role_reaches_dev_tests_and_the_dedicated_cluster() -> anyhow::Result<()> {
+    let root = render_with_manifest_edit("roles-app", "[postgres]\nowner_create_role = true\n")?;
+    let initdb = fs::read_to_string(root.join(OWNER_INITDB))?;
+    assert!(initdb.contains("NOBYPASSRLS CREATEROLE;"));
+    let test = fs::read_to_string(root.join(OWNER_TEST))?;
+    assert!(test.contains("baukit_test::PostgresMigrationOwner::default().with_create_role(),"));
+    for environment in ["testing", "production"] {
+        let cluster = dedicated_cluster(&root, environment)?;
+        assert!(cluster.contains(
+            "      owner: app\n      # `[postgres] owner_create_role`. Runs once at initdb; an existing cluster needs it run by hand.\n      postInitApplicationSQL:\n        - ALTER ROLE app CREATEROLE\n  plugins:\n"
+        ));
+        assert!(!cluster.contains("managed:"));
+    }
+    assert!(
+        fs::read_to_string(root.join("baukit.toml"))?
+            .contains("\n[postgres]\nowner_create_role = true\n")
+    );
+    Ok(())
+}
+
+#[test]
+fn doctor_requires_dedicated_postgres_for_owner_create_role() -> anyhow::Result<()> {
+    let root =
+        render_with_manifest_edit("shared-roles-app", "[postgres]\nowner_create_role = true\n")?;
+    let error = doctor(&root).expect_err("owner_create_role on shared Postgres must fail");
+    let message = error.to_string();
+    assert!(
+        message.contains("postgres.owner_create_role needs dedicated Postgres"),
+        "{message}"
+    );
+    assert!(
+        message.contains("deploy/gitops/production, deploy/gitops/testing"),
+        "{message}"
+    );
+
+    for environment in ["testing", "production"] {
+        let overlay = root
+            .join("deploy/gitops")
+            .join(environment)
+            .join("kustomization.yaml");
+        let source = fs::read_to_string(&overlay)?;
+        assert!(source.contains("components: []"), "{source}");
+        fs::write(
+            &overlay,
+            source.replace(
+                "components: []",
+                "components:\n  - backing/postgres-dedicated",
+            ),
+        )?;
+    }
+    if let Err(error) = doctor(&root) {
+        assert!(
+            !error.to_string().contains("postgres.owner_create_role"),
+            "{error}"
+        );
+    }
+    Ok(())
+}
+
 #[test]
 fn linux_jobs_take_runners_from_repository_variables() -> anyhow::Result<()> {
     let seed = tempfile::tempdir()?;

@@ -38,6 +38,11 @@ pub(crate) fn render_manifest(context: &TemplateContext, options: &NewOptions) -
     } else {
         String::new()
     };
+    let postgres_manifest = if context.postgres_owner_create_role {
+        "\n[postgres]\nowner_create_role = true\n"
+    } else {
+        ""
+    };
     let consumers = "[\"generated/openapi.d.ts\"]";
     format!(
         "schema_version = {MANIFEST_SCHEMA_VERSION}\n\
@@ -56,7 +61,7 @@ name = \"{}\"\n\
 \n\
 [openapi]\n\
 schema = \"backend/openapi.json\"\n\
-consumers = {}\n{}{}",
+consumers = {}\n{}{}{}",
         context.template_version,
         port_offset,
         context.app_name,
@@ -66,6 +71,7 @@ consumers = {}\n{}{}",
         consumers,
         platform_manifest,
         gitops_manifest,
+        postgres_manifest,
     )
 }
 

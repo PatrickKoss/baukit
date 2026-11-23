@@ -20,7 +20,7 @@ use crate::{
     },
     doctor_layout, doctor_platform,
     doctor_ports::{uses_bundled_keycloak, validate_port_configuration},
-    gate_settings, identity,
+    doctor_postgres, gate_settings, identity,
     manifest::{
         AnalyticsAdapter, BaukitDependency, MANIFEST_SCHEMA_VERSION, Manifest,
         OpenApiCompatibility, QualityProfile, read_manifest,
@@ -86,6 +86,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     identity::validate(root, &manifest, successes, failures)?;
     validate_port_configuration(root, &manifest, successes, failures)?;
     validate_backend(root, &manifest, host, successes, failures)?;
+    doctor_postgres::validate(root, &manifest, successes, failures)?;
     validate_cargo_workspaces(root, &manifest, host, successes, failures)?;
     validate_mobile(root, &manifest, successes, failures)?;
     validate_web(root, &manifest, successes, failures)?;

@@ -63,6 +63,25 @@ pub struct Manifest {
     pub backend: BackendManifest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gitops: Option<GitopsManifest>,
+    #[serde(default, skip_serializing_if = "PostgresManifest::is_default")]
+    pub postgres: PostgresManifest,
+}
+
+/// How the database owner that runs migrations is set up in the dev stack, the tests and a
+/// dedicated CNPG cluster. The owner is never a superuser.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct PostgresManifest {
+    /// Gives the owner `CREATEROLE`, for migrations that create, grant and switch into their own
+    /// roles. Only dedicated Postgres supports it; doctor rejects it with shared Postgres.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub owner_create_role: bool,
+}
+
+impl PostgresManifest {
+    fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
 }
 
 pub const DEFAULT_GITOPS_DOMAIN: &str = "lab.example.com";
