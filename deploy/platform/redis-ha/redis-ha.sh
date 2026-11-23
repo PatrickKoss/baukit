@@ -142,14 +142,13 @@ ensure_reload_token() {
 # Appending keeps the line numbers in Redis errors equal to those of the Secret's users.acl.
 write_acl_file() {
   digest="$(sha256sum "$acl_reload_token" | cut -d ' ' -f 1)"
-  (
-    umask 077
-    {
-      awk 1 "$acl_dir/users.acl"
-      printf 'user %s on #%s resetkeys resetchannels -@all +acl|load\n' "$acl_reload_user" "$digest"
-    } >"$acl_file.$$"
-  )
-  mv "$acl_file.$$" "$acl_file"
+  # mktemp, not $$: the redis and acl-reload containers each run this script as PID 1.
+  staged="$(mktemp "$acl_file.XXXXXX")"
+  {
+    awk 1 "$acl_dir/users.acl"
+    printf 'user %s on #%s resetkeys resetchannels -@all +acl|load\n' "$acl_reload_user" "$digest"
+  } >"$staged"
+  mv "$staged" "$acl_file"
 }
 
 # Writes the ACL file path and replication credentials to a private config file, so the password never
