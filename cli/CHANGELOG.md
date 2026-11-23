@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - `baukit doctor` skips `backend/fuzz/Cargo.lock` in the registry pin check while git ignores it and does not track it. The fuzz step copies `backend/Cargo.lock` over that file before every run, so a stale copy from an earlier run no longer fails doctor. A tracked copy still fails, and so does every other ignored lockfile, such as an ignored `backend/Cargo.lock`, because local builds resolve against it.
+- New backend products map `"deploy/**"` to the new `deploy-values` gate step in `[quality.affected]`. `baukit doctor` fails when a `quality.affected` glob matches `deploy/gitops` in a backend product without selecting `deploy-values` or the `fast` lane, and accepts `deploy-values` as a token.
 
 ## [0.28.8] - 2026-11-22
 

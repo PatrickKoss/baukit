@@ -44,3 +44,12 @@ echo "$lock_plan"
 expect "$lock_plan" "gate: mode full against HEAD^"
 expect "$lock_plan" "images (full gate)"
 refuse "$lock_plan" "(selected by"
+
+echo "# affected" >> "$fixture/deploy/gitops/testing/kustomization.yaml"
+commit deploy
+deploy_plan=$(plan)
+echo "$deploy_plan"
+expect "$deploy_plan" "gate: mode affected against HEAD^"
+expect "$deploy_plan" "fast/deploy-values (selected by deploy-values)"
+refuse "$deploy_plan" "rust-tests"
+refuse "$deploy_plan" "(full gate)"
