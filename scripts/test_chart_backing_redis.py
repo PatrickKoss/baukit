@@ -142,13 +142,17 @@ class SharedRedisTest(unittest.TestCase):
                 [container] = template["spec"]["containers"]
                 self.assertIn({"secretRef": {"name": "minimal-api-redis"}}, container["envFrom"])
                 self.assertTrue(
-                    reaches_platform_redis(specs.get(f"{RELEASE}-baukit-app-{process}-backing-egress"))
+                    reaches_platform_redis(
+                        specs.get(f"{RELEASE}-baukit-app-{process}-backing-egress")
+                    )
                 )
         for process in ("migrate", "seed"):
             with self.subTest(process=process):
                 self.assertNotIn(CLIENT_LABEL, templates[process]["metadata"]["labels"])
                 self.assertFalse(
-                    reaches_platform_redis(specs.get(f"{RELEASE}-baukit-app-{process}-backing-egress"))
+                    reaches_platform_redis(
+                        specs.get(f"{RELEASE}-baukit-app-{process}-backing-egress")
+                    )
                 )
 
     def test_switch_keeps_the_worker_off_redis(self) -> None:
@@ -157,8 +161,12 @@ class SharedRedisTest(unittest.TestCase):
         self.assertNotIn(CLIENT_LABEL, worker["metadata"]["labels"])
         self.assertNotIn(NAMESPACE, env_names(worker))
         specs = policies(documents)
-        self.assertFalse(reaches_platform_redis(specs.get(f"{RELEASE}-baukit-app-worker-backing-egress")))
-        self.assertTrue(reaches_platform_redis(specs.get(f"{RELEASE}-baukit-app-api-backing-egress")))
+        self.assertFalse(
+            reaches_platform_redis(specs.get(f"{RELEASE}-baukit-app-worker-backing-egress"))
+        )
+        self.assertTrue(
+            reaches_platform_redis(specs.get(f"{RELEASE}-baukit-app-api-backing-egress"))
+        )
 
 
 if __name__ == "__main__":

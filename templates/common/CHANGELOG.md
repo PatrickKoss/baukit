@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.28.8] - 2026-11-22
+{% if context.worker %}- The baukit-app chart gives the worker the backing Redis it gives the API: the URL in dedicated mode, the key namespace and `baukit.dev/redis-client` label in either mode, and the NetworkPolicy path to Redis. `worker.redis.enabled` switches it and defaults to true. Remove a `<APP>__RATE_LIMIT__REDIS_URL` entry from `worker.env` and any NetworkPolicy you added for worker Redis traffic in the same change that moves to this chart; a second env entry with the same name fails server-side apply. Set `worker.redis.enabled: false` for a worker that never talks to Redis.
+
+{% endif %}## [0.28.8] - 2026-11-22
 
 ## [0.28.7] - 2026-11-22
 
