@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-11-23
+
 - `PostgresMigrationOwner` and `PostgresTestOptions::with_migration_owner` (also on `PostgresTestDatabases`) apply migrations as a login role that owns the database and has the rights a CNPG owner has: no superuser, `CREATEDB`, `REPLICATION` or `BYPASSRLS`. A migration that only works as a superuser, such as `CREATE ROLE` or `CREATE EXTENSION file_fdw`, now fails with `PostgresTestError::Migrate` in the test instead of in the cluster's migrate Job. `with_create_role()` adds `CREATEROLE` for products with `[postgres] owner_create_role = true`. Read the owner URL from `owner_connection_url()` on the container or the per-test database. `start_postgres_with_owner_migrations(path, owner)` is the shorthand the templates use. An app role set with `with_app_role` gets default privileges on the owner's objects. Without an owner, migrations still run as the superuser.
 
 ## [0.29.0] - 2026-11-23

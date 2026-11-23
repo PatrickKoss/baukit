@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-11-23
+
+- Breaking: this is a minor release because generated backends now migrate as a non-superuser owner, and existing products must adopt the template change. Copy `postgres/initdb/10-owner.sql` and its mount on the `postgres` service in `compose.yaml`, switch local database URLs to `app:app`, and move the Postgres tests to `PostgresMigrationOwner` with `owner_connection_url()`, as the product changelog describes.
 - Generated backends migrate as a non-superuser owner everywhere. `compose.yaml` mounts `postgres/initdb/10-owner.sql`, which creates `app` (no superuser, `CREATEDB`, `REPLICATION` or `BYPASSRLS`) and makes it the database owner; the API, `make migrate`, the mobile QA services and `platform/.env.example` connect as `app:app`. The generated Postgres tests call `baukit_test::start_postgres_with_owner_migrations` and connect with `owner_connection_url()`, so a migration that needs a superuser fails in `make test`.
 
 - `[postgres] owner_create_role = true` in `baukit.toml` gives the owner `CREATEROLE` in the local initdb script, the generated tests and, through `ALTER ROLE app CREATEROLE` in `postInitApplicationSQL`, the `app` role of the dedicated CNPG cluster in `deploy/gitops/{testing,production}/backing/postgres-dedicated`. CNPG runs that SQL only at initdb, so an existing cluster needs the statement once by hand as the superuser. `baukit doctor` fails when the flag is set and an overlay under `deploy/gitops` does not list `backing/postgres-dedicated`, since shared Postgres keeps tenant owners without `CREATEROLE`. `deploy/gitops/README.md` lists the migration rules that go with it: create roles in a migration, `GRANT r TO CURRENT_USER` (or `SET createrole_self_grant = 'set, inherit'`) before `SET ROLE r` or `OWNER TO r`, and `GRANT CREATE ON SCHEMA public TO r` before handing `r` objects.
