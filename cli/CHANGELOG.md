@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-11-23
+
+- Breaking: this is a minor release because of the new doctor check below. A backend product whose `[quality.affected]` already has a glob matching `deploy/gitops/base/helmrelease.yaml`, such as `"deploy/**" = []`, fails `baukit doctor` until that glob selects `deploy-values` or `fast`. Copy the `deploy-values` step from the template as the product changelog describes, and set `"deploy/**" = ["deploy-values"]`.
 - `baukit doctor` skips `backend/fuzz/Cargo.lock` in the registry pin check while git ignores it and does not track it. The fuzz step copies `backend/Cargo.lock` over that file before every run, so a stale copy from an earlier run no longer fails doctor. A tracked copy still fails, and so does every other ignored lockfile, such as an ignored `backend/Cargo.lock`, because local builds resolve against it.
 - New backend products map `"deploy/**"` to the new `deploy-values` gate step in `[quality.affected]`. `baukit doctor` fails when a `quality.affected` glob matches `deploy/gitops` in a backend product without selecting `deploy-values` or the `fast` lane, and accepts `deploy-values` as a token.
 

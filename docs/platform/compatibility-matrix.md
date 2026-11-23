@@ -5,6 +5,14 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.29.0
+
+Last verified release train: `v0.29.0` (minor train on top of `v0.28.8`). The CNPG Postgres image moves to the 2026-11-23 `18.7-system-trixie` build (`sha256:c437b7c6...51ad`); PostgreSQL stays on 18.7. `sqlx` moves to 0.9.1.
+- BREAKING: `baukit doctor` fails a backend product whose `[quality.affected]` has a glob matching `deploy/gitops` that selects neither `deploy-values` nor `fast`. New products map `"deploy/**"` to the new strict-gate `deploy-values` step.
+- `sqlx` 0.9.1 is the workspace and backend-template minimum. 0.9.0 could hand out a pooled connection still inside a transaction after a cancelled `BEGIN`.
+- The `baukit-app` chart wires the backing Redis to the worker only with `worker.redis.enabled: true`.
+- `image-findings.toml` allows 14 krb5 CVEs in `plugin-barman-cloud-sidecar:v0.16.0` and `redpandadata/redpanda:v26.2.7`, which ship no KDC or kadmind.
+
 ## v0.28.8
 
 Last verified release train: `v0.28.8` (patch train on top of `v0.28.7`). No component or dependency versions change.
