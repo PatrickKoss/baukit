@@ -37,7 +37,8 @@ between modes is that one entry plus a data migration.
 | Redis | shared | `backing/redis-shared` | `{{ context.app_env }}__RATE_LIMIT__REDIS_URL` in Secret `{{ context.app_name }}-redis` |
 | Redis | dedicated | `backing/redis-dedicated` | the chart, pointing at its own Redis |
 
-With Redis on, the API keeps its keys under `{{ context.app_env }}__RATE_LIMIT__REDIS_KEY_NAMESPACE`,
+With Redis on, {% if context.worker %}the API and the worker keep their{% else %}the API keeps its{% endif %} keys
+under `{{ context.app_env }}__RATE_LIMIT__REDIS_KEY_NAMESPACE`,
 `{{ context.app_name }}-testing:` or `{{ context.app_name }}-production:`.
 
 Dedicated Postgres is a CNPG `Cluster` named `{{ context.app_name }}-postgres` in the environment's namespace,

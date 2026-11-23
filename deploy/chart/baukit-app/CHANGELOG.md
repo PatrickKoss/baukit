@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The worker gets the backing Redis too. With `backing.redis.mode` set and the worker enabled, it receives `<PREFIX>__RATE_LIMIT__REDIS_KEY_NAMESPACE`, in `dedicated` mode `<PREFIX>__RATE_LIMIT__REDIS_URL`, a `<redis>-worker-egress` NetworkPolicy and admission in `<redis>-ingress`, and in `shared` mode the `baukit.dev/redis-client` label and the `platform-redis` rule in its backing egress. `config.existingSecretRefs` already reached the worker. The new `worker.redis.enabled` (default `true`) turns this off for a worker that does not use Redis. A product that set the worker's Redis URL in `worker.env` must drop that entry, or the container lists the variable twice and server-side apply rejects it.
+
 ## [0.28.8] - 2026-11-22
 
 ## [0.28.7] - 2026-11-22
