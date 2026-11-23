@@ -5,6 +5,14 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.30.0
+
+Last verified release train: `v0.30.0` (minor train on top of `v0.29.0`). No component or dependency versions change.
+- BREAKING: generated backends migrate as a non-superuser owner. `compose.yaml` mounts `postgres/initdb/10-owner.sql`, local database URLs use `app:app`, and the Postgres tests apply migrations through `baukit_test::PostgresMigrationOwner`. Existing products adopt these files on upgrade.
+- `[postgres] owner_create_role = true` gives the owner `CREATEROLE` locally, in the tests and in dedicated CNPG Postgres; `baukit doctor` fails it on shared Postgres.
+- `components/redis-ha-acl` adds an `acl-reload` container that runs `ACL LOAD` when Secret `redis-ha-acl` changes. Updating rolls the redis StatefulSet once. The platform alert pack gains `BaukitRedisAclLoadFailing`.
+- The Postgres restore test reads the restored sentinel over the network instead of through `kubectl exec`, and its Role loses `pods/exec`.
+
 ## v0.29.0
 
 Last verified release train: `v0.29.0` (minor train on top of `v0.28.8`). The CNPG Postgres image moves to the 2026-11-23 `18.7-system-trixie` build (`sha256:c437b7c6...51ad`); PostgreSQL stays on 18.7. `sqlx` moves to 0.9.1.
