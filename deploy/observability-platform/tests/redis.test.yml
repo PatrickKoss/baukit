@@ -1,0 +1,68 @@
+rule_files:
+  - ../alerts/redis.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: ACL LOAD failing on every retry fires BaukitRedisAclLoadFailing
+    interval: 1m
+    input_series:
+      - series: 'redis_commands_failed_calls_total{namespace="platform-redis",pod="redis-1",cmd="acl|load"}'
+        values: '0+1x30'
+      - series: 'redis_commands_failed_calls_total{namespace="platform-redis",pod="redis-1",cmd="get"}'
+        values: '0+5x30'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BaukitRedisAclLoadFailing
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: BaukitRedisAclLoadFailing
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: BaukitRedisAclLoadFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: redis
+              namespace: platform-redis
+              pod: redis-1
+            exp_annotations:
+              summary: Redis platform-redis/redis-1 rejects the users.acl from its Secret
+              description: >-
+                ACL LOAD has failed on platform-redis/redis-1 for 10 minutes. Redis keeps
+                the users it loaded last, so users added or changed in Secret redis-ha-acl cannot log in,
+                and the pod will not start again until users.acl is fixed. The acl-reload container logs
+                the line Redis rejected.
+              runbook_url: RUNBOOK_BASE_URL/redis-acl-load-failing
+  - name: a fixed users.acl clears BaukitRedisAclLoadFailing
+    interval: 1m
+    input_series:
+      - series: 'redis_commands_failed_calls_total{namespace="platform-redis",pod="redis-1",cmd="acl|load"}'
+        values: '0+1x15 15x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: BaukitRedisAclLoadFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: redis
+              namespace: platform-redis
+              pod: redis-1
+            exp_annotations:
+              summary: Redis platform-redis/redis-1 rejects the users.acl from its Secret
+              description: >-
+                ACL LOAD has failed on platform-redis/redis-1 for 10 minutes. Redis keeps
+                the users it loaded last, so users added or changed in Secret redis-ha-acl cannot log in,
+                and the pod will not start again until users.acl is fixed. The acl-reload container logs
+                the line Redis rejected.
+              runbook_url: RUNBOOK_BASE_URL/redis-acl-load-failing
+      - eval_time: 22m
+        alertname: BaukitRedisAclLoadFailing
+        exp_alerts: []
+  - name: a single rejected file that is fixed within a minute stays quiet
+    interval: 1m
+    input_series:
+      - series: 'redis_commands_failed_calls_total{namespace="platform-redis",pod="redis-1",cmd="acl|load"}'
+        values: '0 1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitRedisAclLoadFailing
+        exp_alerts: []

@@ -101,3 +101,4 @@ kube_cronjob_created
 http_server_requests_seconds_count
 keycloak_user_events_total
 agroal_awaiting_count
+redis_commands_failed_calls_total

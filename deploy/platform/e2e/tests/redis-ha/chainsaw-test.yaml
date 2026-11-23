@@ -8,7 +8,9 @@ spec:
     Killing the Redis master triggers a Sentinel failover. The restarted old master rejoins as a replica of
     the promoted pod instead of coming back as an empty master, and a key written before the kill survives on
     both. The e2e overlay composes components/redis-ha-acl: a tenant ACL user runs the rate-limit script
-    under its own namespace and gets NOPERM for another tenant's keys and for FLUSHALL.
+    under its own namespace and gets NOPERM for another tenant's keys and for FLUSHALL. A user added to
+    Secret redis-ha-acl logs in on every pod without a restart, and a users.acl that Redis rejects keeps
+    the previous users working.
   timeouts:
     exec: 5m
   steps:
@@ -84,6 +86,135 @@ spec:
                   wget -qO- http://127.0.0.1:9121/metrics | grep -qx 'redis_up 1'
               done
               printf 'PASS: exporter on every pod reports redis_up 1 as monitor\n'
+    - name: acl-reload
+      try:
+        - script:
+            timeout: 10m
+            content: |
+              set -eu
+              ns=platform-redis
+              pods="redis-0 redis-1 redis-2"
+              kubectl -n "$ns" rollout status statefulset/redis --timeout=180s
+              # Flux would put the fixture back while the test edits it.
+              kubectl -n "$ns" annotate secret redis-ha-acl kustomize.toolkit.fluxcd.io/reconcile=disabled --overwrite
+              original="$(kubectl -n "$ns" get secret redis-ha-acl -o jsonpath='{.data.users\.acl}')"
+              tenant_line() {
+                printf 'user %s on >e2e-%s-password resetkeys ~%s:* resetchannels -@all +get +set %s\n' \
+                  "$1" "$1" "$1" "${2:-}"
+              }
+              set_users() {
+                data="$(printf '%s' "$1" | base64 | tr -d '\n')"
+                kubectl -n "$ns" patch secret redis-ha-acl --type merge \
+                  -p "{\"data\":{\"users.acl\":\"$data\"}}" >/dev/null
+              }
+              restarts() {
+                kubectl -n "$ns" get pods -l app.kubernetes.io/name=redis -o \
+                  jsonpath='{range .items[*]}{.metadata.name} {.metadata.uid}{range .status.containerStatuses[*]} {.name}={.restartCount}{end}{"\n"}{end}'
+              }
+              answer() {
+                kubectl -n "$ns" exec "$1" -c redis -- \
+                  redis-cli --no-auth-warning --user "$2" --pass "e2e-$2-password" GET "$2:acl-reload" 2>&1
+              }
+              logs_in() {
+                case "$(answer "$1" "$2")" in *WRONGPASS* | *ERR* | *NOPERM*) return 1 ;; esac
+              }
+              refused() { answer "$1" "$2" | grep -q WRONGPASS; }
+              on_every_pod() {
+                for pod in $pods; do "$@" "$pod" || return 1; done
+              }
+              wait_until() {
+                deadline=$(($(date +%s) + $1)); shift
+                while [ "$(date +%s)" -lt "$deadline" ]; do
+                  if "$@"; then return 0; fi
+                  sleep 3
+                done
+                return 1
+              }
+              tenant_c_logs_in() { logs_in "$1" tenant-c; }
+              tenant_c_refused() { refused "$1" tenant-c; }
+              rejected() {
+                kubectl -n "$ns" logs "$1" -c acl-reload --since=10m | grep -q 'ACL LOAD rejected users.acl'
+              }
+              failed_loads() {
+                kubectl -n "$ns" exec "$1" -c redis -- wget -qO- http://127.0.0.1:9121/metrics |
+                  sed -n 's/^redis_commands_failed_calls_total{cmd="acl|load"} //p'
+              }
+              failed_count() { failed_loads "$1" | cut -d . -f 1; }
+              failed_totals() {
+                for pod in $pods; do printf '%s=%s\n' "$pod" "$(failed_count "$pod")"; done
+              }
+              acl_load_failed() {
+                base="$(printf '%s\n' "$failed_before" | sed -n "s/^$1=//p")"
+                [ "$(failed_count "$1")" -gt "${base:-0}" ] 2>/dev/null
+              }
+              master() {
+                kubectl -n "$ns" exec redis-0 -c sentinel -- \
+                  redis-cli -p 26379 --raw SENTINEL get-master-addr-by-name mymaster | head -n 1
+              }
+
+              before="$(restarts)"
+              master_before="$(master)"
+              printf 'restart counts before:\n%s\n' "$before"
+              users="$(printf '%s' "$original" | base64 -d)"
+              on_every_pod tenant_c_refused
+              printf 'PASS: tenant-c is unknown on every pod\n'
+
+              set_users "$users
+              $(tenant_line tenant-c)"
+              wait_until 240 on_every_pod tenant_c_logs_in ||
+                { printf 'FAIL: tenant-c cannot log in on every pod within 240s\n' >&2; exit 1; }
+              printf 'PASS: tenant-c logs in on every pod after the Secret changed\n'
+
+              failed_before="$(failed_totals)"
+              set_users "$users
+              $(tenant_line tenant-c)
+              $(tenant_line tenant-d +nosuchcommand)"
+              wait_until 240 on_every_pod rejected ||
+                { printf 'FAIL: acl-reload did not report the rejected file on every pod\n' >&2; exit 1; }
+              for pod in $pods; do
+                logs_in "$pod" tenant-c || { printf 'FAIL: tenant-c lost access on %s\n' "$pod" >&2; exit 1; }
+                logs_in "$pod" tenant-a || { printf 'FAIL: tenant-a lost access on %s\n' "$pod" >&2; exit 1; }
+                refused "$pod" tenant-d || { printf 'FAIL: tenant-d logs in on %s\n' "$pod" >&2; exit 1; }
+                if kubectl -n "$ns" logs "$pod" -c acl-reload | grep -q 'e2e-tenant-d-password'; then
+                  printf 'FAIL: %s acl-reload logged a password\n' "$pod" >&2; exit 1
+                fi
+              done
+              printf 'PASS: the rejected file left tenant-a and tenant-c working and tenant-d out\n'
+              kubectl -n "$ns" logs redis-0 -c acl-reload | grep 'ACL LOAD rejected' | tail -n 1
+              wait_until 120 on_every_pod acl_load_failed ||
+                { printf 'FAIL: redis_commands_failed_calls_total{cmd="acl|load"} did not rise\n' >&2; exit 1; }
+              for pod in $pods; do
+                printf '%s redis_commands_failed_calls_total{cmd="acl|load"} %s -> %s\n' "$pod" \
+                  "$(printf '%s\n' "$failed_before" | sed -n "s/^$pod=//p")" "$(failed_loads "$pod")"
+              done
+
+              set_users "$users"
+              wait_until 240 on_every_pod tenant_c_refused ||
+                { printf 'FAIL: tenant-c still logs in after it was removed\n' >&2; exit 1; }
+              printf 'PASS: removing tenant-c from the Secret logs it out on every pod\n'
+
+              after="$(restarts)"
+              printf 'restart counts after:\n%s\n' "$after"
+              [ "$after" = "$before" ] || { printf 'FAIL: a container restarted or a pod was replaced\n' >&2; exit 1; }
+              [ "$(master)" = "$master_before" ] || { printf 'FAIL: the master changed\n' >&2; exit 1; }
+              printf 'PASS: no restart, no new pod and no failover\n'
+      catch:
+        - script:
+            content: |
+              for pod in redis-0 redis-1 redis-2; do
+                printf '=== %s/acl-reload\n' "$pod"
+                kubectl -n platform-redis logs "$pod" -c acl-reload --timestamps || true
+              done
+              kubectl -n platform-redis get pods -o wide || true
+      finally:
+        - script:
+            timeout: 3m
+            content: |
+              set -eu
+              kubectl -n platform-redis annotate secret redis-ha-acl kustomize.toolkit.fluxcd.io/reconcile-
+              kubectl -n flux-system annotate kustomization e2e-redis \
+                reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite
+              kubectl -n flux-system wait kustomization e2e-redis --for=condition=Ready --timeout=150s
     - name: failover-and-rejoin
       try:
         - script:
