@@ -5,6 +5,8 @@ use serde::Deserialize;
 
 use crate::doctor_layout;
 
+const FUZZ_LOCKFILE: &str = "backend/fuzz/Cargo.lock";
+
 struct Pin {
     name: String,
     version: String,
@@ -46,7 +48,14 @@ pub(super) fn validate_registry_pins(
     let initial = failures.len();
     let mut checked = 0;
     for extension in ["toml", "lock", "json", "yaml"] {
+        let listed = doctor_layout::files(root, extension)?;
         for path in doctor_layout::product_files(root, extension)? {
+            let fuzz_copy = path
+                .strip_prefix(root)
+                .is_ok_and(|relative| relative == Path::new(FUZZ_LOCKFILE));
+            if fuzz_copy && !listed.contains(&path) {
+                continue;
+            }
             let filename = path.file_name().and_then(|name| name.to_str());
             if !matches!(
                 filename,
@@ -254,7 +263,9 @@ fn pnpm_pins(value: &serde_yaml_ng::Value, pins: &mut Vec<Pin>) {
 
 #[cfg(test)]
 mod tests {
-    use super::read_pins;
+    use std::{fs, process::Command};
+
+    use super::{read_pins, validate_registry_pins};
 
     const PNPM_12_LOCK: &str = include_str!("../tests/fixtures/pnpm-12-lock.yaml");
 
@@ -441,6 +452,48 @@ baukit-core = "0.1.0"
         assert_eq!(pins[1].name, "@baukit/events");
         assert!(!pins[1].matches("0.10.2"));
         assert!(pins[2].matches("0.10.2"));
+        Ok(())
+    }
+
+    #[test]
+    fn registry_pins_skip_an_ignored_untracked_fuzz_lockfile() -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let fuzz = root.path().join("backend/fuzz");
+        fs::create_dir_all(&fuzz)?;
+        fs::write(fuzz.join(".gitignore"), "Cargo.lock\n")?;
+        let stale = "[[package]]\nname = \"baukit-core\"\nversion = \"0.9.0\"\n";
+        fs::write(fuzz.join("Cargo.lock"), stale)?;
+        fs::write(
+            root.path().join("backend/Cargo.toml"),
+            "[dependencies]\nbaukit-core = \"0.10.2\"\n",
+        )?;
+        assert!(
+            Command::new("git")
+                .args(["init", "--quiet"])
+                .current_dir(root.path())
+                .status()?
+                .success()
+        );
+        let mut successes = Vec::new();
+        let mut failures = Vec::new();
+        validate_registry_pins(root.path(), "0.10.2", &mut successes, &mut failures)?;
+        assert!(failures.is_empty(), "{failures:?}");
+        assert_eq!(successes, ["1 Baukit registry pins match version 0.10.2"]);
+
+        assert!(
+            Command::new("git")
+                .args(["add", "--force", "backend/fuzz/Cargo.lock"])
+                .current_dir(root.path())
+                .status()?
+                .success()
+        );
+        validate_registry_pins(root.path(), "0.10.2", &mut successes, &mut failures)?;
+        assert_eq!(
+            failures,
+            [
+                "`backend/fuzz/Cargo.lock`: baukit-core pin `0.9.0` differs from Baukit registry version 0.10.2"
+            ]
+        );
         Ok(())
     }
 }

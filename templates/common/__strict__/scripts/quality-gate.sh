@@ -111,6 +111,7 @@ workflow-lint fast - always -
 secret-scan fast - always -
 osv fast - always -
 {% if context.backend %}cargo-deny fast - always -
+deploy-values fast - selected -
 {% endif %}python-lint fast - always -
 shell-lint fast - always -
 metric-names fast - always -
@@ -194,6 +195,14 @@ step_osv() {
 
 step_cargo_deny() {
   sh scripts/repo-lint.sh deny
+}
+
+step_deploy_values() {
+  use_baukit_root
+  deploy_tools=${BAUKIT_TOOLS_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/baukit/tools}
+  BAUKIT_TOOLS_DIR=$deploy_tools "$baukit_root/scripts/install-deploy-tools.sh" --only helm,kustomize
+  PATH="$deploy_tools/bin:$PATH" python3 "$baukit_root/scripts/check-deploy-values.py" \
+    . "$baukit_root/deploy/chart/baukit-app"
 }
 
 step_python_lint() {

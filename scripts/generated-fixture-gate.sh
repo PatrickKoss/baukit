@@ -61,6 +61,7 @@ for flavor in "${flavors[@]}"; do
         helm lint --strict deploy/chart/baukit-app -f "$fixture/deploy/values.yaml"
         helm template "$name" deploy/chart/baukit-app -f "$fixture/deploy/values.yaml" >/dev/null
         python3 scripts/check-gitops-fixture.py "$fixture"
+        python3 scripts/check-deploy-values.py "$fixture" deploy/chart/baukit-app
         python3 "$fixture/scripts/gitops-pins.test.py"
         python3 "$fixture/scripts/release-dry-run.test.py"
     fi

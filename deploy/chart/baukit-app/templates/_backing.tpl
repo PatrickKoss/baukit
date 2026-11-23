@@ -20,6 +20,12 @@
 {{- if or .Values.redis.enabled (eq (include "baukit-app.redisMode" .) "dedicated") }}true{{ end -}}
 {{- end }}
 
+{{/* Whether a process uses the backing Redis: (dict "root" $ "process" <name>). */}}
+{{- define "baukit-app.redisClient" -}}
+{{- $worker := .root.Values.worker -}}
+{{- if or (eq .process "api") (and (eq .process "worker") $worker.enabled $worker.redis.enabled) }}true{{ end -}}
+{{- end }}
+
 {{- define "baukit-app.postgresClusterName" -}}
 {{- default (printf "%s-postgres" .Release.Name) .Values.backing.postgres.dedicated.clusterName | trunc 50 | trimSuffix "-" -}}
 {{- end }}
@@ -48,7 +54,7 @@
       name: {{ printf "%s-app" (include "baukit-app.postgresClusterName" $root) }}
       key: uri
 {{- end }}
-{{- if and (eq .process "api") (eq (include "baukit-app.redisMode" $root) "dedicated") }}
+{{- if and (include "baukit-app.redisClient" .) (eq (include "baukit-app.redisMode" $root) "dedicated") }}
 - name: {{ printf "%s__RATE_LIMIT__REDIS_URL" $prefix }}
   value: {{ include "baukit-app.redisUrl" $root | quote }}
 {{- end }}
@@ -60,7 +66,7 @@
 {{- if eq (include "baukit-app.postgresMode" .root) "shared" -}}
 {{- $_ := set $labels "baukit.dev/postgres-client" "true" -}}
 {{- end -}}
-{{- if and (eq .process "api") (eq (include "baukit-app.redisMode" .root) "shared") -}}
+{{- if and (include "baukit-app.redisClient" .) (eq (include "baukit-app.redisMode" .root) "shared") -}}
 {{- $_ := set $labels "baukit.dev/redis-client" "true" -}}
 {{- end -}}
 {{- with $labels -}}
@@ -92,7 +98,7 @@
   ports:
     - {protocol: TCP, port: 5432}
 {{- end }}
-{{- if and (eq .process "api") (eq (include "baukit-app.redisMode" $root) "shared") }}
+{{- if and (include "baukit-app.redisClient" .) (eq (include "baukit-app.redisMode" $root) "shared") }}
 - to:
     - namespaceSelector:
         matchLabels:

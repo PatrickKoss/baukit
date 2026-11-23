@@ -84,12 +84,12 @@ baukit.dev/process: {{ .process }}
   value: {{ . | quote }}
 {{- end }}
 {{- $overrides := deepCopy $root.Values.config.overrides -}}
-{{- if eq $process "api" }}
-{{- if include "baukit-app.redisMode" $root }}
+{{- if and (include "baukit-app.redisClient" .) (include "baukit-app.redisMode" $root) }}
 {{- if not (hasKey $overrides "RATE_LIMIT__REDIS_KEY_NAMESPACE") }}
 {{- $_ := set $overrides "RATE_LIMIT__REDIS_KEY_NAMESPACE" (include "baukit-app.redisKeyNamespace" $root) -}}
 {{- end }}
 {{- end }}
+{{- if eq $process "api" }}
 {{- if $root.Values.mcp.enabled }}
 {{- if empty $root.Values.mcp.allowedHosts }}
 {{- fail "mcp.allowedHosts must not be empty when MCP is enabled" }}

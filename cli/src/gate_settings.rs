@@ -18,6 +18,8 @@ const MAX_ANDROID_EMULATORS: u8 = 4;
 pub const fn default_android_emulators() -> u8 {
     DEFAULT_ANDROID_EMULATORS
 }
+const DEPLOY_VALUES_STEP: &str = "deploy-values";
+const DEPLOY_VALUES_PROBE: &str = "deploy/gitops/base/helmrelease.yaml";
 const FNV_OFFSET: u32 = 0x811c_9dc5;
 const FNV_PRIME: u32 = 0x0100_0193;
 
@@ -151,6 +153,7 @@ pub fn default_affected(capabilities: &Capabilities) -> BTreeMap<String, Vec<Str
         add("backend/crates/**", &["backend"]);
         add("backend/Cargo.toml", &["backend", "images"]);
         add("backend/Dockerfile", &["images"]);
+        add("deploy/**", &[DEPLOY_VALUES_STEP]);
     }
     if capabilities.components.web() {
         add("web/src/**", &["web"]);
@@ -330,6 +333,7 @@ fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&
             "rust-tests",
             "rust-doctests",
             "cargo-deny",
+            DEPLOY_VALUES_STEP,
             "fuzz",
             "images",
         ]);
@@ -382,6 +386,44 @@ fn known_tokens(capabilities: &Capabilities, quality: &QualityManifest) -> Vec<&
         tokens.extend(["stack", "full-stack-e2e"]);
     }
     tokens
+}
+
+fn glob_matches(glob: &str, path: &str) -> bool {
+    globset::GlobBuilder::new(glob)
+        .literal_separator(true)
+        .build()
+        .is_ok_and(|glob| glob.compile_matcher().is_match(path))
+}
+
+fn validate_deploy_glob(
+    quality: &QualityManifest,
+    capabilities: &Capabilities,
+    failures: &mut Vec<String>,
+) {
+    if !capabilities.components.backend() {
+        return;
+    }
+    let matching: Vec<(&String, &Vec<String>)> = quality
+        .affected
+        .iter()
+        .filter(|(glob, _)| glob_matches(glob, DEPLOY_VALUES_PROBE))
+        .collect();
+    let selects_step = matching.iter().any(|(_, tokens)| {
+        tokens
+            .iter()
+            .any(|token| token == DEPLOY_VALUES_STEP || token == "fast")
+    });
+    if matching.is_empty() || selects_step {
+        return;
+    }
+    let globs: Vec<String> = matching
+        .iter()
+        .map(|(glob, _)| format!("`{glob}`"))
+        .collect();
+    failures.push(format!(
+        "quality.affected {} matches {DEPLOY_VALUES_PROBE} without selecting `{DEPLOY_VALUES_STEP}`; add it so deploy changes render the chart",
+        globs.join(", ")
+    ));
 }
 
 fn invalid_glob(glob: &str) -> bool {
@@ -512,6 +554,7 @@ pub fn validate(
             failures.push(format!("quality.light names unknown lane or step `{name}`"));
         }
     }
+    validate_deploy_glob(quality, capabilities, failures);
     validate_resources("resources", &quality.resources, &lanes_and_steps, failures);
     validate_resources(
         "shared_resources",
@@ -635,7 +678,9 @@ mod tests {
     fn default_table_follows_capabilities() {
         let backend_only = default_affected(&capabilities(true, false, false));
         assert_eq!(backend_only["backend/crates/**"], ["backend"]);
+        assert_eq!(backend_only["deploy/**"], ["deploy-values"]);
         assert!(!backend_only.contains_key("web/src/**"));
+        assert!(!default_affected(&capabilities(false, true, false)).contains_key("deploy/**"));
         let all = default_affected(&capabilities(true, true, true));
         assert_eq!(all["mobile/**"], ["mobile"]);
         assert_eq!(
@@ -684,6 +729,43 @@ mod tests {
         assert!(text.contains("unknown lane or step `playwright:@x`"));
         assert!(text.contains("unknown lane or step `nope`"));
         assert!(text.contains("quality.shared glob `../x`"));
+    }
+
+    #[test]
+    fn deploy_globs_must_select_deploy_values() {
+        let deploy_failures = |text: &str, caps: &Capabilities| {
+            let quality: QualityManifest = toml::from_str(text).expect("quality parses");
+            let mut failures = Vec::new();
+            validate(&quality, caps, None, &mut failures);
+            failures
+                .into_iter()
+                .filter(|failure| failure.contains("deploy-values"))
+                .collect::<Vec<_>>()
+        };
+        let backend = capabilities(true, false, false);
+        assert_eq!(
+            deploy_failures(
+                "[affected]\n\"deploy/**\" = []\n\"docs/**\" = []\n",
+                &backend
+            ),
+            [
+                "quality.affected `deploy/**` matches deploy/gitops/base/helmrelease.yaml without selecting `deploy-values`; add it so deploy changes render the chart"
+            ]
+        );
+        for text in [
+            "[affected]\n\"deploy/**\" = [\"deploy-values\"]\n",
+            "[affected]\n\"deploy/**\" = [\"images\"]\n\"deploy/gitops/**\" = [\"fast\"]\n",
+            "[affected]\n\"docs/**\" = []\n",
+        ] {
+            assert!(deploy_failures(text, &backend).is_empty(), "{text}");
+        }
+        assert!(
+            deploy_failures(
+                "[affected]\n\"deploy/**\" = []\n",
+                &capabilities(false, true, false)
+            )
+            .is_empty()
+        );
     }
 
     #[test]
@@ -880,6 +962,9 @@ mod tests {
         let steps = template_steps(template, &clerk).expect("renders");
         assert!(steps.contains("expo-doctor") && steps.contains("mobile-bundle"));
         assert!(!steps.contains("rust-clippy") && !steps.contains("web-build"));
+        assert!(!steps.contains("deploy-values"));
+        let backend = template_steps(template, &capabilities(true, false, false)).expect("renders");
+        assert!(backend.contains("deploy-values"));
         clerk.auth = Some(AuthProvider::Oidc);
         let steps = template_steps(template, &clerk).expect("renders");
         assert!(!steps.contains("mobile-bundle"));

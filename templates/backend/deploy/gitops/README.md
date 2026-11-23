@@ -39,7 +39,9 @@ between modes is that one entry plus a data migration.
 
 With Redis on, the API keeps its keys under `{{ context.app_env }}__RATE_LIMIT__REDIS_KEY_NAMESPACE`,
 `{{ context.app_name }}-testing:` or `{{ context.app_name }}-production:`.
-
+{% if context.worker %}The worker gets Redis only when the HelmRelease sets `worker.redis.enabled: true`.
+It then gets the same URL, key namespace and network path as the API.
+{% endif %}
 Dedicated Postgres is a CNPG `Cluster` named `{{ context.app_name }}-postgres` in the environment's namespace,
 with WAL archiving and a daily backup through the Barman Cloud plugin. Before you list the component,
 replace the placeholders in `backing/postgres-dedicated/postgres.yaml`: the bucket and endpoint of the
