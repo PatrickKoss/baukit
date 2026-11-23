@@ -110,11 +110,22 @@ that a restored cluster turns `Ready`:
    timeout fails the job.
 3. It deletes any prior throwaway cluster, restores the latest backup as
    `postgres-cluster-restore-test` (one instance, no PDB) and waits for `Ready`.
-4. It reads the sentinel back as the product owner through `kubectl exec` into
-   the restored primary. The password goes over stdin, not the command line. A
-   missing row or a different token (an old backup) fails the job.
+4. A second container, `read-sentinel` (the pinned CNPG Postgres image), reads
+   the sentinel back over the network. Once the cluster is `Ready`,
+   `restore-test` writes the host `postgres-cluster-restore-test-rw` to the
+   shared `emptyDir`. `read-sentinel` retries `select 1` for up to
+   `WAIT_SECONDS` (300) and then queries the row. The restored cluster carries
+   the source's roles, so it logs in as the product owner with the password from
+   `product-db-credentials`, which reaches psql through the environment, not the
+   command line. It writes the token back to the `emptyDir`, or the reason it
+   failed. `restore-test` waits up to `READ_TIMEOUT_SECONDS` (420) for either. A
+   failed read, a timeout, a missing row or a different token (an old backup)
+   fails the job. Nothing execs into the restored pod, so the Falco rule
+   `Baukit exec into protected platform namespace` stays quiet.
 5. Only then it pushes `baukit_restore_test_last_success_timestamp_seconds` and
-   deletes the restored cluster.
+   deletes the restored cluster. On any failure its exit trap deletes the
+   restored cluster too and marks the `emptyDir`, so `read-sentinel` stops
+   waiting.
 6. Each Backup it creates carries `baukit.dev/restore-test: "true"` and a
    non-controller ownerReference to the Job, whose name and uid come from the
    pod labels `batch.kubernetes.io/job-name` and
@@ -136,13 +147,15 @@ throwaway cluster, deletes it and restores it. `restore-test-cronjob` runs this
 CronJob once, in parallel with it.
 
 If a product patches the initial database name away from `product`, patch the
-`PGDATABASE` env of both containers as well.
+`PGDATABASE` env of `write-sentinel` and `read-sentinel` as well.
 
 The CronJob's Role can create, get, list and watch CNPG clusters, create and get
-backups, but patch and delete only `postgres-cluster-restore-test` and exec only
-into its first pod, `postgres-cluster-restore-test-1`. It cannot change or delete the
-production `postgres-cluster`. Renaming the throwaway cluster means patching
-the Role's `resourceNames` too.
+backups, but patch and delete only `postgres-cluster-restore-test`. It cannot
+read or exec into pods, and it cannot change or delete the production
+`postgres-cluster`. Renaming the throwaway cluster means patching the Role's
+`resourceNames` too. NetworkPolicy `allow-postgres-instances` already admits
+`app.kubernetes.io/name: postgres-restore-test` pods to every instance on 5432,
+the restored one included.
 
 The CronJob image matches the pinned k3s/Kubernetes version. If cluster and
 ObjectStore names are patched, patch the recovery manifest embedded in the

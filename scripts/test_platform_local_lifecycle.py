@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -11,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from process_runner import run_process
+from process_runner import run_process, start_process
 
 PLATFORM = Path(__file__).resolve().parent.parent / "deploy/platform"
 HELPER = PLATFORM / "local-git-http.sh"
@@ -636,20 +637,23 @@ class SystemNamespaceLabelTest(unittest.TestCase):
 
 
 class RestoreTestScriptTest(unittest.TestCase):
-    PRIMARY = "postgres-cluster-restore-test-1"
+    RESTORE_HOST = "postgres-cluster-restore-test-rw"
 
     def setUp(self) -> None:
-        manifest = yaml.safe_load_all((PLATFORM / "postgres-cluster/restore-test.yaml").read_text())
-        cronjob = next(doc for doc in manifest if doc["kind"] == "CronJob")
+        self.manifest = list(
+            yaml.safe_load_all((PLATFORM / "postgres-cluster/restore-test.yaml").read_text())
+        )
+        cronjob = next(doc for doc in self.manifest if doc["kind"] == "CronJob")
         pod = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]
         self.writer = pod["initContainers"][0]
-        self.restorer = pod["containers"][0]
+        self.restorer, self.reader = pod["containers"]
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.work = Path(directory.name)
         self.applied = self.work / "applied.yaml"
         self.pushed = self.work / "pushed.txt"
-        self.exec_log = self.work / "exec.txt"
+        self.kubectl_log = self.work / "kubectl.txt"
+        self.read_log = self.work / "read.txt"
         self.sql = self.work / "sentinel.sql"
         self.sentinel_file = self.work / "sentinel"
 
@@ -662,6 +666,7 @@ class RestoreTestScriptTest(unittest.TestCase):
             "PATH": f"{self.work}{os.pathsep}{os.environ['PATH']}",
             "POD_NAMESPACE": "postgres",
             "SENTINEL_FILE": str(self.sentinel_file),
+            "WORK_DIR": str(self.work),
             **values,
         }
 
@@ -727,39 +732,88 @@ esac
         self.assertIn("database product not reachable as product_owner after 0s", result.stderr)
         self.assertFalse(self.sql.exists())
 
+    def stub_restored_psql(self, restored_token: str | None) -> None:
+        query = (
+            f'printf "%s\\n" "$PGHOST $PGUSER $PGDATABASE $PGSSLMODE $*" >> "{self.read_log}"\n'
+            f"printf %s {restored_token!r}"
+            if restored_token is not None
+            else "echo 'relation \"baukit_restore_sentinel\" does not exist' >&2; exit 1"
+        )
+        write_stub(
+            self.work,
+            "psql",
+            f"""case "$*" in
+  *"select 1"*) ;;
+  *) {query} ;;
+esac
+""",
+        )
+
+    def reader_env(self, **values: str) -> dict[str, str]:
+        return self.container_env(
+            self.reader,
+            PGDATABASE="product",
+            PGSSLMODE="require",
+            PGUSER="product_owner",
+            PGPASSWORD="secret",
+            **{"WAIT_SECONDS": "300", "POLL_SECONDS": "0", **values},
+        )
+
     def run_restore(
-        self, storage_class: str, restored_token: str
+        self, storage_class: str, restored_token: str | None, *, reader: bool = True, **values: str
     ) -> subprocess.CompletedProcess[str]:
         write_stub(
             self.work,
             "kubectl",
-            f"""case "$1 $2" in
+            f"""printf "%s\\n" "$*" >> "{self.kubectl_log}"
+case "$1 $2" in
   "apply -f") cat >> "{self.applied}"; echo --- >> "{self.applied}" ;;
   "-n postgres")
     case "$3 $4" in
       "get backup") printf completed ;;
-      "get cluster") printf {self.PRIMARY} ;;
-      "exec -i")
-        printf '%s ' "$@" > "{self.exec_log}"
-        cat >> "{self.exec_log}"
-        printf '%s' {restored_token!r} ;;
     esac ;;
 esac
 """,
         )
         write_stub(self.work, "wget", f'cat > "{self.pushed}"\n')
+        write_stub(self.work, "sleep", f"exec {shutil.which('sleep')} 0.01\n")
+        self.stub_restored_psql(restored_token)
         env = self.container_env(
             self.restorer,
             RESTORE_STORAGE_CLASS=storage_class,
             JOB_NAME="postgres-restore-test-29000000",
             JOB_UID="0b5c9a8e-1111-4222-8333-444455556666",
-            BACKUP_TIMEOUT_SECONDS="5",
-            POLL_SECONDS="0",
-            PGDATABASE="product",
-            PGUSER="product_owner",
-            PGPASSWORD="secret",
+            **{
+                "BACKUP_TIMEOUT_SECONDS": "5",
+                "READ_TIMEOUT_SECONDS": "30",
+                "POLL_SECONDS": "0",
+                **values,
+            },
         )
-        return self.run_script(self.restorer, env)
+        if not reader:
+            return self.run_script(self.restorer, env)
+        with start_process(
+            ["sh", "-ec", textwrap.dedent(self.reader["args"][0])],
+            env=self.reader_env(),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ) as reading:
+            result = self.run_script(self.restorer, env)
+            _, self.reader_stderr = reading.communicate(timeout=30)
+        self.reader_returncode = reading.returncode
+        return result
+
+    def kubectl_calls(self) -> list[str]:
+        return self.kubectl_log.read_text().splitlines()
+
+    def assert_restore_cluster_deleted(self) -> None:
+        self.assertIn(
+            "-n postgres delete cluster postgres-cluster-restore-test "
+            "--ignore-not-found=true --wait=false",
+            self.kubectl_calls(),
+        )
 
     def applied_docs(self) -> list[dict[str, Any]]:
         return [doc for doc in yaml.safe_load_all(self.applied.read_text()) if doc]
@@ -802,10 +856,67 @@ esac
                 "pluginConfiguration": {"name": "barman-cloud.cloudnative-pg.io"},
             },
         )
-        exec_call = self.exec_log.read_text()
-        self.assertIn(f"exec -i {self.PRIMARY} -c postgres", exec_call)
-        self.assertTrue(exec_call.endswith("secret\n"), "the password goes over stdin")
+        self.assertEqual(self.reader_returncode, 0, self.reader_stderr)
         self.assertIn("baukit_restore_test_last_success_timestamp_seconds", self.pushed.read_text())
+        self.assert_restore_cluster_deleted()
+
+    def test_sentinel_is_read_over_the_network_without_exec(self) -> None:
+        token = self.write_sentinel()
+        self.assertEqual(self.run_restore("", token).returncode, 0)
+        self.assertFalse(any(" exec " in f" {call} " for call in self.kubectl_calls()))
+        (read,) = self.read_log.read_text().splitlines()
+        self.assertTrue(
+            read.startswith(f"{self.RESTORE_HOST} product_owner product require "), read
+        )
+        self.assertIn("SELECT token FROM baukit_restore_sentinel WHERE id = 1", read)
+        self.assertNotIn("secret", read)
+        env = {item["name"]: item for item in self.reader["env"]}
+        for name in ("PGUSER", "PGPASSWORD"):
+            self.assertEqual(
+                env[name]["valueFrom"]["secretKeyRef"]["name"], "product-db-credentials"
+            )
+        restorer_env = {item["name"] for item in self.restorer["env"]}
+        self.assertFalse(restorer_env & {"PGUSER", "PGPASSWORD"})
+
+    def test_role_cannot_exec_or_read_pods(self) -> None:
+        role = next(doc for doc in self.manifest if doc["kind"] == "Role")
+        resources = {resource for rule in role["rules"] for resource in rule["resources"]}
+        self.assertEqual(resources, {"clusters", "backups"})
+
+    def test_failed_read_fails_and_deletes_the_restore_cluster(self) -> None:
+        self.write_sentinel()
+        result = self.run_restore("", None)
+        self.assertNotEqual(result.returncode, 0)
+        reason = f"reading baukit_restore_sentinel from {self.RESTORE_HOST} failed"
+        self.assertIn(f"read-sentinel failed: {reason}", result.stderr)
+        self.assertNotEqual(self.reader_returncode, 0)
+        self.assertFalse(self.pushed.exists())
+        self.assert_restore_cluster_deleted()
+
+    def test_silent_reader_times_out_and_deletes_the_restore_cluster(self) -> None:
+        token = self.write_sentinel()
+        result = self.run_restore("", token, reader=False, READ_TIMEOUT_SECONDS="0")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("read-sentinel did not report within 0s", result.stderr)
+        self.assertFalse(self.pushed.exists())
+        self.assert_restore_cluster_deleted()
+
+    def test_reader_gives_up_when_the_restored_database_stays_unreachable(self) -> None:
+        write_stub(self.work, "psql", "exit 2\n")
+        write_stub(self.work, "sleep", "")
+        (self.work / "restored-host").write_text(f"{self.RESTORE_HOST}\n")
+        result = self.run_script(self.reader, self.reader_env(WAIT_SECONDS="0"))
+        self.assertNotEqual(result.returncode, 0)
+        message = f"database product on {self.RESTORE_HOST} not reachable as product_owner after 0s"
+        self.assertIn(message, result.stderr)
+        self.assertEqual((self.work / "read-failed").read_text().strip(), message)
+
+    def test_reader_exits_when_the_restore_ends_before_the_cluster_is_ready(self) -> None:
+        write_stub(self.work, "psql", "exit 2\n")
+        (self.work / "restore-done").touch()
+        result = self.run_script(self.reader, self.reader_env())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.work / "read-failed").exists())
 
     def test_backup_is_owned_by_the_job_from_the_downward_api(self) -> None:
         token = self.write_sentinel()
@@ -865,6 +976,7 @@ esac
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("no sentinel was written", result.stderr)
         self.assertFalse(self.applied.exists())
+        self.assertEqual(self.reader_returncode, 0, self.reader_stderr)
 
     def test_restore_cluster_uses_the_configured_storage_class(self) -> None:
         token = self.write_sentinel()
