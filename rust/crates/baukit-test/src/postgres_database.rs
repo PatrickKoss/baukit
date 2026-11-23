@@ -7,8 +7,10 @@ use sqlx::{AssertSqlSafe, Connection as _, PgConnection, Row as _};
 
 use crate::postgres::PostgresTestError;
 
+mod owner;
 mod template;
 
+pub use owner::PostgresMigrationOwner;
 pub use template::PostgresDatabaseName;
 
 const MAX_IDENTIFIER_BYTES: usize = 63;
@@ -45,16 +47,7 @@ impl PostgresAppRole {
     ) -> Result<Self, PostgresTestError> {
         let name = name.into();
         let password = password.into();
-        if !is_plain_identifier(&name) {
-            return Err(PostgresTestError::InvalidAppRole(
-                "name must match [a-z_][a-z0-9_]* and fit 63 bytes",
-            ));
-        }
-        if !is_valid_password(&password) {
-            return Err(PostgresTestError::InvalidAppRole(
-                "password must be non-empty URL-unreserved characters",
-            ));
-        }
+        validate_credentials(&name, &password)?;
         Ok(Self { name, password })
     }
 
@@ -73,6 +66,20 @@ impl fmt::Debug for PostgresAppRole {
             .field("password", &"<redacted>")
             .finish()
     }
+}
+
+fn validate_credentials(name: &str, password: &str) -> Result<(), PostgresTestError> {
+    if !is_plain_identifier(name) {
+        return Err(PostgresTestError::InvalidAppRole(
+            "name must match [a-z_][a-z0-9_]* and fit 63 bytes",
+        ));
+    }
+    if !is_valid_password(password) {
+        return Err(PostgresTestError::InvalidAppRole(
+            "password must be non-empty URL-unreserved characters",
+        ));
+    }
+    Ok(())
 }
 
 fn is_plain_identifier(name: &str) -> bool {
@@ -103,6 +110,7 @@ fn is_valid_password(password: &str) -> bool {
 pub struct PostgresTestDatabases {
     admin_url: String,
     app_role: Option<PostgresAppRole>,
+    migration_owner: Option<PostgresMigrationOwner>,
     migrations: Option<PathBuf>,
 }
 
@@ -113,6 +121,7 @@ impl PostgresTestDatabases {
         Self {
             admin_url: admin_url.into(),
             app_role: None,
+            migration_owner: None,
             migrations: None,
         }
     }
@@ -125,10 +134,21 @@ impl PostgresTestDatabases {
         self
     }
 
-    /// Applies SQLx migrations from `path` to every new database as the admin role.
+    /// Applies SQLx migrations from `path` to every new database, as the migration owner when
+    /// one is set and as the admin role otherwise.
     #[must_use]
     pub fn with_migrations(mut self, path: impl Into<PathBuf>) -> Self {
         self.migrations = Some(path.into());
+        self
+    }
+
+    /// Creates `owner` if it is missing, makes it the owner of every new database and applies
+    /// migrations as it instead of the admin role.
+    ///
+    /// The admin role still creates and drops databases and grants the app role.
+    #[must_use]
+    pub fn with_migration_owner(mut self, owner: PostgresMigrationOwner) -> Self {
+        self.migration_owner = Some(owner);
         self
     }
 
@@ -138,12 +158,16 @@ impl PostgresTestDatabases {
     ///
     /// Returns [`PostgresTestError::InvalidConnectionUrl`] when the admin URL cannot
     /// name the new database, `Connect` when the server is unreachable, `Setup` when
-    /// creating the role, database or grants fails, and `Migrate` for a bad migration.
+    /// creating the roles, database or grants fails, and `Migrate` for a bad migration.
     pub async fn create(&self) -> Result<PostgresTestDatabase, PostgresTestError> {
         let database = self
             .create_with(|name| format!("CREATE DATABASE \"{name}\""))
             .await?;
-        self.prepare(&database.connection_url).await?;
+        self.prepare(
+            &database.connection_url,
+            database.owner_connection_url.as_deref(),
+        )
+        .await?;
         Ok(database)
     }
 
@@ -154,14 +178,19 @@ impl PostgresTestDatabases {
         let name = format!("{DATABASE_NAME_PREFIX}{}", uuid::Uuid::new_v4().simple());
         let connection_url = with_database(&self.admin_url, &name)?;
         let app_connection_url = self.app_url(&name)?;
+        let owner_connection_url = self.owner_url(&name)?;
         let mut admin = connect_when_ready(&self.admin_url).await?;
-        self.ensure_app_role(&mut admin).await?;
+        self.ensure_roles(&mut admin).await?;
         execute(&mut admin, statement(&name)).await?;
+        if let Some(owner) = &self.migration_owner {
+            owner.own(&mut admin, &name).await?;
+        }
         close(admin).await;
         Ok(PostgresTestDatabase {
             name,
             connection_url,
             app_connection_url,
+            owner_connection_url,
             admin_url: self.admin_url.clone(),
             dropped: false,
         })
@@ -169,33 +198,57 @@ impl PostgresTestDatabases {
 
     pub(crate) async fn prepare_server_database(
         &self,
-    ) -> Result<Option<String>, PostgresTestError> {
-        let mut admin = connect_when_ready(&self.admin_url).await?;
-        self.ensure_app_role(&mut admin).await?;
-        close(admin).await;
-        self.prepare(&self.admin_url).await?;
+    ) -> Result<ServerDatabaseUrls, PostgresTestError> {
         let database = Url::parse(&self.admin_url)
             .map_err(|_| PostgresTestError::InvalidConnectionUrl)?
             .path()
             .trim_start_matches('/')
             .to_owned();
-        self.app_url(&database)
+        let owner_url = self.owner_url(&database)?;
+        let mut admin = connect_when_ready(&self.admin_url).await?;
+        self.ensure_roles(&mut admin).await?;
+        if let Some(owner) = &self.migration_owner {
+            owner.own(&mut admin, &database).await?;
+        }
+        close(admin).await;
+        self.prepare(&self.admin_url, owner_url.as_deref()).await?;
+        Ok(ServerDatabaseUrls {
+            app: self.app_url(&database)?,
+            owner: owner_url,
+        })
     }
 
-    async fn prepare(&self, database_url: &str) -> Result<(), PostgresTestError> {
-        let mut connection = PgConnection::connect(database_url)
+    async fn prepare(
+        &self,
+        database_url: &str,
+        owner_url: Option<&str>,
+    ) -> Result<(), PostgresTestError> {
+        if let Some(role) = &self.app_role {
+            let mut admin = PgConnection::connect(database_url)
+                .await
+                .map_err(PostgresTestError::Connect)?;
+            grant_app_role(&mut admin, role, self.migration_owner.as_ref()).await?;
+            close(admin).await;
+        }
+        let Some(path) = &self.migrations else {
+            return Ok(());
+        };
+        let mut migrator = PgConnection::connect(owner_url.unwrap_or(database_url))
             .await
             .map_err(PostgresTestError::Connect)?;
-        if let Some(role) = &self.app_role {
-            grant_app_role(&mut connection, role).await?;
+        sqlx::migrate::Migrator::new(path.as_path())
+            .await?
+            .run(&mut migrator)
+            .await?;
+        close(migrator).await;
+        Ok(())
+    }
+
+    async fn ensure_roles(&self, admin: &mut PgConnection) -> Result<(), PostgresTestError> {
+        self.ensure_app_role(admin).await?;
+        if let Some(owner) = &self.migration_owner {
+            owner.ensure(admin).await?;
         }
-        if let Some(path) = &self.migrations {
-            sqlx::migrate::Migrator::new(path.as_path())
-                .await?
-                .run(&mut connection)
-                .await?;
-        }
-        close(connection).await;
         Ok(())
     }
 
@@ -233,16 +286,26 @@ impl PostgresTestDatabases {
     }
 
     fn app_url(&self, database: &str) -> Result<Option<String>, PostgresTestError> {
-        let Some(role) = &self.app_role else {
-            return Ok(None);
-        };
-        let mut url = Url::parse(&with_database(&self.admin_url, database)?)
-            .map_err(|_| PostgresTestError::InvalidConnectionUrl)?;
-        url.set_username(&role.name)
-            .and_then(|()| url.set_password(Some(&role.password)))
-            .map_err(|()| PostgresTestError::InvalidConnectionUrl)?;
-        Ok(Some(url.into()))
+        self.app_role
+            .as_ref()
+            .map(|role| with_credentials(&self.admin_url, database, &role.name, &role.password))
+            .transpose()
     }
+
+    fn owner_url(&self, database: &str) -> Result<Option<String>, PostgresTestError> {
+        self.migration_owner
+            .as_ref()
+            .map(|owner| {
+                with_credentials(&self.admin_url, database, owner.name(), owner.password())
+            })
+            .transpose()
+    }
+}
+
+/// App role and migration owner URLs for the server's own database.
+pub(crate) struct ServerDatabaseUrls {
+    pub(crate) app: Option<String>,
+    pub(crate) owner: Option<String>,
 }
 
 impl fmt::Debug for PostgresTestDatabases {
@@ -250,6 +313,7 @@ impl fmt::Debug for PostgresTestDatabases {
         formatter
             .debug_struct("PostgresTestDatabases")
             .field("app_role", &self.app_role)
+            .field("migration_owner", &self.migration_owner)
             .field("migrations", &self.migrations)
             .finish_non_exhaustive()
     }
@@ -264,6 +328,7 @@ pub struct PostgresTestDatabase {
     name: String,
     connection_url: String,
     app_connection_url: Option<String>,
+    owner_connection_url: Option<String>,
     admin_url: String,
     dropped: bool,
 }
@@ -285,6 +350,12 @@ impl PostgresTestDatabase {
     #[must_use]
     pub fn app_connection_url(&self) -> Option<&str> {
         self.app_connection_url.as_deref()
+    }
+
+    /// Returns the migration owner URL for this database, when a migration owner is set.
+    #[must_use]
+    pub fn owner_connection_url(&self) -> Option<&str> {
+        self.owner_connection_url.as_deref()
     }
 
     /// Drops the database, closing any connections still open to it.
@@ -346,16 +417,20 @@ async fn drop_database(admin_url: &str, name: &str) -> Result<(), PostgresTestEr
 async fn grant_app_role(
     connection: &mut PgConnection,
     role: &PostgresAppRole,
+    migration_owner: Option<&PostgresMigrationOwner>,
 ) -> Result<(), PostgresTestError> {
     let name = &role.name;
+    let creator = migration_owner
+        .map(|owner| format!("FOR ROLE \"{}\" ", owner.name()))
+        .unwrap_or_default();
     for statement in [
         format!("GRANT USAGE ON SCHEMA public TO \"{name}\""),
         format!(
-            "ALTER DEFAULT PRIVILEGES IN SCHEMA public \
+            "ALTER DEFAULT PRIVILEGES {creator}IN SCHEMA public \
              GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO \"{name}\""
         ),
         format!(
-            "ALTER DEFAULT PRIVILEGES IN SCHEMA public \
+            "ALTER DEFAULT PRIVILEGES {creator}IN SCHEMA public \
              GRANT USAGE, SELECT ON SEQUENCES TO \"{name}\""
         ),
     ] {
@@ -395,6 +470,20 @@ async fn close(connection: PgConnection) {
 fn with_database(url: &str, database: &str) -> Result<String, PostgresTestError> {
     let mut url = Url::parse(url).map_err(|_| PostgresTestError::InvalidConnectionUrl)?;
     url.set_path(&format!("/{database}"));
+    Ok(url.into())
+}
+
+fn with_credentials(
+    url: &str,
+    database: &str,
+    name: &str,
+    password: &str,
+) -> Result<String, PostgresTestError> {
+    let mut url = Url::parse(&with_database(url, database)?)
+        .map_err(|_| PostgresTestError::InvalidConnectionUrl)?;
+    url.set_username(name)
+        .and_then(|()| url.set_password(Some(password)))
+        .map_err(|()| PostgresTestError::InvalidConnectionUrl)?;
     Ok(url.into())
 }
 
@@ -453,6 +542,50 @@ mod tests {
             databases.app_url("baukit_test_1").expect("url"),
             Some("postgres://app:secret@db:5432/baukit_test_1".to_owned())
         );
+    }
+
+    #[test]
+    fn owner_url_swaps_credentials_and_database() {
+        let databases = PostgresTestDatabases::new("postgres://admin:pw@db:5432/postgres")
+            .with_migration_owner(PostgresMigrationOwner::default());
+        assert_eq!(
+            databases.owner_url("baukit_test_1").expect("url"),
+            Some("postgres://app:app@db:5432/baukit_test_1".to_owned())
+        );
+        assert_eq!(
+            PostgresTestDatabases::new("postgres://admin:pw@db:5432/postgres")
+                .owner_url("baukit_test_1")
+                .expect("url"),
+            None
+        );
+    }
+
+    #[test]
+    fn migration_owner_validates_like_the_app_role() {
+        let owner = PostgresMigrationOwner::new("product_owner", "owner-secret")
+            .expect("valid owner")
+            .with_create_role();
+        assert_eq!(owner.name(), "product_owner");
+        for (name, password) in [("Owner", "secret"), ("owner", "p@w"), ("", "secret")] {
+            assert!(
+                matches!(
+                    PostgresMigrationOwner::new(name, password),
+                    Err(PostgresTestError::InvalidAppRole(_))
+                ),
+                "accepted {name:?} / {password:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn debug_output_hides_the_migration_owner_password() {
+        let owner = PostgresMigrationOwner::new("owner", "hidden-secret").expect("valid owner");
+        let databases = PostgresTestDatabases::new("postgres://admin:admin-secret@db/postgres")
+            .with_migration_owner(owner.clone());
+        for rendered in [format!("{owner:?}"), format!("{databases:?}")] {
+            assert!(!rendered.contains("hidden-secret"), "{rendered}");
+            assert!(rendered.contains("owner"), "{rendered}");
+        }
     }
 
     #[test]

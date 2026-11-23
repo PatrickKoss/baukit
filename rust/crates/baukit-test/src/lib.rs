@@ -163,11 +163,13 @@ pub use ops::{
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::{
     ForeignKeyDeleteMismatch, audit_user_root_foreign_keys, start_postgres_with_migrations,
+    start_postgres_with_owner_migrations,
 };
 pub use postgres::{PostgresTestContainer, PostgresTestError, PostgresTestOptions, start_postgres};
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres_database::{
-    PostgresAppRole, PostgresDatabaseName, PostgresTestDatabase, PostgresTestDatabases,
+    PostgresAppRole, PostgresDatabaseName, PostgresMigrationOwner, PostgresTestDatabase,
+    PostgresTestDatabases,
 };
 pub use purge_horizon::{
     PullPause, PurgeHorizonAdapter, PurgeHorizonConformanceError, PurgeHorizonPull,
