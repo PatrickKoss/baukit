@@ -33,23 +33,6 @@ rules:
     verbs:
       - create
       - get
-  # kubectl exec reads the pod before it opens the exec stream.
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    resourceNames:
-      - postgres-cluster-restore-test-1
-    verbs:
-      - get
-  - apiGroups:
-      - ""
-    resources:
-      - pods/exec
-    resourceNames:
-      - postgres-cluster-restore-test-1
-    verbs:
-      - create
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -177,6 +160,7 @@ spec:
                 - |
                   restore_cluster="postgres-cluster-restore-test"
                   cleanup() {
+                    : > "${WORK_DIR}/restore-done" || true
                     kubectl -n "${POD_NAMESPACE}" delete cluster "${restore_cluster}" \
                       --ignore-not-found=true --wait=false >/dev/null 2>&1 || true
                   }
@@ -274,12 +258,21 @@ spec:
                   kubectl -n "${POD_NAMESPACE}" wait cluster/"${restore_cluster}" \
                     --for=condition=Ready --timeout=30m
 
-                  primary="$(kubectl -n "${POD_NAMESPACE}" get cluster "${restore_cluster}" \
-                    -o jsonpath='{.status.currentPrimary}')"
-                  restored="$(printf '%s\n' "${PGPASSWORD}" |
-                    kubectl -n "${POD_NAMESPACE}" exec -i "${primary}" -c postgres -- \
-                      sh -ec 'IFS= read -r PGPASSWORD; export PGPASSWORD; exec psql -h 127.0.0.1 -U "$1" -d "$2" -tAX -c "SELECT token FROM baukit_restore_sentinel WHERE id = 1"' \
-                      sentinel "${PGUSER}" "${PGDATABASE}")"
+                  printf '%s-rw\n' "${restore_cluster}" > "${WORK_DIR}/restored-host.tmp"
+                  mv "${WORK_DIR}/restored-host.tmp" "${WORK_DIR}/restored-host"
+                  deadline=$(($(date +%s) + READ_TIMEOUT_SECONDS))
+                  until [ -e "${WORK_DIR}/restored-sentinel" ]; do
+                    if [ -e "${WORK_DIR}/read-failed" ]; then
+                      printf 'read-sentinel failed: %s\n' "$(cat "${WORK_DIR}/read-failed")" >&2
+                      exit 1
+                    fi
+                    if [ "$(date +%s)" -ge "${deadline}" ]; then
+                      printf 'read-sentinel did not report within %ss\n' "${READ_TIMEOUT_SECONDS}" >&2
+                      exit 1
+                    fi
+                    sleep "${POLL_SECONDS}"
+                  done
+                  restored="$(cat "${WORK_DIR}/restored-sentinel")"
                   if [ -z "${restored}" ]; then
                     printf 'sentinel missing in the restored cluster, expected %s\n' "${sentinel}" >&2
                     exit 1
@@ -317,12 +310,73 @@ spec:
                       fieldPath: metadata.labels['batch.kubernetes.io/controller-uid']
                 - name: SENTINEL_FILE
                   value: /work/sentinel
+                - name: WORK_DIR
+                  value: /work
                 - name: BACKUP_TIMEOUT_SECONDS
                   value: "1200"
+                - name: READ_TIMEOUT_SECONDS
+                  value: "420"
                 - name: POLL_SECONDS
                   value: "10"
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 64Mi
+                limits:
+                  cpu: 250m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop:
+                    - ALL
+                readOnlyRootFilesystem: true
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+            - name: read-sentinel
+              image: ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie@sha256:c437b7c6c00aa7e66f5d6de1dd83602391fdebd4ff776ffb1ab7aaba5e7351ad
+              imagePullPolicy: IfNotPresent
+              command:
+                - /bin/sh
+                - -ec
+              args:
+                - |
+                  fail() {
+                    printf '%s\n' "$1" > "${WORK_DIR}/read-failed"
+                    printf '%s\n' "$1" >&2
+                    exit 1
+                  }
+                  # restore-test names the host once the restored cluster is Ready and marks restore-done on exit.
+                  until [ -e "${WORK_DIR}/restored-host" ]; do
+                    [ ! -e "${WORK_DIR}/restore-done" ] || exit 0
+                    sleep "${POLL_SECONDS}"
+                  done
+                  PGHOST="$(cat "${WORK_DIR}/restored-host")"
+                  export PGHOST
+                  deadline=$(( $(date +%s) + WAIT_SECONDS ))
+                  until psql -XtAq -v ON_ERROR_STOP=1 -c 'select 1' >/dev/null; do
+                    [ "$(date +%s)" -lt "${deadline}" ] || fail "database ${PGDATABASE} on ${PGHOST} not reachable as ${PGUSER} after ${WAIT_SECONDS}s"
+                    sleep 2
+                  done
+                  restored="$(psql -XtAq -v ON_ERROR_STOP=1 -c 'SELECT token FROM baukit_restore_sentinel WHERE id = 1')" ||
+                    fail "reading baukit_restore_sentinel from ${PGHOST} failed"
+                  printf '%s\n' "${restored}" > "${WORK_DIR}/restored-sentinel.tmp"
+                  mv "${WORK_DIR}/restored-sentinel.tmp" "${WORK_DIR}/restored-sentinel"
+              env:
+                - name: WORK_DIR
+                  value: /work
+                - name: WAIT_SECONDS
+                  value: "300"
+                - name: POLL_SECONDS
+                  value: "10"
+                - name: PGCONNECT_TIMEOUT
+                  value: "3"
                 - name: PGDATABASE
                   value: product
+                - name: PGSSLMODE
+                  value: require
+                # The restored cluster carries the source's roles, so the product owner keeps its password.
                 - name: PGUSER
                   valueFrom:
                     secretKeyRef:
@@ -336,10 +390,10 @@ spec:
               resources:
                 requests:
                   cpu: 25m
-                  memory: 64Mi
+                  memory: 32Mi
                 limits:
-                  cpu: 250m
-                  memory: 256Mi
+                  cpu: 100m
+                  memory: 64Mi
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities:

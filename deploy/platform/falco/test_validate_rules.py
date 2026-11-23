@@ -141,10 +141,10 @@ def audit_event(index: int, user: str, namespace: str, subresource: str, verb: s
 
 
 class K8sAuditReplayTest(unittest.TestCase):
-    def test_only_restore_test_and_operator_execs_into_postgres_are_expected(self) -> None:
+    def test_only_operator_execs_into_postgres_are_expected(self) -> None:
         events = [
-            (RESTORE_TEST, "postgres", "exec", "create"),
             (CNPG_OPERATOR, "postgres", "exec", "create"),
+            (RESTORE_TEST, "postgres", "exec", "create"),
             ("system:admin", "postgres", "exec", "get"),
             (RESTORE_TEST, "postgres", "attach", "create"),
             (RESTORE_TEST, "default", "exec", "create"),
@@ -165,7 +165,7 @@ class K8sAuditReplayTest(unittest.TestCase):
         fired = [tuple(line.split("\t")[1:]) for line in result.stdout.splitlines()]
         self.assertEqual(
             fired,
-            [(user, namespace, subresource) for user, namespace, subresource, _ in events[2:]],
+            [(user, namespace, subresource) for user, namespace, subresource, _ in events[1:]],
         )
 
     def test_flagger_gets_secrets_only_in_tenant_namespaces(self) -> None:
