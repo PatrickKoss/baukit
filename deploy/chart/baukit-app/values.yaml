@@ -180,10 +180,11 @@ worker:
   networkPolicy:
     additionalIngress: []
     additionalEgress: []
-  # Gives the worker the backing Redis the API gets: the URL in dedicated mode,
-  # the key namespace and client label in either mode, and the network path.
+  # Opt in for a worker that uses the backing Redis. It then gets what the API
+  # gets: the URL in dedicated mode, the key namespace and client label in
+  # either mode, and the network path. Off, the worker has no Redis access.
   redis:
-    enabled: true
+    enabled: false
   # Renders only with more than one replica (or the API HPA). Set at most one
   # of minAvailable or maxUnavailable; neither means maxUnavailable: 1.
   podDisruptionBudget:

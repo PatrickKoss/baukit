@@ -13,6 +13,7 @@ URL = "MINIMAL_API__RATE_LIMIT__REDIS_URL"
 NAMESPACE = "MINIMAL_API__RATE_LIMIT__REDIS_KEY_NAMESPACE"
 CLIENT_LABEL = "baukit.dev/redis-client"
 PLATFORM_REDIS = {"kubernetes.io/metadata.name": "platform-redis"}
+WORKER_REDIS = ["--set", "worker.redis.enabled=true"]
 
 
 def render(mode: str, *args: str) -> list[dict]:
@@ -81,8 +82,21 @@ def reaches_platform_redis(spec: dict | None) -> bool:
 
 
 class DedicatedRedisTest(unittest.TestCase):
-    def test_worker_gets_the_url_namespace_and_network_path_by_default(self) -> None:
+    def test_worker_stays_off_redis_by_default(self) -> None:
         documents = render("dedicated")
+        templates = pods(documents)
+        self.assertLessEqual({URL, NAMESPACE}, env_names(templates["api"]))
+        for process in ("worker", "migrate", "seed"):
+            with self.subTest(process=process):
+                self.assertFalse({URL, NAMESPACE} & env_names(templates[process]))
+        specs = policies(documents)
+        [ingress] = specs[f"{RELEASE}-redis-ingress"]["ingress"]
+        self.assertEqual(processes_of(ingress["from"]), ["api"])
+        self.assertIn(f"{RELEASE}-redis-api-egress", specs)
+        self.assertNotIn(f"{RELEASE}-redis-worker-egress", specs)
+
+    def test_enabled_worker_gets_the_url_namespace_and_network_path(self) -> None:
+        documents = render("dedicated", *WORKER_REDIS)
         templates = pods(documents)
         for process in ("api", "worker"):
             with self.subTest(process=process):
@@ -101,26 +115,16 @@ class DedicatedRedisTest(unittest.TestCase):
                 self.assertEqual(processes_of(rule["to"]), ["redis"])
                 self.assertEqual(rule["ports"], [{"port": 6379, "protocol": "TCP"}])
 
-    def test_sentinel_mode_opens_both_ports_to_the_worker(self) -> None:
-        specs = policies(render("dedicated", "--set", "redis.replicas=3"))
+    def test_sentinel_mode_opens_both_ports_to_an_enabled_worker(self) -> None:
+        specs = policies(render("dedicated", "--set", "redis.replicas=3", *WORKER_REDIS))
         [rule] = specs[f"{RELEASE}-redis-worker-egress"]["egress"]
         self.assertEqual(
             rule["ports"],
             [{"port": 6379, "protocol": "TCP"}, {"port": 26379, "protocol": "TCP"}],
         )
 
-    def test_switch_keeps_the_worker_off_redis(self) -> None:
-        documents = render("dedicated", "--set", "worker.redis.enabled=false")
-        templates = pods(documents)
-        self.assertLessEqual({URL, NAMESPACE}, env_names(templates["api"]))
-        self.assertFalse({URL, NAMESPACE} & env_names(templates["worker"]))
-        specs = policies(documents)
-        [ingress] = specs[f"{RELEASE}-redis-ingress"]["ingress"]
-        self.assertEqual(processes_of(ingress["from"]), ["api"])
-        self.assertNotIn(f"{RELEASE}-redis-worker-egress", specs)
-
     def test_disabled_worker_opens_nothing(self) -> None:
-        specs = policies(render("dedicated", "--set", "worker.enabled=false"))
+        specs = policies(render("dedicated", "--set", "worker.enabled=false", *WORKER_REDIS))
         [ingress] = specs[f"{RELEASE}-redis-ingress"]["ingress"]
         self.assertEqual(processes_of(ingress["from"]), ["api"])
         self.assertNotIn(f"{RELEASE}-redis-worker-egress", specs)
@@ -129,8 +133,21 @@ class DedicatedRedisTest(unittest.TestCase):
 class SharedRedisTest(unittest.TestCase):
     SECRET = ["--set", "config.existingSecretRefs[0].name=minimal-api-redis"]
 
-    def test_worker_gets_the_label_namespace_secret_and_egress_by_default(self) -> None:
+    def test_worker_stays_off_redis_by_default(self) -> None:
         documents = render("shared", *self.SECRET)
+        worker = pods(documents)["worker"]
+        self.assertNotIn(CLIENT_LABEL, worker["metadata"]["labels"])
+        self.assertNotIn(NAMESPACE, env_names(worker))
+        specs = policies(documents)
+        self.assertFalse(
+            reaches_platform_redis(specs.get(f"{RELEASE}-baukit-app-worker-backing-egress"))
+        )
+        self.assertTrue(
+            reaches_platform_redis(specs.get(f"{RELEASE}-baukit-app-api-backing-egress"))
+        )
+
+    def test_enabled_worker_gets_the_label_namespace_secret_and_egress(self) -> None:
+        documents = render("shared", *self.SECRET, *WORKER_REDIS)
         templates = pods(documents)
         specs = policies(documents)
         for process in ("api", "worker"):
@@ -154,19 +171,6 @@ class SharedRedisTest(unittest.TestCase):
                         specs.get(f"{RELEASE}-baukit-app-{process}-backing-egress")
                     )
                 )
-
-    def test_switch_keeps_the_worker_off_redis(self) -> None:
-        documents = render("shared", *self.SECRET, "--set", "worker.redis.enabled=false")
-        worker = pods(documents)["worker"]
-        self.assertNotIn(CLIENT_LABEL, worker["metadata"]["labels"])
-        self.assertNotIn(NAMESPACE, env_names(worker))
-        specs = policies(documents)
-        self.assertFalse(
-            reaches_platform_redis(specs.get(f"{RELEASE}-baukit-app-worker-backing-egress"))
-        )
-        self.assertTrue(
-            reaches_platform_redis(specs.get(f"{RELEASE}-baukit-app-api-backing-egress"))
-        )
 
 
 if __name__ == "__main__":

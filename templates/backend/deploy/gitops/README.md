@@ -37,10 +37,11 @@ between modes is that one entry plus a data migration.
 | Redis | shared | `backing/redis-shared` | `{{ context.app_env }}__RATE_LIMIT__REDIS_URL` in Secret `{{ context.app_name }}-redis` |
 | Redis | dedicated | `backing/redis-dedicated` | the chart, pointing at its own Redis |
 
-With Redis on, {% if context.worker %}the API and the worker keep their{% else %}the API keeps its{% endif %} keys
-under `{{ context.app_env }}__RATE_LIMIT__REDIS_KEY_NAMESPACE`,
+With Redis on, the API keeps its keys under `{{ context.app_env }}__RATE_LIMIT__REDIS_KEY_NAMESPACE`,
 `{{ context.app_name }}-testing:` or `{{ context.app_name }}-production:`.
-
+{% if context.worker %}The worker gets Redis only when the HelmRelease sets `worker.redis.enabled: true`.
+It then gets the same URL, key namespace and network path as the API.
+{% endif %}
 Dedicated Postgres is a CNPG `Cluster` named `{{ context.app_name }}-postgres` in the environment's namespace,
 with WAL archiving and a daily backup through the Barman Cloud plugin. Before you list the component,
 replace the placeholders in `backing/postgres-dedicated/postgres.yaml`: the bucket and endpoint of the

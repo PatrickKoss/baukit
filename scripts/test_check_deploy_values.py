@@ -104,6 +104,7 @@ class DeployValuesTest(unittest.TestCase):
         environment = ENVIRONMENT.replace(
             worker,
             worker
+            + "      redis: {enabled: true}\n"
             + "      env:\n        - {name: DEMO__RATE_LIMIT__REDIS_URL, value: redis://demo-redis:6379}\n",
         )
         with tempfile.TemporaryDirectory() as directory:
