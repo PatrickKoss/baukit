@@ -17,8 +17,13 @@ const OWNER: &str = "postgres-owner";
 #[ignore = "requires a reachable Docker daemon; run explicitly for PostgreSQL adapter verification"]
 async fn postgres_adapter_crud() -> Result<(), Box<dyn Error>> {
     let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-    let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
-    let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
+    let fixture = baukit_test::start_postgres_with_owner_migrations(
+        &migrations,
+        baukit_test::PostgresMigrationOwner::default(){% if context.postgres_owner_create_role %}.with_create_role(){% endif %},
+    )
+    .await?;
+    let owner_url = fixture.owner_connection_url().ok_or("missing owner URL")?;
+    let pool = sqlx::PgPool::connect(owner_url).await?;
     let repository = Arc::new(PostgresItemRepository::new(pool.clone()));
     let service = ItemService::new(repository.clone());
 {% if context.auth_enabled %}    let users = UserService::new(Arc::new(PostgresUserRepository::new(

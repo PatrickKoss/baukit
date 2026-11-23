@@ -15,8 +15,15 @@ const KEPT: &str = "kept-subject";
 async fn profile_erasure_deletes_only_the_erased_subjects_browser_sessions()
 -> Result<(), Box<dyn Error>> {
     let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-    let container = baukit_test::start_postgres_with_migrations(&migrations).await?;
-    let pool = PgPool::connect(container.connection_url()).await?;
+    let container = baukit_test::start_postgres_with_owner_migrations(
+        &migrations,
+        baukit_test::PostgresMigrationOwner::default(){% if context.postgres_owner_create_role %}.with_create_role(){% endif %},
+    )
+    .await?;
+    let owner_url = container
+        .owner_connection_url()
+        .ok_or("missing owner URL")?;
+    let pool = PgPool::connect(owner_url).await?;
     let expires_at = Timestamp::now() + SignedDuration::from_hours(24);
     insert_session(&pool, ERASED, expires_at).await?;
     insert_session(&pool, ERASED, expires_at).await?;

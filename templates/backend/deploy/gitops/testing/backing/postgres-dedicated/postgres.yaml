@@ -57,6 +57,11 @@ spec:
     initdb:
       database: app
       owner: app
+{%- if context.postgres_owner_create_role %}
+      # `[postgres] owner_create_role`. Runs once at initdb; an existing cluster needs it run by hand.
+      postInitApplicationSQL:
+        - ALTER ROLE app CREATEROLE
+{%- endif %}
   plugins:
     - name: barman-cloud.cloudnative-pg.io
       isWALArchiver: true

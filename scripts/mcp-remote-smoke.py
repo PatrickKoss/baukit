@@ -271,7 +271,7 @@ def run_connect_example(repository: Path, resource: str, token: str, item_name: 
 def backend_environment(name: str, prefix: str, internal_jwks: str) -> dict[str, str]:
     environment = os.environ.copy()
     environment[f"{prefix}__DATABASE__URL"] = (
-        f"postgres://postgres:postgres@postgres:5432/{name.replace('-', '_')}"
+        f"postgres://app:app@postgres:5432/{name.replace('-', '_')}"
     )
     environment[f"{prefix}__RATE_LIMIT__REDIS_URL"] = "redis://redis:6379/"
     environment[f"{prefix}__AUTH__JWKS_URI"] = internal_jwks

@@ -20,8 +20,13 @@ use {{ context.app_crate }}_worker::DemoJobHandler;
 #[ignore = "requires a reachable Docker daemon; run explicitly for durable worker verification"]
 async fn durable_outbox_runs_the_generated_demo_handler() -> Result<(), Box<dyn Error>> {
     let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-    let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
-    let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
+    let fixture = baukit_test::start_postgres_with_owner_migrations(
+        &migrations,
+        baukit_test::PostgresMigrationOwner::default(){% if context.postgres_owner_create_role %}.with_create_role(){% endif %},
+    )
+    .await?;
+    let owner_url = fixture.owner_connection_url().ok_or("missing owner URL")?;
+    let pool = sqlx::PgPool::connect(owner_url).await?;
     let service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
     let item = service
         .create("worker-owner", "worker fixture".to_owned())
@@ -94,8 +99,13 @@ async fn retention_job_purges_expired_browser_sessions() -> Result<(), Box<dyn E
     use {{ context.app_crate }}_worker::retention::RetentionJobHandler;
 
     let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-    let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
-    let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
+    let fixture = baukit_test::start_postgres_with_owner_migrations(
+        &migrations,
+        baukit_test::PostgresMigrationOwner::default(){% if context.postgres_owner_create_role %}.with_create_role(){% endif %},
+    )
+    .await?;
+    let owner_url = fixture.owner_connection_url().ok_or("missing owner URL")?;
+    let pool = sqlx::PgPool::connect(owner_url).await?;
     let now = jiff::Timestamp::now();
     let three_days = jiff::SignedDuration::from_hours(72);
     insert_browser_session(&pool, "expired", now - three_days).await?;

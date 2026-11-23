@@ -121,8 +121,13 @@ async fn signed_fixture_event_reads_entitlements_and_retains_receipts() -> Resul
 {
 {% if context.auth_enabled %}    use baukit_suite::platform::EntitlementCache;
 {% endif %}    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
-    let fixture = baukit_test::start_postgres_with_migrations(&migrations).await?;
-    let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
+    let fixture = baukit_test::start_postgres_with_owner_migrations(
+        &migrations,
+        baukit_test::PostgresMigrationOwner::default(){% if context.postgres_owner_create_role %}.with_create_role(){% endif %},
+    )
+    .await?;
+    let owner_url = fixture.owner_connection_url().ok_or("missing owner URL")?;
+    let pool = sqlx::PgPool::connect(owner_url).await?;
     let hub = hub().await?;
     let config = settings(&hub.base);
     config.validate()?;

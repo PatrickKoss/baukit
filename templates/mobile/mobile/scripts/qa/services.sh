@@ -100,7 +100,7 @@ start_default_services() {
   echo "qa: starting disposable PostgreSQL, Redis{% if context.auth_enabled %}, and Keycloak{% endif %}"
   "${compose[@]}" up -d --wait "${qa_compose_services[@]}"
 
-  export {{ context.app_env }}__DATABASE__URL="postgres://postgres:postgres@127.0.0.1:${postgres_port}/{{ context.app_crate }}"
+  export {{ context.app_env }}__DATABASE__URL="postgres://app:app@127.0.0.1:${postgres_port}/{{ context.app_crate }}"
   export {{ context.app_env }}__RATE_LIMIT__REDIS_URL="redis://127.0.0.1:${redis_port}/"
   export {{ context.app_env }}__HTTP__BIND_ADDRESS=127.0.0.1
   export {{ context.app_env }}__HTTP__PORT="$api_port"

@@ -13,6 +13,7 @@ mod doctor_layout;
 mod doctor_mcp;
 mod doctor_platform;
 mod doctor_ports;
+mod doctor_postgres;
 mod doctor_screens;
 #[cfg(test)]
 mod doctor_tests;

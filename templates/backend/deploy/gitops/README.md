@@ -65,6 +65,44 @@ ACL user for the environment limited to `~{{ context.app_name }}-<environment>:*
 `redis+sentinel://<user>:<password>@redis-sentinel.platform-redis.svc:26379/mymaster`. Dedicated Redis keeps
 no data; with `redis.replicas` 1 it is one pod, with an odd 3 or more it runs Sentinel.
 
+## Migrations and roles
+
+The migrate Job connects as the database owner: the tenant role on shared Postgres, `app` on a dedicated
+cluster. Neither is a superuser, and neither has `CREATEDB`, `REPLICATION` or `BYPASSRLS`. The local
+compose stack and the generated tests migrate as an `app` role with the same rights, so a migration that
+needs a superuser fails in `make test` before it reaches a cluster. The owner owns the database and its
+`public` schema, so it can create tables, functions, policies and trusted extensions such as `pgcrypto`.
+Untrusted extensions such as `timescaledb` belong in the Cluster's `postInitApplicationSQL`.
+
+A migration that creates its own roles needs `CREATEROLE`. Set it in `baukit.toml`:
+
+```toml
+[postgres]
+owner_create_role = true
+```
+
+The flag needs dedicated Postgres in every environment, because role names are global to a Postgres
+cluster and the shared one is not the product's to fill; `baukit doctor` fails otherwise. With it,
+`backing/postgres-dedicated/postgres.yaml` runs `ALTER ROLE app CREATEROLE` in `postInitApplicationSQL`, and
+the local owner and test owner get `CREATEROLE` as well. CNPG runs that SQL only when it creates the cluster;
+on an existing cluster, run it once as the superuser on the primary:
+
+```sh
+kubectl exec -n {{ context.app_name }}-testing {{ context.app_name }}-postgres-1 -c postgres -- \
+  psql -U postgres -d app -c 'ALTER ROLE app CREATEROLE'
+```
+
+Don't list `app` under the Cluster's `managed.roles`. CNPG then owns its memberships and revokes the ones
+migrations grant it on the next reconcile. Since PostgreSQL 16 the owner holds only `ADMIN` on the roles it
+creates, so migrations follow three rules:
+
+- Create the roles in a migration. The owner can grant only roles it created, so a role made by
+  `postInitApplicationSQL` or by hand cannot be granted, switched into or handed objects.
+- Before `SET ROLE r` or `ALTER ... OWNER TO r`, give the owner membership: `GRANT r TO CURRENT_USER`, or
+  `SET createrole_self_grant = 'set, inherit'` before the `CREATE ROLE` statements.
+- Before handing objects in `public` to `r`, run `GRANT CREATE ON SCHEMA public TO r`. A superuser skips
+  that check, the owner does not.
+
 ## Secrets
 
 `*.enc.yaml` files ship as plaintext placeholders. Put the tenant's age recipients into

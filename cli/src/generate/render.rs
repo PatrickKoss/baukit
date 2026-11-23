@@ -113,6 +113,8 @@ pub(crate) struct TemplateContext {
     pub(crate) api_container_port: u16,
     pub(crate) ops_container_port: u16,
     pub(crate) gitops: GitopsContext,
+    /// `[postgres] owner_create_role` from `baukit.toml`.
+    pub(crate) postgres_owner_create_role: bool,
 }
 
 /// `[gitops]` from `baukit.toml`, resolved for the `deploy/gitops` templates.
@@ -527,6 +529,7 @@ mod generator_tests {
                 identity_url: "https://id.lab.example.com".to_owned(),
                 realm: "cache-test".to_owned(),
             },
+            postgres_owner_create_role: false,
         };
         let mut rendered = BTreeMap::new();
 

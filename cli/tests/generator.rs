@@ -1223,7 +1223,7 @@ fn combined_generation_applies_port_offset_to_host_ports() -> anyhow::Result<()>
         ("web/README.md", "http://localhost:8180"),
         ("README.md", "public API listens on port 8180"),
         ("README.md", "endpoints listen on port 9190"),
-        ("README.md", "postgres@localhost:5532/offset_app"),
+        ("README.md", "app:app@localhost:5532/offset_app"),
         ("README.md", "http://localhost:8181/realms/offset-app"),
         ("README.md", "Redis on `127.0.0.1:6479`"),
         ("docs/fake-providers.md", "FAKE_PROVIDER_PORT:-18181"),
