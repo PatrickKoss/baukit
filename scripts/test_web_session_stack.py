@@ -24,6 +24,13 @@ class WebSessionStackTest(unittest.TestCase):
         self.assertIn('"/repo/fixture:/repo/fixture"', override)
         self.assertIn('"/cargo/target/debug:/cargo/target/debug:ro"', override)
 
+    def test_stack_gives_chromium_more_than_the_default_shared_memory(self) -> None:
+        override = STACK.compose_override(
+            Path("/repo"), Path("/repo/fixture"), Path("/cargo/target/debug")
+        )
+        stack = override.split("  stack:\n", 1)[1]
+        self.assertIn("    shm_size: 1g\n", stack)
+
     def test_binaries_follow_the_cargo_target_directory(self) -> None:
         fixture = Path("/repo/fixture")
         with patch.dict(STACK.os.environ, {"CARGO_TARGET_DIR": "/cargo/target"}):

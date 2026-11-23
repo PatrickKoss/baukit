@@ -162,6 +162,7 @@ def compose_override(repository: Path, fixture: Path, binaries: Path) -> str:
     volumes: {json.dumps(mounts)}
     cpus: 2
     mem_limit: 2g
+    shm_size: 1g
 """
 
 
