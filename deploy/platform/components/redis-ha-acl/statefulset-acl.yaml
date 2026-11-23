@@ -23,6 +23,38 @@ spec:
             - name: acl
               mountPath: /acl
               readOnly: true
+        - name: acl-reload
+          image: redis:8.10.3-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - /scripts/redis-ha.sh
+            - acl-reload
+          env:
+            - name: REDIS_ACL_DIR
+              value: /acl
+          resources:
+            requests:
+              cpu: 1m
+              memory: 4Mi
+            limits:
+              cpu: 20m
+              memory: 16Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: acl
+              mountPath: /acl
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
         - name: redis-exporter
           env:
             - name: REDIS_USER

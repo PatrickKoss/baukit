@@ -89,7 +89,10 @@ Each Redis container requests 10m CPU / 16 MiB and is limited to 100m CPU /
 64 MiB; each Sentinel requests 5m CPU / 8 MiB and is limited to 250m CPU /
 32 MiB. At 50m CPU a loaded 4-CPU node throttled Sentinel in 37% of its CFS
 periods, and a throttled timer that stalls for more than 2 seconds puts
-Sentinel into TILT mode; at 250m it was throttled in under 9%. Redis is capped at 48 MB with `allkeys-lru`. These values target
+Sentinel into TILT mode; at 250m it was throttled in under 9%. With
+`components/redis-ha-acl`, each `acl-reload` container requests 1m CPU / 4 MiB
+and is limited to 20m CPU / 16 MiB; on the e2e cluster it used 1m CPU and under
+1 MiB. Redis is capped at 48 MB with `allkeys-lru`. These values target
 near-zero traffic and should be patched from measurements when traffic or key
 cardinality grows.
 
@@ -185,10 +188,52 @@ traffic, and a client that can reach Sentinel learns only the master's
 address. The NetworkPolicy still limits who reaches port 26379, and nothing
 behind Sentinel is readable without a data-node password.
 
-Redis reads `users.acl` at start. After the Secret changes, restart the pods
-one at a time (`kubectl -n platform-redis rollout restart statefulset/redis`).
-`ACL SAVE` fails because the file is mounted read-only, so do not change users
-with `ACL SETUSER` at runtime; they would be lost on restart.
+### Changing users without a restart
+
+The component adds an `acl-reload` container (the same pinned Redis image,
+`redis-ha.sh acl-reload`) to every pod. The Secret is mounted as a directory,
+not with `subPath`, so the kubelet swaps in a changed `users.acl` in place,
+usually within a minute of the Secret change. `acl-reload` checks the file's
+SHA-256 every 5 seconds and on a change runs `ACL LOAD` against the Redis in
+its own pod. Each pod loads its own copy, nothing restarts and Sentinel does
+not fail over. Connections of users whose line did not change stay open. A
+user added to the Secret can log in on every pod about a minute later, and a
+removed user can no longer log in.
+
+Redis does not load the mounted file directly. At start the redis container
+copies it to `/tmp/redis-users.acl` and appends one line:
+
+```text
+user baukit-acl-reload on #<sha256 of a per-pod random password> resetkeys resetchannels -@all +acl|load
+```
+
+The password is 32 random bytes the redis container writes to the pod's `tmp`
+volume on first start, readable only by the Redis user. That user may run
+`ACL LOAD` and nothing else, so the reload needs no admin user in the Secret.
+`acl-reload` rewrites the copy before each `ACL LOAD`. The user name
+`baukit-acl-reload` is reserved; a Secret that defines it fails with
+`Duplicate user`. Because the copy appends at the end, line numbers in Redis
+errors match the Secret's `users.acl`.
+
+When Redis rejects the new file, `ACL LOAD` changes nothing and the users
+loaded last keep working. `acl-reload` logs the file and line Redis named,
+with quoted tokens replaced by `<redacted>` because a token can be a password,
+and tries the same file again every 60 seconds. Every rejected try counts in
+`redis_commands_failed_calls_total{cmd="acl|load"}`, and the platform alert
+pack fires `BaukitRedisAclLoadFailing` after 10 minutes of failures. Fix the
+Secret; a restarted Redis would read the broken file and not start.
+
+Two limits remain:
+
+- `replication-password`, `sentinel-password` and `monitor-password` are read
+  at container start. To rotate one, add the new password to the user's line
+  next to the old one (`>old >new`), let it load, change the key and restart
+  the pods one at a time
+  (`kubectl -n platform-redis rollout restart statefulset/redis`), then drop
+  the old password.
+- Users created with `ACL SETUSER` at runtime vanish at the next Secret change
+  or restart, since `ACL SAVE` writes only the copy in `/tmp`. Put every user
+  in the Secret.
 
 ## Metrics
 

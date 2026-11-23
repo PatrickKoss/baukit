@@ -1,5 +1,5 @@
 #!/bin/sh
-# Usage: redis-ha.sh server|sentinel
+# Usage: redis-ha.sh server|sentinel|acl-reload
 set -eu
 
 master_name="${REDIS_MASTER_NAME:-mymaster}"
@@ -11,6 +11,15 @@ sentinel_conf="${SENTINEL_CONF:-/sentinel/sentinel.conf}"
 # Set by components/redis-ha-acl to the mounted redis-ha-acl Secret; empty keeps Redis unauthenticated.
 acl_dir="${REDIS_ACL_DIR:-}"
 acl_conf="${REDIS_ACL_CONF:-/tmp/redis-acl.conf}"
+# Redis loads this copy of users.acl with the reload user appended; the Secret mount stays read-only.
+acl_file="${REDIS_ACL_FILE:-/tmp/redis-users.acl}"
+acl_reload_token="${REDIS_ACL_RELOAD_TOKEN:-/tmp/redis-acl-reload.token}"
+acl_reload_user=baukit-acl-reload
+acl_poll_seconds="${ACL_POLL_SECONDS:-5}"
+# A users.acl that Redis rejected is retried this often, so redis_commands_failed_calls_total keeps rising.
+acl_retry_seconds="${ACL_RETRY_SECONDS:-60}"
+# 0 polls forever; tests set a bound.
+acl_poll_limit="${ACL_POLL_LIMIT:-0}"
 local_wait_attempts="${LOCAL_WAIT_ATTEMPTS:-24}"
 retry_seconds="${RETRY_SECONDS:-5}"
 down_after_ms=5000
@@ -118,13 +127,40 @@ acl_secret() {
   cat "$acl_dir/$1"
 }
 
+# Creates the pod-local password of the reload user. Only the redis container creates it, at start, on the
+# pod's tmp volume, so it survives a container restart and the acl-reload sidecar reads the same one.
+ensure_reload_token() {
+  [ ! -s "$acl_reload_token" ] || return 0
+  (
+    umask 077
+    head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' >"$acl_reload_token.$$"
+  )
+  mv "$acl_reload_token.$$" "$acl_reload_token"
+}
+
+# Copies users.acl from the Secret and appends the reload user, which may run ACL LOAD and nothing else.
+# Appending keeps the line numbers in Redis errors equal to those of the Secret's users.acl.
+write_acl_file() {
+  digest="$(sha256sum "$acl_reload_token" | cut -d ' ' -f 1)"
+  (
+    umask 077
+    {
+      awk 1 "$acl_dir/users.acl"
+      printf 'user %s on #%s resetkeys resetchannels -@all +acl|load\n' "$acl_reload_user" "$digest"
+    } >"$acl_file.$$"
+  )
+  mv "$acl_file.$$" "$acl_file"
+}
+
 # Writes the ACL file path and replication credentials to a private config file, so the password never
 # appears on the redis-server command line.
 write_acl_conf() {
+  ensure_reload_token
+  write_acl_file
   (
     umask 077
     printf '%s\n' \
-      "aclfile $acl_dir/users.acl" \
+      "aclfile $acl_file" \
       'masteruser replication' \
       "masterauth $(acl_secret replication-password)" \
       >"$acl_conf"
@@ -197,12 +233,79 @@ run_sentinel() {
   exec redis-sentinel "$sentinel_conf"
 }
 
+acl_checksum() {
+  sha256sum "$acl_dir/users.acl" | cut -d ' ' -f 1
+}
+
+# Redis quotes the offending token in its errors, which may be a password; keep only file, line and reason.
+redacted_acl_error() {
+  printf '%s' "$1" | tr '\n' ' ' |
+    sed -e "s|$acl_file|users.acl|g" -e "s/'[^']*'/'<redacted>'/g" -e 's/ WARNING: .*//'
+}
+
+# Returns 0 when Redis loaded the file, 1 when it rejected it and kept the previous users, 2 when it did
+# not answer or has not started yet. Sets reply to the redacted answer.
+load_acl() {
+  reply="redis has not created $acl_reload_token yet"
+  [ -s "$acl_reload_token" ] || return 2
+  write_acl_file
+  answer="$(REDISCLI_AUTH="$(cat "$acl_reload_token")" timeout 5 redis-cli -t 3 -h 127.0.0.1 -p 6379 \
+    --no-auth-warning --user "$acl_reload_user" ACL LOAD 2>&1 || true)"
+  reply="$(redacted_acl_error "$answer")"
+  case "$answer" in
+    OK) return 0 ;;
+    ERR*) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+
+# Loads users.acl into the local Redis whenever the mounted Secret changes. The kubelet swaps the files of a
+# Secret volume in place, unless it is mounted with subPath.
+run_acl_reload() {
+  if [ -z "$acl_dir" ]; then
+    log "acl-reload needs REDIS_ACL_DIR"
+    exit 2
+  fi
+  loaded=""
+  attempted=""
+  retry_at=0
+  unanswered=""
+  polls=0
+  while [ "$acl_poll_limit" = 0 ] || [ "$polls" -lt "$acl_poll_limit" ]; do
+    polls=$((polls + 1))
+    sum="$(acl_checksum)"
+    now="$(date +%s)"
+    if [ "$sum" != "$loaded" ] && { [ "$sum" != "$attempted" ] || [ "$now" -ge "$retry_at" ]; }; then
+      status=0
+      load_acl || status=$?
+      case "$status" in
+        0)
+          loaded="$sum"
+          unanswered=""
+          log "loaded users.acl sha256 $(printf '%.12s' "$sum")"
+          ;;
+        1)
+          attempted="$sum"
+          retry_at=$((now + acl_retry_seconds))
+          log "ACL LOAD rejected users.acl sha256 $(printf '%.12s' "$sum"), Redis keeps the previous users: $reply"
+          ;;
+        *)
+          [ "$reply" = "$unanswered" ] || log "ACL LOAD not done, retrying: $reply"
+          unanswered="$reply"
+          ;;
+      esac
+    fi
+    sleep "$acl_poll_seconds"
+  done
+}
+
 case "${1:-}" in
   server) run_server ;;
   sentinel) run_sentinel ;;
+  acl-reload) run_acl_reload ;;
   decide) decide_master "$no_answer_attempts" "$self_wait_attempts" ;;
   *)
-    log "usage: redis-ha.sh server|sentinel|decide"
+    log "usage: redis-ha.sh server|sentinel|acl-reload|decide"
     exit 2
     ;;
 esac

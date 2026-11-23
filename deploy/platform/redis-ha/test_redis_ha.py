@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import os
 import re
@@ -88,6 +89,8 @@ class RedisHaScript:
                 "LOCAL_WAIT_ATTEMPTS": "1",
                 "SENTINEL_CONF": str(stub_dir / "sentinel.conf"),
                 "REDIS_ACL_CONF": str(stub_dir / "redis-acl.conf"),
+                "REDIS_ACL_FILE": str(stub_dir / "redis-users.acl"),
+                "REDIS_ACL_RELOAD_TOKEN": str(stub_dir / "redis-acl-reload.token"),
                 **(extra_env or {}),
             }
             return process_runner.run_process(
@@ -214,9 +217,10 @@ class AclConfigTest(RedisHaScript, unittest.TestCase):
 
     def test_server_with_acl_dir_loads_acl_and_replication_credentials(self) -> None:
         with tempfile.TemporaryDirectory() as acl:
+            (Path(acl) / "users.acl").write_text("user default on nopass -@all +ping\n")
             result = self.decide("redis-2", {}, mode="server", extra_env=self.acl_env(Path(acl)))
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(f"aclfile {acl}/users.acl", result.stdout)
+            self.assertRegex(result.stdout, r"(?m)^aclfile \S+/redis-users\.acl$")
             self.assertIn("masteruser replication", result.stdout)
             self.assertIn("masterauth replication-secret", result.stdout)
             self.assertNotIn("arg replication-secret", result.stdout)
@@ -237,6 +241,133 @@ class AclConfigTest(RedisHaScript, unittest.TestCase):
             monitor = lines.index(f"sentinel monitor mymaster {fqdn(1)} 6379 2")
             self.assertGreater(lines.index("sentinel auth-user mymaster sentinel"), monitor)
             self.assertIn("sentinel auth-pass mymaster sentinel-secret", lines)
+
+
+RELOAD_STUB = textwrap.dedent(
+    """\
+    #!/bin/sh
+    call=$(($(cat "$STUB_DIR/calls" 2>/dev/null || echo 0) + 1))
+    echo "$call" >"$STUB_DIR/calls"
+    printf 'auth=%s args=%s\\n' "${REDISCLI_AUTH:-}" "$*" >>"$STUB_DIR/cli.log"
+    cp "$REDIS_ACL_FILE" "$STUB_DIR/loaded.$call"
+    [ ! -f "$STUB_DIR/change.$call" ] || cat "$STUB_DIR/change.$call" >>"$REDIS_ACL_DIR/users.acl"
+    reply="$STUB_DIR/reply.$call"
+    [ -f "$reply" ] || reply="$STUB_DIR/reply"
+    cat "$reply"
+    """
+)
+TOKEN = "a" * 64
+REJECTED = (
+    "ERR ACL_FILE:2: Error in applying operation 'tenant-secret': Syntax error. "
+    "WARNING: ACL errors detected, no change to the previously active ACL rules was performed\n"
+)
+
+
+class AclReloadTest(unittest.TestCase):
+    def setUp(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.stub_dir = Path(tmp.name)
+        self.acl_dir = self.stub_dir / "acl"
+        self.acl_dir.mkdir()
+        (self.acl_dir / "users.acl").write_text("user default on nopass -@all +ping")
+        cli = self.stub_dir / "redis-cli"
+        cli.write_text(RELOAD_STUB)
+        cli.chmod(0o755)
+        self.acl_file = self.stub_dir / "redis-users.acl"
+        self.token = self.stub_dir / "redis-acl-reload.token"
+        self.token.write_text(TOKEN)
+        (self.stub_dir / "reply").write_text("OK\n")
+        self.rejected = REJECTED.replace("ACL_FILE", str(self.acl_file))
+
+    def reload(self, polls: int, retry_seconds: int = 3600) -> subprocess.CompletedProcess[str]:
+        env = {
+            **os.environ,
+            "PATH": f"{self.stub_dir}:{os.environ['PATH']}",
+            "STUB_DIR": str(self.stub_dir),
+            "POD_NAME": "redis-1",
+            "REDIS_ACL_DIR": str(self.acl_dir),
+            "REDIS_ACL_FILE": str(self.acl_file),
+            "REDIS_ACL_RELOAD_TOKEN": str(self.token),
+            "ACL_POLL_SECONDS": "0",
+            "ACL_RETRY_SECONDS": str(retry_seconds),
+            "ACL_POLL_LIMIT": str(polls),
+        }
+        return process_runner.run_process(
+            ["sh", str(SCRIPT), "acl-reload"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def calls(self) -> list[str]:
+        log = self.stub_dir / "cli.log"
+        return log.read_text().splitlines() if log.exists() else []
+
+    def test_unchanged_file_is_loaded_once_as_the_reload_user(self) -> None:
+        result = self.reload(polls=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        self.assertEqual(len(calls), 1, calls)
+        self.assertTrue(calls[0].startswith(f"auth={TOKEN} "), calls[0])
+        self.assertIn("--user baukit-acl-reload ACL LOAD", calls[0])
+        self.assertNotIn(TOKEN, calls[0].split(" args=", 1)[1])
+        self.assertIn("loaded users.acl sha256", result.stderr)
+
+    def test_loaded_file_is_the_secret_plus_a_reload_user_limited_to_acl_load(self) -> None:
+        self.reload(polls=1)
+        digest = hashlib.sha256(TOKEN.encode()).hexdigest()
+        self.assertEqual(
+            (self.stub_dir / "loaded.1").read_text().splitlines(),
+            [
+                "user default on nopass -@all +ping",
+                f"user baukit-acl-reload on #{digest} resetkeys resetchannels -@all +acl|load",
+            ],
+        )
+        self.assertEqual(self.acl_file.stat().st_mode & 0o777, 0o600)
+
+    def test_rejected_file_is_logged_without_the_quoted_token_and_retried_later(self) -> None:
+        (self.stub_dir / "reply").write_text(self.rejected)
+        result = self.reload(polls=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(self.calls()), 1)
+        self.assertIn("Redis keeps the previous users: ERR users.acl:2:", result.stderr)
+        self.assertNotIn("tenant-secret", result.stderr)
+        self.assertNotIn("WARNING", result.stderr)
+
+    def test_rejected_file_is_retried_after_the_retry_interval(self) -> None:
+        (self.stub_dir / "reply").write_text(self.rejected)
+        self.reload(polls=3, retry_seconds=0)
+        self.assertEqual(len(self.calls()), 3)
+
+    def test_changed_file_after_a_rejection_is_loaded_at_once(self) -> None:
+        (self.stub_dir / "reply.1").write_text(self.rejected)
+        (self.stub_dir / "change.1").write_text("\nuser tenant-b on >b -@all +get\n")
+        result = self.reload(polls=3)
+        self.assertEqual(len(self.calls()), 2, result.stderr)
+        self.assertIn("user tenant-b on >b -@all +get", (self.stub_dir / "loaded.2").read_text())
+
+    def test_waits_quietly_until_redis_creates_the_token(self) -> None:
+        self.token.unlink()
+        result = self.reload(polls=3)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(result.stderr.count("retrying"), 1, result.stderr)
+
+    def test_unreachable_redis_is_retried_on_every_poll(self) -> None:
+        (self.stub_dir / "reply").write_text("Could not connect to Redis at 127.0.0.1:6379\n")
+        result = self.reload(polls=3)
+        self.assertEqual(len(self.calls()), 3)
+        self.assertEqual(result.stderr.count("retrying"), 1, result.stderr)
+
+
+class AclComponentTests(unittest.TestCase):
+    def test_secret_is_mounted_as_a_directory_so_the_kubelet_updates_it(self) -> None:
+        component = STATEFULSET.parents[1] / "components" / "redis-ha-acl" / "statefulset-acl.yaml"
+        text = component.read_text()
+        self.assertNotIn("subPath", text)
+        self.assertIn("- acl-reload\n", text)
 
 
 class SentinelConfigVolumeTests(unittest.TestCase):
