@@ -1,0 +1,18 @@
+groups:
+  - name: baukit-redis
+    rules:
+      - alert: BaukitRedisAclLoadFailing
+        expr: |
+          sum by (namespace, pod) (increase(redis_commands_failed_calls_total{cmd="acl|load"}[5m])) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: Redis {{ $labels.namespace }}/{{ $labels.pod }} rejects the users.acl from its Secret
+          description: >-
+            ACL LOAD has failed on {{ $labels.namespace }}/{{ $labels.pod }} for 10 minutes. Redis keeps
+            the users it loaded last, so users added or changed in Secret redis-ha-acl cannot log in,
+            and the pod will not start again until users.acl is fixed. The acl-reload container logs
+            the line Redis rejected.
+          runbook_url: RUNBOOK_BASE_URL/redis-acl-load-failing
