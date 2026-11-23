@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `baukit doctor` skips `backend/fuzz/Cargo.lock` in the registry pin check while git ignores it and does not track it. The fuzz step copies `backend/Cargo.lock` over that file before every run, so a stale copy from an earlier run no longer fails doctor. A tracked copy still fails, and so does every other ignored lockfile, such as an ignored `backend/Cargo.lock`, because local builds resolve against it.
+
 ## [0.28.8] - 2026-11-22
 
 ## [0.28.7] - 2026-11-22
