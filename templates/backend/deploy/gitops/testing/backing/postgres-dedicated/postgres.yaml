@@ -46,7 +46,7 @@ spec:
   instances: 1
   # A single instance cannot move during a drain, so its PDB stays off until 2+ instances.
   enablePDB: false
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie@sha256:13f5dc1b42c5d96233724be976740df031136ca013f98a56a2877a62b362b453
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie@sha256:c437b7c6c00aa7e66f5d6de1dd83602391fdebd4ff776ffb1ab7aaba5e7351ad
   enableSuperuserAccess: false
   inheritedMetadata:
     labels:
