@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## 0.29.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.29.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/a11y-core@0.29.0
+  - @baukit/ui-tokens@0.29.0
+
 ## 0.28.8
 
 ### Patch Changes
