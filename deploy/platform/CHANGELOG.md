@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - The CNPG Postgres image moves from `ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie@sha256:13f5dc1b...b453` (the 2026-11-16 build) to `sha256:c437b7c6...51ad` (the 2026-11-23 build, `18.7-202611230809-system-trixie`) in the operator default, the `postgresql` ImageCatalog, the restore test, Keycloak's database and the backend template's dedicated Postgres. The new build ships krb5 1.21.3-5+deb13u2 and clears 14 krb5 CVEs (CVE-2026-107364, CVE-2026-112315 to CVE-2026-112323, CVE-2026-118380, CVE-2026-119079, CVE-2026-71199, CVE-2026-71200); Trivy reports no fixable HIGH or CRITICAL finding in it. PostgreSQL stays on 18.7.
+- `image-findings.toml` allows the same 14 krb5 CVEs in `plugin-barman-cloud-sidecar:v0.16.0` and `redpandadata/redpanda:v26.2.7`. Both are the newest releases on their lines and still ship krb5 1.21.3-5+deb13u1; Redpanda v26.3.1 ships it too. The advisories attack the KDC and kadmind, which neither image ships.
 
 ## [0.28.8] - 2026-11-22
 

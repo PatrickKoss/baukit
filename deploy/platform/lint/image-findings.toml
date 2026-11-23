@@ -1869,9 +1869,23 @@ ids = [
 
 [images."ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0@sha256:c669259e20ed1e11fad821f735c396c19d929985aa05b9544b13ecc8b5a386d0"]
 expires = 2027-01-16
-reason = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0: no fixed upstream release exists as of 2026-11-19. v0.16.0 is the newest plugin-barman-cloud release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
+reason = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0: no fixed upstream release exists as of 2026-11-23. v0.16.0 is the newest plugin-barman-cloud release and its digest has not been rebuilt, so it still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. CVE-2026-107364, CVE-2026-112315 to CVE-2026-112323, CVE-2026-118380, CVE-2026-119079, CVE-2026-71199 and CVE-2026-71200 are Debian trixie krb5 1.21.3-5+deb13u1 (libkrb5-3, libgssapi-krb5-2, libk5crypto3, libkrb5support0), fixed in 1.21.3-5+deb13u2. Every one of these advisories attacks the KDC or kadmind, which the image does not ship; it carries only the client libraries, and the sidecar authenticates to the object store with S3 keys and to Postgres over its local socket, never with Kerberos. Follow-up RF29."
 ids = [
+  "CVE-2026-107364",
   "CVE-2026-111943",
+  "CVE-2026-112315",
+  "CVE-2026-112316",
+  "CVE-2026-112317",
+  "CVE-2026-112318",
+  "CVE-2026-112319",
+  "CVE-2026-112320",
+  "CVE-2026-112321",
+  "CVE-2026-112322",
+  "CVE-2026-112323",
+  "CVE-2026-118380",
+  "CVE-2026-119079",
+  "CVE-2026-71199",
+  "CVE-2026-71200",
   "CVE-2026-78661",
   "CVE-2026-78667",
   "CVE-2026-78669",
@@ -2004,6 +2018,26 @@ ids = [
   "CVE-2026-78661",
   "CVE-2026-95839",
   "CVE-2026-97054",
+]
+
+[images."redpandadata/redpanda:v26.2.7@sha256:43545ee03966431f5451e0b3c1e651b39fbe3eb383360220311021f50133b649"]
+expires = 2027-01-16
+reason = "redpandadata/redpanda:v26.2.7: no fixed upstream release exists as of 2026-11-23. v26.2.7 is the newest 26.2 patch and its digest has not been rebuilt; v26.3.1, the next feature release, ships the same packages. The findings are Debian trixie krb5 1.21.3-5+deb13u1 (libkrb5-3, libgssapi-krb5-2, libk5crypto3, libkrb5support0, krb5-locales), fixed in 1.21.3-5+deb13u2, which the image's curl pulls in. Every one of these advisories attacks the KDC or kadmind, which the image does not ship. PostHog's broker enables no SASL on its in-cluster Kafka listener, so it never negotiates GSSAPI. Follow-up RF29."
+ids = [
+  "CVE-2026-107364",
+  "CVE-2026-112315",
+  "CVE-2026-112316",
+  "CVE-2026-112317",
+  "CVE-2026-112318",
+  "CVE-2026-112319",
+  "CVE-2026-112320",
+  "CVE-2026-112321",
+  "CVE-2026-112322",
+  "CVE-2026-112323",
+  "CVE-2026-118380",
+  "CVE-2026-119079",
+  "CVE-2026-71199",
+  "CVE-2026-71200",
 ]
 
 [images."reg.kyverno.io/kyverno/background-controller:v1.20.0@sha256:c72df38320a48fc9de10f9d23d087a117853bb08207b7f60f6d1e8457fb3ddb7"]
