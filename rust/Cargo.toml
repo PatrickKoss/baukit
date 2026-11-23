@@ -75,7 +75,7 @@ rmcp = { version = "3.9.0", default-features = false, features = ["server", "tra
 serde = { version = "1.0.229", features = ["derive"] }
 serde_html_form = "0.4.1"
 serde_json = "1.0.151"
-sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "json", "uuid"] }
+sqlx = { version = "0.9.1", default-features = false, features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "postgres", "json", "uuid"] }
 subtle = "2.6.1"
 tempfile = "3.27.0"
 testcontainers = { version = "0.28.0", default-features = false, features = ["aws-lc-rs", "watchdog"] }

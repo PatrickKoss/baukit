@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Require sqlx 0.9.1. sqlx-postgres 0.9.0 counted a transaction only after `BEGIN` returned, so a `begin()` future dropped mid-await left the server connection inside a transaction. The pool then handed that connection to the next borrower, whose statements ran inside it. 0.9.1 counts the transaction before sending `BEGIN`, and products resolve it through this crate's minimum.
+
 ## [0.28.8] - 2026-11-22
 
 ## [0.28.7] - 2026-11-22

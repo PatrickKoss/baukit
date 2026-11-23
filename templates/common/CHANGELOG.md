@@ -6,6 +6,8 @@
 
 {% endif %}{% if context.quality_strict and context.backend %}- The strict gate has a `deploy-values` step. It builds every `deploy/gitops` overlay with kustomize, lints and renders the baukit-app chart from the same Baukit checkout with each HelmRelease's values, and fails when a container sets one env name twice. It installs the helm and kustomize versions Baukit pins into `~/.cache/baukit/tools`. New products map `"deploy/**"` to `["deploy-values"]`, and `baukit doctor` fails when a `quality.affected` glob matches `deploy/gitops` without selecting `deploy-values` or the `fast` lane. Copy `scripts/quality-gate.sh` and `docs/quality-gate.md` from the template, run `baukit check template-files --update`, and set `"deploy/**" = ["deploy-values"]` in `[quality.affected]`; without a `deploy/**` glob every deploy change runs the full gate. Rename a product step already called `deploy-values` in `scripts/quality-gate.local.sh`, because the gate rejects duplicate step names.
 
+{% endif %}{% if context.backend %}- `backend/Cargo.toml` requires sqlx 0.9.1. With 0.9.0 a `begin()` future cancelled mid-await left its pooled connection inside a server-side transaction, and the next borrower's statements ran in it. Set `version = "0.9.1"` on `sqlx` in `[workspace.dependencies]` and run `cargo update -p sqlx`.
+
 {% endif %}## [0.28.8] - 2026-11-22
 
 ## [0.28.7] - 2026-11-22
