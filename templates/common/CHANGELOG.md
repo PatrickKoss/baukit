@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 
-{% if context.mobile and context.quality_strict %}- `scripts/quality-gate.sh` step `mobile-unit` runs `pnpm --dir mobile run test:scripts` before jest, in full and affected mode. The step ran only jest, so the `node --test` script tests in `mobile/scripts/*.test.mjs` never ran in the gate. `mobile/package.json` gains `test:scripts` with the `node --test` command that `test` ran, and `test` becomes `jest && pnpm run test:scripts`. Products that copied the template move their `node --test` list into `test:scripts` and copy `step_mobile_unit`.
+{% if context.mobile %}- Products whose own tests run copies of `mobile/scripts/qa` scripts, as the template's `test_android.py` does, need three changes since 0.30.1. The test tree must contain `android-broker.sh`, because `android-env.sh` sources it unconditionally; the template test copies the whole `mobile/scripts/qa` directory. The test environment must set `BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE` high (the template test uses `1000`), or `start` and `boot` wait up to 600 s for the host load to drop. A fake `adb` rule that matches every `am start` also matches the Chrome warm-up `am start -W -a android.intent.action.VIEW -d about:blank -p com.android.chrome`{% if not context.auth_enabled %} that auth products run{% endif %}; match the app launch with `am start -n <package>/.MainActivity` instead.
+{% endif %}{% if context.mobile and context.quality_strict %}- `scripts/quality-gate.sh` step `mobile-unit` runs `pnpm --dir mobile run test:scripts` before jest, in full and affected mode. The step ran only jest, so the `node --test` script tests in `mobile/scripts/*.test.mjs` never ran in the gate. `mobile/package.json` gains `test:scripts` with the `node --test` command that `test` ran, and `test` becomes `jest && pnpm run test:scripts`. Products that copied the template move their `node --test` list into `test:scripts` and copy `step_mobile_unit`.
 {% endif %}
 ## [0.30.2] - 2026-11-24
 
