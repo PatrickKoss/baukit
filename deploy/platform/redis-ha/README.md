@@ -8,9 +8,12 @@ application-level rate-limit counters. The application contract URL is:
 redis+sentinel://redis-sentinel.platform-redis.svc:26379/mymaster
 ```
 
-Sentinel monitors master name `mymaster` with quorum 2. Sentinel detects an
-unavailable master after 5 seconds, uses a 30-second failover timeout, and
-synchronizes one replica at a time.
+Sentinel monitors master name `mymaster` with quorum 2. The Sentinel in
+`redis-0` marks an unavailable master down after 5 seconds, the one in
+`redis-1` after 7 and the one in `redis-2` after 9, so the two surviving
+Sentinels do not start a failover at the same moment and split the vote.
+Sentinel uses a 10-second failover timeout and synchronizes one replica at a
+time.
 
 Both containers start through `redis-ha.sh`, which the kustomization ships as
 the `redis-ha-scripts` ConfigMap. On start the script asks the Sentinels in the
@@ -24,15 +27,15 @@ other pods for the current master:
   runners. A restarted `redis-0` that gave up earlier started as an empty
   master, and the replicas resynced to it.
 - This pod reported as master: the pod was master and restarted before the
-  failover finished. Redis waits up to 125 seconds for the Sentinels to promote
+  failover finished. Redis waits up to 109 seconds for the Sentinels to promote
   another pod and starts as master only if they still agree on this pod. A
   Sentinel whose timer stalled for more than 2 seconds sits in TILT mode for
   30 seconds and neither votes nor fails over. When two Sentinels start the
   failover at the same moment, each votes for itself and the election fails.
-  Sentinel retries twice the failover timeout (60 seconds) after the first
-  try, so the wait covers detection (5 seconds), one TILT period, that retry
-  and one more failover timeout for the election and promotion. Starting as
-  master earlier would make the replicas resync to the empty data set.
+  Sentinel retries twice the failover timeout (20 seconds) after the try
+  before, so the wait covers the slowest detection (9 seconds), one TILT
+  period, three retries and one more failover timeout for the election and
+  promotion. Starting as master earlier would make the replicas resync to the empty data set.
 - Different masters reported: Redis keeps retrying, then exits so the kubelet
   restarts it.
 

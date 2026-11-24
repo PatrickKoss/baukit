@@ -200,13 +200,15 @@ spec:
             - -ec
           args:
             - |
+              # Sentinels that see the master die together split the vote; a per-pod delay lets one ask first.
+              down_after_ms=$((5000 + ${HOSTNAME##*-} * 2000))
               printf '%s\n' \
                 'port 26379' \
                 'dir /tmp' \
                 'sentinel resolve-hostnames yes' \
                 'sentinel monitor mymaster {{ include "baukit-app.redisName" . }}-0.{{ include "baukit-app.redisName" . }}-headless 6379 {{ add (div $replicas 2) 1 }}' \
-                'sentinel down-after-milliseconds mymaster 5000' \
-                'sentinel failover-timeout mymaster 30000' \
+                "sentinel down-after-milliseconds mymaster $down_after_ms" \
+                'sentinel failover-timeout mymaster 10000' \
                 'sentinel parallel-syncs mymaster 1' \
                 > /sentinel/sentinel.conf
               exec redis-sentinel /sentinel/sentinel.conf

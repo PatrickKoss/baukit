@@ -22,21 +22,29 @@ acl_retry_seconds="${ACL_RETRY_SECONDS:-60}"
 acl_poll_limit="${ACL_POLL_LIMIT:-0}"
 local_wait_attempts="${LOCAL_WAIT_ATTEMPTS:-24}"
 retry_seconds="${RETRY_SECONDS:-5}"
-down_after_ms=5000
-failover_timeout_ms=30000
-# Redis Sentinel holds TILT mode for a fixed 30 s after its timer stalls; it neither votes nor fails over then.
-sentinel_tilt_ms=30000
-# A Sentinel in TILT detects the dead master only when TILT ends, and after a split vote it retries the
-# failover only twice the failover timeout after the first try. A restarted master that is still reported
-# as master waits for both and the promotion, because starting as master without persistence would make
-# the replicas resync to an empty data set.
-self_wait_seconds="${SELF_WAIT_SECONDS:-$(((down_after_ms + sentinel_tilt_ms + 3 * failover_timeout_ms) / 1000))}"
-poll_seconds=$((retry_seconds > 0 ? retry_seconds : 1))
-self_wait_attempts=$((self_wait_seconds / poll_seconds + 1))
-
 pod_name="${POD_NAME:-$(hostname)}"
 statefulset="${pod_name%-*}"
 ordinal="${pod_name##*-}"
+
+# Two Sentinels that see the master die at the same moment reach odown together, each votes for itself and
+# the election fails. Sentinel retries twice the failover timeout later with under 1 s of jitter, which split
+# again on a loaded CI node. A detection delay that differs per pod lets one Sentinel ask for votes before
+# the other starts its own failover, and the short failover timeout leaves room for several retries.
+down_after_base_ms=5000
+down_after_step_ms=2000
+down_after_ms=$((down_after_base_ms + ordinal * down_after_step_ms))
+max_down_after_ms=$((down_after_base_ms + (peer_count - 1) * down_after_step_ms))
+failover_timeout_ms=10000
+split_vote_retries=3
+# Redis Sentinel holds TILT mode for a fixed 30 s after its timer stalls; it neither votes nor fails over then.
+sentinel_tilt_ms=30000
+# A restarted master that is still reported as master waits for detection, one TILT period, the split-vote
+# retries and the promotion, because starting as master without persistence would make the replicas resync
+# to an empty data set.
+self_wait_ms=$((max_down_after_ms + sentinel_tilt_ms + (2 * split_vote_retries + 1) * failover_timeout_ms))
+self_wait_seconds="${SELF_WAIT_SECONDS:-$((self_wait_ms / 1000))}"
+poll_seconds=$((retry_seconds > 0 ? retry_seconds : 1))
+self_wait_attempts=$((self_wait_seconds / poll_seconds + 1))
 
 # kube-router rejects a new pod's traffic until it programs the pod IP, which took over 15 s on CI runners.
 # redis-0 starting as master while the peers are unreachable would make them resync to an empty data set,
