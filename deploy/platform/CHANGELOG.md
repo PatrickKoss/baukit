@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- RustFS in `overlays/local/components/foundation` raises its memory limit from 384Mi to 768Mi. RustFS 1.0.6 holds the whole source part of every `UploadPartCopy` in memory, so the server-side copy zot runs to move a finished upload to its blob path needs about concurrency times part size. Reproduced with zot v2.1.23 on the pinned RustFS and a 6 GB layer: upload took 31 MiB, read-back about 100 MiB, and the copy peaked at 2.3 GiB with the driver default of 100 parallel 32 MiB copies (OOMKilled at 384Mi), 280 MiB with 8, and 561 MiB with 16 under the new limit (push and pull succeeded, no OOM). RustFS has no setting that bounds it; `RUSTFS_PUT_FOREGROUND_ADMISSION_*` rejects excess copies with `503 SlowDown` instead of queueing, which fails the push too. Consumers that put a registry on this RustFS, such as the homelab zot, must set `"multipartcopymaxconcurrency": 16` or lower in its S3 `storageDriver`; README section "RustFS memory" has the numbers. `lint/test_rustfs_memory.py` fails if the render drops the limit below 16 x 32 MiB plus 128 MiB. Updating restarts the RustFS pod once.
+
 ## [0.30.1] - 2026-11-24
 
 - `lint/image-findings.toml` allows CVE-2026-111943, CVE-2026-78661, CVE-2026-78667, CVE-2026-78669 and CVE-2026-97031 in the pinned `generic-device-plugin` of `emulator-slots`, and CVE-2026-77423 in `zookeeper:3.9.7`, until 2027-01-16. No upstream build fixes them as of 2026-11-24: the newest device-plugin build is still Go 1.26.8 with x/net 0.59.0, and the newest zookeeper 3.9.7 still ships jline 3.30.14. Each reason records why the code is unreachable here. Follow-up RF29.
