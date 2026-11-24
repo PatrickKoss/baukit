@@ -121,3 +121,63 @@ fn mobile_unit_gate_step_runs_the_node_tests_in_both_modes() -> anyhow::Result<(
     }
     Ok(())
 }
+
+fn step_key(step: &serde_yaml_ng::Value) -> String {
+    match step {
+        serde_yaml_ng::Value::String(command) => command.clone(),
+        serde_yaml_ng::Value::Mapping(mapping) => mapping
+            .iter()
+            .next()
+            .map(|(command, argument)| {
+                let argument = argument
+                    .get("id")
+                    .unwrap_or(argument)
+                    .as_str()
+                    .unwrap_or_default();
+                format!("{} {argument}", command.as_str().unwrap_or_default())
+            })
+            .unwrap_or_default(),
+        _ => String::new(),
+    }
+}
+
+#[test]
+fn keycloak_sign_in_flows_hide_the_keyboard_after_each_field() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&mobile_options(
+        parent.path(),
+        "maestro-login",
+        Some(AuthProvider::Oidc),
+    ))?;
+    let mut sign_in_flows = 0;
+    for entry in fs::read_dir(root.join("mobile/.maestro"))? {
+        let source = fs::read_to_string(entry?.path())?;
+        let Some(flow) = source.split("\n---\n").nth(1) else {
+            continue;
+        };
+        let steps: Vec<serde_yaml_ng::Value> = serde_yaml_ng::from_str(flow)?;
+        let keys = steps.iter().map(step_key).collect::<Vec<_>>();
+        let Some(login) = keys.iter().position(|key| key == "tapOn kc-login") else {
+            continue;
+        };
+        sign_in_flows += 1;
+        let username = keys
+            .iter()
+            .position(|key| key == "tapOn username")
+            .ok_or_else(|| anyhow::anyhow!("no username tap"))?;
+        assert_eq!(
+            keys[username..=login],
+            [
+                "tapOn username",
+                "inputText test",
+                "hideKeyboard",
+                "tapOn password",
+                "inputText development-password",
+                "hideKeyboard",
+                "tapOn kc-login",
+            ]
+        );
+    }
+    assert_eq!(sign_in_flows, 1);
+    Ok(())
+}

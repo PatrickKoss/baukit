@@ -12,6 +12,7 @@ appId: ${APP_ID}
 - tapOn:
     id: username
 - inputText: test
+- hideKeyboard
 - tapOn:
     id: password
 - inputText: development-password
