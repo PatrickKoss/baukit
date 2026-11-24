@@ -8,6 +8,7 @@ mod doctor_dependencies;
 mod doctor_dev_ports;
 mod doctor_files;
 mod doctor_frontend;
+mod doctor_gitops;
 mod doctor_host;
 mod doctor_layout;
 mod doctor_mcp;

@@ -14,6 +14,7 @@ use crate::{
         pwa_app_directory, validate_frontend_capability, validate_mobile_router_configuration,
         validate_pwa_worker_build, web_renders_expo_routes,
     },
+    doctor_gitops,
     doctor_host::{
         DoctorHost, SystemDoctorHost, diagnose_docker, diagnose_ssh_agent,
         has_docker_build_targets, probe_git_dependency,
@@ -87,6 +88,7 @@ fn doctor_with_host(root: &Path, host: &dyn DoctorHost) -> Result<Vec<String>> {
     validate_port_configuration(root, &manifest, successes, failures)?;
     validate_backend(root, &manifest, host, successes, failures)?;
     doctor_postgres::validate(root, &manifest, successes, failures)?;
+    doctor_gitops::validate(root, &manifest, successes, failures)?;
     validate_cargo_workspaces(root, &manifest, host, successes, failures)?;
     validate_mobile(root, &manifest, successes, failures)?;
     validate_web(root, &manifest, successes, failures)?;

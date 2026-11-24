@@ -321,6 +321,31 @@ fn doctor_requires_dedicated_postgres_for_owner_create_role() -> anyhow::Result<
 }
 
 #[test]
+fn doctor_fails_when_the_gitops_chart_tag_lags_the_template_version() -> anyhow::Result<()> {
+    let seed = tempfile::tempdir()?;
+    let root = generate_new(&strict_auth_options(seed.path(), "chart-tag-app"))?;
+    let chart_source = root.join("deploy/gitops/base/chart-source.yaml");
+    let source = fs::read_to_string(&chart_source)?;
+    let current = format!("tag: v{}\n", env!("CARGO_PKG_VERSION"));
+    assert!(source.contains(&current), "{source}");
+    if let Err(error) = doctor(&root) {
+        assert!(!error.to_string().contains("chart-source.yaml"), "{error}");
+    }
+    fs::write(&chart_source, source.replace(&current, "tag: v0.28.7\n"))?;
+    let message = doctor(&root)
+        .expect_err("a stale chart tag must fail the doctor")
+        .to_string();
+    assert!(
+        message.contains(&format!(
+            "deploy/gitops/base/chart-source.yaml sets ref.tag v0.28.7, but template_version is {}",
+            env!("CARGO_PKG_VERSION")
+        )),
+        "{message}"
+    );
+    Ok(())
+}
+
+#[test]
 fn linux_jobs_take_runners_from_repository_variables() -> anyhow::Result<()> {
     let seed = tempfile::tempdir()?;
     let root = generate_new(&strict_auth_options(seed.path(), "runner-app"))?;
