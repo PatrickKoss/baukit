@@ -181,3 +181,135 @@ fn keycloak_sign_in_flows_hide_the_keyboard_after_each_field() -> anyhow::Result
     assert_eq!(sign_in_flows, 1);
     Ok(())
 }
+
+const QA_SHELL_SCRIPTS: [&str; 6] = [
+    "services.sh",
+    "android-env.sh",
+    "build-android.sh",
+    "build-ios.sh",
+    "ios-env.sh",
+    "run-maestro.sh",
+];
+const LOCAL_HOOKS_SOURCE: &str = "|| source \"$local_hooks\"\n";
+
+fn offset_product(parent: &Path, offset: u32) -> anyhow::Result<PathBuf> {
+    let mut options = mobile_options(parent, "qa-ports", Some(AuthProvider::Oidc));
+    options.port_offset = offset;
+    generate_new(&options)
+}
+
+fn qa_port_probe(
+    root: &Path,
+    script: &str,
+    local_hooks: &str,
+    environment: &[(&str, &str)],
+) -> anyhow::Result<String> {
+    let qa = root.join("mobile/scripts/qa");
+    let source = fs::read_to_string(qa.join(script))?;
+    let end = source
+        .find(LOCAL_HOOKS_SOURCE)
+        .ok_or_else(|| anyhow::anyhow!("{script} does not source local.sh"))?
+        + LOCAL_HOOKS_SOURCE.len();
+    let probe = qa.join(format!("probe-{script}"));
+    fs::write(
+        &probe,
+        format!(
+            "{}printf '%s %s\\n' \"$api_port\" \"$keycloak_port\"\n",
+            &source[..end]
+        ),
+    )?;
+    fs::write(qa.join("local.sh"), local_hooks)?;
+    let tools = tempfile::tempdir()?;
+    fs::write(tools.path().join("maestro"), "#!/bin/sh\n")?;
+    fs::set_permissions(
+        tools.path().join("maestro"),
+        fs::Permissions::from_mode(0o700),
+    )?;
+    let mut command = Command::new("bash");
+    command.arg(&probe).env(
+        "PATH",
+        format!("{}:{}", tools.path().display(), std::env::var("PATH")?),
+    );
+    for variable in ["BAUKIT_QA_API_PORT", "BAUKIT_QA_KEYCLOAK_PORT"] {
+        command.env_remove(variable);
+    }
+    command.envs(environment.iter().copied());
+    let output = command.output()?;
+    fs::remove_file(probe)?;
+    anyhow::ensure!(
+        output.status.success(),
+        "{script}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    Ok(String::from_utf8(output.stdout)?.trim().to_owned())
+}
+
+#[test]
+fn mobile_qa_ports_follow_the_product_port_offset() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = offset_product(parent.path(), 400)?;
+    let qa = root.join("mobile/scripts/qa");
+    let compose = fs::read_to_string(qa.join("docker-compose.qa.yml"))?;
+    for expansion in [
+        "${BAUKIT_QA_POSTGRES_PORT:-15832}",
+        "${BAUKIT_QA_REDIS_PORT:-16779}",
+        "${BAUKIT_QA_KEYCLOAK_PORT:-18481}",
+    ] {
+        assert!(compose.contains(expansion), "{expansion}");
+    }
+    let services = fs::read_to_string(qa.join("services.sh"))?;
+    assert!(services.contains("${BAUKIT_QA_OPS_PORT:-19490}"));
+    for fixed in ["15432", "16379", "18080", "19090", "18081"] {
+        for file in QA_SHELL_SCRIPTS
+            .iter()
+            .chain(&["docker-compose.qa.yml", "local.sh.example"])
+        {
+            let source = fs::read_to_string(qa.join(file))?;
+            assert!(!source.contains(fixed), "{file} still names {fixed}");
+        }
+        let readme = fs::read_to_string(root.join("mobile/README.md"))?;
+        assert!(!readme.contains(fixed), "README names {fixed}");
+    }
+    for script in QA_SHELL_SCRIPTS {
+        assert_eq!(qa_port_probe(&root, script, "", &[])?, "18480 18481");
+    }
+    Ok(())
+}
+
+#[test]
+fn mobile_qa_port_overrides_win_over_the_derived_defaults() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = offset_product(parent.path(), 400)?;
+    let leitbild_style = "export api_port=\"${BAUKIT_QA_API_PORT:-24200}\"\nexport keycloak_port=\"${BAUKIT_QA_KEYCLOAK_PORT:-24203}\"\n";
+    let environment = [
+        ("BAUKIT_QA_API_PORT", "21000"),
+        ("BAUKIT_QA_KEYCLOAK_PORT", "21001"),
+    ];
+    for script in QA_SHELL_SCRIPTS {
+        assert_eq!(
+            qa_port_probe(&root, script, "", &environment)?,
+            "21000 21001"
+        );
+        assert_eq!(
+            qa_port_probe(&root, script, leitbild_style, &[])?,
+            "24200 24203"
+        );
+        assert_eq!(
+            qa_port_probe(&root, script, leitbild_style, &environment)?,
+            "21000 21001"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn doctor_accepts_the_derived_qa_keycloak_port() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut options = mobile_options(parent.path(), "qa-doctor", Some(AuthProvider::Clerk));
+    options.port_offset = 400;
+    let root = generate_new(&options)?;
+    let services = fs::read_to_string(root.join("mobile/scripts/qa/services.sh"))?;
+    assert!(services.contains("${BAUKIT_QA_KEYCLOAK_PORT:-18481}"));
+    baukit_cli::doctor(&root)?;
+    Ok(())
+}

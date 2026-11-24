@@ -40,9 +40,16 @@ Clerk and WorkOS realm's `<app>-local` client in `keycloak/realm.json`,
 `pkce-login.py` example. It defaults to 18890. Doctor checks that client's
 redirect URIs against it instead of the browser ports.
 
+The mobile QA scripts default PostgreSQL, Redis, the API, the operations
+listener and Keycloak to the product's effective host port plus 10000, so
+offset 0 renders 15432, 16379, 18080, 19090 and 18081, and `port_offset = 400`
+renders 15832 and so on. `BAUKIT_QA_*_PORT` variables and assignments in
+`mobile/scripts/qa/local.sh` still win.
+
 For Clerk and WorkOS mobile products, doctor accepts a QA Keycloak default of
 `${BAUKIT_QA_KEYCLOAK_PORT:-<port>}` in the mobile QA scripts on the bundled
-18081, on `keycloak` and on every `keycloak_extra` port.
+18081, on the derived QA Keycloak port, on `keycloak` and on every
+`keycloak_extra` port.
 
 Absent declarations retain Vite dev 5173, preview 4173, and Expo's unpinned
 Metro port. `port_offset` shifts PostgreSQL, API, operations, Keycloak, Redis,

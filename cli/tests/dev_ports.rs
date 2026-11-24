@@ -1100,7 +1100,8 @@ fn keycloak_extra_rejects_empty_duplicate_zero_and_colliding_ports() -> anyhow::
     Ok(())
 }
 
-const QA_KEYCLOAK_DEFAULT: &str = "${BAUKIT_QA_KEYCLOAK_PORT:-18081}";
+// CLERK_PORTS declares keycloak 8281, so the rendered QA default is 8281 + 10000.
+const QA_KEYCLOAK_DEFAULT: &str = "${BAUKIT_QA_KEYCLOAK_PORT:-18281}";
 const QA_KEYCLOAK_SCRIPTS: [&str; 5] = [
     "mobile/scripts/qa/docker-compose.qa.yml",
     "mobile/scripts/qa/services.sh",
@@ -1150,7 +1151,7 @@ fn doctor_accepts_the_bundled_qa_keycloak_port() -> anyhow::Result<()> {
 
 #[test]
 fn doctor_accepts_a_qa_keycloak_on_a_declared_port() -> anyhow::Result<()> {
-    for port in [8281, 24003] {
+    for port in [8281, 24003, 18081] {
         let parent = tempfile::tempdir()?;
         clerk_product(parent.path(), CLERK_PORTS)?;
         use_qa_keycloak_port(parent.path(), port)?;

@@ -5,8 +5,8 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 mobile_dir="$root/mobile"
 platform="${1:-}"
 state_dir="${BAUKIT_QA_STATE_DIR:-$mobile_dir/.qa}"
-api_port="${BAUKIT_QA_API_PORT:-18080}"
-{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
+api_port="${BAUKIT_QA_API_PORT:-{{ context.qa_ports.api }}}"
+{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-{{ context.qa_ports.keycloak }}}"
 {% endif %}maestro_bin="$(command -v maestro || true)"
 [[ -n "$maestro_bin" ]] || {
   echo "qa: Maestro is required; install it from https://docs.maestro.dev/getting-started/installing-maestro" >&2

@@ -4,8 +4,8 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 state_dir="${BAUKIT_QA_STATE_DIR:-$root/mobile/.qa}"
 action="${1:-start}"
-api_port="${BAUKIT_QA_API_PORT:-18080}"
-{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
+api_port="${BAUKIT_QA_API_PORT:-{{ context.qa_ports.api }}}"
+{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-{{ context.qa_ports.keycloak }}}"
 {% endif %}qa_ios_bundle_id="${BAUKIT_QA_IOS_BUNDLE_ID:-dev.baukit.{{ context.app_name }}}"
 local_hooks="$root/mobile/scripts/qa/local.sh"
 # shellcheck source=/dev/null

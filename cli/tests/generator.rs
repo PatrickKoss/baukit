@@ -6566,28 +6566,28 @@ fn doctor_checks_local_realm_sites_of_provider_products() -> anyhow::Result<()> 
             ),
             (
                 "mobile/scripts/qa/docker-compose.qa.yml",
-                "KEYCLOAK_PORT:-18081",
                 "KEYCLOAK_PORT:-18181",
+                "KEYCLOAK_PORT:-18281",
             ),
             (
                 "mobile/scripts/qa/services.sh",
-                "KEYCLOAK_PORT:-18081",
                 "KEYCLOAK_PORT:-18181",
+                "KEYCLOAK_PORT:-18281",
             ),
             (
                 "mobile/scripts/qa/build-android.sh",
-                "KEYCLOAK_PORT:-18081",
                 "KEYCLOAK_PORT:-18181",
+                "KEYCLOAK_PORT:-18281",
             ),
             (
                 "mobile/scripts/qa/build-ios.sh",
-                "KEYCLOAK_PORT:-18081",
                 "KEYCLOAK_PORT:-18181",
+                "KEYCLOAK_PORT:-18281",
             ),
             (
                 "mobile/scripts/qa/android-env.sh",
-                "KEYCLOAK_PORT:-18081",
                 "KEYCLOAK_PORT:-18181",
+                "KEYCLOAK_PORT:-18281",
             ),
         ] {
             let path = root.join(relative);

@@ -112,6 +112,7 @@ pub(crate) struct TemplateContext {
     pub(crate) declared_ports: DeclaredPorts,
     pub(crate) api_container_port: u16,
     pub(crate) ops_container_port: u16,
+    pub(crate) qa_ports: crate::ports::QaPorts,
     pub(crate) gitops: GitopsContext,
     /// `[postgres] owner_create_role` from `baukit.toml`.
     pub(crate) postgres_owner_create_role: bool,
@@ -522,6 +523,7 @@ mod generator_tests {
             },
             api_container_port: 8080,
             ops_container_port: 9090,
+            qa_ports: crate::ports::PortConfiguration::new(0)?.qa_ports()?,
             gitops: super::GitopsContext {
                 domain: "lab.example.com".to_owned(),
                 registry: "ghcr.io/example".to_owned(),

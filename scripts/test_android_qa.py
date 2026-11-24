@@ -61,6 +61,11 @@ def render(source: str, backend: bool) -> str:
         ("app_crate", "test"),
         ("app_env", "TEST"),
         ("template_version", "test"),
+        ("qa_ports.postgres", "15432"),
+        ("qa_ports.redis", "16379"),
+        ("qa_ports.api", "18080"),
+        ("qa_ports.ops", "19090"),
+        ("qa_ports.keycloak", "18081"),
     ):
         source = source.replace("{{ context." + key + " }}", value)
     return source

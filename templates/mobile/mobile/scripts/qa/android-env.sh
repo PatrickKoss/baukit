@@ -19,8 +19,8 @@ qa_reverse_ports=()
 qa_app_id="${BAUKIT_QA_APP_ID:-dev.baukit.{{ context.app_crate }}}"
 qa_apk_variant="${BAUKIT_QA_APK_VARIANT:-release}"
 qa_apk_path=""
-api_port="${BAUKIT_QA_API_PORT:-18080}"
-{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
+api_port="${BAUKIT_QA_API_PORT:-{{ context.qa_ports.api }}}"
+{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-{{ context.qa_ports.keycloak }}}"
 {% endif %}qa_build_apk() { bash "$root/mobile/scripts/qa/build-android.sh"; }
 qa_prepare_device() { prepare_device "$@"; }
 local_hooks="$root/mobile/scripts/qa/local.sh"
