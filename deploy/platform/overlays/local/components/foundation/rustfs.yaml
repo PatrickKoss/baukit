@@ -46,6 +46,12 @@ spec:
         - name: rustfs
           image: rustfs/rustfs:1.0.6@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
           imagePullPolicy: IfNotPresent
+          # RustFS 1.0.6 keeps the container's soft open-files limit of 1024 and has no setting to
+          # raise it; thousands of parallel requests then fail with EMFILE.
+          command:
+            - /bin/sh
+            - -c
+            - ulimit -Sn 65536 && exec /etc/rustfs/entrypoint.sh rustfs
           env:
             - name: RUSTFS_ACCESS_KEY
               valueFrom:

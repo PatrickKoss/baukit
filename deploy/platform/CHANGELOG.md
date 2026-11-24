@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- RustFS in `overlays/local/components/foundation` raises its soft open-files limit to 65536 before it starts. RustFS 1.0.6 has no setting for it and kept the container's soft limit of 1024 (hard 1048576), so a client with thousands of parallel HEADs got 500s and RustFS logged `No file descriptors available (os error 24)` on accept. The container now runs `/bin/sh -c 'ulimit -Sn 65536 && exec /etc/rustfs/entrypoint.sh rustfs'` with the image's own busybox shell and entrypoint, and `lint/test_rustfs_open_files.py` fails if the render drops the limit below 65536. Clusters that reuse this component, such as a homelab foundation Kustomization, get it without a patch; updating restarts the RustFS pod once.
 - New optional base `emulator-slots` and component `components/emulator-slots`: squat's generic device plugin (`ghcr.io/squat/generic-device-plugin:f7c3291`, pinned by digest) as DaemonSet `kube-system/emulator-slots`, advertising `/dev/kvm` as `squat.ai/kvm` on labelled nodes. A local-config ConfigMap `emulator-slots` sets `nodeLabelKey`, `nodeLabelValue` and `devicesPerNode` (defaults `baukit.dev/emulators`, `"true"`, `2`). PolicyException `kyverno/emulator-slots` admits its two hostPath volumes and root user, and the PolicyException budget goes from 13 to 14. Inert unless an overlay composes it; `emulator-slots/test_emulator_slots.py` renders the defaults and an overlay.
 
 ## [0.30.0] - 2026-11-23
