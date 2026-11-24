@@ -1163,7 +1163,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
     def snapshot_name(
         self,
         gpu: str = "swiftshader_indirect",
-        version: str = "{{ context.template_version }}",
+        schema: str = "1",
         features: str = "",
     ) -> str:
         result = subprocess.run(
@@ -1175,7 +1175,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
                 str(self.sdk),
                 gpu,
                 features,
-                version,
+                schema,
             ],
             capture_output=True,
             text=True,

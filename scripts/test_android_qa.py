@@ -379,7 +379,7 @@ RENDERER
                 str(self.sdk),
                 "swiftshader_indirect",
                 "-Vulkan",
-                "test",
+                "1",
             ],
             capture_output=True,
             text=True,

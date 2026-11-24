@@ -225,7 +225,7 @@ def settle(
     return 0
 
 
-def snapshot_name(config: Path, sdk_root: Path, gpu: str, features: str, version: str) -> str:
+def snapshot_name(config: Path, sdk_root: Path, gpu: str, features: str, schema: str) -> str:
     settings = {}
     for line in (config.read_text() if config.is_file() else "").splitlines():
         key, separator, value = line.partition("=")
@@ -240,7 +240,7 @@ def snapshot_name(config: Path, sdk_root: Path, gpu: str, features: str, version
         *sorted(f"{key}={value}" for key, value in settings.items() if key.startswith("hw.")),
         gpu,
         features,
-        version,
+        schema,
     ):
         digest.update(part.encode() + b"\0")
     return f"{SNAPSHOT_PREFIX}-{digest.hexdigest()[:SNAPSHOT_HASH_LENGTH]}"
@@ -260,20 +260,17 @@ def loaded_snapshots(avd_name: str, proc: Path = Path("/proc")) -> set[str]:
 
 
 def prune_snapshots(avd_dir: Path, keep: str, loaded: set[str]) -> int:
-    """Delete older baukit snapshots except loaded ones and the newest complete older one."""
+    """Delete every other baukit snapshot of this AVD except ones a running emulator loaded."""
     snapshots = avd_dir / "snapshots"
     older = [
         entry
         for entry in (snapshots.iterdir() if snapshots.is_dir() else ())
         if entry.name.startswith(SNAPSHOT_PREFIX) and entry.name != keep and entry.is_dir()
     ]
-    complete = [entry for entry in older if (avd_dir / f"{entry.name}.ready").is_file()]
     kept = {keep, *loaded}
-    if complete:
-        kept.add(max(complete, key=lambda entry: entry.stat().st_mtime).name)
     for entry in older:
         if entry.name in kept:
-            print(f"qa: kept older quick-boot snapshot {entry.name} for other worktrees")
+            print(f"qa: kept older quick-boot snapshot {entry.name} that a running emulator loaded")
             continue
         shutil.rmtree(entry)
         print(f"qa: removed stale quick-boot snapshot {entry.name}")

@@ -41,6 +41,8 @@ emulator_port="${BAUKIT_QA_ANDROID_PORT:-$(manifest_quality android_emulator_por
 [[ "$emulator_port" =~ ^[0-9]+$ ]] || { echo "qa: Android emulator port must be a number" >&2; exit 2; }
 emulator_count="${BAUKIT_QA_ANDROID_EMULATORS:-$(manifest_quality android_emulators 2)}"
 [[ "$emulator_count" =~ ^[1-9][0-9]*$ ]] || { echo "qa: Android emulator count must be a positive integer" >&2; exit 2; }
+# Bump when the saved quick-boot state changes; it keys the snapshot name.
+snapshot_schema=1
 gpu_mode="${BAUKIT_QA_ANDROID_GPU:-swiftshader_indirect}"
 [[ "$gpu_mode" =~ ^[a-z_]+$ ]] || { echo "qa: BAUKIT_QA_ANDROID_GPU must be an emulator gpu mode" >&2; exit 2; }
 [[ -z "$emulator_accel" || "$emulator_accel" =~ ^[a-z]+$ ]] || { echo "qa: BAUKIT_QA_ANDROID_ACCEL must be an emulator accel mode" >&2; exit 2; }
@@ -366,7 +368,7 @@ boot_emulators() {
   if ((android_wifi)); then
     emulator_features="$emulator_features,-WiFiPacketStream"
   fi
-  snapshot_name="$(python3 "$root/mobile/scripts/qa/android-adb.py" --snapshot-name "$avd_dir/config.ini" "$sdk_root" "$gpu_mode" "$emulator_features" "{{ context.template_version }}")"
+  snapshot_name="$(python3 "$root/mobile/scripts/qa/android-adb.py" --snapshot-name "$avd_dir/config.ini" "$sdk_root" "$gpu_mode" "$emulator_features" "$snapshot_schema")"
   snapshot_dir="$avd_dir/snapshots/$snapshot_name"
   snapshot_ready="$avd_dir/$snapshot_name.ready"
   mkdir -p "$state_dir/renderer"

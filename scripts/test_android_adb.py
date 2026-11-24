@@ -552,8 +552,8 @@ class AndroidSnapshotTests(unittest.TestCase):
             "hw.ramSize=2048\nhw.cpu.ncore=4\navd.ini.displayname=test\n"
         )
 
-    def name(self, gpu="swiftshader_indirect", features="-WiFiPacketStream", version="0.17.1"):
-        return android_adb.snapshot_name(self.config, self.sdk, gpu, features, version)
+    def name(self, gpu="swiftshader_indirect", features="-WiFiPacketStream", schema="1"):
+        return android_adb.snapshot_name(self.config, self.sdk, gpu, features, schema)
 
     def test_same_inputs_give_the_same_name(self):
         self.assertEqual(self.name(), self.name())
@@ -562,7 +562,7 @@ class AndroidSnapshotTests(unittest.TestCase):
     def test_each_input_changes_the_name(self):
         original = self.name()
         self.assertNotEqual(self.name(gpu="swiftshader"), original)
-        self.assertNotEqual(self.name(version="0.17.2"), original)
+        self.assertNotEqual(self.name(schema="2"), original)
         self.assertNotEqual(self.name(features=""), original)
         (self.image / "source.properties").write_text("Pkg.Revision=8\n")
         self.assertNotEqual(self.name(), original)
@@ -597,7 +597,7 @@ class AndroidSnapshotTests(unittest.TestCase):
             sorted(path.name for path in avd.glob("*.ready")),
         )
 
-    def test_prune_removes_older_baukit_snapshots_but_keeps_the_newest_complete_one(self):
+    def test_prune_removes_every_other_baukit_snapshot(self):
         avd = self.root / "test-qa.avd"
         self.snapshot(avd, "baukit-clean", ready=False)
         self.snapshot(avd, "baukit-clean-aaaaaaaaaaaa", age=20)
@@ -609,8 +609,8 @@ class AndroidSnapshotTests(unittest.TestCase):
         self.assertEqual(
             self.prune(avd, "baukit-clean-dddddddddddd"),
             (
-                ["baukit-clean-bbbbbbbbbbbb", "baukit-clean-dddddddddddd", "default_boot"],
-                ["baukit-clean-bbbbbbbbbbbb.ready", "baukit-clean-dddddddddddd.ready"],
+                ["baukit-clean-dddddddddddd", "default_boot"],
+                ["baukit-clean-dddddddddddd.ready"],
             ),
         )
         with contextlib.redirect_stdout(io.StringIO()):
@@ -625,11 +625,7 @@ class AndroidSnapshotTests(unittest.TestCase):
         self.snapshot(avd, "baukit-clean-dddddddddddd")
         self.assertEqual(
             self.prune(avd, "baukit-clean-dddddddddddd", {"baukit-clean-aaaaaaaaaaaa"})[0],
-            [
-                "baukit-clean-aaaaaaaaaaaa",
-                "baukit-clean-bbbbbbbbbbbb",
-                "baukit-clean-dddddddddddd",
-            ],
+            ["baukit-clean-aaaaaaaaaaaa", "baukit-clean-dddddddddddd"],
         )
 
     def test_stale_tags_are_baukit_tags_without_a_snapshot_directory(self):

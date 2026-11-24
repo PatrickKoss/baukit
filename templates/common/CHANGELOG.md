@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+{% if context.mobile %}- The Android quick-boot snapshot is keyed on the system image, the AVD hardware settings, the GPU mode, the emulator features and `snapshot_schema` in `mobile/scripts/qa/android-env.sh`, not on the baukit version, so later re-pins reuse it. The first boot after this re-pin still saves one new snapshot, and saving it removes the older baukit snapshots of that AVD. Copy `mobile/scripts/qa/android-env.sh` and `android-adb.py` from the template and run `baukit check template-files --update`.
+
+{% endif %}
 ## [0.30.0] - 2026-11-23
 
 {% if context.backend %}- Breaking: migrations run as a non-superuser owner in the dev stack and the tests, as the migrate Job does on CNPG. Copy `postgres/initdb/10-owner.sql` and the `./postgres/initdb:/docker-entrypoint-initdb.d:ro` mount on the `postgres` service in `compose.yaml` from the template, switch local `__DATABASE__URL` values{% if context.mcp %} in `compose.yaml`{% endif %}{% if context.platform %}, `.env.example`{% endif %}{% if context.mobile %}, `mobile/scripts/qa/services.sh`{% endif %} and your `.env` to `postgres://app:app@...`, and run `docker compose down -v` once, because the init script runs only on an empty volume. Postgres tests call `baukit_test::start_postgres_with_owner_migrations(&migrations, baukit_test::PostgresMigrationOwner::default())` and connect with `owner_connection_url()`. Fix any migration that then fails: it needed a superuser and would fail in the cluster too. A migration that creates roles needs `[postgres] owner_create_role = true` and dedicated Postgres; `deploy/gitops/README.md` under "Migrations and roles" lists the rules. Run `baukit check template-files --update` after copying the files.

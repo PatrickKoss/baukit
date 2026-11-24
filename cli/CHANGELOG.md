@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The mobile QA quick-boot snapshot name no longer includes the template version. It hashes the system image, the AVD's `hw.*` settings, the GPU mode, the emulator features and `snapshot_schema` in `mobile/scripts/qa/android-env.sh`, which a release bumps only when the saved state changes, so a re-pin no longer cold boots the AVD. Saving a snapshot removes every other baukit snapshot of that AVD except ones a running emulator loaded; it no longer keeps the newest older one.
+
 ## [0.30.0] - 2026-11-23
 
 - Breaking: this is a minor release because generated backends now migrate as a non-superuser owner, and existing products must adopt the template change. Copy `postgres/initdb/10-owner.sql` and its mount on the `postgres` service in `compose.yaml`, switch local database URLs to `app:app`, and move the Postgres tests to `PostgresMigrationOwner` with `owner_connection_url()`, as the product changelog describes.
