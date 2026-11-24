@@ -56,6 +56,7 @@ http_port=${PLATFORM_HTTP_PORT:-80}
 https_port=${PLATFORM_HTTPS_PORT:-443}
 # Inside the nodeCIDR, clear of platform-up.sh's 10.89.0.0/24 and the e2e range 10.89.100-199.0/24.
 k3d_subnet=${PLATFORM_SUBNET:-10.89.1.0/24}
+read -r -a extra_registry_mirrors <<<"${PLATFORM_EXTRA_REGISTRY_MIRRORS:-}"
 state_root=${XDG_STATE_HOME:-${HOME}/.local/state}
 state_dir=${PLATFORM_STATE_DIR:-$state_root/baukit-platform/$cluster_name}
 snapshot_container=${PLATFORM_SNAPSHOT_CONTAINER:-${cluster_name}-baukit-git}
@@ -105,6 +106,7 @@ validate_common_config() {
       exit 2
       ;;
   esac
+  registry_mirrors_check_extra "${extra_registry_mirrors[@]}" || exit 2
 }
 
 validate_up_config() {
@@ -251,9 +253,12 @@ ensure_cluster() {
     mapfile -t etcd_args < <(platform_local_etcd_args)
     mirror_dir=$(mktemp -d)
     if registry_mirrors_running; then
-      mapfile -t mirror_args < <(registry_mirrors_k3d_args "$mirror_dir/registries.yaml")
+      mapfile -t mirror_args < <(registry_mirrors_k3d_args "$mirror_dir/registries.yaml" "${extra_registry_mirrors[@]}")
       printf 'Using the running registry mirrors.\n'
+    elif ((${#extra_registry_mirrors[@]})); then
+      mapfile -t mirror_args < <(registry_mirrors_extra_k3d_args "$mirror_dir/registries.yaml" "${extra_registry_mirrors[@]}")
     fi
+    ((${#extra_registry_mirrors[@]} == 0)) || printf 'Using the extra registry mirrors %s.\n' "${extra_registry_mirrors[*]}"
     k3d_create_local_cluster "$cluster_name" "$k3s_image" "$api_port" "$http_port" "$https_port" \
       --subnet "$k3d_subnet" "${etcd_args[@]}" "${mirror_args[@]}"
     rm -rf -- "$mirror_dir"

@@ -80,7 +80,42 @@ registry_mirrors_status() {
   done
 }
 
-# Prints the k3s registries.yaml that routes each upstream to its mirror on the cluster network.
+# Usage: registry_mirrors_check_extra [host=endpoint ...]. Fails unless each entry names a registry
+# host baukit does not mirror itself and an http(s) endpoint, each host once.
+registry_mirrors_check_extra() {
+  local entry host seen=" " mirror_host mirror_port mirror_url known
+  for entry in "$@"; do
+    host=${entry%%=*}
+    if [[ $entry != *=* || ! $host =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?$ ||
+      ! ${entry#*=} =~ ^https?://[^[:space:]/]+$ ]]; then
+      printf 'ERROR: extra registry mirror %s must be host=http(s)://address[:port]\n' "$entry" >&2
+      return 2
+    fi
+    for known in "${registry_mirror_upstreams[@]}" "${registry_mirror_aliases[@]}"; do
+      registry_mirror_fields "$known"
+      if [[ $mirror_host == "$host" ]]; then
+        printf 'ERROR: extra registry mirror %s overrides a baukit mirror\n' "$host" >&2
+        return 2
+      fi
+    done
+    if [[ $seen == *" $host "* ]]; then
+      printf 'ERROR: extra registry mirror %s is listed twice\n' "$host" >&2
+      return 2
+    fi
+    seen+="$host "
+  done
+}
+
+# Usage: registry_mirrors_extra_k3s_config [host=endpoint ...]. Prints the mirrors entries for them.
+registry_mirrors_extra_k3s_config() {
+  local entry
+  for entry in "$@"; do
+    printf '  %s:\n    endpoint:\n      - %s\n' "${entry%%=*}" "${entry#*=}"
+  done
+}
+
+# Usage: registry_mirrors_k3s_config [host=endpoint ...]. Prints the k3s registries.yaml that routes
+# each upstream to its mirror on the cluster network, plus the extra mirrors.
 registry_mirrors_k3s_config() {
   local entry mirror_host mirror_port mirror_url
   printf 'mirrors:\n'
@@ -91,6 +126,7 @@ registry_mirrors_k3s_config() {
   for entry in "${registry_mirror_aliases[@]}"; do
     printf '  %s:\n    endpoint:\n      - http://k3d-%s:5000\n' "${entry%%=*}" "$(registry_mirror_name "${entry#*=}")"
   done
+  registry_mirrors_extra_k3s_config "$@"
 }
 
 # Prints one k3d cluster create argument per line.
@@ -113,13 +149,24 @@ registry_mirrors_running() {
   done
 }
 
-# Usage: registry_mirrors_k3d_args <registries.yaml path>. Writes the k3s registry config to the path
-# and prints one k3d cluster create argument per line. Delete the cluster with registry_mirrors_detach
-# first, or the cluster network stays behind.
+# Usage: registry_mirrors_k3d_args <registries.yaml path> [host=endpoint ...]. Writes the k3s
+# registry config with the extra mirrors to the path and prints one k3d cluster create argument per
+# line. Delete the cluster with registry_mirrors_detach first, or the cluster network stays behind.
 registry_mirrors_k3d_args() {
-  registry_mirrors_k3s_config >"$1"
-  printf -- '--registry-config\n%s\n' "$1"
+  local config=$1
+  shift
+  registry_mirrors_k3s_config "$@" >"$config"
+  printf -- '--registry-config\n%s\n' "$config"
   registry_mirrors_cluster_args
+}
+
+# Usage: registry_mirrors_extra_k3d_args <registries.yaml path> host=endpoint .... The same for the
+# extra mirrors alone, when the baukit mirrors are not running.
+registry_mirrors_extra_k3d_args() {
+  local config=$1
+  shift
+  { printf 'mirrors:\n'; registry_mirrors_extra_k3s_config "$@"; } >"$config"
+  printf -- '--registry-config\n%s\n' "$config"
 }
 
 # Prints the trivy config that routes each upstream to its mirror on 127.0.0.1.
