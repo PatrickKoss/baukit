@@ -497,6 +497,26 @@ This harness does not migrate old object-store files or filesystem log data.
 The publishable Loki base still uses filesystem storage; persistent consumers
 must add a future schema period when moving existing logs to S3.
 
+#### RustFS memory
+
+RustFS 1.0.6 buffers the whole source range of every `UploadPartCopy` in
+memory. Upload and download stream: a 6 GB object took about 31 MiB of
+anonymous memory to upload and about 100 MiB to read back. A server-side copy
+of the same object, which zot and other Docker distribution S3 drivers run when
+they move a finished upload to its blob path, needs about concurrency times part
+size. The driver defaults of 100 parallel copies of 32 MiB parts peaked at
+2.3 GiB and OOMKilled RustFS at its old 384 MiB limit; with 8 parallel copies
+the peak was 280 MiB. Below 100 parts the copy fan-out covers every part, so
+memory grows with object size up to about 3.2 GiB.
+
+RustFS has no setting that bounds this. Its foreground write admission
+(`RUSTFS_PUT_FOREGROUND_ADMISSION_*`) rejects excess copies with `503
+SlowDown` instead of queueing them, which fails the push either way. The bound
+belongs in the client. The local RustFS limit is 768 MiB, sized for at most
+16 parallel copies of 32 MiB parts. A zot or registry that stores on this
+RustFS must set `"multipartcopymaxconcurrency": 16` (or lower) in its S3
+`storageDriver`, and keep `multipartcopychunksize` at the 32 MiB default.
+
 The monthly restore CronJob is enabled locally so it can be exercised
 immediately with:
 

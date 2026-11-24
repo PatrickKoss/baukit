@@ -80,13 +80,15 @@ spec:
               port: s3
             periodSeconds: 5
             timeoutSeconds: 2
+          # Each in-flight UploadPartCopy holds its whole source part in memory, so a server-side
+          # copy of a large object needs about concurrency x part size. See README "RustFS memory".
           resources:
             requests:
               cpu: 50m
               memory: 128Mi
             limits:
               cpu: 400m
-              memory: 384Mi
+              memory: 768Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
