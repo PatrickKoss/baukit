@@ -2,7 +2,7 @@ use std::{env, fs, path::Path};
 
 fn main() -> std::io::Result<()> {
     println!("cargo:rerun-if-changed=../templates");
-    println!("cargo:rerun-if-changed=../typescript/packages");
+    println!("cargo:rerun-if-changed=../typescript/pnpm-lock.yaml");
     let packages = Path::new(env!("CARGO_MANIFEST_DIR")).join("../typescript/packages");
     let mut manifests = fs::read_dir(&packages)
         .map(|entries| {

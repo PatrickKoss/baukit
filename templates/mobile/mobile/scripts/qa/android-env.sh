@@ -434,6 +434,11 @@ save_snapshot() {
   await_emulator "$serial"
 {% if context.auth_enabled %}  warm_chrome "$serial" || exit 1
 {% endif %}  python3 "$root/mobile/scripts/qa/android-adb.py" --settle "$adb" "$serial" || exit 1
+  # The snapshot keeps whatever window has focus, an ANR dialog from the settle included.
+  python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-idle "$adb" "$serial" || {
+    echo "qa: systemui did not become idle on $serial; not saving the snapshot" >&2
+    exit 1
+  }
   python3 "$root/mobile/scripts/qa/android-adb.py" --check-health "$adb" "$serial" "$state_dir/android-health.log"
   adb_bounded -s "$serial" logcat -b all -c >/dev/null
   rm -rf "$snapshot_dir"

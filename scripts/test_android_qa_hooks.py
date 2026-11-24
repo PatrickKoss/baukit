@@ -75,6 +75,39 @@ class AndroidQaHookTests(unittest.TestCase):
         self.assertIn("INSTALL_FAILED_OLDER_SDK", result.stderr)
         self.assertEqual(self.starts(), [])
 
+    def test_boot_closes_an_anr_dialog_that_holds_focus(self):
+        self.prepare_start()
+        result = self.run_script("android-env.sh", "start", FAILURE="anr-dialog")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "qa: closing an ANR dialog on emulator-5556: mCurrentFocus=Window{8dbc30a u0"
+            " Application Not Responding: com.android.systemui}",
+            result.stderr,
+        )
+        events = self.events_list()
+        close = events.index(
+            "adb -s emulator-5556 shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS"
+        )
+        self.assertLess(close, next(i for i, e in enumerate(events) if "snapshot save" in e))
+
+    def test_snapshot_is_not_saved_while_an_anr_dialog_holds_focus(self):
+        self.prepare_start()
+        result = self.run_script(
+            "android-env.sh",
+            "start",
+            FAILURE="anr-after-settle",
+            BAUKIT_QA_IDLE_TIMEOUT_SECONDS="0.5",
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn(
+            "qa: last idle probe: systemui pid 321, mCurrentFocus=Window{8dbc30a u0"
+            " Application Not Responding: com.android.systemui}",
+            result.stderr,
+        )
+        self.assertIn("not saving the snapshot", result.stderr)
+        self.assertNotIn("snapshot save", "\n".join(self.events_list()))
+        self.assertEqual(list((self.root / "avd/test-qa.avd").glob("*.ready")), [])
+
     def test_boot_leaves_services_and_the_app_alone(self):
         self.prepare_start()
         result = self.run_script("android-env.sh", "boot")
