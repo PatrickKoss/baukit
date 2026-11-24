@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - rbac.yaml
+  - cronjob.yaml
+configMapGenerator:
+  - name: netpol-ipset-check
+    namespace: observability-agents
+    files:
+      - check.py
+generatorOptions:
+  labels:
+    app.kubernetes.io/part-of: baukit-platform

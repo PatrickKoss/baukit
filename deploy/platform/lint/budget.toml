@@ -2,4 +2,5 @@
 # 13: cnpg-tenant-pods lets CNPG instance and job pods in tenant namespaces mount their token.
 # 14: emulator-slots lets the optional emulator-slots device plugin mount the kubelet socket
 #     directory and /dev/kvm and run as root.
-policy_exceptions = 14
+# 15: netpol-ipset-check runs ipset save as root with NET_ADMIN in the host network.
+policy_exceptions = 15

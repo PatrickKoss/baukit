@@ -1,0 +1,99 @@
+# observability-agents because Kyverno lets only node-agent namespaces enforce privileged PSA, and
+# the ipset-save init container needs the host network and NET_ADMIN.
+# Every 10 minutes: dump the node's ipsets, then fail when a pod that has run for 10 minutes is missing
+# from the KUBE-DST or KUBE-SRC set of a NetworkPolicy that selects it. A failed Job fires
+# KubeJobFailed through Alertmanager. Finished Jobs go after an hour, so the alert clears
+# once kube-router has caught up.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: netpol-ipset-check
+  namespace: observability-agents
+  labels:
+    app.kubernetes.io/name: netpol-ipset-check
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  schedule: "*/10 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: netpol-ipset-check
+        app.kubernetes.io/part-of: baukit-platform
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: netpol-ipset-check
+            app.kubernetes.io/part-of: baukit-platform
+        spec:
+          priorityClassName: platform-standard
+          serviceAccountName: netpol-ipset-check
+          enableServiceLinks: false
+          restartPolicy: Never
+          hostNetwork: true
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          initContainers:
+            - name: ipset-save
+              # Same image and ipset as the node; v1.37.2-k3s1 ships ipset v7.16.
+              image: rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332
+              imagePullPolicy: IfNotPresent
+              command: [/bin/ipset, -f, /work/ipset.save, save]
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+              securityContext:
+                runAsUser: 0
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+                  add: [NET_ADMIN]
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+          containers:
+            - name: check
+              image: python:3.15.2-alpine3.24@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
+              imagePullPolicy: IfNotPresent
+              command: [python3, -I, /config/check.py]
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 128Mi
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65534
+                runAsGroup: 65534
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: work
+                  mountPath: /work
+                  readOnly: true
+                - name: config
+                  mountPath: /config
+                  readOnly: true
+          volumes:
+            - name: work
+              emptyDir:
+                sizeLimit: 16Mi
+            - name: config
+              configMap:
+                name: netpol-ipset-check
