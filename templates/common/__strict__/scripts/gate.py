@@ -952,7 +952,9 @@ def worker_budget(
         cores,
         total_memory_mb(),
         worker_memory,
-        EmulatorReserve(emulator_cores(settings, environment), emulator_steps(settings, environment)),
+        EmulatorReserve(
+            emulator_cores(settings, environment), emulator_steps(settings, environment)
+        ),
         pool,
     )
     if pool is not None:
