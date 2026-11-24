@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+{% if context.mobile %}- `mobile/scripts/qa/android-env.sh` relaunches an emulator once when its process exits before it boots, which Android emulator 37.3.10 sometimes does with a segfault. The first log stays as `mobile/.qa/android-emulator*.log.crashed`. A boot timeout or a second early exit still fails with "did not boot". Copy the file from the template and run `baukit check template-files --update`.
+
+{% endif %}
 {% if context.mobile %}- The Android quick-boot snapshot is keyed on the system image, the AVD hardware settings, the GPU mode, the emulator features and `snapshot_schema` in `mobile/scripts/qa/android-env.sh`, not on the baukit version, so later re-pins reuse it. The first boot after this re-pin still saves one new snapshot, and saving it removes the older baukit snapshots of that AVD. Copy `mobile/scripts/qa/android-env.sh` and `android-adb.py` from the template and run `baukit check template-files --update`.
 
 {% endif %}

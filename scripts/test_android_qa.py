@@ -409,6 +409,56 @@ RENDERER
         )
         self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
 
+    def crashing_emulator(self, crashes):
+        self.executable(
+            self.sdk / "emulator/emulator",
+            f"""
+launches="$(cat "$EVENTS.launches" 2>/dev/null || echo 0)"
+echo $((launches + 1)) > "$EVENTS.launches"
+if ((launches < {crashes})); then echo "segfault $launches"; exit 139; fi
+printf '{{"args": "%s"}}\\n' "$*" >> "$EVENTS"
+""",
+        )
+
+    def test_an_emulator_that_exits_before_boot_is_relaunched_once(self):
+        self.prepare_start()
+        self.crashing_emulator(1)
+        result = self.run_script("android-env.sh", "start", BAUKIT_QA_ANDROID_EMULATORS="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        relaunch = "emulator for emulator-5556 exited before boot; relaunching it once"
+        self.assertIn(relaunch, result.stderr)
+        self.assertEqual(Path(f"{self.events}.launches").read_text().strip(), "2")
+        self.assertEqual((self.state / "android-serial").read_text(), "emulator-5556\n")
+        self.assertIn("segfault 0", (self.state / "android-emulator.log.crashed").read_text())
+        self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
+
+    def test_an_emulator_that_exits_twice_before_boot_fails_the_start(self):
+        self.prepare_start()
+        self.crashing_emulator(2)
+        result = self.run_script("android-env.sh", "start", BAUKIT_QA_ANDROID_EMULATORS="1")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stderr.count("relaunching it once"), 1)
+        self.assertIn("Android emulator emulator-5556 did not boot", result.stderr)
+        self.assertEqual(Path(f"{self.events}.launches").read_text().strip(), "2")
+
+    def test_a_boot_timeout_is_not_relaunched(self):
+        self.prepare_start()
+        self.executable(
+            self.sdk / "emulator/emulator",
+            'echo launch >> "$EVENTS.launches"\nexec sleep 30\n',
+        )
+        result = self.run_script(
+            "android-env.sh",
+            "start",
+            BAUKIT_QA_ANDROID_EMULATORS="1",
+            BAUKIT_QA_BOOT_TIMEOUT_SECONDS="1",
+            BAUKIT_QA_POLL_SECONDS="0.1",
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertNotIn("relaunching", result.stderr)
+        self.assertIn("did not boot", result.stderr)
+        self.assertEqual(Path(f"{self.events}.launches").read_text(), "launch\n")
+
     def test_emulators_keep_the_default_network_without_android_wifi(self):
         self.prepare_start()
         self.executable(

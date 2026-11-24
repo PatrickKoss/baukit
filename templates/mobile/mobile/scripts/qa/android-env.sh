@@ -245,7 +245,7 @@ close_inherited_fds() {
 }
 
 launch_emulator() {
-  local index="$1" port=$((emulator_port + 2 * $1)) log="$state_dir/android-emulator.log"
+  local index="$1" relaunch="${2:-}" port=$((emulator_port + 2 * $1)) log="$state_dir/android-emulator.log"
   local emulator_args=(
     -avd "$avd_name"
     -port "$port"
@@ -275,6 +275,9 @@ launch_emulator() {
     emulator_args+=(-accel "$emulator_accel")
   fi
   emulator_args+=("${qa_emulator_args[@]}")
+  if [[ -n "$relaunch" && -f "$log" ]]; then
+    mv "$log" "$log.crashed"
+  fi
   (
     close_inherited_fds
     cd "$state_dir/renderer"
@@ -282,7 +285,22 @@ launch_emulator() {
     exec nohup "$emulator" "${emulator_args[@]}"
   ) >"$log" 2>&1 &
   printf '%s\n' "$!" > "$state_dir/android-emulator-$port.pid"
-  printf 'emulator-%s\n' "$port" >> "$state_dir/android-serial"
+  [[ -n "$relaunch" ]] || printf 'emulator-%s\n' "$port" >> "$state_dir/android-serial"
+}
+
+declare -A relaunched_emulators=()
+
+wait_for_emulator_boot() {
+  local device="$1" status=0
+  python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-boot "$adb" "$device" "$(emulator_pid "$device")" || status=$?
+  if ((status == 1)) && [[ -z "${relaunched_emulators[$device]:-}" ]]; then
+    relaunched_emulators[$device]=1
+    echo "qa: emulator for $device exited before boot; relaunching it once" >&2
+    launch_emulator "$(((${device#emulator-} - emulator_port) / 2))" relaunch
+    status=0
+    python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-boot "$adb" "$device" "$(emulator_pid "$device")" || status=$?
+  fi
+  return "$status"
 }
 
 started_emulator_pids() {
@@ -309,7 +327,7 @@ stop_started_emulators_on_failure() {
 
 await_emulator() {
   local device="$1"
-  if ! python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-boot "$adb" "$device" "$(emulator_pid "$device")"; then
+  if ! wait_for_emulator_boot "$device"; then
     echo "qa: Android emulator $device did not boot; see $state_dir/android-emulator*.log" >&2
     exit 1
   fi
