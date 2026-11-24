@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+{% if context.mobile %}- `mobile/scripts/qa/android-env.sh prepare` checks `adb devices` first and exits 1 within seconds when an expected emulator is not booted, naming the serials and `sh scripts/quality-gate.sh --step android-boot`. Products that split `android-boot` from `android-e2e` waited about 20 minutes for `adb device not found` when they ran `--step android-e2e` alone. The template's own `android-e2e` still boots its emulators through `android-env.sh start` and is unchanged. Copy `android-env.sh` from the template.
+{% endif %}
 ## [0.30.3] - 2026-11-24
 
 {% if context.mobile %}- `mobile/scripts/qa/run-maestro.sh` passes the device target before `test`. Maestro 2.8.0 accepts `--host`, `--port` and `--device` only as global options, so since 0.30.2 every single-device Android run failed with `Unknown options: '--host', '--port'`. The sharded run moves `--device` in front of `test` as well. Products that hand-merged 0.30.2 must move `"${target[@]}"` in front of `test` at the three `run_maestro` calls (`run_declared_shard`, `run_device_flows` and the single-device loop), and `--device "$device_list"` in front of `test` in the sharded run.

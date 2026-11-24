@@ -98,14 +98,30 @@ class AndroidQaHookTests(unittest.TestCase):
         result = self.run_script("android-env.sh", "prepare", BAUKIT_QA_SKIP_BUILD="0")
         self.assertEqual(result.returncode, 0, result.stderr)
         events = self.events_list()
-        self.assertEqual(events[0], "hook build")
+        self.assertEqual(events[:2], ["adb devices", "hook build"])
         self.assertFalse(any("emu kill" in event for event in events))
         self.assertFalse(any("services" in event for event in events))
         self.assertTrue(any("install -r" in event for event in events))
         self.assertEqual(len(self.starts()), 1)
 
+    def test_prepare_fails_fast_without_booted_emulators(self):
+        self.prepare_start()
+        result = self.run_script("android-env.sh", "prepare", BAUKIT_QA_ANDROID_EMULATORS="2")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("no booted Android emulator on emulator-5556 emulator-5558", result.stderr)
+        self.assertIn("--step android-boot", result.stderr)
+        self.assertFalse(any("install -r" in event for event in self.events_list()))
+
+    def test_prepare_names_only_the_missing_emulator(self):
+        self.prepare_start()
+        self.owned()
+        result = self.run_script("android-env.sh", "prepare", BAUKIT_QA_ANDROID_EMULATORS="2")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("no booted Android emulator on emulator-5558;", result.stderr)
+
     def test_prepare_fails_without_the_apk(self):
         self.prepare_start()
+        self.owned()
         self.hooks('qa_apk_path="$root/missing.apk"\n')
         result = self.run_script("android-env.sh", "prepare")
         self.assertEqual(result.returncode, 1)
