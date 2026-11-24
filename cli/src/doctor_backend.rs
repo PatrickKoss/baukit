@@ -63,7 +63,8 @@ pub(crate) fn validate_remote_mcp(
     }
     let values = root.join("deploy/values.yaml");
     if values.is_file() {
-        let values: serde_yaml_ng::Value = serde_yaml_ng::from_str(&fs::read_to_string(values)?)?;
+        let values: serde_yaml_ng::Value =
+            serde_yaml_ng::from_str(&crate::doctor_layout::read_text(values)?)?;
         let mcp = values.get("mcp").or_else(|| {
             values
                 .get("application")
@@ -104,7 +105,9 @@ pub(crate) fn validate_migrations(
     for entry in fs::read_dir(&directory)
         .with_context(|| format!("could not inspect {}", directory.display()))?
     {
-        let path = entry?.path();
+        let path = entry
+            .with_context(|| format!("could not inspect {}", directory.display()))?
+            .path();
         if path.extension().is_some_and(|extension| extension == "sql") {
             migrations.push(path);
         }
@@ -134,7 +137,9 @@ pub(crate) fn validate_jobs_migration(
     for entry in fs::read_dir(&directory)
         .with_context(|| format!("could not inspect {}", directory.display()))?
     {
-        let path = entry?.path();
+        let path = entry
+            .with_context(|| format!("could not inspect {}", directory.display()))?
+            .path();
         if path.extension().is_some_and(|extension| extension == "sql") {
             let source = fs::read_to_string(&path)
                 .with_context(|| format!("could not read {}", path.display()))?;

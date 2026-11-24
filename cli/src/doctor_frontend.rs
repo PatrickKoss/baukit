@@ -54,7 +54,7 @@ pub(crate) fn validate_pnpm_workspace(
         ));
         return Ok(());
     }
-    let workspace: PnpmWorkspace = serde_yaml_ng::from_str(&fs::read_to_string(path)?)
+    let workspace: PnpmWorkspace = serde_yaml_ng::from_str(&crate::doctor_layout::read_text(path)?)
         .context("could not parse root pnpm-workspace.yaml")?;
     let mut included = false;
     let mut excluded = false;
@@ -161,7 +161,7 @@ pub(crate) fn validate_pwa_worker_build(
     let script_path = root.join(&script);
     if !script_path.is_file() {
         failures.push(format!("the PWA capability requires `{script}`"));
-    } else if !fs::read_to_string(&script_path)?.contains("@baukit/pwa-web/worker") {
+    } else if !crate::doctor_layout::read_text(&script_path)?.contains("@baukit/pwa-web/worker") {
         failures.push(format!(
             "{script} must copy the supported `@baukit/pwa-web/worker` artifact"
         ));

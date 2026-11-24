@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `baukit doctor` no longer fails with a bare `No such file or directory` when another gate lane rewrites build output during its walks. The walks skip Gradle and Xcode `build/` directories, `.expo`, `.qa`, `.quality-gate`, `.ci-gate`, `.gradle`, `.cxx`, `.turbo`, `__pycache__` and `maestro-debug*`, treat an entry deleted mid-walk as gone, and every read or listing error names its path.
+
 ## [0.30.3] - 2026-11-24
 
 ## [0.30.2] - 2026-11-24

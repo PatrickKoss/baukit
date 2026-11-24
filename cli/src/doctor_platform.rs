@@ -35,9 +35,12 @@ pub(super) fn validate(
     let mut source = String::new();
     let mut dependencies = String::new();
     for krate in doctor_layout::backend_crates(root, manifest)? {
-        dependencies.push_str(&fs::read_to_string(&krate.manifest)?);
+        dependencies.push_str(&crate::doctor_layout::read_text(&krate.manifest)?);
         for path in krate.sources {
-            source.push_str(&doctor_layout::symbols(&fs::read_to_string(path)?, true));
+            source.push_str(&doctor_layout::symbols(
+                &crate::doctor_layout::read_text(path)?,
+                true,
+            ));
         }
     }
     for symbol in [
@@ -62,7 +65,8 @@ pub(super) fn validate(
             .push("platform requires baukit-suite with platform and postgres features".to_owned());
     }
     let schema = root.join(&manifest.openapi.schema);
-    let document: serde_json::Value = serde_json::from_str(&fs::read_to_string(schema)?)?;
+    let document: serde_json::Value =
+        serde_json::from_str(&crate::doctor_layout::read_text(schema)?)?;
     if document
         .pointer("/paths/~1platform~1inbound/post")
         .is_none()

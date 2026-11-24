@@ -18,6 +18,7 @@ mod doctor_postgres;
 mod doctor_screens;
 #[cfg(test)]
 mod doctor_tests;
+mod doctor_walk;
 mod gate_settings;
 mod gate_worker_caps;
 mod generate;
