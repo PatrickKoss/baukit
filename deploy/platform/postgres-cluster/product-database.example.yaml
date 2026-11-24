@@ -1,8 +1,24 @@
-# Copy this pair once for every additional product, then replace every
+# Copy these three objects once for every additional product, then replace every
 # `product` token with the product's stable Kubernetes/PostgreSQL identifier.
 # The password Secret is overlay-owned and must contain `username` and
-# `password`; its username must match `spec.name` on the DatabaseRole.
+# `password`; its username must match `spec.name` on the owner DatabaseRole.
+# The owner joins baukit_tenants and the role named like the database, so the
+# cluster's pg_hba admits it to that database and rejects it on every other one.
 #
+# apiVersion: postgresql.cnpg.io/v1
+# kind: DatabaseRole
+# metadata:
+#   name: product-database
+# spec:
+#   cluster:
+#     name: postgres-cluster
+#   name: product
+#   login: false
+#   superuser: false
+#   createdb: false
+#   createrole: false
+#   databaseRoleReclaimPolicy: retain
+# ---
 # apiVersion: postgresql.cnpg.io/v1
 # kind: DatabaseRole
 # metadata:
@@ -15,6 +31,9 @@
 #   superuser: false
 #   createdb: false
 #   createrole: false
+#   inRoles:
+#     - baukit_tenants
+#     - product
 #   databaseRoleReclaimPolicy: retain
 #   passwordSecret:
 #     name: product-db-credentials
@@ -29,4 +48,3 @@
 #   name: product
 #   owner: product_owner
 #   databaseReclaimPolicy: retain
-

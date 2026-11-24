@@ -41,7 +41,7 @@
       "clientId": "{{ context.app_name }}-mobile",
 {% if not context.auth_oidc %}      "exactProtocolMappers": true,
 {% endif %}      "activeOrigins": [],
-      "activeRedirectUris": ["{{ context.app_name }}://oauth"]
+      "activeRedirectUris": ["{{ context.app_name }}://oauth", "{{ context.app_name }}-dev://oauth"]
     }{% endif %}{% if not context.auth_oidc %},
     {
       "clientId": "{{ context.app_name }}-local",

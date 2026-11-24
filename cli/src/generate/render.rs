@@ -417,7 +417,9 @@ pub(crate) fn is_provider_shaped_realm_only(path: &Path) -> bool {
             .is_some_and(|parent| parent.ends_with("src/sign-in"))
             && path.file_name().is_some_and(|name| {
                 let name = name.to_string_lossy();
-                name.starts_with("local.") || name.starts_with("production.")
+                name.starts_with("local.")
+                    || name.starts_with("lab.")
+                    || name.starts_with("production.")
             })
         || path.file_name().is_some_and(|name| {
             let name = name.to_string_lossy();

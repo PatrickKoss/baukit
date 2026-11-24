@@ -174,12 +174,29 @@ class AndroidQaLifecycleTests(unittest.TestCase):
         runs = sorted(event for event in self.events_list() if event.startswith("maestro"))
         self.assertEqual(len(runs), 3)
         self.assertTrue(
-            runs[0].startswith("maestro 0 test --platform android --device emulator-5556")
+            runs[0].startswith("maestro 0 test --platform android --host localhost --port 5557")
         )
         self.assertTrue(runs[0].endswith(".maestro/a.yaml"))
         self.assertTrue(runs[1].endswith(".maestro/b.yaml"))
-        self.assertIn("--device emulator-5558", runs[2])
+        self.assertIn("--host localhost --port 5559", runs[2])
         self.assertTrue((self.mobile / "maestro-debug/shard-1/maestro-output.log").exists())
+
+    def test_flows_hook_receives_the_device_count(self):
+        self.flows("a.yaml", "b.yaml", "c.yaml")
+        (self.state / "android-serial").write_text("emulator-5556\nemulator-5558\n")
+        (self.scripts / "local.sh").write_text(
+            "qa_maestro_flows() { local flows=(a b c) i;"
+            " for ((i = $1; i < ${#flows[@]}; i += $2));"
+            ' do echo ".maestro/${flows[i]}.yaml"; done; }\n'
+        )
+        self.executable(self.tools / "maestro", 'echo "maestro ${*: -1}" >> "$EVENTS"\n')
+        self.environment["BAUKIT_QA_ANDROID_EMULATORS"] = "2"
+        result = self.run_script("run-maestro.sh", "android")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            sorted(event for event in self.events_list() if event.startswith("maestro")),
+            ["maestro .maestro/a.yaml", "maestro .maestro/b.yaml", "maestro .maestro/c.yaml"],
+        )
 
     def test_flows_hook_fails_a_device_when_a_flow_fails(self):
         self.flows("a.yaml", "b.yaml")

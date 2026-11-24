@@ -22,15 +22,19 @@ config.resolver.blockList = [
 {% if context.auth_enabled and not context.auth_oidc %}
 // Production builds swap the local Keycloak adapter for the provider SDK, so
 // the bundle carries neither. QA builds keep signing in against the local realm.
+// APP_VARIANT builds sign in against the lab realm in every mode.
+const labSignIn = (process.env.APP_VARIANT ?? '') !== '';
 const productionSignIn =
   process.env.NODE_ENV === 'production' && process.env.BAUKIT_QA_BUILD !== '1';
 const localSignInAdapter = path.join(import.meta.dirname, 'src', 'sign-in', 'local.ts');
 const productionSignInAdapter = path.join(import.meta.dirname, 'src', 'sign-in', 'production.ts');
+const labSignInAdapter = path.join(import.meta.dirname, 'src', 'sign-in', 'lab.ts');
+const replacementSignInAdapter = labSignIn ? labSignInAdapter : productionSignIn ? productionSignInAdapter : undefined;
 const upstreamResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   const resolved = (upstreamResolveRequest ?? context.resolveRequest)(context, moduleName, platform);
-  return productionSignIn && resolved.type === 'sourceFile' && resolved.filePath === localSignInAdapter
-    ? { type: 'sourceFile', filePath: productionSignInAdapter }
+  return replacementSignInAdapter !== undefined && resolved.type === 'sourceFile' && resolved.filePath === localSignInAdapter
+    ? { type: 'sourceFile', filePath: replacementSignInAdapter }
     : resolved;
 };
 {% endif %}

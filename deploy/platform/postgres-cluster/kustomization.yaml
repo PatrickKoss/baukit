@@ -5,6 +5,7 @@ resources:
   - namespace.yaml
   - image-catalog.yaml
   - cluster.yaml
+  - tenant-group.yaml
   - objectstore.yaml
   - scheduledbackup.yaml
   - pushgateway.yaml

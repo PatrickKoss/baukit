@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-11-24
+
+- Generated mobile products pass the device count to the `qa_maestro_flows` hook as its second argument.
+- Generated mobile products with auth start Chrome on each emulator before the first Maestro flow and in the quick-boot snapshot, which removes the Custom Tab input dispatch ANR at high host load.
+- Generated mobile products wait for the host load per core to drop below `BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE` before they start local emulators.
+- Generated mobile products run single-device Maestro flows with `--host localhost --port <adb port>`, which skips Maestro 2.8.0's scan of every device on the shared adb server; only the multi-device sharded run still scans.
+- Extra Android AVDs copy the base AVD's quick-boot snapshot on the first start instead of cold-booting one after another.
+- The mobile template has `dev` and `lab` build variants behind `APP_VARIANT`, with their own package suffix, name, scheme, icon badge, version code, API URL and lab realm sign-in. The lab's DNS name comes from `BAUKIT_LAB_DOMAIN`. Unset, the generated config is unchanged. `src/sign-in/lab.*` renders only for Clerk and WorkOS products, next to the local adapter.
+- Generated auth products with mobile allow the dev variant's `<app>-dev://oauth` redirect in `keycloak/realm-policy.json`, `keycloak/realm.json` and `keycloak/reconcile.json`. Products adopting the variants add the same three entries.
+
 ## [0.30.1] - 2026-11-24
 
 - The doctor failure for a gate without a `deploy-values` step also says that a product overriding `list_steps` in `scripts/quality-gate.local.sh` adds the step line there.

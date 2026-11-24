@@ -59,6 +59,17 @@ The product-root `limits.json` is the resource policy shared by backend, web, an
 
 Before claiming native accessibility, follow the VoiceOver and TalkBack release protocol in Baukit's `docs/platform/accessibility-contract.md`. Lint and Jest cannot validate spoken copy, traversal, gesture operation, or focus behavior on a real release binary.
 
+## Build variants
+
+`APP_VARIANT` picks a lab build; leave it unset for the plain build. A variant needs `BAUKIT_LAB_DOMAIN`, the lab's DNS name without scheme or path, for example `lab.example.com`.
+
+- `APP_VARIANT=dev` installs next to the plain app as `<package>.dev`, named "{{ context.app_name }} Dev" with a dot on the launcher icon. It registers the scheme `{{ context.app_name }}-dev` and talks to `https://{{ context.app_name }}-testing.<BAUKIT_LAB_DOMAIN>`.
+- `APP_VARIANT=lab` keeps the plain package, name and scheme and needs `EXPO_PUBLIC_API_URL`, an https origin.
+{% if context.auth_enabled %}- Both sign in against `https://id.<BAUKIT_LAB_DOMAIN>/realms/{{ context.app_name }}` with the client `{{ context.app_name }}-mobile` and ask for `offline_access`, so a phone keeps its session past the realm's SSO idle timeout. `EXPO_PUBLIC_LAB_OIDC_ISSUER` and `EXPO_PUBLIC_LAB_OIDC_CLIENT_ID` override the issuer and client. The realm's mobile client must allow the redirect URIs `{{ context.app_name }}://oauth` (lab) and `{{ context.app_name }}-dev://oauth` (dev), and the client's users need the `offline_access` role, which Keycloak's default roles include.
+{% endif %}- `BAUKIT_VERSION_CODE`, else `GITHUB_RUN_NUMBER`, sets the Android `versionCode` and iOS build number; a local build uses 1.
+
+A variant cannot be combined with `BAUKIT_QA_BUILD=1`.
+
 ## Purchases
 
 `src/purchases.ts` builds one `PurchaseFlow` from `@baukit/purchases-core`. With `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` or `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` set it uses RevenueCat. Without them it uses the no-op port and the app behaves as before. `AppShell` provides the flow and resets it on sign-out. Call `purchaseFlow().identify(suiteSubject)` after sign-in and replace the standalone entitlement backend when the product joins the suite. Baukit's `docs/platform/mobile-purchases.md` has the full order.

@@ -247,6 +247,7 @@ owned and contain assignments only.
 | `PLATFORM_HTTP_PORT` | `80` | Host port for HTTP ingress, bound to `127.0.0.1`. |
 | `PLATFORM_HTTPS_PORT` | `443` | Host port for HTTPS ingress, bound to `127.0.0.1`. |
 | `PLATFORM_SUBNET` | `10.89.1.0/24` | Docker network of a new cluster. Must sit inside the `10.89.0.0/16` nodeCIDR and overlap no Docker network; an existing cluster outside the nodeCIDR fails until `recreate`. A leftover `k3d-<cluster>` network on another subnet stops `up` before k3d, which would reuse it and ignore `--subnet`; the error prints the `docker network rm` command. |
+| `PLATFORM_EXTRA_REGISTRY_MIRRORS` | empty | Space-separated `host=http(s)://address[:port]` entries that a new cluster's k3s `registries.yaml` mirrors next to the baukit pull-through caches, such as a registry the cluster serves itself on a fixed ClusterIP. Read at create only, so set it for `up` and `recreate`; an existing cluster keeps its config until `recreate`. A host baukit already mirrors, a repeated host or an endpoint with a path fails before any command. |
 | `PLATFORM_STATE_DIR` | XDG state path | Disposable snapshot repository state. |
 
 GitHub mode uses the owner/repository fields to bootstrap and verifies desired
@@ -495,6 +496,26 @@ RustFS gets a new PVC, and the local Loki overlay starts with an S3 schema.
 This harness does not migrate old object-store files or filesystem log data.
 The publishable Loki base still uses filesystem storage; persistent consumers
 must add a future schema period when moving existing logs to S3.
+
+#### RustFS memory
+
+RustFS 1.0.6 buffers the whole source range of every `UploadPartCopy` in
+memory. Upload and download stream: a 6 GB object took about 31 MiB of
+anonymous memory to upload and about 100 MiB to read back. A server-side copy
+of the same object, which zot and other Docker distribution S3 drivers run when
+they move a finished upload to its blob path, needs about concurrency times part
+size. The driver defaults of 100 parallel copies of 32 MiB parts peaked at
+2.3 GiB and OOMKilled RustFS at its old 384 MiB limit; with 8 parallel copies
+the peak was 280 MiB. Below 100 parts the copy fan-out covers every part, so
+memory grows with object size up to about 3.2 GiB.
+
+RustFS has no setting that bounds this. Its foreground write admission
+(`RUSTFS_PUT_FOREGROUND_ADMISSION_*`) rejects excess copies with `503
+SlowDown` instead of queueing them, which fails the push either way. The bound
+belongs in the client. The local RustFS limit is 768 MiB, sized for at most
+16 parallel copies of 32 MiB parts. A zot or registry that stores on this
+RustFS must set `"multipartcopymaxconcurrency": 16` (or lower) in its S3
+`storageDriver`, and keep `multipartcopychunksize` at the 32 MiB default.
 
 The monthly restore CronJob is enabled locally so it can be exercised
 immediately with:

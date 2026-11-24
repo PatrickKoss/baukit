@@ -13,3 +13,4 @@ resources:
   - baukit-platform-observability.yaml
   - flux-notifications.yaml
   - tenant-rbac.yaml
+  - ../netpol-ipset-check

@@ -288,6 +288,17 @@ run_maestro() {
   return "$status"
 }
 
+# Maestro 2.8.0 lists every device on the shared adb server before it applies --device, so a
+# foreign offline emulator aborts the run. --host/--port opens the emulator's adbd directly and
+# skips that scan; the multi-device sharded run still needs --device.
+maestro_target() {
+  if [[ "$platform" == android && "$1" =~ ^emulator-([0-9]+)$ ]]; then
+    target=(--host localhost --port "$((BASH_REMATCH[1] + 1))")
+  else
+    target=(--device "$1")
+  fi
+}
+
 count() { echo "$#"; }
 
 run_declared_shard() {
@@ -298,9 +309,10 @@ run_declared_shard() {
   window="$(stall_window "${qa_maestro_shards[index]}" "${qa_maestro_shards[index]}")" ||
     fail_device "${devices[index]}" "$?"
   prepare_flow_device "${devices[index]}" "${qa_maestro_shards[index]}" || fail_device "${devices[index]}" "$?"
+  maestro_target "${devices[index]}"
   run_maestro "${qa_maestro_shards[index]}" "" "$window" "${devices[index]}" test \
     --platform "$platform" \
-    --device "${devices[index]}" \
+    "${target[@]}" \
     --env "APP_ID=$app_id" \
     --debug-output "$debug_dir" \
     "${qa_maestro_args[@]}" \
@@ -327,16 +339,17 @@ run_declared_shards() {
 
 run_device_flows() {
   local index="$1" flow device_flows debug_dir="$2/shard-$1" maestro_log window
-  mapfile -t device_flows < <(qa_maestro_flows "$index")
+  mapfile -t device_flows < <(qa_maestro_flows "$index" "$(count "${devices[@]}")")
   qa_maestro_env "$index"
   mkdir -p "$debug_dir"
   maestro_log="$debug_dir/maestro-output.log"
   for flow in "${device_flows[@]}"; do
     window="$(stall_window "$flow" "$flow")" || fail_device "${devices[index]}" "$?"
     prepare_flow_device "${devices[index]}" "$flow" || fail_device "${devices[index]}" "$?"
+    maestro_target "${devices[index]}"
     run_maestro "$flow" "" "$window" "${devices[index]}" test \
       --platform "$platform" \
-      --device "${devices[index]}" \
+      "${target[@]}" \
       --env "APP_ID=$app_id" \
       --debug-output "$debug_dir" \
       "${qa_maestro_args[@]}" \
@@ -359,7 +372,7 @@ run_hooked_flows() {
 hooked_flows_declared() {
   local index
   for index in "${!devices[@]}"; do
-    [[ -z "$(qa_maestro_flows "$index")" ]] || return 0
+    [[ -z "$(qa_maestro_flows "$index" "$(count "${devices[@]}")")" ]] || return 0
   done
   return 1
 }
@@ -392,9 +405,10 @@ if ((shards < 2)); then
   for flow in "${flows[@]}"; do
     window="$(stall_window "${flow#.maestro/}" "$flow")" || exit
     prepare_flow_device "${devices[0]}" "${flow#.maestro/}" || exit 1
+    maestro_target "${devices[0]}"
     run_maestro "${flow#.maestro/}" "" "$window" "${devices[0]}" test \
       --platform "$platform" \
-      --device "${devices[0]}" \
+      "${target[@]}" \
       --env "APP_ID=$app_id" \
       --debug-output "$debug_dir" \
       "${qa_maestro_args[@]}" \

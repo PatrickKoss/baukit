@@ -1,0 +1,13 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: baukit-tenants
+spec:
+  cluster:
+    name: postgres-cluster
+  name: baukit_tenants
+  login: false
+  superuser: false
+  createdb: false
+  createrole: false
+  databaseRoleReclaimPolicy: retain

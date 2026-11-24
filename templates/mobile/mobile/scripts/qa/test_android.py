@@ -47,6 +47,7 @@ class AndroidScriptsTest(unittest.TestCase):
             "BAUKIT_QA_ANDROID_ARCHITECTURE": "x86_64",
             "BAUKIT_QA_SKIP_BUILD": "1",
             "EVENTS": str(self.events),
+            "BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE": "1000",
         }
         for name in ("BAUKIT_QA_AVD_CONFIG", "BAUKIT_QA_GRADLE_WORKERS", "BAUKIT_QA_NATIVE_JOBS"):
             self.environment.pop(name, None)
@@ -797,9 +798,6 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
         apk.touch()
-        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check --force-renderer-accessibility=complete" > /data/local/tmp/chrome-command-line'
-        debug = "-s emulator-5556 shell settings put global debug_app com.android.chrome"
-        stop = "-s emulator-5556 shell am force-stop com.android.chrome"
         for headless, wifi in (("0", "1"), ("1", "1"), ("1", "0")):
             self.environment["BAUKIT_QA_HEADLESS"] = headless
             self.environment["BAUKIT_QA_ANDROID_WIFI"] = wifi
@@ -826,15 +824,20 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
                 features,
                 "-no-snapshot-load",
             ]
-            expected_args.extend([*(["-no-window"] if headless == "1" else []), "-accel", "off"])
+            window = [*(["-no-window"] if headless == "1" else []), "-accel", "off"]
+            seeded = [*expected_args[4:-1], "-snapshot", snapshot, *window]
+            expected_args.extend(window)
             *launches, rest = emulator_args.read_text().split("--\n")
             self.assertEqual(rest, "")
             self.assertEqual(
                 sorted(launch.splitlines() for launch in launches),
-                [
-                    expected_args,
-                    ["-avd", "test-qa-1", "-port", "5558", *expected_args[4:]],
-                ],
+                sorted(
+                    [
+                        expected_args,
+                        ["-avd", "test-qa", "-port", "5556", *seeded],
+                        ["-avd", "test-qa-1", "-port", "5558", *seeded],
+                    ]
+                ),
             )
             events = self.events.read_text().splitlines()
             activity = "dev.baukit.{{ context.app_crate }}/.MainActivity"
@@ -843,8 +846,8 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             launch = events.index(command)
             self.assertEqual(events.count("-s emulator-5556 reverse tcp:18015 tcp:18015"), 1)
             self.assertFalse(any("monkey" in event for event in events))
-            for serial in ("emulator-5556", "emulator-5558"):
-                self.assertEqual(events.count(f"-s {serial} emu avd snapshot save {snapshot}"), 1)
+            self.assertEqual(events.count(f"-s emulator-5556 emu avd snapshot save {snapshot}"), 1)
+            self.assertNotIn(f"-s emulator-5558 emu avd snapshot save {snapshot}", events)
             if wifi == "0":
                 self.assertFalse(
                     any("svc wifi" in event or "route get" in event for event in events)
@@ -856,13 +859,26 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
                     enable,
                 )
                 self.assertLess(enable, events.index(f"-s {serial} shell ip -4 route get 10.0.2.2"))
-            if AUTH_ENABLED:
-                for command in (flags, debug, stop):
-                    self.assertEqual(events.count(command), 1)
-                    self.assertLess(events.index(command), launch)
-                self.assertLess(events.index(stop), events.index(flags))
-            else:
-                self.assertFalse(any("chrome" in event for event in events))
+            self.assert_chrome_prepared(events, launch, snapshot)
+
+    def assert_chrome_prepared(self, events: list[str], launch: int, snapshot: str) -> None:
+        flags = '-s emulator-5556 shell echo "chrome --disable-fre --no-first-run --no-default-browser-check --force-renderer-accessibility=complete" > /data/local/tmp/chrome-command-line'
+        debug = "-s emulator-5556 shell settings put global debug_app com.android.chrome"
+        stop = "-s emulator-5556 shell am force-stop com.android.chrome"
+        if not AUTH_ENABLED:
+            self.assertFalse(any("chrome" in event for event in events))
+            return
+        warm = (
+            "-s emulator-5556 shell am start -W -a android.intent.action.VIEW"
+            " -d about:blank -p com.android.chrome"
+        )
+        for command in (flags, debug, stop, warm):
+            self.assertIn(command, events)
+            self.assertLess(events.index(command), launch)
+        self.assertLess(events.index(stop), events.index(flags))
+        self.assertLess(events.index(flags), events.index(warm))
+        save = events.index(f"-s emulator-5556 emu avd snapshot save {snapshot}")
+        self.assertLess(events.index(warm), save)
 
     def test_maestro_passes_local_hook_arguments_to_every_run(self) -> None:
         maestro = self.root / "bin/maestro"
@@ -886,6 +902,7 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("--device udid-1 --env", self.events.read_text())
         self.assertIn("--exclude-tags kompass .maestro/one.yaml", self.events.read_text())
 
     def prepare_maestro_run(self, devices: list[str], local_hooks: str = "") -> None:
@@ -910,6 +927,7 @@ esac
 previous=""
 for argument in "$@"; do
   if [[ "$previous" == --device && "$argument" == "${FAIL_DEVICE:-}" ]]; then exit 1; fi
+  if [[ "$previous" == --port && "emulator-$((argument - 1))" == "${FAIL_DEVICE:-}" ]]; then exit 1; fi
   previous="$argument"
 done
 """,
@@ -1174,7 +1192,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
     def snapshot_name(
         self,
         gpu: str = "swiftshader_indirect",
-        schema: str = "1",
+        schema: str = "2",
         features: str = "",
     ) -> str:
         result = subprocess.run(
@@ -1278,6 +1296,122 @@ class AndroidPollIntervalTest(unittest.TestCase):
             )
         self.assertEqual(status, 0)
         self.assertEqual(clock.sleeps, [self.POLL_SECONDS])
+
+
+class HostLoadWaitTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.android_adb = load_android_adb()
+        self.clock = FakeClock()
+        self.timing = self.android_adb.Timing(clock=self.clock, sleep=self.clock.sleep)
+
+    def wait(self, loads: list[float], timeout: float) -> tuple[int, str]:
+        readings = iter(loads)
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            status = self.android_adb.wait_for_load(
+                2.0, timeout, lambda: next(readings), self.timing
+            )
+        return status, stderr.getvalue()
+
+    def test_load_under_the_limit_starts_at_once(self) -> None:
+        self.assertEqual(self.wait([1.5], 600), (0, ""))
+        self.assertEqual(self.clock.sleeps, [])
+
+    def test_high_load_waits_until_it_falls(self) -> None:
+        status, message = self.wait([3.1, 2.5, 1.9], 600)
+        self.assertEqual(status, 0)
+        self.assertEqual(self.clock.sleeps, [15, 15])
+        self.assertIn("host load is 3.10 per core", message)
+        self.assertIn("fell to 1.90", message)
+
+    def test_wait_is_bounded_and_names_the_setting(self) -> None:
+        status, message = self.wait([3.0] * 10, 40)
+        self.assertEqual(status, 1)
+        self.assertEqual(self.clock.sleeps, [15, 15, 10])
+        self.assertIn("stayed above 2 per core for 40 s", message)
+        self.assertIn("BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE", message)
+
+    def test_mode_rejects_a_nonpositive_limit(self) -> None:
+        with (
+            patch.dict(os.environ, {"BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE": "0"}),
+            self.assertRaises(ValueError),
+        ):
+            self.android_adb.wait_for_load_mode(10)
+
+
+class SeedCloneTest(unittest.TestCase):
+    SNAPSHOT = "baukit-clean-0123456789ab"
+
+    def setUp(self) -> None:
+        self.android_adb = load_android_adb()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.base = Path(directory.name) / "test-qa.avd"
+        self.clone = Path(directory.name) / "test-qa-1.avd"
+        (self.base / "snapshots" / self.SNAPSHOT).mkdir(parents=True)
+        (self.base / "snapshots" / self.SNAPSHOT / "ram.bin").write_text("ram")
+        (self.base / "snapshots" / self.SNAPSHOT / "hardware.ini").write_text(
+            f"avd.name = test-qa\navd.id = test-qa\n"
+            f"disk.dataPartition.path = {self.base}/userdata-qemu.img\n"
+        )
+        (self.base / f"{self.SNAPSHOT}.ready").touch()
+        for name in (
+            "userdata-qemu.img",
+            "userdata-qemu.img.qcow2",
+            "version_num.cache",
+            "config.ini",
+            "hardware-qemu.ini",
+        ):
+            (self.base / name).write_text(name)
+        self.clone.mkdir()
+        (self.clone / "config.ini").write_text("clone config")
+
+    def seed(self, running: bool = False) -> int:
+        with contextlib.redirect_stdout(io.StringIO()):
+            return self.android_adb.seed_clone(self.base, self.clone, self.SNAPSHOT, running)
+
+    def test_copies_disks_and_the_snapshot_but_not_the_config(self) -> None:
+        self.assertEqual(self.seed(), 0)
+        self.assertEqual(
+            (self.clone / "userdata-qemu.img.qcow2").read_text(), "userdata-qemu.img.qcow2"
+        )
+        self.assertEqual((self.clone / "snapshots" / self.SNAPSHOT / "ram.bin").read_text(), "ram")
+        self.assertTrue((self.clone / f"{self.SNAPSHOT}.ready").is_file())
+        self.assertEqual((self.clone / "version_num.cache").read_text(), "version_num.cache")
+        self.assertEqual((self.clone / "config.ini").read_text(), "clone config")
+        self.assertFalse((self.clone / "hardware-qemu.ini").exists())
+
+    def test_points_the_copied_snapshot_hardware_at_the_clone(self) -> None:
+        self.assertEqual(self.seed(), 0)
+        self.assertEqual(
+            (self.clone / "snapshots" / self.SNAPSHOT / "hardware.ini").read_text(),
+            "avd.name = test-qa-1\navd.id = test-qa-1\n"
+            f"disk.dataPartition.path = {self.clone}/userdata-qemu.img\n",
+        )
+        self.assertIn(
+            "avd.name = test-qa\n",
+            (self.base / "snapshots" / self.SNAPSHOT / "hardware.ini").read_text(),
+        )
+
+    def test_refuses_a_running_base_or_one_without_the_snapshot(self) -> None:
+        self.assertEqual(self.seed(running=True), 1)
+        (self.base / f"{self.SNAPSHOT}.ready").unlink()
+        self.assertEqual(self.seed(), 1)
+        self.assertEqual(sorted(path.name for path in self.clone.iterdir()), ["config.ini"])
+
+    def test_running_avd_is_matched_by_name_and_avd_home(self) -> None:
+        homes = self.base.parent
+        with tempfile.TemporaryDirectory() as proc:
+            for pid, home in (("42", homes), ("43", Path("/elsewhere"))):
+                (Path(proc) / pid).mkdir()
+                (Path(proc) / pid / "cmdline").write_bytes(b"qemu\0-avd\0test-qa\0")
+                (Path(proc) / pid / "environ").write_bytes(f"ANDROID_AVD_HOME={home}\0".encode())
+            self.assertTrue(self.android_adb.avd_running(self.base, Path(proc)))
+            self.assertFalse(self.android_adb.avd_running(self.clone, Path(proc)))
+            (Path(proc) / "42/environ").unlink()
+            self.assertTrue(self.android_adb.avd_running(self.base, Path(proc)))
+            (Path(proc) / "42/cmdline").unlink()
+            self.assertFalse(self.android_adb.avd_running(self.base, Path(proc)))
 
 
 class FakeClock:

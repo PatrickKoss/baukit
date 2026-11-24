@@ -19,6 +19,9 @@ DEFAULT_IDLE_TIMEOUT = 180
 DEFAULT_SETTLE_TIMEOUT = 600
 DEFAULT_STOP_TIMEOUT = 120
 DEFAULT_WIFI_TIMEOUT = 90
+DEFAULT_LOAD_WAIT_TIMEOUT = 600
+DEFAULT_MAX_LOAD_PER_CORE = 2.0
+LOAD_POLL_INTERVAL = 15
 HOST_ALIAS = "10.0.2.2"
 LOOPBACK = "127.0.0.1"
 CONSOLE_CONNECT_TIMEOUT = 1.0
@@ -247,16 +250,94 @@ def snapshot_name(config: Path, sdk_root: Path, gpu: str, features: str, schema:
 
 
 def loaded_snapshots(avd_name: str, proc: Path = Path("/proc")) -> set[str]:
-    loaded = set()
+    return {
+        pairs["-snapshot"]
+        for pairs in process_arguments(proc)
+        if pairs.get("-avd") == avd_name and "-snapshot" in pairs
+    }
+
+
+def process_arguments(proc: Path = Path("/proc")) -> list[dict[str, str]]:
+    running = []
     for cmdline in proc.glob("[0-9]*/cmdline"):
         try:
             args = cmdline.read_bytes().decode(errors="replace").split("\0")
         except OSError:
             continue
-        pairs = dict(zip(args, args[1:], strict=False))
-        if pairs.get("-avd") == avd_name and "-snapshot" in pairs:
-            loaded.add(pairs["-snapshot"])
-    return loaded
+        running.append(dict(zip(args, args[1:], strict=False)))
+    return running
+
+
+def process_avd_home(environ: Path) -> str | None:
+    try:
+        variables = environ.read_bytes().decode(errors="replace").split("\0")
+    except OSError:
+        return None
+    homes = [entry.split("=", 1)[1] for entry in variables if entry.startswith("ANDROID_AVD_HOME=")]
+    return homes[0] if homes else None
+
+
+def avd_running(avd_dir: Path, proc: Path = Path("/proc")) -> bool:
+    """Whether an emulator runs this AVD; one whose AVD home is unreadable counts as running."""
+    name = avd_dir.name.removesuffix(".avd")
+    for cmdline in proc.glob("[0-9]*/cmdline"):
+        try:
+            args = cmdline.read_bytes().decode(errors="replace").split("\0")
+        except OSError:
+            continue
+        if dict(zip(args, args[1:], strict=False)).get("-avd") != name:
+            continue
+        home = process_avd_home(cmdline.with_name("environ"))
+        if home is None or Path(home) == avd_dir.parent:
+            return True
+    return False
+
+
+# The emulator rebuilds the cache partition when version_num.cache is missing.
+SEED_SUFFIXES = (".img", ".img.qcow2", "version_num.cache")
+
+
+def retarget_hardware(hardware: Path, base_avd: str, clone_avd: str) -> None:
+    """Point a copied snapshot's hardware.ini at the clone; the emulator refuses a mismatch."""
+    if not hardware.is_file():
+        return
+    clone_name = clone_avd.removesuffix(".avd")
+    identity = {"avd.name", "avd.id"}
+    lines = [
+        f"{key} = {clone_name}"
+        if (key := line.partition(" = ")[0]) in identity
+        else line.replace(f"/{base_avd}/", f"/{clone_avd}/")
+        for line in hardware.read_text().splitlines()
+    ]
+    hardware.write_text("\n".join(lines) + "\n")
+
+
+def seed_clone(base_dir: Path, clone_dir: Path, snapshot: str, running: bool) -> int:
+    """Copy the base AVD's disks and quick-boot snapshot into an extra AVD that has none.
+
+    The qcow2 overlays name their backing files relative to the AVD directory, so the copies
+    resolve to the clone's own images. A running base emulator writes its overlays, so the
+    copy waits for a stopped base.
+    """
+    source = base_dir / "snapshots" / snapshot
+    if running or not source.is_dir() or not (base_dir / f"{snapshot}.ready").is_file():
+        return 1
+    target = clone_dir / "snapshots" / snapshot
+    shutil.rmtree(target, ignore_errors=True)
+    for image in base_dir.iterdir():
+        if image.is_file() and image.name.endswith(SEED_SUFFIXES):
+            shutil.copy2(image, clone_dir / image.name)
+    shutil.copytree(source, target)
+    retarget_hardware(target / "hardware.ini", base_dir.name, clone_dir.name)
+    (clone_dir / f"{snapshot}.ready").touch()
+    prune_snapshots(clone_dir, snapshot, loaded_snapshots(clone_dir.name.removesuffix(".avd")))
+    print(f"qa: seeded {clone_dir.name} from the {snapshot} snapshot of {base_dir.name}")
+    return 0
+
+
+def seed_clone_mode(_probe_timeout: float) -> int:
+    base_dir, clone_dir, snapshot = Path(sys.argv[2]), Path(sys.argv[3]), sys.argv[4]
+    return seed_clone(base_dir, clone_dir, snapshot, avd_running(base_dir))
 
 
 def prune_snapshots(avd_dir: Path, keep: str, loaded: set[str]) -> int:
@@ -598,6 +679,47 @@ def report_unready_mode(probe_timeout: float) -> int:
     return report_unready_transports(sys.argv[2], tuple(sys.argv[3:]), probe_timeout)
 
 
+def load_per_core() -> float:
+    return os.getloadavg()[0] / (os.cpu_count() or 1)
+
+
+def wait_for_load(
+    limit: float,
+    wait_timeout: float,
+    read_load: Callable[[], float] = load_per_core,
+    timing: Timing = SYSTEM_TIMING,
+) -> int:
+    deadline = timing.clock() + wait_timeout
+    load = read_load()
+    if load <= limit:
+        return 0
+    print(
+        f"qa: host load is {load:.2f} per core,"
+        f" above BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE={limit:g};"
+        f" waiting up to {wait_timeout:g} s before starting emulators",
+        file=sys.stderr,
+    )
+    while (remaining := deadline - timing.clock()) > 0:
+        timing.sleep(min(LOAD_POLL_INTERVAL, remaining))
+        load = read_load()
+        if load <= limit:
+            print(f"qa: host load fell to {load:.2f} per core", file=sys.stderr)
+            return 0
+    print(
+        f"qa: host load stayed above {limit:g} per core for {wait_timeout:g} s (now {load:.2f});"
+        " emulators under this load hit input ANRs, so none were started."
+        " Retry when the host is quieter or raise BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def wait_for_load_mode(_probe_timeout: float) -> int:
+    limit = timeout_setting("BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE", DEFAULT_MAX_LOAD_PER_CORE)
+    wait_timeout = timeout_setting("BAUKIT_QA_ANDROID_LOAD_WAIT_SECONDS", DEFAULT_LOAD_WAIT_TIMEOUT)
+    return wait_for_load(limit, wait_timeout)
+
+
 MODES = dict(
     [
         ("--check-health", check_health_mode),
@@ -619,6 +741,8 @@ MODES = dict(
         ("--report-unready", report_unready_mode),
         ("--wait-for-stop", wait_for_stop_mode),
         ("--wait-for-boot", wait_for_boot_mode),
+        ("--wait-for-load", wait_for_load_mode),
+        ("--seed-clone", seed_clone_mode),
     ]
 )
 

@@ -29,7 +29,8 @@ import { Platform } from 'react-native';
 import type { ThemePreference } from './app-preferences';
 import { signInFeedback } from './auth-feedback';
 {% if context.auth_oidc and context.pwa and not context.web %}import { apiBaseUrl } from './api-base-url';
-{% endif %}{% if context.auth_oidc %}import { authStorage } from './auth-storage';
+{% endif %}{% if context.auth_oidc %}import { appScheme } from './app-scheme';
+import { authStorage } from './auth-storage';
 {% endif %}{% if context.auth_oidc and context.pwa and not context.web %}import { browserSignInClient } from './sign-in/browser-client';
 {% endif %}import type { {% if context.auth_oidc %}SignInAdapter, SignInClient, {% endif %}SignInSession } from './sign-in/port';
 {% if context.auth_oidc %}
@@ -66,7 +67,7 @@ function nativeClient(): SignInClient {
     {
       issuer,
       clientId: typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`,
-      redirectUri: AuthSession.makeRedirectUri({ scheme: PRODUCT_NAME, path: 'oauth' }),
+      redirectUri: AuthSession.makeRedirectUri({ scheme: appScheme(), path: 'oauth' }),
       scopes,
       ...tokenBinding,
       offlineAccess,

@@ -42,7 +42,7 @@ emulator_port="${BAUKIT_QA_ANDROID_PORT:-$(manifest_quality android_emulator_por
 emulator_count="${BAUKIT_QA_ANDROID_EMULATORS:-$(manifest_quality android_emulators 2)}"
 [[ "$emulator_count" =~ ^[1-9][0-9]*$ ]] || { echo "qa: Android emulator count must be a positive integer" >&2; exit 2; }
 # Bump when the saved quick-boot state changes; it keys the snapshot name.
-snapshot_schema=1
+snapshot_schema=2
 gpu_mode="${BAUKIT_QA_ANDROID_GPU:-swiftshader_indirect}"
 [[ "$gpu_mode" =~ ^[a-z_]+$ ]] || { echo "qa: BAUKIT_QA_ANDROID_GPU must be an emulator gpu mode" >&2; exit 2; }
 [[ -z "$emulator_accel" || "$emulator_accel" =~ ^[a-z]+$ ]] || { echo "qa: BAUKIT_QA_ANDROID_ACCEL must be an emulator accel mode" >&2; exit 2; }
@@ -194,15 +194,28 @@ apply_reverse() {
 {% if context.auth_enabled %}  adb_bounded -s "$device" reverse "tcp:$keycloak_port" "tcp:$keycloak_port"
 {% endif %}}
 
-prepare_device() {
+{% if context.auth_enabled %}# Chrome's first start in a fresh profile keeps its main thread busy for seconds. Inside the
+# login flow that work lands on the Custom Tab's first input, which under host load times out
+# as an input dispatch ANR, so Chrome starts once here, before any flow.
+warm_chrome() {
+  local device="$1"
+  adb_bounded -s "$device" shell am force-stop com.android.chrome
+  adb_bounded -s "$device" shell 'echo "chrome --disable-fre --no-first-run --no-default-browser-check --force-renderer-accessibility=complete" > /data/local/tmp/chrome-command-line'
+  adb_bounded -s "$device" shell settings put global debug_app com.android.chrome
+  adb_checked -s "$device" shell am start -W -a android.intent.action.VIEW -d about:blank -p com.android.chrome || {
+    echo "qa: could not start Chrome on $device" >&2
+    return 1
+  }
+  adb_bounded -s "$device" shell input keyevent KEYCODE_HOME
+}
+
+{% endif %}prepare_device() {
   local device="$1" apk="$2"
   adb_bounded -s "$device" shell settings put global window_animation_scale 0
   adb_bounded -s "$device" shell settings put global transition_animation_scale 0
   adb_bounded -s "$device" shell settings put global animator_duration_scale 0
   apply_reverse "$device"
-{% if context.auth_enabled %}  adb_bounded -s "$device" shell am force-stop com.android.chrome
-  adb_bounded -s "$device" shell 'echo "chrome --disable-fre --no-first-run --no-default-browser-check --force-renderer-accessibility=complete" > /data/local/tmp/chrome-command-line'
-  adb_bounded -s "$device" shell settings put global debug_app com.android.chrome
+{% if context.auth_enabled %}  warm_chrome "$device"
 {% endif %}  adb_checked -s "$device" install -r "$apk"
   launch_app "$device"
 }
@@ -406,7 +419,8 @@ save_snapshot() {
   local index="$1" serial="${serials[$1]}"
   launch_emulator "$index"
   await_emulator "$serial"
-  python3 "$root/mobile/scripts/qa/android-adb.py" --settle "$adb" "$serial" || exit 1
+{% if context.auth_enabled %}  warm_chrome "$serial" || exit 1
+{% endif %}  python3 "$root/mobile/scripts/qa/android-adb.py" --settle "$adb" "$serial" || exit 1
   python3 "$root/mobile/scripts/qa/android-adb.py" --check-health "$adb" "$serial" "$state_dir/android-health.log"
   adb_bounded -s "$serial" logcat -b all -c >/dev/null
   rm -rf "$snapshot_dir"
@@ -415,6 +429,38 @@ save_snapshot() {
   echo "qa: saved quick-boot snapshot $snapshot_name"
   python3 "$root/mobile/scripts/qa/android-adb.py" --prune-snapshots "$avd_dir" "$snapshot_name" "$index_avd"
   delete_stale_snapshot_tags "$serial"
+}
+
+# Extra AVDs copy the base snapshot instead of cold-booting one after another, so the first
+# start saves the base snapshot and stops that emulator before the copies.
+prepare_base_snapshot() {
+  select_avd 0
+  [[ ! -f "$snapshot_ready" ]] || return 0
+  lock_snapshot
+  if [[ ! -f "$snapshot_ready" ]]; then
+    save_snapshot 0
+    stop_emulator "${serials[0]}" || exit 1
+    rm -f "$state_dir/android-emulator-${serials[0]#emulator-}.pid"
+    : > "$state_dir/android-serial"
+  fi
+  exec 9>&-
+}
+
+seed_clone() {
+  [[ -f "$snapshot_ready" ]] && return 0
+  python3 "$root/mobile/scripts/qa/android-adb.py" --seed-clone "$avd_home/$avd_name.avd" "$avd_dir" "$snapshot_name" ||
+    echo "qa: cold-booting $index_avd because $avd_name has no stopped $snapshot_name snapshot to copy"
+}
+
+seed_clones() {
+  local index
+  for ((index = 1; index < emulator_count; index++)); do
+    ensure_avd_clone "$index"
+    select_avd "$index"
+    lock_snapshot
+    seed_clone
+    exec 9>&-
+  done
 }
 
 boot_emulators() {
@@ -431,6 +477,10 @@ boot_emulators() {
   : > "$state_dir/android-serial"
   printf '%s\n' "$avd_name" > "$state_dir/android-avd-name"
   touch "$state_dir/android-owned"
+  if ((emulator_count > 1)); then
+    prepare_base_snapshot
+    seed_clones
+  fi
   for ((index = 0; index < emulator_count; index++)); do
     ((index == 0)) || ensure_avd_clone "$index"
     select_avd "$index"
@@ -458,6 +508,7 @@ acquire_devices() {
     return
   fi
   reject_foreign_emulators
+  python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-load || exit 1
   boot_emulators
 }
 

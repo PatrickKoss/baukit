@@ -216,6 +216,14 @@
       "groupSlug": "platform-kyverno-policies"
     },
     {
+      "description": "One PR per platform base: netpol-ipset-check",
+      "matchFileNames": [
+        "deploy/platform/netpol-ipset-check/**"
+      ],
+      "groupName": "platform netpol-ipset-check",
+      "groupSlug": "platform-netpol-ipset-check"
+    },
+    {
       "description": "One PR per platform base: observability-stack",
       "matchFileNames": [
         "deploy/platform/observability-stack/**"

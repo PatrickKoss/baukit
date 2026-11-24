@@ -1,4 +1,4 @@
-import { PRODUCT_NAME } from "../src/product";
+import { appScheme } from "../src/app-scheme";
 
 export function redirectSystemPath({
   path,
@@ -7,5 +7,5 @@ export function redirectSystemPath({
   readonly initial: boolean;
 }): string {
   const route = path.split(/[?#]/, 1)[0];
-  return route === `${PRODUCT_NAME}://oauth` || route === "/oauth" ? "/" : path;
+  return route === `${appScheme()}://oauth` || route === "/oauth" ? "/" : path;
 }
