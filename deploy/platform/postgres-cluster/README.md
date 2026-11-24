@@ -85,11 +85,31 @@ that must be replaced.
 The initial `Cluster.spec.bootstrap.initdb` pair encodes the convention as the
 placeholder database `product`, owner `product_owner`, and overlay-owned
 `product-db-credentials` Secret. For every subsequent product, copy
-`product-database.example.yaml` into the overlay and create one `DatabaseRole`
-plus one `Database`. Standalone `DatabaseRole` resources are the CNPG 1.30
+`product-database.example.yaml` into the overlay and create two `DatabaseRole`
+objects plus one `Database`. Standalone `DatabaseRole` resources are the CNPG 1.30
 GitOps-oriented role API; retain policies keep deleting a Kubernetes object from
 silently deleting a production role or database. Application migrations still
 own schemas and tables.
+
+Postgres grants `CONNECT` on every database to `PUBLIC`, and CNPG's default
+`pg_hba` admits every role to every database, so without more a product owner
+could log in to another product's database and to `postgres`. The Cluster adds
+two `pg_hba` lines ahead of CNPG's final `host all all all scram-sha-256`:
+
+```text
+host samerole +baukit_tenants all scram-sha-256
+host all      +baukit_tenants all reject
+```
+
+A member of `baukit_tenants` (`tenant-group.yaml`) gets in only where the
+database name equals a role it belongs to, and is rejected everywhere else.
+That is why the example creates a `NOLOGIN` role named like the database and
+lists both it and `baukit_tenants` in the owner's `inRoles`. An owner without
+`baukit_tenants` falls through to CNPG's default line and reaches every
+database, so consumers should check the pair in CI. The bootstrap
+`product_owner`, `keycloak_owner`, `streaming_replica` and the local `postgres`
+superuser are not tenants and keep their access. CNPG reloads `pg_hba` without
+a restart.
 
 ## Restore proof
 
