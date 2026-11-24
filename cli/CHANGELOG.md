@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-11-24
+
 - Generated mobile products pass the device count to the `qa_maestro_flows` hook as its second argument.
 - Generated mobile products with auth start Chrome on each emulator before the first Maestro flow and in the quick-boot snapshot, which removes the Custom Tab input dispatch ANR at high host load.
 - Generated mobile products wait for the host load per core to drop below `BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE` before they start local emulators.

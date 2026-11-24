@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.30.2] - 2026-11-24
+
 {% if context.mobile and context.auth_enabled %}- `mobile/scripts/qa/android-env.sh` starts Chrome once on every emulator before the first flow (`am start -W` on `about:blank`, then Home) and once while it saves the quick-boot snapshot, so the snapshot holds a Chrome profile that has done its first start. Chrome's first start in a fresh profile kept its main thread busy for seconds; inside the login flow that work landed on the Custom Tab's first input, and at host load 60 to 80 Android raised `Input dispatching timed out` for `CustomTabActivity` after 5 s. `snapshot_schema` goes to 2, so the next start saves a new snapshot once.
 {% endif %}{% if context.mobile %}- `mobile/scripts/qa/android-env.sh start` and `boot` wait while the host's 1-minute load per core is above `BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE` (2.0) before they launch local emulators, for up to `BAUKIT_QA_ANDROID_LOAD_WAIT_SECONDS` (600), then exit 1 with the load they saw. Leased emulators skip the wait.
 - With more than one emulator, the first start saves the base AVD's snapshot, stops that emulator and copies its disks and snapshot into every extra AVD that has none, then quick-boots them all. Before, each extra AVD cold-booted and settled one after another, and a failed first start left it without a snapshot for the next start. The copy is skipped while another emulator runs the base AVD; that extra AVD then cold-boots as before.
