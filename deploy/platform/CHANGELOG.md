@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- redis-ha: the Sentinels mark a dead master down after different delays (5 s in `redis-0`, 7 s in `redis-1`, 9 s in `redis-2`), and the failover timeout drops from 30 s to 10 s. In CI run 45368520390 the two surviving Sentinels reached odown within 25 ms of each other, each voted for itself, and the retry 60 s later split the same way, so no replica was promoted within 120 s and the restarted master waited for a promotion that never came. Now one Sentinel asks for votes about 2 s before the other wants to start a failover, and a split vote is retried every 20 s instead of every 60 s. A restarted master that the Sentinels still name waits up to 109 s (was 125 s): the slowest detection, one TILT period, three retries and the promotion.
+- Falco's `Baukit exec into protected platform namespace` no longer fires on the Kyverno chart's `kyverno-check-legacy-policies` hook (`kubectl-kyverno check-legacy-policies` in `reg.kyverno.io/kyverno/kyverno-cli`). When the hook started while Falco itself started, Falco missed the parent of the hook's entrypoint and reported it as an exec, which failed e2e `falco/no-warning-events-outside-the-triggers` in CI run 45351167853.
+
 ## [0.30.2] - 2026-11-24
 
 - `platform-lifecycle.sh` takes `PLATFORM_EXTRA_REGISTRY_MIRRORS`, space-separated `host=endpoint` entries that a new cluster's k3s `registries.yaml` mirrors, merged with the pull-through caches when they run and on their own when they do not. Before, a consumer that pointed a registry at an in-cluster endpoint wrote the mirror into the running node, and `recreate` lost it. `validate_common_config` rejects malformed entries, endpoints with a path, repeated hosts and hosts baukit mirrors itself. Unset, nothing changes. `platform-up.sh` does not read it.

@@ -101,6 +101,9 @@ class RedisHaScript:
                 check=False,
             )
 
+    def sentinel_conf(self, pod: str) -> str:
+        return self.decide(pod, {0: f"{fqdn(0)}\n6379\n"}, mode="sentinel").stdout
+
 
 class DecideMasterTest(RedisHaScript, unittest.TestCase):
     def assert_decision(self, pod: str, answers: dict[int, str], expected: str) -> None:
@@ -138,25 +141,26 @@ class DecideMasterTest(RedisHaScript, unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "self")
         self.assertIn("waiting for Sentinels", result.stderr)
 
-    def test_restarted_master_waits_for_the_failover_retry_after_a_split_vote(self) -> None:
+    def default_self_wait_seconds(self) -> int:
         answers = {1: f"{fqdn(0)}\n6379\n", 2: f"{fqdn(0)}\n6379\n"}
         result = self.decide("redis-0", answers, extra_env={"SELF_WAIT_SECONDS": ""})
         self.assertEqual(result.returncode, 0, result.stderr)
-        waited_seconds = result.stderr.count("waiting for Sentinels")
-        conf = self.decide("redis-1", {0: f"{fqdn(0)}\n6379\n"}, mode="sentinel").stdout
-        down_after_ms = sentinel_setting(conf, "down-after-milliseconds")
-        failover_ms = sentinel_setting(conf, "failover-timeout")
-        retry_after_split_vote_ms = down_after_ms + 2 * failover_ms
-        self.assertGreaterEqual(waited_seconds * 1000, retry_after_split_vote_ms + failover_ms)
+        return result.stderr.count("waiting for Sentinels")
+
+    def slowest_detection_and_failover_timeout_ms(self) -> tuple[int, int]:
+        confs = [self.sentinel_conf(f"redis-{ordinal}") for ordinal in range(3)]
+        down_after_ms = max(sentinel_setting(conf, "down-after-milliseconds") for conf in confs)
+        return down_after_ms, sentinel_setting(confs[0], "failover-timeout")
+
+    def test_restarted_master_waits_for_three_failover_retries_after_split_votes(self) -> None:
+        waited_seconds = self.default_self_wait_seconds()
+        down_after_ms, failover_ms = self.slowest_detection_and_failover_timeout_ms()
+        retries_after_split_votes_ms = down_after_ms + 3 * 2 * failover_ms
+        self.assertGreaterEqual(waited_seconds * 1000, retries_after_split_votes_ms + failover_ms)
 
     def test_restarted_master_waits_out_a_sentinel_tilt_before_the_split_vote_retry(self) -> None:
-        answers = {1: f"{fqdn(0)}\n6379\n", 2: f"{fqdn(0)}\n6379\n"}
-        result = self.decide("redis-0", answers, extra_env={"SELF_WAIT_SECONDS": ""})
-        self.assertEqual(result.returncode, 0, result.stderr)
-        waited_seconds = result.stderr.count("waiting for Sentinels")
-        conf = self.decide("redis-1", {0: f"{fqdn(0)}\n6379\n"}, mode="sentinel").stdout
-        down_after_ms = sentinel_setting(conf, "down-after-milliseconds")
-        failover_ms = sentinel_setting(conf, "failover-timeout")
+        waited_seconds = self.default_self_wait_seconds()
+        down_after_ms, failover_ms = self.slowest_detection_and_failover_timeout_ms()
         worst_case_promotion_ms = down_after_ms + SENTINEL_TILT_MS + 3 * failover_ms
         self.assertGreaterEqual(waited_seconds * 1000, worst_case_promotion_ms)
 
@@ -168,6 +172,14 @@ class DecideMasterTest(RedisHaScript, unittest.TestCase):
 
 
 class SentinelConfigTest(RedisHaScript, unittest.TestCase):
+    def test_sentinels_detect_a_dead_master_at_different_times(self) -> None:
+        delays = set()
+        for ordinal in range(3):
+            conf = self.sentinel_conf(f"redis-{ordinal}")
+            delays.add(sentinel_setting(conf, "down-after-milliseconds"))
+        self.assertEqual(len(delays), 3)
+        self.assertGreaterEqual(max(delays) - min(delays), 2 * 1000)
+
     def test_sentinel_monitors_reported_master_and_announces_hostname(self) -> None:
         result = self.decide("redis-0", {1: f"{fqdn(2)}\n6379\n"}, mode="sentinel")
         self.assertEqual(result.returncode, 0, result.stderr)
