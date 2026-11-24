@@ -583,7 +583,13 @@ printf '{{"args": "%s"}}\\n' "$*" >> "$EVENTS"
             event for event in self.events.read_text().splitlines() if event.startswith("maestro")
         ]
         self.assertEqual(len(runs), 1)
-        self.assertRegex(runs[0], "--device emulator-5556,emulator-5558 --shard-split 2 ")
+        self.assertTrue(
+            runs[0].startswith(
+                "maestro --device emulator-5556,emulator-5558 test --platform android "
+            ),
+            runs[0],
+        )
+        self.assertIn(" --shard-split 2 ", runs[0])
         self.assertTrue(
             runs[0].endswith(".maestro/a-first.yaml .maestro/b-second.yaml .maestro/c-third.yaml")
         )

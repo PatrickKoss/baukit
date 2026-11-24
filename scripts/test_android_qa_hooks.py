@@ -208,9 +208,9 @@ class AndroidQaHookTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         runs = sorted(event for event in self.events_list() if event.startswith("maestro"))
         self.assertEqual(len(runs), 2)
-        self.assertIn("user-0 test --platform android --host localhost --port 5557", runs[0])
+        self.assertIn("user-0 --host localhost --port 5557 test --platform android ", runs[0])
         self.assertTrue(runs[0].endswith(".maestro/a.yaml"))
-        self.assertIn("user-1 test --platform android --host localhost --port 5559", runs[1])
+        self.assertIn("user-1 --host localhost --port 5559 test --platform android ", runs[1])
         self.assertTrue(runs[1].endswith(".maestro/b.yaml"))
         self.assertTrue((self.mobile / "maestro-debug/shard-1-1/maestro-output.log").exists())
 

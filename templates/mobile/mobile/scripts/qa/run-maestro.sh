@@ -310,9 +310,8 @@ run_declared_shard() {
     fail_device "${devices[index]}" "$?"
   prepare_flow_device "${devices[index]}" "${qa_maestro_shards[index]}" || fail_device "${devices[index]}" "$?"
   maestro_target "${devices[index]}"
-  run_maestro "${qa_maestro_shards[index]}" "" "$window" "${devices[index]}" test \
+  run_maestro "${qa_maestro_shards[index]}" "" "$window" "${devices[index]}" "${target[@]}" test \
     --platform "$platform" \
-    "${target[@]}" \
     --env "APP_ID=$app_id" \
     --debug-output "$debug_dir" \
     "${qa_maestro_args[@]}" \
@@ -347,9 +346,8 @@ run_device_flows() {
     window="$(stall_window "$flow" "$flow")" || fail_device "${devices[index]}" "$?"
     prepare_flow_device "${devices[index]}" "$flow" || fail_device "${devices[index]}" "$?"
     maestro_target "${devices[index]}"
-    run_maestro "$flow" "" "$window" "${devices[index]}" test \
+    run_maestro "$flow" "" "$window" "${devices[index]}" "${target[@]}" test \
       --platform "$platform" \
-      "${target[@]}" \
       --env "APP_ID=$app_id" \
       --debug-output "$debug_dir" \
       "${qa_maestro_args[@]}" \
@@ -406,9 +404,8 @@ if ((shards < 2)); then
     window="$(stall_window "${flow#.maestro/}" "$flow")" || exit
     prepare_flow_device "${devices[0]}" "${flow#.maestro/}" || exit 1
     maestro_target "${devices[0]}"
-    run_maestro "${flow#.maestro/}" "" "$window" "${devices[0]}" test \
+    run_maestro "${flow#.maestro/}" "" "$window" "${devices[0]}" "${target[@]}" test \
       --platform "$platform" \
-      "${target[@]}" \
       --env "APP_ID=$app_id" \
       --debug-output "$debug_dir" \
       "${qa_maestro_args[@]}" \
@@ -421,11 +418,10 @@ devices=("${devices[@]:0:shards}")
 device_list="$(IFS=,; printf '%s' "${devices[*]}")"
 window="$(stall_window "the sharded run" "${flows[@]}")" || exit
 echo "qa: sharding $flow_count flows across $device_list"
-run_maestro "the sharded run" "during the sharded run" "$window" "$device_list" test \
+run_maestro "the sharded run" "during the sharded run" "$window" "$device_list" --device "$device_list" test \
   --platform "$platform" \
   --env "APP_ID=$app_id" \
   --debug-output "$debug_dir" \
-  --device "$device_list" \
   --shard-split "$shards" \
   "${qa_maestro_args[@]}" \
   "${flows[@]}"
