@@ -62,6 +62,8 @@ adb="$sdk_root/platform-tools/adb"
 adb_bounded() {
   python3 "$root/mobile/scripts/qa/android-adb.py" "$adb" "$@"
 }
+# shellcheck source=android-broker.sh
+source "$root/mobile/scripts/qa/android-broker.sh"
 
 stop_android() {
   [[ -f "$state_dir/android-owned" ]] || return 0
@@ -112,6 +114,7 @@ clear_ownership() {
 
 stop_all() {
   local status=0
+  release_leased_devices || status=$?
   stop_android || status=$?
   bash "$root/mobile/scripts/qa/services.sh" stop || status=$?
   if [[ "$status" != 0 ]]; then
@@ -122,6 +125,7 @@ stop_all() {
 }
 
 stop_emulators() {
+  release_leased_devices || return
   stop_android || {
     echo "qa: Android cleanup failed; ownership state was kept" >&2
     return 1
@@ -135,7 +139,9 @@ if [[ "$action" == stop ]]; then
   exit 0
 fi
 [[ "$action" =~ ^(start|boot|prepare|reverse)$ ]] || { echo "usage: $0 [start|boot|prepare|reverse DEVICE|stop]" >&2; exit 2; }
-[[ -n "$sdk_root" && -n "$avd_home" ]] || {
+sdk_configured() { [[ -n "$sdk_root" ]] && { broker_enabled || [[ -n "$avd_home" ]]; }; }
+sdk_complete() { [[ -x "$adb" ]] && { broker_enabled || [[ -x "$emulator" ]]; }; }
+sdk_configured || {
   echo "qa: run 'make qa-android-setup' first" >&2
   exit 1
 }
@@ -144,7 +150,7 @@ export ANDROID_HOME="$sdk_root"
 export ANDROID_SDK_ROOT="$sdk_root"
 export ANDROID_AVD_HOME="$avd_home"
 emulator="$sdk_root/emulator/emulator"
-[[ -x "$adb" && -x "$emulator" ]] || {
+sdk_complete || {
   echo "qa: Android SDK is incomplete; run 'make qa-android-setup'" >&2
   exit 1
 }
@@ -293,7 +299,7 @@ declare -A relaunched_emulators=()
 wait_for_emulator_boot() {
   local device="$1" status=0
   python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-boot "$adb" "$device" "$(emulator_pid "$device")" || status=$?
-  if ((status == 1)) && [[ -z "${relaunched_emulators[$device]:-}" ]]; then
+  if ((status == 1)) && [[ "$device" == emulator-* && -z "${relaunched_emulators[$device]:-}" ]]; then
     relaunched_emulators[$device]=1
     echo "qa: emulator for $device exited before boot; relaunching it once" >&2
     launch_emulator "$(((${device#emulator-} - emulator_port) / 2))" relaunch
@@ -411,26 +417,34 @@ boot_emulators() {
   done
 }
 
+acquire_devices() {
+  if broker_enabled; then
+    lease_devices
+    return
+  fi
+  reject_foreign_emulators
+  boot_emulators
+}
+
 case "$action" in
   start)
     stop_all
-    reject_foreign_emulators
     mkdir -p "$state_dir"
     bash "$root/mobile/scripts/qa/services.sh" start
-    boot_emulators
+    acquire_devices
     prepare_android
     ;;
   boot)
     stop_emulators
-    reject_foreign_emulators
-    boot_emulators
+    acquire_devices
     echo "qa: Android emulators booted on ${serials[*]}"
     ;;
   prepare)
+    ! broker_enabled || mapfile -t serials <"$state_dir/android-serial"
     prepare_android
     ;;
   reverse)
-    [[ "${2:-}" =~ ^emulator-[0-9]+$ ]] || { echo "usage: $0 reverse emulator-<port>" >&2; exit 2; }
+    [[ "${2:-}" =~ ^(emulator-[0-9]+|[A-Za-z0-9.-]+:[0-9]+)$ ]] || { echo "usage: $0 reverse emulator-<port>|<host>:<port>" >&2; exit 2; }
     apply_reverse "$2"
     ;;
 esac

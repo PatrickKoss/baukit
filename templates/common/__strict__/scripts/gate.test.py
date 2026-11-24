@@ -396,9 +396,11 @@ class CoreBudgetTests(unittest.TestCase):
         self.assertEqual(budget.acquire(4), 1)
 
     def test_emulator_steps_come_from_the_settings(self):
-        self.assertEqual(gate.emulator_steps({}), frozenset({"android-e2e"}))
+        self.assertEqual(gate.emulator_steps({}, {}), frozenset({"android-e2e"}))
         configured = {"quality": {"emulator_steps": ["native-android"], "emulator_cores": 8}}
-        self.assertEqual(gate.emulator_steps(configured), {"android-e2e", "native-android"})
+        self.assertEqual(gate.emulator_steps(configured, {}), {"android-e2e", "native-android"})
+        broker = {"BAUKIT_QA_DEVICE_BROKER": "https://pruefstand.example"}
+        self.assertEqual(gate.emulator_steps(configured, broker), frozenset())
         self.assertEqual(gate.emulator_cores(configured, {}), 8)
         self.assertEqual(gate.emulator_cores(configured, {"BAUKIT_GATE_EMULATOR_CORES": "5"}), 5)
 

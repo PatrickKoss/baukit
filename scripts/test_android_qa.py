@@ -76,6 +76,7 @@ class AndroidQaTests(unittest.TestCase):
         self.scripts.mkdir(parents=True)
         for name in (
             "android-env.sh",
+            "android-broker.sh",
             "services.sh",
             "android-adb.py",
             "maestro-waits.py",
