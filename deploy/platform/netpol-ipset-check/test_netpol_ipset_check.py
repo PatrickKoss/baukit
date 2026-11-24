@@ -42,7 +42,7 @@ ALLOW_ZK = policy(
 
 
 class SetNameTest(unittest.TestCase):
-    def test_matches_the_set_kube_router_built_on_the_lab(self):
+    def test_matches_the_set_kube_router_built_on_a_live_cluster(self):
         self.assertEqual(check.set_name("KUBE-DST-", "posthog", "allow-zookeeper"), ZK_DST)
 
     def test_policy_types_pick_dst_and_src(self):

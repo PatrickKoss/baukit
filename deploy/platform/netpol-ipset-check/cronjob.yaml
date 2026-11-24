@@ -2,7 +2,7 @@
 # the ipset-save init container needs the host network and NET_ADMIN.
 # Every 10 minutes: dump the node's ipsets, then fail when a pod that has run for 10 minutes is missing
 # from the KUBE-DST or KUBE-SRC set of a NetworkPolicy that selects it. A failed Job fires
-# KubeJobFailed, which pages through ntfy (O2). Finished Jobs go after an hour, so the alert clears
+# KubeJobFailed through Alertmanager. Finished Jobs go after an hour, so the alert clears
 # once kube-router has caught up.
 apiVersion: batch/v1
 kind: CronJob
