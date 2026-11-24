@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+{% if context.mobile and context.quality_strict %}- `scripts/quality-gate.sh` step `mobile-unit` runs `pnpm --dir mobile run test:scripts` before jest, in full and affected mode. The step ran only jest, so the `node --test` script tests in `mobile/scripts/*.test.mjs` never ran in the gate. `mobile/package.json` gains `test:scripts` with the `node --test` command that `test` ran, and `test` becomes `jest && pnpm run test:scripts`. Products that copied the template move their `node --test` list into `test:scripts` and copy `step_mobile_unit`.
+{% endif %}
 ## [0.30.2] - 2026-11-24
 
 {% if context.mobile and context.auth_enabled %}- `mobile/scripts/qa/android-env.sh` starts Chrome once on every emulator before the first flow (`am start -W` on `about:blank`, then Home) and once while it saves the quick-boot snapshot, so the snapshot holds a Chrome profile that has done its first start. Chrome's first start in a fresh profile kept its main thread busy for seconds; inside the login flow that work landed on the Custom Tab's first input, and at host load 60 to 80 Android raised `Input dispatching timed out` for `CustomTabActivity` after 5 s. `snapshot_schema` goes to 2, so the next start saves a new snapshot once.
