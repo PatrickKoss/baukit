@@ -336,6 +336,11 @@ a product prefix or labels.
    Register `suiteMessages`; validate intents with
    `createSuiteNativeIntentValidator(scheme)` and use `openSuitePeer` for
    native-to-web fallback. Product UI supplies event labels and mapping controls.
+   Take `scheme` and the native return origin (`${scheme}://suite`) from
+   `appScheme()` in the template's `mobile/src/app-scheme.ts`, never from the
+   product name. The `dev` build variant registers `<scheme>-dev`, so a fixed
+   `<scheme>://suite/linked` return opens the plain app instead of the dev
+   build. `baukit doctor` prints a warning note for such a literal.
 10. Run the shared fixture checks and product conformance tests. Copy protocol
     vectors only when the product needs a vendored copy. Check `sha256sum -c
     SHA256SUMS` from `fixtures/suite-events/v1`, and compare its protocol fixtures

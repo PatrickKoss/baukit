@@ -361,6 +361,7 @@ fn validate_mobile(
     if capabilities.auth.is_some() {
         doctor_layout::validate_mobile_auth_wiring(root, manifest, failures)?;
     }
+    crate::doctor_mobile_notes::suite_scheme_notes(root, &manifest.app.name, successes)?;
     Ok(())
 }
 

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `baukit doctor` prints a warning note when a product with `mobile/src/app-scheme.ts` builds suite links from the fixed scheme (`<app>://suite`, `<app>:///suite` or `createSuiteNativeIntentValidator('<app>')` in non-test sources under `mobile/src` or `mobile/app`). The dev variant registers `<app>-dev`, so such a return opens the plain app.
+
 - `baukit.toml` accepts `[auth] mobile_client_id` and `[auth] mobile_redirect_path`. Rendering and `baukit doctor` reject values outside letters, digits, `.`, `_`, `-` (and `/` between path segments).
 
 - `baukit doctor` no longer fails with a bare `No such file or directory` when another gate lane rewrites build output during its walks. The walks skip Gradle and Xcode `build/` directories, `.expo`, `.qa`, `.quality-gate`, `.ci-gate`, `.gradle`, `.cxx`, `.turbo`, `__pycache__` and `maestro-debug*`, treat an entry deleted mid-walk as gone, and every read or listing error names its path.

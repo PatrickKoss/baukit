@@ -12,6 +12,7 @@ mod doctor_gitops;
 mod doctor_host;
 mod doctor_layout;
 mod doctor_mcp;
+mod doctor_mobile_notes;
 mod doctor_platform;
 mod doctor_ports;
 mod doctor_postgres;
