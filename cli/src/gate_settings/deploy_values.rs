@@ -2,6 +2,8 @@ use super::{
     DEPLOY_VALUES_PROBE, DEPLOY_VALUES_STEP, GATE_SCRIPT, GateSteps, STRICT_GATE_TEMPLATE,
     glob_matches,
 };
+const LOCAL_GATE_SCRIPT: &str = "scripts/quality-gate.local.sh";
+
 use crate::{Capabilities, QualityManifest, QualityProfile};
 
 pub(super) fn validate_deploy_glob(
@@ -18,7 +20,8 @@ pub(super) fn validate_deploy_glob(
             failures.push(format!(
                 "{GATE_SCRIPT} has no `{DEPLOY_VALUES_STEP}` step; copy `step_deploy_values` and its \
                  `{DEPLOY_VALUES_STEP} fast - selected -` step line from baukit's \
-                 {STRICT_GATE_TEMPLATE}"
+                 {STRICT_GATE_TEMPLATE}; a product that overrides `list_steps` in \
+                 {LOCAL_GATE_SCRIPT} adds the step line there"
             ));
             return;
         }
@@ -77,7 +80,7 @@ mod tests {
         assert_eq!(
             deploy_failures(stale, Some(&without_step)),
             [
-                "scripts/quality-gate.sh has no `deploy-values` step; copy `step_deploy_values` and its `deploy-values fast - selected -` step line from baukit's templates/common/__strict__/scripts/quality-gate.sh"
+                "scripts/quality-gate.sh has no `deploy-values` step; copy `step_deploy_values` and its `deploy-values fast - selected -` step line from baukit's templates/common/__strict__/scripts/quality-gate.sh; a product that overrides `list_steps` in scripts/quality-gate.local.sh adds the step line there"
             ]
         );
         let with_step = GateSteps {
