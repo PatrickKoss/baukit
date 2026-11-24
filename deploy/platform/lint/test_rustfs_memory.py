@@ -33,7 +33,8 @@ class RustfsMemoryTest(unittest.TestCase):
             for doc in documents
             if doc and doc["kind"] == "Deployment" and doc["metadata"]["name"] == "rustfs"
         )
-        limit = deployment["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"]["memory"]
+        container = deployment["spec"]["template"]["spec"]["containers"][0]
+        limit = container["resources"]["limits"]["memory"]
         self.assertGreaterEqual(parse_quantity(limit), MIN_LIMIT_BYTES, limit)
 
     def test_parse_quantity(self):
