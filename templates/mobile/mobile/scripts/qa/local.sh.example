@@ -21,7 +21,8 @@
 # qa_reverse_ports, qa_maestro_args, qa_maestro_shards, qa_gradle_args.
 # Environment: BAUKIT_QA_ANDROID_ACCEL (emulator -accel mode), BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE (default 2.0)
 # and BAUKIT_QA_ANDROID_LOAD_WAIT_SECONDS (default 600) hold emulator starts while the host is loaded, BAUKIT_QA_DEVICE_BROKER (lease emulators from
-# this pruefstand URL) and BAUKIT_QA_DEVICE_BROKER_ARGS (extra pruefstand lease flags), BAUKIT_QA_IOS_SCHEME (default: app.json expo.name,
+# this pruefstand URL), BAUKIT_QA_DEVICE_BROKER_ARGS (extra pruefstand lease flags), BAUKIT_QA_DEVICE_PORT_FORWARD
+# (lease through kubectl port-forward in this kube context), BAUKIT_QA_IOS_SCHEME (default: app.json expo.name,
 # else the Xcode workspace name). Builds keep a Metro cache per EXPO_PUBLIC_* value set under state_dir.
 # Functions: qa_build_apk, qa_prepare_device, qa_build_env, qa_install_dependencies,
 # qa_maestro_env INDEX, qa_maestro_flows INDEX COUNT (prints the flow files for device INDEX of COUNT, one per line)
