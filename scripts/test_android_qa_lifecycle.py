@@ -159,6 +159,19 @@ class AndroidQaLifecycleTests(unittest.TestCase):
         self.assertIn("emulator-5556 is not listed on adb after 0 s", result.stderr)
         self.assertIn("emulator emulator-5556 died before b.yaml", result.stderr)
 
+    def test_a_single_emulator_gets_its_target_before_the_test_command(self):
+        self.flows("a.yaml", "b.yaml")
+        (self.state / "android-serial").write_text("emulator-5556\n")
+        self.executable(self.tools / "maestro", 'echo "maestro $*" >> "$EVENTS"\n')
+        result = self.run_script("run-maestro.sh", "android")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        runs = [event for event in self.events_list() if event.startswith("maestro")]
+        self.assertEqual(len(runs), 2)
+        for run in runs:
+            self.assertTrue(
+                run.startswith("maestro --host localhost --port 5557 test --platform android "), run
+            )
+
     def test_flows_hook_runs_each_devices_list_sequentially(self):
         self.flows("a.yaml", "b.yaml", "c.yaml")
         (self.state / "android-serial").write_text("emulator-5556\nemulator-5558\n")
@@ -174,11 +187,11 @@ class AndroidQaLifecycleTests(unittest.TestCase):
         runs = sorted(event for event in self.events_list() if event.startswith("maestro"))
         self.assertEqual(len(runs), 3)
         self.assertTrue(
-            runs[0].startswith("maestro 0 test --platform android --host localhost --port 5557")
+            runs[0].startswith("maestro 0 --host localhost --port 5557 test --platform android ")
         )
         self.assertTrue(runs[0].endswith(".maestro/a.yaml"))
         self.assertTrue(runs[1].endswith(".maestro/b.yaml"))
-        self.assertIn("--host localhost --port 5559", runs[2])
+        self.assertIn(" --host localhost --port 5559 test --platform android ", runs[2])
         self.assertTrue((self.mobile / "maestro-debug/shard-1/maestro-output.log").exists())
 
     def test_flows_hook_receives_the_device_count(self):

@@ -307,6 +307,12 @@ ETCD_ARGS = [
     "--env",
     "CATTLE_ELECTION_RETRY_PERIOD=10s@server:0",
 ]
+KUBELET_ARGS = [
+    "--k3s-arg",
+    "--kubelet-arg=eviction-hard=memory.available<100Mi,nodefs.available<20Gi,imagefs.available<20Gi@server:0",
+    "--k3s-arg",
+    "--kubelet-arg=eviction-minimum-reclaim=nodefs.available=2Gi,imagefs.available=2Gi@server:0",
+]
 ETCD_CALLERS = (
     PLATFORM / "platform-up.sh",
     PLATFORM / "platform-lifecycle.sh",
@@ -332,6 +338,7 @@ class LocalDatastoreTest(unittest.TestCase):
             )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("\n".join(ETCD_ARGS) + "\n", result.stdout)
+        self.assertIn("\n".join(KUBELET_ARGS) + "\n", result.stdout)
 
     def test_every_caller_uses_the_helper(self) -> None:
         for caller in ETCD_CALLERS:
@@ -340,6 +347,30 @@ class LocalDatastoreTest(unittest.TestCase):
                 self.assertIn("mapfile -t etcd_args < <(platform_local_etcd_args)", source)
                 self.assertIn('"${etcd_args[@]}"', source)
                 self.assertNotIn("cluster-init", source)
+
+    def test_kubelet_helper_prints_absolute_eviction_thresholds(self) -> None:
+        result = bash(f'source "{HELPER}"\nplatform_local_kubelet_args')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(), KUBELET_ARGS)
+        for value in KUBELET_ARGS[1::2]:
+            argument, node_filter = value.rsplit("@", 1)
+            self.assertEqual(node_filter, "server:0")
+            self.assertNotIn("@", argument)
+
+    def test_every_caller_passes_the_kubelet_args(self) -> None:
+        for caller in ETCD_CALLERS:
+            with self.subTest(caller=caller.name):
+                source = caller.read_text()
+                self.assertIn("mapfile -t kubelet_args < <(platform_local_kubelet_args)", source)
+                self.assertIn('"${kubelet_args[@]}"', source)
+                self.assertNotIn("eviction-", source)
+
+    def test_shared_and_etcd_args_keep_the_stock_eviction_policy(self) -> None:
+        for helper in ("platform_k3s_server_args", "platform_local_etcd_args"):
+            with self.subTest(helper=helper):
+                result = bash(f'source "{HELPER}"\n{helper}')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn("eviction", result.stdout)
 
     def test_shared_server_args_leave_the_datastore_alone(self) -> None:
         result = bash(f'source "{HELPER}"\nplatform_k3s_server_args')

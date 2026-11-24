@@ -6,11 +6,11 @@ state_dir="${BAUKIT_QA_STATE_DIR:-$root/mobile/.qa}"
 action="${1:-start}"
 qa_backend_bin_dir="$root/backend/target/debug"
 {% if context.backend %}compose_project="${BAUKIT_QA_COMPOSE_PROJECT:-{{ context.app_name }}-mobile-qa}"
-postgres_port="${BAUKIT_QA_POSTGRES_PORT:-15432}"
-redis_port="${BAUKIT_QA_REDIS_PORT:-16379}"
-api_port="${BAUKIT_QA_API_PORT:-18080}"
-ops_port="${BAUKIT_QA_OPS_PORT:-19090}"
-{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
+postgres_port="${BAUKIT_QA_POSTGRES_PORT:-{{ context.qa_ports.postgres }}}"
+redis_port="${BAUKIT_QA_REDIS_PORT:-{{ context.qa_ports.redis }}}"
+api_port="${BAUKIT_QA_API_PORT:-{{ context.qa_ports.api }}}"
+ops_port="${BAUKIT_QA_OPS_PORT:-{{ context.qa_ports.ops }}}"
+{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-{{ context.qa_ports.keycloak }}}"
 {% endif %}
 compose=(
   docker compose

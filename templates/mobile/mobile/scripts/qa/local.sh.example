@@ -5,8 +5,8 @@
 # Set in every script before the hooks run:
 #   root        repository root
 #   state_dir   BAUKIT_QA_STATE_DIR or mobile/.qa
-#   api_port    BAUKIT_QA_API_PORT, default 18080
-{% if context.auth_enabled %}#   keycloak_port  BAUKIT_QA_KEYCLOAK_PORT, default 18081
+#   api_port    BAUKIT_QA_API_PORT, default {{ context.qa_ports.api }}
+{% if context.auth_enabled %}#   keycloak_port  BAUKIT_QA_KEYCLOAK_PORT, default {{ context.qa_ports.keycloak }}
 {% endif %}#
 # android-env.sh also sets adb, serials, qa_apk_variant and the functions adb_bounded, adb_checked,
 # apply_reverse and prepare_device. services.sh also sets compose, the stop_pid_file helper

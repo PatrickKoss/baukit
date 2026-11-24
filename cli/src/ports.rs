@@ -8,6 +8,18 @@ use crate::Manifest;
 pub const WEB_PORT: u16 = 5173;
 pub const LOCAL_CALLBACK_PORT: u16 = 18890;
 pub const WEB_PREVIEW_PORT: u16 = 4173;
+/// Mobile QA services listen on the product's service port plus this shift.
+pub const QA_PORT_SHIFT: u16 = 10_000;
+
+/// Default host ports of the mobile QA services, derived from the product's service ports.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub(crate) struct QaPorts {
+    pub postgres: u16,
+    pub redis: u16,
+    pub api: u16,
+    pub ops: u16,
+    pub keycloak: u16,
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -145,6 +157,24 @@ impl PortConfiguration {
         Ok(())
     }
 
+    pub fn qa_ports(&self) -> Result<QaPorts> {
+        let shifted = |name, port: u16| {
+            port.checked_add(QA_PORT_SHIFT).ok_or_else(|| {
+                anyhow!(
+                    "the mobile QA {name} port ({port} + {QA_PORT_SHIFT}) is above {}",
+                    u16::MAX
+                )
+            })
+        };
+        Ok(QaPorts {
+            postgres: shifted("PostgreSQL", self.postgres)?,
+            redis: shifted("Redis", self.redis)?,
+            api: shifted("API", self.api)?,
+            ops: shifted("operations", self.ops)?,
+            keycloak: shifted("Keycloak", self.keycloak)?,
+        })
+    }
+
     pub fn local_callback_port(&self) -> u16 {
         self.local_callback.unwrap_or(LOCAL_CALLBACK_PORT)
     }
@@ -243,4 +273,34 @@ pub(crate) fn generation_ports(
         PortConfiguration::from_manifest(&manifest)?,
         Some(fs::read_to_string(path)?),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn qa_ports_shift_the_service_ports() -> Result<()> {
+        assert_eq!(
+            PortConfiguration::new(0)?.qa_ports()?,
+            QaPorts {
+                postgres: 15432,
+                redis: 16379,
+                api: 18080,
+                ops: 19090,
+                keycloak: 18081,
+            }
+        );
+        assert_eq!(PortConfiguration::new(400)?.qa_ports()?.postgres, 15832);
+        Ok(())
+    }
+
+    #[test]
+    fn qa_ports_reject_a_shift_past_the_port_range() -> Result<()> {
+        let mut ports = PortConfiguration::new(0)?;
+        ports.redis = 60_000;
+        let error = ports.qa_ports().expect_err("overflow").to_string();
+        assert!(error.contains("mobile QA Redis port"), "{error}");
+        Ok(())
+    }
 }
