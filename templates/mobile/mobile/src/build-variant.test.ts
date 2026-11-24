@@ -1,6 +1,7 @@
 import type { ExpoConfig } from 'expo/config';
 
 import { buildVariantFrom, DEFAULT_VERSION_CODE, withBuildVariant } from './build-variant';
+import { MOBILE_OIDC_CLIENT_ID } from './product';
 
 const product = 'demo';
 const domain = 'lab.example.com';
@@ -52,7 +53,7 @@ describe('build variant', () => {
       apiUrl: `https://${product}-testing.${domain}`,
       versionCode: DEFAULT_VERSION_CODE,
       oidcIssuer: labRealm,
-      oidcClientId: `${product}-mobile`,
+      oidcClientId: MOBILE_OIDC_CLIENT_ID,
     });
   });
 

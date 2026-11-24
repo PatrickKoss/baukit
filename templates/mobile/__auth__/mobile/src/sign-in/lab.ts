@@ -9,7 +9,7 @@ import { apiBaseUrl } from '../api-base-url';
 {% endif %}
 import { appScheme } from '../app-scheme';
 import { authStorage } from '../auth-storage';
-import { PRODUCT_NAME } from '../product';
+import { OIDC_REDIRECT_PATH, PRODUCT_NAME } from '../product';
 {% if context.pwa and not context.web %}import { browserSignInClient } from './browser-client';
 {% endif %}import type { SignInAdapter, SignInClient } from './port';
 
@@ -29,7 +29,7 @@ function nativeClient(): SignInClient {
     {
       issuer,
       clientId,
-      redirectUri: AuthSession.makeRedirectUri({ scheme: appScheme(), path: 'oauth' }),
+      redirectUri: AuthSession.makeRedirectUri({ scheme: appScheme(), path: OIDC_REDIRECT_PATH }),
       scopes: [],
       offlineAccess: true,
       storageKeyPrefix: `${PRODUCT_NAME}.lab-oidc`,

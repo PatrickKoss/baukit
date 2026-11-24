@@ -1,6 +1,6 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
-import { PRODUCT_NAME } from './product';
+import { {% if context.auth_enabled %}MOBILE_OIDC_CLIENT_ID, {% endif %}PRODUCT_NAME } from './product';
 
 const variables = [
   'NODE_ENV',
@@ -60,8 +60,8 @@ describe('app config variants', () => {
     expect(config.android).toEqual({ package: `${androidPackage}.dev`, versionCode: 31 });
     expect(config.plugins).toContain('./plugins/with-variant-badge.cjs');
     expect(config.extra).toMatchObject({ apiBaseUrl: `https://${PRODUCT_NAME}-testing.${labDomain}` });
-{% if context.auth_oidc %}    expect(config.extra).toMatchObject({ oidcIssuer: labRealm, oidcClientId: `${PRODUCT_NAME}-mobile` });
-{% elif context.auth_enabled %}    expect(config.extra).toMatchObject({ labOidcIssuer: labRealm, labOidcClientId: `${PRODUCT_NAME}-mobile` });
+{% if context.auth_oidc %}    expect(config.extra).toMatchObject({ oidcIssuer: labRealm, oidcClientId: MOBILE_OIDC_CLIENT_ID });
+{% elif context.auth_enabled %}    expect(config.extra).toMatchObject({ labOidcIssuer: labRealm, labOidcClientId: MOBILE_OIDC_CLIENT_ID });
     expect(config.extra?.['localOidcIssuer']).toBeUndefined();
 {% endif %}  });
 

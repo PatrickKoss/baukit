@@ -34,7 +34,7 @@ import { authStorage } from './auth-storage';
 {% endif %}{% if context.auth_oidc and context.pwa and not context.web %}import { browserSignInClient } from './sign-in/browser-client';
 {% endif %}import type { {% if context.auth_oidc %}SignInAdapter, SignInClient, {% endif %}SignInSession } from './sign-in/port';
 {% if context.auth_oidc %}
-import { PRODUCT_NAME } from './product';
+import { {% if context.auth_oidc %}MOBILE_OIDC_CLIENT_ID, OIDC_REDIRECT_PATH, {% endif %}PRODUCT_NAME } from './product';
 
 completeExpoAuthSession();
 
@@ -66,8 +66,8 @@ function nativeClient(): SignInClient {
   return createExpoOidcClient(
     {
       issuer,
-      clientId: typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`,
-      redirectUri: AuthSession.makeRedirectUri({ scheme: appScheme(), path: 'oauth' }),
+      clientId: typeof configuredClientId === 'string' ? configuredClientId : MOBILE_OIDC_CLIENT_ID,
+      redirectUri: AuthSession.makeRedirectUri({ scheme: appScheme(), path: OIDC_REDIRECT_PATH }),
       scopes,
       ...tokenBinding,
       offlineAccess,

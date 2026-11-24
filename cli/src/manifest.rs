@@ -203,6 +203,12 @@ pub struct AuthManifest {
     /// Keycloak login theme name the realm and the theme browser suite use.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login_theme: Option<String>,
+    /// Keycloak client of the mobile app; defaults to `<app>-mobile`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mobile_client_id: Option<String>,
+    /// Path of the mobile app's OIDC redirect URI after `<scheme>://`; defaults to `oauth`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mobile_redirect_path: Option<String>,
 }
 
 pub const DEFAULT_LOGIN_THEME: &str = "baukit-accessible";
@@ -226,6 +232,47 @@ impl AuthManifest {
         );
         Ok(theme)
     }
+
+    /// # Errors
+    ///
+    /// Fails when the client id has characters outside letters, digits, `.`, `_` and `-`.
+    pub fn resolved_mobile_client_id(&self, app_name: &str) -> Result<String> {
+        let Some(client) = self.mobile_client_id.as_deref() else {
+            return Ok(format!("{app_name}-mobile"));
+        };
+        anyhow::ensure!(
+            is_safe_segment(client),
+            "auth.mobile_client_id `{client}` must start with a letter or digit and hold only letters, digits, `.`, `_` and `-`"
+        );
+        Ok(client.to_owned())
+    }
+
+    /// # Errors
+    ///
+    /// Fails unless the path is one or more `/`-separated segments of letters, digits, `.`, `_` and `-`.
+    pub fn resolved_mobile_redirect_path(&self) -> Result<&str> {
+        let path = self
+            .mobile_redirect_path
+            .as_deref()
+            .unwrap_or(DEFAULT_MOBILE_REDIRECT_PATH);
+        anyhow::ensure!(
+            path.split('/').all(is_safe_segment),
+            "auth.mobile_redirect_path `{path}` must be `/`-separated segments that start with a letter or digit and hold only letters, digits, `.`, `_` and `-`, without a leading or trailing `/`"
+        );
+        Ok(path)
+    }
+}
+
+pub const DEFAULT_MOBILE_REDIRECT_PATH: &str = "oauth";
+
+fn is_safe_segment(value: &str) -> bool {
+    value
+        .chars()
+        .next()
+        .is_some_and(|first| first.is_ascii_alphanumeric())
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

@@ -3197,7 +3197,20 @@ fn typescript_source_is_independent_of_product_name_length() -> anyhow::Result<(
                     .remove(&path)
                     .expect("frontend product constants must be generated");
                 let product = String::from_utf8(product)?;
-                assert_eq!(product, format!("export const PRODUCT_NAME = '{name}';\n"));
+                let expected = format!("export const PRODUCT_NAME = '{name}';\n");
+                if flavor == "web" {
+                    assert_eq!(product, expected);
+                } else {
+                    assert!(product.starts_with(&expected), "{product}");
+                    assert!(
+                        product.contains(&format!("MOBILE_OIDC_CLIENT_ID = '{name}-mobile';")),
+                        "{product}"
+                    );
+                    assert!(
+                        product.contains("OIDC_REDIRECT_PATH = 'oauth';"),
+                        "{product}"
+                    );
+                }
             }
             assert!(!source.is_empty());
             if let Some(expected) = &baseline {

@@ -1,5 +1,7 @@
 import type { ExpoConfig } from 'expo/config';
 
+import { MOBILE_OIDC_CLIENT_ID } from './product.ts';
+
 export const DEFAULT_VERSION_CODE = 1;
 const MAX_VERSION_CODE = 2_100_000_000;
 const VARIANTS = ['dev', 'lab'] as const;
@@ -88,7 +90,7 @@ export function buildVariantFrom(environment: BuildEnvironment, productName: str
       'EXPO_PUBLIC_LAB_OIDC_ISSUER',
       text(environment, 'EXPO_PUBLIC_LAB_OIDC_ISSUER') || `https://id.${labDomain}/realms/${productName}`,
     ),
-    oidcClientId: text(environment, 'EXPO_PUBLIC_LAB_OIDC_CLIENT_ID') || `${productName}-mobile`,
+    oidcClientId: text(environment, 'EXPO_PUBLIC_LAB_OIDC_CLIENT_ID') || MOBILE_OIDC_CLIENT_ID,
   };
 }
 

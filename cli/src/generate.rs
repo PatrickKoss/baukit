@@ -195,6 +195,8 @@ fn template_context(
         ci_env: ci_env_entries(&ci)?,
         ci_env_names: ci.env.keys().cloned().collect(),
         login_theme: auth_manifest.resolved_login_theme()?.to_owned(),
+        mobile_client_id: auth_manifest.resolved_mobile_client_id(&options.name)?,
+        mobile_redirect_path: auth_manifest.resolved_mobile_redirect_path()?.to_owned(),
         port_offset: ports.offset,
         postgres_host_port: ports.postgres,
         api_host_port: ports.api,

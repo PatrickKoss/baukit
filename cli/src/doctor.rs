@@ -134,6 +134,12 @@ fn validate_quality_settings(root: &Path, manifest: &Manifest, failures: &mut Ve
     if let Err(error) = manifest.auth.resolved_login_theme() {
         failures.push(error.to_string());
     }
+    if let Err(error) = manifest.auth.resolved_mobile_client_id(&manifest.app.name) {
+        failures.push(error.to_string());
+    }
+    if let Err(error) = manifest.auth.resolved_mobile_redirect_path() {
+        failures.push(error.to_string());
+    }
 }
 
 fn listed_gate_steps(

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+{% if context.mobile and context.auth_enabled %}- `[auth] mobile_client_id` and `[auth] mobile_redirect_path` in `baukit.toml` name the mobile Keycloak client and its callback path (defaults `<app>-mobile` and `oauth`). `mobile/src/product.ts` exports them as `MOBILE_OIDC_CLIENT_ID` and `OIDC_REDIRECT_PATH`, and the lab variant's default client in `src/build-variant.ts`, the redirect in `src/sign-in/lab.ts` and `src/sign-in/local.ts` (or `src/auth.ts` for OIDC), `app/+native-intent.ts`, the realm files and the QA build scripts read them, so a product whose client or callback differs sets the two keys and re-renders instead of editing each file. Products that hand-edited these files set the keys, copy the listed files and drop their divergences.
+{% endif %}
 {% if context.mobile %}- `mobile/scripts/qa/android-env.sh prepare` checks `adb devices` first and exits 1 within seconds when an expected emulator is not booted, naming the serials and `sh scripts/quality-gate.sh --step android-boot`. Products that split `android-boot` from `android-e2e` waited about 20 minutes for `adb device not found` when they ran `--step android-e2e` alone. The template's own `android-e2e` still boots its emulators through `android-env.sh start` and is unchanged. Copy `android-env.sh` from the template.
 {% endif %}
 ## [0.30.3] - 2026-11-24

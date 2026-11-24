@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `baukit.toml` accepts `[auth] mobile_client_id` and `[auth] mobile_redirect_path`. Rendering and `baukit doctor` reject values outside letters, digits, `.`, `_`, `-` (and `/` between path segments).
+
 - `baukit doctor` no longer fails with a bare `No such file or directory` when another gate lane rewrites build output during its walks. The walks skip Gradle and Xcode `build/` directories, `.expo`, `.qa`, `.quality-gate`, `.ci-gate`, `.gradle`, `.cxx`, `.turbo`, `__pycache__` and `maestro-debug*`, treat an entry deleted mid-walk as gone, and every read or listing error names its path.
 
 ## [0.30.3] - 2026-11-24

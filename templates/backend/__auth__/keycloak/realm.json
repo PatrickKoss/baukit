@@ -189,13 +189,13 @@
       "protocolMappers": {{ shape_mappers() }}
 {% endif %}    }{% endif %}{% if context.mobile %},
     {
-      "clientId": "{{ context.app_name }}-mobile",
+      "clientId": "{{ context.mobile_client_id }}",
       "name": "Mobile public PKCE client",
       "enabled": true,
       "publicClient": true,
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
-      "redirectUris": ["{{ context.app_name }}://oauth", "{{ context.app_name }}-dev://oauth"],
+      "redirectUris": ["{{ context.app_name }}://{{ context.mobile_redirect_path }}", "{{ context.app_name }}-dev://{{ context.mobile_redirect_path }}"],
       "webOrigins": [],
       "attributes": { "pkce.code.challenge.method": "S256" },
       "protocol": "openid-connect",

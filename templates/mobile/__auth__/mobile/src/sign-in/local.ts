@@ -8,7 +8,7 @@ import { Platform } from 'react-native';
 import { apiBaseUrl } from '../api-base-url';
 {% endif %}
 import { authStorage } from '../auth-storage';
-import { PRODUCT_NAME } from '../product';
+import { MOBILE_OIDC_CLIENT_ID, OIDC_REDIRECT_PATH, PRODUCT_NAME } from '../product';
 {% if context.pwa and not context.web %}import { browserSignInClient } from './browser-client';
 {% endif %}import type { SignInAdapter, SignInClient } from './port';
 
@@ -24,8 +24,8 @@ function nativeClient(): SignInClient {
   return createExpoOidcClient(
     {
       issuer,
-      clientId: `${PRODUCT_NAME}-mobile`,
-      redirectUri: AuthSession.makeRedirectUri({ scheme: PRODUCT_NAME, path: 'oauth' }),
+      clientId: MOBILE_OIDC_CLIENT_ID,
+      redirectUri: AuthSession.makeRedirectUri({ scheme: PRODUCT_NAME, path: OIDC_REDIRECT_PATH }),
       scopes: [],
       offlineAccess: false,
       storageKeyPrefix: `${PRODUCT_NAME}.local-oidc`,
