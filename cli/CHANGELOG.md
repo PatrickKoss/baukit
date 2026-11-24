@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-11-24
+
 - The doctor failure for a gate without a `deploy-values` step also says that a product overriding `list_steps` in `scripts/quality-gate.local.sh` adds the step line there.
 - Generated mobile products retry a Maestro run once when a foreign emulator on the shared adb server goes offline while Maestro 2.8.0 lists every device.
 - Strict gates gain `require_node_modules` so product steps that run Node code name the missing install step.

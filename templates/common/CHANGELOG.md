@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-11-24
+
 {% if context.mobile %}- Each local Android emulator boots its own writable AVD: index 0 keeps `<avd>`, index N uses `<avd>-N`, created from `<avd>`'s `config.ini` and recreated when that file changes. Extra emulators no longer launch `-read-only` from one shared AVD, which crashed about once in 30 starts. Each AVD saves and keeps one quick-boot snapshot, so an extra AVD costs its own userdata and snapshot on disk, and the first start of an extra emulator cold-boots it. Copy `mobile/scripts/qa/android-env.sh` from the template and run `baukit check template-files --update`.
 {% endif %}{% if context.mobile %}- `mobile/scripts/qa/run-maestro.sh` restarts a Maestro run once when another session's emulator on the shared adb server went offline while Maestro created its session. Maestro 2.8.0 opens every device adb lists (`Dadb.list` in `AndroidDeviceConnection.byId`), so the offline foreign device failed the run with `host:transport:emulator-5800: device offline` before any flow. When a flow had already started, or the retry hits it again, the run fails with a message naming the foreign serial.
 {% endif %}{% if context.quality_strict %}- `scripts/quality-gate.sh` adds `require_node_modules DIR INSTALL_STEP`. A product step that runs Node code from `web/` or `mobile/` calls it first, so `--step scripts-tests` on a fresh checkout fails by naming `web-install` instead of with only `Cannot find module 'typescript'`.
