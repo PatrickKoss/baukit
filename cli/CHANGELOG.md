@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `postgres/initdb/10-owner.sql` hands `current_database()` to `app` instead of the product's default database name, so e2e and QA compose stacks with another `POSTGRES_DB` can mount it too.
+
 - `mobile/scripts/qa/android-env.sh` relaunches an emulator once when its process exits before boot, logs `exited before boot; relaunching it once` and keeps the first log as `android-emulator*.log.crashed`. Android emulator 37.3.10 sometimes segfaults right after start; a boot timeout and a second early exit still fail the step.
 
 - The mobile QA quick-boot snapshot name no longer includes the template version. It hashes the system image, the AVD's `hw.*` settings, the GPU mode, the emulator features and `snapshot_schema` in `mobile/scripts/qa/android-env.sh`, which a release bumps only when the saved state changes, so a re-pin no longer cold boots the AVD. Saving a snapshot removes every other baukit snapshot of that AVD except ones a running emulator loaded; it no longer keeps the newest older one.

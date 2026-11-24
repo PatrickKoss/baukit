@@ -241,7 +241,10 @@ fn migrations_run_as_a_non_superuser_owner_by_default() -> anyhow::Result<()> {
     let root = generate_new(&strict_auth_options(seed.path(), "owner-app"))?;
     let initdb = fs::read_to_string(root.join(OWNER_INITDB))?;
     assert!(initdb.contains("CREATE ROLE app LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOREPLICATION NOBYPASSRLS NOCREATEROLE;"));
-    assert!(initdb.contains("ALTER DATABASE owner_app OWNER TO app;"));
+    assert!(
+        initdb.contains("EXECUTE format('ALTER DATABASE %I OWNER TO app', current_database());")
+    );
+    assert!(!initdb.contains("owner_app"));
     let compose = fs::read_to_string(root.join("compose.yaml"))?;
     assert!(compose.contains("./postgres/initdb:/docker-entrypoint-initdb.d:ro"));
     assert!(!compose.contains("postgres://postgres:postgres@"));

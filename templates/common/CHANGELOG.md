@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+{% if context.backend %}- `postgres/initdb/10-owner.sql` makes `app` the owner of `current_database()`, not of a fixed name, so a compose stack with another `POSTGRES_DB` can mount the same script. Copy it from the template; existing volumes keep their owner.
+
+{% endif %}
 {% if context.mobile %}- `mobile/scripts/qa/android-env.sh` relaunches an emulator once when its process exits before it boots, which Android emulator 37.3.10 sometimes does with a segfault. The first log stays as `mobile/.qa/android-emulator*.log.crashed`. A boot timeout or a second early exit still fails with "did not boot". Copy the file from the template and run `baukit check template-files --update`.
 
 {% endif %}
