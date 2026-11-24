@@ -9,10 +9,178 @@ spec:
     ImageCatalog, a ScheduledBackup and the NetworkPolicy of the generated backing/postgres-dedicated
     component. The operator reaches the instance, the instance archives WAL to rustfs, its CNPG app
     Secret carries a uri, and an on-demand backup completes, all under the tenant's Kyverno policies
-    and default-deny.
+    and default-deny. On the shared postgres-cluster, a tenant owner from product-database.example.yaml
+    reaches its own database and pg_hba rejects it on another tenant's database and on postgres.
   timeouts:
     exec: 25m
   steps:
+    - name: shared-database-isolation
+      try:
+        - script:
+            timeout: 8m
+            content: |
+              set -eu
+              ns=e2e-shared-pg
+              image="$(kubectl -n postgres get cluster postgres-cluster -o jsonpath='{.status.image}')"
+              kubectl apply -f - <<YAML
+              apiVersion: v1
+              kind: Namespace
+              metadata:
+                name: $ns
+                labels:
+                  baukit.dev/tenant: "true"
+                  baukit.dev/postgres-client: "true"
+                  pod-security.kubernetes.io/enforce: restricted
+                  pod-security.kubernetes.io/enforce-version: v1.37
+                  pod-security.kubernetes.io/audit: restricted
+                  pod-security.kubernetes.io/warn: restricted
+              YAML
+              for k8s in e2e-iso-a e2e-iso-b; do
+                tenant="$(printf %s "$k8s" | tr - _)"
+                kubectl -n postgres create secret generic "${k8s}-db" --type=kubernetes.io/basic-auth \
+                  --from-literal=username="${tenant}_owner" --from-literal=password="$(openssl rand -hex 18)" \
+                  --dry-run=client -o yaml | kubectl apply -f -
+                kubectl apply -f - <<YAML
+              apiVersion: postgresql.cnpg.io/v1
+              kind: DatabaseRole
+              metadata:
+                name: ${k8s}-database
+                namespace: postgres
+              spec:
+                cluster: {name: postgres-cluster}
+                name: $tenant
+                login: false
+                databaseRoleReclaimPolicy: delete
+              ---
+              apiVersion: postgresql.cnpg.io/v1
+              kind: DatabaseRole
+              metadata:
+                name: ${k8s}-owner
+                namespace: postgres
+              spec:
+                cluster: {name: postgres-cluster}
+                name: ${tenant}_owner
+                login: true
+                inRoles: [baukit_tenants, $tenant]
+                databaseRoleReclaimPolicy: delete
+                passwordSecret: {name: ${k8s}-db}
+              ---
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Database
+              metadata:
+                name: $k8s
+                namespace: postgres
+              spec:
+                cluster: {name: postgres-cluster}
+                name: $tenant
+                owner: ${tenant}_owner
+                databaseReclaimPolicy: delete
+              YAML
+              done
+              for object in databaserole/e2e-iso-a-database databaserole/e2e-iso-a-owner database/e2e-iso-a \
+                databaserole/e2e-iso-b-database databaserole/e2e-iso-b-owner database/e2e-iso-b; do
+                kubectl -n postgres wait "$object" --for=jsonpath='{.status.applied}'=true --timeout=3m
+              done
+              kubectl -n postgres get secret e2e-iso-a-db -o json |
+                python3 -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({"apiVersion":"v1","kind":"Secret","metadata":{"name":"e2e-iso-a-db"},"type":s["type"],"data":s["data"]}))' |
+                kubectl -n "$ns" apply -f -
+
+              kubectl apply -f - <<YAML
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: allow-shared-postgres
+                namespace: $ns
+              spec:
+                podSelector: {}
+                policyTypes: [Egress]
+                egress:
+                  - to:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: postgres
+                        podSelector:
+                          matchLabels:
+                            cnpg.io/cluster: postgres-cluster
+                    ports:
+                      - {protocol: TCP, port: 5432}
+              ---
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: isolation-probe
+                namespace: $ns
+                labels:
+                  baukit.dev/postgres-client: "true"
+              spec:
+                restartPolicy: Never
+                activeDeadlineSeconds: 300
+                automountServiceAccountToken: false
+                enableServiceLinks: false
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 26
+                  runAsGroup: 26
+                  seccompProfile: {type: RuntimeDefault}
+                containers:
+                  - name: psql
+                    image: $image
+                    command: [bash, -ec]
+                    args:
+                      - |
+                        connect() { psql -XtAq -v ON_ERROR_STOP=1 -d "\$1" -c 'select current_database()' 2>&1; }
+                        deadline=\$((\$(date +%s) + 180))
+                        until out="\$(connect e2e_iso_a)"; do
+                          [ "\$(date +%s)" -lt "\$deadline" ] || { printf 'own database refused: %s\n' "\$out"; exit 1; }
+                          sleep 3
+                        done
+                        printf 'own database: %s\n' "\$out"
+                        for db in e2e_iso_b postgres; do
+                          if out="\$(connect "\$db")"; then printf '%s reachable: %s\n' "\$db" "\$out"; exit 1; fi
+                          case "\$out" in
+                            *'pg_hba.conf rejects connection'*) printf '%s refused by pg_hba\n' "\$db" ;;
+                            *) printf '%s failed for another reason: %s\n' "\$db" "\$out"; exit 1 ;;
+                          esac
+                        done
+                    env:
+                      - {name: PGHOST, value: postgres-cluster-rw.postgres}
+                      - {name: PGSSLMODE, value: require}
+                      - {name: PGCONNECT_TIMEOUT, value: "3"}
+                      - name: PGUSER
+                        valueFrom: {secretKeyRef: {name: e2e-iso-a-db, key: username}}
+                      - name: PGPASSWORD
+                        valueFrom: {secretKeyRef: {name: e2e-iso-a-db, key: password}}
+                    resources:
+                      requests: {cpu: 10m, memory: 32Mi}
+                      limits: {cpu: 200m, memory: 128Mi}
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities: {drop: [ALL]}
+              YAML
+              deadline=$(($(date +%s) + 300))
+              until phase="$(kubectl -n "$ns" get pod isolation-probe -o jsonpath='{.status.phase}')" &&
+                { [ "$phase" = Succeeded ] || [ "$phase" = Failed ]; }; do
+                [ "$(date +%s)" -lt "$deadline" ] || { kubectl -n "$ns" describe pod isolation-probe >&2; exit 1; }
+                sleep 3
+              done
+              kubectl -n "$ns" logs isolation-probe
+              [ "$phase" = Succeeded ]
+      catch:
+        - script:
+            content: |
+              kubectl -n e2e-shared-pg get pods,networkpolicy -o wide
+              kubectl -n e2e-shared-pg describe pod isolation-probe | tail -30
+              kubectl -n postgres get databaserole,database -o wide
+      finally:
+        - script:
+            timeout: 5m
+            content: |
+              kubectl delete namespace e2e-shared-pg --ignore-not-found --wait=true --timeout=3m
+              kubectl -n postgres delete database e2e-iso-a e2e-iso-b --ignore-not-found --wait=true --timeout=2m
+              kubectl -n postgres delete databaserole e2e-iso-a-owner e2e-iso-b-owner --ignore-not-found --wait=true --timeout=1m
+              kubectl -n postgres delete databaserole e2e-iso-a-database e2e-iso-b-database --ignore-not-found --wait=true --timeout=1m
+              kubectl -n postgres delete secret e2e-iso-a-db e2e-iso-b-db --ignore-not-found
     - name: dedicated-cluster-in-tenant
       try:
         - script:
