@@ -35,6 +35,14 @@ platform_local_etcd_args() {
     --env CATTLE_ELECTION_RETRY_PERIOD=10s@server:0
 }
 
+# Local and e2e clusters share the host disk with gate runs, so k3s's percentage thresholds
+# (5% free, reclaim to 15%) tainted a 1 TB node until about 160 GB were free. Absolute ones do not.
+platform_local_kubelet_args() {
+  printf '%s\n' \
+    --k3s-arg '--kubelet-arg=eviction-hard=memory.available<100Mi,nodefs.available<20Gi,imagefs.available<20Gi@server:0' \
+    --k3s-arg '--kubelet-arg=eviction-minimum-reclaim=nodefs.available=2Gi,imagefs.available=2Gi@server:0'
+}
+
 # nodeCIDR of overlays/local/cluster-network. The node-cidr NetworkPolicies only let the API server
 # reach webhooks from this range, so every local cluster network must sit inside it.
 platform_node_cidr=10.89.0.0/16
