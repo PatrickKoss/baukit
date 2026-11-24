@@ -61,6 +61,11 @@ def render(source: str, backend: bool) -> str:
         ("app_crate", "test"),
         ("app_env", "TEST"),
         ("template_version", "test"),
+        ("qa_ports.postgres", "15432"),
+        ("qa_ports.redis", "16379"),
+        ("qa_ports.api", "18080"),
+        ("qa_ports.ops", "19090"),
+        ("qa_ports.keycloak", "18081"),
     ):
         source = source.replace("{{ context." + key + " }}", value)
     return source
@@ -578,7 +583,13 @@ printf '{{"args": "%s"}}\\n' "$*" >> "$EVENTS"
             event for event in self.events.read_text().splitlines() if event.startswith("maestro")
         ]
         self.assertEqual(len(runs), 1)
-        self.assertRegex(runs[0], "--device emulator-5556,emulator-5558 --shard-split 2 ")
+        self.assertTrue(
+            runs[0].startswith(
+                "maestro --device emulator-5556,emulator-5558 test --platform android "
+            ),
+            runs[0],
+        )
+        self.assertIn(" --shard-split 2 ", runs[0])
         self.assertTrue(
             runs[0].endswith(".maestro/a-first.yaml .maestro/b-second.yaml .maestro/c-third.yaml")
         )

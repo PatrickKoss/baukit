@@ -149,6 +149,15 @@
       and ((container.image.repository = ghcr.io/cloudnative-pg/postgresql and proc.cmdline startswith "manager backup ")
         or (container.image.repository = ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar and proc.cmdline = "manager healthcheck unix"))))
 
+# The Kyverno chart's legacy policy check hook runs kubectl-kyverno as its container entrypoint. When the
+# hook starts while Falco itself starts, Falco misses its parent and it looks like an exec (CI run
+# 45351167853, kyverno-check-legacy-policies 11 s after the Falco pod started).
+- macro: baukit_kyverno_legacy_check
+  condition: >
+    (k8s.ns.name = kyverno
+    and container.image.repository = reg.kyverno.io/kyverno/kyverno-cli
+    and proc.cmdline = "kubectl-kyverno check-legacy-policies")
+
 - rule: Baukit shell or package manager in app container
   desc: A shell or package manager started in a baukit app container. The app images run one binary and need neither.
   condition: >
@@ -213,6 +222,7 @@
     and k8s.ns.name in (baukit_exec_protected_namespaces)
     and not baukit_cnpg_runtime_exec
     and not baukit_flux_controller_child
+    and not baukit_kyverno_legacy_check
   output: Process started by kubectl exec or attach in a protected platform namespace | process=%proc.name command=%proc.cmdline user=%user.name terminal=%proc.tty k8s_ns=%k8s.ns.name k8s_pod=%k8s.pod.name container=%container.name image=%container.image.repository:%container.image.tag
   priority: CRITICAL
   tags: [baukit, baukit_platform, container, process, mitre_execution, T1609]

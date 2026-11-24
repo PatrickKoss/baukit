@@ -214,6 +214,7 @@ fn template_context(
         },
         api_container_port: ports.api_container,
         ops_container_port: ports.ops_container,
+        qa_ports: ports.qa_ports()?,
         gitops: gitops_context(options, manifest)?,
         postgres_owner_create_role: manifest
             .is_some_and(|manifest| manifest.postgres.owner_create_role),

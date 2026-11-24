@@ -345,6 +345,18 @@ class RuntimeExecTest(unittest.TestCase):
         self.assertIn("and not baukit_flux_controller_child", condition)
         self.assertIn("baukit_runtime_exec", condition)
 
+    def test_kyverno_exception_names_only_the_legacy_policy_check(self) -> None:
+        check = macro_condition(self.rules, "baukit_kyverno_legacy_check")
+        rule = self.rules.split("- rule: Baukit exec into protected platform namespace", 1)[1]
+        condition = rule.split("  output:", 1)[0]
+
+        self.assertIn("k8s.ns.name = kyverno", check)
+        self.assertIn("container.image.repository = reg.kyverno.io/kyverno/kyverno-cli", check)
+        self.assertIn('proc.cmdline = "kubectl-kyverno check-legacy-policies"', check)
+        self.assertNotIn("startswith", check)
+        self.assertNotIn(" or ", check)
+        self.assertIn("and not baukit_kyverno_legacy_check", condition)
+
 
 if __name__ == "__main__":
     unittest.main()

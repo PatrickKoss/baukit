@@ -244,12 +244,14 @@ create_cluster() {
   registry_mirrors_k3s_config >"$state_dir/registries.yaml"
   local mirror_args=()
   mapfile -t mirror_args < <(registry_mirrors_cluster_args)
-  local etcd_args=()
+  local etcd_args=() kubelet_args=()
   mapfile -t etcd_args < <(platform_local_etcd_args)
+  mapfile -t kubelet_args < <(platform_local_kubelet_args)
   create_k3d_cluster "$image" "$(free_port)" "$(free_port)" "$(free_port)" \
     --registry-config "$state_dir/registries.yaml" \
     --k3s-arg "$kubelet_image_gc_arg" \
     "${etcd_args[@]}" \
+    "${kubelet_args[@]}" \
     "${mirror_args[@]}"
   k3d kubeconfig get "$cluster_name" >"$kubeconfig"
   chmod 0600 "$kubeconfig"

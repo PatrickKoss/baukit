@@ -525,6 +525,7 @@ step_expo_doctor() {
 }
 
 step_mobile_unit() {
+  corepack "$pnpm_package" --dir mobile run test:scripts
   if [ "$gate_mode" = affected ]; then
     corepack "$pnpm_package" --dir mobile exec jest --changedSince="$BAUKIT_GATE_BASE" \
       --maxWorkers="$workers" --passWithNoTests

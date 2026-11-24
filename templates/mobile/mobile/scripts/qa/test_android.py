@@ -902,7 +902,7 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
         )
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("--device udid-1 --env", self.events.read_text())
+        self.assertIn("--device udid-1 test --platform ios --env", self.events.read_text())
         self.assertIn("--exclude-tags kompass .maestro/one.yaml", self.events.read_text())
 
     def prepare_maestro_run(self, devices: list[str], local_hooks: str = "") -> None:

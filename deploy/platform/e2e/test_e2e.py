@@ -253,6 +253,8 @@ class DatastoreTests(unittest.TestCase):
         text = (E2E / "run.sh").read_text()
         self.assertIn("mapfile -t etcd_args < <(platform_local_etcd_args)", text)
         self.assertIn('"${etcd_args[@]}" \\', text)
+        self.assertIn("mapfile -t kubelet_args < <(platform_local_kubelet_args)", text)
+        self.assertIn('"${kubelet_args[@]}" \\', text)
 
 
 class NodeRegistrationTests(unittest.TestCase):

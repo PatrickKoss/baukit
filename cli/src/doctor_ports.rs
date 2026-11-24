@@ -716,6 +716,9 @@ pub(crate) fn has_mismatched_qa_keycloak_port(source: &str, declared: &PortConfi
     let accepted = |port: u16| {
         port == QA_KEYCLOAK_PORT
             || port == declared.keycloak
+            || declared
+                .qa_ports()
+                .is_ok_and(|qa_ports| qa_ports.keycloak == port)
             || declared.keycloak_extra.contains(&port)
     };
     let ports = qa_keycloak_port_defaults(source);

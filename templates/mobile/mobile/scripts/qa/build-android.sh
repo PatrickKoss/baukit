@@ -11,8 +11,8 @@ qa_build_env() { :; }
 qa_install_dependencies() {
   corepack pnpm --dir "$root/mobile" install --frozen-lockfile
 }
-api_port="${BAUKIT_QA_API_PORT:-18080}"
-{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-18081}"
+api_port="${BAUKIT_QA_API_PORT:-{{ context.qa_ports.api }}}"
+{% if context.auth_enabled %}keycloak_port="${BAUKIT_QA_KEYCLOAK_PORT:-{{ context.qa_ports.keycloak }}}"
 {% endif %}local_hooks="$root/mobile/scripts/qa/local.sh"
 # shellcheck source=/dev/null
 [[ ! -f "$local_hooks" ]] || source "$local_hooks"
