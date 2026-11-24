@@ -1,3 +1,5 @@
 # 12: tailscale-proxies admits the operator's privileged kernel-mode proxy pods.
 # 13: cnpg-tenant-pods lets CNPG instance and job pods in tenant namespaces mount their token.
-policy_exceptions = 13
+# 14: emulator-slots lets the optional emulator-slots device plugin mount the kubelet socket
+#     directory and /dev/kvm and run as root.
+policy_exceptions = 14
