@@ -23,6 +23,11 @@ spec:
   matchConditions:
     - name: workload
       expression: >-
-        object.metadata.?namespace.orValue("") == "observability-agents" &&
-        object.kind in ["CronJob", "Job", "Pod"] &&
-        object.metadata.?labels[?"app.kubernetes.io/name"].orValue("") == "netpol-ipset-check"
+        object.metadata.?namespace.orValue("") == "observability-agents" && (
+          (object.kind == "CronJob" && object.metadata.name == "netpol-ipset-check") ||
+          (object.kind == "Job" && (
+            object.metadata.?name.orValue("").startsWith("netpol-ipset-check-") ||
+            object.metadata.?ownerReferences.orValue([])
+              .exists(o, o.kind == "CronJob" && o.name == "netpol-ipset-check"))) ||
+          (object.kind == "Pod" && object.metadata.?ownerReferences.orValue([])
+            .exists(o, o.kind == "Job" && o.name.startsWith("netpol-ipset-check-"))))

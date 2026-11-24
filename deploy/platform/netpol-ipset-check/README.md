@@ -13,7 +13,11 @@ or `KUBE-SRC-` (egress) set of a policy that selects it. Set names follow kube-r
 `policyDestinationPodIPSetName` and `policySourcePodIPSetName`. A failed Job fires
 `KubeJobFailed` after 15 minutes. Finished Jobs are deleted after an hour, so the alert clears an
 hour after the sets are right again. PolicyException `netpol-ipset-check` lifts the host-namespace,
-capability and root policies for this CronJob only.
+capability and root policies for the CronJob, its Jobs and their Pods only. It matches a Job by its
+CronJob owner reference (which `kubectl create job --from` sets) or the name prefix
+`netpol-ipset-check-`, and a Pod only when its owning Job has that prefix, so a manual probe Job
+must use it:
+`kubectl -n observability-agents create job --from=cronjob/netpol-ipset-check netpol-ipset-check-probe`.
 
 The Job reads the ipsets of whichever node it lands on. kube-router fills the target sets with pods
 from every node, so one node is enough to catch a missing pod, but not a node whose own sets are

@@ -135,5 +135,20 @@ class ManifestTest(unittest.TestCase):
         self.assertIn(f"image: {image}\n", self.cronjob)
 
 
+class PolicyExceptionTest(unittest.TestCase):
+    exception = (HERE.parent / "kyverno-policies/exceptions/netpol-ipset-check.yaml").read_text()
+    expression = exception.split("expression: >-", 1)[1]
+
+    def test_matches_owners_and_names_not_the_label(self):
+        for fragment in (
+            'object.kind == "CronJob" && object.metadata.name == "netpol-ipset-check"',
+            'o.kind == "CronJob" && o.name == "netpol-ipset-check"',
+            'startsWith("netpol-ipset-check-")',
+            'o.kind == "Job" && o.name.startsWith("netpol-ipset-check-")',
+        ):
+            self.assertIn(fragment, self.expression)
+        self.assertNotIn("labels", self.expression)
+
+
 if __name__ == "__main__":
     unittest.main()
