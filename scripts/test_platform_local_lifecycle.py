@@ -385,7 +385,15 @@ class RegistryMirrorClusterTest(unittest.TestCase):
           fi
         }}
         k3d() {{ printf 'k3d %s\\n' "$*" >>"$calls"; }}
-        k3d_create_local_cluster() {{ printf 'create %s\\n' "$*" >>"$calls"; }}
+        k3d_create_local_cluster() {{
+          printf 'create %s\\n' "$*" >>"$calls"
+          local previous=""
+          for argument in "$@"; do
+            [[ $previous == --registry-config ]] && cat "$argument" >>"$calls.registries"
+            previous=$argument
+          done
+          return 0
+        }}
         cluster_exists() {{ [[ $EXISTS == yes ]]; }}
         require_tools() {{ :; }}
         baukit_use_tools() {{ :; }}
@@ -401,10 +409,14 @@ class RegistryMirrorClusterTest(unittest.TestCase):
         use_cluster() {{ exit 0; }}
         cluster_name=demo k3s_image=k3s api_port=1 http_port=2 https_port=3
         k3d_subnet=10.0.0.0/24 state_dir=/nonexistent snapshot_image=snap repo_root=/nonexistent
+        read -r -a extra_registry_mirrors <<<"$EXTRA"
         """
     )
+    LAB = "registry.lab.example=http://10.43.200.10:5000"
 
-    def run_function(self, script: str, function: str, *, mirrors: str, exists: str) -> str:
+    def run_function(
+        self, script: str, function: str, *, mirrors: str, exists: str, extra: str = ""
+    ) -> str:
         text = (PLATFORM / script).read_text()
         match = re.search(rf"^{function}\(\) {{\n.*?^}}\n", text, re.MULTILINE | re.DOTALL)
         assert match is not None
@@ -414,10 +426,60 @@ class RegistryMirrorClusterTest(unittest.TestCase):
             stubs = self.STUBS.format(mirrors=PLATFORM / "registry-mirrors.sh")
             result = bash(
                 f"{stubs}\n{match.group(0)}\n{function}",
-                env={"CALLS": str(calls), "MIRRORS": mirrors, "EXISTS": exists},
+                env={"CALLS": str(calls), "MIRRORS": mirrors, "EXISTS": exists, "EXTRA": extra},
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.registries = (
+                yaml.safe_load(Path(f"{calls}.registries").read_text())
+                if Path(f"{calls}.registries").exists()
+                else None
+            )
             return calls.read_text()
+
+    def test_extra_mirrors_join_the_running_mirrors(self) -> None:
+        self.run_function(
+            "platform-lifecycle.sh",
+            "ensure_cluster",
+            mirrors="running",
+            exists="no",
+            extra=self.LAB,
+        )
+        assert self.registries is not None
+        mirrors = self.registries["mirrors"]
+        self.assertEqual(
+            mirrors["registry.lab.example"], {"endpoint": ["http://10.43.200.10:5000"]}
+        )
+        self.assertEqual(
+            mirrors["ghcr.io"], {"endpoint": ["http://k3d-baukit-mirror-ghcr-io:5000"]}
+        )
+
+    def test_extra_mirrors_alone_when_the_baukit_mirrors_are_absent(self) -> None:
+        line = self.created_with(
+            self.run_function(
+                "platform-lifecycle.sh",
+                "ensure_cluster",
+                mirrors="absent",
+                exists="no",
+                extra=self.LAB,
+            )
+        )
+        self.assertIn("--registry-config", line)
+        self.assertNotIn("--registry-use", line)
+        self.assertEqual(
+            self.registries,
+            {"mirrors": {"registry.lab.example": {"endpoint": ["http://10.43.200.10:5000"]}}},
+        )
+
+    def test_existing_cluster_starts_without_registry_config(self) -> None:
+        calls = self.run_function(
+            "platform-lifecycle.sh",
+            "ensure_cluster",
+            mirrors="absent",
+            exists="yes",
+            extra=self.LAB,
+        )
+        self.assertIn("k3d cluster start demo", calls)
+        self.assertIsNone(self.registries)
 
     def created_with(self, calls: str) -> str:
         return next(line for line in calls.splitlines() if line.startswith("create "))
@@ -454,6 +516,59 @@ class RegistryMirrorClusterTest(unittest.TestCase):
                 self.assertLess(disconnect, calls.index("k3d cluster delete demo"))
 
 
+class ExtraRegistryMirrorCheckTest(unittest.TestCase):
+    def check(self, *entries: str) -> subprocess.CompletedProcess[str]:
+        quoted = " ".join(f"'{entry}'" for entry in entries)
+        return bash(
+            f'source "{PLATFORM / "registry-mirrors.sh"}"\nregistry_mirrors_check_extra {quoted}'
+        )
+
+    def test_valid_entries_pass(self) -> None:
+        result = self.check(
+            "registry.lab.example=http://10.43.200.10:5000",
+            "cache.example:5000=https://cache.example",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_no_entries_pass(self) -> None:
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_malformed_entries_fail(self) -> None:
+        for entry in (
+            "registry.lab.example",
+            "registry.lab.example=10.43.200.10:5000",
+            "registry.lab.example=http://10.43.200.10:5000/v2",
+            "Registry_Lab=http://10.43.200.10:5000",
+        ):
+            with self.subTest(entry=entry):
+                result = self.check(entry)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("must be host=http(s)://address[:port]", result.stderr)
+
+    def test_baukit_mirror_hosts_cannot_be_overridden(self) -> None:
+        for host in ("docker.io", "reg.kyverno.io"):
+            with self.subTest(host=host):
+                result = self.check(f"{host}=http://10.0.0.1:5000")
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("overrides a baukit mirror", result.stderr)
+
+    def test_duplicate_hosts_fail(self) -> None:
+        result = self.check("a.example=http://10.0.0.1:5000", "a.example=http://10.0.0.2:5000")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("listed twice", result.stderr)
+
+    def test_lifecycle_checks_the_setting_before_any_command(self) -> None:
+        text = (PLATFORM / "platform-lifecycle.sh").read_text()
+        body = re.search(
+            r"^validate_common_config\(\) \{\n.*?^\}\n", text, re.MULTILINE | re.DOTALL
+        )
+        assert body is not None
+        self.assertIn('registry_mirrors_check_extra "${extra_registry_mirrors[@]}"', body.group(0))
+        self.assertIn(
+            'read -r -a extra_registry_mirrors <<<"${PLATFORM_EXTRA_REGISTRY_MIRRORS:-}"', text
+        )
+
+
 class LifecycleSubnetTest(unittest.TestCase):
     """platform-lifecycle.sh keeps platform-local inside the nodeCIDR; docker and k3d are stubs."""
 
@@ -484,6 +599,7 @@ class LifecycleSubnetTest(unittest.TestCase):
         source "{helper}"
         cluster_exists() {{ [[ $EXISTS == yes ]]; }}
         registry_mirrors_running() {{ return 1; }}
+        extra_registry_mirrors=()
         k3d_create_local_cluster() {{ printf 'create %s\\n' "$*" >>"$CALLS"; exit 0; }}
         k3d() {{ printf 'k3d %s\\n' "$*" >>"$CALLS"; exit 0; }}
         cluster_name=demo k3s_image=k3s api_port=1 http_port=2 https_port=3

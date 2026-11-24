@@ -247,6 +247,7 @@ owned and contain assignments only.
 | `PLATFORM_HTTP_PORT` | `80` | Host port for HTTP ingress, bound to `127.0.0.1`. |
 | `PLATFORM_HTTPS_PORT` | `443` | Host port for HTTPS ingress, bound to `127.0.0.1`. |
 | `PLATFORM_SUBNET` | `10.89.1.0/24` | Docker network of a new cluster. Must sit inside the `10.89.0.0/16` nodeCIDR and overlap no Docker network; an existing cluster outside the nodeCIDR fails until `recreate`. A leftover `k3d-<cluster>` network on another subnet stops `up` before k3d, which would reuse it and ignore `--subnet`; the error prints the `docker network rm` command. |
+| `PLATFORM_EXTRA_REGISTRY_MIRRORS` | empty | Space-separated `host=http(s)://address[:port]` entries that a new cluster's k3s `registries.yaml` mirrors next to the baukit pull-through caches, such as a registry the cluster serves itself on a fixed ClusterIP. Read at create only, so set it for `up` and `recreate`; an existing cluster keeps its config until `recreate`. A host baukit already mirrors, a repeated host or an endpoint with a path fails before any command. |
 | `PLATFORM_STATE_DIR` | XDG state path | Disposable snapshot repository state. |
 
 GitHub mode uses the owner/repository fields to bootstrap and verifies desired

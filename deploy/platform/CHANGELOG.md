@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `platform-lifecycle.sh` takes `PLATFORM_EXTRA_REGISTRY_MIRRORS`, space-separated `host=endpoint` entries that a new cluster's k3s `registries.yaml` mirrors, merged with the pull-through caches when they run and on their own when they do not. Before, a consumer that pointed a registry at an in-cluster endpoint wrote the mirror into the running node, and `recreate` lost it. `validate_common_config` rejects malformed entries, endpoints with a path, repeated hosts and hosts baukit mirrors itself. Unset, nothing changes. `platform-up.sh` does not read it.
+
 ## [0.30.1] - 2026-11-24
 
 - `lint/image-findings.toml` allows CVE-2026-111943, CVE-2026-78661, CVE-2026-78667, CVE-2026-78669 and CVE-2026-97031 in the pinned `generic-device-plugin` of `emulator-slots`, and CVE-2026-77423 in `zookeeper:3.9.7`, until 2027-01-16. No upstream build fixes them as of 2026-11-24: the newest device-plugin build is still Go 1.26.8 with x/net 0.59.0, and the newest zookeeper 3.9.7 still ships jline 3.30.14. Each reason records why the code is unreachable here. Follow-up RF29.
