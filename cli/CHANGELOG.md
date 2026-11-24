@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.30.3] - 2026-11-24
+
 ## [0.30.2] - 2026-11-24
 
 - Generated mobile products pass the device count to the `qa_maestro_flows` hook as its second argument.
