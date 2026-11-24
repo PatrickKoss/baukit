@@ -1,5 +1,6 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
+import { type BuildVariant, buildVariantFrom, withBuildVariant } from './src/build-variant.ts';
 import { PRODUCT_NAME } from './src/product.ts';
 
 const configuredApiUrl: unknown = process.env['EXPO_PUBLIC_API_URL'];
@@ -12,7 +13,8 @@ const configuredScopes: unknown = process.env['EXPO_PUBLIC_OIDC_SCOPES'];
 {% endif %}{% if not context.auth_oidc %}const configuredLocalIssuer: unknown = process.env['EXPO_PUBLIC_LOCAL_OIDC_ISSUER'];
 {% endif %}
 const isQaBuild = process.env['BAUKIT_QA_BUILD'] === '1';
-{% if not context.auth_oidc %}const localSignInBuild = process.env.NODE_ENV !== 'production' || isQaBuild;
+const buildVariant = buildVariantFrom(process.env, PRODUCT_NAME);
+{% if not context.auth_oidc %}const localSignInBuild = buildVariant === undefined && (process.env.NODE_ENV !== 'production' || isQaBuild);
 {% endif %}
 function environmentText(name: string): string {
   const value: unknown = process.env[name];
@@ -25,7 +27,7 @@ const revenueCat = {
   offeringId: environmentText('EXPO_PUBLIC_REVENUECAT_OFFERING_ID'),
 };
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
+const baseConfig = ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: PRODUCT_NAME,
   slug: PRODUCT_NAME,
@@ -70,3 +72,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: { package: `dev.baukit.${PRODUCT_NAME.replaceAll('-', '_')}` },
 {% if context.pwa and not context.web %}  web: { ...config.web, bundler: 'metro', output: 'single' },
 {% endif %}});
+
+{% if context.auth_oidc %}function labSignIn(build: BuildVariant): Record<string, unknown> {
+  return { oidcIssuer: build.oidcIssuer, oidcClientId: build.oidcClientId };
+}
+{% else %}function labSignIn(build: BuildVariant): Record<string, unknown> {
+  return { labOidcIssuer: build.oidcIssuer, labOidcClientId: build.oidcClientId };
+}
+{% endif %}
+export default (context: ConfigContext): ExpoConfig =>
+  buildVariant === undefined
+    ? baseConfig(context)
+    : withBuildVariant(baseConfig(context), buildVariant, labSignIn(buildVariant));

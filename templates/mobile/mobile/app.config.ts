@@ -1,9 +1,11 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
+import { buildVariantFrom, withBuildVariant } from './src/build-variant.ts';
 import { PRODUCT_NAME } from './src/product.ts';
 
 const configuredApiUrl: unknown = process.env['EXPO_PUBLIC_API_URL'];
 const isQaBuild = process.env['BAUKIT_QA_BUILD'] === '1';
+const buildVariant = buildVariantFrom(process.env, PRODUCT_NAME);
 
 function environmentText(name: string): string {
   const value: unknown = process.env[name];
@@ -16,7 +18,7 @@ const revenueCat = {
   offeringId: environmentText('EXPO_PUBLIC_REVENUECAT_OFFERING_ID'),
 };
 
-export default ({ config }: ConfigContext): ExpoConfig => ({
+const baseConfig = ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: PRODUCT_NAME,
   slug: PRODUCT_NAME,
@@ -41,3 +43,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
 {% if context.pwa and not context.web %}  web: { ...config.web, bundler: 'metro', output: 'single' },
 {% endif %}});
+
+export default (context: ConfigContext): ExpoConfig =>
+  buildVariant === undefined ? baseConfig(context) : withBuildVariant(baseConfig(context), buildVariant, {});
