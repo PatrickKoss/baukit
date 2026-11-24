@@ -136,6 +136,14 @@
       "groupSlug": "platform-components"
     },
     {
+      "description": "One PR per platform base: emulator-slots",
+      "matchFileNames": [
+        "deploy/platform/emulator-slots/**"
+      ],
+      "groupName": "platform emulator-slots",
+      "groupSlug": "platform-emulator-slots"
+    },
+    {
       "description": "One PR per platform base: falco",
       "matchFileNames": [
         "deploy/platform/falco/**"

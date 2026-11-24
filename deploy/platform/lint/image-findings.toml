@@ -257,6 +257,17 @@ ids = [
   "CVE-2026-97054",
 ]
 
+[images."ghcr.io/squat/generic-device-plugin:f7c3291@sha256:8dc84958301f054bf72d9753a7a2c9af3d6642a9844b34d1171b3f2cdb4a15f6"]
+expires = 2027-01-16
+reason = "ghcr.io/squat/generic-device-plugin (emulator-slots): no rebuild on Go 1.26.10+ or golang.org/x/net 0.62.0 exists as of 2026-11-24; the newest build 0ae0011 (sha256:6fd8023741b24c0302a97153605ff77f4d55535a4b5a8b0c8502b208e8310525, 2026-11-23) is still go1.26.8 with x/net 0.59.0 and scans the same. The plugin listens only on plain-HTTP :8080 (/health, metrics) and on the kubelet gRPC socket under the root-owned hostPath /var/lib/kubelet/device-plugins, and opens no TLS connection. CVE-2026-78667 (net/http Range parsing in FileServer, ServeContent, ServeFile): serveFile and parseRange are not in the binary. CVE-2026-78661 (x/net/html): no x/net/html code is in the binary. CVE-2026-97031 (crypto/tls ECH server) and CVE-2026-111943 (crypto/x509 intermediates): the code is linked through grpc but no listener or client uses TLS. CVE-2026-78669 (HTTP/2 SETTINGS flood): grpc's http2Server and the x/net Framer are linked, but the only HTTP/2 peer is the kubelet on the device-plugin socket, and :8080 serves no h2c. Only an upstream rebuild clears these, because the platform runs upstream's published images. Follow-up RF29."
+ids = [
+  "CVE-2026-111943",
+  "CVE-2026-78661",
+  "CVE-2026-78667",
+  "CVE-2026-78669",
+  "CVE-2026-97031",
+]
+
 [images."mirror.gcr.io/clickhouse/clickhouse-server:22.8.21.38-alpine@sha256:d3c96b46a803e35f202b0cacb75e1966be1f5f9ea10a56d051bda7db3bf3cdea"]
 expires = 2027-01-16
 reason = "mirror.gcr.io/clickhouse/clickhouse-server:22.8.21.38-alpine: no fixed upstream release exists as of 2026-11-19. 22.8 is the ClickHouse line PostHog 1.43 schema runs on; 22.12 fixes 2 of 65 but is outside PostHog's supported versions, revisit when PostHog leaves the platform (SC2 follow-up). Follow-up RF29."
@@ -2187,12 +2198,13 @@ ids = [
 
 [images."zookeeper:3.9.7@sha256:7654645af057c76db8facc77c5d6fc0749f0f566bdd5c41efe6e3b824d1248c0"]
 expires = 2027-01-16
-reason = "zookeeper:3.9.7: no fixed upstream release exists as of 2026-11-17. 3.9.7 is the newest upstream release and still ships these. Follow-up RF29."
+reason = "zookeeper:3.9.7: no fixed upstream release exists as of 2026-11-24. 3.9.7 is the newest upstream release, and its 2026-11-20 rebuild (sha256:23f7fe549a6be53e39f9bf90cfa82542b4c7df8e8a19374ce4f3625cd11fa86b) still ships these. CVE-2026-77422 and CVE-2026-77423 are ReDoS in the grep and less builtins of lib/jline-3.30.14-jdk8.jar, which only the interactive zkCli shell uses, not the server PostHog runs. Follow-up RF29."
 ids = [
   "CVE-2026-10050",
   "CVE-2026-108106",
   "CVE-2026-2332",
   "CVE-2026-77422",
+  "CVE-2026-77423",
   "CVE-2026-93451",
 ]
 

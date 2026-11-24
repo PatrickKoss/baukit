@@ -75,6 +75,11 @@ esac
         config.parent.mkdir(parents=True)
         return config
 
+    def base_avd(self) -> None:
+        config = self.avds / "test-qa.avd/config.ini"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text("hw.device.name=pixel_6\nhw.ramSize=1536\n")
+
     def executable(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("#!/usr/bin/env bash\nset -eu\n" + content)
@@ -763,6 +768,7 @@ fi
     def test_android_setup_is_idempotent_and_prepares_oidc_browser(self) -> None:
         emulator_args = self.root / "emulator-args"
         self.environment["EMULATOR_ARGS"] = str(emulator_args)
+        self.base_avd()
         self.executable(
             self.sdk / "platform-tools/adb",
             r"""
@@ -772,7 +778,10 @@ if [[ "$*" == *'getprop sys.boot_completed' && -f "$EMULATOR_ARGS" ]]; then echo
 if [[ "$*" == *'pidof com.android.systemui' ]]; then echo 321; fi
 if [[ "$*" == *'dumpsys window displays' ]]; then echo '  mCurrentFocus=Window{1 u0 launcher}'; fi
 if [[ "$*" == *'cat /proc/stat' ]]; then printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n'; fi
-if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}"; fi
+if [[ "$*" == *'emu avd snapshot save '* ]]; then
+  avd=test-qa; [[ "$2" == emulator-5556 ]] || avd=test-qa-1
+  mkdir -p "$ANDROID_AVD_HOME/$avd.avd/snapshots/${@: -1}"
+fi
 if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 10.0.2.16 uid 0'; fi
 """,
         )
@@ -796,9 +805,10 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             self.environment["BAUKIT_QA_ANDROID_WIFI"] = wifi
             self.events.unlink(missing_ok=True)
             emulator_args.unlink(missing_ok=True)
-            shutil.rmtree(self.avds / "test-qa.avd/snapshots", ignore_errors=True)
-            for marker in self.avds.glob("test-qa.avd/baukit-clean-*.ready"):
-                marker.unlink()
+            for avd in ("test-qa", "test-qa-1"):
+                shutil.rmtree(self.avds / f"{avd}.avd/snapshots", ignore_errors=True)
+                for marker in self.avds.glob(f"{avd}.avd/baukit-clean-*.ready"):
+                    marker.unlink()
             self.run_script("android-env.sh")
             features = "-Vulkan,-WiFiPacketStream" if wifi == "1" else "-Vulkan"
             snapshot = self.snapshot_name(features=features)
@@ -817,16 +827,15 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
                 "-no-snapshot-load",
             ]
             expected_args.extend([*(["-no-window"] if headless == "1" else []), "-accel", "off"])
-            cold, *shared, rest = emulator_args.read_text().split("--\n")
-            self.assertEqual(cold.splitlines(), expected_args)
+            *launches, rest = emulator_args.read_text().split("--\n")
             self.assertEqual(rest, "")
-            for port, launch in zip(
-                ("5556", "5558"), sorted(shared, key=lambda args: args.split()[3]), strict=True
-            ):
-                quick = [*expected_args[:3], port, *expected_args[4:]]
-                load = quick.index("-no-snapshot-load")
-                quick[load : load + 1] = ["-snapshot", snapshot, "-read-only"]
-                self.assertEqual(launch.splitlines(), quick)
+            self.assertEqual(
+                sorted(launch.splitlines() for launch in launches),
+                [
+                    expected_args,
+                    ["-avd", "test-qa-1", "-port", "5558", *expected_args[4:]],
+                ],
+            )
             events = self.events.read_text().splitlines()
             activity = "dev.baukit.{{ context.app_crate }}/.MainActivity"
             command = f"-s emulator-5556 shell am start -n {activity} -W"
@@ -834,7 +843,8 @@ if [[ "$*" == *'ip -4 route get 10.0.2.2' ]]; then echo '10.0.2.2 dev wlan0 src 
             launch = events.index(command)
             self.assertEqual(events.count("-s emulator-5556 reverse tcp:18015 tcp:18015"), 1)
             self.assertFalse(any("monkey" in event for event in events))
-            self.assertEqual(events.count(f"-s emulator-5556 emu avd snapshot save {snapshot}"), 1)
+            for serial in ("emulator-5556", "emulator-5558"):
+                self.assertEqual(events.count(f"-s {serial} emu avd snapshot save {snapshot}"), 1)
             if wifi == "0":
                 self.assertFalse(
                     any("svc wifi" in event or "route get" in event for event in events)
@@ -1136,6 +1146,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
         self.executable(
             self.sdk / "emulator/emulator", 'printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"\n'
         )
+        self.base_avd()
         self.executable(self.scripts / "services.sh", "exit 0\n")
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
@@ -1163,7 +1174,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
     def snapshot_name(
         self,
         gpu: str = "swiftshader_indirect",
-        version: str = "{{ context.template_version }}",
+        schema: str = "1",
         features: str = "",
     ) -> str:
         result = subprocess.run(
@@ -1175,7 +1186,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
                 str(self.sdk),
                 gpu,
                 features,
-                version,
+                schema,
             ],
             capture_output=True,
             text=True,

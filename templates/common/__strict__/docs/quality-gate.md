@@ -46,6 +46,8 @@ step_dashboard_coverage() {
 }
 ```
 
+A product step that runs Node code from `web/` or `mobile/`, such as `node --test` inside an overridden `step_scripts_tests`, starts with `require_node_modules web web-install` (or `mobile mobile-install`). `--step` runs one step without its dependencies, and fast-lane steps cannot wait for the install steps, so on a fresh checkout the step otherwise fails with only `Cannot find module`. The helper exits 1 and names the install step to run first.
+
 The file can also redefine a template step function when a product has to replace it. CI runs the local steps as part of `sh scripts/quality-gate.sh`. A product on the standard profile has no gate, and its generated CI runs each `local_steps` row from the `Generated repository scripts` job instead.
 
 After a Baukit upgrade re-renders the template, review the changes to the owned files and run `baukit check template-files --update` to record the new hashes.
@@ -111,6 +113,8 @@ Each suite runs once. nextest runs every Rust test, including ignored ones, unde
 ## Android emulator
 
 `quality.android_emulator_port` in `baukit.toml` sets the emulator console port. `BAUKIT_QA_ANDROID_PORT` overrides it for one run. `quality.android_emulators`, 2 by default, sets how many emulators the gate boots. Each emulator takes its console port and the ADB port after it, and the next emulator starts two ports higher, so two emulators at 5644 take 5644 to 5647. `BAUKIT_QA_ANDROID_EMULATORS` overrides the count for one run.
+
+With `BAUKIT_QA_DEVICE_BROKER` set to a pruefstand URL, `android-env.sh start` and `boot` lease the emulators from that broker instead of booting AVDs. They run `pruefstand lease --api 36 --count <emulators> --ttl 30m --wait 10m`, append `BAUKIT_QA_DEVICE_BROKER_ARGS`, `adb connect` each leased serial and hand the serials to Maestro through `android-serial`. `PRUEFSTAND_TOKEN` must be set. `BAUKIT_QA_ANDROID_API_LEVEL`, `BAUKIT_QA_DEVICE_LEASE_TTL` and `BAUKIT_QA_DEVICE_LEASE_WAIT` change the lease flags. A background loop sends `pruefstand heartbeat` every `BAUKIT_QA_DEVICE_HEARTBEAT_SECONDS` (60) while the calling shell lives. `android-env.sh stop` releases the leases, and a failed `start` releases them on exit. When the broker has no free devices within the wait, `start` exits 3. The gate then holds no `BAUKIT_GATE_EMULATOR_CORES` reserve, since the emulators run elsewhere.
 
 Ports from 5556 to 5811 form blocks of 8, starting at 5556, 5564, 5572 and so on. A block holds up to 4 emulators. Each product owns one block, and its range must stay inside the block that holds its first port. `baukit doctor` prints the range and the block, and rejects an odd port, a port outside 5556 to 5810, or a range that runs past its block. `baukit new` picks one of the 16 blocks from 5556 to 5683 from the product name. The blocks from 5684 up stay free for Baukit's own lanes and one-off runs: Baukit's `native-android` lane uses 5780 to 5783, from `scripts/ci-gate.toml`. Two products in one block share emulators, so give each product its own block.
 

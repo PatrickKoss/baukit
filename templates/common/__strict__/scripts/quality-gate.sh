@@ -89,6 +89,12 @@ gate_mode=${BAUKIT_GATE_MODE:-full}
 export PLAYWRIGHT_BROWSERS_PATH
 {% endif %}{% if context.web or context.mobile %}pnpm_package=$(python3 -c 'import json; print(json.load(open("{{ "web" if context.web else "mobile" }}/package.json"))["packageManager"].split("+")[0])')
 {% endif %}
+require_node_modules() {
+  [ -d "$1/node_modules" ] && return 0
+  echo "gate: $1/node_modules is missing; run 'sh scripts/quality-gate.sh --step $2' first" >&2
+  return 1
+}
+
 has_token() {
   case " ${BAUKIT_GATE_TOKENS:-} " in
     *" $1 "*) return 0 ;;
@@ -201,8 +207,16 @@ step_deploy_values() {
   use_baukit_root
   deploy_tools=${BAUKIT_TOOLS_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/baukit/tools}
   BAUKIT_TOOLS_DIR=$deploy_tools "$baukit_root/scripts/install-deploy-tools.sh" --only helm,kustomize
-  PATH="$deploy_tools/bin:$PATH" python3 "$baukit_root/scripts/check-deploy-values.py" \
+  PATH="$deploy_tools/bin:$PATH" deploy_values_python "$baukit_root/scripts/check-deploy-values.py" \
     . "$baukit_root/deploy/chart/baukit-app"
+}
+
+deploy_values_python() {
+  if [ -f pyproject.toml ] && [ -f uv.lock ]; then
+    uv run --locked --project . python3 "$@"
+  else
+    uv run --no-project --with PyYAML==6.0.3 python3 "$@"
+  fi
 }
 
 step_python_lint() {

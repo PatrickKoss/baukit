@@ -241,7 +241,10 @@ fn migrations_run_as_a_non_superuser_owner_by_default() -> anyhow::Result<()> {
     let root = generate_new(&strict_auth_options(seed.path(), "owner-app"))?;
     let initdb = fs::read_to_string(root.join(OWNER_INITDB))?;
     assert!(initdb.contains("CREATE ROLE app LOGIN PASSWORD 'app' NOSUPERUSER NOCREATEDB NOREPLICATION NOBYPASSRLS NOCREATEROLE;"));
-    assert!(initdb.contains("ALTER DATABASE owner_app OWNER TO app;"));
+    assert!(
+        initdb.contains("EXECUTE format('ALTER DATABASE %I OWNER TO app', current_database());")
+    );
+    assert!(!initdb.contains("owner_app"));
     let compose = fs::read_to_string(root.join("compose.yaml"))?;
     assert!(compose.contains("./postgres/initdb:/docker-entrypoint-initdb.d:ro"));
     assert!(!compose.contains("postgres://postgres:postgres@"));
@@ -314,6 +317,31 @@ fn doctor_requires_dedicated_postgres_for_owner_create_role() -> anyhow::Result<
             "{error}"
         );
     }
+    Ok(())
+}
+
+#[test]
+fn doctor_fails_when_the_gitops_chart_tag_lags_the_template_version() -> anyhow::Result<()> {
+    let seed = tempfile::tempdir()?;
+    let root = generate_new(&strict_auth_options(seed.path(), "chart-tag-app"))?;
+    let chart_source = root.join("deploy/gitops/base/chart-source.yaml");
+    let source = fs::read_to_string(&chart_source)?;
+    let current = format!("tag: v{}\n", env!("CARGO_PKG_VERSION"));
+    assert!(source.contains(&current), "{source}");
+    if let Err(error) = doctor(&root) {
+        assert!(!error.to_string().contains("chart-source.yaml"), "{error}");
+    }
+    fs::write(&chart_source, source.replace(&current, "tag: v0.28.7\n"))?;
+    let message = doctor(&root)
+        .expect_err("a stale chart tag must fail the doctor")
+        .to_string();
+    assert!(
+        message.contains(&format!(
+            "deploy/gitops/base/chart-source.yaml sets ref.tag v0.28.7, but template_version is {}",
+            env!("CARGO_PKG_VERSION")
+        )),
+        "{message}"
+    );
     Ok(())
 }
 

@@ -62,7 +62,8 @@ with its condition message.
   document.
 
 `redis` is left out because it and `redis-ha` own the same objects in `platform-redis`; the overlay
-composes `redis-ha`.
+composes `redis-ha`. `emulator-slots` is left out because it mounts `/dev/kvm` from the node, which
+CI runners do not promise; `emulator-slots/test_emulator_slots.py` covers its render.
 
 ## k3s hardening checks
 

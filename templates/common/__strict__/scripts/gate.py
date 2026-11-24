@@ -471,7 +471,9 @@ def emulator_cores(settings: dict, environment: dict[str, str]) -> int:
     return CORES_PER_EMULATOR * int(emulators)
 
 
-def emulator_steps(settings: dict) -> frozenset[str]:
+def emulator_steps(settings: dict, environment: dict[str, str]) -> frozenset[str]:
+    if environment.get("BAUKIT_QA_DEVICE_BROKER"):
+        return frozenset()
     return EMULATOR_STEPS | frozenset(settings.get("quality", {}).get("emulator_steps", []))
 
 
@@ -950,7 +952,9 @@ def worker_budget(
         cores,
         total_memory_mb(),
         worker_memory,
-        EmulatorReserve(emulator_cores(settings, environment), emulator_steps(settings)),
+        EmulatorReserve(
+            emulator_cores(settings, environment), emulator_steps(settings, environment)
+        ),
         pool,
     )
     if pool is not None:

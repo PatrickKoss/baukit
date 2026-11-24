@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: emulator-slots
+  annotations:
+    config.kubernetes.io/local-config: "true"
+data:
+  nodeLabelKey: baukit.dev/emulators
+  nodeLabelValue: "true"
+  devicesPerNode: "2"

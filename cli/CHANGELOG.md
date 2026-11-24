@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.30.1] - 2026-11-24
+
+- The doctor failure for a gate without a `deploy-values` step also says that a product overriding `list_steps` in `scripts/quality-gate.local.sh` adds the step line there.
+- Generated mobile products retry a Maestro run once when a foreign emulator on the shared adb server goes offline while Maestro 2.8.0 lists every device.
+- Strict gates gain `require_node_modules` so product steps that run Node code name the missing install step.
+- Generated mobile products lease Android emulators from a pruefstand broker when `BAUKIT_QA_DEVICE_BROKER` is set, and the strict gate skips its emulator core reserve then. The `pruefstand` CLI must be on `PATH`.
+- The strict gate's `deploy-values` step runs under `uv`, in the product's locked project when it has `pyproject.toml` and `uv.lock`, otherwise with a pinned PyYAML.
+- `baukit doctor` applies the `deploy-values` glob rule only to a strict product or one whose gate defines a `deploy-values` step. A gate without the step gets one failure that names `step_deploy_values` in `templates/common/__strict__/scripts/quality-gate.sh` to copy, instead of a failure per glob it cannot satisfy.
+- `baukit doctor` fails when `deploy/gitops/base/chart-source.yaml` sets a `ref.tag` other than `v<template_version>`, or none, and names the file. Three products re-pinned to 0.30.0 kept `v0.28.7`, so Flux rendered them with the old chart while doctor and `check template-files` passed. Products without that file skip the check.
+- `baukit check template-files --update` stops tracking `scripts/tests/test_<name>.py` when the product owns `scripts/<name>.py` (the script exists but is not tracked) and notes it. A template change to the test, such as a new Keycloak environment class in `test_keycloak_policy.py`, otherwise broke a product whose `keycloak_policy.py` had diverged.
+
+- `postgres/initdb/10-owner.sql` hands `current_database()` to `app` instead of the product's default database name, so e2e and QA compose stacks with another `POSTGRES_DB` can mount it too.
+
+- `mobile/scripts/qa/android-env.sh` relaunches an emulator once when its process exits before boot, logs `exited before boot; relaunching it once` and keeps the first log as `android-emulator*.log.crashed`. Android emulator 37.3.10 sometimes segfaults right after start; a boot timeout and a second early exit still fail the step.
+
+- The mobile QA quick-boot snapshot name no longer includes the template version. It hashes the system image, the AVD's `hw.*` settings, the GPU mode, the emulator features and `snapshot_schema` in `mobile/scripts/qa/android-env.sh`, which a release bumps only when the saved state changes, so a re-pin no longer cold boots the AVD. Saving a snapshot removes every other baukit snapshot of that AVD except ones a running emulator loaded; it no longer keeps the newest older one.
+
 ## [0.30.0] - 2026-11-23
 
 - Breaking: this is a minor release because generated backends now migrate as a non-superuser owner, and existing products must adopt the template change. Copy `postgres/initdb/10-owner.sql` and its mount on the `postgres` service in `compose.yaml`, switch local database URLs to `app:app`, and move the Postgres tests to `PostgresMigrationOwner` with `owner_connection_url()`, as the product changelog describes.

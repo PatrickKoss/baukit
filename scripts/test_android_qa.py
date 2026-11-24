@@ -76,6 +76,7 @@ class AndroidQaTests(unittest.TestCase):
         self.scripts.mkdir(parents=True)
         for name in (
             "android-env.sh",
+            "android-broker.sh",
             "services.sh",
             "android-adb.py",
             "maestro-waits.py",
@@ -108,6 +109,10 @@ class AndroidQaTests(unittest.TestCase):
             "BAUKIT_QA_POLL_SECONDS": "0",
         }
         self.environment.pop("BAUKIT_QA_RENDERER_THREADS", None)
+        base_avd = self.root / "avd/test-qa.avd"
+        base_avd.mkdir(parents=True)
+        (base_avd / "config.ini").write_text("hw.device.name=pixel_6\nhw.ramSize=4096\n")
+        (self.root / "avd/test-qa.ini").write_text(f"path={base_avd}\ntarget=android-36\n")
         self.executable(
             self.sdk / "platform-tools/adb",
             r"""
@@ -156,7 +161,9 @@ case "$*" in
       echo '10.0.2.2 dev eth0 src 10.0.2.15 uid 0'
     fi ;;
   *'cmd wifi status') echo 'Wifi is enabled'; echo 'Wifi is not connected' ;;
-  *'emu avd snapshot save '*) mkdir -p "$ANDROID_AVD_HOME/test-qa.avd/snapshots/${@: -1}" ;;
+  *'emu avd snapshot save '*)
+    avd="$(cat "$EVENTS.avd-${2#emulator-}" 2>/dev/null || echo test-qa)"
+    mkdir -p "$ANDROID_AVD_HOME/$avd.avd/snapshots/${@: -1}" ;;
 esac
 exit 0
 """,
@@ -359,7 +366,8 @@ RENDERER
                 ]
                 if expected == "-no-snapshot-load":
                     health = next(i for i, event in enumerate(events) if "lastanr" in event)
-                    self.assertEqual(len(saved), 1)
+                    serials = (self.state / "android-serial").read_text().split()
+                    self.assertEqual(len(saved), len(serials))
                     self.assertLess(health, saved[0])
                 else:
                     self.assertEqual(saved, [])
@@ -379,7 +387,7 @@ RENDERER
                 str(self.sdk),
                 "swiftshader_indirect",
                 "-Vulkan",
-                "test",
+                "1",
             ],
             capture_output=True,
             text=True,
@@ -408,6 +416,56 @@ RENDERER
             order[1], max(i for i, event in enumerate(events[: order[0]]) if "lastanr" in event)
         )
         self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
+
+    def crashing_emulator(self, crashes):
+        self.executable(
+            self.sdk / "emulator/emulator",
+            f"""
+launches="$(cat "$EVENTS.launches" 2>/dev/null || echo 0)"
+echo $((launches + 1)) > "$EVENTS.launches"
+if ((launches < {crashes})); then echo "segfault $launches"; exit 139; fi
+printf '{{"args": "%s"}}\\n' "$*" >> "$EVENTS"
+""",
+        )
+
+    def test_an_emulator_that_exits_before_boot_is_relaunched_once(self):
+        self.prepare_start()
+        self.crashing_emulator(1)
+        result = self.run_script("android-env.sh", "start", BAUKIT_QA_ANDROID_EMULATORS="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        relaunch = "emulator for emulator-5556 exited before boot; relaunching it once"
+        self.assertIn(relaunch, result.stderr)
+        self.assertEqual(Path(f"{self.events}.launches").read_text().strip(), "2")
+        self.assertEqual((self.state / "android-serial").read_text(), "emulator-5556\n")
+        self.assertIn("segfault 0", (self.state / "android-emulator.log.crashed").read_text())
+        self.assertEqual(self.run_script("android-env.sh", "stop").returncode, 0)
+
+    def test_an_emulator_that_exits_twice_before_boot_fails_the_start(self):
+        self.prepare_start()
+        self.crashing_emulator(2)
+        result = self.run_script("android-env.sh", "start", BAUKIT_QA_ANDROID_EMULATORS="1")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stderr.count("relaunching it once"), 1)
+        self.assertIn("Android emulator emulator-5556 did not boot", result.stderr)
+        self.assertEqual(Path(f"{self.events}.launches").read_text().strip(), "2")
+
+    def test_a_boot_timeout_is_not_relaunched(self):
+        self.prepare_start()
+        self.executable(
+            self.sdk / "emulator/emulator",
+            'echo launch >> "$EVENTS.launches"\nexec sleep 30\n',
+        )
+        result = self.run_script(
+            "android-env.sh",
+            "start",
+            BAUKIT_QA_ANDROID_EMULATORS="1",
+            BAUKIT_QA_BOOT_TIMEOUT_SECONDS="1",
+            BAUKIT_QA_POLL_SECONDS="0.1",
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertNotIn("relaunching", result.stderr)
+        self.assertIn("did not boot", result.stderr)
+        self.assertEqual(Path(f"{self.events}.launches").read_text(), "launch\n")
 
     def test_emulators_keep_the_default_network_without_android_wifi(self):
         self.prepare_start()
@@ -471,7 +529,7 @@ RENDERER
         events = [
             event for event in self.events.read_text().splitlines() if "emulator-5556" in event
         ]
-        events = events[: next(i for i, event in enumerate(events) if "emu kill" in event)]
+        events = events[: next(i for i, event in enumerate(events) if "snapshot save" in event)]
         boot = next(i for i, event in enumerate(events) if "getprop" in event)
         idle = [i for i, event in enumerate(events) if "dumpsys window displays" in event]
         health = next(i for i, event in enumerate(events) if "logcat" in event)
@@ -501,42 +559,6 @@ RENDERER
                 self.assertIn(f"adb -s {serial} install -r", self.events.read_text())
                 self.attached.touch()
                 self.run_script("android-env.sh", "stop")
-
-    def test_emulator_count_comes_from_manifest_and_extra_emulators_are_read_only(self):
-        self.prepare_start()
-        port = free_console_ports(3)
-        serials = [f"emulator-{port + offset}" for offset in (0, 2, 4)]
-        (self.root / "baukit.toml").write_text(
-            f"[quality]\nandroid_emulator_port = {port}\nandroid_emulators = 3\n"
-        )
-        self.executable(
-            self.sdk / "emulator/emulator",
-            '{ flock 9; printf \'{"args": "%s"}\\n\' "$*" >> "$EVENTS"; } 9>"$EVENTS.lock"\n',
-        )
-        result = self.run_script("android-env.sh", "start")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(
-            (self.state / "android-serial").read_text(),
-            "".join(f"{serial}\n" for serial in serials),
-        )
-        events = self.events.read_text().splitlines()
-        launches = [json.loads(event)["args"] for event in events if event.startswith("{")]
-        self.assertEqual(len(launches), 4)
-        self.assertNotIn("-read-only", launches[0])
-        self.assertIn("-no-snapshot-load", launches[0])
-        kill = next(i for i, event in enumerate(events) if f"{serials[0]} emu kill" in event)
-        save = next(i for i, event in enumerate(events) if "snapshot save" in event)
-        self.assertLess(save, kill)
-        for launch in launches[1:]:
-            self.assertIn("-read-only", launch)
-            self.assertIn("-snapshot baukit-clean", launch)
-        for serial in serials:
-            self.assertIn(f"adb -s {serial} install -r", self.events.read_text())
-            self.assertTrue(any(serial in event and "lastanr" in event for event in events), serial)
-        self.assertEqual(
-            self.run_script("android-env.sh", "start", BAUKIT_QA_ANDROID_EMULATORS="0").returncode,
-            2,
-        )
 
     def sharded(self, maestro, **environment):
         (self.state / "android-owned").touch()
