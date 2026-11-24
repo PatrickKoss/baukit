@@ -98,7 +98,7 @@ stop_emulator() {
   fi
   owned_avd="$(adb_bounded -s "$owned_serial" emu avd name)" || return
   owned_avd="$(printf '%s\n' "$owned_avd" | tr -d '\r' | sed -n '1p')"
-  [[ "$owned_avd" == "$expected_avd" ]] || {
+  [[ "$owned_avd" == "$expected_avd" || "$owned_avd" =~ ^"$expected_avd"-[1-9][0-9]*$ ]] || {
     echo "qa: refusing to stop $owned_serial because it belongs to '$owned_avd'" >&2
     return 1
   }
@@ -250,10 +250,51 @@ close_inherited_fds() {
   done
 }
 
+avd_for_index() {
+  if (($1 == 0)); then
+    printf '%s\n' "$avd_name"
+  else
+    printf '%s-%s\n' "$avd_name" "$1"
+  fi
+}
+
+select_avd() {
+  index_avd="$(avd_for_index "$1")"
+  avd_dir="$avd_home/$index_avd.avd"
+  snapshot_name="$(python3 "$root/mobile/scripts/qa/android-adb.py" --snapshot-name "$avd_dir/config.ini" "$sdk_root" "$gpu_mode" "$emulator_features" "$snapshot_schema")"
+  snapshot_dir="$avd_dir/snapshots/$snapshot_name"
+  snapshot_ready="$avd_dir/$snapshot_name.ready"
+}
+
+# Concurrent -read-only instances of one AVD crash in the emulator's disk re-open path, so
+# every extra emulator boots its own AVD, cloned from the base AVD's config.ini.
+ensure_avd_clone() {
+  local clone base_dir="$avd_home/$avd_name.avd" clone_dir
+  clone="$(avd_for_index "$1")"
+  clone_dir="$avd_home/$clone.avd"
+  [[ -f "$base_dir/config.ini" ]] || { echo "qa: AVD '$avd_name' has no config.ini; run 'make qa-android-setup'" >&2; exit 1; }
+  if cmp -s "$base_dir/config.ini" "$clone_dir/baukit-base-config.ini"; then
+    return 0
+  fi
+  if [[ -d "$clone_dir" ]]; then
+    echo "qa: recreating AVD '$clone' because '$avd_name' changed its config"
+    rm -rf "$clone_dir"
+  fi
+  mkdir -p "$clone_dir"
+  cp "$base_dir/config.ini" "$clone_dir/config.ini"
+  {
+    echo "avd.ini.encoding=UTF-8"
+    echo "path=$clone_dir"
+    echo "path.rel=avd/$clone.avd"
+    grep '^target=' "$avd_home/$avd_name.ini" || true
+  } >"$avd_home/$clone.ini"
+  cp "$base_dir/config.ini" "$clone_dir/baukit-base-config.ini"
+}
+
 launch_emulator() {
   local index="$1" relaunch="${2:-}" port=$((emulator_port + 2 * $1)) log="$state_dir/android-emulator.log"
   local emulator_args=(
-    -avd "$avd_name"
+    -avd "$index_avd"
     -port "$port"
     -no-snapshot-save
     -no-audio
@@ -267,9 +308,6 @@ launch_emulator() {
     emulator_args+=(-snapshot "$snapshot_name")
   else
     emulator_args+=(-no-snapshot-load)
-  fi
-  if ((emulator_count > 1)) && [[ -f "$snapshot_ready" ]]; then
-    emulator_args+=(-read-only)
   fi
   if ((index > 0)); then
     log="$state_dir/android-emulator-$port.log"
@@ -302,6 +340,7 @@ wait_for_emulator_boot() {
   if ((status == 1)) && [[ "$device" == emulator-* && -z "${relaunched_emulators[$device]:-}" ]]; then
     relaunched_emulators[$device]=1
     echo "qa: emulator for $device exited before boot; relaunching it once" >&2
+    select_avd "$(((${device#emulator-} - emulator_port) / 2))"
     launch_emulator "$(((${device#emulator-} - emulator_port) / 2))" relaunch
     status=0
     python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-boot "$adb" "$device" "$(emulator_pid "$device")" || status=$?
@@ -355,16 +394,17 @@ lock_snapshot() {
 }
 
 delete_stale_snapshot_tags() {
-  local listing tag
+  local serial="$1" listing tag
   listing="$(adb_bounded -s "$serial" emu avd snapshot list)" || return
   while IFS= read -r tag; do
     adb_bounded -s "$serial" emu avd snapshot delete "$tag" >/dev/null || return
     echo "qa: deleted stale qcow2 snapshot tag $tag"
-  done < <(printf '%s\n' "$listing" | python3 "$root/mobile/scripts/qa/android-adb.py" --stale-snapshot-tags "$avd_dir" "$snapshot_name" "$avd_name")
+  done < <(printf '%s\n' "$listing" | python3 "$root/mobile/scripts/qa/android-adb.py" --stale-snapshot-tags "$avd_dir" "$snapshot_name" "$index_avd")
 }
 
 save_snapshot() {
-  launch_emulator 0
+  local index="$1" serial="${serials[$1]}"
+  launch_emulator "$index"
   await_emulator "$serial"
   python3 "$root/mobile/scripts/qa/android-adb.py" --settle "$adb" "$serial" || exit 1
   python3 "$root/mobile/scripts/qa/android-adb.py" --check-health "$adb" "$serial" "$state_dir/android-health.log"
@@ -373,47 +413,42 @@ save_snapshot() {
   adb_bounded -s "$serial" emu avd snapshot save "$snapshot_name" >/dev/null
   touch "$snapshot_ready"
   echo "qa: saved quick-boot snapshot $snapshot_name"
-  python3 "$root/mobile/scripts/qa/android-adb.py" --prune-snapshots "$avd_dir" "$snapshot_name" "$avd_name"
-  delete_stale_snapshot_tags
-  if ((emulator_count > 1)); then
-    adb_bounded -s "$serial" emu kill >/dev/null
-    python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-stop "$adb" "$serial" "$(emulator_pid "$serial")"
-    rm -f "$state_dir/android-emulator-${serial#emulator-}.pid"
-    : > "$state_dir/android-serial"
-  fi
+  python3 "$root/mobile/scripts/qa/android-adb.py" --prune-snapshots "$avd_dir" "$snapshot_name" "$index_avd"
+  delete_stale_snapshot_tags "$serial"
 }
 
 boot_emulators() {
   local index device
+  local -A awaited=()
   mkdir -p "$state_dir"
   trap stop_started_emulators_on_failure EXIT
-  avd_dir="$avd_home/$avd_name.avd"
   emulator_features="-Vulkan"
   if ((android_wifi)); then
     emulator_features="$emulator_features,-WiFiPacketStream"
   fi
-  snapshot_name="$(python3 "$root/mobile/scripts/qa/android-adb.py" --snapshot-name "$avd_dir/config.ini" "$sdk_root" "$gpu_mode" "$emulator_features" "$snapshot_schema")"
-  snapshot_dir="$avd_dir/snapshots/$snapshot_name"
-  snapshot_ready="$avd_dir/$snapshot_name.ready"
   mkdir -p "$state_dir/renderer"
   printf '[Processor]\nThreadCount=%s\n[Testing]\nDisableServer=1\n' "$renderer_threads" > "$state_dir/renderer/SwiftShader.ini"
   : > "$state_dir/android-serial"
   printf '%s\n' "$avd_name" > "$state_dir/android-avd-name"
   touch "$state_dir/android-owned"
-  if [[ ! -f "$snapshot_ready" ]]; then
+  for ((index = 0; index < emulator_count; index++)); do
+    ((index == 0)) || ensure_avd_clone "$index"
+    select_avd "$index"
+    if [[ -f "$snapshot_ready" ]]; then
+      launch_emulator "$index"
+      continue
+    fi
     lock_snapshot
-    if [[ ! -f "$snapshot_ready" ]]; then
-      save_snapshot
+    if [[ -f "$snapshot_ready" ]]; then
+      launch_emulator "$index"
+    else
+      save_snapshot "$index"
+      awaited[${serials[index]}]=1
     fi
     exec 9>&-
-  fi
-  for ((index = 0; index < emulator_count; index++)); do
-    if ((index > 0)) || [[ ! -s "$state_dir/android-serial" ]]; then
-      launch_emulator "$index"
-    fi
   done
   for device in "${serials[@]}"; do
-    await_emulator "$device"
+    [[ -n "${awaited[$device]:-}" ]] || await_emulator "$device"
   done
 }
 
