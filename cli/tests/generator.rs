@@ -1419,6 +1419,13 @@ fn generated_keycloak_policy_and_reconciler_fixtures_pass() -> anyhow::Result<()
     selected.auth = Some(AuthProvider::Oidc);
     selected.baukit_path = Some(baukit_path);
     let root = generate_new(&selected)?;
+    for file in ["realm.json", "reconcile.json"] {
+        assert!(
+            fs::read_to_string(root.join("keycloak").join(file))?
+                .contains("\"keycloak-tools-dev://oauth\""),
+            "{file} lacks the dev variant redirect"
+        );
+    }
 
     for arguments in [
         vec!["-m", "unittest", "discover", "-s", "scripts/tests"],

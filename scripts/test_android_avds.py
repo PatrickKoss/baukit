@@ -32,8 +32,13 @@ class AndroidAvdTests(unittest.TestCase):
         launches = [json.loads(event)["args"] for event in events if event.startswith("{")]
         self.assertEqual(
             sorted(launch.split("-avd ")[1].split()[0] for launch in launches),
-            ["test-qa", "test-qa-1", "test-qa-2"],
+            ["test-qa", "test-qa", "test-qa-1", "test-qa-2"],
         )
+        cold = [launch for launch in launches if "-no-snapshot-load" in launch]
+        self.assertEqual(len(cold), 1)
+        self.assertIn("-avd test-qa ", cold[0])
+        self.assertIn("seeded test-qa-1.avd", result.stdout)
+        self.assertIn("seeded test-qa-2.avd", result.stdout)
         for launch in launches:
             self.assertNotIn("-read-only", launch)
         for serial in serials:
@@ -42,6 +47,20 @@ class AndroidAvdTests(unittest.TestCase):
         self.assertEqual(
             self.run_script("android-env.sh", "start", BAUKIT_QA_ANDROID_EMULATORS="0").returncode,
             2,
+        )
+
+    def test_start_waits_for_host_load_and_gives_up_without_launching(self):
+        self.prepare_start()
+        result = self.run_script(
+            "android-env.sh",
+            "start",
+            BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE="0.000001",
+            BAUKIT_QA_ANDROID_LOAD_WAIT_SECONDS="0.01",
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("host load stayed above", result.stderr)
+        self.assertFalse(
+            any(event.startswith("{") for event in self.events.read_text().splitlines())
         )
 
     def test_extra_avd_is_cloned_once_and_recreated_on_config_change(self):

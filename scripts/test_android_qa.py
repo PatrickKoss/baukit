@@ -107,6 +107,7 @@ class AndroidQaTests(unittest.TestCase):
             "BAUKIT_QA_STOP_TIMEOUT_SECONDS": "0.5",
             "BAUKIT_QA_SKIP_BUILD": "1",
             "BAUKIT_QA_POLL_SECONDS": "0",
+            "BAUKIT_QA_ANDROID_MAX_LOAD_PER_CORE": "1000",
         }
         self.environment.pop("BAUKIT_QA_RENDERER_THREADS", None)
         base_avd = self.root / "avd/test-qa.avd"
@@ -366,8 +367,7 @@ RENDERER
                 ]
                 if expected == "-no-snapshot-load":
                     health = next(i for i, event in enumerate(events) if "lastanr" in event)
-                    serials = (self.state / "android-serial").read_text().split()
-                    self.assertEqual(len(saved), len(serials))
+                    self.assertEqual(len(saved), 1)
                     self.assertLess(health, saved[0])
                 else:
                     self.assertEqual(saved, [])
@@ -387,7 +387,7 @@ RENDERER
                 str(self.sdk),
                 "swiftshader_indirect",
                 "-Vulkan",
-                "1",
+                "2",
             ],
             capture_output=True,
             text=True,

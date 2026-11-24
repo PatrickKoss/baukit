@@ -12,6 +12,6 @@
   "redirectUris": {
     "maximumPerClient": 8,
     "allowDevelopmentLoopbackHttp": true,
-    "allowedCustomSchemes": [{% if context.mobile %}"{{ context.app_name }}"{% endif %}]
+    "allowedCustomSchemes": [{% if context.mobile %}"{{ context.app_name }}", "{{ context.app_name }}-dev"{% endif %}]
   }
 }
