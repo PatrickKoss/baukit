@@ -1,9 +1,11 @@
 import type { ExpoConfig } from 'expo/config';
 
-export const LAB_DOMAIN = 'lab.patrick-koss.de';
 export const DEFAULT_VERSION_CODE = 1;
 const MAX_VERSION_CODE = 2_100_000_000;
 const VARIANTS = ['dev', 'lab'] as const;
+const LAB_DOMAIN_VARIABLE = 'BAUKIT_LAB_DOMAIN';
+const HOSTNAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/u;
+export const DEV_SCHEME_SUFFIX = '-dev';
 const DEV_BADGE_PLUGIN = './plugins/with-variant-badge.cjs';
 
 export type AppVariant = (typeof VARIANTS)[number];
@@ -12,6 +14,7 @@ type BuildEnvironment = Readonly<Record<string, string | undefined>>;
 
 export interface BuildVariant {
   readonly variant: AppVariant;
+  readonly labDomain: string;
   readonly apiUrl: string;
   readonly versionCode: number;
   readonly oidcIssuer: string;
@@ -37,8 +40,19 @@ function httpsUrl(name: string, value: string): string {
   return value;
 }
 
-function apiUrlFor(variant: AppVariant, environment: BuildEnvironment, productName: string): string {
-  if (variant === 'dev') return `https://${productName}-testing.${LAB_DOMAIN}`;
+function labDomainFrom(environment: BuildEnvironment): string {
+  const domain = text(environment, LAB_DOMAIN_VARIABLE);
+  if (domain === '') {
+    throw new Error(`APP_VARIANT builds need ${LAB_DOMAIN_VARIABLE}, the lab's DNS name such as lab.example.com`);
+  }
+  if (!HOSTNAME.test(domain)) {
+    throw new Error(`${LAB_DOMAIN_VARIABLE} must be a lowercase DNS name without scheme or path, got "${domain}"`);
+  }
+  return domain;
+}
+
+function apiUrlFor(variant: AppVariant, environment: BuildEnvironment, productName: string, labDomain: string): string {
+  if (variant === 'dev') return `https://${productName}-testing.${labDomain}`;
   const configured = text(environment, 'EXPO_PUBLIC_API_URL');
   if (configured === '') {
     throw new Error('APP_VARIANT=lab needs EXPO_PUBLIC_API_URL, the https origin of the product on the production cluster');
@@ -64,19 +78,21 @@ export function buildVariantFrom(environment: BuildEnvironment, productName: str
   if (environment['BAUKIT_QA_BUILD'] === '1') {
     throw new Error('APP_VARIANT and BAUKIT_QA_BUILD=1 cannot be combined: QA builds sign in against the local realm');
   }
+  const labDomain = labDomainFrom(environment);
   return {
     variant,
-    apiUrl: apiUrlFor(variant, environment, productName),
+    labDomain,
+    apiUrl: apiUrlFor(variant, environment, productName, labDomain),
     versionCode: versionCodeFrom(environment),
     oidcIssuer: httpsUrl(
       'EXPO_PUBLIC_LAB_OIDC_ISSUER',
-      text(environment, 'EXPO_PUBLIC_LAB_OIDC_ISSUER') || `https://id.${LAB_DOMAIN}/realms/${productName}`,
+      text(environment, 'EXPO_PUBLIC_LAB_OIDC_ISSUER') || `https://id.${labDomain}/realms/${productName}`,
     ),
     oidcClientId: text(environment, 'EXPO_PUBLIC_LAB_OIDC_CLIENT_ID') || `${productName}-mobile`,
   };
 }
 
-/** Applies a variant's identity, version code and API URL; `signIn` lands in `extra`. */
+/** Applies a variant's identity, deep-link scheme, version code and API URL; `signIn` lands in `extra`. */
 export function withBuildVariant(
   config: ExpoConfig,
   build: BuildVariant,
@@ -89,6 +105,7 @@ export function withBuildVariant(
   return {
     ...config,
     name: dev ? `${config.name} Dev` : config.name,
+    ...(dev && typeof config.scheme === 'string' ? { scheme: `${config.scheme}${DEV_SCHEME_SUFFIX}` } : {}),
     plugins: [...(config.plugins ?? []), ...(dev ? [DEV_BADGE_PLUGIN] : [])],
     extra: { ...config.extra, apiBaseUrl: build.apiUrl, ...signIn },
     ios: {

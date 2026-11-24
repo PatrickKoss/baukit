@@ -9,6 +9,7 @@ jest.mock('expo-constants', () => ({
   __esModule: true,
   default: {
     expoConfig: {
+      scheme: 'demo-dev',
       extra: { labOidcIssuer: 'https://id.lab.example.test/realms/demo', labOidcClientId: 'demo-mobile' },
     },
   },
@@ -122,9 +123,9 @@ describe('lab realm sign-in adapter', () => {
     expect(calls[0]?.url).toBe('https://id.lab.example.test/realms/demo/.well-known/openid-configuration');
     expect(mockBrowser.requests[0]).toMatchObject({
       clientId: 'demo-mobile',
-      redirectUri: expect.stringMatching(/:\/\/oauth$/u),
+      redirectUri: 'demo-dev://oauth',
       usePKCE: true,
-      scopes: ['openid'],
+      scopes: ['openid', 'offline_access'],
     });
     const token = new URLSearchParams(calls.find(({ url }) => url.endsWith('/token'))?.body);
     expect(token.get('grant_type')).toBe('authorization_code');

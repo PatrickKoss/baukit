@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- The mobile template has `dev` and `lab` build variants behind `APP_VARIANT`, with their own package suffix, name, icon badge, version code, API URL and lab realm sign-in. Unset, the generated config is unchanged. `src/sign-in/lab.*` renders only for Clerk and WorkOS products, next to the local adapter.
+- The mobile template has `dev` and `lab` build variants behind `APP_VARIANT`, with their own package suffix, name, scheme, icon badge, version code, API URL and lab realm sign-in. The lab's DNS name comes from `BAUKIT_LAB_DOMAIN`. Unset, the generated config is unchanged. `src/sign-in/lab.*` renders only for Clerk and WorkOS products, next to the local adapter.
 
 ## [0.30.1] - 2026-11-24
 

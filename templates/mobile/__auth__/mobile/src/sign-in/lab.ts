@@ -7,6 +7,7 @@ import { Platform } from 'react-native';
 
 import { apiBaseUrl } from '../api-base-url';
 {% endif %}
+import { appScheme } from '../app-scheme';
 import { authStorage } from '../auth-storage';
 import { PRODUCT_NAME } from '../product';
 {% if context.pwa and not context.web %}import { browserSignInClient } from './browser-client';
@@ -28,9 +29,9 @@ function nativeClient(): SignInClient {
     {
       issuer,
       clientId,
-      redirectUri: AuthSession.makeRedirectUri({ scheme: PRODUCT_NAME, path: 'oauth' }),
+      redirectUri: AuthSession.makeRedirectUri({ scheme: appScheme(), path: 'oauth' }),
       scopes: [],
-      offlineAccess: false,
+      offlineAccess: true,
       storageKeyPrefix: `${PRODUCT_NAME}.lab-oidc`,
     },
     {
@@ -50,7 +51,7 @@ function browserClient(): SignInClient {
         clientId: `${PRODUCT_NAME}-web`,
         redirectUri: `${window.location.origin}/`,
         scopes: [],
-        offlineAccess: false,
+        offlineAccess: true,
         storageKeyPrefix: `${PRODUCT_NAME}:lab-oidc`,
       }),
   );

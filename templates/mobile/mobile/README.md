@@ -61,11 +61,11 @@ Before claiming native accessibility, follow the VoiceOver and TalkBack release 
 
 ## Build variants
 
-`APP_VARIANT` picks a lab build; leave it unset for the plain build.
+`APP_VARIANT` picks a lab build; leave it unset for the plain build. A variant needs `BAUKIT_LAB_DOMAIN`, the lab's DNS name without scheme or path, for example `lab.example.com`.
 
-- `APP_VARIANT=dev` installs next to the plain app as `<package>.dev`, named "{{ context.app_name }} Dev" with a dot on the launcher icon, and talks to `https://{{ context.app_name }}-testing.lab.patrick-koss.de`.
-- `APP_VARIANT=lab` keeps the plain package and name and needs `EXPO_PUBLIC_API_URL`, an https origin.
-{% if context.auth_enabled %}- Both sign in against `https://id.lab.patrick-koss.de/realms/{{ context.app_name }}` with the client `{{ context.app_name }}-mobile`. `EXPO_PUBLIC_LAB_OIDC_ISSUER` and `EXPO_PUBLIC_LAB_OIDC_CLIENT_ID` override them.
+- `APP_VARIANT=dev` installs next to the plain app as `<package>.dev`, named "{{ context.app_name }} Dev" with a dot on the launcher icon. It registers the scheme `{{ context.app_name }}-dev` and talks to `https://{{ context.app_name }}-testing.<BAUKIT_LAB_DOMAIN>`.
+- `APP_VARIANT=lab` keeps the plain package, name and scheme and needs `EXPO_PUBLIC_API_URL`, an https origin.
+{% if context.auth_enabled %}- Both sign in against `https://id.<BAUKIT_LAB_DOMAIN>/realms/{{ context.app_name }}` with the client `{{ context.app_name }}-mobile` and ask for `offline_access`, so a phone keeps its session past the realm's SSO idle timeout. `EXPO_PUBLIC_LAB_OIDC_ISSUER` and `EXPO_PUBLIC_LAB_OIDC_CLIENT_ID` override the issuer and client. The realm's mobile client must allow the redirect URIs `{{ context.app_name }}://oauth` (lab) and `{{ context.app_name }}-dev://oauth` (dev), and the client's users need the `offline_access` role, which Keycloak's default roles include.
 {% endif %}- `BAUKIT_VERSION_CODE`, else `GITHUB_RUN_NUMBER`, sets the Android `versionCode` and iOS build number; a local build uses 1.
 
 A variant cannot be combined with `BAUKIT_QA_BUILD=1`.
