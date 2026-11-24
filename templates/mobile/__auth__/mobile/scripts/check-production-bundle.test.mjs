@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  bundleMarkers,
   decodeMappings,
   developerEnvironment,
   isProductSource,
@@ -49,6 +50,17 @@ test("Keycloak markers, realm URLs and the local adapter module fail anywhere", 
   assert.deepEqual(scanBundleText("label='Sign in with local Keycloak'", library), ["Keycloak adapter"]);
   assert.deepEqual(scanBundleText("i='https://login.example/realms/app'", library), ["local realm URL"]);
   assert.deepEqual(scanBundleText("x=1", mapFor(["/src/sign-in/local.ts"], "AAAA")), ["Keycloak adapter module"]);
+});
+
+test("an APP_VARIANT bundle may carry the lab realm URL but still fails loopback URLs and the local adapter", () => {
+  const markers = bundleMarkers("dev");
+  const app = mapFor([appSource], "AAAA");
+  assert.deepEqual(scanBundleText("i='https://id.lab.example.test/realms/app'", app, markers), []);
+  assert.deepEqual(scanBundleText("a='https://app-testing.lab.example.test'", app, markers), []);
+  assert.deepEqual(scanBundleText("i='http://localhost:8180/realms/app'", app, markers), [`loopback URL from ${appSource}`]);
+  assert.deepEqual(scanBundleText("label='Sign in with local Keycloak'", app, markers), ["Keycloak adapter"]);
+  assert.deepEqual(scanBundleText("x=1", mapFor(["/src/sign-in/local.ts"], "AAAA"), markers), ["Keycloak adapter module"]);
+  assert.deepEqual(bundleMarkers(""), bundleMarkers());
 });
 
 test("a WorkOS or Clerk secret API key fails anywhere", () => {

@@ -15,7 +15,7 @@
 {% if context.pwa and not context.web %}    "csp": "node scripts/csp.mjs dist",
 {% endif %}    "typecheck": "tsc --noEmit",
     "lint": "eslint app app.config.ts src scripts --max-warnings=0",
-    "test": "jest && node --test scripts/build-sw.test.mjs scripts/qa-build-flag.test.mjs scripts/csp.test.mjs",
+    "test": "jest && node --test scripts/build-sw.test.mjs scripts/qa-build-flag.test.mjs scripts/variant-badge.test.mjs scripts/csp.test.mjs",
     "test:coverage": "jest --coverage"
   },
   "dependencies": {

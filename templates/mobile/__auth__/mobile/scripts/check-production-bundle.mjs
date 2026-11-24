@@ -6,11 +6,9 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseEnv } from "node:util";
 
-const BUNDLE_MARKERS = [
-  { name: "Keycloak adapter", pattern: /keycloak|local-oidc/giu },
-  { name: "local realm URL", pattern: /\/realms\//gu },
-  { name: "secret API key (sk_)", pattern: /\bsk_(?:test|live)_[A-Za-z0-9]{16,}/gu },
-];
+const KEYCLOAK_MARKER = { name: "Keycloak adapter", pattern: /keycloak|local-oidc/giu };
+const REALM_MARKER = { name: "local realm URL", pattern: /\/realms\//gu };
+const SECRET_KEY_MARKER = { name: "secret API key (sk_)", pattern: /\bsk_(?:test|live)_[A-Za-z0-9]{16,}/gu };
 const PRODUCT_MARKERS = [{ name: "loopback URL", pattern: /https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])/giu }];
 const LOCAL_ADAPTER_SOURCE = /(?:^|\/)src\/sign-in\/local\.[cm]?[jt]sx?$/u;
 const PLATFORMS = ["android", "ios"{% if context.pwa and not context.web %}, "web"{% endif %}];
@@ -74,8 +72,13 @@ function position(text, index) {
   return { line, column: index - before.lastIndexOf("\n") - 1 };
 }
 
-export function scanBundleText(text, map) {
-  const findings = [...new Set(matches(text, BUNDLE_MARKERS).map(({ name }) => name))];
+/** An `APP_VARIANT` build signs in against the https lab realm, so only a plain build rejects realm URLs. */
+export function bundleMarkers(appVariant = "") {
+  return appVariant === "" ? [KEYCLOAK_MARKER, REALM_MARKER, SECRET_KEY_MARKER] : [KEYCLOAK_MARKER, SECRET_KEY_MARKER];
+}
+
+export function scanBundleText(text, map, markers = bundleMarkers()) {
+  const findings = [...new Set(matches(text, markers).map(({ name }) => name))];
   if (map.sources.some((source) => LOCAL_ADAPTER_SOURCE.test(source))) findings.push("Keycloak adapter module");
   const lines = decodeMappings(map.mappings);
   for (const { name, index } of matches(text, PRODUCT_MARKERS)) {
@@ -108,7 +111,7 @@ async function sourceMap(file, path, copiedPublicFiles) {
   }
 }
 
-export async function scanExport(directory, copiedPublicFiles = new Set()) {
+export async function scanExport(directory, copiedPublicFiles = new Set(), markers = bundleMarkers()) {
   const entries = await readdir(directory, { recursive: true, withFileTypes: true });
   const bundles = entries.filter((entry) => entry.isFile() && entry.name.endsWith(".js"));
   if (bundles.length === 0) throw new Error(`no JavaScript bundle in ${directory}`);
@@ -117,7 +120,7 @@ export async function scanExport(directory, copiedPublicFiles = new Set()) {
     const file = join(entry.parentPath, entry.name);
     const map = await sourceMap(file, relative(directory, file), copiedPublicFiles);
     const text = (await readFile(file, "utf8")).replace(SOURCE_MAP_COMMENT, "");
-    for (const finding of scanBundleText(text, map)) {
+    for (const finding of scanBundleText(text, map, markers)) {
       findings.push(`${relative(directory, file)}: ${finding}`);
     }
   }
@@ -148,24 +151,27 @@ async function main() {
   try {
     const environment = productionEnvironment(await developerEnvironment(mobileDirectory), cacheDir);
     const copiedPublicFiles = await publicFiles(join(mobileDirectory, "public"));
+    const appVariant = environment.APP_VARIANT ?? "";
+    const markers = bundleMarkers(appVariant);
+    const build = appVariant === "" ? "production" : `production APP_VARIANT=${appVariant}`;
     const findings = [];
     for (const platform of PLATFORMS) {
       const platformDir = join(outDir, platform);
-      const build = spawnSync(
+      const exported = spawnSync(
         join(mobileDirectory, "node_modules", ".bin", "expo"),
         ["export", "--platform", platform, "--clear", "--no-bytecode", "--source-maps", "--output-dir", platformDir],
         { cwd: mobileDirectory, stdio: ["ignore", "ignore", "inherit"], env: environment },
       );
-      if (build.status !== 0) throw new Error(`production ${platform} export failed`);
-      for (const finding of await scanExport(platformDir, copiedPublicFiles)) findings.push(`${platform}/${finding}`);
+      if (exported.status !== 0) throw new Error(`${build} ${platform} export failed`);
+      for (const finding of await scanExport(platformDir, copiedPublicFiles, markers)) findings.push(`${platform}/${finding}`);
     }
     if (findings.length > 0) {
-      console.error(`production bundle carries local sign-in code or a secret key:\n${findings.join("\n")}`);
+      console.error(`${build} bundle carries local sign-in code or a secret key:\n${findings.join("\n")}`);
       process.exitCode = 1;
       return;
     }
     console.log(
-      `production ${PLATFORMS.join(", ")} bundles carry no Keycloak adapter, local realm URL, product loopback URL or secret API key`,
+      `${build} ${PLATFORMS.join(", ")} bundles carry no Keycloak adapter, ${appVariant === "" ? "local realm URL, " : ""}product loopback URL or secret API key`,
     );
   } finally {
     await rm(outDir, { recursive: true, force: true });

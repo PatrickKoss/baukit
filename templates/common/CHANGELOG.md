@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+{% if context.mobile %}- `mobile/app.config.ts` reads `APP_VARIANT=dev|lab`. `dev` appends `.dev` to the Android package and iOS bundle identifier, " Dev" to the name, layers a dot over the launcher icon through `plugins/with-variant-badge.cjs` and points the API at `https://<app>-testing.lab.patrick-koss.de`. `lab` keeps the plain identity and needs an https `EXPO_PUBLIC_API_URL`. Both take the version code from `BAUKIT_VERSION_CODE` or `GITHUB_RUN_NUMBER` (default 1){% if context.auth_enabled %} and sign in against the lab realm `https://id.lab.patrick-koss.de/realms/<app>`, overridable with `EXPO_PUBLIC_LAB_OIDC_ISSUER` and `EXPO_PUBLIC_LAB_OIDC_CLIENT_ID`{% endif %}. Without `APP_VARIANT` the config is unchanged. To adopt it, copy `src/build-variant.ts`, `src/build-variant.test.ts`, `src/app-config-variant.test.ts`, `plugins/with-variant-badge.cjs` and `scripts/variant-badge.test.mjs`, add the test to the `test` script, and wrap your `app.config.ts` export as the template does{% if context.auth_enabled and not context.auth_oidc %}. Copy `src/sign-in/lab.ts`, `src/sign-in/lab.test.ts` and the `metro.config.js` resolver, which swaps the local adapter for `lab.ts` whenever `APP_VARIANT` is set; `scripts/check-production-bundle.mjs` then accepts the lab realm URL but still rejects loopback URLs and the local adapter{% endif %}. Run `baukit check template-files --update` after copying.
+
+{% endif %}## [0.30.0] - 2026-11-23
+
 ## [0.30.1] - 2026-11-24
 
 {% if context.mobile %}- Each local Android emulator boots its own writable AVD: index 0 keeps `<avd>`, index N uses `<avd>-N`, created from `<avd>`'s `config.ini` and recreated when that file changes. Extra emulators no longer launch `-read-only` from one shared AVD, which crashed about once in 30 starts. Each AVD saves and keeps one quick-boot snapshot, so an extra AVD costs its own userdata and snapshot on disk, and the first start of an extra emulator cold-boots it. Copy `mobile/scripts/qa/android-env.sh` from the template and run `baukit check template-files --update`.

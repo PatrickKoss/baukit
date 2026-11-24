@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The mobile template has `dev` and `lab` build variants behind `APP_VARIANT`, with their own package suffix, name, icon badge, version code, API URL and lab realm sign-in. Unset, the generated config is unchanged. `src/sign-in/lab.*` renders only for Clerk and WorkOS products, next to the local adapter.
+
 ## [0.30.1] - 2026-11-24
 
 - The doctor failure for a gate without a `deploy-values` step also says that a product overriding `list_steps` in `scripts/quality-gate.local.sh` adds the step line there.

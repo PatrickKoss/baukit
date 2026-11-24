@@ -60,6 +60,17 @@ The generated `.maestro/smoke.yaml` signs in with the local test account{% if no
 
 The Baukit packages come from {{ context.baukit_typescript_dependency_description }} and the generated lockfile makes the first install reproducible. Native compilation is outside the portable CI gates; run `corepack pnpm typecheck`, `corepack pnpm lint`, and `corepack pnpm test`.
 
+## Build variants
+
+`APP_VARIANT` picks a lab build; leave it unset for the plain build.
+
+- `APP_VARIANT=dev` installs next to the plain app as `<package>.dev`, named "{{ context.app_name }} Dev" with a dot on the launcher icon, and talks to `https://{{ context.app_name }}-testing.lab.patrick-koss.de`.
+- `APP_VARIANT=lab` keeps the plain package and name and needs `EXPO_PUBLIC_API_URL`, an https origin.
+{% if context.auth_enabled %}- Both sign in against `https://id.lab.patrick-koss.de/realms/{{ context.app_name }}` with the client `{{ context.app_name }}-mobile`. `EXPO_PUBLIC_LAB_OIDC_ISSUER` and `EXPO_PUBLIC_LAB_OIDC_CLIENT_ID` override them.
+{% endif %}- `BAUKIT_VERSION_CODE`, else `GITHUB_RUN_NUMBER`, sets the Android `versionCode` and iOS build number; a local build uses 1.
+
+A variant cannot be combined with `BAUKIT_QA_BUILD=1`.
+
 ## Purchases
 
 `src/purchases.ts` builds one `PurchaseFlow` from `@baukit/purchases-core`. With `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` or `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` set it uses RevenueCat. Without them it uses the no-op port and the app behaves as before. `AppShell` provides the flow and resets it on sign-out. Call `purchaseFlow().identify(suiteSubject)` after sign-in and replace the standalone entitlement backend when the product joins the suite. Baukit's `docs/platform/mobile-purchases.md` has the full order.
