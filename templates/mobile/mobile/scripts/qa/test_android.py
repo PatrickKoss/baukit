@@ -75,6 +75,11 @@ esac
         config.parent.mkdir(parents=True)
         return config
 
+    def base_avd(self) -> None:
+        config = self.avds / "test-qa.avd/config.ini"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text("hw.device.name=pixel_6\nhw.ramSize=1536\n")
+
     def executable(self, path: Path, content: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("#!/usr/bin/env bash\nset -eu\n" + content)
@@ -763,6 +768,7 @@ fi
     def test_android_setup_is_idempotent_and_prepares_oidc_browser(self) -> None:
         emulator_args = self.root / "emulator-args"
         self.environment["EMULATOR_ARGS"] = str(emulator_args)
+        self.base_avd()
         self.executable(
             self.sdk / "platform-tools/adb",
             r"""
@@ -1140,6 +1146,7 @@ if [[ "$*" == *'emu avd snapshot save '* ]]; then mkdir -p "$ANDROID_AVD_HOME/te
         self.executable(
             self.sdk / "emulator/emulator", 'printf "%s\\n" "$@" -- >> "$EMULATOR_ARGS"\n'
         )
+        self.base_avd()
         self.executable(self.scripts / "services.sh", "exit 0\n")
         apk = self.root / "mobile/android/app/build/outputs/apk/release/app-release.apk"
         apk.parent.mkdir(parents=True)
