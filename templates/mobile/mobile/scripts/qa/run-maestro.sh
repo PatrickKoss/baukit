@@ -213,7 +213,7 @@ stop_maestro() {
   wait "$1" 2>/dev/null || true
 }
 
-run_maestro() {
+run_maestro_once() {
   local label="$1" check="$2" window="$3" last="" now since=$SECONDS started=$SECONDS pid status=0
   local -a targets
   IFS=, read -ra targets <<<"$4"
@@ -247,6 +247,44 @@ run_maestro() {
   done
   wait "$pid" || status=$?
   ((status == 0)) || report_unready_devices "${targets[@]}"
+  return "$status"
+}
+
+# Prints the foreign serial and whether a flow had started when Maestro failed to open it.
+foreign_offline_at_session() {
+  awk -v targets=",$1," '
+    /Command failed \(host:transport:[^)]*\): device offline/ {
+      serial = $0
+      sub(/.*host:transport:/, "", serial)
+      sub(/\).*/, "", serial)
+      if (index(targets, "," serial ",")) exit 1
+      print serial, (started ? "started" : "fresh")
+      found = 1
+      exit 0
+    }
+    !/^[[:space:]]*$/ && !/^Picked up JAVA_TOOL_OPTIONS/ { started = 1 }
+    END { if (!found) exit 1 }
+  ' "$maestro_log"
+}
+
+run_maestro() {
+  local status=0 serial state
+  run_maestro_once "$@" || status=$?
+  ((status != 0)) || return 0
+  read -r serial state < <(foreign_offline_at_session "$4") || return "$status"
+  local offline="qa: foreign $serial went offline on the shared adb server while Maestro 2.8.0 listed every device"
+  if [[ "$state" != fresh ]]; then
+    echo "$offline; a flow had started, so $1 is not retried" >&2
+    return "$status"
+  fi
+  echo "$offline before $1 started; retrying it once" >&2
+  cp "$maestro_log" "$maestro_log.foreign-offline"
+  status=0
+  run_maestro_once "$@" || status=$?
+  ((status != 0)) || return 0
+  if read -r serial state < <(foreign_offline_at_session "$4"); then
+    echo "qa: foreign $serial went offline on the shared adb server while Maestro 2.8.0 listed every device; $1 failed again" >&2
+  fi
   return "$status"
 }
 
