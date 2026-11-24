@@ -201,8 +201,16 @@ step_deploy_values() {
   use_baukit_root
   deploy_tools=${BAUKIT_TOOLS_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/baukit/tools}
   BAUKIT_TOOLS_DIR=$deploy_tools "$baukit_root/scripts/install-deploy-tools.sh" --only helm,kustomize
-  PATH="$deploy_tools/bin:$PATH" python3 "$baukit_root/scripts/check-deploy-values.py" \
+  PATH="$deploy_tools/bin:$PATH" deploy_values_python "$baukit_root/scripts/check-deploy-values.py" \
     . "$baukit_root/deploy/chart/baukit-app"
+}
+
+deploy_values_python() {
+  if [ -f pyproject.toml ] && [ -f uv.lock ]; then
+    uv run --locked --project . python3 "$@"
+  else
+    uv run --no-project --with PyYAML==6.0.3 python3 "$@"
+  fi
 }
 
 step_python_lint() {

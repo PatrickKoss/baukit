@@ -2,7 +2,8 @@
 
 ## [Unreleased]
 
-{% if context.backend %}- `postgres/initdb/10-owner.sql` makes `app` the owner of `current_database()`, not of a fixed name, so a compose stack with another `POSTGRES_DB` can mount the same script. Copy it from the template; existing volumes keep their owner.
+{% if context.quality_strict and context.backend %}- The `deploy-values` gate step runs its check under `uv`: `uv run --locked --project .` when the product has `pyproject.toml` and `uv.lock`, otherwise `uv run --no-project --with PyYAML==6.0.3`, so it no longer needs PyYAML on the system Python. `mise.toml` and the strict CI job install `uv` 0.12.3.
+{% endif %}{% if context.backend %}- `postgres/initdb/10-owner.sql` makes `app` the owner of `current_database()`, not of a fixed name, so a compose stack with another `POSTGRES_DB` can mount the same script. Copy it from the template; existing volumes keep their owner.
 
 {% endif %}
 {% if context.mobile %}- `mobile/scripts/qa/android-env.sh` relaunches an emulator once when its process exits before it boots, which Android emulator 37.3.10 sometimes does with a segfault. The first log stays as `mobile/.qa/android-emulator*.log.crashed`. A boot timeout or a second early exit still fails with "did not boot". Copy the file from the template and run `baukit check template-files --update`.

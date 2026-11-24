@@ -96,7 +96,7 @@ jobs:
           install_args: >-
             aqua:rhysd/actionlint aqua:zizmorcore/zizmor aqua:gitleaks/gitleaks
             aqua:google/osv-scanner aqua:astral-sh/ruff aqua:koalaman/shellcheck
-            aqua:ast-grep/ast-grep{% if context.backend %} aqua:EmbarkStudios/cargo-deny{% endif %}
+            aqua:ast-grep/ast-grep{% if context.backend %} aqua:EmbarkStudios/cargo-deny aqua:astral-sh/uv{% endif %}
 {% if context.backend %}      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           toolchain: nightly

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The strict gate's `deploy-values` step runs under `uv`, in the product's locked project when it has `pyproject.toml` and `uv.lock`, otherwise with a pinned PyYAML.
+- `baukit doctor` applies the `deploy-values` glob rule only to a strict product or one whose gate defines a `deploy-values` step. A gate without the step gets one failure that names `step_deploy_values` in `templates/common/__strict__/scripts/quality-gate.sh` to copy, instead of a failure per glob it cannot satisfy.
 - `baukit doctor` fails when `deploy/gitops/base/chart-source.yaml` sets a `ref.tag` other than `v<template_version>`, or none, and names the file. Three products re-pinned to 0.30.0 kept `v0.28.7`, so Flux rendered them with the old chart while doctor and `check template-files` passed. Products without that file skip the check.
 - `baukit check template-files --update` stops tracking `scripts/tests/test_<name>.py` when the product owns `scripts/<name>.py` (the script exists but is not tracked) and notes it. A template change to the test, such as a new Keycloak environment class in `test_keycloak_policy.py`, otherwise broke a product whose `keycloak_policy.py` had diverged.
 
