@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+{% if context.mobile %}- With `BAUKIT_QA_DEVICE_PORT_FORWARD` set to a kube context, `mobile/scripts/qa/android-env.sh` leases emulators through `pruefstand lease --port-forward <context>` running in the background, so a host outside the cluster network gets `127.0.0.1:<port>` serials. The CLI heartbeats and releases its own leases on SIGTERM, which `stop`, a failed `start` or the death of the calling shell sends. Before, passing `--port-forward` in `BAUKIT_QA_DEVICE_BROKER_ARGS` hung `start`. Copy `mobile/scripts/qa/android-broker.sh`.
+{% endif %}
 ## [0.30.2] - 2026-11-24
 
 {% if context.mobile and context.auth_enabled %}- `mobile/scripts/qa/android-env.sh` starts Chrome once on every emulator before the first flow (`am start -W` on `about:blank`, then Home) and once while it saves the quick-boot snapshot, so the snapshot holds a Chrome profile that has done its first start. Chrome's first start in a fresh profile kept its main thread busy for seconds; inside the login flow that work landed on the Custom Tab's first input, and at host load 60 to 80 Android raised `Input dispatching timed out` for `CustomTabActivity` after 5 s. `snapshot_schema` goes to 2, so the next start saves a new snapshot once.
