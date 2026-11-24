@@ -160,7 +160,7 @@ await_forwarded_serials() {
   pid="$(<"$forward_pid")"
   limit="$(duration_seconds "${BAUKIT_QA_DEVICE_LEASE_WAIT:-10m}")" || exit
   local deadline=$((SECONDS + limit + start))
-  while (($(forwarded_serial_count) < emulator_count)); do
+  while (($(forwarded_serial_count) < ${emulator_count:?})); do
     if ! process_alive "$pid"; then
       wait "$pid" || status=$?
       rm -f "$forward_pid"
