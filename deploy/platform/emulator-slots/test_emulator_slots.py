@@ -1,21 +1,22 @@
+import importlib.util
 import os
 import shutil
-import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "lint"))
-import helm_yaml  # noqa: E402
+HELM_YAML_PATH = HERE.parent / "lint" / "helm_yaml.py"
+HELM_YAML_SPEC = importlib.util.spec_from_file_location("helm_yaml", HELM_YAML_PATH)
+helm_yaml = importlib.util.module_from_spec(HELM_YAML_SPEC)
+HELM_YAML_SPEC.loader.exec_module(helm_yaml)
 
 COMPONENT = HERE.parent / "components" / "emulator-slots"
 KUSTOMIZE = shutil.which("kustomize")
 
 
 def render(directory: Path) -> list[dict]:
-    output = subprocess.run(
+    output = helm_yaml.process_runner.run_process(
         [KUSTOMIZE, "build", "--load-restrictor", "LoadRestrictionsNone", str(directory)],
         check=True,
         capture_output=True,
@@ -44,9 +45,7 @@ def device_arg(plugin: dict) -> str:
 class EmulatorSlotsRenderTest(unittest.TestCase):
     def test_defaults_render_two_slots_on_labelled_nodes(self) -> None:
         documents = render(HERE)
-        self.assertEqual(
-            sorted(doc["kind"] for doc in documents), ["DaemonSet", "PolicyException"]
-        )
+        self.assertEqual(sorted(doc["kind"] for doc in documents), ["DaemonSet", "PolicyException"])
         plugin = daemon_set(documents)
         self.assertEqual(
             node_term(plugin),
@@ -70,9 +69,9 @@ class EmulatorSlotsRenderTest(unittest.TestCase):
             )
             (overlay / "parameters.yaml").write_text(
                 "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: emulator-slots\n"
-                "  annotations:\n    config.kubernetes.io/local-config: \"true\"\n"
-                "data:\n  nodeLabelKey: lab/emulators\n  nodeLabelValue: \"yes\"\n"
-                "  devicesPerNode: \"3\"\n"
+                '  annotations:\n    config.kubernetes.io/local-config: "true"\n'
+                'data:\n  nodeLabelKey: lab/emulators\n  nodeLabelValue: "yes"\n'
+                '  devicesPerNode: "3"\n'
             )
             plugin = daemon_set(render(overlay))
         self.assertEqual(node_term(plugin)["key"], "lab/emulators")
