@@ -362,6 +362,11 @@ fn validate_mobile(
         doctor_layout::validate_mobile_auth_wiring(root, manifest, failures)?;
     }
     crate::doctor_mobile_notes::suite_scheme_notes(root, &manifest.app.name, successes)?;
+    if let Ok(ports) = crate::ports::PortConfiguration::from_manifest(manifest)
+        && let Ok(qa_ports) = ports.qa_ports()
+    {
+        crate::doctor_mobile_notes::pinned_qa_port_notes(root, &qa_ports, successes)?;
+    }
     Ok(())
 }
 

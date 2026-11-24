@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `baukit doctor` prints a warning note, not a failure, for each line of `mobile/scripts/qa/local.sh` that pins a QA port to a fixed default of templates before 0.30.3 (15432, 16379, 18080, 19090, 18081) when the product's derived default differs. The note names the variable and the derived port.
+
 - `baukit doctor` prints a warning note when a product with `mobile/src/app-scheme.ts` builds suite links from the fixed scheme (`<app>://suite`, `<app>:///suite` or `createSuiteNativeIntentValidator('<app>')` in non-test sources under `mobile/src` or `mobile/app`). The dev variant registers `<app>-dev`, so such a return opens the plain app.
 
 - `baukit.toml` accepts `[auth] mobile_client_id` and `[auth] mobile_redirect_path`. Rendering and `baukit doctor` reject values outside letters, digits, `.`, `_`, `-` (and `/` between path segments).

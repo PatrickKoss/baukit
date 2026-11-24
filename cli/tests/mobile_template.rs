@@ -313,3 +313,27 @@ fn doctor_accepts_the_derived_qa_keycloak_port() -> anyhow::Result<()> {
     baukit_cli::doctor(&root)?;
     Ok(())
 }
+
+#[test]
+fn doctor_warns_about_qa_ports_pinned_to_the_old_template_defaults() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut options = mobile_options(parent.path(), "qa-pinned", Some(AuthProvider::Clerk));
+    options.port_offset = 400;
+    let root = generate_new(&options)?;
+    fs::write(
+        root.join("mobile/scripts/qa/local.sh"),
+        "postgres_port=15432\nkeycloak_port=18081\n",
+    )?;
+    let notes = baukit_cli::doctor(&root)?
+        .into_iter()
+        .filter(|finding| finding.starts_with("note: warning:"))
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 2, "{notes:?}");
+    assert!(notes.iter().any(
+        |note| note.contains("pins `postgres_port` to 15432") && note.contains("default 15832")
+    ));
+    assert!(notes.iter().any(
+        |note| note.contains("pins `keycloak_port` to 18081") && note.contains("default 18481")
+    ));
+    Ok(())
+}
