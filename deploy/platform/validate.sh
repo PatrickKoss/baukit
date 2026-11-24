@@ -637,6 +637,7 @@ if ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/sc
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/lint/ci-policies" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/falco" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/redis-ha" -p 'test_*.py' ||
+  ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/netpol-ipset-check" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/e2e" -p 'test_*.py' ||
   ! PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$platform_dir/e2e/tests/netpol" -p 'test_*.py'; then
   status=1

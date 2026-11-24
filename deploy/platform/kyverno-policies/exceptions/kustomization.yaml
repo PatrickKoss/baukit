@@ -11,5 +11,6 @@ resources:
   - k3s-servicelb-traefik.yaml
   - kured.yaml
   - kyverno-migrate-rbac.yaml
+  - netpol-ipset-check.yaml
   - node-exporter.yaml
   - prometheus-operator-rbac.yaml

@@ -1,3 +1,4 @@
 # 12: tailscale-proxies admits the operator's privileged kernel-mode proxy pods.
 # 13: cnpg-tenant-pods lets CNPG instance and job pods in tenant namespaces mount their token.
-policy_exceptions = 13
+# 14: netpol-ipset-check runs ipset save as root with NET_ADMIN in the host network.
+policy_exceptions = 14

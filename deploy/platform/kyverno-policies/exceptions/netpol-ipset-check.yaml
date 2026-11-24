@@ -1,0 +1,28 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: netpol-ipset-check
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      The netpol-ipset-check init container runs ipset save in the host network namespace, which needs root and NET_ADMIN. It drops every other capability, and the check container runs as nobody with none.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-host-namespaces
+    - kind: ValidatingPolicy
+      name: disallow-capabilities
+    - kind: ValidatingPolicy
+      name: disallow-capabilities-strict
+    - kind: ValidatingPolicy
+      name: require-run-as-nonroot
+    - kind: ValidatingPolicy
+      name: require-run-as-non-root-user
+  matchConditions:
+    - name: workload
+      expression: >-
+        object.metadata.?namespace.orValue("") == "observability-agents" &&
+        object.kind in ["CronJob", "Job", "Pod"] &&
+        object.metadata.?labels[?"app.kubernetes.io/name"].orValue("") == "netpol-ipset-check"
