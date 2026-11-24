@@ -46,6 +46,8 @@ step_dashboard_coverage() {
 }
 ```
 
+A product step that runs Node code from `web/` or `mobile/`, such as `node --test` inside an overridden `step_scripts_tests`, starts with `require_node_modules web web-install` (or `mobile mobile-install`). `--step` runs one step without its dependencies, and fast-lane steps cannot wait for the install steps, so on a fresh checkout the step otherwise fails with only `Cannot find module`. The helper exits 1 and names the install step to run first.
+
 The file can also redefine a template step function when a product has to replace it. CI runs the local steps as part of `sh scripts/quality-gate.sh`. A product on the standard profile has no gate, and its generated CI runs each `local_steps` row from the `Generated repository scripts` job instead.
 
 After a Baukit upgrade re-renders the template, review the changes to the owned files and run `baukit check template-files --update` to record the new hashes.

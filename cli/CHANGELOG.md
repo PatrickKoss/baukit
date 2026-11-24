@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Strict gates gain `require_node_modules` so product steps that run Node code name the missing install step.
 - The doctor failure for a gate without a `deploy-values` step also says that a product overriding `list_steps` in `scripts/quality-gate.local.sh` adds the step line there.
 - Generated mobile products lease Android emulators from a pruefstand broker when `BAUKIT_QA_DEVICE_BROKER` is set, and the strict gate skips its emulator core reserve then. The `pruefstand` CLI must be on `PATH`.
 - The strict gate's `deploy-values` step runs under `uv`, in the product's locked project when it has `pyproject.toml` and `uv.lock`, otherwise with a pinned PyYAML.

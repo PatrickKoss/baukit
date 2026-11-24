@@ -89,6 +89,12 @@ gate_mode=${BAUKIT_GATE_MODE:-full}
 export PLAYWRIGHT_BROWSERS_PATH
 {% endif %}{% if context.web or context.mobile %}pnpm_package=$(python3 -c 'import json; print(json.load(open("{{ "web" if context.web else "mobile" }}/package.json"))["packageManager"].split("+")[0])')
 {% endif %}
+require_node_modules() {
+  [ -d "$1/node_modules" ] && return 0
+  echo "gate: $1/node_modules is missing; run 'sh scripts/quality-gate.sh --step $2' first" >&2
+  return 1
+}
+
 has_token() {
   case " ${BAUKIT_GATE_TOKENS:-} " in
     *" $1 "*) return 0 ;;
