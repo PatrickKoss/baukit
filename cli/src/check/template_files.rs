@@ -128,10 +128,38 @@ fn update(
             ));
         }
     }
+    for test in tests_of_product_scripts(root, &files) {
+        files.remove(&test);
+        findings.push(Finding::note(
+            NAME,
+            test.as_str(),
+            "tests a product-owned script, not tracked",
+        ));
+    }
     let target = root.join(MANIFEST_PATH);
     fs::write(&target, render_manifest(files)?)
         .with_context(|| format!("failed to write {}", target.display()))?;
     Ok(findings)
+}
+
+/// A script's test follows the script: once the product owns `scripts/<name>.py`, a template
+/// change to `scripts/tests/test_<name>.py` would test code the product no longer has.
+fn tests_of_product_scripts(root: &Path, files: &BTreeMap<String, String>) -> Vec<String> {
+    files
+        .keys()
+        .filter(|test| {
+            script_under_test(test)
+                .is_some_and(|script| !files.contains_key(&script) && root.join(&script).is_file())
+        })
+        .cloned()
+        .collect()
+}
+
+fn script_under_test(test: &str) -> Option<String> {
+    let name = test
+        .strip_prefix("scripts/tests/test_")?
+        .strip_suffix(".py")?;
+    Some(format!("scripts/{name}.py"))
 }
 
 #[cfg(test)]
@@ -247,6 +275,36 @@ mod tests {
                 .files
                 .contains_key("scripts/gate_locks.py")
         );
+        Ok(())
+    }
+
+    #[test]
+    fn update_untracks_the_test_of_a_product_owned_script() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        write_product(root.path())?;
+        fs::create_dir_all(root.path().join("scripts/tests"))?;
+        fs::write(root.path().join("scripts/keycloak_policy.py"), "forked\n")?;
+        fs::write(
+            root.path().join("scripts/tests/test_keycloak_policy.py"),
+            "test\n",
+        )?;
+        fs::write(root.path().join("scripts/tests/test_gate.py"), "test\n")?;
+        let owned = owned(&[
+            ("scripts/keycloak_policy.py", "policy\n"),
+            ("scripts/tests/test_keycloak_policy.py", "test\n"),
+            ("scripts/tests/test_gate.py", "test\n"),
+        ]);
+        let findings = update(root.path(), &manifest(root.path())?, &owned)?;
+        assert_eq!(
+            findings.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            vec![
+                "template-files: scripts/keycloak_policy.py: note: template-owned but diverged, not tracked",
+                "template-files: scripts/tests/test_keycloak_policy.py: note: tests a product-owned script, not tracked",
+            ]
+        );
+        let tracked = manifest(root.path())?.files;
+        assert!(!tracked.contains_key("scripts/tests/test_keycloak_policy.py"));
+        assert!(tracked.contains_key("scripts/tests/test_gate.py"));
         Ok(())
     }
 

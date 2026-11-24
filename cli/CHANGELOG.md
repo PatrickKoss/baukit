@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- `baukit check template-files --update` stops tracking `scripts/tests/test_<name>.py` when the product owns `scripts/<name>.py` (the script exists but is not tracked) and notes it. A template change to the test, such as a new Keycloak environment class in `test_keycloak_policy.py`, otherwise broke a product whose `keycloak_policy.py` had diverged.
 - `postgres/initdb/10-owner.sql` hands `current_database()` to `app` instead of the product's default database name, so e2e and QA compose stacks with another `POSTGRES_DB` can mount it too.
 
 - `mobile/scripts/qa/android-env.sh` relaunches an emulator once when its process exits before boot, logs `exited before boot; relaunching it once` and keeps the first log as `android-emulator*.log.crashed`. Android emulator 37.3.10 sometimes segfaults right after start; a boot timeout and a second early exit still fail the step.
