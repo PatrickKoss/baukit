@@ -14,8 +14,16 @@ PLATFORM = E2E.parent
 REPO = PLATFORM.parent.parent
 RECONCILIATION = E2E / "overlay/reconciliation.yaml"
 NOT_BASES = {"components", "e2e", "lib", "lint", "overlays", "schemas"}
-# tailscale-operator needs a real tailnet OAuth client, which e2e does not have.
-LEFT_OUT = {"hcloud", "posthog", "redis", "tailscale-operator", "tailscale-proxy-class"}
+# tailscale-operator needs a real tailnet OAuth client, which e2e does not have. emulator-slots
+# needs /dev/kvm on the node, which CI runners do not promise.
+LEFT_OUT = {
+    "emulator-slots",
+    "hcloud",
+    "posthog",
+    "redis",
+    "tailscale-operator",
+    "tailscale-proxy-class",
+}
 NODE_CIDR_PLACEHOLDER = "192.0.2.0/32"
 
 

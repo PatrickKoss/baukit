@@ -1,0 +1,41 @@
+# Compose with a ConfigMap emulator-slots (config.kubernetes.io/local-config: "true") that sets
+# nodeLabelKey, nodeLabelValue and devicesPerNode; deploy/platform/emulator-slots holds the defaults.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - device-plugin.yaml
+  - policy-exception.yaml
+replacements:
+  - source:
+      kind: ConfigMap
+      name: emulator-slots
+      fieldPath: data.nodeLabelKey
+    targets:
+      - select:
+          kind: DaemonSet
+          name: emulator-slots
+        fieldPaths:
+          - spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms.0.matchExpressions.0.key
+  - source:
+      kind: ConfigMap
+      name: emulator-slots
+      fieldPath: data.nodeLabelValue
+    targets:
+      - select:
+          kind: DaemonSet
+          name: emulator-slots
+        fieldPaths:
+          - spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms.0.matchExpressions.0.values.0
+  - source:
+      kind: ConfigMap
+      name: emulator-slots
+      fieldPath: data.devicesPerNode
+    targets:
+      - select:
+          kind: DaemonSet
+          name: emulator-slots
+        fieldPaths:
+          - spec.template.spec.containers.[name=generic-device-plugin].args.1
+        options:
+          delimiter: " "
+          index: 4

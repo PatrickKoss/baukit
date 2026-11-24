@@ -1,0 +1,84 @@
+# squat's generic device plugin advertises /dev/kvm as squat.ai/kvm on the nodes the parameters
+# select. An emulator Pod requests one, so the scheduler caps each node at devicesPerNode.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: emulator-slots
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: emulator-slots
+    app.kubernetes.io/part-of: baukit-platform
+    baukit.dev/process: device-plugin
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: emulator-slots
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: emulator-slots
+        app.kubernetes.io/part-of: baukit-platform
+        baukit.dev/process: device-plugin
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      priorityClassName: system-node-critical
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: NODE_LABEL_KEY
+                    operator: In
+                    values: [NODE_LABEL_VALUE]
+      tolerations:
+        - operator: Exists
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: generic-device-plugin
+          image: ghcr.io/squat/generic-device-plugin:f7c3291@sha256:8dc84958301f054bf72d9753a7a2c9af3d6642a9844b34d1171b3f2cdb4a15f6
+          args:
+            - --domain=squat.ai
+            # The spaces are part of the parameter: the count is the fifth space-separated token.
+            - "--device={name: kvm, groups: [{count: DEVICES_PER_NODE , paths: [{path: /dev/kvm}]}]}"
+          ports:
+            - name: metrics
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: device-plugins
+              mountPath: /var/lib/kubelet/device-plugins
+            # Only /dev/kvm: a read-only host /dev over /dev blocks the termination-log mount.
+            - name: kvm
+              mountPath: /dev/kvm
+              readOnly: true
+      volumes:
+        - name: device-plugins
+          hostPath:
+            path: /var/lib/kubelet/device-plugins
+            type: Directory
+        - name: kvm
+          hostPath:
+            path: /dev/kvm
+            type: CharDevice

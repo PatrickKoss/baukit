@@ -1,0 +1,27 @@
+apiVersion: policies.kyverno.io/v1
+kind: PolicyException
+metadata:
+  name: emulator-slots
+  namespace: kyverno
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+  annotations:
+    baukit.dev/reason: >-
+      The generic device plugin registers with the kubelet through a root-owned socket in the host's /var/lib/kubelet/device-plugins and reads the host's /dev/kvm, both hostPath volumes. It runs as root without privileges, drops every capability and mounts only /dev/kvm, read-only.
+spec:
+  policyRefs:
+    - kind: ValidatingPolicy
+      name: disallow-host-path
+    - kind: ValidatingPolicy
+      name: require-run-as-nonroot
+    - kind: ValidatingPolicy
+      name: require-run-as-non-root-user
+    - kind: ValidatingPolicy
+      name: restrict-volume-types
+  matchConditions:
+    - name: workload
+      expression: >-
+        object.metadata.?namespace.orValue("") == "kube-system" && (
+          (object.kind == "DaemonSet" && object.metadata.name == "emulator-slots") ||
+          (object.kind == "Pod" && object.metadata.?ownerReferences.orValue([])
+            .exists(o, o.kind == "DaemonSet" && o.name == "emulator-slots")))
