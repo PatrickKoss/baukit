@@ -493,6 +493,63 @@ fn is_base64url_byte(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
 }
 
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// All `u64` triples: no panic, and `Ok` implies `now < expires <= now + max_ahead`
+    /// (the sum taken without overflow). No loops, so no unwind bound.
+    #[kani::proof]
+    fn check_expiry_bounds() {
+        let (expires, now, max_ahead): (u64, u64, u64) = (kani::any(), kani::any(), kani::any());
+        if check_expiry(expires, now, max_ahead).is_ok() {
+            assert!(now < expires);
+            assert!(u128::from(expires) <= u128::from(now) + u128::from(max_ahead));
+        }
+    }
+
+    /// Every ASCII string of up to 11 bytes: an accepted expiry re-encodes to
+    /// the same bytes. Unwind 12 covers the digit loops.
+    #[kani::proof]
+    #[kani::unwind(12)]
+    fn parse_expires_accepts_only_canonical_text() {
+        const MAX_LENGTH: usize = MAX_EXPIRES_DIGITS + 1;
+        let bytes: [u8; MAX_LENGTH] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= MAX_LENGTH);
+        let Some(text) = bytes
+            .get(..length)
+            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+        else {
+            return;
+        };
+        if let Some(value) = parse_expires(text) {
+            assert!(value <= MAX_EXPIRES);
+            assert_eq!(value.to_string(), text);
+        }
+    }
+
+    /// Base64url strings of up to 4 bytes: an accepted string re-encodes to the
+    /// same bytes. Unwind 6 covers the 4-byte input loops.
+    #[kani::proof]
+    #[kani::unwind(6)]
+    fn decode_canonical_round_trips() {
+        const MAX_LENGTH: usize = 4;
+        let bytes: [u8; MAX_LENGTH] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= MAX_LENGTH);
+        let Some(text) = bytes
+            .get(..length)
+            .and_then(|bytes| std::str::from_utf8(bytes).ok())
+        else {
+            return;
+        };
+        if let Some(decoded) = decode_canonical(text) {
+            assert_eq!(URL_SAFE_NO_PAD.encode(decoded), text);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
