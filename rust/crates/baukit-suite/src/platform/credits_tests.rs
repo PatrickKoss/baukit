@@ -108,7 +108,11 @@ proptest! {
                     if let Ok(r) = &answer {
                         prop_assert_eq!(r.status, ReservationStatus::Pending);
                         prop_assert_eq!(r.amount, amount);
-                        prop_assert!(!finished.contains_key(&key));
+                        // A stateless client cannot catch a hub that relabels a finished
+                        // reservation, so only honest answers must respect `finished`.
+                        if matches!(tamper, Tamper::None) {
+                            prop_assert!(!finished.contains_key(&key));
+                        }
                         reserved.entry(key).or_insert(amount);
                     }
                     if matches!(tamper, Tamper::None) {

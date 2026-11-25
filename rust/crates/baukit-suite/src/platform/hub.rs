@@ -129,15 +129,19 @@ pub enum HubError {
 
 /// Encodes every byte except ASCII alphanumerics and `*-._`, so `|` in a
 /// suite subject becomes `%7C`.
-/// Percent-encodes one path segment. `.` and `..` are encoded too, because a URL
-/// parser resolves them as dot segments and would leave `/platform/v1/`.
-fn encode_segment(segment: &str) -> String {
+const DOT_SEGMENT_CODE: &str = "hub_path_segment_invalid";
+
+/// Percent-encodes one path segment. `None` for `.` and `..`: URL parsers resolve
+/// them, encoded or not, as dot segments that would leave `/platform/v1/`.
+fn encode_segment(segment: &str) -> Option<String> {
     if matches!(segment, "." | "..") {
-        return segment.replace('.', "%2E");
+        return None;
     }
-    url::form_urlencoded::byte_serialize(segment.as_bytes())
-        .map(|part| if part == "+" { "%20" } else { part })
-        .collect()
+    Some(
+        url::form_urlencoded::byte_serialize(segment.as_bytes())
+            .map(|part| if part == "+" { "%20" } else { part })
+            .collect(),
+    )
 }
 
 struct CachedToken {
@@ -288,7 +292,10 @@ impl HubClient {
         let mut path = url.path().trim_end_matches('/').to_owned();
         for segment in ["platform", "v1"].iter().chain(segments) {
             path.push('/');
-            path.push_str(&encode_segment(segment));
+            path.push_str(&encode_segment(segment).ok_or(HubError::Rejected {
+                status: 0,
+                code: Some(DOT_SEGMENT_CODE.to_owned()),
+            })?);
         }
         url.set_path(&path);
         Ok(url)
@@ -512,16 +519,16 @@ mod tests {
     #[test]
     fn dot_segments_stay_inside_the_platform_api() {
         let hub = client();
-        for subject in ["..", ".", "%2E%2E"] {
-            let url = hub
-                .url(&["accounts", subject, "organizations"])
-                .expect("url");
-            assert!(
-                url.path().starts_with("/api/platform/v1/accounts/"),
-                "{subject} escaped to {}",
-                url.path()
-            );
+        for subject in ["..", "."] {
+            assert!(hub.url(&["accounts", subject, "organizations"]).is_err());
         }
+        let encoded = hub
+            .url(&["accounts", "%2E%2E", "organizations"])
+            .expect("url");
+        assert_eq!(
+            encoded.path(),
+            "/api/platform/v1/accounts/%252E%252E/organizations"
+        );
     }
 }
 
@@ -540,8 +547,12 @@ mod proofs {
         let Ok(segment) = std::str::from_utf8(&bytes[..len]) else {
             return;
         };
-        let encoded = encode_segment(segment);
-        assert!(!encoded.contains(['/', '?', '#', '\\']));
-        assert!(encoded != "." && encoded != "..");
+        if let Some(encoded) = encode_segment(segment) {
+            assert!(!encoded.contains(['/', '?', '#', '\\']));
+            assert!(!encoded.eq_ignore_ascii_case(".") && !encoded.eq_ignore_ascii_case(".."));
+            assert!(
+                !encoded.eq_ignore_ascii_case("%2e") && !encoded.eq_ignore_ascii_case("%2e%2e")
+            );
+        }
     }
 }
