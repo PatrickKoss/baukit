@@ -15,7 +15,7 @@ use baukit_auth::{AuthState, Principal};
 {% else %}use std::collections::BTreeMap;
 
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
-{% endif %}use baukit_config::HttpConfig;
+{% endif %}use baukit_config::{Environment, HttpConfig};
 {% if context.auth_enabled %}use baukit_erasure::{
     ErasureError, ErasureOutcome, ErasureService, ProductErasure, reject_fenced_subject,
 };
@@ -59,8 +59,12 @@ impl FromRef<ApiState> for AuthState {
     }
 }
 
-{% endif %}pub fn router(state: ApiState, config: &HttpConfig) -> Result<Router, HttpOptionsError> {
-    finalize_api(routes(state), config)
+{% endif %}pub fn router(
+    state: ApiState,
+    config: &HttpConfig,
+    environment: Environment,
+) -> Result<Router, HttpOptionsError> {
+    finalize_api(routes(state), config, environment)
 }
 
 pub fn routes(state: ApiState) -> Router {
@@ -82,16 +86,28 @@ pub fn routes(state: ApiState) -> Router {
 
 /// Applies the Baukit HTTP layers last, so CORS, request IDs, and the cache
 /// policy also cover responses from authentication and rate-limit layers.
-pub fn finalize_api(router: Router, config: &HttpConfig) -> Result<Router, HttpOptionsError> {
-    Ok(finalize_with_options(router, http_options(config)?))
+pub fn finalize_api(
+    router: Router,
+    config: &HttpConfig,
+    environment: Environment,
+) -> Result<Router, HttpOptionsError> {
+    Ok(finalize_with_options(
+        router,
+        http_options(config, environment)?,
+    ))
 }
 
 /// The HTTP options `finalize_api` applies, for callers that adjust them first.
-pub fn http_options(config: &HttpConfig) -> Result<HttpOptions, HttpOptionsError> {
-    Ok(HttpOptions::from_config(config)?{% if context.mcp %}
+///
+/// `environment` decides whether non-loopback `http://` CORS origins are allowed.
+pub fn http_options(
+    config: &HttpConfig,
+    environment: Environment,
+) -> Result<HttpOptions, HttpOptionsError> {
+    Ok(HttpOptions::from_config_in(config, environment)?{% if context.mcp %}
         .with_additional_allowed_headers(baukit_mcp::ALLOWED_HEADERS)?
-        .with_additional_exposed_headers(["www-authenticate"])?
-        {% endif %}.with_json_rejection_codes(JsonRejectionCodes::default()))
+        .with_additional_exposed_headers(["www-authenticate"])?{% endif %}
+        .with_json_rejection_codes(JsonRejectionCodes::default()))
 }
 
 pub fn finalize_with_options(router: Router, options: HttpOptions) -> Router {

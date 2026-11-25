@@ -15,7 +15,7 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use baukit_config::{HttpConfig, Validate, ValidationError, ValidationErrors};
+use baukit_config::{Environment, HttpConfig, Validate, ValidationError, ValidationErrors};
 use baukit_http::{ApiError, ApiJson, ApiPath, HttpOptions, HttpOptionsError, finalize};
 use baukit_openapi::{ErrorBody, ErrorEnvelope, OpenApiMetadata};
 use baukit_ops::{OpsRouter, PrometheusHandle, ReadinessError, RegistrationError, TrafficGate};
@@ -100,13 +100,22 @@ impl AppState {
 }
 
 /// Builds the public router with the complete Baukit HTTP layer stack.
-pub fn api_router(state: AppState, config: &HttpConfig) -> Result<Router, HttpOptionsError> {
+///
+/// `environment` decides whether non-loopback `http://` CORS origins are allowed.
+pub fn api_router(
+    state: AppState,
+    config: &HttpConfig,
+    environment: Environment,
+) -> Result<Router, HttpOptionsError> {
     let router = Router::new()
         .route("/notes", post(create_note).get(list_notes))
         .route("/notes/{id}", get(get_note))
         .route("/fail", get(fail_validation))
         .with_state(state);
-    Ok(finalize(router, HttpOptions::from_config(config)?))
+    Ok(finalize(
+        router,
+        HttpOptions::from_config_in(config, environment)?,
+    ))
 }
 
 /// Builds the private operations router with state readiness and a shared traffic gate.

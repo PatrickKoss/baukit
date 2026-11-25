@@ -83,6 +83,7 @@ async fn protected_route_conforms_and_maps_subject_to_internal_user() -> Result<
             erasure: fixture.erasure.clone(),
         },
         &HttpConfig::default(),
+        baukit_config::Environment::Local,
     )?;
 
     baukit_test::check_auth_router_conformance(&app, "/me", &issuer, AUDIENCE).await?;
@@ -230,7 +231,7 @@ async fn authentication_runs_before_identity_rate_limiting() -> Result<(), Box<d
         cors_allowed_origins: vec![WEB_ORIGIN.to_owned()],
         ..HttpConfig::default()
     };
-    let app = finalize_api(app, &config)?;
+    let app = finalize_api(app, &config, baukit_config::Environment::Local)?;
     let alice = issuer.mint(&issuer.claims("alice", AUDIENCE, Duration::from_secs(60))?)?;
     let bob = issuer.mint(&issuer.claims("bob", AUDIENCE, Duration::from_secs(60))?)?;
 
