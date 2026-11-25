@@ -33,8 +33,6 @@ REQUIRED_TOOLS = {
     "flux",
     "yamllint",
     "kubectl",
-    "squawk",
-    "zizmor",
     "tla2tools.jar",
 }
 REQUIRED_PLATFORMS = {"linux-amd64", "linux-arm64", "darwin-arm64"}

@@ -37,6 +37,7 @@ fixture-1 = 60
 fixture-2 = 60
 affected-fixture = 60
 mcp-fixture = 60
+migrations = 30
 
 [quality.affected]
 "README.md" = []
@@ -46,8 +47,25 @@ mcp-fixture = 60
 ".gitleaks.toml" = []
 "osv-scanner.toml" = []
 "ruff.toml" = []
-"zizmor.yml" = []
-"rust/crates/**" = ["rust", "fixtures", "mcp-fixture", "fuzz"]
+"zizmor.yml" = ["workflows"]
+"rust/crates/**" = ["rust", "fixtures", "mcp-fixture", "fuzz", "kani"]
+"rust/crates/*/migrations/**" = ["migrations"]
+"rust/migrations.toml" = ["migrations"]
+"scripts/check-migrations.py" = ["migrations"]
+"scripts/migrations-old-binary.sh" = ["migrations"]
+"scripts/list-proofs.py" = ["kani"]
+"rust/verus/**" = ["verus"]
+"models/**" = ["models"]
+# Code each TLA+ model describes; a change there re-checks the models.
+"rust/crates/baukit-sync/**" = ["models"]
+"rust/crates/baukit-jobs/**" = ["models"]
+"rust/crates/baukit-auth/src/browser_session/**" = ["models"]
+"rust/crates/baukit-suite/**" = ["models"]
+"rust/crates/baukit-erasure/**" = ["models"]
+"typescript/packages/data-contracts/**" = ["models"]
+"scripts/check-models.sh" = ["models"]
+"scripts/regenerate-vectors.py" = ["vectors"]
+"scripts/vector-generators.toml" = ["vectors"]
 "rust/fuzz/**" = ["fuzz"]
 "scripts/fuzz.sh" = ["fuzz"]
 "cli/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
