@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+- Breaking: `StandaloneAccountPlan::new` takes an `OrganizationMembership` port; nobody is an organization member by default. See docs/migrations/suite-correctness-hardening.md.
+- Breaking: the `<scheme>-dev` return URL needs `suite.allow_dev_scheme = true`.
+- Peers sign the replay flag with `x-suite-signature-v2`; an unsigned replay flag is ignored.
+- Membership caches evict on hub events; a hub read in flight during eviction is discarded.
+- A reused event id with another type or time is a conflict, not a duplicate.
+- Credits answers from the hub are checked against the request; a settled reservation is refused on replay.
+- A free refresh replaces a cached paid plan. Organization grants use their own cache product key.
+- Ticket `manageUrl` follows the same host and port rule as the TS client.
+
 - Accept `<scheme>-dev://suite/linked` as a suite `start` return URL next to `<scheme>://suite/linked`. The template's `dev` build variant registers `<scheme>-dev` and builds its return from `appScheme()`, so every dev build got `suite_return_url_invalid`. Lookalikes such as `<scheme>-devx`, `<scheme>dev` and other apps' schemes stay rejected.
 
 ## [0.30.4] - 2026-11-25

@@ -22,9 +22,10 @@ or approves a matching account, and issues a short-lived code. The callback
 checks `from`, relays the code to the recorded return URL and echoes the client
 nonce. `start` accepts only two return URLs: `<public web URL>/suite/linked`
 and `<scheme>://suite/linked`, where `scheme` is the own app's entry in
-`peers.json`. It also accepts `<scheme>-dev://suite/linked`, the scheme the
-template's `dev` build variant registers. Lab and production builds register
-the plain scheme. Any other scheme, host or path returns
+`peers.json`. With `suite.allow_dev_scheme = true` it also accepts
+`<scheme>-dev://suite/linked`, the scheme the template's `dev` build variant
+registers. The flag defaults to false and stays off in lab and production, and
+the registry ignores it when another peer's scheme is `<scheme>-dev`. Any other scheme, host or path returns
 `suite_return_url_invalid`. Only the initiating owner can complete the request. Completion exchanges
 the code, verifier, initiator link id and secret with the peer outside the
 database transaction, then commits the link and its initial replay.
@@ -405,6 +406,7 @@ Configuration keys use the product prefix without renaming:
 | `PUBLIC_API_URL`, `PUBLIC_WEB_URL` | unset |
 | `PEERS__<APP>__API_URL`, `PEERS__<APP>__WEB_URL` | unset |
 | `ALLOW_LOOPBACK` | false |
+| `ALLOW_DEV_SCHEME` | false, set true only for dev builds |
 | `INITIAL_REPLAY_DAYS` | 90, at most 365 |
 | `SHARE_XP` | true |
 | `IDENTITY_DOMAIN` | unset |
