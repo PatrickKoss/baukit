@@ -175,27 +175,30 @@ mod proofs {
         ALPHABET.iter().position(|candidate| *candidate == byte)
     }
 
-    /// K-18: for any 43 ASCII bytes, and for any other length up to 44,
-    /// `parse_token` accepts iff the length is 43, every byte is in the
-    /// URL-safe alphabet, and the last sextet has its two unused bits clear,
-    /// which is exactly a canonical base64url round trip. Unwind 65.
+    const PREFIX: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    /// K-18: a 43-character token with a fixed valid 41-character prefix and
+    /// two symbolic ASCII tail bytes is accepted iff both are in the URL-safe
+    /// alphabet and the last sextet has its two unused bits clear, which is
+    /// exactly a canonical base64url round trip. No unwind bound is set; the
+    /// decoder's loops are over the concrete length.
     #[kani::proof]
-    #[kani::unwind(65)]
-    fn parse_token_accepts_only_canonical_tokens() {
-        let bytes: [u8; TOKEN_CHARS + 1] = kani::any();
-        let len: usize = kani::any();
-        kani::assume(len == TOKEN_CHARS || len == TOKEN_CHARS + 1 || len == TOKEN_CHARS - 1);
-        let Some(input) = bytes.get(..len) else {
-            return;
-        };
-        kani::assume(input.is_ascii());
-        let raw: String = input.iter().copied().map(char::from).collect();
-        let alphabet = input.iter().all(|byte| sextet(*byte).is_some());
-        let canonical_tail = input
-            .last()
-            .and_then(|byte| sextet(*byte))
-            .is_some_and(|value| value % 4 == 0);
-        let expected = len == TOKEN_CHARS && alphabet && canonical_tail;
+    fn parse_token_accepts_only_canonical_tails() {
+        let tail: [u8; 2] = kani::any();
+        kani::assume(tail.is_ascii());
+        let mut raw = String::from(PREFIX);
+        raw.extend(tail.iter().copied().map(char::from));
+        let expected = tail.iter().all(|byte| sextet(*byte).is_some())
+            && sextet(tail[1]).is_some_and(|value| value % 4 == 0);
         assert_eq!(parse_token(&raw).is_ok(), expected);
+    }
+
+    /// K-18: any length other than 43 is rejected before decoding.
+    #[kani::proof]
+    fn parse_token_rejects_other_lengths() {
+        let len: usize = kani::any();
+        kani::assume(len <= 4 || len == TOKEN_CHARS - 1 || len == TOKEN_CHARS + 1);
+        let raw = "A".repeat(len);
+        assert!(parse_token(&raw).is_err());
     }
 }

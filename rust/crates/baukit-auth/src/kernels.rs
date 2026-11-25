@@ -91,34 +91,24 @@ mod tests {
 mod proofs {
     use super::*;
 
-    const STEPS: usize = 8;
-
-    /// K-05: over 8 symbolic, non-decreasing `now` offsets (whole seconds below
-    /// 2^20), a caller that records each allowed attempt is allowed at most
-    /// `1 + span / cooldown` times. Unwind 9.
+    /// K-05, inductive step: for any last attempt, `now` and non-zero cooldown
+    /// (whole seconds, no loop, so no unwind bound), a refetch is allowed iff
+    /// there was no attempt or a full cooldown has passed since it. Recording
+    /// each allowed attempt therefore spaces allowed refetches at least one
+    /// cooldown apart, which bounds them to `1 + span / cooldown` over any span.
     #[kani::proof]
-    #[kani::unwind(9)]
-    fn refresh_allowed_is_bounded_per_span() {
+    fn refresh_allowed_spaces_attempts_by_the_cooldown() {
         let cooldown_secs: u64 = kani::any();
-        kani::assume(cooldown_secs > 0 && cooldown_secs < 1 << 20);
-        let cooldown = Duration::from_secs(cooldown_secs);
-        let mut last = None;
-        let mut previous = 0_u64;
-        let mut first = None;
-        let mut allowed = 0_u64;
-        for _ in 0..STEPS {
-            let offset: u64 = kani::any();
-            kani::assume(offset >= previous && offset < 1 << 20);
-            previous = offset;
-            let now = Duration::from_secs(offset);
-            if jwks_refresh_allowed(last, now, cooldown) {
-                allowed += 1;
-                last = Some(now);
-                first.get_or_insert(offset);
-            }
-        }
-        let span = first.map_or(0, |first| previous - first);
-        assert!(allowed <= 1 + span / cooldown_secs);
+        kani::assume(cooldown_secs > 0);
+        let last: Option<u64> = kani::any();
+        let now: u64 = kani::any();
+        let allowed = jwks_refresh_allowed(
+            last.map(Duration::from_secs),
+            Duration::from_secs(now),
+            Duration::from_secs(cooldown_secs),
+        );
+        let expected = last.is_none_or(|last| now.saturating_sub(last) >= cooldown_secs);
+        assert_eq!(allowed, expected);
     }
 
     /// K-06: for every `i64` input the kernel never overflows, and it accepts

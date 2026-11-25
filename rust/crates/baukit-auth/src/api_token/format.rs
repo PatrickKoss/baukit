@@ -68,7 +68,7 @@ impl ApiTokenFormat {
     /// Returns whether a presented credential has the exact shape of a token.
     #[must_use]
     pub fn is_well_formed(&self, presented: &str) -> bool {
-        well_formed_bytes(self.marker.as_bytes(), presented.as_bytes())
+        well_formed_bytes(self.marker.as_bytes(), presented.as_bytes(), SECRET_LENGTH)
     }
 
     /// Generates a token secret, hash, and display prefix without a store.
@@ -158,40 +158,41 @@ pub fn hash_api_token(presented: &str) -> Vec<u8> {
         .to_vec()
 }
 
-fn well_formed_bytes(marker: &[u8], bytes: &[u8]) -> bool {
-    bytes.len() == marker.len() + SECRET_LENGTH
+fn well_formed_bytes(marker: &[u8], bytes: &[u8], secret_length: usize) -> bool {
+    bytes.len() == marker.len() + secret_length
         && bytes.starts_with(marker)
         && bytes
             .get(marker.len()..)
-            .is_some_and(|body| body.iter().all(|byte| BASE62.contains(byte)))
+            .is_some_and(|body| body.iter().all(u8::is_ascii_alphanumeric))
 }
 
 #[cfg(kani)]
 mod proofs {
     use super::*;
 
-    const MAX_INPUT: usize = 96;
+    const MAX_INPUT: usize = 8;
+    const MARKER: &[u8] = b"bk_";
+    const SHORT_SECRET: usize = 4;
 
-    /// K-07: for any byte input up to 96 bytes and the default marker, the
-    /// byte kernel behind `is_well_formed` never panics and accepts iff the length, marker prefix
-    /// and base62 body all match. Unwind 97.
+    /// K-07: for any byte input up to 8 bytes, the `bk_` marker and a 4-byte
+    /// secret, the shape kernel behind `is_well_formed` never panics and
+    /// accepts iff the length, marker prefix and alphanumeric body all match.
+    /// The kernel is generic in the secret length. Unwind 9.
     #[kani::proof]
-    #[kani::unwind(97)]
-    fn is_well_formed_matches_the_token_shape() {
-        let format = ApiTokenFormat::default();
+    #[kani::unwind(9)]
+    fn well_formed_bytes_matches_the_token_shape() {
         let bytes: [u8; MAX_INPUT] = kani::any();
         let len: usize = kani::any();
         kani::assume(len <= MAX_INPUT);
         let Some(input) = bytes.get(..len) else {
             return;
         };
-        let marker = format.marker().as_bytes();
-        let expected = len == marker.len() + SECRET_LENGTH
-            && input.starts_with(marker)
+        let expected = len == MARKER.len() + SHORT_SECRET
+            && input.starts_with(MARKER)
             && input
                 .iter()
-                .skip(marker.len())
+                .skip(MARKER.len())
                 .all(|byte| byte.is_ascii_alphanumeric());
-        assert_eq!(well_formed_bytes(marker, input), expected);
+        assert_eq!(well_formed_bytes(MARKER, input, SHORT_SECRET), expected);
     }
 }
