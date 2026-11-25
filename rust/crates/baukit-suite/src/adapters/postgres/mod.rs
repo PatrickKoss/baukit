@@ -710,24 +710,28 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         &self,
         tx: &mut sqlx::PgConnection,
         id: Uuid,
-        event: &str,
-        hash: [u8; 32],
+        event: InboxIdentity<'_>,
     ) -> Result<InboxLookup, SuiteStoreError> {
         let row = sqlx::query_as::<_, InboxRow>(
             r#"SELECT payload_hash,
+            event_type,
+            occurred_at,
             outcome,
             ledger_entry_id FROM suite_inbound_events WHERE link_id=$1
             AND event_id=$2"#,
         )
         .bind(id)
-        .bind(event)
+        .bind(event.event_id)
         .fetch_optional(&mut *tx)
         .await
         .map_err(storage)?;
         let Some(row) = row else {
             return Ok(InboxLookup::New);
         };
-        if row.payload_hash != hash {
+        if row.payload_hash != event.payload_hash
+            || row.event_type != event.event_type
+            || !same_microsecond(row.occurred_at.to_jiff(), event.occurred_at)
+        {
             return Err(SuiteStoreError::EventIdConflict);
         }
         Ok(InboxLookup::Duplicate(AppliedOutcome {
@@ -930,9 +934,17 @@ async fn try_lock_owner(tx: &mut sqlx::PgConnection, owner: Uuid) -> Result<bool
         .map_err(storage)
 }
 
+/// PostgreSQL keeps microseconds, so a stored time differs from the original by under one.
+fn same_microsecond(stored: Timestamp, original: Timestamp) -> bool {
+    const NANOS_PER_MICRO: i128 = 1_000;
+    (stored.as_nanosecond() - original.as_nanosecond()).abs() < NANOS_PER_MICRO
+}
+
 #[derive(sqlx::FromRow)]
 struct InboxRow {
     payload_hash: Vec<u8>,
+    event_type: String,
+    occurred_at: jiff_sqlx::Timestamp,
     outcome: String,
     ledger_entry_id: Option<String>,
 }
