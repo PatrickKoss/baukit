@@ -66,7 +66,7 @@ impl JobCancellation {
         }
     }
 
-    /// Returns the lease owner required by `PostgresJobStore::complete_in_transaction`.
+    /// Returns the lease owner required by `PostgresJobStore::complete_lease_in_transaction`.
     pub fn worker_id(&self) -> &str {
         &self.lease.worker_id
     }

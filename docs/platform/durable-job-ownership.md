@@ -86,7 +86,7 @@ Owner cancellation applies these transitions:
 
 The owner operation never deletes a running row. A worker with a live lease can already have sent an external request when cancellation commits. Destination idempotency and any provider-side revocation remain product responsibilities.
 
-The current runner polls `cancellation_requested`, prevents normal completion after the request commits, and records `cancelled` when the handler yields. A handler that committed `complete_in_transaction` first has already won the race; owner cleanup sees a terminal succeeded row and may delete it. If no worker is alive, a later owner-cancellation call can cancel the row after lease expiry.
+The current runner polls `cancellation_requested`, prevents normal completion after the request commits, and records `cancelled` when the handler yields. A handler that committed `complete_lease_in_transaction` first has already won the race; owner cleanup sees a terminal succeeded row and may delete it. If no worker is alive, a later owner-cancellation call can cancel the row after lease expiry.
 
 Locked rows are skipped, so an underfilled batch does not prove completion. Callers repeat cancellation and terminal deletion, then use `owner_jobs_remain`. A true result means erasure must wait and retry.
 

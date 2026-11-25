@@ -13,7 +13,7 @@
 //! The crate never runs migrations at process startup. Use
 //! [`PostgresJobStore::enqueue_in_transaction`] when a domain write and its
 //! job need to commit atomically. Likewise, a handler which writes PostgreSQL can
-//! use [`PostgresJobStore::complete_in_transaction`] as the last statement in
+//! use [`PostgresJobStore::complete_lease_in_transaction`] as the last statement in
 //! the same transaction. After that transaction commits, call
 //! [`JobCancellation::mark_completed_in_transaction`] before returning success
 //! so the runner does not attempt the transition again.
