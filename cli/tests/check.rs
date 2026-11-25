@@ -153,16 +153,19 @@ fn patterns_fail_on_errors_and_show_hints_only_when_verbose() -> Result<()> {
         output.contains("patterns: web/src/ignored.ts:1: `ast-grep-ignore` without ` -- reason`"),
         "{output}"
     );
-    assert!(!output.contains("vendor/"), "{output}");
+    assert!(
+        output.contains("patterns: vendor/x/cast.ts:1: ts-double-cast: "),
+        "{output}"
+    );
     assert!(!output.contains("rust-sql-unscoped-by-id"), "{output}");
-    assert!(output.ends_with("patterns: 2 findings\n"), "{output}");
+    assert!(output.ends_with("patterns: 3 findings\n"), "{output}");
 
     let (_, verbose) = baukit_check(root.path(), &["patterns", "--verbose"])?;
     assert!(
         verbose.contains("patterns: backend/src/repo.rs:1: note: rust-sql-unscoped-by-id: "),
         "{verbose}"
     );
-    assert!(verbose.ends_with("patterns: 2 findings\n"), "{verbose}");
+    assert!(verbose.ends_with("patterns: 3 findings\n"), "{verbose}");
     Ok(())
 }
 

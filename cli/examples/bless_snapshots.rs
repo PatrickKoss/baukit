@@ -13,14 +13,22 @@ mod snapshot_flavors;
 #[path = "../tests/support/snapshot_tree.rs"]
 mod snapshot_tree;
 
+#[path = "../tests/support/snapshot_wiring.rs"]
+mod snapshot_wiring;
+
 use snapshot_flavors::snapshot_flavors;
 use snapshot_tree::{read_tree, render_hash_snapshot};
+use snapshot_wiring::{render_wiring_snapshot, wiring_snapshot_path};
 
 fn bless(name: &str, options: &NewOptions) -> Result<PathBuf> {
     let root = generate_new(options)?;
     let snapshot = render_hash_snapshot(&read_tree(&root)?);
     let target = snapshot_path(name);
     fs::write(&target, snapshot).with_context(|| format!("write {}", target.display()))?;
+    if let Some(wiring) = render_wiring_snapshot(&root)? {
+        let path = wiring_snapshot_path(name);
+        fs::write(&path, wiring).with_context(|| format!("write {}", path.display()))?;
+    }
     Ok(target)
 }
 
