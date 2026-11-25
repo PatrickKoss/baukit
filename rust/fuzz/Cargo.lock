@@ -356,6 +356,7 @@ dependencies = [
  "baukit-integrations",
  "baukit-mcp",
  "baukit-ratelimit",
+ "baukit-suite",
  "baukit-sync",
  "baukit-test",
  "http",
@@ -364,6 +365,8 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower",
+ "url",
+ "uuid",
 ]
 
 [[package]]
@@ -491,6 +494,31 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "baukit-suite"
+version = "0.30.4"
+dependencies = [
+ "async-trait",
+ "aws-lc-rs",
+ "axum",
+ "base64 0.23.1",
+ "baukit-config",
+ "baukit-core",
+ "baukit-egress",
+ "baukit-events",
+ "baukit-http",
+ "jiff 1.0.0",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "url",
+ "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -3498,6 +3526,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "sha2"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4459,6 +4493,7 @@ dependencies = [
  "quote",
  "regex",
  "syn 3.0.9",
+ "uuid",
 ]
 
 [[package]]
@@ -4470,6 +4505,7 @@ dependencies = [
  "getrandom 0.4.3",
  "js-sys",
  "serde_core",
+ "sha1_smol",
  "wasm-bindgen",
 ]
 

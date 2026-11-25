@@ -1,0 +1,1 @@
+{"eventId": "platform-fixture-10", "type": "schluesselbund.credits.changed", "userId": "suite|person-123", "occurredAt": "2026-10-18T10:00:00Z", "sourceApp": "schluesselbund", "schemaVersion": 1, "payload": {"suiteSubject": "suite|person-123", "wallet": "hebkit", "revision": 4}}

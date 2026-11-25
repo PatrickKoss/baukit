@@ -19,12 +19,15 @@ baukit-http = { path = "../crates/baukit-http" }
 baukit-integrations = { path = "../crates/baukit-integrations", features = ["oauth-state"] }
 baukit-mcp = { path = "../crates/baukit-mcp" }
 baukit-ratelimit = { path = "../crates/baukit-ratelimit" }
+baukit-suite = { path = "../crates/baukit-suite", features = ["platform"] }
 baukit-sync = { path = "../crates/baukit-sync", default-features = false }
 baukit-test = { path = "../crates/baukit-test", default-features = false }
 jiff = { version = "1.0.0", features = ["serde"] }
 http = "1.5.0"
 serde_json = "1.0.151"
 tokio = { version = "1.53.2", features = ["full"] }
+url = "2"
+uuid = "1"
 tower = { version = "0.5.3", features = ["util"] }
 
 [profile.release]
@@ -75,6 +78,27 @@ bench = false
 [[bin]]
 name = "oauth_state_parse"
 path = "fuzz_targets/oauth_state_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "suite_event_decode"
+path = "fuzz_targets/suite_event_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "suite_ticket"
+path = "fuzz_targets/suite_ticket.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "suite_return_url"
+path = "fuzz_targets/suite_return_url.rs"
 test = false
 doc = false
 bench = false
