@@ -188,7 +188,8 @@ run_kani() {
   # Idempotent; also installs the nightly toolchain Kani pins, which runner caches miss.
   cargo kani setup
   for crate in "$@"; do
-    (cd rust && cargo kani -p "$crate")
+    # Kani 0.68 has no timeout flag; bound each crate's harness run instead.
+    (cd rust && timeout "${BAUKIT_KANI_TIMEOUT_SECONDS:-1800}" cargo kani -p "$crate")
   done
 }
 step_kani() {
@@ -217,7 +218,20 @@ step_verus() {
   fi
   cargo verus verify --manifest-path rust/verus/Cargo.toml
 }
-step_models() { sh scripts/check-models.sh; }
+# Prints TLA2TOOLS_JAR, or installs the deploy/tools.toml pin and prints its path.
+tla2tools_jar() {
+  if [ -n "${TLA2TOOLS_JAR:-}" ]; then
+    printf '%s\n' "$TLA2TOOLS_JAR"
+    return
+  fi
+  scripts/install-deploy-tools.sh --only tla2tools >&2
+  printf '%s\n' "${BAUKIT_TOOLS_DIR:-$repository_root/.tools}/bin/tla2tools"
+}
+step_models() {
+  jar=$(tla2tools_jar)
+  JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:--Xmx4g}" TLC_WORKERS="${TLC_WORKERS:-4}" \
+    TLA2TOOLS_JAR="$jar" sh models/check.sh
+}
 step_migrations() {
   python3 scripts/check-migrations.py lint
   python3 scripts/check-migrations.py double-apply

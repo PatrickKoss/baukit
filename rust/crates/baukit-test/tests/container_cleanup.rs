@@ -13,7 +13,7 @@ async fn postgres_has_cleanup_labels() -> Result<(), Box<dyn Error>> {
             "inspect",
             "--format",
             "{{json .Config.Labels}}",
-            postgres.container().id(),
+            postgres.container().ok_or("no container")?.id(),
         ])
         .output()?;
     assert!(output.status.success());
@@ -112,7 +112,10 @@ mod watchdog {
     fn child() -> Result<(), Box<dyn Error>> {
         tokio::runtime::Runtime::new()?.block_on(async {
             let postgres = baukit_test::start_postgres().await?;
-            println!("container-id={}", postgres.container().id());
+            println!(
+                "container-id={}",
+                postgres.container().ok_or("no container")?.id()
+            );
             std::io::stdout().flush()?;
             std::future::pending::<()>().await;
             drop(postgres);

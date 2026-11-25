@@ -197,6 +197,24 @@ class DoubleApplyTest(unittest.TestCase):
         )
 
 
+class ModelsStepTest(unittest.TestCase):
+    def test_models_step_hands_an_explicit_jar_to_models_check(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            jar = Path(directory) / "missing.jar"
+            result = subprocess.run(  # noqa: S603 -- fixed argv
+                ["sh", str(ROOT / "scripts" / "ci-gate.sh"), "--step", "models"],  # noqa: S607 -- sh on PATH
+                env={"PATH": "/usr/bin:/bin", "TLA2TOOLS_JAR": str(jar), "TLC_WORKERS": "1"},
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("install-deploy-tools", result.stdout + result.stderr)
+        self.assertIn("FAIL", result.stdout)
+
+
 class VectorRegistryTest(unittest.TestCase):
     def test_every_generated_vector_needs_one_generator(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -3,7 +3,7 @@
 # migration that breaks the binaries still running during a rollout fails CI (F-58, G-06).
 #
 # The tests to run are `[old_binary] tests` in rust/migrations.toml, as `crate:test-target` pairs.
-# They take the database from DATABASE_URL, so only releases whose baukit-test honours it can be
+# They take the database from BAUKIT_TEST_DATABASE_URL, so only releases whose baukit-test honours it can be
 # listed. With no tests listed the step reports that and passes.
 set -eu
 
@@ -44,8 +44,8 @@ while [ ! -s "$scratch/url" ]; do
   kill -0 "$!" 2>/dev/null || { echo "migrations-old-binary: migrating HEAD failed" >&2; exit 1; }
   sleep 1
 done
-DATABASE_URL=$(head -n 1 "$scratch/url")
-export DATABASE_URL
+BAUKIT_TEST_DATABASE_URL=$(head -n 1 "$scratch/url")
+export BAUKIT_TEST_DATABASE_URL
 
 echo "migrations-old-binary: $previous store tests against HEAD's schema"
 for entry in $tests; do

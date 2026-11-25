@@ -63,7 +63,6 @@ migrations = 30
 "rust/crates/baukit-suite/**" = ["models"]
 "rust/crates/baukit-erasure/**" = ["models"]
 "typescript/packages/data-contracts/**" = ["models"]
-"scripts/check-models.sh" = ["models"]
 "scripts/regenerate-vectors.py" = ["vectors"]
 "scripts/vector-generators.toml" = ["vectors"]
 "rust/fuzz/**" = ["fuzz"]

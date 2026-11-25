@@ -8,7 +8,7 @@ with `TLA2TOOLS_JAR`.
 |---|---|---|
 | `make kani` | `kani` | Every `#[kani::proof]` in a crate with `cfg(kani)` code holds for all inputs within the bounds its doc comment states. Also fails when a harness has no `Bounds:` line. |
 | `make kani-full` | `kani-full` | The same for every crate at once. Runs nightly. |
-| `make models` | `models` | TLC finds no invariant violation or unintended deadlock in any `models/*/*.cfg`. A cfg opts out of deadlock checking with `\* tlc-args: -deadlock`. |
+| `make models` | `models` | `models/check.sh`: each `models/<Name>/<Name>.cfg` passes TLC (deadlock checking off), and each `<Name>*_current.cfg`, which reproduces a bug in today's code, reports a violation. |
 | `make fuzz` | `fuzz` | No fuzz target crashes within 60 s. |
 | `make fuzz-long` | `fuzz-nightly` | The same for `FUZZ_SECONDS` per target (default 1800), growing the corpus. |
 | `make migrations-check` | `migrations` | New migrations pass squawk, cross-crate order matches `rust/migrations.toml`, every new file reruns cleanly, and the previous release's store tests pass on HEAD's schema. |

@@ -52,5 +52,10 @@ the rest.
 | Double apply | `scripts/check-migrations.py double-apply` | a new file that fails on its second run, or a second run that changes the schema |
 | Old binary | `scripts/migrations-old-binary.sh` | the previous release's store tests failing against HEAD's schema |
 
+The old-binary check runs the store tests listed in `[old_binary] tests` of
+`rust/migrations.toml`. The list is empty today and the step passes. A test can only be
+listed once a release ships whose baukit-test reads `BAUKIT_TEST_DATABASE_URL`, so the
+list fills after the next release.
+
 A squawk finding that is safe in context can be suppressed in the file with
 `-- squawk-ignore <rule>` and a comment that says why.
