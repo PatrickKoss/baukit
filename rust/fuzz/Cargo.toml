@@ -129,3 +129,10 @@ path = "fuzz_targets/idp_delete_url.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "xff_resolve"
+path = "fuzz_targets/xff_resolve.rs"
+test = false
+doc = false
+bench = false

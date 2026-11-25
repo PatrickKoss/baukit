@@ -626,6 +626,7 @@ dependencies = [
  "baukit-test",
  "metrics",
  "metrics-util",
+ "proptest",
  "redis",
  "serde_json",
  "thiserror",
