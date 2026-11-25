@@ -1,4 +1,6 @@
 use baukit_core::webhook_signature::verify_webhook_hmac_sha256;
+
+use crate::domain::SUITE_SIGNATURE_V2_HEADER;
 use baukit_events::{EventEnvelope, IngestOutcomeStatus};
 use sha2::{Digest as _, Sha256};
 
@@ -11,6 +13,8 @@ pub struct SignedHeaders {
     pub(super) timestamp: i64,
     delivery_id: String,
     pub(super) source: String,
+    signature_v2: Option<String>,
+    /// True only when `x-suite-replay: 1` arrives with a v2 signature, which covers it.
     replay: bool,
 }
 impl SignedHeaders {
@@ -18,7 +22,8 @@ impl SignedHeaders {
     ///
     /// `SignatureInvalid` when a suite header repeats, a required header is missing, the content type
     /// is not JSON, the timestamp is not a decimal integer, the delivery id is empty, too long or has
-    /// control characters, or `x-suite-replay` is present with a value other than `1`.
+    /// control characters, or `x-suite-replay` is present with a value other than `1`. A replay flag
+    /// without `x-suite-signature-v2` is unsigned, so it is ignored.
     pub fn parse<'a>(
         headers: impl Iterator<Item = (&'a str, &'a str)>,
     ) -> Result<Self, SuiteServiceError> {
@@ -33,6 +38,7 @@ impl SignedHeaders {
                     | "x-suite-delivery-id"
                     | "x-suite-source"
                     | "x-suite-replay"
+                    | SUITE_SIGNATURE_V2_HEADER
             ) && values.insert(key, value).is_some()
             {
                 return Err(SuiteServiceError::SignatureInvalid);
@@ -70,15 +76,34 @@ impl SignedHeaders {
             Some(&"1") => true,
             _ => return Err(SuiteServiceError::SignatureInvalid),
         };
+        let signature_v2 = values
+            .get(SUITE_SIGNATURE_V2_HEADER)
+            .map(|value| (*value).to_owned());
         Ok(Self {
+            replay: replay && signature_v2.is_some(),
+            signature_v2,
             signature: required("x-suite-signature")?.to_owned(),
             timestamp,
             delivery_id: delivery_id.to_owned(),
             source: required("x-suite-source")?.to_owned(),
-            replay,
         })
     }
 }
+fn signatures_valid(secret: &[u8], h: &SignedHeaders, body: &[u8]) -> bool {
+    let v1 = verify_webhook_hmac_sha256([secret], h.timestamp, &h.delivery_id, body, &h.signature);
+    let v2 = h.signature_v2.as_deref().is_none_or(|signature| {
+        crate::domain::verify_suite_v2(
+            secret,
+            h.timestamp,
+            &h.delivery_id,
+            h.replay,
+            body,
+            signature,
+        )
+    });
+    v1 && v2
+}
+
 #[derive(Clone, Debug)]
 pub struct IngestResult {
     pub duplicate: bool,
@@ -116,13 +141,7 @@ impl SuiteIngestService {
             .map_err(|_| SuiteServiceError::SignatureInvalid)?;
         if !signature_timestamp_valid(h.timestamp, now.as_second())
             || h.source != link.peer_app
-            || !verify_webhook_hmac_sha256(
-                [secret.as_slice()],
-                h.timestamp,
-                &h.delivery_id,
-                body,
-                &h.signature,
-            )
+            || !signatures_valid(secret.as_slice(), h, body)
         {
             return Err(SuiteServiceError::SignatureInvalid);
         }
@@ -212,10 +231,16 @@ impl SuiteIngestService {
             }
         };
         let payload_hash = payload_hash(&envelope)?;
+        let identity = InboxIdentity {
+            event_id: &envelope.event_id,
+            event_type: &envelope.event_type,
+            occurred_at: envelope.occurred_at,
+            payload_hash,
+        };
         if let InboxLookup::Duplicate(stored) = self
             .context
             .store
-            .inbox_in_transaction(&mut tx, id, &envelope.event_id, payload_hash)
+            .inbox_in_transaction(&mut tx, id, identity)
             .await?
         {
             let result = IngestResult::duplicate(stored.ledger_entry_id);
@@ -223,20 +248,7 @@ impl SuiteIngestService {
                 .acknowledge_received(tx, &link, now, "duplicate", result)
                 .await;
         }
-        let mut inbound = SuiteInboundEvent {
-            link_id: id,
-            event_id: envelope.event_id.clone(),
-            user_id: link.user_id,
-            event_type: envelope.event_type.clone(),
-            occurred_at: envelope.occurred_at,
-            payload_hash,
-            replay: h.replay,
-            outcome: AppliedOutcome {
-                outcome: AppliedOutcomeStatus::NoRule,
-                ledger_entry_id: None,
-            },
-            received_at: now,
-        };
+        let mut inbound = received_event(id, &link, &envelope, payload_hash, h.replay, now);
         self.context
             .store
             .record_inbound_in_transaction(&mut tx, &inbound)
@@ -406,4 +418,91 @@ fn payload_hash(envelope: &EventEnvelope) -> Result<[u8; 32], SuiteServiceError>
     let bytes =
         serde_json::to_vec(&envelope.payload).map_err(|_| SuiteServiceError::PayloadInvalid)?;
     Ok(Sha256::digest(bytes).into())
+}
+
+fn received_event(
+    link_id: Uuid,
+    link: &SuiteLink,
+    envelope: &EventEnvelope,
+    payload_hash: [u8; 32],
+    replay: bool,
+    received_at: Timestamp,
+) -> SuiteInboundEvent {
+    SuiteInboundEvent {
+        link_id,
+        event_id: envelope.event_id.clone(),
+        user_id: link.user_id,
+        event_type: envelope.event_type.clone(),
+        occurred_at: envelope.occurred_at,
+        payload_hash,
+        replay,
+        outcome: AppliedOutcome {
+            outcome: AppliedOutcomeStatus::NoRule,
+            ledger_entry_id: None,
+        },
+        received_at,
+    }
+}
+
+#[cfg(test)]
+mod signature_tests {
+    use super::*;
+    use crate::domain::sign_suite_v2;
+    use baukit_core::webhook_signature::sign_webhook_hmac_sha256;
+
+    const SECRET: &[u8] = b"link-secret";
+    const TIMESTAMP: i64 = 1_800_000_000;
+    const DELIVERY: &str = "delivery-1";
+    const BODY: &[u8] = br#"{"eventId":"delivery-1"}"#;
+
+    fn headers(replay_header: bool, v2_replay: Option<bool>) -> SignedHeaders {
+        let v1 = sign_webhook_hmac_sha256(SECRET, TIMESTAMP, DELIVERY, BODY);
+        let timestamp = TIMESTAMP.to_string();
+        let v2 = v2_replay.map(|replay| sign_suite_v2(SECRET, TIMESTAMP, DELIVERY, replay, BODY));
+        let mut pairs = vec![
+            ("content-type", "application/json"),
+            ("x-suite-signature", v1.as_str()),
+            ("x-suite-timestamp", timestamp.as_str()),
+            ("x-suite-delivery-id", DELIVERY),
+            ("x-suite-source", "beta"),
+        ];
+        if replay_header {
+            pairs.push(("x-suite-replay", "1"));
+        }
+        if let Some(v2) = v2.as_deref() {
+            pairs.push((SUITE_SIGNATURE_V2_HEADER, v2));
+        }
+        SignedHeaders::parse(pairs.into_iter()).expect("headers")
+    }
+
+    #[test]
+    fn a_v2_signature_binds_the_replay_flag() {
+        for replay in [false, true] {
+            assert!(signatures_valid(
+                SECRET,
+                &headers(replay, Some(replay)),
+                BODY
+            ));
+            assert!(headers(replay, Some(replay)).replay == replay);
+        }
+        let stripped = headers(false, Some(true));
+        assert!(!signatures_valid(SECRET, &stripped, BODY));
+        let added = headers(true, Some(false));
+        assert!(!signatures_valid(SECRET, &added, BODY));
+    }
+
+    #[test]
+    fn an_unsigned_v1_replay_flag_is_ignored() {
+        let h = headers(true, None);
+        assert!(!h.replay);
+        assert!(signatures_valid(SECRET, &h, BODY));
+    }
+
+    #[test]
+    fn a_v2_signature_does_not_verify_as_v1_or_for_another_body() {
+        let mut h = headers(false, Some(false));
+        assert!(!signatures_valid(SECRET, &h, b"{}"));
+        h.signature_v2 = h.signature_v2.map(|v2| v2.replacen("v2=", "v1=", 1));
+        assert!(!signatures_valid(SECRET, &h, BODY));
+    }
 }
