@@ -164,3 +164,40 @@ pub fn binding_from_cookie_header(header: &str) -> Option<&str> {
         (name == OAUTH_BINDING_COOKIE).then_some(value)
     })
 }
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+    fn sextet(byte: u8) -> Option<usize> {
+        ALPHABET.iter().position(|candidate| *candidate == byte)
+    }
+
+    /// K-18: for any 43 ASCII bytes, and for any other length up to 44,
+    /// `parse_token` accepts iff the length is 43, every byte is in the
+    /// URL-safe alphabet, and the last sextet has its two unused bits clear,
+    /// which is exactly a canonical base64url round trip. Unwind 65.
+    #[kani::proof]
+    #[kani::unwind(65)]
+    fn parse_token_accepts_only_canonical_tokens() {
+        let bytes: [u8; TOKEN_CHARS + 1] = kani::any();
+        let len: usize = kani::any();
+        kani::assume(len == TOKEN_CHARS || len == TOKEN_CHARS + 1 || len == TOKEN_CHARS - 1);
+        let Some(input) = bytes.get(..len) else {
+            return;
+        };
+        kani::assume(input.is_ascii());
+        let Ok(raw) = std::str::from_utf8(input) else {
+            return;
+        };
+        let alphabet = input.iter().all(|byte| sextet(*byte).is_some());
+        let canonical_tail = input
+            .last()
+            .and_then(|byte| sextet(*byte))
+            .is_some_and(|value| value % 4 == 0);
+        let expected = len == TOKEN_CHARS && alphabet && canonical_tail;
+        assert_eq!(parse_token(raw).is_ok(), expected);
+    }
+}
