@@ -6709,6 +6709,7 @@ fn both_quality_profiles_run_baukit_doctor() -> anyhow::Result<()> {
     assert!(workflow["jobs"].get("baukit-doctor").is_none());
     let gate = fs::read_to_string(strict_root.join("scripts/quality-gate.sh"))?;
     assert!(gate.contains("\nbaukit-doctor fast - always -\n"));
-    assert!(gate.contains("--bin baukit -- doctor"));
+    assert!(gate.contains("--bin baukit -- \"$@\""));
+    assert!(gate.contains("\n  run_baukit_cli doctor\n"));
     Ok(())
 }
