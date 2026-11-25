@@ -4,6 +4,15 @@ All notable changes to `baukit-sync` are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `pull::open_pull_window`, `PullCursor` and `merge_pull_page` for pulls that lose no rows. See `docs/migrations/sync-pull-window.md`.
+- `hlc::now_step`, `observe_step`, `validate_client_timestamp` and `HybridLogicalClock::with_max_drift_ms`.
+
+### Changed
+
+- Breaking: `observe` rejects remote timestamps more than 24 hours ahead. Corrupt persisted HLC state restarts at physical time. See `docs/migrations/hlc-drift-bound.md`.
+
 ## [0.30.4] - 2026-11-25
 
 ## [0.30.3] - 2026-11-24

@@ -5,7 +5,8 @@
 //! its owner. A client pulls by asking for everything above the revision it
 //! last saw, so the counter must be monotonic per owner and must move in the
 //! same transaction as the row write it stamps. [`next_revision`] does exactly
-//! that. The [`purge`] module deletes old tombstones and records the per-owner
+//! that. A pull opens a [`pull::PullWindow`] and pages with a `(revision, id)`
+//! cursor, because one revision can stamp several rows. The [`purge`] module deletes old tombstones and records the per-owner
 //! purge horizon, and [`horizon`] holds the pull-cursor rule that turns a
 //! cursor below the horizon into a full-resync signal. The [`hlc`] module
 //! supplies a cross-runtime logical clock for ordering writes when physical
@@ -59,12 +60,13 @@
 //!
 //! ```no_run
 //! # #[cfg(feature = "sqlx-postgres")]
-//! # async fn example(pool: &sqlx::PgPool, owner_id: uuid::Uuid) -> Result<(), sqlx::Error> {
+//! # async fn example(pool: &sqlx::PgPool, owner_id: uuid::Uuid, id: uuid::Uuid) -> Result<(), sqlx::Error> {
 //! let mut transaction = pool.begin().await?;
 //! let revision = baukit_sync::next_revision(&mut transaction, owner_id).await?;
-//! sqlx::query("UPDATE product_records SET revision = $1 WHERE owner_id = $2")
+//! sqlx::query("UPDATE product_records SET revision = $1 WHERE owner_id = $2 AND id = $3")
 //!     .bind(revision)
 //!     .bind(owner_id)
+//!     .bind(id)
 //!     .execute(&mut *transaction)
 //!     .await?;
 //! transaction.commit().await?;
@@ -76,6 +78,8 @@
 
 pub mod hlc;
 pub mod horizon;
+#[cfg(feature = "sqlx-postgres")]
+pub mod pull;
 #[cfg(feature = "sqlx-postgres")]
 pub mod purge;
 #[cfg(feature = "sqlx-postgres")]
