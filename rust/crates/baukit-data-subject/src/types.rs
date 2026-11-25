@@ -269,8 +269,9 @@ pub struct OperationResource {
 }
 
 /// Signed receipt body. Field declaration order is the signer's canonical JSON order.
+/// Unknown top-level fields are rejected: a v1 receipt has exactly these fields.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReceiptPayload {
     /// Must be `baukit.data-subject.receipt.v1`.
     pub receipt_type: String,
