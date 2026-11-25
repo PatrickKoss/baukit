@@ -9,7 +9,7 @@ use crate::{
     DEFAULT_DEVICES_PER_OWNER, DeliveryClaim, DeliveryClaimStore, DevicePlatform,
     DeviceRegistration, DeviceRegistry, DeviceTimeZone, DeviceToken, PendingReceipt,
     PendingReceiptStore, PushStoreError, PushStoreFuture, PushTicketId, RegisteredDevice,
-    RegistrationOutcome,
+    RegistrationOutcome, TakeoverDecision, takeover_decision,
 };
 
 const OWNER_LOCK_NAMESPACE: &str = "baukit_push.devices:";
@@ -19,8 +19,8 @@ const OWNER_LOCK_NAMESPACE: &str = "baukit_push.devices:";
 ///
 /// `register` and `rotate` run in one transaction under a per-owner advisory
 /// lock, so concurrent registrations for one owner cannot overshoot the cap.
-/// The token is the primary key; registering a token another owner holds moves
-/// it in the same statement.
+/// The token is the primary key. A token another owner holds moves only with
+/// its stored install secret, or when its row predates install secrets.
 #[derive(Clone, Debug)]
 pub struct PostgresDeviceRegistry {
     pool: PgPool,
@@ -58,9 +58,30 @@ impl PostgresDeviceRegistry {
                 .await
                 .map_err(PushStoreError::internal)?;
         }
-        upsert_device(&mut *transaction, &registration)
+        let digest = registration.secret_digest();
+        let stored = stored_owner(&mut transaction, &registration.token)
             .await
             .map_err(PushStoreError::internal)?;
+        match takeover_decision(
+            stored
+                .as_ref()
+                .map(|(owner, hash)| (*owner, hash.as_deref())),
+            registration.owner_id,
+            digest.as_deref(),
+        ) {
+            TakeoverDecision::Refuse => return Err(PushStoreError::TokenHeldByAnotherOwner),
+            TakeoverDecision::MoveLegacy => tracing::warn!(
+                target: "baukit_push",
+                "device token moved to another owner without an install secret"
+            ),
+            TakeoverDecision::Keep | TakeoverDecision::Move => {}
+        }
+        if !upsert_device(&mut *transaction, &registration, digest.as_deref())
+            .await
+            .map_err(PushStoreError::internal)?
+        {
+            return Err(PushStoreError::TokenHeldByAnotherOwner);
+        }
         let evicted = evict_over_cap(
             &mut transaction,
             registration.owner_id,
@@ -549,18 +570,36 @@ where
     Ok(deleted)
 }
 
+async fn stored_owner(
+    connection: &mut PgConnection,
+    token: &DeviceToken,
+) -> Result<Option<(Uuid, Option<Vec<u8>>)>, sqlx::Error> {
+    sqlx::query_as(
+        "SELECT owner_id, install_secret_hash FROM push_devices WHERE token = $1 FOR UPDATE",
+    )
+    .bind(token.expose())
+    .fetch_optional(connection)
+    .await
+}
+
+/// Returns `false` when a concurrent registration of another owner took the token first.
 async fn upsert_device<'e, E>(
     executor: E,
     registration: &DeviceRegistration,
-) -> Result<(), sqlx::Error>
+    digest: Option<&[u8]>,
+) -> Result<bool, sqlx::Error>
 where
     E: PgExecutor<'e>,
 {
-    sqlx::query(
+    let written = sqlx::query(
         "INSERT INTO push_devices
-             (token, owner_id, platform, time_zone, created_at, last_registered_at)
-         VALUES ($1, $2, $3, $4, $5, $5)
+             (token, owner_id, platform, time_zone, created_at, last_registered_at,
+              install_secret_hash)
+         VALUES ($1, $2, $3, $4, $5, $5, $6)
          ON CONFLICT (token) DO UPDATE SET
+             install_secret_hash = COALESCE(EXCLUDED.install_secret_hash,
+                 CASE WHEN push_devices.owner_id = EXCLUDED.owner_id
+                     THEN push_devices.install_secret_hash END),
              platform = EXCLUDED.platform,
              time_zone = EXCLUDED.time_zone,
              created_at = CASE WHEN push_devices.owner_id = EXCLUDED.owner_id
@@ -568,16 +607,21 @@ where
              last_registered_at = CASE WHEN push_devices.owner_id = EXCLUDED.owner_id
                  THEN GREATEST(push_devices.last_registered_at, EXCLUDED.last_registered_at)
                  ELSE EXCLUDED.last_registered_at END,
-             owner_id = EXCLUDED.owner_id",
+             owner_id = EXCLUDED.owner_id
+         WHERE push_devices.owner_id = EXCLUDED.owner_id
+             OR push_devices.install_secret_hash IS NULL
+             OR push_devices.install_secret_hash = EXCLUDED.install_secret_hash",
     )
     .bind(registration.token.expose())
     .bind(registration.owner_id)
     .bind(registration.platform.as_str())
     .bind(registration.time_zone.as_ref().map(DeviceTimeZone::as_str))
     .bind(registration.registered_at.to_sqlx())
+    .bind(digest)
     .execute(executor)
-    .await?;
-    Ok(())
+    .await?
+    .rows_affected();
+    Ok(written == 1)
 }
 
 async fn evict_over_cap(

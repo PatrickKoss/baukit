@@ -4,6 +4,17 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Breaking: `DeviceRegistration` has a new public field `install_secret`. Build registrations with `DeviceRegistration::new` and `with_install_secret`.
+- Breaking: `PushError::Partial` carries the outcomes of chunks that were sent before a later chunk failed. Read them with `PushError::completed_outcomes`.
+- A token held by another owner moves only with its install secret. Otherwise registration fails with `PushStoreError::TokenHeldByAnotherOwner`. Rows without a secret still move and log a warning.
+
+### Added
+
+- Migration `0005_baukit_push_install_secrets.sql` (`POSTGRES_PUSH_INSTALL_SECRETS_MIGRATION_SQL`). See `docs/migrations/push-install-secrets.md`.
+
+
 ## [0.30.4] - 2026-11-25
 
 ## [0.30.3] - 2026-11-24

@@ -137,8 +137,10 @@ exists.
 
 A scheduled sender claims a `DeliveryClaim` keyed by owner, local date, and
 `DeliveryKind` before it sends. `claim` returns `false` when another worker
-already holds it. If the whole send fails, `release` the claim so a later run
-can try again. Event-driven senders do not need claims, which is why this is a
+already holds it. If the send fails before any notification went out, `release`
+the claim so a later run can try again. A `PushError::Partial` means earlier
+chunks already went out: record its `outcomes` and keep the claim, because a
+retry would send those notifications twice. Event-driven senders do not need claims, which is why this is a
 separate `DeliveryClaimStore` port with its own table.
 
 ```rust,ignore
@@ -152,7 +154,11 @@ match sender.send(messages).await {
         registry.invalidate_dead_tokens(&outcomes, sent_at).await?;
     }
     Err(error) => {
-        claims.release(claim).await?;
+        if error.completed_outcomes().is_empty() {
+            claims.release(claim).await?;
+        } else {
+            registry.invalidate_dead_tokens(error.completed_outcomes(), sent_at).await?;
+        }
         return Err(error.into());
     }
 }
@@ -353,7 +359,10 @@ if error.is_retryable() {
 ```
 
 A malformed provider response is a `PushError::InvalidResponse` and is never
-retryable. Per-notification refusals are not errors at all; check
+retryable. When a later chunk of a multi-chunk batch fails, `send` returns
+`PushError::Partial` with the outcomes of the chunks Expo already handled and
+the error that stopped the rest; `is_retryable` and `retry_after` follow that
+inner error. Retry only the messages without an outcome. Per-notification refusals are not errors at all; check
 `PushRejection::is_retryable` on each outcome instead.
 
 ## Configuration
