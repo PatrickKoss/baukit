@@ -1,3 +1,4 @@
+use crate::kernel::{ReplayDecision, replay_decision};
 use crate::{
     ErasureFuture, IDENTITY_DELETE_JOB_TYPE, IdentityAccountDeleter, IdentityDeletionError,
 };
@@ -17,7 +18,8 @@ use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
 
-const REJECTED_SESSION_SQL: &str = "SELECT EXISTS (
+/// Mirrored by [`crate::kernel::fence_rejects`]; keep both in step.
+pub const REJECTED_SESSION_SQL: &str = "SELECT EXISTS (
     SELECT 1 FROM erasure_fences AS fence
     WHERE fence.subject_hash = $1 AND (
         $2::timestamptz IS NULL OR $2 <= fence.erased_at OR EXISTS (
@@ -204,7 +206,28 @@ impl PostgresErasureStore {
             Ok(())
         }
     }
+    /// Begins a product write transaction that already holds the subject lock and passed the
+    /// fence. Run every product write for an authenticated subject through it: an erase
+    /// that commits first rejects the write, and an erase that starts later waits for the
+    /// write to commit and then deletes its rows.
+    ///
+    /// # Errors
+    ///
+    /// [`ErasureError::ProfileErased`] when the session is fenced, and
+    /// [`ErasureError::Database`] when the transaction, lock or fence query fails.
+    pub async fn begin_guarded_write(
+        &self,
+        subject: &str,
+        authenticated_at: Option<Timestamp>,
+    ) -> Result<Transaction<'static, Postgres>, ErasureError> {
+        let mut transaction = self.pool.begin().await?;
+        self.guard_subject(&mut transaction, subject, authenticated_at)
+            .await?;
+        Ok(transaction)
+    }
     /// Returns whether this session is rejected, without creating a profile.
+    /// This read takes no lock, so it cannot protect a later write. Use
+    /// [`Self::begin_guarded_write`] or [`Self::guard_subject`] for writes.
     /// A missing login time keeps a subject fenced permanently.
     ///
     /// # Errors
@@ -273,7 +296,11 @@ async fn lock(transaction: &mut Transaction<'_, Postgres>, hash: &[u8]) -> Resul
         .await?;
     Ok(())
 }
-/// Axum handler helper. Call after authentication, before any product operation.
+/// Axum handler helper. Call after authentication to reject fenced sessions early.
+///
+/// The check takes no lock: an erase can commit between this check and a later write.
+/// Product writes must still run inside [`PostgresErasureStore::begin_guarded_write`] or
+/// call [`PostgresErasureStore::guard_subject`] in their own transaction.
 ///
 /// # Errors
 ///
@@ -344,6 +371,19 @@ impl ErasureService {
     /// Receipt and fence store for status handlers and subject resolution.
     pub fn store(&self) -> &PostgresErasureStore {
         &self.store
+    }
+    /// Readiness check for the identity provider in delete mode. Register it with the
+    /// readiness registry so a wrong base URL keeps the service unready.
+    ///
+    /// # Errors
+    ///
+    /// The deleter's [`IdentityDeletionError`] when its endpoint does not answer like the
+    /// provider. Retain mode always succeeds.
+    pub async fn probe_identity_provider(&self) -> Result<(), IdentityDeletionError> {
+        match &self.identity_retention {
+            IdentityRetention::Delete { deleter, .. } => deleter.probe().await,
+            IdentityRetention::Retain => Ok(()),
+        }
     }
     /// Fences an operator-selected subject inside the caller's transaction.
     ///
@@ -589,13 +629,16 @@ fn replay_outcome(
     subject_hash: &[u8],
     previous: Option<(Vec<u8>, Value)>,
 ) -> Result<Option<ErasureOutcome>, ErasureError> {
-    let Some((owner, response)) = previous else {
-        return Ok(None);
-    };
-    if owner != subject_hash {
-        return Err(ErasureError::Conflict);
+    let same_subject = previous
+        .as_ref()
+        .is_some_and(|(owner, _)| owner.as_slice() == subject_hash);
+    match (replay_decision(previous.is_some(), same_subject), previous) {
+        (ReplayDecision::Replay, Some((_, response))) => {
+            Ok(Some(serde_json::from_value(response)?))
+        }
+        (ReplayDecision::Conflict, _) => Err(ErasureError::Conflict),
+        _ => Ok(None),
     }
-    Ok(Some(serde_json::from_value(response)?))
 }
 
 #[cfg(test)]

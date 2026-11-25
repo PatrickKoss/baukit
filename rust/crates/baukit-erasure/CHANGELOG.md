@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- A `404` counts as deleted only when the provider body names a missing user (Clerk `resource_not_found`, WorkOS `entity_not_found`, Keycloak `User not found`). A bare `404` is now a permanent error.
+- Keycloak accepts `http` only for loopback hosts with `allow_local_http`.
+- Subjects that are empty, `.`, `..`, longer than 256 bytes or hold control characters are rejected before any request.
+
+### Added
+
+- `IdentityDeletion::probe` and `ErasureService::probe_identity_provider` for a startup readiness check.
+- `PostgresErasureStore::begin_guarded_write`, `WriteFence`, `with_write_fence` and `begin_fenced_write` for product writes that an erasure cannot race.
+
+
 ## [0.30.4] - 2026-11-25
 
 ## [0.30.3] - 2026-11-24
