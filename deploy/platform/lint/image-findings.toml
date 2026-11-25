@@ -51,10 +51,11 @@ ids = [
 ]
 
 [images."docker.io/falcosecurity/falcosidekick:2.35.1@sha256:a9bb60d2c7742febd912315ca1155839abc0199bf322c58d3adbb8b0849fadb9"]
-expires = 2027-01-16
-reason = "docker.io/falcosecurity/falcosidekick:2.35.1: no fixed upstream release exists as of 2026-11-19. 2.35.1 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
+expires = 2027-01-13
+reason = "docker.io/falcosecurity/falcosidekick:2.35.1: no fixed upstream release exists as of 2026-11-19. 2.35.1 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.10, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. CVE-2026-124709 is the Alpine OpenSSL 3.5.9-r0 QUIC stream memory leak (libcrypto3, libssl3), fixed in 3.5.9-r2; the libraries come from the Alpine base, the falcosidekick server is a Go binary that uses Go's crypto/tls rather than OpenSSL, and no rebuild of this tag with the fix exists as of 2026-11-25. Follow-up RF29."
 ids = [
   "CVE-2026-116587",
+  "CVE-2026-124709",
   "CVE-2026-78661",
   "CVE-2026-78669",
   "CVE-2026-97054",
@@ -140,11 +141,12 @@ ids = [
 ]
 
 [images."ghcr.io/fluxcd/flagger:1.45.0@sha256:15b372d35012f9ae450f9030bc82217369c0aee082ed5a5225830010cf972b2b"]
-expires = 2027-01-16
-reason = "ghcr.io/fluxcd/flagger:1.45.0: no fixed upstream release exists as of 2026-11-19. 1.45.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.7, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. Follow-up RF29."
+expires = 2027-01-13
+reason = "ghcr.io/fluxcd/flagger:1.45.0: no fixed upstream release exists as of 2026-11-19. 1.45.0 is the newest upstream release and still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.7, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. CVE-2026-124709 is the Alpine OpenSSL 3.5.7-r0 QUIC stream memory leak (libcrypto3, libssl3), fixed in 3.5.9-r2; the libraries come from the Alpine base, the flagger controller is a Go binary that uses Go's crypto/tls rather than OpenSSL, and no rebuild of this tag with the fix exists as of 2026-11-25. Follow-up RF29."
 ids = [
   "CVE-2026-107891",
   "CVE-2026-111943",
+  "CVE-2026-124709",
   "CVE-2026-14456",
   "CVE-2026-56851",
   "CVE-2026-56854",
@@ -1879,8 +1881,8 @@ ids = [
 ]
 
 [images."ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0@sha256:c669259e20ed1e11fad821f735c396c19d929985aa05b9544b13ecc8b5a386d0"]
-expires = 2027-01-16
-reason = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0: no fixed upstream release exists as of 2026-11-23. v0.16.0 is the newest plugin-barman-cloud release and its digest has not been rebuilt, so it still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. CVE-2026-107364, CVE-2026-112315 to CVE-2026-112323, CVE-2026-118380, CVE-2026-119079, CVE-2026-71199 and CVE-2026-71200 are Debian trixie krb5 1.21.3-5+deb13u1 (libkrb5-3, libgssapi-krb5-2, libk5crypto3, libkrb5support0), fixed in 1.21.3-5+deb13u2. Every one of these advisories attacks the KDC or kadmind, which the image does not ship; it carries only the client libraries, and the sidecar authenticates to the object store with S3 keys and to Postgres over its local socket, never with Kerberos. Follow-up RF29."
+expires = 2027-01-13
+reason = "ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.16.0: no fixed upstream release exists as of 2026-11-23. v0.16.0 is the newest plugin-barman-cloud release and its digest has not been rebuilt, so it still ships these. CVE-2026-97054 is a Go standard library net/http race fixed in Go 1.26.11 and 1.27.4 on 2026-11-10; this image's binaries are built with Go 1.26.6, and only an upstream rebuild clears it because the platform runs upstream's published images and does not rebuild third-party binaries. CVE-2026-107364, CVE-2026-112315 to CVE-2026-112323, CVE-2026-118380, CVE-2026-119079, CVE-2026-71199 and CVE-2026-71200 are Debian trixie krb5 1.21.3-5+deb13u1 (libkrb5-3, libgssapi-krb5-2, libk5crypto3, libkrb5support0), fixed in 1.21.3-5+deb13u2. Every one of these advisories attacks the KDC or kadmind, which the image does not ship; it carries only the client libraries, and the sidecar authenticates to the object store with S3 keys and to Postgres over its local socket, never with Kerberos. CVE-2026-124851 is Debian trixie libzstd1 1.5.7+dfsg-1 reading an uninitialized buffer, fixed in 1.5.7+dfsg-1+deb13u1; no rebuild of this tag with the fix exists as of 2026-11-25. Follow-up RF29."
 ids = [
   "CVE-2026-107364",
   "CVE-2026-111943",
@@ -1895,6 +1897,7 @@ ids = [
   "CVE-2026-112323",
   "CVE-2026-118380",
   "CVE-2026-119079",
+  "CVE-2026-124851",
   "CVE-2026-71199",
   "CVE-2026-71200",
   "CVE-2026-78661",
@@ -1902,6 +1905,13 @@ ids = [
   "CVE-2026-78669",
   "CVE-2026-97031",
   "CVE-2026-97054",
+]
+
+[images."ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie@sha256:c437b7c6c00aa7e66f5d6de1dd83602391fdebd4ff776ffb1ab7aaba5e7351ad"]
+expires = 2027-01-13
+reason = "ghcr.io/cloudnative-pg/postgresql:18.7-system-trixie: no fixed upstream release exists as of 2026-11-25. The pinned digest is the newest 18.7 trixie build (18.7-202611230809-system-trixie) and the tag still resolves to it. CVE-2026-124851 is Debian trixie libzstd1 1.5.7+dfsg-1 reading an uninitialized buffer, fixed in 1.5.7+dfsg-1+deb13u1, which this build does not ship yet. Follow-up RF29."
+ids = [
+  "CVE-2026-124851",
 ]
 
 [images."python:3.15.2-alpine3.24@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd"]
@@ -2031,9 +2041,16 @@ ids = [
   "CVE-2026-97054",
 ]
 
+[images."redis:6.2.24-alpine@sha256:3f9c6e23ed6bea3b41d0ef709fc164c1a0b7c00d5a21a60e0e9c33ada5496881"]
+expires = 2027-01-13
+reason = "redis:6.2.24-alpine: no fixed upstream release exists as of 2026-11-25. 6.2.24 is the newest 6.2 release and the tag still resolves to the pinned digest. CVE-2026-124709 is the Alpine OpenSSL 3.5.9-r0 QUIC stream memory leak (libcrypto3, libssl3), fixed in 3.5.9-r2. Redis has no QUIC support, and PostHog's redis-server runs without TLS options, serving plain TCP inside the cluster. Follow-up RF29."
+ids = [
+  "CVE-2026-124709",
+]
+
 [images."redpandadata/redpanda:v26.2.7@sha256:43545ee03966431f5451e0b3c1e651b39fbe3eb383360220311021f50133b649"]
-expires = 2027-01-16
-reason = "redpandadata/redpanda:v26.2.7: no fixed upstream release exists as of 2026-11-23. v26.2.7 is the newest 26.2 patch and its digest has not been rebuilt; v26.3.1, the next feature release, ships the same packages. The findings are Debian trixie krb5 1.21.3-5+deb13u1 (libkrb5-3, libgssapi-krb5-2, libk5crypto3, libkrb5support0, krb5-locales), fixed in 1.21.3-5+deb13u2, which the image's curl pulls in. Every one of these advisories attacks the KDC or kadmind, which the image does not ship. PostHog's broker enables no SASL on its in-cluster Kafka listener, so it never negotiates GSSAPI. Follow-up RF29."
+expires = 2027-01-13
+reason = "redpandadata/redpanda:v26.2.7: no fixed upstream release exists as of 2026-11-23. v26.2.7 is the newest 26.2 patch and its digest has not been rebuilt; v26.3.1, the next feature release, ships the same packages. The findings are Debian trixie krb5 1.21.3-5+deb13u1 (libkrb5-3, libgssapi-krb5-2, libk5crypto3, libkrb5support0, krb5-locales), fixed in 1.21.3-5+deb13u2, which the image's curl pulls in. Every one of these advisories attacks the KDC or kadmind, which the image does not ship. PostHog's broker enables no SASL on its in-cluster Kafka listener, so it never negotiates GSSAPI. CVE-2026-124851 is Debian trixie libzstd1 1.5.7+dfsg-1 reading an uninitialized buffer, fixed in 1.5.7+dfsg-1+deb13u1; no rebuild of this tag with the fix exists as of 2026-11-25. Follow-up RF29."
 ids = [
   "CVE-2026-107364",
   "CVE-2026-112315",
@@ -2047,6 +2064,7 @@ ids = [
   "CVE-2026-112323",
   "CVE-2026-118380",
   "CVE-2026-119079",
+  "CVE-2026-124851",
   "CVE-2026-71199",
   "CVE-2026-71200",
 ]
@@ -2183,16 +2201,18 @@ ids = [
 ]
 
 [images."tailscale/k8s-operator@sha256:51ba104ff02afcc39f93189415c8b2f44fb6037e8592d626bfa52c3c8afc02f6"]
-expires = 2027-01-16
-reason = "tailscale/k8s-operator 1.104.7: no fixed upstream release exists as of 2026-11-21. Tailscale 1.104.7 is the newest release (2026-11-12) and its binaries are built with golang.org/x/net 0.60.0; the fix is in 0.62.0. The vulnerable package is x/net/html, a parser for HTML documents, and the operator talks only to the Kubernetes API and the Tailscale control plane, and parses no HTML from untrusted peers. Only an upstream rebuild clears it, because the platform runs upstream's published images. Follow-up RF29."
+expires = 2027-01-13
+reason = "tailscale/k8s-operator 1.104.7: no fixed upstream release exists as of 2026-11-21. Tailscale 1.104.7 is the newest release (2026-11-12) and its binaries are built with golang.org/x/net 0.60.0; the fix is in 0.62.0. The vulnerable package is x/net/html, a parser for HTML documents, and the operator talks only to the Kubernetes API and the Tailscale control plane, and parses no HTML from untrusted peers. Only an upstream rebuild clears it, because the platform runs upstream's published images. CVE-2026-124709 is the Alpine OpenSSL 3.5.9-r0 QUIC stream memory leak (libcrypto3, libssl3), fixed in 3.5.9-r2; the libraries come from the Alpine base, the operator is a Go binary that uses Go's crypto/tls rather than OpenSSL, and no rebuild of this tag with the fix exists as of 2026-11-25. Follow-up RF29."
 ids = [
+  "CVE-2026-124709",
   "CVE-2026-78661",
 ]
 
 [images."tailscale/tailscale@sha256:72c1e19e0aedca96b8533bbb0b4368564410ff20b17e53b804eb6c1f04a31be4"]
-expires = 2027-01-16
-reason = "tailscale/tailscale 1.104.7 (operator proxies): no fixed upstream release exists as of 2026-11-21. Tailscale 1.104.7 is the newest release (2026-11-12) and its binaries are built with golang.org/x/net 0.60.0; the fix is in 0.62.0. The vulnerable package is x/net/html, a parser for HTML documents, and containerboot, tailscale and tailscaled forward TCP and parse no HTML from untrusted peers. Only an upstream rebuild clears it, because the platform runs upstream's published images. Follow-up RF29."
+expires = 2027-01-13
+reason = "tailscale/tailscale 1.104.7 (operator proxies): no fixed upstream release exists as of 2026-11-21. Tailscale 1.104.7 is the newest release (2026-11-12) and its binaries are built with golang.org/x/net 0.60.0; the fix is in 0.62.0. The vulnerable package is x/net/html, a parser for HTML documents, and containerboot, tailscale and tailscaled forward TCP and parse no HTML from untrusted peers. Only an upstream rebuild clears it, because the platform runs upstream's published images. CVE-2026-124709 is the Alpine OpenSSL 3.5.9-r0 QUIC stream memory leak (libcrypto3, libssl3), fixed in 3.5.9-r2; the libraries come from the Alpine base, the containerboot, tailscale and tailscaled each is a Go binary that uses Go's crypto/tls rather than OpenSSL, and no rebuild of this tag with the fix exists as of 2026-11-25. Follow-up RF29."
 ids = [
+  "CVE-2026-124709",
   "CVE-2026-78661",
 ]
 

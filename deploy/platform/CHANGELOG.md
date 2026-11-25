@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `lint/image-findings.toml` allows CVE-2026-124709 (Alpine OpenSSL 3.5.9-r0 QUIC stream memory leak in libcrypto3 and libssl3, fixed in 3.5.9-r2) in `falcosidekick:2.35.1`, `flagger:1.45.0`, `redis:6.2.24-alpine`, `tailscale/k8s-operator` and `tailscale/tailscale`, and CVE-2026-124851 (Debian trixie libzstd1 1.5.7+dfsg-1 uninitialized buffer read, fixed in 1.5.7+dfsg-1+deb13u1) in `plugin-barman-cloud-sidecar:v0.16.0`, `postgresql:18.7-system-trixie` and `redpandadata/redpanda:v26.2.7`, until 2027-01-13. Every pinned tag still resolves to the pinned digest and no newer patch release exists as of 2026-11-25. The falcosidekick, flagger and Tailscale binaries are Go and use crypto/tls, and Redis has no QUIC support. The entries these join now expire on 2027-01-13 too. Follow-up RF29.
+
 ## [0.30.4] - 2026-11-25
 
 - `deploy/smoke/k3d-smoke.sh` passes `platform_local_kubelet_args` to `k3d cluster create`, so throwaway smoke clusters evict at 20 GiB free instead of k3s's 5% (about 50 GB on a 1 TB disk). No other k3d create in baukit or the product templates existed outside `deploy/platform`.
