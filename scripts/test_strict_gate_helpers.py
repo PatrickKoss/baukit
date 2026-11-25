@@ -7,6 +7,12 @@ from process_runner import run_process
 
 ROOT = Path(__file__).resolve().parents[1]
 GATE = ROOT / "templates/common/__strict__/scripts/quality-gate.sh"
+FAKE_GIT = """#!/bin/sh
+printf '%s\\n' "$*" >> "$GIT_LOG"
+[ -n "${GIT_FAILS:-}" ] && exit 128
+for target; do :; done
+mkdir -p "$target/cli"
+"""
 FAKE_UV = '#!/bin/sh\nprintf \'%s\\n\' "$*" > "$UV_ARGS"\n'
 
 
@@ -93,6 +99,97 @@ class RequireNodeModulesTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("web/node_modules is missing", result.stderr)
         self.assertIn("--step web-install", result.stderr)
+
+
+def cached_checkout_script():
+    return (
+        "baukit_remote=https://example.invalid/baukit.git\n"
+        "baukit_clone_retry_seconds=0\n"
+        + gate_function("clone_baukit_tag")
+        + gate_function("move_into_place")
+        + gate_function("cached_baukit_checkout")
+        + "cached_baukit_checkout v1.2.3"
+    )
+
+
+def without_cache_lookup(script):
+    lookup = '  if [ -d "$checkout_dir" ]; then\n    printf'
+    assert lookup in script
+    return script.replace(lookup, "  if false; then\n    printf", 1)
+
+
+class CachedBaukitCheckoutTests(unittest.TestCase):
+    def run_checkout(self, root, git_fails=False, script=None):
+        bin_dir = root / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "git").write_text(FAKE_GIT)
+        (bin_dir / "git").chmod(0o755)
+        env = {
+            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "XDG_CACHE_HOME": str(root / "cache"),
+            "GIT_LOG": str(root / "git.log"),
+        }
+        if git_fails:
+            env["GIT_FAILS"] = "1"
+        return run_process(
+            ["sh", "-c", script or cached_checkout_script()],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=root,
+            env=env,
+        )
+
+    def git_calls(self, root):
+        log = root / "git.log"
+        return log.read_text().splitlines() if log.exists() else []
+
+    def test_an_existing_checkout_is_reused_without_git(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkout = root / "cache/baukit/checkouts/v1.2.3"
+            checkout.mkdir(parents=True)
+            result = self.run_checkout(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(checkout))
+            self.assertEqual(self.git_calls(root), [])
+
+    def test_a_missing_checkout_is_cloned_beside_the_target_and_moved_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkouts = root / "cache/baukit/checkouts"
+            result = self.run_checkout(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), str(checkouts / "v1.2.3"))
+            self.assertTrue((checkouts / "v1.2.3/cli").is_dir())
+            self.assertEqual([path.name for path in checkouts.iterdir()], ["v1.2.3"])
+            [call] = self.git_calls(root)
+            self.assertIn("--branch v1.2.3 --depth 1 https://example.invalid/baukit.git", call)
+            self.assertIn(str(checkouts / "v1.2.3.tmp."), call)
+
+    def test_a_checkout_that_appeared_meanwhile_wins_over_the_staged_clone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            checkouts = root / "cache/baukit/checkouts"
+            (checkouts / "v1.2.3").mkdir(parents=True)
+            (checkouts / "v1.2.3/marker").write_text("")
+            result = self.run_checkout(root, script=without_cache_lookup(cached_checkout_script()))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((checkouts / "v1.2.3/marker").exists())
+            self.assertFalse((checkouts / "v1.2.3/checkout").exists())
+            self.assertEqual([path.name for path in checkouts.iterdir()], ["v1.2.3"])
+
+    def test_an_unreachable_remote_is_retried_once_then_named(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.run_checkout(root, git_fails=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(len(self.git_calls(root)), 2)
+            self.assertIn(
+                "baukit remote https://example.invalid/baukit.git was unreachable", result.stderr
+            )
+            self.assertIn(str(root / "cache/baukit/checkouts/v1.2.3"), result.stderr)
+            self.assertEqual(list((root / "cache/baukit/checkouts").iterdir()), [])
 
 
 if __name__ == "__main__":
