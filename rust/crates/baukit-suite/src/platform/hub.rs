@@ -129,7 +129,12 @@ pub enum HubError {
 
 /// Encodes every byte except ASCII alphanumerics and `*-._`, so `|` in a
 /// suite subject becomes `%7C`.
+/// Percent-encodes one path segment. `.` and `..` are encoded too, because a URL
+/// parser resolves them as dot segments and would leave `/platform/v1/`.
 fn encode_segment(segment: &str) -> String {
+    if matches!(segment, "." | "..") {
+        return segment.replace('.', "%2E");
+    }
     url::form_urlencoded::byte_serialize(segment.as_bytes())
         .map(|part| if part == "+" { "%20" } else { part })
         .collect()
@@ -502,5 +507,41 @@ mod tests {
                 .path(),
             "/api/platform/v1/accounts/suite-dev%7Calice/organizations"
         );
+    }
+
+    #[test]
+    fn dot_segments_stay_inside_the_platform_api() {
+        let hub = client();
+        for subject in ["..", ".", "%2E%2E"] {
+            let url = hub
+                .url(&["accounts", subject, "organizations"])
+                .expect("url");
+            assert!(
+                url.path().starts_with("/api/platform/v1/accounts/"),
+                "{subject} escaped to {}",
+                url.path()
+            );
+        }
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::encode_segment;
+
+    /// K-21: an encoded segment never adds a path, query or fragment delimiter
+    /// and is never a dot segment.
+    #[kani::proof]
+    #[kani::unwind(5)]
+    fn an_encoded_segment_cannot_leave_its_slot() {
+        let bytes: [u8; 3] = kani::any();
+        let len: usize = kani::any();
+        kani::assume(len <= bytes.len());
+        let Ok(segment) = std::str::from_utf8(&bytes[..len]) else {
+            return;
+        };
+        let encoded = encode_segment(segment);
+        assert!(!encoded.contains(['/', '?', '#', '\\']));
+        assert!(encoded != "." && encoded != "..");
     }
 }
