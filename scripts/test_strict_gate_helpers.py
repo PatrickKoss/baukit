@@ -192,5 +192,41 @@ class CachedBaukitCheckoutTests(unittest.TestCase):
             self.assertEqual(list((root / "cache/baukit/checkouts").iterdir()), [])
 
 
+RUN_BAUKIT_CLI_SCRIPT = (
+    "baukit_root=/cache/baukit\n" + gate_function("run_baukit_cli") + "run_baukit_cli doctor"
+)
+
+
+class RunBaukitCliTests(unittest.TestCase):
+    def target_dir(self, log_dir=None):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            (bin_dir / "cargo").write_text('#!/bin/sh\nprintf "%s\\n" "$CARGO_TARGET_DIR"\n')
+            (bin_dir / "cargo").chmod(0o755)
+            env = {"PATH": f"{bin_dir}:/usr/bin:/bin"}
+            if log_dir:
+                env["BAUKIT_GATE_LOG_DIR"] = log_dir
+            result = run_process(
+                ["sh", "-c", RUN_BAUKIT_CLI_SCRIPT],
+                capture_output=True,
+                text=True,
+                check=False,
+                cwd=root,
+                env=env,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout.strip(), str(root.resolve())
+
+    def test_the_build_lands_in_the_product_gate_directory(self):
+        target, root = self.target_dir()
+        self.assertEqual(target, f"{root}/.quality-gate/baukit-target")
+
+    def test_the_gate_log_directory_moves_the_build(self):
+        target, _ = self.target_dir("/logs")
+        self.assertEqual(target, "/logs/baukit-target")
+
+
 if __name__ == "__main__":
     unittest.main()

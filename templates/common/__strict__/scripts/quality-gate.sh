@@ -209,14 +209,19 @@ step_preflight() {
   sh scripts/preflight.sh
 }
 
+run_baukit_cli() {
+  CARGO_TARGET_DIR="${BAUKIT_GATE_LOG_DIR:-$(pwd)/.quality-gate}/baukit-target" \
+    cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- "$@"
+}
+
 step_baukit_doctor() {
   use_baukit_root
-  cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- doctor
+  run_baukit_cli doctor
 }
 
 step_baukit_check() {
   use_baukit_root
-  cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- \
+  run_baukit_cli \
     check agent-docs file-size suppressions lints patterns observability template-files fuzz-lockfile --root .
 }
 
