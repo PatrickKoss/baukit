@@ -7,7 +7,9 @@ use thiserror::Error;
 const BYTE_ORDER_MARK: char = '\u{feff}';
 const RECORD_SEPARATOR: &str = "\r\n";
 const FORMULA_ESCAPE: char = '\'';
-const FORMULA_TRIGGERS: [char; 4] = ['=', '+', '-', '@'];
+const FORMULA_TRIGGERS: [char; 8] = [
+    '=', '+', '-', '@', '\u{ff1d}', '\u{ff0b}', '\u{ff0d}', '\u{ff20}',
+];
 const CONTROL_TRIGGERS: [char; 2] = ['\t', '\r'];
 const LEADING_WHITESPACE: [char; 4] = [' ', '\t', '\r', '\n'];
 const QUOTE_REQUIRED: [char; 4] = ['"', ',', '\r', '\n'];

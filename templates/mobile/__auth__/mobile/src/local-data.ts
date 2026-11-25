@@ -30,14 +30,52 @@ import { PRODUCT_NAME } from './product';
 
 const REGISTRY_KEY = `${PRODUCT_NAME}.local-data-registry.v1`;
 
+const REGISTRY_CHUNK_COUNT_KEY = `${REGISTRY_KEY}.chunks`;
+/** SecureStore warns above 2048 bytes per item; 500 UTF-16 units stay below it for any text. */
+const REGISTRY_CHUNK_LENGTH = 500;
+
+/** Splits the registry across items so it can outgrow one SecureStore item. */
 class SecureStoreRegistry implements ScopedPersistenceRegistryStore {
-  public read(): Promise<string | null> {
-    return SecureStore.getItemAsync(REGISTRY_KEY);
+  public async read(): Promise<string | null> {
+    const count = await SecureStore.getItemAsync(REGISTRY_CHUNK_COUNT_KEY);
+    if (count === null) return SecureStore.getItemAsync(REGISTRY_KEY);
+    const chunks: string[] = [];
+    for (let index = 0; index < Number(count); index += 1) {
+      const chunk = await SecureStore.getItemAsync(`${REGISTRY_KEY}.${String(index)}`);
+      if (chunk === null) throw new PersistenceIdentityMismatchError();
+      chunks.push(chunk);
+    }
+    return chunks.join('');
   }
 
-  public write(serialized: string): Promise<void> {
-    return SecureStore.setItemAsync(REGISTRY_KEY, serialized);
+  public async write(serialized: string): Promise<void> {
+    const previous = Number((await SecureStore.getItemAsync(REGISTRY_CHUNK_COUNT_KEY)) ?? '0');
+    const chunks = chunk(serialized);
+    for (const [index, value] of chunks.entries()) {
+      await SecureStore.setItemAsync(`${REGISTRY_KEY}.${String(index)}`, value);
+    }
+    await SecureStore.setItemAsync(REGISTRY_CHUNK_COUNT_KEY, String(chunks.length));
+    for (let index = chunks.length; index < previous; index += 1) {
+      await SecureStore.deleteItemAsync(`${REGISTRY_KEY}.${String(index)}`);
+    }
+    await SecureStore.deleteItemAsync(REGISTRY_KEY);
   }
+}
+
+function chunk(serialized: string): string[] {
+  const chunks: string[] = [];
+  let start = 0;
+  while (start < serialized.length) {
+    let end = Math.min(start + REGISTRY_CHUNK_LENGTH, serialized.length);
+    if (end < serialized.length && isHighSurrogate(serialized.charCodeAt(end - 1))) end -= 1;
+    chunks.push(serialized.slice(start, end));
+    start = end;
+  }
+  return chunks.length === 0 ? [''] : chunks;
+}
+
+function isHighSurrogate(unit: number): boolean {
+  return unit >= 0xd800 && unit <= 0xdbff;
 }
 
 function digest(value: string): Promise<string> {

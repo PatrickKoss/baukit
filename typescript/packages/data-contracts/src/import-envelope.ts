@@ -12,7 +12,9 @@ export type ImportEnvelopeErrorCode =
   | 'collection_not_allowed'
   | 'field_not_allowed'
   | 'string_too_large'
-  | 'invalid_row_value';
+  | 'invalid_row_value'
+  | 'value_too_deep'
+  | 'subject_mismatch';
 
 export interface ImportEnvelopeErrorDetails {
   readonly collection?: string;
@@ -67,7 +69,12 @@ export interface ImportEnvelopePlannerInput<TContext, TRow> {
 export interface ImportEnvelopePreview<TPlan> {
   readonly rowCount: number;
   readonly plan: TPlan;
+  /** The subject the preview was prepared for, if one was given. */
+  readonly subject?: string;
 }
+
+/** Nesting depth of a field value, counted in objects and arrays. */
+export const MAX_IMPORT_VALUE_DEPTH = 64;
 
 export interface PrepareImportEnvelopeOptions<TContext, TCollection extends string, TRow, TPlan> {
   readonly source: ImportEnvelopeSource;
@@ -82,6 +89,8 @@ export interface PrepareImportEnvelopeOptions<TContext, TCollection extends stri
     input: ImportEnvelopeRowDecoderInput<TContext, TCollection>,
   ) => TRow | Promise<TRow>;
   readonly plan: (input: ImportEnvelopePlannerInput<TContext, TRow>) => TPlan | Promise<TPlan>;
+  /** Binds the preview to the active subject; commit then requires the same subject. */
+  readonly subject?: string;
 }
 
 export interface ImportEnvelopeTransactionAdapter<TTransaction> {
@@ -94,7 +103,11 @@ export interface CommitImportEnvelopeOptions<TPlan, TTransaction, TResult> {
   readonly preview: ImportEnvelopePreview<TPlan>;
   readonly transaction: ImportEnvelopeTransactionAdapter<TTransaction>;
   readonly write: (transaction: TTransaction, plan: TPlan) => Promise<TResult>;
+  /** Runs after the commit. A failure goes to `onAfterCommitError`, never to the caller. */
   readonly afterCommit?: (result: TResult) => Promise<void> | void;
+  readonly onAfterCommitError?: (cause: unknown, result: TResult) => void;
+  /** The active subject; must equal the preview's when either is set. */
+  readonly subject?: string;
 }
 
 export async function prepareImportEnvelope<TContext, TCollection extends string, TRow, TPlan>(
@@ -137,17 +150,41 @@ export async function prepareImportEnvelope<TContext, TCollection extends string
 
   const rows = Object.freeze(decodedRows.slice());
   const plan = await options.plan({ context: envelope.context, rows });
-  return Object.freeze({ rowCount: rows.length, plan });
+  return Object.freeze({
+    rowCount: rows.length,
+    plan,
+    ...(options.subject === undefined ? {} : { subject: options.subject }),
+  });
 }
 
 export async function commitImportEnvelope<TPlan, TTransaction, TResult>(
   options: CommitImportEnvelopeOptions<TPlan, TTransaction, TResult>,
 ): Promise<TResult> {
+  if (options.preview.subject !== options.subject) {
+    throw new ImportEnvelopeError('subject_mismatch');
+  }
   const result = await options.transaction.withTransaction((transaction) =>
     options.write(transaction, options.preview.plan),
   );
-  await options.afterCommit?.(result);
+  try {
+    await options.afterCommit?.(result);
+  } catch (cause) {
+    reportAfterCommitError(options.onAfterCommitError, cause, result);
+  }
   return result;
+}
+
+function reportAfterCommitError<TResult>(
+  report: ((cause: unknown, result: TResult) => void) | undefined,
+  cause: unknown,
+  result: TResult,
+): void {
+  try {
+    if (report !== undefined) report(cause, result);
+    else globalThis.reportError(cause);
+  } catch {
+    // The import committed; a failing reporter must not turn that into a failure.
+  }
 }
 
 function assertLimits(limits: ImportEnvelopeLimits): void {
@@ -200,6 +237,7 @@ function sanitizeFields(
       maxStringBytes,
       { collection, rowIndex, field },
       new WeakSet(),
+      0,
     );
     entries.push([field, descriptor.value]);
   }
@@ -211,6 +249,7 @@ function assertBoundedStrings(
   allowed: number,
   location: Required<Pick<ImportEnvelopeErrorDetails, 'collection' | 'rowIndex' | 'field'>>,
   ancestors: WeakSet<object>,
+  depth: number,
 ): void {
   if (typeof value === 'string') {
     const measured = utf8StringBytes(value);
@@ -220,6 +259,12 @@ function assertBoundedStrings(
     return;
   }
   if (value === null || typeof value !== 'object') return;
+  if (depth >= MAX_IMPORT_VALUE_DEPTH) {
+    throw new ImportEnvelopeError('value_too_deep', {
+      ...location,
+      allowed: MAX_IMPORT_VALUE_DEPTH,
+    });
+  }
   if (ancestors.has(value)) {
     throw new ImportEnvelopeError('invalid_row_value', location);
   }
@@ -234,7 +279,7 @@ function assertBoundedStrings(
       if (descriptor === undefined || !('value' in descriptor)) {
         throw new ImportEnvelopeError('invalid_row_value', location);
       }
-      assertBoundedStrings(descriptor.value, allowed, location, ancestors);
+      assertBoundedStrings(descriptor.value, allowed, location, ancestors, depth + 1);
     }
   } finally {
     ancestors.delete(value);
