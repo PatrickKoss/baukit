@@ -10,9 +10,11 @@ Breaking changes in `baukit-suite` and `@baukit/suite-client`.
    return is now off by default. Set `suite.allow_dev_scheme = true` (env
    `<PREFIX>__SUITE__ALLOW_DEV_SCHEME=true`) in local and dev configs only.
 3. Peers send `x-suite-signature-v2` next to the v1 signature. It covers the
-   replay flag. A receiver ignores `x-suite-replay` without v2. Deploy receivers
-   before senders; a v1-only sender's replays now apply live rewards as normal
-   events, so stop replays until every peer runs this version.
+   replay flag. A receiver now refuses `x-suite-replay` without v2 with 401, so
+   an attacker cannot strip v2 and turn a replay into a live event. Deploy this
+   version to every peer before running replays; an older sender's replays fail
+   and retry until it upgrades. Release-blocked: refusing v1-only deliveries
+   entirely needs every peer on this release first.
 4. A suite event id reused with a different `event_type` or `occurred_at`
    returns `suite_event_id_conflict` instead of a duplicate.
 5. `@baukit/suite-client`: `SuiteSession` checks the server's authorize URL.

@@ -4,7 +4,7 @@
 
 - Breaking: `StandaloneAccountPlan::new` takes an `OrganizationMembership` port; nobody is an organization member by default. See docs/migrations/suite-correctness-hardening.md.
 - Breaking: the `<scheme>-dev` return URL needs `suite.allow_dev_scheme = true`.
-- Peers sign the replay flag with `x-suite-signature-v2`; an unsigned replay flag is ignored.
+- Breaking: peers sign the replay flag with `x-suite-signature-v2`; a replay flag without it is refused with 401.
 - Membership caches evict on hub events; a hub read in flight during eviction is discarded.
 - A reused event id with another type or time is a conflict, not a duplicate.
 - Credits answers from the hub are checked against the request; a settled reservation is refused on replay.

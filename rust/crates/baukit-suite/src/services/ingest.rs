@@ -14,7 +14,7 @@ pub struct SignedHeaders {
     delivery_id: String,
     pub(super) source: String,
     signature_v2: Option<String>,
-    /// True only when `x-suite-replay: 1` arrives with a v2 signature, which covers it.
+    /// `x-suite-replay: 1`, accepted only with the v2 signature that covers it.
     replay: bool,
 }
 impl SignedHeaders {
@@ -22,8 +22,8 @@ impl SignedHeaders {
     ///
     /// `SignatureInvalid` when a suite header repeats, a required header is missing, the content type
     /// is not JSON, the timestamp is not a decimal integer, the delivery id is empty, too long or has
-    /// control characters, or `x-suite-replay` is present with a value other than `1`. A replay flag
-    /// without `x-suite-signature-v2` is unsigned, so it is ignored.
+    /// control characters, or `x-suite-replay` is present with a value other than `1` or without
+    /// `x-suite-signature-v2`, which is the only signature that covers it.
     pub fn parse<'a>(
         headers: impl Iterator<Item = (&'a str, &'a str)>,
     ) -> Result<Self, SuiteServiceError> {
@@ -79,8 +79,11 @@ impl SignedHeaders {
         let signature_v2 = values
             .get(SUITE_SIGNATURE_V2_HEADER)
             .map(|value| (*value).to_owned());
+        if replay && signature_v2.is_none() {
+            return Err(SuiteServiceError::SignatureInvalid);
+        }
         Ok(Self {
-            replay: replay && signature_v2.is_some(),
+            replay,
             signature_v2,
             signature: required("x-suite-signature")?.to_owned(),
             timestamp,
@@ -492,10 +495,21 @@ mod signature_tests {
     }
 
     #[test]
-    fn an_unsigned_v1_replay_flag_is_ignored() {
-        let h = headers(true, None);
-        assert!(!h.replay);
-        assert!(signatures_valid(SECRET, &h, BODY));
+    fn an_unsigned_replay_flag_is_refused_not_downgraded() {
+        let v1 = sign_webhook_hmac_sha256(SECRET, TIMESTAMP, DELIVERY, BODY);
+        let timestamp = TIMESTAMP.to_string();
+        let pairs = [
+            ("content-type", "application/json"),
+            ("x-suite-signature", v1.as_str()),
+            ("x-suite-timestamp", timestamp.as_str()),
+            ("x-suite-delivery-id", DELIVERY),
+            ("x-suite-source", "beta"),
+            ("x-suite-replay", "1"),
+        ];
+        assert!(matches!(
+            SignedHeaders::parse(pairs.into_iter()),
+            Err(SuiteServiceError::SignatureInvalid)
+        ));
     }
 
     #[test]
