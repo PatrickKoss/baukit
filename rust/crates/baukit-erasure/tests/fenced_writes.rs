@@ -116,6 +116,51 @@ async fn a_scoped_write_is_fenced_and_an_unscoped_one_is_not() -> Result<(), Box
 
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
+async fn sign_in_with_the_erased_session_does_not_recreate_the_identity()
+-> Result<(), Box<dyn Error>> {
+    let (_container, pool, store) = postgres_fixture::database().await?;
+    sqlx::raw_sql(NOTES_TABLE).execute(&pool).await?;
+    sqlx::raw_sql("CREATE TABLE user_identities (subject TEXT PRIMARY KEY)")
+        .execute(&pool)
+        .await?;
+    let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
+    let login = earlier_login();
+    let resolve = |authenticated_at| {
+        let (store, pool) = (store.clone(), pool.clone());
+        async move {
+            let mut transaction = pool.begin().await?;
+            store
+                .guard_subject(&mut transaction, "alice", authenticated_at)
+                .await?;
+            sqlx::query("INSERT INTO user_identities VALUES ('alice') ON CONFLICT DO NOTHING")
+                .execute(&mut *transaction)
+                .await?;
+            transaction.commit().await?;
+            Ok::<_, ErasureError>(())
+        }
+    };
+    resolve(login).await?;
+    sqlx::query("DELETE FROM user_identities")
+        .execute(&pool)
+        .await?;
+    service
+        .erase("alice", login, "identity-recreate-01", &NotesProduct)
+        .await?;
+    for stale in [login, None] {
+        assert!(matches!(
+            resolve(stale).await,
+            Err(ErasureError::ProfileErased)
+        ));
+    }
+    let identities: i64 = sqlx::query_scalar("SELECT count(*) FROM user_identities")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(identities, 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
 async fn erase_waits_for_a_guarded_write_and_then_deletes_its_rows() -> Result<(), Box<dyn Error>> {
     let (_container, pool, store) = postgres_fixture::database().await?;
     sqlx::raw_sql(NOTES_TABLE).execute(&pool).await?;
@@ -220,7 +265,7 @@ async fn rejected_session_sql_agrees_with_the_mirror() -> Result<(), Box<dyn Err
             .login
             .map(|offset| (base + SignedDuration::from_secs(offset)).to_sqlx());
         let rejected: bool = sqlx::query_scalar(REJECTED_SESSION_SQL)
-            .bind(&hash)
+            .bind(vec![hash.clone()])
             .bind(login)
             .fetch_one(&pool)
             .await?;

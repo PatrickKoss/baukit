@@ -10,6 +10,7 @@
 
 ### Added
 
+- `PostgresErasureStore::with_retired_keys` and `rehash_subjects` rotate `erasure_hash_key` without losing fences, receipts or idempotency keys. No schema change.
 - `IdentityDeletion::probe` and `ErasureService::probe_identity_provider` for a startup readiness check.
 - `PostgresErasureStore::begin_guarded_write`, `WriteFence`, `with_write_fence` and `begin_fenced_write` for product writes that an erasure cannot race.
 
