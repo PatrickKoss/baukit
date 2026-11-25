@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- The vendored suite `link-protocol.json` adds return URL vectors for the `-dev` variant scheme and its lookalikes.
+
 ## [0.30.4] - 2026-11-25
 
 ## [0.30.3] - 2026-11-24
