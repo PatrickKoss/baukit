@@ -36,7 +36,19 @@ registry_mirror_fields() {
   mirror_url=${mirror_url%=*}
 }
 
-# Starts each mirror that is not running yet.
+registry_mirror_prune_script=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/registry-mirror-prune.sh
+
+# Usage: registry_mirror_prune <container>. Removes dangling layer links from a running mirror and
+# restarts it when it removed any, which drops the stale entries from its blob descriptor cache.
+registry_mirror_prune() {
+  local container=$1 removed
+  removed=$(docker exec -i "$container" sh -s < "$registry_mirror_prune_script") || return 0
+  [[ -n $removed ]] || return 0
+  printf 'Removed dangling layer links from %s:\n%s\n' "$container" "$removed" >&2
+  docker restart "$container" >/dev/null
+}
+
+# Starts each mirror that is not running yet and prunes the dangling layer links of each.
 registry_mirrors_start() {
   local entry name mirror_host mirror_port mirror_url
   for entry in "${registry_mirror_upstreams[@]}"; do
@@ -44,6 +56,7 @@ registry_mirrors_start() {
     name=$(registry_mirror_name "$mirror_host")
     if docker container inspect "k3d-$name" >/dev/null 2>&1; then
       docker start "k3d-$name" >/dev/null
+      registry_mirror_prune "k3d-$name"
       continue
     fi
     k3d registry create "$name" \
