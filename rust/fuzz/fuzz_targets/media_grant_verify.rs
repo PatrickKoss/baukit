@@ -28,7 +28,7 @@ static RING: LazyLock<MediaGrantKeyRing> = LazyLock::new(|| {
     .expect("key ring")
 });
 
-/// Layout: method selector, clock offset, then `path?query` (path defaults to a valid one).
+// Layout: method selector, clock offset, then `path?query` (path defaults to a valid one).
 fuzz_target!(|data: &[u8]| {
     let Some((&selector, rest)) = data.split_first() else {
         return;
