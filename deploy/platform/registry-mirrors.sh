@@ -36,25 +36,13 @@ registry_mirror_fields() {
   mirror_url=${mirror_url%=*}
 }
 
-# Run by sh inside a mirror. Removes each repository layer link whose blob data is gone and prints
-# its digest. The proxy's TTL expiry deletes a blob shared by several repositories when the first
-# repository's entry expires, and the others then answer 200 with an empty body
-# (distribution/distribution#2367).
-# shellcheck disable=SC2016
-registry_mirror_prune_script='cd /var/lib/registry/docker/registry/v2 2>/dev/null || exit 0
-find repositories -path "*/_layers/sha256/*/link" 2>/dev/null | while read -r link; do
-  digest=$(cat "$link")
-  hex=${digest#sha256:}
-  [ -f "blobs/sha256/${hex%"${hex#??}"}/$hex/data" ] && continue
-  rm -rf "${link%/link}"
-  printf "%s %s\n" "${link%%/_layers/*}" "$digest"
-done'
+registry_mirror_prune_script=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/registry-mirror-prune.sh
 
 # Usage: registry_mirror_prune <container>. Removes dangling layer links from a running mirror and
 # restarts it when it removed any, which drops the stale entries from its blob descriptor cache.
 registry_mirror_prune() {
   local container=$1 removed
-  removed=$(docker exec "$container" sh -c "$registry_mirror_prune_script") || return 0
+  removed=$(docker exec -i "$container" sh -s < "$registry_mirror_prune_script") || return 0
   [[ -n $removed ]] || return 0
   printf 'Removed dangling layer links from %s:\n%s\n' "$container" "$removed" >&2
   docker restart "$container" >/dev/null

@@ -1026,8 +1026,7 @@ class RegistryMirrorTests(unittest.TestCase):
             data = root / "blobs/sha256" / kept[:2] / kept / "data"
             data.parent.mkdir(parents=True)
             data.write_text("blob")
-            script = "${registry_mirror_prune_script/\\/var\\/lib\\/registry/" + tmp + "}"
-            out = self.source(f'sh -c "{script}"')
+            out = self.source(f'sh "$registry_mirror_prune_script" {tmp}')
             self.assertEqual(out, f"repositories/kyverno/kyverno-cli sha256:{gone}\n")
             layers = "_layers/sha256"
             self.assertTrue((root / "repositories/library/redis" / layers / kept).exists())
