@@ -928,3 +928,46 @@ mod policy;
 #[cfg(feature = "suite")]
 #[path = "support/suite.rs"]
 mod suite;
+
+#[tokio::test]
+async fn non_json_bodies_are_rejected_before_dispatch() -> Result<(), Box<dyn Error>> {
+    let issuer = MockOidcServer::start().await?;
+    let config = config(&issuer);
+    let token =
+        issuer.mint(&issuer.claims("alice", &config.resource_url, Duration::from_secs(300))?)?;
+    let app = app(config).await?;
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/mcp")
+                .header(header::HOST, "mcp.example")
+                .header(header::CONTENT_TYPE, "application/json")
+                .header(header::ACCEPT, "application/json, text/event-stream")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .body(Body::from("method=tools/call&name=identity"))?,
+        )
+        .await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value = serde_json::from_slice(&to_bytes(response.into_body(), 1024).await?)?;
+    assert_eq!(body["error"], "invalid_json");
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_bearers_are_rate_limited() -> Result<(), Box<dyn Error>> {
+    let issuer = MockOidcServer::start().await?;
+    let mut config = config(&issuer);
+    config.requests_per_minute = 1;
+    let app = app(config).await?;
+    let (status, _, _) = send(&app, Some("not-a-jwt"), list()).await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    let (status, headers, body) = send(&app, Some("another-bad-token"), list()).await?;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(headers[header::RETRY_AFTER].to_str()?.parse::<u64>()? > 0);
+    assert_eq!(body["error"], "rate_limited");
+    let (status, _, _) = send(&app, None, list()).await?;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    Ok(())
+}
