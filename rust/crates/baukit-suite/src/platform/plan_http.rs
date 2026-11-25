@@ -33,17 +33,28 @@ impl<S: Send + Sync> FromRequestParts<S> for FeatureSubject {
 }
 
 fn feature_subject(parts: &Parts) -> Result<FeatureSubject, PlanError> {
-    let named = named_organization(parts)?;
-    if let Some(PlanOrganization(owner)) = parts.extensions.get::<PlanOrganization>().copied() {
+    let suite_subject = parts
+        .extensions
+        .get::<PlanSubject>()
+        .and_then(|PlanSubject(subject)| subject.clone());
+    resolve_subject(
+        parts.extensions.get::<PlanOrganization>().copied(),
+        named_organization(parts)?,
+        suite_subject,
+    )
+}
+
+fn resolve_subject(
+    token_organization: Option<PlanOrganization>,
+    named: Option<Uuid>,
+    suite_subject: Option<String>,
+) -> Result<FeatureSubject, PlanError> {
+    if let Some(PlanOrganization(owner)) = token_organization {
         return match named {
             Some(named) if named != owner => Err(PlanError::OrganizationNotAccessible),
             _ => Ok(FeatureSubject::Organization(owner)),
         };
     }
-    let suite_subject = parts
-        .extensions
-        .get::<PlanSubject>()
-        .and_then(|PlanSubject(subject)| subject.clone());
     Ok(match named {
         Some(organization_id) => FeatureSubject::Member {
             organization_id,
@@ -213,4 +224,19 @@ async fn credits(
 ) -> Result<Json<CreditBalance>, ApiError> {
     let subject = subject(extension)?;
     Ok(Json(plan.credits(&subject).await?))
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// K-20
+    #[kani::proof]
+    fn an_organization_subject_is_always_the_token_organization() {
+        let token = kani::any::<bool>().then(|| PlanOrganization(Uuid::from_u128(kani::any())));
+        let named = kani::any::<bool>().then(|| Uuid::from_u128(kani::any()));
+        if let Ok(FeatureSubject::Organization(id)) = resolve_subject(token, named, None) {
+            assert_eq!(token, Some(PlanOrganization(id)));
+        }
+    }
 }

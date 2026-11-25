@@ -18,6 +18,8 @@ mod link_protocol;
 pub use link_protocol::*;
 
 mod payloads;
+mod return_url;
+pub use return_url::*;
 #[cfg(feature = "runtime")]
 mod signing;
 pub mod validation;
@@ -28,7 +30,6 @@ pub use signing::*;
 pub const SUITE_EVENT_NAMESPACE: Uuid = Uuid::from_u128(0x5f0e8c1a_3b7d_4c2e_9a61_2d8f4b7e0c95);
 pub const SUITE_EVENTS_DELIVER_JOB_TYPE: &str = "suite.events.deliver";
 pub const SUITE_LINKS_REVOKE_JOB_TYPE: &str = "suite.links.revoke";
-const DEV_SCHEME_SUFFIX: &str = "-dev";
 /// Job kinds whose terminal history is managed by suite cleanup.
 pub const SUITE_JOB_TYPES: [&str; 2] = [SUITE_EVENTS_DELIVER_JOB_TYPE, SUITE_LINKS_REVOKE_JOB_TYPE];
 pub const SUITE_QUEUE: &str = "suite-events";
@@ -405,59 +406,6 @@ pub(crate) fn validate_authorize_url(
     }
     configured_url(value, allow_loopback, false, peer)?;
     Url::parse(value).map_err(|_| SuiteDataError::InvalidUrl(peer.to_owned()))
-}
-
-/// # Errors
-///
-/// `SuiteDataError::ReturnUrlInvalid` when either URL does not parse, either carries
-/// credentials, the origin has a path, query or fragment, or `value` is neither
-/// `<origin>/suite/linked` nor `<own_scheme>://suite/linked`. With `allow_dev_scheme`, the
-/// `<own_scheme>-dev` scheme of the template's `dev` build variant is accepted too.
-pub fn validate_return_url(
-    value: &str,
-    own_web_origin: &str,
-    own_scheme: &str,
-    allow_dev_scheme: bool,
-) -> Result<(), SuiteDataError> {
-    let invalid = || SuiteDataError::ReturnUrlInvalid;
-    let origin = Url::parse(own_web_origin).map_err(|_| invalid())?;
-    let url = Url::parse(value).map_err(|_| invalid())?;
-    if !url.username().is_empty()
-        || url.password().is_some()
-        || !origin.username().is_empty()
-        || origin.password().is_some()
-        || origin.path() != "/"
-        || origin.query().is_some()
-        || origin.fragment().is_some()
-    {
-        return Err(invalid());
-    }
-    let web = matches!(url.scheme(), "https" | "http")
-        && url.origin() == origin.origin()
-        && url.path() == "/suite/linked";
-    let native = is_own_native_scheme(url.scheme(), own_scheme, allow_dev_scheme)
-        && url.host_str() == Some("suite")
-        && url.port().is_none()
-        && url.path() == "/linked";
-    if web || native {
-        Ok(())
-    } else {
-        Err(invalid())
-    }
-}
-
-/// Web schemes never count as a native app scheme, even if a registry names one.
-const NON_NATIVE_SCHEMES: [&str; 3] = ["http", "https", "javascript"];
-
-pub(crate) fn is_own_native_scheme(scheme: &str, own_scheme: &str, allow_dev_scheme: bool) -> bool {
-    if NON_NATIVE_SCHEMES.contains(&scheme) {
-        return false;
-    }
-    scheme == own_scheme
-        || allow_dev_scheme
-            && scheme
-                .strip_suffix(DEV_SCHEME_SUFFIX)
-                .is_some_and(|base| base == own_scheme)
 }
 
 #[derive(Clone, Debug, PartialEq)]
