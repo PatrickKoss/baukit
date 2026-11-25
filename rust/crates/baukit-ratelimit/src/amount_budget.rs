@@ -718,14 +718,14 @@ mod proofs {
 
     /// K-12: the selected window contains `now`: `reset - duration <= now < reset`,
     /// and no arithmetic overflows. Proved on the nanosecond kernel behind
-    /// `FixedWindow::at` with `now` over all `i64` nanos (about +/-292 years around
-    /// the epoch, wider than `SystemTime` in practice) and any positive `u64`
-    /// duration; the `SystemTime` conversion around it is not modelled. No loops.
+    /// `FixedWindow::at`, the `SystemTime` conversion around it is not modelled.
+    /// Bounds: `now` over all `i32` values and `duration` in `1..=65_536`. No loops.
+    /// Unverified so far: CBMC bit-blasts the 128-bit `div_euclid` and neither these
+    /// bounds nor the full `i64`/`u64` ranges finished within 30 minutes at 8 GB.
     #[kani::proof]
     fn window_bounds_contain_now() {
-        let now = i128::from(kani::any::<i64>());
-        let duration = i128::from(kani::any::<u64>());
-        kani::assume(duration > 0);
+        let now = i128::from(kani::any::<i32>());
+        let duration = i128::from(kani::any::<u16>()) + 1;
         let (index, reset) = window_bounds(now, duration).expect("in range");
         assert!(reset - duration <= now);
         assert!(now < reset);
