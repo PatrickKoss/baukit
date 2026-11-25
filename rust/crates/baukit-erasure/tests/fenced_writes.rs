@@ -292,8 +292,19 @@ fn action() -> impl Strategy<Value = Action> {
 #[derive(Default)]
 struct Model {
     key_owner: HashMap<usize, usize>,
+    receipts: HashMap<usize, Receipt>,
     fenced: [bool; SUBJECTS.len()],
     notes: [i64; SUBJECTS.len()],
+}
+
+type Receipt = (String, Uuid, Option<Timestamp>);
+
+fn receipt(outcome: &baukit_erasure::ErasureOutcome) -> Receipt {
+    (
+        format!("{:?}", outcome.status),
+        outcome.operation_id,
+        outcome.completed_at,
+    )
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -354,7 +365,7 @@ impl Harness {
         login: Login,
     ) -> Result<(), Box<dyn Error>> {
         let expected = model.admission(subject, key, login);
-        let replayed = expected == Expected::Replay;
+        let operations = self.operation_count().await?;
         let result = self
             .service
             .erase(
@@ -364,20 +375,49 @@ impl Harness {
                 &NotesProduct,
             )
             .await;
-        let actual = classify(result.map(|_| ()))?;
-        if replayed {
-            assert_eq!(
-                actual,
-                Expected::Ok,
-                "a replayed erase returns its stored outcome"
-            );
-        } else {
-            assert_eq!(actual, expected);
-        }
-        if expected == Expected::Ok {
-            model.key_owner.insert(key, subject);
-            model.fenced[subject] = true;
-            model.notes[subject] = 0;
+        self.check_erase(model, subject, key, expected, result, operations)
+            .await?;
+        Ok(())
+    }
+
+    async fn operation_count(&self) -> Result<i64, sqlx::Error> {
+        sqlx::query_scalar("SELECT count(*) FROM erasure_operations")
+            .fetch_one(&self.pool)
+            .await
+    }
+
+    /// `erase` answers a same-key replay with the first receipt, so a replay must return
+    /// `Ok` carrying that exact receipt, add no operation and rerun no product erase.
+    async fn check_erase(
+        &self,
+        model: &mut Model,
+        subject: usize,
+        key: usize,
+        expected: Expected,
+        result: Result<baukit_erasure::ErasureOutcome, ErasureError>,
+        operations_before: i64,
+    ) -> Result<(), Box<dyn Error>> {
+        let outcome = match result {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                assert_eq!(classify(Err(error))?, expected);
+                assert_eq!(self.operation_count().await?, operations_before);
+                return Ok(());
+            }
+        };
+        match expected {
+            Expected::Replay => {
+                assert_eq!(Some(&receipt(&outcome)), model.receipts.get(&key));
+                assert_eq!(self.operation_count().await?, operations_before);
+            }
+            Expected::Ok => {
+                assert_eq!(self.operation_count().await?, operations_before + 1);
+                model.receipts.insert(key, receipt(&outcome));
+                model.key_owner.insert(key, subject);
+                model.fenced[subject] = true;
+                model.notes[subject] = 0;
+            }
+            other => panic!("erase succeeded where the model expected {other:?}"),
         }
         Ok(())
     }
@@ -438,17 +478,16 @@ impl Harness {
         let erase = self
             .service
             .erase(SUBJECTS[subject], login, &key_text, &NotesProduct);
+        let operations = self.operation_count().await?;
         let (write, erase) = tokio::join!(write, erase);
-        assert_eq!(classify(erase.map(|_| ()))?, expected);
         let wrote = classify(write)? == Expected::Ok;
-        if expected == Expected::Ok {
-            model.key_owner.insert(key, subject);
-            model.fenced[subject] = true;
-            model.notes[subject] = 0;
-        } else {
+        let erased = expected == Expected::Ok;
+        if !erased {
             assert_eq!(wrote, !model.rejects(subject, Login::BeforeErasures));
             model.notes[subject] += i64::from(wrote);
         }
+        self.check_erase(model, subject, key, expected, erase, operations)
+            .await?;
         Ok(())
     }
 }
