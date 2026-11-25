@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- A POST body that is not JSON gets `400 invalid_json` before dispatch.
+- Malformed or rejected bearer tokens share one rate-limit bucket per resource and get `429` once it is spent, instead of an unlimited stream of `401`s.
+- Resource templates no longer match `.`, `..` or their percent-encoded forms as a segment.
+- Rate-limit keys are length-prefixed, so parts with `:` in them can no longer collide. Existing buckets reset once after the upgrade. See [docs/migrations/boundary-hardening.md](../../../docs/migrations/boundary-hardening.md).
+
 ## [0.30.4] - 2026-11-25
 
 ## [0.30.3] - 2026-11-24

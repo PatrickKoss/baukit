@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `ReceiptPayload` rejects unknown top-level fields, so a field added outside the signature check fails as `Payload`. See [docs/migrations/boundary-hardening.md](../../../docs/migrations/boundary-hardening.md).
+
 ## [0.30.4] - 2026-11-25
 
 ## [0.30.3] - 2026-11-24

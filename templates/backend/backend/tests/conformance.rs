@@ -57,6 +57,7 @@ use {{ context.app_crate }}_services::UserService;
             erasure: fixture.erasure.clone(),
 {% endif %}        },
         &HttpConfig::default(),
+        baukit_config::Environment::Local,
     )?;
     let request = Request::builder().method(Method::GET).uri("/items");
 {% if context.auth_enabled %}    let claims = issuer.claims("conformance-user", AUDIENCE, Duration::from_secs(60))?;
@@ -102,6 +103,7 @@ use {{ context.app_crate }}_services::UserService;
             erasure: fixture.erasure.clone(),
 {% endif %}        },
         &config,
+        baukit_config::Environment::Local,
     )?;
 
     let oversized_name = "x".repeat(64);
@@ -214,6 +216,7 @@ async fn item_routes_deny_other_tenants_and_invalid_tokens() -> Result<(), Box<d
             erasure: fixture.erasure.clone(),
         },
         &HttpConfig::default(),
+        baukit_config::Environment::Local,
     )?;
     let token = |subject: &str| -> Result<String, Box<dyn Error>> {
         Ok(issuer.mint(&issuer.claims(subject, AUDIENCE, Duration::from_secs(60))?)?)
@@ -283,3 +286,13 @@ async fn create_item(
         .to_owned())
 }
 {% endif %}
+#[test]
+fn plain_http_cors_origins_are_accepted_only_in_local() {
+    use {{ context.app_crate }}_api::http_options;
+    let config = HttpConfig {
+        cors_allowed_origins: vec!["http://app.local:5173".to_owned()],
+        ..HttpConfig::default()
+    };
+    assert!(http_options(&config, baukit_config::Environment::Local).is_ok());
+    assert!(http_options(&config, baukit_config::Environment::Production).is_err());
+}

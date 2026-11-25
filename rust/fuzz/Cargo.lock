@@ -300,6 +300,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "baukit-data-subject"
+version = "0.30.4"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.23.1",
+ "jiff 1.0.0",
+ "pem",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "baukit-egress"
 version = "0.30.4"
 dependencies = [
@@ -348,9 +363,13 @@ dependencies = [
 name = "baukit-fuzz"
 version = "0.0.0"
 dependencies = [
+ "aws-lc-rs",
  "axum",
+ "base64 0.23.1",
  "baukit-auth",
  "baukit-core",
+ "baukit-data-subject",
+ "baukit-egress",
  "baukit-events",
  "baukit-http",
  "baukit-integrations",
@@ -361,9 +380,11 @@ dependencies = [
  "http",
  "jiff 1.0.0",
  "libfuzzer-sys",
+ "pem",
  "serde_json",
  "tokio",
  "tower",
+ "url",
 ]
 
 [[package]]

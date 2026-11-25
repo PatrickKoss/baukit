@@ -12,7 +12,11 @@ use std::{
 
 use crate::AllowedEndpoint;
 
-pub(crate) fn is_endpoint_address(address: IpAddr) -> bool {
+pub(crate) fn is_metadata_address(address: IpAddr) -> bool {
+    CLOUD_METADATA_ADDRESSES.contains(&address.to_canonical())
+}
+
+pub(crate) fn is_internal_endpoint_address(address: IpAddr) -> bool {
     let address = address.to_canonical();
     !CLOUD_METADATA_ADDRESSES.contains(&address)
         && (is_public_address(address)
@@ -194,9 +198,10 @@ const ALLOWLISTABLE_NETWORKS: [PrivateNetwork; 5] = [
     },
 ];
 
-const CLOUD_METADATA_ADDRESSES: [IpAddr; 4] = [
+const CLOUD_METADATA_ADDRESSES: [IpAddr; 5] = [
     IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254)),
     IpAddr::V4(Ipv4Addr::new(100, 100, 100, 200)),
+    IpAddr::V4(Ipv4Addr::new(168, 63, 129, 16)),
     IpAddr::V6(Ipv6Addr::new(0xfd00, 0xec2, 0, 0, 0, 0, 0, 0x254)),
     IpAddr::V6(Ipv6Addr::new(0xfd20, 0x00ce, 0, 0, 0, 0, 0, 0x254)),
 ];
@@ -224,9 +229,10 @@ pub enum AddressPolicy {
     /// host name must be inside the list. Loopback and link-local stay blocked.
     /// NAT64 addresses carrying private IPv4 addresses do not pass the list.
     AllowPrivate(PrivateNetworks),
-    /// Reach only one exact host and port, including its private or loopback
-    /// DNS answers. Link-local, metadata and reserved addresses stay blocked.
-    /// The endpoint's HTTP flag selects HTTP only or HTTPS only.
+    /// Reach only one exact host and port. An operator-configured internal
+    /// endpoint may resolve to private or loopback answers; a tenant endpoint
+    /// gets public answers only. Link-local, metadata and reserved addresses
+    /// stay blocked. The endpoint's HTTP flag selects HTTP only or HTTPS only.
     OnlyEndpoint(AllowedEndpoint),
 }
 
@@ -288,8 +294,9 @@ impl AddressPolicy {
     }
 }
 
-const NON_PUBLIC_IPV4: [(Ipv4Addr, u32); 15] = [
+const NON_PUBLIC_IPV4: [(Ipv4Addr, u32); 16] = [
     (Ipv4Addr::new(0, 0, 0, 0), 8),
+    (Ipv4Addr::new(168, 63, 129, 16), 32),
     (Ipv4Addr::new(10, 0, 0, 0), 8),
     (Ipv4Addr::new(100, 64, 0, 0), 10),
     (Ipv4Addr::new(127, 0, 0, 0), 8),
@@ -319,6 +326,7 @@ const NON_PUBLIC_GLOBAL_UNICAST: [(Ipv6Addr, u32); 4] = [
 
 /// Returns whether `address` is a globally reachable unicast address.
 ///
+/// The Azure WireServer `168.63.129.16` counts as non-public.
 /// IPv4-mapped IPv6 addresses and addresses in the NAT64 well-known prefix
 /// `64:ff9b::/96` are judged by the IPv4 address they carry.
 #[must_use]
@@ -369,6 +377,111 @@ fn ipv4_mask(prefix: u32) -> u32 {
 
 fn ipv6_mask(prefix: u32) -> u128 {
     u128::MAX.checked_shl(u128::BITS - prefix).unwrap_or(0)
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// Non-global IPv4 per the IANA IPv4 Special-Purpose Address Registry,
+    /// written octet-wise so it does not share the implementation's tables.
+    fn spec_ipv4_public(octets: [u8; 4]) -> bool {
+        !matches!(
+            octets,
+            [0 | 10 | 127, ..]
+                | [100, 64..=127, ..]
+                | [169, 254, ..]
+                | [172, 16..=31, ..]
+                | [192, 0, 0 | 2, _]
+                | [192, 88, 99, _]
+                | [192, 168, ..]
+                | [198, 18 | 19, ..]
+                | [198, 51, 100, _]
+                | [203, 0, 113, _]
+                | [168, 63, 129, 16]
+                | [224..=255, ..]
+        )
+    }
+
+    /// Public IPv6 is `2000::/3` minus the IETF protocol block `2001::/23`
+    /// (Teredo included), documentation `2001:db8::/32` and `3fff::/20`, and
+    /// 6to4 `2002::/16`. ULA, link-local and multicast fall outside `2000::/3`.
+    /// Mapped and NAT64 well-known addresses follow the IPv4 they carry.
+    fn spec_ipv6_public(bits: u128) -> bool {
+        let segments = Ipv6Addr::from_bits(bits).segments();
+        let low = (bits & u128::from(u32::MAX)) as u32;
+        if bits >> 32 == 0xffff {
+            return spec_ipv4_public(low.to_be_bytes());
+        }
+        if bits >> 32 == 0x0064_ff9b_0000_0000_0000_0000 {
+            return spec_ipv4_public(low.to_be_bytes());
+        }
+        let first = segments[0];
+        (0x2000..=0x3fff).contains(&first)
+            && !(first == 0x2001 && segments[1] < 0x0200)
+            && !(first == 0x2001 && segments[1] == 0x0db8)
+            && first != 0x2002
+            && !(first == 0x3fff && segments[1] < 0x1000)
+    }
+
+    /// Every `u32`: `is_public_address` equals the IANA spec. No unwinding needed.
+    #[kani::proof]
+    fn ipv4_public_matches_spec() {
+        let bits: u32 = kani::any();
+        let address = Ipv4Addr::from_bits(bits);
+        assert_eq!(
+            is_public_address(IpAddr::V4(address)),
+            spec_ipv4_public(address.octets())
+        );
+    }
+
+    /// Every `u128`: `is_public_address` equals the IANA spec, which covers each
+    /// listed prefix (mapped, NAT64, 6to4, Teredo, ULA, link-local, multicast)
+    /// with all bits symbolic.
+    #[kani::proof]
+    #[kani::unwind(17)]
+    fn ipv6_public_matches_spec() {
+        let bits: u128 = kani::any();
+        assert_eq!(
+            is_public_address(IpAddr::V6(Ipv6Addr::from_bits(bits))),
+            spec_ipv6_public(bits)
+        );
+    }
+
+    /// Every `u32` under `PublicOnly`: `permits` equals the spec, so metadata
+    /// and non-global addresses are denied.
+    #[kani::proof]
+    fn public_only_permits_matches_spec() {
+        let address = Ipv4Addr::from_bits(kani::any());
+        let metadata = matches!(
+            address.octets(),
+            [169, 254, 169, 254] | [100, 100, 100, 200] | [168, 63, 129, 16]
+        );
+        assert_eq!(
+            AddressPolicy::PublicOnly.permits(IpAddr::V4(address)),
+            !metadata && spec_ipv4_public(address.octets())
+        );
+    }
+
+    /// Prefix 0 to 32: no panic and exactly `prefix` leading ones.
+    #[kani::proof]
+    fn ipv4_mask_has_prefix_leading_ones() {
+        let prefix: u32 = kani::any();
+        kani::assume(prefix <= u32::BITS);
+        let mask = ipv4_mask(prefix);
+        assert_eq!(mask.leading_ones(), prefix);
+        assert_eq!(mask.count_ones(), prefix);
+    }
+
+    /// Prefix 0 to 128: no panic and exactly `prefix` leading ones.
+    #[kani::proof]
+    fn ipv6_mask_has_prefix_leading_ones() {
+        let prefix: u32 = kani::any();
+        kani::assume(prefix <= u128::BITS);
+        let mask = ipv6_mask(prefix);
+        assert_eq!(mask.leading_ones(), prefix);
+        assert_eq!(mask.count_ones(), prefix);
+    }
 }
 
 #[cfg(test)]

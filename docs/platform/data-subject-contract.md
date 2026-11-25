@@ -306,7 +306,8 @@ This stable serialization is not RFC 8785 or a requirement for other signers.
 Verifiers check the expected media type, decode base64 and construct PAE over
 the received payload bytes. They never re-serialize before verification. Reject
 unknown key IDs, empty signature lists and envelopes with no valid trusted
-signature. The core requires every listed key ID to be known and every base64
+signature. After the signature verifies, a v1 payload with a top-level field
+outside the example is rejected. The core requires every listed key ID to be known and every base64
 signature to be well formed, and accepts at least one valid trusted signature.
 After verification, parse the payload and check `receiptType`, `contractVersion`
 and a receipt-bearing terminal status. The core also checks reference syntax

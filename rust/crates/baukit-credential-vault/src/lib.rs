@@ -18,6 +18,13 @@
 //! [`CredentialVaultError::DecryptionFailed`], which carries no detail worth
 //! leaking into a log.
 //!
+//! [`CredentialCipher::encrypt`] seals fields independently, so
+//! [`CredentialCipher::decrypt`] opens any non-empty subset and cannot tell an
+//! old ciphertext for the same scope, field and version from the current one.
+//! [`CredentialCipher::seal_record`] and [`CredentialCipher::open_record`] bind
+//! a random record id and the full field list as well, so a record opens with
+//! all its fields or not at all. Both formats stay readable.
+//!
 //! Plaintext lives in [`CredentialSecrets`], which zeroizes every value on drop
 //! and implements neither `Debug` nor `Display`.
 //!
@@ -59,12 +66,14 @@ mod config;
 mod error;
 mod model;
 mod port;
+mod record;
 
 pub use cipher::{CredentialCipher, KEY_LENGTH, NONCE_LENGTH};
 pub use config::CredentialVaultConfig;
 pub use error::CredentialVaultError;
 pub use model::{CredentialSecrets, EncryptedCredentials, EncryptedField};
 pub use port::{CredentialVault, VaultFuture};
+pub use record::SealedCredentials;
 
 #[cfg(test)]
 mod tests;

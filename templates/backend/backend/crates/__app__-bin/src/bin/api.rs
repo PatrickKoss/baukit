@@ -190,7 +190,7 @@ async fn compose_api(
         store: SharedRateLimitStore::new(store),
         options: rate_limit_options.clone(),
     });
-    let mut http = http_options(&config.http)?;
+    let mut http = http_options(&config.http, config.environment)?;
     if config.environment != Environment::Local {
         http = http.with_hsts(HSTS_MAX_AGE);
     }
@@ -281,7 +281,7 @@ fn compose_api(
     let api = api.merge(platform.router);
 {% endif %}    let api = rate_limited(api, limits.as_ref());
 {% if context.platform %}    let api = api.layer(axum::Extension(platform.entitlements));
-{% endif %}    Ok(finalize_api(api, &config.http)?)
+{% endif %}    Ok(finalize_api(api, &config.http, config.environment)?)
 }
 {% endif %}
 async fn serve(
