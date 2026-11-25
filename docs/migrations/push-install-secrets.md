@@ -22,3 +22,10 @@ Handle `PushStoreError::TokenHeldByAnotherOwner` as a `409`. Code that builds
 `PushError::Partial` is a new variant. A sender that matches on `PushError` exhaustively needs
 an arm for it. Its `completed_outcomes()` lists notifications that were already sent, so do
 not resend those.
+
+## Delivery claim tokens
+
+Apply `0006_baukit_push_delivery_claim_ids.sql` after `0005`. `DeliveryClaimStore::claim` now
+returns `Option<ClaimToken>` instead of `bool`, and `release(claim, token)` needs that token.
+Claims taken before the migration have no token, so they cannot be released and stay until
+`purge` removes them.

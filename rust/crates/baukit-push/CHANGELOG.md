@@ -12,6 +12,7 @@ All notable changes to `baukit-push` are documented here.
 
 ### Added
 
+- Breaking: `DeliveryClaimStore::claim` returns `Option<ClaimToken>` and `release` takes that token, so a stale claimer cannot release a newer claim. Migration `0006_baukit_push_delivery_claim_ids.sql` (`POSTGRES_PUSH_DELIVERY_CLAIM_IDS_MIGRATION_SQL`) adds the column.
 - Migration `0005_baukit_push_install_secrets.sql` (`POSTGRES_PUSH_INSTALL_SECRETS_MIGRATION_SQL`). See `docs/migrations/push-install-secrets.md`.
 
 

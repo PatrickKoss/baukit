@@ -6,7 +6,7 @@ use sqlx::{PgConnection, PgExecutor, PgPool, Row as _, postgres::PgRow};
 use uuid::Uuid;
 
 use crate::{
-    DEFAULT_DEVICES_PER_OWNER, DeliveryClaim, DeliveryClaimStore, DevicePlatform,
+    ClaimToken, DEFAULT_DEVICES_PER_OWNER, DeliveryClaim, DeliveryClaimStore, DevicePlatform,
     DeviceRegistration, DeviceRegistry, DeviceTimeZone, DeviceToken, PendingReceipt,
     PendingReceiptStore, PushStoreError, PushStoreFuture, PushTicketId, RegisteredDevice,
     RegistrationOutcome, TakeoverDecision, takeover_decision,
@@ -235,31 +235,38 @@ impl PostgresDeliveryClaimStore {
         &self,
         claim: DeliveryClaim,
         claimed_at: Timestamp,
-    ) -> Result<bool, PushStoreError> {
+    ) -> Result<Option<ClaimToken>, PushStoreError> {
+        let token = ClaimToken::new();
         let inserted = sqlx::query(
-            "INSERT INTO push_delivery_claims (owner_id, local_date, kind, claimed_at)
-             VALUES ($1, $2, $3, $4)
+            "INSERT INTO push_delivery_claims (owner_id, local_date, kind, claimed_at, claim_id)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (owner_id, local_date, kind) DO NOTHING",
         )
         .bind(claim.owner_id)
         .bind(claim.local_date.to_sqlx())
         .bind(claim.kind.as_str())
         .bind(claimed_at.to_sqlx())
+        .bind(token.as_uuid())
         .execute(&self.pool)
         .await
         .map_err(PushStoreError::internal)?
         .rows_affected();
-        Ok(inserted == 1)
+        Ok((inserted == 1).then_some(token))
     }
 
-    async fn delete_claim(&self, claim: DeliveryClaim) -> Result<bool, PushStoreError> {
+    async fn delete_claim(
+        &self,
+        claim: DeliveryClaim,
+        token: ClaimToken,
+    ) -> Result<bool, PushStoreError> {
         let deleted = sqlx::query(
             "DELETE FROM push_delivery_claims
-             WHERE owner_id = $1 AND local_date = $2 AND kind = $3",
+             WHERE owner_id = $1 AND local_date = $2 AND kind = $3 AND claim_id = $4",
         )
         .bind(claim.owner_id)
         .bind(claim.local_date.to_sqlx())
         .bind(claim.kind.as_str())
+        .bind(token.as_uuid())
         .execute(&self.pool)
         .await
         .map_err(PushStoreError::internal)?
@@ -279,12 +286,16 @@ impl DeliveryClaimStore for PostgresDeliveryClaimStore {
         &self,
         claim: DeliveryClaim,
         claimed_at: Timestamp,
-    ) -> PushStoreFuture<'_, Result<bool, PushStoreError>> {
+    ) -> PushStoreFuture<'_, Result<Option<ClaimToken>, PushStoreError>> {
         Box::pin(self.insert_claim(claim, claimed_at))
     }
 
-    fn release(&self, claim: DeliveryClaim) -> PushStoreFuture<'_, Result<bool, PushStoreError>> {
-        Box::pin(self.delete_claim(claim))
+    fn release(
+        &self,
+        claim: DeliveryClaim,
+        token: ClaimToken,
+    ) -> PushStoreFuture<'_, Result<bool, PushStoreError>> {
+        Box::pin(self.delete_claim(claim, token))
     }
 
     fn purge(

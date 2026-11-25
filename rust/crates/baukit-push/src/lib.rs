@@ -95,7 +95,7 @@ pub use config::{
     PushOptionsError,
 };
 pub use delivery_claim::{
-    DeliveryClaim, DeliveryClaimStore, DeliveryKind, MAX_DELIVERY_KIND_LENGTH,
+    ClaimToken, DeliveryClaim, DeliveryClaimStore, DeliveryKind, MAX_DELIVERY_KIND_LENGTH,
 };
 pub use expo::ExpoPushSender;
 #[cfg(feature = "test-support")]
@@ -163,6 +163,13 @@ pub const POSTGRES_PUSH_PENDING_RECEIPT_OWNERS_MIGRATION_SQL: &str =
 /// database: a nullable column without a rewrite, and a check validated separately.
 pub const POSTGRES_PUSH_INSTALL_SECRETS_MIGRATION_SQL: &str =
     include_str!("../migrations/0005_baukit_push_install_secrets.sql");
+
+/// Reference PostgreSQL migration that stores each delivery claim's token.
+///
+/// Apply it after [`POSTGRES_PUSH_INSTALL_SECRETS_MIGRATION_SQL`]. It adds a nullable column
+/// without a table rewrite.
+pub const POSTGRES_PUSH_DELIVERY_CLAIM_IDS_MIGRATION_SQL: &str =
+    include_str!("../migrations/0006_baukit_push_delivery_claim_ids.sql");
 
 // Compiles the README's examples so they cannot drift from the API.
 #[doc = include_str!("../README.md")]
