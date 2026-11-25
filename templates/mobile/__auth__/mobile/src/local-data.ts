@@ -27,6 +27,7 @@ import { loadAnalytics } from './analytics';
 import { createProductPersistenceLifecycle } from './persistence-lifecycle';
 
 import { PRODUCT_NAME } from './product';
+import { profileErasureMarker } from './erasure-marker';
 
 const REGISTRY_KEY = `${PRODUCT_NAME}.local-data-registry.v1`;
 
@@ -91,6 +92,7 @@ function erasePartition({ storeName }: OpenScopedPersistenceContext): Promise<vo
 const localDataLifecycle = createProductPersistenceLifecycle<ExpoSqliteStore<Item>>({
   registry,
   digest,
+  erasureMarker: profileErasureMarker,
   erase: erasePartition,
   open: async ({ storeName }) => {
     const database = await SQLite.openDatabaseAsync(`${storeName}.db`);

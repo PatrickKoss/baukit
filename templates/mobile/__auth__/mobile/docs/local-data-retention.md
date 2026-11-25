@@ -13,3 +13,5 @@ A `session-expired` event with reason `profile_erased` closes and deletes the ac
 A device that never receives `profile_erased` keeps the old database on disk. It cannot reopen it under the new profile ID. The product must clean up partitions of unknown profiles to remove that data. `LocalDataRetention` names logout policies; it does not implement cleanup. Data-contracts can erase an active partition and remove a known registry entry, but has no public API to enumerate entries or purge unknown profiles. Products need their own partition inventory and cleanup policy.
 
 If logout changes to `delete`, close first, delete the database and active registry entry, and report deletion failures. For `quarantine`, keep the partition out of normal mounting until an explicit recovery or deletion flow exists. Add product tests for the selected policy.
+
+`src/erasure-marker.ts` records a pending profile erasure before the server call. If the app dies after the server erase but before the local wipe, the lifecycle wipes the partition on the next start instead of opening it. Pass `profileId` to `deleteProfile` so the marker is set.

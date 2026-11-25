@@ -13,6 +13,7 @@ import { analytics } from './analytics';
 import { setApiSessionSubject } from './api-session';
 import { createProductPersistenceLifecycle } from './persistence-lifecycle';
 import { PRODUCT_NAME } from './product';
+import { profileErasureMarker } from './erasure-marker';
 
 const REGISTRY_KEY = `${PRODUCT_NAME}:local-data-registry:v1`;
 
@@ -63,6 +64,7 @@ export function useAuthenticatedLocalData(
     () =>
       createProductPersistenceLifecycle<CachePartition>({
         registry: new LocalStorageRegistry(),
+        erasureMarker: profileErasureMarker,
         open: () => Promise.resolve({ close: () => Promise.resolve() }),
         erase: () => {
           queryClient.clear();
