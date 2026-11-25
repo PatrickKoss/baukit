@@ -30,7 +30,10 @@ clears the store. `clear()` still empties the whole store.
 
 `WebStorageKeyValueStore` is a `KeyValueStore` over `sessionStorage` or `localStorage`. It stores
 each value as JSON text under a namespace you pass, so `clear()` and `clearPrefix()` never remove
-other keys of the origin. An empty namespace throws a `RangeError`. Storage failures reject the
+other keys of the origin. The stored key is the namespace, U+001F and the key, so namespace
+`drafts:u1` never clears `drafts:u10`. An empty namespace or one containing U+001F throws a
+`RangeError`. Pass `{ migrateLegacyKeys: true }` to move keys written by versions before the
+delimiter on first use. Storage failures reject the
 returned promise, and a full storage rejects with `StorageError.code === "storage_quota_exceeded"`.
 
 ```ts
@@ -421,9 +424,9 @@ including across namespaces.
 
 `ScopedPersistenceLifecycle` immediately hides stale handles, closes before it
 opens another subject, resets product-provided user-scoped memory, and publishes
-only an open/migrated/hydrated partition. Call `handleSessionExpired()` for a
+only an open/migrated/hydrated partition. Call `handleSessionExpired(subject)` for a
 terminal authentication expiry; it closes and blocks without inventing a
-subject switch. For the auth reason `profile_erased`, call `handleProfileErased()`
+subject switch. For the auth reason `profile_erased`, call `handleProfileErased(subject)`
 with a configured `erase` hook. It closes and deletes the last selected partition,
 removes its registry entry, and ends blocked with reason `profile-erased`. The
 `cleanup` field is `pending` while the transition is queued or running, `complete`
@@ -431,7 +434,7 @@ after erasure or when no partition needs erasing, and `failed` if closing or
 erasing fails or no `erase` hook is configured. The `error` is a sign-in reminder
 unless cleanup fails, when it holds the cleanup error. Show a cleanup-failure
 alert only when `cleanup === 'failed'`. The lifecycle retains the partition
-context after `clear()` or `handleSessionExpired()`, so token clearing can happen
+context after `clear()` or `handleSessionExpired(subject)`, so token clearing can happen
 before the erasure event. Cleanup failures retain the registry entry. Selecting
 the erased subject again preserves its cleanup outcome and error. Concurrent
 selection cannot reopen the erased profile; a new profile ID opens a fresh

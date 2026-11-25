@@ -18,6 +18,32 @@ export type LocalDataRetention = 'retain' | 'delete' | 'quarantine';
 export interface ScopedPersistenceRegistryStore {
   read(): Promise<string | null>;
   write(serialized: string): Promise<void>;
+  /** Writes `next` only if the stored document still equals `expected`. Preferred over `write`. */
+  compareAndSet?(expected: string | null, next: string): Promise<boolean>;
+  /** Cross-context mutual exclusion, such as Web Locks, held around each registry update. */
+  withLock?<TResult>(operation: () => Promise<TResult>): Promise<TResult>;
+}
+
+const MAX_REGISTRY_UPDATE_ATTEMPTS = 8;
+
+/** Runs `operation` under a Web Lock named `name` when `navigator.locks` exists. */
+export function withWebLock<TResult>(
+  name: string,
+  operation: () => Promise<TResult>,
+): Promise<TResult> {
+  const navigatorValue: unknown = Reflect.get(globalThis, 'navigator');
+  const locks: unknown =
+    typeof navigatorValue === 'object' && navigatorValue !== null
+      ? Reflect.get(navigatorValue, 'locks')
+      : undefined;
+  if (typeof locks !== 'object' || locks === null) return operation();
+  const request = Reflect.get(locks, 'request') as unknown;
+  if (typeof request !== 'function') return operation();
+  return (request as (name: string, callback: () => Promise<TResult>) => Promise<TResult>).call(
+    locks,
+    name,
+    operation,
+  );
 }
 
 /** A digest seam for runtimes that install their Web Crypto implementation explicitly. */
@@ -248,7 +274,9 @@ function withRegistryLock<TResult>(
   operation: () => Promise<TResult>,
 ): Promise<TResult> {
   const previous = registryQueues.get(registry) ?? Promise.resolve();
-  const result = previous.then(operation);
+  const locked = (): Promise<TResult> =>
+    registry.withLock === undefined ? operation() : registry.withLock(operation);
+  const result = previous.then(locked);
   registryQueues.set(
     registry,
     result.then(
@@ -257,6 +285,33 @@ function withRegistryLock<TResult>(
     ),
   );
   return result;
+}
+
+interface RegistryUpdate<TResult> {
+  readonly result: TResult;
+  readonly changed: boolean;
+}
+
+/** Re-reads, mutates and writes, retrying when another writer changed the document. */
+async function updateRegistry<TResult>(
+  store: ScopedPersistenceRegistryStore,
+  mutate: (registry: PersistenceRegistry) => RegistryUpdate<TResult>,
+): Promise<TResult> {
+  for (let attempt = 0; attempt < MAX_REGISTRY_UPDATE_ATTEMPTS; attempt += 1) {
+    const before = await store.read();
+    const registry = parseRegistry(before);
+    const { result, changed } = mutate(registry);
+    if (!changed) return result;
+    const next = JSON.stringify(registry);
+    if (store.compareAndSet === undefined) {
+      await store.write(next);
+      return result;
+    }
+    if (await store.compareAndSet(before, next)) return result;
+  }
+  throw new PersistenceIdentityMismatchError(
+    'Local account ownership metadata kept changing; local data was not opened.',
+  );
 }
 
 function findNamespace(
@@ -271,28 +326,26 @@ async function resolveScopedStoreLocked(
 ): Promise<ResolvedScopedStore> {
   const namespaceName = requiredIdentityPart(options.namespace, 'Persistence namespace');
   const subject = requiredIdentityPart(options.subject, 'Authenticated subject');
-  const registry = parseRegistry(await options.registry.read());
-  let namespace = findNamespace(registry, namespaceName);
+  parseRegistry(await options.registry.read());
   const storeName = await deriveScopedStoreName(namespaceName, subject, options.digest ?? sha256);
-  const existing = namespace?.subjects.find((entry) => entry.subject === subject);
-  if (existing !== undefined) {
-    if (existing.storeName !== storeName) throw corruptRegistry();
-    return { storeName };
-  }
-
-  if (namespace === undefined) {
-    namespace = { namespace: namespaceName, subjects: [] };
-    registry.namespaces.push(namespace);
-  }
-
-  const storeAlreadyRegistered = registry.namespaces.some((candidate) =>
-    candidate.subjects.some((entry) => entry.storeName === storeName),
-  );
-  if (storeAlreadyRegistered) throw corruptRegistry();
-
-  namespace.subjects.push({ subject, storeName });
-  await options.registry.write(JSON.stringify(registry));
-  return { storeName };
+  return updateRegistry(options.registry, (registry) => {
+    let namespace = findNamespace(registry, namespaceName);
+    const existing = namespace?.subjects.find((entry) => entry.subject === subject);
+    if (existing !== undefined) {
+      if (existing.storeName !== storeName) throw corruptRegistry();
+      return { result: { storeName }, changed: false };
+    }
+    if (namespace === undefined) {
+      namespace = { namespace: namespaceName, subjects: [] };
+      registry.namespaces.push(namespace);
+    }
+    const storeAlreadyRegistered = registry.namespaces.some((candidate) =>
+      candidate.subjects.some((entry) => entry.storeName === storeName),
+    );
+    if (storeAlreadyRegistered) throw corruptRegistry();
+    namespace.subjects.push({ subject, storeName });
+    return { result: { storeName }, changed: true };
+  });
 }
 
 /** Resolves or atomically records one authenticated subject's local partition. */
@@ -308,24 +361,21 @@ export interface RemoveScopedPersistenceRegistryEntryOptions {
   readonly registry: ScopedPersistenceRegistryStore;
 }
 
-async function removeScopedPersistenceRegistryEntryLocked(
+function removeScopedPersistenceRegistryEntryLocked(
   options: RemoveScopedPersistenceRegistryEntryOptions,
 ): Promise<boolean> {
   const namespaceName = requiredIdentityPart(options.namespace, 'Persistence namespace');
   const subject = requiredIdentityPart(options.subject, 'Authenticated subject');
-  const registry = parseRegistry(await options.registry.read());
-  const namespace = findNamespace(registry, namespaceName);
-  if (namespace === undefined) return false;
-
-  const entryIndex = namespace.subjects.findIndex((entry) => entry.subject === subject);
-  if (entryIndex === -1) return false;
-  namespace.subjects.splice(entryIndex, 1);
-  if (namespace.subjects.length === 0) {
-    const namespaceIndex = registry.namespaces.indexOf(namespace);
-    registry.namespaces.splice(namespaceIndex, 1);
-  }
-  await options.registry.write(JSON.stringify(registry));
-  return true;
+  return updateRegistry(options.registry, (registry) => {
+    const namespace = findNamespace(registry, namespaceName);
+    const entryIndex = namespace?.subjects.findIndex((entry) => entry.subject === subject) ?? -1;
+    if (namespace === undefined || entryIndex === -1) return { result: false, changed: false };
+    namespace.subjects.splice(entryIndex, 1);
+    if (namespace.subjects.length === 0) {
+      registry.namespaces.splice(registry.namespaces.indexOf(namespace), 1);
+    }
+    return { result: true, changed: true };
+  });
 }
 
 /** Removes one subject mapping without exposing serialized registry metadata. */
@@ -337,22 +387,68 @@ export function removeScopedPersistenceRegistryEntry(
   );
 }
 
+/** A source of transition revisions, such as `ScopedPersistenceLifecycle`. */
+export interface TransitionRevisionSource {
+  readonly transitionRevision: number;
+}
+
+export interface SyncAdoptionFence {
+  /** Aborts with the caller's signal or once `owned()` reports a lost fence. */
+  readonly signal: AbortSignal;
+  /** Call before each request; false (and an aborted signal) once ownership moved. */
+  owned(): boolean;
+}
+
 export interface RecheckServerSubjectOptions<TResult> {
   readonly partitionSubject: string;
   readonly readServerSubject: () => Promise<string>;
-  readonly adopt: () => MaybePromise<TResult>;
+  readonly adopt: (fence: SyncAdoptionFence) => MaybePromise<TResult>;
+  /** Fails the adoption when the lifecycle transitioned after the recheck started. */
+  readonly lifecycle?: TransitionRevisionSource;
+  /** Subject whose token the next request would carry; must equal the partition's. */
+  readonly tokenSubject?: () => string | undefined;
+  readonly signal?: AbortSignal;
 }
 
-/** Performs the final subject check before sync adoption or an outbox push. */
+function identityMoved(): PersistenceIdentityMismatchError {
+  return new PersistenceIdentityMismatchError(
+    'The server identity does not match the active local-data partition.',
+  );
+}
+
+/**
+ * Performs the final subject check before sync adoption or an outbox push, then
+ * hands `adopt` a fence bound to the lifecycle revision and the token subject.
+ */
 export async function recheckServerSubjectBeforeSyncAdoption<TResult>(
   options: RecheckServerSubjectOptions<TResult>,
 ): Promise<TResult> {
   requiredIdentityPart(options.partitionSubject, 'Partition subject');
+  const revision = options.lifecycle?.transitionRevision;
   const serverSubject = await options.readServerSubject();
   if (serverSubject.trim().length === 0 || serverSubject !== options.partitionSubject) {
-    throw new PersistenceIdentityMismatchError(
-      'The server identity does not match the active local-data partition.',
-    );
+    throw identityMoved();
   }
-  return options.adopt();
+  options.signal?.throwIfAborted();
+  const controller = new AbortController();
+  const stillOwned = (): boolean =>
+    options.lifecycle?.transitionRevision === revision &&
+    (options.tokenSubject === undefined || options.tokenSubject() === options.partitionSubject);
+  if (!stillOwned()) throw identityMoved();
+  const forward = (): void => {
+    controller.abort(options.signal?.reason);
+  };
+  options.signal?.addEventListener('abort', forward, { once: true });
+  const fence: SyncAdoptionFence = {
+    signal: controller.signal,
+    owned: () => {
+      if (!controller.signal.aborted && !stillOwned()) controller.abort(identityMoved());
+      return !controller.signal.aborted;
+    },
+  };
+  try {
+    return await options.adopt(fence);
+  } finally {
+    options.signal?.removeEventListener('abort', forward);
+  }
 }

@@ -118,9 +118,9 @@ describe('scoped persistence lifecycle', () => {
         const { lifecycle, registry, close, erase } = createLifecycle();
         const partition = await lifecycle.selectSubject('account-e');
         if (status === 'cleared') await lifecycle.clear();
-        if (status === 'expired') await lifecycle.handleSessionExpired();
+        if (status === 'expired') await lifecycle.handleSessionExpired('account-e');
 
-        const erasure = lifecycle.handleProfileErased();
+        const erasure = lifecycle.handleProfileErased('account-e');
         expect(lifecycle.current()).toBeUndefined();
         expect(lifecycle.state).toMatchObject({
           status: 'blocked',
@@ -154,7 +154,7 @@ describe('scoped persistence lifecycle', () => {
         if (lifecycle.state.status !== 'blocked') throw new Error('Expected a blocked lifecycle.');
         expect(lifecycle.state.error).toBe(completed.error);
 
-        await lifecycle.handleProfileErased();
+        await lifecycle.handleProfileErased('account-e');
         expect(erase).toHaveBeenCalledOnce();
         expect(lifecycle.state).toMatchObject({ cleanup: 'complete' });
       },
@@ -163,7 +163,7 @@ describe('scoped persistence lifecycle', () => {
     it('only blocks when no partition was ever selected', async () => {
       const { lifecycle, registry, close, erase, open, reset } = createLifecycle();
 
-      await lifecycle.handleProfileErased();
+      await lifecycle.handleProfileErased('account-e');
 
       expect(lifecycle.state).toMatchObject({
         status: 'blocked',
@@ -189,7 +189,7 @@ describe('scoped persistence lifecycle', () => {
       });
       const message = 'Active partition erasure requires a configured persistence erase hook.';
 
-      await expect(lifecycle.handleProfileErased()).rejects.toThrow(message);
+      await expect(lifecycle.handleProfileErased('account-e')).rejects.toThrow(message);
       expect(lifecycle.state).toMatchObject({
         status: 'blocked',
         reason: 'profile-erased',
@@ -198,7 +198,7 @@ describe('scoped persistence lifecycle', () => {
       });
       await lifecycle.selectSubject('account-e');
       await expect(lifecycle.eraseActivePartition()).rejects.toThrow(message);
-      await expect(lifecycle.handleProfileErased()).rejects.toThrow(message);
+      await expect(lifecycle.handleProfileErased('account-e')).rejects.toThrow(message);
       expect(close).toHaveBeenCalledOnce();
       expect(lifecycle.current()).toBeUndefined();
       expect(lifecycle.state).toMatchObject({
@@ -215,7 +215,7 @@ describe('scoped persistence lifecycle', () => {
       const error = new Error('disk unavailable');
       erase.mockRejectedValueOnce(error);
 
-      await expect(lifecycle.handleProfileErased()).rejects.toBe(error);
+      await expect(lifecycle.handleProfileErased('account-e')).rejects.toBe(error);
 
       expect(lifecycle.state).toEqual({
         status: 'blocked',
@@ -235,7 +235,7 @@ describe('scoped persistence lifecycle', () => {
       if (lifecycle.state.status !== 'blocked') throw new Error('Expected a blocked lifecycle.');
       expect(lifecycle.state.error).toBe(error);
 
-      await lifecycle.handleProfileErased();
+      await lifecycle.handleProfileErased('account-e');
       expect(erase).toHaveBeenCalledTimes(2);
       await expect(registry.read()).resolves.not.toContain('account-e');
       const completed = lifecycle.state;
@@ -255,7 +255,7 @@ describe('scoped persistence lifecycle', () => {
       const error = new Error('close failed');
       close.mockRejectedValueOnce(error);
 
-      await expect(lifecycle.handleProfileErased()).rejects.toBe(error);
+      await expect(lifecycle.handleProfileErased('account-e')).rejects.toBe(error);
 
       expect(lifecycle.state).toEqual({
         status: 'blocked',
@@ -269,7 +269,7 @@ describe('scoped persistence lifecycle', () => {
       await expect(lifecycle.selectSubject('account-e')).resolves.toBeUndefined();
       expect(lifecycle.state).toMatchObject({ cleanup: 'failed', error });
 
-      await lifecycle.handleProfileErased();
+      await lifecycle.handleProfileErased('account-e');
       expect(lifecycle.state).toMatchObject({ cleanup: 'complete' });
       await expect(registry.read()).resolves.not.toContain('account-e');
     });
@@ -285,7 +285,7 @@ describe('scoped persistence lifecycle', () => {
             finishErase = resolve;
           }),
         );
-        const erasure = lifecycle.handleProfileErased();
+        const erasure = lifecycle.handleProfileErased('account-e');
         await vi.waitFor(() => {
           expect(erase).toHaveBeenCalledOnce();
         });
@@ -324,7 +324,7 @@ describe('scoped persistence lifecycle', () => {
       const { lifecycle, open } = createLifecycle();
       await lifecycle.selectSubject('account-e');
 
-      const erasure = lifecycle.handleProfileErased();
+      const erasure = lifecycle.handleProfileErased('account-e');
       const selection = lifecycle.selectSubject('account-e');
       await erasure;
 
@@ -349,7 +349,7 @@ describe('scoped persistence lifecycle', () => {
             failErase = reject;
           }),
         );
-        const erasure = expect(lifecycle.handleProfileErased()).rejects.toBe(error);
+        const erasure = expect(lifecycle.handleProfileErased('account-e')).rejects.toBe(error);
         await vi.waitFor(() => {
           expect(erase).toHaveBeenCalledOnce();
         });
@@ -380,7 +380,7 @@ describe('scoped persistence lifecycle', () => {
     it('opens a new profile after erasure and retains that profile for later cleanup', async () => {
       const { lifecycle, erase } = createLifecycle();
       const previous = await lifecycle.selectSubject('account-e');
-      await lifecycle.handleProfileErased();
+      await lifecycle.handleProfileErased('account-e');
 
       const next = await lifecycle.selectSubject('account-f');
 
@@ -388,8 +388,46 @@ describe('scoped persistence lifecycle', () => {
       expect(next?.storeName).not.toBe(previous?.storeName);
       expect(lifecycle.current()).toBe(next);
       await lifecycle.clear();
-      await lifecycle.handleProfileErased();
+      await lifecycle.handleProfileErased('account-f');
       expect(erase).toHaveBeenLastCalledWith({ subject: 'account-f', storeName: next?.storeName });
+    });
+
+    it.each(['ready', 'initializing'] as const)(
+      'ignores a stale signal for a previous subject while another is %s',
+      async (phase) => {
+        const { lifecycle, erase, close, open, registry } = createLifecycle();
+        await lifecycle.selectSubject('account-e');
+        await lifecycle.clear();
+        const selection = lifecycle.selectSubject('account-f');
+        if (phase === 'ready') await selection;
+
+        await lifecycle.handleProfileErased('account-e');
+        await lifecycle.handleSessionExpired('account-e');
+        await lifecycle.blockIdentityMismatch('account-e', new PersistenceIdentityMismatchError());
+        const next = await selection;
+
+        expect(erase).not.toHaveBeenCalled();
+        expect(close).toHaveBeenCalledOnce();
+        expect(open).toHaveBeenCalledTimes(2);
+        expect(lifecycle.current()).toBe(next);
+        expect(lifecycle.state).toMatchObject({ status: 'ready', partition: next });
+        await expect(registry.read()).resolves.toContain('account-f');
+      },
+    );
+
+    it('erases only the signalled subject after sign-out', async () => {
+      const { lifecycle, erase } = createLifecycle();
+      const previous = await lifecycle.selectSubject('account-e');
+      await lifecycle.clear();
+
+      await lifecycle.handleProfileErased('account-f');
+      expect(erase).not.toHaveBeenCalled();
+      await lifecycle.handleProfileErased('account-e');
+
+      expect(erase).toHaveBeenCalledExactlyOnceWith({
+        subject: 'account-e',
+        storeName: previous?.storeName,
+      });
     });
 
     it('forgets an old context on a subject switch and after successful active erasure', async () => {
@@ -399,7 +437,7 @@ describe('scoped persistence lifecycle', () => {
       await lifecycle.selectSubject('account-f');
       await lifecycle.eraseActivePartition();
 
-      await lifecycle.handleProfileErased();
+      await lifecycle.handleProfileErased('account-e');
 
       expect(erase).toHaveBeenCalledOnce();
       expect(erase.mock.calls[0]?.[0].subject).toBe('account-f');
@@ -420,7 +458,7 @@ describe('scoped persistence lifecycle', () => {
         expect(open).toHaveBeenCalledOnce();
       });
 
-      const erasure = lifecycle.handleProfileErased();
+      const erasure = lifecycle.handleProfileErased('account-e');
       finishOpen?.();
 
       await expect(selection).resolves.toBeUndefined();
@@ -579,7 +617,7 @@ describe('scoped persistence lifecycle', () => {
     });
     await lifecycle.selectSubject('account-e');
 
-    await lifecycle.handleSessionExpired();
+    await lifecycle.handleSessionExpired('account-e');
 
     expect(close).toHaveBeenCalledOnce();
     expect(reset).toHaveBeenCalledTimes(2);

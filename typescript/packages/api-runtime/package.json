@@ -57,6 +57,7 @@
     "format:check": "prettier --check src package.json tsconfig.json tsconfig.test.json"
   },
   "devDependencies": {
+    "fast-check": "catalog:",
     "typescript": "6.0.3"
   },
   "dependencies": {

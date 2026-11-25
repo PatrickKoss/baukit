@@ -212,7 +212,7 @@ function describeSessionExpiryBlocking(
     });
     await lifecycle.selectSubject('account-e');
 
-    await lifecycle.handleSessionExpired();
+    await lifecycle.handleSessionExpired('account-e');
 
     expect(opens).toBe(1);
     expect(lifecycle.current()).toBeUndefined();

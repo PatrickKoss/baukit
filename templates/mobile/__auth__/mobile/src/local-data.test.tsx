@@ -20,7 +20,13 @@ jest.mock('expo-secure-store', () => ({
   },
   setItemAsync: (key: string, value: string) => {
     mockValidateSecureStoreKey(key);
+    if (value.length > 2048) throw new Error('SecureStore item too large');
     mockSecureStore.set(key, value);
+    return Promise.resolve();
+  },
+  deleteItemAsync: (key: string) => {
+    mockValidateSecureStoreKey(key);
+    mockSecureStore.delete(key);
     return Promise.resolve();
   },
 }));
@@ -108,6 +114,24 @@ async function renderReady(subject: string) {
 }
 
 describe('authenticated local data', () => {
+  it('keeps the registry readable past one SecureStore item', async () => {
+    const subjects = Array.from({ length: 30 }, (_, index) => `profile-${String(index)}`);
+    const rendered = await renderReady('profile-start');
+    for (const subject of subjects) {
+      await rendered.rerender({ profileId: subject, sessionExpiredReason: undefined });
+      await waitFor(() => {
+        expect(rendered.result.current.state).toMatchObject({ partition: { subject } });
+      });
+    }
+    const stored = [...mockSecureStore.entries()]
+      .filter(([key]) => /\.local-data-registry\.v1\.\d+$/u.test(key))
+      .map(([, value]) => value)
+      .join('');
+    const count = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.chunks'))?.[1];
+    expect(Number(count)).toBeGreaterThan(1);
+    for (const subject of subjects) expect(stored).toContain(subject);
+  });
+
   it('requires the provider', async () => {
     jest.spyOn(console, 'error').mockImplementation(() => undefined);
 
@@ -130,7 +154,7 @@ describe('authenticated local data', () => {
     );
     expect(mockAnalyticsReset).toHaveBeenCalled();
     const registry = [...mockSecureStore.entries()].find(([key]) =>
-      key.endsWith('.local-data-registry.v1'),
+      key.endsWith('.local-data-registry.v1.0'),
     );
     expect(registry).toBeDefined();
     expect(registry?.[1]).toContain('subject-open');
@@ -155,7 +179,7 @@ describe('authenticated local data', () => {
     expect(mockStoreClose).toHaveBeenCalledTimes(1);
     expect(mockDeleteDatabase).toHaveBeenCalledWith(`${state.partition.storeName}.db`);
     expect(result.current.state.status).toBe('signed-out');
-    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1'));
+    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1.0'));
     expect(registry?.[1]).not.toContain('subject-erase');
   });
 
@@ -190,7 +214,7 @@ describe('authenticated local data', () => {
     expect(mockStoreClose).toHaveBeenCalledTimes(1);
     expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);
     expect(mockDeleteDatabase).toHaveBeenCalledWith(`${state.partition.storeName}.db`);
-    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1'));
+    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1.0'));
     expect(registry?.[1]).not.toContain(state.partition.subject);
   });
 
@@ -204,7 +228,7 @@ describe('authenticated local data', () => {
     await waitFor(() => {
       expect(result.current.state).toEqual({ status: 'blocked', reason: 'profile-erased', cleanup: 'failed', error: failure });
     });
-    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1'));
+    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1.0'));
     expect(registry?.[1]).toContain('profile-delete-failed');
   });
 
@@ -271,7 +295,7 @@ describe('authenticated local data', () => {
     expect(newState.partition.storeName).not.toBe(oldState.partition.storeName);
     expect(mockOpenDatabase).toHaveBeenLastCalledWith(`${newState.partition.storeName}.db`);
     expect(mockDeleteDatabase).not.toHaveBeenCalled();
-    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1'));
+    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1.0'));
     expect(registry?.[1]).toContain('old-profile');
     expect(registry?.[1]).toContain('new-profile');
   });
@@ -280,7 +304,7 @@ describe('authenticated local data', () => {
     const { result } = await renderReady('subject-mismatch');
     const error = new PersistenceIdentityMismatchError();
 
-    await act(() => result.current.blockIdentityMismatch(error));
+    await act(() => result.current.blockIdentityMismatch('subject-mismatch', error));
 
     expect(result.current.state).toEqual({ status: 'blocked', reason: 'identity-mismatch', error });
     expect(mockStoreClose).toHaveBeenCalledTimes(1);
