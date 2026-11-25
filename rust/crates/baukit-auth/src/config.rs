@@ -217,12 +217,18 @@ pub struct OidcConfig {
     pub(crate) allowed_clients: Option<BTreeSet<String>>,
     pub(crate) algorithms: BTreeSet<SigningAlgorithm>,
     pub(crate) cache_ttl: Duration,
+    pub(crate) jwks_refresh_cooldown: Duration,
+    pub(crate) jwks_stale_grace: Duration,
+    pub(crate) require_access_token_type: bool,
     pub(crate) request_timeout: Duration,
     pub(crate) clock_skew: Duration,
     pub(crate) claim_mapping: PrincipalClaimMapping,
     pub(crate) token_profile: TokenProfile,
     pub(crate) egress_policy: Option<AddressPolicy>,
 }
+
+const DEFAULT_JWKS_REFRESH_COOLDOWN: Duration = Duration::from_secs(30);
+const DEFAULT_JWKS_STALE_GRACE: Duration = Duration::from_secs(10 * 60);
 
 impl OidcConfig {
     /// Creates configuration for an issuer and one required audience.
@@ -250,6 +256,9 @@ impl OidcConfig {
             audiences: BTreeSet::from([audience]),
             algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
             cache_ttl: Duration::from_secs(300),
+            jwks_refresh_cooldown: DEFAULT_JWKS_REFRESH_COOLDOWN,
+            jwks_stale_grace: DEFAULT_JWKS_STALE_GRACE,
+            require_access_token_type: false,
             request_timeout: Duration::from_secs(5),
             clock_skew: Duration::from_secs(60),
             claim_mapping: PrincipalClaimMapping::new(),
@@ -275,6 +284,9 @@ impl OidcConfig {
             allowed_clients: None,
             algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
             cache_ttl: Duration::from_secs(300),
+            jwks_refresh_cooldown: DEFAULT_JWKS_REFRESH_COOLDOWN,
+            jwks_stale_grace: DEFAULT_JWKS_STALE_GRACE,
+            require_access_token_type: false,
             request_timeout: Duration::from_secs(5),
             clock_skew: Duration::from_secs(5),
             claim_mapping: PrincipalClaimMapping::clerk(),
@@ -310,6 +322,9 @@ impl OidcConfig {
             allowed_clients: None,
             algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
             cache_ttl: Duration::from_secs(300),
+            jwks_refresh_cooldown: DEFAULT_JWKS_REFRESH_COOLDOWN,
+            jwks_stale_grace: DEFAULT_JWKS_STALE_GRACE,
+            require_access_token_type: false,
             request_timeout: Duration::from_secs(5),
             clock_skew: Duration::from_secs(60),
             claim_mapping: PrincipalClaimMapping::client_bound(),
@@ -335,6 +350,9 @@ impl OidcConfig {
             allowed_clients: None,
             algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
             cache_ttl: Duration::from_secs(300),
+            jwks_refresh_cooldown: DEFAULT_JWKS_REFRESH_COOLDOWN,
+            jwks_stale_grace: DEFAULT_JWKS_STALE_GRACE,
+            require_access_token_type: false,
             request_timeout: Duration::from_secs(5),
             clock_skew: Duration::ZERO,
             claim_mapping: PrincipalClaimMapping::client_bound(),
@@ -450,6 +468,41 @@ impl OidcConfig {
         validate_duration("JWKS cache TTL", cache_ttl)?;
         self.cache_ttl = cache_ttl;
         Ok(self)
+    }
+
+    /// Sets the minimum time between JWKS refetches caused by an unknown `kid`.
+    ///
+    /// The cooldown is global, so a stream of random key IDs costs at most one
+    /// fetch per cooldown. Defaults to 30 seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::ZeroDuration`] when `cooldown` is zero.
+    pub fn with_jwks_refresh_cooldown(
+        mut self,
+        cooldown: Duration,
+    ) -> Result<Self, OidcConfigError> {
+        validate_duration("JWKS refresh cooldown", cooldown)?;
+        self.jwks_refresh_cooldown = cooldown;
+        Ok(self)
+    }
+
+    /// Sets how long past the cache TTL known keys stay usable while refreshes fail.
+    ///
+    /// Defaults to 10 minutes. Zero disables stale serving.
+    #[must_use]
+    pub const fn with_jwks_stale_grace(mut self, grace: Duration) -> Self {
+        self.jwks_stale_grace = grace;
+        self
+    }
+
+    /// Requires the RFC 9068 `typ: at+jwt` header on access tokens.
+    ///
+    /// Off by default because many providers still issue `typ: JWT`.
+    #[must_use]
+    pub const fn requiring_access_token_type(mut self) -> Self {
+        self.require_access_token_type = true;
+        self
     }
 
     /// Sets the timeout applied independently to discovery and JWKS requests.
@@ -575,6 +628,32 @@ pub enum OidcConfigError {
     /// A network or cache duration is zero.
     #[error("{0} must be greater than zero")]
     ZeroDuration(&'static str),
+}
+
+/// Profile constructors for the fuzz targets. Not a public API.
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+impl OidcConfig {
+    pub fn fuzz_clerk(
+        issuer: &str,
+        authorized_parties: &[&str],
+        allow_missing_azp: bool,
+    ) -> Result<Self, OidcConfigError> {
+        let config = Self::clerk(issuer, authorized_parties.iter().copied())?;
+        Ok(if allow_missing_azp {
+            config.allowing_missing_authorized_party()
+        } else {
+            config
+        })
+    }
+
+    pub fn fuzz_client_bound(issuer: &str, client_id: &str) -> Result<Self, OidcConfigError> {
+        Self::client_bound(issuer, client_id)
+    }
+
+    pub fn fuzz_scope_bound(issuer: &str, scopes: &[&str]) -> Result<Self, OidcConfigError> {
+        Self::scope_bound(issuer, scopes.iter().copied())
+    }
 }
 
 #[cfg(test)]
