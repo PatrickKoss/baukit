@@ -111,7 +111,9 @@ export function useOrganizationPlan(
     load.then(
       (entitlement) => {
         settle(
-          entitlement === null ? { status: 'not_accessible' } : { status: 'ready', entitlement },
+          entitlement?.organization?.organizationId === organizationId
+            ? { status: 'ready', entitlement }
+            : { status: 'not_accessible' },
         );
       },
       (error: unknown) => {

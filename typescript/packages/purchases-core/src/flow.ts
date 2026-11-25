@@ -262,7 +262,10 @@ export class PurchaseFlow {
     key: K,
   ): void {
     this.#assertGeneration(identity.generation);
-    if (value === null) return;
+    if (value === null) {
+      if (this.#state[key] !== null) this.#setState({ ...this.#state, [key]: null });
+      return;
+    }
     if (value.suiteSubject !== identity.suiteSubject) throw new PurchaseError('subject_mismatch');
     const current = this.#state[key];
     if (current !== null && value.revision < current.revision) return;
