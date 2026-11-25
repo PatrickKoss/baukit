@@ -351,19 +351,23 @@ dependencies = [
  "axum",
  "baukit-auth",
  "baukit-core",
+ "baukit-erasure",
  "baukit-events",
  "baukit-http",
  "baukit-integrations",
  "baukit-mcp",
+ "baukit-push",
  "baukit-ratelimit",
  "baukit-sync",
  "baukit-test",
  "http",
  "jiff 1.0.0",
  "libfuzzer-sys",
+ "percent-encoding",
  "serde_json",
  "tokio",
  "tower",
+ "url",
 ]
 
 [[package]]
@@ -464,6 +468,24 @@ dependencies = [
  "baukit-telemetry",
  "serde",
  "tokio",
+]
+
+[[package]]
+name = "baukit-push"
+version = "0.30.4"
+dependencies = [
+ "aws-lc-rs",
+ "axum",
+ "baukit-config",
+ "baukit-egress",
+ "baukit-http",
+ "jiff 1.0.0",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "url",
+ "uuid",
 ]
 
 [[package]]
