@@ -66,7 +66,7 @@ impl JwksPolicy {
     pub(crate) fn from_config(config: &OidcConfig) -> Self {
         Self {
             ttl: config.cache_ttl,
-            cooldown: config.jwks_refresh_cooldown,
+            cooldown: config.jwks_refresh_cooldown.min(config.cache_ttl),
             stale_grace: config.jwks_stale_grace,
         }
     }

@@ -216,3 +216,16 @@ async fn expired_set_during_an_outage_refetches_once_per_cooldown() {
     }
     assert_eq!(source.fetches(), 2);
 }
+
+#[tokio::test]
+async fn a_ttl_shorter_than_the_cooldown_still_refreshes_on_expiry() {
+    let config = crate::OidcConfig::new("https://issuer.example", "api")
+        .expect("config")
+        .with_jwks_cache_ttl(Duration::from_secs(1))
+        .expect("ttl");
+    let source = FakeSource::new();
+    let cache = JwksCache::new(JwksPolicy::from_config(&config));
+    cache.key_for(&source, KNOWN, at(0)).await.expect("prime");
+    cache.key_for(&source, KNOWN, at(2)).await.expect("stale");
+    assert_eq!(source.fetches(), 2);
+}
