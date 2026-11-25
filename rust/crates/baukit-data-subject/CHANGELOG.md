@@ -5,6 +5,8 @@
 ### Changed
 
 - `ReceiptPayload` rejects unknown top-level fields, so a field added outside the signature check fails as `Payload`. See [docs/migrations/boundary-hardening.md](../../../docs/migrations/boundary-hardening.md).
+- Breaking: `authorize` accepts only client-credentials tokens whose `sub` is the client id (or `<client>@clients`) and that carry no user grants. Keycloak service accounts need a hardcoded `sub` mapper.
+- `purge_expired` never deletes a pending operation or its job.
 
 ## [0.30.4] - 2026-11-25
 

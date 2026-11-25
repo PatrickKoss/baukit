@@ -31,6 +31,8 @@ use {{ context.app_crate }}_bin::browser_session_router;
 {% endif %}{% if context.mcp %}use {{ context.app_crate }}_bin::mcp_policy;
 use {{ context.app_crate }}_bin::mcp_verifier;
 {% endif %}use {{ context.app_crate }}_bin::operations_router;
+{% if context.auth_enabled %}use {{ context.app_crate }}_bin::register_identity_provider_readiness;
+{% endif %}
 {% if context.auth_enabled %}use {{ context.app_crate }}_bin::protect_routes;
 {% endif %}{% if not context.auth_enabled or context.platform or context.mcp %}use {{ context.app_crate }}_bin::rate_limited;
 {% endif %}{% if not context.auth_enabled and not context.platform %}use {{ context.app_crate }}_ports::ItemRepository;
@@ -297,13 +299,20 @@ async fn serve(
         let traffic_gate = traffic_gate.clone();
         move || traffic_gate.stop_accepting()
     });
-    let (operations, _readiness) = operations_router(
+{% if context.auth_enabled %}    let erasure = backend.api_state.erasure.service.clone();
+{% endif %}    let (operations, readiness) = operations_router(
         backend.item_service,
         service_info.telemetry_identity().clone(),
         telemetry.prometheus_handle().clone(),
         traffic_gate,
     )?;
-    let api_listener =
+{% if context.auth_enabled %}    if config.environment == Environment::Local {
+        drop((readiness, erasure));
+    } else {
+        register_identity_provider_readiness(&readiness, erasure)?;
+    }
+{% else %}    drop(readiness);
+{% endif %}    let api_listener =
         TcpListener::bind(SocketAddr::new(config.http.bind_address, config.http.port)).await?;
     let operations_listener =
         TcpListener::bind(SocketAddr::new(config.ops.bind_address, config.ops.port)).await?;

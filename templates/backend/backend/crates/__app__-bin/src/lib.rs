@@ -406,6 +406,23 @@ pub fn worker_operations_router(
     Ok((router, readiness))
 }{% endif %}{% if context.auth_enabled %}
 
+/// Fails readiness while the identity provider rejects the deleter's base URL or credentials.
+/// Local stacks skip it because they run with placeholder provider secrets.
+pub fn register_identity_provider_readiness(
+    readiness: &ReadinessRegistry,
+    service: baukit_erasure::ErasureService,
+) -> Result<(), RegistrationError> {
+    readiness.register_fn_default("identity_provider", move || {
+        let service = service.clone();
+        async move {
+            service
+                .probe_identity_provider()
+                .await
+                .map_err(|_| ReadinessError::new("identity provider deletion is unavailable"))
+        }
+    })
+}
+
 pub fn identity_erasure(
     pool: sqlx::PgPool,
     auth: &AuthConfig,

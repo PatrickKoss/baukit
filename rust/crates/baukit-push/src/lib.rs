@@ -70,11 +70,18 @@
 
 #![deny(missing_docs)]
 
+/// Parsers exposed for fuzzing. Not part of the stable API.
+#[doc(hidden)]
+pub mod internals {
+    pub use crate::expo::{PendingTickets, parse_tickets};
+}
+
 mod config;
 mod delivery_claim;
 mod expo;
 #[cfg(feature = "test-support")]
 mod fake;
+mod install_secret;
 #[cfg(feature = "test-support")]
 mod memory;
 mod pending_receipt;
@@ -88,11 +95,15 @@ pub use config::{
     PushOptionsError,
 };
 pub use delivery_claim::{
-    DeliveryClaim, DeliveryClaimStore, DeliveryKind, MAX_DELIVERY_KIND_LENGTH,
+    ClaimToken, DeliveryClaim, DeliveryClaimStore, DeliveryKind, MAX_DELIVERY_KIND_LENGTH,
 };
 pub use expo::ExpoPushSender;
 #[cfg(feature = "test-support")]
 pub use fake::FakePushSender;
+pub use install_secret::{
+    DeviceInstallSecret, MAX_INSTALL_SECRET_LENGTH, MIN_INSTALL_SECRET_LENGTH, TakeoverDecision,
+    takeover_decision,
+};
 #[cfg(feature = "test-support")]
 pub use memory::{MemoryDeliveryClaimStore, MemoryDeviceRegistry, MemoryPendingReceiptStore};
 pub use pending_receipt::{
@@ -145,6 +156,20 @@ pub const POSTGRES_PUSH_PENDING_RECEIPTS_MIGRATION_SQL: &str =
 /// the device tokens their pending tickets hold.
 pub const POSTGRES_PUSH_PENDING_RECEIPT_OWNERS_MIGRATION_SQL: &str =
     include_str!("../migrations/0004_baukit_push_pending_receipt_owners.sql");
+
+/// Reference PostgreSQL migration that adds per-install secrets to device rows.
+///
+/// Apply it after [`POSTGRES_PUSH_PENDING_RECEIPT_OWNERS_MIGRATION_SQL`]. It is safe on a live
+/// database: a nullable column without a rewrite, and a check validated separately.
+pub const POSTGRES_PUSH_INSTALL_SECRETS_MIGRATION_SQL: &str =
+    include_str!("../migrations/0005_baukit_push_install_secrets.sql");
+
+/// Reference PostgreSQL migration that stores each delivery claim's token.
+///
+/// Apply it after [`POSTGRES_PUSH_INSTALL_SECRETS_MIGRATION_SQL`]. It adds a nullable column
+/// without a table rewrite.
+pub const POSTGRES_PUSH_DELIVERY_CLAIM_IDS_MIGRATION_SQL: &str =
+    include_str!("../migrations/0006_baukit_push_delivery_claim_ids.sql");
 
 // Compiles the README's examples so they cannot drift from the API.
 #[doc = include_str!("../README.md")]

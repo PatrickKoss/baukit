@@ -5,10 +5,12 @@
 mod api;
 #[cfg(any(feature = "api-providers", feature = "keycloak"))]
 mod egress;
+pub mod kernel;
 #[cfg(feature = "keycloak")]
 mod keycloak;
 mod store;
 mod worker;
+mod write_fence;
 
 use std::{future::Future, pin::Pin};
 
@@ -21,6 +23,7 @@ pub use store::{
     IdentityRetention, PostgresErasureStore, ProductErasure, reject_fenced_subject,
 };
 pub use worker::IdentityDeletionHandler;
+pub use write_fence::{WriteFence, begin_fenced_write, with_write_fence};
 
 /// Reference migration to copy after the baukit-jobs migrations.
 pub const POSTGRES_MIGRATION_SQL: &str = include_str!("../migrations/0001_erasure.sql");
@@ -43,11 +46,27 @@ pub enum IdentityDeletionError {
     Permanent,
 }
 
-/// Provider-neutral account deletion. An absent account is successful deletion.
+/// Provider-neutral account deletion. An account the provider reports as missing is
+/// successful deletion; an unexplained `404` is not.
 pub trait IdentityAccountDeleter: Send + Sync + 'static {
     /// Deletes the account and its provider sessions.
     fn delete_account<'a>(
         &'a self,
         subject: &'a str,
     ) -> ErasureFuture<'a, Result<(), IdentityDeletionError>>;
+
+    /// Checks that the configured endpoint answers like the provider, for readiness.
+    /// A misconfigured base URL must fail here instead of turning every deletion into a 404.
+    fn probe(&self) -> ErasureFuture<'_, Result<(), IdentityDeletionError>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+/// Pure helpers and SQL exposed for fuzz targets and agreement tests. Not a stable API.
+#[doc(hidden)]
+pub mod internals {
+    #[cfg(any(feature = "api-providers", feature = "keycloak"))]
+    pub use crate::egress::{MissingUserDialect, body_says_missing, user_url};
+    pub use crate::store::REJECTED_SESSION_SQL;
+    pub use crate::worker::parse_payload;
 }

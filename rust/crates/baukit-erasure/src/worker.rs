@@ -8,12 +8,34 @@ use serde::Deserialize;
 use std::sync::Arc;
 use uuid::Uuid;
 
-#[derive(Deserialize)]
+/// A validated identity deletion job payload.
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-struct Payload {
-    subject: String,
-    provider_id: String,
-    operation_id: Uuid,
+pub struct Payload {
+    /// Provider subject to delete.
+    pub subject: String,
+    /// Provider the producer selected.
+    pub provider_id: String,
+    /// Erasure operation to complete.
+    pub operation_id: Uuid,
+}
+
+/// Decodes a job payload for `provider_id`. Only a well-formed subject is returned.
+///
+/// # Errors
+///
+/// A permanent [`JobError`] for a malformed payload, another provider, or a subject that is
+/// not exactly one well-formed provider path segment.
+pub fn parse_payload(value: &serde_json::Value, provider_id: &str) -> Result<Payload, JobError> {
+    let payload: Payload = serde_json::from_value(value.clone())
+        .map_err(|_| JobError::permanent("invalid identity deletion payload"))?;
+    if payload.provider_id != provider_id {
+        return Err(JobError::permanent("identity deletion provider mismatch"));
+    }
+    if !crate::kernel::is_well_formed_subject(&payload.subject) {
+        return Err(JobError::permanent("invalid identity deletion payload"));
+    }
+    Ok(payload)
 }
 
 /// Lease-aware identity deletion handler. WorkerRunner supplies retry backoff.
@@ -47,11 +69,10 @@ impl JobHandler for IdentityDeletionHandler {
         cancellation: JobCancellation,
     ) -> JobFuture<'a, Result<(), JobError>> {
         Box::pin(async move {
-            let payload: Payload = serde_json::from_value(job.payload.clone())
-                .map_err(|_| JobError::permanent("invalid identity deletion payload"))?;
-            if job.job_type != IDENTITY_DELETE_JOB_TYPE || payload.provider_id != self.provider_id {
+            if job.job_type != IDENTITY_DELETE_JOB_TYPE {
                 return Err(JobError::permanent("identity deletion provider mismatch"));
             }
+            let payload = parse_payload(&job.payload, &self.provider_id)?;
             match self.deleter.delete_account(&payload.subject).await {
                 Ok(()) => {}
                 Err(IdentityDeletionError::Retryable) => {

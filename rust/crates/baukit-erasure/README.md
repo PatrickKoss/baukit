@@ -74,6 +74,23 @@ transaction to prevent races with erasure. Pass `principal.authenticated_at()`
 to both checks and `ErasureService::erase`. `is_fenced(subject, authenticated_at)`
 returns whether that session is rejected.
 
+`reject_fenced_subject` and `is_fenced` take no lock, so an erase can commit between
+the check and a later write. Open product writes with
+`PostgresErasureStore::begin_guarded_write`, or wrap the request in
+`with_write_fence(WriteFence::new(store, subject, authenticated_at), next)` and open
+writes with `begin_fenced_write(&pool)`. Both hold the subject lock until commit.
+
+To rotate the subject hash key, build the store with
+`PostgresErasureStore::with_retired_keys(pool, new_key, vec![old_key])`. Lookups match
+both keys. Every locked access moves that subject's fence and operations to the new key.
+Call `rehash_subjects` with the erased subjects you know about, for example from the
+provider's audit log, then drop the old key. A subject that was never rehashed loses its
+fence when its old key goes. Idempotency keys stay readable under the old key until it is
+dropped, so keep it for at least the client retry window.
+
+Call `ErasureService::probe_identity_provider` at startup and report it as readiness.
+It fails when the base URL or credentials are wrong, before any erasure runs.
+
 A fenced subject is admitted only when its verified `auth_time` is present,
 strictly later than `erased_at`, and every operation for that subject is
 `completed`. Missing login times, equal or earlier times, pending operations,

@@ -17,7 +17,8 @@ use baukit_auth::{AuthState, Principal};
 use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 {% endif %}use baukit_config::{Environment, HttpConfig};
 {% if context.auth_enabled %}use baukit_erasure::{
-    ErasureError, ErasureOutcome, ErasureService, ProductErasure, reject_fenced_subject,
+    ErasureError, ErasureOutcome, ErasureService, ProductErasure, WriteFence,
+    reject_fenced_subject, with_write_fence,
 };
 {% endif %}
 use baukit_http::{
@@ -175,13 +176,14 @@ pub async fn erasure_fence(
     request: Request,
     next: Next,
 ) -> Result<Response, ErasureError> {
-    reject_fenced_subject(
-        state.erasure.service.store(),
+    let store = state.erasure.service.store();
+    reject_fenced_subject(store, principal.subject(), principal.authenticated_at()).await?;
+    let fence = WriteFence::new(
+        store.clone(),
         principal.subject(),
         principal.authenticated_at(),
-    )
-    .await?;
-    Ok(next.run(request).await)
+    );
+    Ok(with_write_fence(fence, next.run(request)).await)
 }
 
 #[utoipa::path(

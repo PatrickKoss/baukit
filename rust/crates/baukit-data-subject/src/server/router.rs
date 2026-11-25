@@ -66,6 +66,18 @@ async fn discovery(State(store): State<PostgresDataSubjectStore>) -> impl IntoRe
     )
 }
 
+const AUTH0_CLIENT_SUBJECT_SUFFIX: &str = "@clients";
+
+/// A client-credentials token names the client itself as its subject: `sub` equals the
+/// client id (Okta, Baukit test issuers, a Keycloak hardcoded `sub` mapper) or the Auth0
+/// form `{client_id}@clients`. A user token from the same client has a user subject.
+fn is_client_credentials_subject(subject: &str, client: &str) -> bool {
+    subject == client
+        || subject
+            .strip_suffix(AUTH0_CLIENT_SUBJECT_SUFFIX)
+            .is_some_and(|prefix| prefix == client)
+}
+
 fn authorize(
     store: &PostgresDataSubjectStore,
     principal: Option<Extension<Principal>>,
@@ -75,7 +87,9 @@ fn authorize(
     let client = principal
         .client_id()
         .filter(|id| store.config.allowed_client_ids.contains(*id));
-    let Some(client) = client.filter(|_| principal.grants().is_none()) else {
+    let Some(client) = client.filter(|client| {
+        principal.grants().is_none() && is_client_credentials_subject(principal.subject(), client)
+    }) else {
         return Err(ApiError::new(
             StatusCode::FORBIDDEN,
             codes::CLIENT_NOT_ALLOWED,

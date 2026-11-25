@@ -768,3 +768,45 @@ fn sender_debug_omits_credentials_and_endpoint_secrets() -> Result<(), Box<dyn s
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn a_failed_later_chunk_keeps_the_earlier_chunks_outcomes()
+-> Result<(), Box<dyn std::error::Error>> {
+    async fn send(
+        State(calls): State<Arc<Mutex<usize>>>,
+        Json(payload): Json<Vec<Value>>,
+    ) -> (StatusCode, Json<Value>) {
+        let mut calls = calls.lock().expect("calls lock");
+        *calls += 1;
+        if *calls > 1 {
+            return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({})));
+        }
+        let tickets = payload
+            .iter()
+            .map(|item| json!({"status": "ok", "id": format!("ticket-{}", item["to"].as_str().expect("token"))}))
+            .collect::<Vec<_>>();
+        (StatusCode::OK, Json(json!({"data": tickets})))
+    }
+    let server = start(
+        Router::new()
+            .route("/push/send", post(send))
+            .route("/push/getReceipts", post(receipts_all_ok))
+            .with_state(Arc::new(Mutex::new(0))),
+    )
+    .await;
+
+    let error = sender(&server, 2)?
+        .send(vec![message("one"), message("two"), message("three")])
+        .await
+        .expect_err("the second chunk fails");
+    assert!(error.is_retryable());
+    let PushError::Partial { outcomes, error } = error else {
+        panic!("expected a partial error, got {error:?}");
+    };
+    assert!(matches!(*error, PushError::Transport { .. }));
+    let statuses = by_token(outcomes);
+    assert_eq!(statuses.len(), 2);
+    assert_eq!(statuses["one"], PushDeliveryStatus::Delivered);
+    assert_eq!(statuses["two"], PushDeliveryStatus::Delivered);
+    Ok(())
+}

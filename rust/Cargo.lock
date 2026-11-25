@@ -434,6 +434,7 @@ dependencies = [
  "baukit-test",
  "jiff 1.0.0",
  "jiff-sqlx",
+ "proptest",
  "reqwest",
  "serde",
  "serde_json",
@@ -593,6 +594,7 @@ dependencies = [
 name = "baukit-push"
 version = "0.30.4"
 dependencies = [
+ "aws-lc-rs",
  "axum",
  "baukit-config",
  "baukit-egress",
@@ -601,6 +603,7 @@ dependencies = [
  "baukit-test",
  "jiff 1.0.0",
  "jiff-sqlx",
+ "proptest",
  "serde",
  "serde_json",
  "sqlx",

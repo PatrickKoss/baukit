@@ -283,7 +283,17 @@ impl Fixture {
         Ok(self.issuer.mint(
             &self
                 .issuer
-                .claims("machine", "fixture", Duration::from_secs(300))?
+                .claims(client, "fixture", Duration::from_secs(300))?
+                .claim("client_id", client)
+                .claim("scope", scopes),
+        )?)
+    }
+
+    pub fn user_token(&self, client: &str, scopes: &str) -> Result<String, Box<dyn Error>> {
+        Ok(self.issuer.mint(
+            &self
+                .issuer
+                .claims("user-7f3a", "fixture", Duration::from_secs(300))?
                 .claim("client_id", client)
                 .claim("scope", scopes),
         )?)
@@ -391,6 +401,25 @@ impl Fixture {
         Ok((status, serde_json::from_value(body)?))
     }
 
+    /// One worker run until none of `ids` is pending, so no job stays leased by a stopped worker.
+    pub async fn run_until_settled(&self, ids: &[Uuid]) -> Result<(), Box<dyn Error>> {
+        self.run_handler_until(
+            Arc::new(DataSubjectHandler::new(
+                self.store.clone(),
+                self.product.clone(),
+            )),
+            || async {
+                let pending: i64 = sqlx::query_scalar(
+                    "SELECT count(*) FROM data_subject_operations WHERE id = ANY($1) AND status = 'pending'",
+                )
+                .bind(ids)
+                .fetch_one(&self.pool)
+                .await?;
+                Ok(pending == 0)
+            },
+        )
+        .await
+    }
     pub async fn run_until(&self, id: Uuid) -> Result<OperationResource, Box<dyn Error>> {
         self.run_handler_until(
             Arc::new(DataSubjectHandler::new(
