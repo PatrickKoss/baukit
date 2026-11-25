@@ -1,4 +1,5 @@
 import type { MaybePromise } from './contracts.js';
+import type { ProfileErasureMarkerStore } from './erasure.js';
 import {
   isPersistenceIdentityMismatchError,
   PersistenceIdentityMismatchError,
@@ -56,6 +57,8 @@ export interface ScopedPersistenceLifecycleOptions<
   /** Deletes a closed partition. Required by eraseActivePartition and handleProfileErased(subject). */
   readonly erase?: (context: OpenScopedPersistenceContext) => Promise<void>;
   readonly resetUserScopedState: () => MaybePromise<void>;
+  /** A marked subject's partition is erased instead of reopened after a crash mid-erasure. */
+  readonly erasureMarker?: ProfileErasureMarkerStore;
 }
 
 /**
@@ -243,6 +246,8 @@ export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersi
         storeName: resolved.storeName,
       };
       this.lastSelectedPartition = context;
+      if (await this.finishMarkedErasure(context, revision)) return undefined;
+      if (revision !== this.revision) return undefined;
       const persistence = await this.options.open(context);
       if (revision !== this.revision) {
         await persistence.close();
@@ -267,6 +272,26 @@ export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersi
       }
       throw cause;
     }
+  }
+
+  private async finishMarkedErasure(
+    context: OpenScopedPersistenceContext,
+    revision: number,
+  ): Promise<boolean> {
+    const marker = this.options.erasureMarker;
+    if (marker === undefined || !(await marker.isMarked(context.subject))) return false;
+    const erase = this.options.erase;
+    if (erase === undefined) {
+      throw new Error('Active partition erasure requires a configured persistence erase hook.');
+    }
+    await this.erasePartition(context, erase);
+    await marker.clear(context.subject);
+    const error = new Error('The server profile was erased; sign in again to continue.');
+    this.erasedProfile = { subject: context.subject, cleanup: 'complete', error };
+    if (revision === this.revision) {
+      this.lifecycleState = { status: 'blocked', reason: 'profile-erased', cleanup: 'complete', error };
+    }
+    return true;
   }
 
   private async erasePartition(

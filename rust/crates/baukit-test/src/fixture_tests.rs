@@ -248,8 +248,8 @@ fn deletion_outcomes_match_the_shared_contract() {
             "local-failure",
             "server-failure",
             "signout-failure",
+            "before-server-failure",
             "success",
-            "warnings-only",
         ])
     );
     assert_eq!(
@@ -266,11 +266,11 @@ fn deletion_outcomes_match_the_shared_contract() {
         outcomes,
         BTreeSet::from([
             ("ambiguous", "ambiguous"),
+            ("before-server-failure", "server-failure"),
             ("local-failure", "local-failure"),
             ("server-failure", "server-failure"),
             ("signout-failure", "signout-failure"),
             ("success", "erased"),
-            ("warnings-only", "erased"),
         ])
     );
 
