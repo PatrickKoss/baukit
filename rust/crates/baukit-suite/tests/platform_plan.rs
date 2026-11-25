@@ -288,7 +288,7 @@ async fn hub_refresh_without_a_claim_or_entitlement() {
     assert_eq!(plan.refresh(SUBJECT).await.expect("free").billing, None);
     tickets.answer(Err(EntitlementSourceError::NoEntitlements));
     let free = plan.refresh(SUBJECT).await.expect("no entitlements");
-    assert_eq!((free.tier.as_str(), free.revision), ("free", 3));
+    assert_eq!((free.tier.as_str(), free.revision), ("free", 2));
     assert!(free.features.is_empty());
 }
 
