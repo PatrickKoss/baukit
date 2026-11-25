@@ -189,15 +189,13 @@ mod proofs {
             return;
         };
         kani::assume(input.is_ascii());
-        let Ok(raw) = std::str::from_utf8(input) else {
-            return;
-        };
+        let raw: String = input.iter().copied().map(char::from).collect();
         let alphabet = input.iter().all(|byte| sextet(*byte).is_some());
         let canonical_tail = input
             .last()
             .and_then(|byte| sextet(*byte))
             .is_some_and(|value| value % 4 == 0);
         let expected = len == TOKEN_CHARS && alphabet && canonical_tail;
-        assert_eq!(parse_token(raw).is_ok(), expected);
+        assert_eq!(parse_token(&raw).is_ok(), expected);
     }
 }

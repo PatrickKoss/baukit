@@ -68,12 +68,7 @@ impl ApiTokenFormat {
     /// Returns whether a presented credential has the exact shape of a token.
     #[must_use]
     pub fn is_well_formed(&self, presented: &str) -> bool {
-        let bytes = presented.as_bytes();
-        bytes.len() == self.marker.len() + SECRET_LENGTH
-            && bytes.starts_with(self.marker.as_bytes())
-            && bytes
-                .get(self.marker.len()..)
-                .is_some_and(|body| body.iter().all(|byte| BASE62.contains(byte)))
+        well_formed_bytes(self.marker.as_bytes(), presented.as_bytes())
     }
 
     /// Generates a token secret, hash, and display prefix without a store.
@@ -163,14 +158,22 @@ pub fn hash_api_token(presented: &str) -> Vec<u8> {
         .to_vec()
 }
 
+fn well_formed_bytes(marker: &[u8], bytes: &[u8]) -> bool {
+    bytes.len() == marker.len() + SECRET_LENGTH
+        && bytes.starts_with(marker)
+        && bytes
+            .get(marker.len()..)
+            .is_some_and(|body| body.iter().all(|byte| BASE62.contains(byte)))
+}
+
 #[cfg(kani)]
 mod proofs {
     use super::*;
 
     const MAX_INPUT: usize = 96;
 
-    /// K-07: for any UTF-8 input up to 96 bytes and the default marker,
-    /// `is_well_formed` never panics and accepts iff the length, marker prefix
+    /// K-07: for any byte input up to 96 bytes and the default marker, the
+    /// byte kernel behind `is_well_formed` never panics and accepts iff the length, marker prefix
     /// and base62 body all match. Unwind 97.
     #[kani::proof]
     #[kani::unwind(97)]
@@ -182,9 +185,6 @@ mod proofs {
         let Some(input) = bytes.get(..len) else {
             return;
         };
-        let Ok(presented) = std::str::from_utf8(input) else {
-            return;
-        };
         let marker = format.marker().as_bytes();
         let expected = len == marker.len() + SECRET_LENGTH
             && input.starts_with(marker)
@@ -192,6 +192,6 @@ mod proofs {
                 .iter()
                 .skip(marker.len())
                 .all(|byte| byte.is_ascii_alphanumeric());
-        assert_eq!(format.is_well_formed(presented), expected);
+        assert_eq!(well_formed_bytes(marker, input), expected);
     }
 }
