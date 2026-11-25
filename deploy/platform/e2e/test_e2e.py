@@ -1015,6 +1015,33 @@ class RegistryMirrorTests(unittest.TestCase):
         self.assertIn("network disconnect k3d-x k3d-baukit-mirror-docker-io", out)
         self.assertEqual(out.count("network disconnect k3d-x "), 4)
 
+    def test_prune_removes_only_layer_links_without_blob_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "docker/registry/v2"
+            kept, gone = "a1" + "0" * 62, "b2" + "0" * 62
+            for repo, hexdigest in (("library/redis", kept), ("kyverno/kyverno-cli", gone)):
+                layer = root / "repositories" / repo / "_layers/sha256" / hexdigest
+                layer.mkdir(parents=True)
+                (layer / "link").write_text(f"sha256:{hexdigest}")
+            data = root / "blobs/sha256" / kept[:2] / kept / "data"
+            data.parent.mkdir(parents=True)
+            data.write_text("blob")
+            script = "${registry_mirror_prune_script/\\/var\\/lib\\/registry/" + tmp + "}"
+            out = self.source(f'sh -c "{script}"')
+            self.assertEqual(out, f"repositories/kyverno/kyverno-cli sha256:{gone}\n")
+            layers = "_layers/sha256"
+            self.assertTrue((root / "repositories/library/redis" / layers / kept).exists())
+            self.assertFalse((root / "repositories/kyverno/kyverno-cli" / layers / gone).exists())
+
+    def test_prune_restarts_the_mirror_only_when_it_removed_links(self):
+        for found, restarted in (("repositories/x sha256:ab", True), ("", False)):
+            stub = (
+                'docker() { printf "%s\\n" "$1" >&3; '
+                f'[[ $1 == exec ]] && printf "%s" "{found}"; return 0; }}'
+            )
+            out = self.source(f"{stub}\nregistry_mirror_prune k3d-m 3>&1 2>/dev/null")
+            self.assertEqual("restart" in out.split(), restarted, out)
+
     def test_the_mirror_image_is_pinned_by_digest(self):
         image = self.source('printf %s "$registry_mirror_image"')
         self.assertRegex(image, r"^docker\.io/library/registry:[0-9.]+@sha256:[0-9a-f]{64}$")

@@ -36,7 +36,31 @@ registry_mirror_fields() {
   mirror_url=${mirror_url%=*}
 }
 
-# Starts each mirror that is not running yet.
+# Run by sh inside a mirror. Removes each repository layer link whose blob data is gone and prints
+# its digest. The proxy's TTL expiry deletes a blob shared by several repositories when the first
+# repository's entry expires, and the others then answer 200 with an empty body
+# (distribution/distribution#2367).
+# shellcheck disable=SC2016
+registry_mirror_prune_script='cd /var/lib/registry/docker/registry/v2 2>/dev/null || exit 0
+find repositories -path "*/_layers/sha256/*/link" 2>/dev/null | while read -r link; do
+  digest=$(cat "$link")
+  hex=${digest#sha256:}
+  [ -f "blobs/sha256/${hex%"${hex#??}"}/$hex/data" ] && continue
+  rm -rf "${link%/link}"
+  printf "%s %s\n" "${link%%/_layers/*}" "$digest"
+done'
+
+# Usage: registry_mirror_prune <container>. Removes dangling layer links from a running mirror and
+# restarts it when it removed any, which drops the stale entries from its blob descriptor cache.
+registry_mirror_prune() {
+  local container=$1 removed
+  removed=$(docker exec "$container" sh -c "$registry_mirror_prune_script") || return 0
+  [[ -n $removed ]] || return 0
+  printf 'Removed dangling layer links from %s:\n%s\n' "$container" "$removed" >&2
+  docker restart "$container" >/dev/null
+}
+
+# Starts each mirror that is not running yet and prunes the dangling layer links of each.
 registry_mirrors_start() {
   local entry name mirror_host mirror_port mirror_url
   for entry in "${registry_mirror_upstreams[@]}"; do
@@ -44,6 +68,7 @@ registry_mirrors_start() {
     name=$(registry_mirror_name "$mirror_host")
     if docker container inspect "k3d-$name" >/dev/null 2>&1; then
       docker start "k3d-$name" >/dev/null
+      registry_mirror_prune "k3d-$name"
       continue
     fi
     k3d registry create "$name" \
