@@ -86,6 +86,11 @@ async fn assert_auth_errors(f: &Fixture) -> TestResult {
         ),
         (Some(f.api_token.clone()), 403, codes::CLIENT_NOT_ALLOWED),
         (
+            Some(f.user_token("privacy", "data-subject.erase")?),
+            403,
+            codes::CLIENT_NOT_ALLOWED,
+        ),
+        (
             Some(f.token("privacy", "")?),
             403,
             codes::INSUFFICIENT_SCOPE,
@@ -586,6 +591,7 @@ async fn purge_is_bounded_and_removes_only_expired_operations_and_execution_payl
         );
     }
     f.run_until(ids[0]).await?;
+    f.run_until(ids[1]).await?;
     sqlx::query("UPDATE data_subject_operations SET purge_after = now() - interval '1 day' WHERE id = ANY($1)").bind(&ids[..2]).execute(&f.pool).await?;
     assert_eq!(
         f.store.purge_expired(Timestamp::now(), 0).await,
@@ -856,5 +862,31 @@ async fn configuration_rejects_unsafe_keys_limits_retention_and_receipt_keys() -
             Err(DataSubjectError::Configuration)
         ));
     }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn purge_never_removes_a_pending_erasure() -> TestResult {
+    let f = Fixture::new(false).await?;
+    let token = f.token("privacy", "data-subject.erase")?;
+    let id = f
+        .post(
+            &token,
+            "purge-pending-key-01",
+            request_body(&["absent@example.invalid"]),
+        )
+        .await?
+        .1
+        .operation_id;
+    sqlx::query(
+        "UPDATE data_subject_operations SET purge_after = now() - interval '1 day' WHERE id = $1",
+    )
+    .bind(id)
+    .execute(&f.pool)
+    .await?;
+    assert_eq!(f.store.purge_expired(Timestamp::now(), 1).await?, 0);
+    assert_eq!(f.operation_count().await?, 1);
+    assert_eq!(f.job_count().await?, 1);
     Ok(())
 }

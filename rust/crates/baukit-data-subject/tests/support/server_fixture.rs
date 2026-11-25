@@ -283,7 +283,17 @@ impl Fixture {
         Ok(self.issuer.mint(
             &self
                 .issuer
-                .claims("machine", "fixture", Duration::from_secs(300))?
+                .claims(client, "fixture", Duration::from_secs(300))?
+                .claim("client_id", client)
+                .claim("scope", scopes),
+        )?)
+    }
+
+    pub fn user_token(&self, client: &str, scopes: &str) -> Result<String, Box<dyn Error>> {
+        Ok(self.issuer.mint(
+            &self
+                .issuer
+                .claims("user-7f3a", "fixture", Duration::from_secs(300))?
                 .claim("client_id", client)
                 .claim("scope", scopes),
         )?)

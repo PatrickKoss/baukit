@@ -329,12 +329,16 @@ public keys they used to verify it.
 Callers are machines using OAuth 2.0 client-credentials access tokens issued by
 the product's identity provider. In Baukit, existing `baukit-auth` middleware
 establishes a `Principal`. Accept it only when `client_id()` is in the configured
-allowlist, it is not an API token and `scopes()` contains the operation's scope.
+allowlist, it is not an API token, its `sub` is the client id itself (Auth0
+service tokens use `<client>@clients`) and `scopes()` contains the operation's
+scope. A user token minted for an allowlisted client is refused. Keycloak service
+accounts need a hardcoded-claim mapper that sets `sub` to the client id.
 An implementation without Baukit must enforce the same checks on its verified
 principal. Discovery is the only unauthenticated route.
 
 No principal returns HTTP 401. A disallowed client, absent client identity or
-API token returns HTTP 403 `data_subject_client_not_allowed`. A missing scope
+API token, or a token whose `sub` is a user returns HTTP 403
+`data_subject_client_not_allowed`. A missing scope
 returns HTTP 403 `insufficient_scope`. Operations belong to their creating
 client. An allowed client cannot read another client's operation; an erasure
 scope grants no access to exports, and vice versa. Check ownership and kind
