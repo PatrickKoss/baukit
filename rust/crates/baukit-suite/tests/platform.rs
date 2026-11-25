@@ -700,6 +700,52 @@ mod postgres {
             }
         }
     }
+    /// P-08: random store sequences leave memory and PostgreSQL with the same
+    /// snapshot, and neither revision ever decreases.
+    #[tokio::test]
+    #[ignore = "requires Docker PostgreSQL"]
+    async fn memory_and_postgres_caches_agree_and_never_lower_the_revision()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use proptest::strategy::{Strategy as _, ValueTree as _};
+        const CASES: usize = 24;
+        let container = baukit_test::start_postgres().await?;
+        let pool = sqlx::PgPool::connect(container.connection_url()).await?;
+        sqlx::raw_sql(PLATFORM_MIGRATION_SQL).execute(&pool).await?;
+        let postgres = PostgresEntitlementCache::new(pool.clone());
+        let strategy =
+            proptest::collection::vec((0..6_u64, 1..400_i64, proptest::bool::ANY), 1..12);
+        let mut runner = proptest::test_runner::TestRunner::deterministic();
+        for case in 0..CASES {
+            let stores = strategy
+                .new_tree(&mut runner)
+                .map_err(|reason| reason.to_string())?
+                .current();
+            let memory = InMemoryEntitlementCache::default();
+            let subject = format!("suite|p08-{case}");
+            let mut highest = 0;
+            for (revision, until, free) in stores {
+                let mut next = snapshot(revision, until);
+                next.subject.clone_from(&subject);
+                if free {
+                    next.tier = "free".into();
+                    next.features.clear();
+                }
+                memory.store(&next).await?;
+                postgres.store(&next).await?;
+                let stored_memory = memory.revision(&subject, "hebkit").await?;
+                let stored_postgres = postgres.revision(&subject, "hebkit").await?;
+                assert!(stored_memory >= highest);
+                highest = stored_memory;
+                assert_eq!(stored_memory, stored_postgres);
+                assert_eq!(
+                    memory.get(&subject, "hebkit", 0).await?,
+                    postgres.get(&subject, "hebkit", 0).await?
+                );
+            }
+        }
+        Ok(())
+    }
+
     #[tokio::test]
     #[ignore = "requires Docker PostgreSQL"]
     async fn postgres_cache_receipts_concurrency_and_rollback()

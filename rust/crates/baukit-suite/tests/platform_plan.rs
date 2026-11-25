@@ -197,6 +197,7 @@ fn standalone(features: &[&str]) -> StandaloneAccountPlan {
             tier: "premium".into(),
             features: features.iter().map(|f| (*f).to_owned()).collect(),
         },
+        Arc::new(NoOrganizationMembers),
     )
 }
 
@@ -287,8 +288,27 @@ async fn hub_refresh_without_a_claim_or_entitlement() {
     assert_eq!(plan.refresh(SUBJECT).await.expect("free").billing, None);
     tickets.answer(Err(EntitlementSourceError::NoEntitlements));
     let free = plan.refresh(SUBJECT).await.expect("no entitlements");
-    assert_eq!((free.tier.as_str(), free.revision), ("free", 2));
+    assert_eq!((free.tier.as_str(), free.revision), ("free", 3));
     assert!(free.features.is_empty());
+}
+
+#[tokio::test]
+async fn a_refresh_that_says_free_replaces_the_cached_paid_plan() {
+    let tickets = Arc::new(ScriptedTickets::default());
+    let plan = hub_plan(tickets.clone());
+    tickets.answer(Ok(sign(&claims(&["eigenruhe.custom_programs"], 4, None))));
+    plan.refresh(SUBJECT).await.expect("paid");
+    tickets.answer(Err(EntitlementSourceError::NoEntitlements));
+    plan.refresh(SUBJECT).await.expect("free");
+    let current = plan.current(SUBJECT).await.expect("current");
+    assert_eq!((current.tier.as_str(), current.revision), ("free", 5));
+    assert!(current.features.is_empty());
+    plan.refresh(SUBJECT).await.expect("free again");
+    assert_eq!(
+        plan.current(SUBJECT).await.expect("current").revision,
+        5,
+        "repeated free answers keep the revision"
+    );
 }
 
 #[tokio::test]

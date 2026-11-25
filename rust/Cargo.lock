@@ -667,6 +667,7 @@ dependencies = [
  "jiff 1.0.0",
  "jiff-sqlx",
  "metrics",
+ "proptest",
  "rand 0.9.5",
  "reqwest",
  "serde",
