@@ -590,8 +590,7 @@ async fn purge_is_bounded_and_removes_only_expired_operations_and_execution_payl
                 .operation_id,
         );
     }
-    f.run_until(ids[0]).await?;
-    f.run_until(ids[1]).await?;
+    f.run_until_settled(&ids).await?;
     sqlx::query("UPDATE data_subject_operations SET purge_after = now() - interval '1 day' WHERE id = ANY($1)").bind(&ids[..2]).execute(&f.pool).await?;
     assert_eq!(
         f.store.purge_expired(Timestamp::now(), 0).await,

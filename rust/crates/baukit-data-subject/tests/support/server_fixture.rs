@@ -401,6 +401,25 @@ impl Fixture {
         Ok((status, serde_json::from_value(body)?))
     }
 
+    /// One worker run until none of `ids` is pending, so no job stays leased by a stopped worker.
+    pub async fn run_until_settled(&self, ids: &[Uuid]) -> Result<(), Box<dyn Error>> {
+        self.run_handler_until(
+            Arc::new(DataSubjectHandler::new(
+                self.store.clone(),
+                self.product.clone(),
+            )),
+            || async {
+                let pending: i64 = sqlx::query_scalar(
+                    "SELECT count(*) FROM data_subject_operations WHERE id = ANY($1) AND status = 'pending'",
+                )
+                .bind(ids)
+                .fetch_one(&self.pool)
+                .await?;
+                Ok(pending == 0)
+            },
+        )
+        .await
+    }
     pub async fn run_until(&self, id: Uuid) -> Result<OperationResource, Box<dyn Error>> {
         self.run_handler_until(
             Arc::new(DataSubjectHandler::new(
