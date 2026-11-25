@@ -337,22 +337,68 @@ export function removeScopedPersistenceRegistryEntry(
   );
 }
 
+/** A source of transition revisions, such as `ScopedPersistenceLifecycle`. */
+export interface TransitionRevisionSource {
+  readonly transitionRevision: number;
+}
+
+export interface SyncAdoptionFence {
+  /** Aborts with the caller's signal or once `owned()` reports a lost fence. */
+  readonly signal: AbortSignal;
+  /** Call before each request; false (and an aborted signal) once ownership moved. */
+  owned(): boolean;
+}
+
 export interface RecheckServerSubjectOptions<TResult> {
   readonly partitionSubject: string;
   readonly readServerSubject: () => Promise<string>;
-  readonly adopt: () => MaybePromise<TResult>;
+  readonly adopt: (fence: SyncAdoptionFence) => MaybePromise<TResult>;
+  /** Fails the adoption when the lifecycle transitioned after the recheck started. */
+  readonly lifecycle?: TransitionRevisionSource;
+  /** Subject whose token the next request would carry; must equal the partition's. */
+  readonly tokenSubject?: () => string | undefined;
+  readonly signal?: AbortSignal;
 }
 
-/** Performs the final subject check before sync adoption or an outbox push. */
+function identityMoved(): PersistenceIdentityMismatchError {
+  return new PersistenceIdentityMismatchError(
+    'The server identity does not match the active local-data partition.',
+  );
+}
+
+/**
+ * Performs the final subject check before sync adoption or an outbox push, then
+ * hands `adopt` a fence bound to the lifecycle revision and the token subject.
+ */
 export async function recheckServerSubjectBeforeSyncAdoption<TResult>(
   options: RecheckServerSubjectOptions<TResult>,
 ): Promise<TResult> {
   requiredIdentityPart(options.partitionSubject, 'Partition subject');
+  const revision = options.lifecycle?.transitionRevision;
   const serverSubject = await options.readServerSubject();
   if (serverSubject.trim().length === 0 || serverSubject !== options.partitionSubject) {
-    throw new PersistenceIdentityMismatchError(
-      'The server identity does not match the active local-data partition.',
-    );
+    throw identityMoved();
   }
-  return options.adopt();
+  options.signal?.throwIfAborted();
+  const controller = new AbortController();
+  const stillOwned = (): boolean =>
+    options.lifecycle?.transitionRevision === revision &&
+    (options.tokenSubject === undefined || options.tokenSubject() === options.partitionSubject);
+  if (!stillOwned()) throw identityMoved();
+  const forward = (): void => {
+    controller.abort(options.signal?.reason);
+  };
+  options.signal?.addEventListener('abort', forward, { once: true });
+  const fence: SyncAdoptionFence = {
+    signal: controller.signal,
+    owned: () => {
+      if (!controller.signal.aborted && !stillOwned()) controller.abort(identityMoved());
+      return !controller.signal.aborted;
+    },
+  };
+  try {
+    return await options.adopt(fence);
+  } finally {
+    options.signal?.removeEventListener('abort', forward);
+  }
 }

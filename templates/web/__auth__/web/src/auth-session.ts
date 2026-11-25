@@ -9,6 +9,7 @@ import {
 import { analytics } from './analytics';
 import { currentUser, type CurrentUser } from './api';
 import { authClient } from './auth';
+import { apiSessionSubject } from './api-session';
 import { sessionFailure } from './session-failure';
 import {
   useAuthenticatedLocalData,
@@ -145,6 +146,7 @@ function useSyncAdoption(
     if (partition === undefined || user === undefined) return;
     void recheckServerSubjectBeforeSyncAdoption({
       partitionSubject: partition.subject,
+      tokenSubject: apiSessionSubject,
       readServerSubject: () => Promise.resolve(user.id),
       adopt: () => {
         analytics.identify(user.id);
