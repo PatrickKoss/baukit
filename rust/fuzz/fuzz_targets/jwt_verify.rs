@@ -331,6 +331,14 @@ fn profile_rule(profile: Profile, claims: &Map<String, Value>) -> Outcome {
 fn expected(profile: Profile, case: &Case) -> Outcome {
     let claims = &case.claims;
     let access = profile != Profile::IdToken;
+    let aud_shape = match claims.get("aud") {
+        None | Some(Value::String(_)) => true,
+        Some(Value::Array(many)) => many.iter().all(Value::is_string),
+        Some(_) => false,
+    };
+    if !aud_shape {
+        return Err("MalformedToken");
+    }
     if access
         && profile == Profile::OidcTyped
         && !matches!(case.typ, Some("at+jwt" | "application/at+jwt"))
@@ -397,6 +405,7 @@ fn kind(result: Result<baukit_auth::Principal, VerificationError>) -> Outcome {
         VerificationError::Expired => "Expired",
         VerificationError::NotYetValid => "NotYetValid",
         VerificationError::InvalidPrincipalContext => "InvalidPrincipalContext",
+        VerificationError::MalformedToken => "MalformedToken",
         _ => "Other",
     })
 }
