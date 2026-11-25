@@ -21,6 +21,9 @@ const POSTGRES_IMAGE_NAME: &str = "postgres";
 const POSTGRES_IMAGE_TAG: &str =
     "18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015";
 const POSTGRES_PORT: u16 = 5432;
+/// Names a running PostgreSQL server URL that [`PostgresTestOptions::start`] uses instead
+/// of starting a container.
+pub const EXTERNAL_DATABASE_URL_VAR: &str = "BAUKIT_TEST_DATABASE_URL";
 
 /// A running disposable PostgreSQL container and its connection URL.
 ///
@@ -34,7 +37,7 @@ pub struct PostgresTestContainer {
     owner_connection_url: Option<String>,
     #[cfg(feature = "sqlx-postgres")]
     databases: PostgresTestDatabases,
-    container: ContainerAsync<GenericImage>,
+    container: Option<ContainerAsync<GenericImage>>,
 }
 
 impl PostgresTestContainer {
@@ -77,14 +80,16 @@ impl PostgresTestContainer {
     }
 
     /// Returns the underlying Testcontainers guard for advanced test setup.
+    ///
+    /// `None` when the fixture uses the server named by [`EXTERNAL_DATABASE_URL_VAR`].
     #[must_use]
-    pub const fn container(&self) -> &ContainerAsync<GenericImage> {
-        &self.container
+    pub const fn container(&self) -> Option<&ContainerAsync<GenericImage>> {
+        self.container.as_ref()
     }
 
     /// Splits the fixture into an owned URL and its lifetime guard.
     #[must_use]
-    pub fn into_parts(self) -> (String, ContainerAsync<GenericImage>) {
+    pub fn into_parts(self) -> (String, Option<ContainerAsync<GenericImage>>) {
         (self.connection_url, self.container)
     }
 }
@@ -180,6 +185,8 @@ impl PostgresTestOptions {
     /// Starts the container and, with `sqlx-postgres`, waits until it accepts
     /// queries, then prepares the app role and migrations.
     ///
+    /// When [`EXTERNAL_DATABASE_URL_VAR`] is set, no container starts: the fixture
+    /// prepares the server at that URL, which must allow a superuser login. Otherwise
     /// Docker is contacted only when this function is called.
     ///
     /// # Errors
@@ -189,7 +196,30 @@ impl PostgresTestOptions {
     /// when the server never accepts queries, the app role cannot be prepared, or a
     /// migration fails.
     pub async fn start(self) -> Result<PostgresTestContainer, PostgresTestError> {
-        let container = GenericImage::new(self.image_name, self.image_tag)
+        let external = std::env::var(EXTERNAL_DATABASE_URL_VAR)
+            .ok()
+            .filter(|url| !url.is_empty());
+        self.start_on(external).await
+    }
+
+    async fn start_on(
+        self,
+        external_url: Option<String>,
+    ) -> Result<PostgresTestContainer, PostgresTestError> {
+        let (connection_url, container) = match external_url {
+            Some(url) => (url, None),
+            None => {
+                let (url, container) = self.start_container().await?;
+                (url, Some(container))
+            }
+        };
+        self.prepare(connection_url, container).await
+    }
+
+    async fn start_container(
+        &self,
+    ) -> Result<(String, ContainerAsync<GenericImage>), PostgresTestError> {
+        let container = GenericImage::new(self.image_name.clone(), self.image_tag.clone())
             .with_exposed_port(POSTGRES_PORT.tcp())
             .with_wait_for(WaitFor::message_on_stderr(
                 "database system is ready to accept connections",
@@ -205,7 +235,24 @@ impl PostgresTestOptions {
             .await?;
         let host = container.get_host().await?;
         let port = container.get_host_port_ipv4(POSTGRES_PORT).await?;
-        let connection_url = format!("postgres://postgres:postgres@{host}:{port}/postgres");
+        Ok((
+            format!("postgres://postgres:postgres@{host}:{port}/postgres"),
+            container,
+        ))
+    }
+
+    #[cfg_attr(
+        not(feature = "sqlx-postgres"),
+        expect(
+            clippy::unused_async,
+            reason = "only the sqlx-postgres build awaits setup"
+        )
+    )]
+    async fn prepare(
+        self,
+        connection_url: String,
+        container: Option<ContainerAsync<GenericImage>>,
+    ) -> Result<PostgresTestContainer, PostgresTestError> {
         #[cfg(feature = "sqlx-postgres")]
         {
             let mut databases = PostgresTestDatabases::new(connection_url.clone());
@@ -491,6 +538,7 @@ mod tests {
         assert_eq!(version, "180007");
         let mut release = fixture
             .container()
+            .ok_or("fixture started no container")?
             .exec(testcontainers::core::ExecCommand::new([
                 "cat",
                 "/etc/alpine-release",
@@ -501,6 +549,29 @@ mod tests {
             release.starts_with("3.23."),
             "override was not used: {release}"
         );
+        pool.close().await;
+        Ok(())
+    }
+
+    #[cfg(feature = "sqlx-postgres")]
+    #[tokio::test]
+    #[ignore = "requires a reachable Docker daemon and may pull the PostgreSQL image"]
+    async fn prepares_an_external_server_without_a_container()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let server = start_postgres().await?;
+        let directory = migrations(&[("0001_fixture.sql", "CREATE TABLE fixture (id INT);")])?;
+        let fixture = PostgresTestOptions::new()
+            .with_migrations(directory.path())
+            .start_on(Some(server.connection_url().to_owned()))
+            .await?;
+        assert!(fixture.container().is_none());
+        assert_eq!(fixture.connection_url(), server.connection_url());
+        let pool = sqlx::PgPool::connect(fixture.connection_url()).await?;
+        let table = sqlx::query("SELECT to_regclass('fixture')::text AS table_name")
+            .fetch_one(&pool)
+            .await?
+            .try_get::<String, _>("table_name")?;
+        assert_eq!(table, "fixture");
         pool.close().await;
         Ok(())
     }

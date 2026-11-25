@@ -12,3 +12,7 @@ swift = "6.4.0"
 "aqua:koalaman/shellcheck" = "0.11.0"
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 "aqua:ast-grep/ast-grep" = "0.51.1"
+"github:sbdchd/squawk" = { version = "2.74.0", bin = "squawk", rename_exe = "squawk" }
+"cargo:cargo-fuzz" = "0.13.2"
+"cargo:kani-verifier" = { version = "0.68.0", postinstall = "cargo kani setup" }
+# "cargo:verus" is added with rust/verus. tla2tools.jar is pinned in deploy/tools.toml (TLA2TOOLS_JAR).

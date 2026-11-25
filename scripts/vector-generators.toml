@@ -1,0 +1,8 @@
+# Generators for the cross-language vectors in fixtures/**/generated-v1.json, run by
+# scripts/regenerate-vectors.py. Each entry names its output and the command (run from the repo
+# root) that rewrites it. Every generated-v1.json must have exactly one entry.
+#
+# [[generator]]
+# output = "fixtures/hlc/generated-v1.json"
+# command = ["cargo", "run", "--manifest-path", "rust/Cargo.toml", "-p", "baukit-sync", "--example", "hlc_vectors"]
+schema = 1
