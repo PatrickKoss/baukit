@@ -78,3 +78,10 @@ path = "fuzz_targets/oauth_state_parse.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "xff_resolve"
+path = "fuzz_targets/xff_resolve.rs"
+test = false
+doc = false
+bench = false
