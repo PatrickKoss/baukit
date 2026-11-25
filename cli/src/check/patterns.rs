@@ -7,18 +7,16 @@ use serde::Deserialize;
 use super::{
     CheckContext, Finding, Rule,
     comments::SuppressionKind,
+    relative,
     suppressions::{missing_reason, scan_tree},
+    walk,
 };
 
 const NAME: &str = "patterns";
 const AST_GREP: &str = "ast-grep";
 const AST_GREP_VERSION: &str = "0.51.1";
-const EXCLUDED_GLOBS: &[&str] = &[
-    "!**/vendor/**",
-    "!**/target/**",
-    "!**/node_modules/**",
-    "!**/.generated-fixture/**",
-];
+const SCANNED_EXTENSIONS: [&str; 5] = ["rs", "ts", "tsx", "mts", "cts"];
+const FILES_PER_SCAN: usize = 400;
 static RULES: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../lint/ast-grep");
 
 pub struct Patterns;
@@ -107,18 +105,34 @@ struct Position {
 }
 
 fn scan(root: &Path, config: &Path) -> Result<Vec<Match>> {
-    let mut command = Command::new(AST_GREP);
-    command
+    let files: Vec<String> = walk::files(root, |path| {
+        path.extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| SCANNED_EXTENSIONS.contains(&ext))
+    })?
+    .iter()
+    .map(|path| relative(root, path))
+    .collect();
+    let mut matches = Vec::new();
+    for chunk in files.chunks(FILES_PER_SCAN) {
+        matches.extend(scan_files(root, config, chunk)?);
+    }
+    matches.sort_by(|left, right| {
+        (&left.file, left.range.start.line).cmp(&(&right.file, right.range.start.line))
+    });
+    Ok(matches)
+}
+
+/// Scans the listed files. Naming them explicitly makes ast-grep check files that a
+/// `.gitignore` would hide but git still tracks.
+fn scan_files(root: &Path, config: &Path, files: &[String]) -> Result<Vec<Match>> {
+    let output = Command::new(AST_GREP)
         .current_dir(root)
         .arg("scan")
         .arg("--config")
         .arg(config)
-        .arg("--json=stream");
-    for glob in EXCLUDED_GLOBS {
-        command.arg("--globs").arg(glob);
-    }
-    let output = command
-        .arg(".")
+        .arg("--json=stream")
+        .args(files)
         .output()
         .with_context(|| format!("failed to run `{AST_GREP} scan`"))?;
     if !output.status.success() && output.stdout.is_empty() {
@@ -139,8 +153,5 @@ fn scan(root: &Path, config: &Path) -> Result<Vec<Match>> {
     for found in &mut matches {
         found.file = found.file.trim_start_matches("./").to_owned();
     }
-    matches.sort_by(|left, right| {
-        (&left.file, left.range.start.line).cmp(&(&right.file, right.range.start.line))
-    });
     Ok(matches)
 }

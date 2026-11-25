@@ -26,8 +26,10 @@ fn mobile_options(parent: &Path, name: &str, auth: Option<AuthProvider>) -> NewO
 fn package_script(root: &Path, name: &str) -> anyhow::Result<String> {
     let package: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(root.join("mobile/package.json"))?)?;
-    package["scripts"][name]
-        .as_str()
+    package
+        .get("scripts")
+        .and_then(|scripts| scripts.get(name))
+        .and_then(serde_json::Value::as_str)
         .map(str::to_owned)
         .ok_or_else(|| anyhow::anyhow!("mobile/package.json has no `{name}` script"))
 }

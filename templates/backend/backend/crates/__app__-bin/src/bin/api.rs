@@ -2,39 +2,26 @@ use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::Router;
 {% if context.auth_enabled %}use baukit_auth::AuthState;
-{% endif %}{% if context.mcp %}use baukit_auth::IdentityVerifier;
 {% endif %}use baukit_config::{BaukitConfig, Environment};
 {% if context.auth_enabled %}use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
 {% endif %}use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
-{% if context.auth_enabled %}use baukit_ratelimit::{RateLimitOptions, RedisRateLimitStore, SharedRateLimitStore};
-{% else %}use baukit_ratelimit::{InMemoryRateLimitStore, RateLimitOptions, SharedRateLimitStore};
-{% endif %}use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
+use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
 use baukit_telemetry::{Telemetry, TelemetryBuilder, tracing};
 
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use tokio::net::TcpListener;
 
-use {{ context.app_crate }}_api::ApiState;
-{% if context.auth_enabled %}use {{ context.app_crate }}_api::ErasureApi;
-use {{ context.app_crate }}_api::finalize_with_options;
-use {{ context.app_crate }}_api::http_options;
-{% else %}use {{ context.app_crate }}_api::finalize_api;
-{% endif %}use {{ context.app_crate }}_api::routes;
-{% if context.auth_enabled %}use {{ context.app_crate }}_bin::BrowserSessionDependencies;
-{% endif %}{% if not context.auth_enabled and not context.platform %}use {{ context.app_crate }}_bin::InMemoryItemRepository;
+{% if context.auth_enabled %}use {{ context.app_crate }}_api::ApiState;
+use {{ context.app_crate }}_api::ErasureApi;
+{% endif %}use {{ context.app_crate }}_bin::ApiDependencies;
+{% if not context.auth_enabled and not context.platform %}use {{ context.app_crate }}_bin::InMemoryItemRepository;
 {% endif %}use {{ context.app_crate }}_bin::ProductConfig;
-use {{ context.app_crate }}_bin::RateLimits;
 {% if context.auth_enabled %}use {{ context.app_crate }}_bin::auth_verifier;
-use {{ context.app_crate }}_bin::browser_session_router;
-{% endif %}use {{ context.app_crate }}_bin::config_loader;
+{% endif %}use {{ context.app_crate }}_bin::compose_api;
+use {{ context.app_crate }}_bin::config_loader;
 {% if context.auth_enabled %}use {{ context.app_crate }}_bin::identity_erasure;
-{% endif %}{% if context.mcp %}use {{ context.app_crate }}_bin::mcp_policy;
-use {{ context.app_crate }}_bin::mcp_verifier;
 {% endif %}use {{ context.app_crate }}_bin::operations_router;
 {% if context.auth_enabled %}use {{ context.app_crate }}_bin::register_identity_provider_readiness;
-{% endif %}
-{% if context.auth_enabled %}use {{ context.app_crate }}_bin::protect_routes;
-{% endif %}{% if not context.auth_enabled or context.platform or context.mcp %}use {{ context.app_crate }}_bin::rate_limited;
 {% endif %}{% if not context.auth_enabled and not context.platform %}use {{ context.app_crate }}_ports::ItemRepository;
 {% endif %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
 {% if context.auth_enabled %}use {{ context.app_crate }}_postgres::PostgresProfileErasure;
@@ -45,8 +32,7 @@ use {{ context.app_crate }}_postgres::PostgresUserRepository;
 const PRODUCT: &str = "{{ context.app_name }}";
 const ENV_PREFIX: &str = "{{ context.app_env }}";
 const POOL_METRICS_INTERVAL: Duration = Duration::from_secs(15);
-{% if context.auth_enabled %}const HSTS_MAX_AGE: Duration = Duration::from_secs(365 * 24 * 60 * 60);
-{% endif %}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let environment = env::var(format!("{ENV_PREFIX}_ENVIRONMENT"))
@@ -63,7 +49,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         ServiceInfo::new(PRODUCT, ProcessKind::Api, build_info!(), config.environment);
     let telemetry = init_telemetry(&config, &service_info)?;
     let backend = Backend::connect(&config).await?;
-    let api = compose_api(&config, &backend){% if context.auth_enabled %}.await{% endif %}?;
+    let api = compose_api(&config, &backend.api){% if context.auth_enabled %}.await{% endif %}?.router;
     serve(&config, &service_info, telemetry, backend, api).await
 }
 
@@ -97,13 +83,9 @@ async fn connect_pool(
 }
 
 struct Backend {
-{% if context.auth_enabled or context.platform %}    pool: PgPool,
-{% endif %}    pool_metrics: Option<PoolMetricsSampler>,
-    item_service: ItemService,
-{% if context.auth_enabled %}    api_state: ApiState,
-    auth: AuthState,
-{% if context.mcp %}    verifier: Arc<dyn IdentityVerifier>,
-{% endif %}    erasure_runner: WorkerRunner,
+    api: ApiDependencies,
+    pool_metrics: Option<PoolMetricsSampler>,
+{% if context.auth_enabled %}    erasure_runner: WorkerRunner,
 {% endif %}}
 
 impl Backend {
@@ -142,22 +124,29 @@ impl Backend {
             },
         };
         Ok(Self {
-            pool,
+            api: ApiDependencies {
+                pool,
+                item_service,
+                api_state,
+                auth,
+{% if context.mcp %}                verifier,
+{% endif %}                rate_limit_store: None,
+            },
             pool_metrics: Some(pool_metrics),
-            item_service,
-            api_state,
-            auth,
-{% if context.mcp %}            verifier,
-{% endif %}            erasure_runner,
+            erasure_runner,
         })
     }
 {% elif context.platform %}    async fn connect(config: &BaukitConfig<ProductConfig>) -> Result<Self, Box<dyn Error>> {
         let (pool, pool_metrics) = connect_pool(config)
             .await?
             .ok_or("platform backend requires database configuration")?;
+        let repository = Arc::new(PostgresItemRepository::new(pool.clone()));
         Ok(Self {
-            item_service: ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone()))),
-            pool,
+            api: ApiDependencies {
+                item_service: ItemService::new(repository),
+                pool,
+                rate_limit_store: None,
+            },
             pool_metrics: Some(pool_metrics),
         })
     }
@@ -176,116 +165,15 @@ impl Backend {
                 }
             };
         Ok(Self {
+            api: ApiDependencies {
+                item_service: ItemService::new(repository),
+                rate_limit_store: None,
+            },
             pool_metrics,
-            item_service: ItemService::new(repository),
         })
     }
 {% endif %}}
-{% if context.auth_enabled %}
-async fn compose_api(
-    config: &BaukitConfig<ProductConfig>,
-    backend: &Backend,
-) -> Result<Router, Box<dyn Error>> {
-    let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
-    let redis = RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?;
-    let limits = redis.clone().map(|store| RateLimits {
-        store: SharedRateLimitStore::new(store),
-        options: rate_limit_options.clone(),
-    });
-    let mut http = http_options(&config.http, config.environment)?;
-    if config.environment != Environment::Local {
-        http = http.with_hsts(HSTS_MAX_AGE);
-    }
-    let mut late = Vec::new();
-    if config.product.auth.browser_session.enabled {
-        http.allow_credentials = true;
-        let dependencies = BrowserSessionDependencies {
-            issuer: &config.product.auth.issuer,
-            http: &http,
-            pool: backend.pool.clone(),
-            rate_limit: &rate_limit_options,
-            rate_limit_store: redis,
-            environment: config.environment,
-        };
-        late.extend(
-            browser_session_router(&config.product.auth.browser_session, dependencies).await?,
-        );
-    }
-{% if context.platform %}    let pool = backend.pool.clone();
-    let mut platform = {{ context.app_crate }}_bin::platform::compose(pool, &config.product)?;
-    platform.router = rate_limited(platform.router, limits.as_ref());
-{% endif %}    let api = protect_routes(
-        routes(backend.api_state.clone()),
-        late,
-        backend.auth.clone(),
-        limits.as_ref(),
-    )?;
-{% if context.mcp %}    // baukit_mcp limits verified callers itself; the IP limiter covers requests with invalid tokens.
-    let mcp_store = mcp_store(config, limits.as_ref())?;
-    let item_reads = Arc::new(backend.item_service.clone());
-    let mcp_services = {{ context.app_crate }}_mcp::services(item_reads);
-    let mcp = baukit_mcp::router(
-        config.product.mcp.clone(),
-        mcp_caller_verifier(config, backend).await?,
-        mcp_services,
-        mcp_store,
-        mcp_policy(&config.product.auth, &config.product.mcp)?,
-    )
-    .await?;
-    let mcp = rate_limited(mcp, limits.as_ref());
-    let api = api.merge(mcp);
-{% endif %}{% if context.platform %}    let api = api
-        .merge(platform.router)
-        .layer(axum::Extension(platform.entitlements));
-{% endif %}    Ok(finalize_with_options(api, http))
-}
-{% if context.mcp %}
-fn mcp_store(
-    config: &BaukitConfig<ProductConfig>,
-    limits: Option<&RateLimits>,
-) -> Result<Arc<dyn baukit_ratelimit::RateLimitStore>, Box<dyn Error>> {
-    match limits {
-        Some(limits) => Ok(Arc::new(limits.store.clone())),
-        None if config.environment == Environment::Local || !config.product.mcp.enabled => {
-            Ok(Arc::new(baukit_ratelimit::InMemoryRateLimitStore::default()))
-        }
-        None => {
-            Err("remote MCP requires a shared rate-limit store outside local development".into())
-        }
-    }
-}
 
-async fn mcp_caller_verifier(
-    config: &BaukitConfig<ProductConfig>,
-    backend: &Backend,
-) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
-    if config.product.mcp.enabled {
-        return mcp_verifier(&config.product.auth, &config.product.mcp).await;
-    }
-    Ok(backend.verifier.clone())
-}
-{% endif %}{% else %}
-fn compose_api(
-    config: &BaukitConfig<ProductConfig>,
-    backend: &Backend,
-) -> Result<Router, Box<dyn Error>> {
-    let options = RateLimitOptions::from_config(&config.rate_limit)?;
-    // Without auth there is no Redis in the stack, so each replica keeps its own IP buckets.
-    let limits = options.is_enabled().then(|| RateLimits {
-        store: SharedRateLimitStore::new(InMemoryRateLimitStore::default()),
-        options,
-    });
-    let api = routes(ApiState {
-        items: backend.item_service.clone(),
-    });
-{% if context.platform %}    let pool = backend.pool.clone();
-    let platform = {{ context.app_crate }}_bin::platform::compose(pool, &config.product)?;
-    let api = api.merge(platform.router);
-{% endif %}    let api = rate_limited(api, limits.as_ref());
-{% if context.platform %}    let api = api.layer(axum::Extension(platform.entitlements));
-{% endif %}    Ok(finalize_api(api, &config.http, config.environment)?)
-}
-{% endif %}
 async fn serve(
     config: &BaukitConfig<ProductConfig>,
     service_info: &ServiceInfo,
@@ -299,9 +187,9 @@ async fn serve(
         let traffic_gate = traffic_gate.clone();
         move || traffic_gate.stop_accepting()
     });
-{% if context.auth_enabled %}    let erasure = backend.api_state.erasure.service.clone();
+{% if context.auth_enabled %}    let erasure = backend.api.api_state.erasure.service.clone();
 {% endif %}    let (operations, readiness) = operations_router(
-        backend.item_service,
+        backend.api.item_service,
         service_info.telemetry_identity().clone(),
         telemetry.prometheus_handle().clone(),
         traffic_gate,
