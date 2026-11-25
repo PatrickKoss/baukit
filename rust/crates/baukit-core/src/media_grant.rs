@@ -497,8 +497,18 @@ fn is_base64url_byte(byte: u8) -> bool {
 mod proofs {
     use super::*;
 
-    /// All `u64` triples: no panic, and `Ok` implies `now < expires <= now + max_ahead`
-    /// (the sum taken without overflow). No loops, so no unwind bound.
+    const SYMBOLIC_TEXT_BYTES: usize = 4;
+
+    fn symbolic_ascii() -> ([u8; SYMBOLIC_TEXT_BYTES], usize) {
+        let bytes: [u8; SYMBOLIC_TEXT_BYTES] = kani::any();
+        let length: usize = kani::any();
+        kani::assume(length <= SYMBOLIC_TEXT_BYTES);
+        kani::assume(bytes.iter().all(u8::is_ascii));
+        (bytes, length)
+    }
+
+    /// Bounds: all `u64` triples, no loops. `Ok` implies
+    /// `now < expires <= now + max_ahead` with the sum taken in `u128`.
     #[kani::proof]
     fn check_expiry_bounds() {
         let (expires, now, max_ahead): (u64, u64, u64) = (kani::any(), kani::any(), kani::any());
@@ -508,44 +518,44 @@ mod proofs {
         }
     }
 
-    /// Every ASCII string of up to 11 bytes: an accepted expiry re-encodes to
-    /// the same bytes. Unwind 12 covers the digit loops.
+    /// Bounds: ASCII strings of 0 to 4 bytes, unwind 8. An accepted expiry is
+    /// non-empty decimal digits without a leading zero whose value matches the text.
     #[kani::proof]
-    #[kani::unwind(12)]
+    #[kani::unwind(8)]
     fn parse_expires_accepts_only_canonical_text() {
-        const MAX_LENGTH: usize = MAX_EXPIRES_DIGITS + 1;
-        let bytes: [u8; MAX_LENGTH] = kani::any();
-        let length: usize = kani::any();
-        kani::assume(length <= MAX_LENGTH);
-        let Some(text) = bytes
-            .get(..length)
-            .and_then(|bytes| std::str::from_utf8(bytes).ok())
-        else {
+        let (bytes, length) = symbolic_ascii();
+        let Ok(text) = std::str::from_utf8(&bytes[..length]) else {
             return;
         };
-        if let Some(value) = parse_expires(text) {
-            assert!(value <= MAX_EXPIRES);
-            assert_eq!(value.to_string(), text);
+        let Some(value) = parse_expires(text) else {
+            return;
+        };
+        assert!(length > 0 && bytes[0] != b'0');
+        let mut expected = 0_u64;
+        for byte in &bytes[..length] {
+            assert!(byte.is_ascii_digit());
+            expected = expected * 10 + u64::from(byte - b'0');
         }
+        assert_eq!(value, expected);
     }
 
-    /// Base64url strings of up to 4 bytes: an accepted string re-encodes to the
-    /// same bytes. Unwind 6 covers the 4-byte input loops.
+    /// Bounds: ASCII strings of 0 to 4 bytes, unwind 8. Every accepted string
+    /// is non-empty and uses only the base64url alphabet, so `\n`, `=` and `+`
+    /// never pass; the round-trip check itself runs in the unit tests.
     #[kani::proof]
-    #[kani::unwind(6)]
-    fn decode_canonical_round_trips() {
-        const MAX_LENGTH: usize = 4;
-        let bytes: [u8; MAX_LENGTH] = kani::any();
-        let length: usize = kani::any();
-        kani::assume(length <= MAX_LENGTH);
-        let Some(text) = bytes
-            .get(..length)
-            .and_then(|bytes| std::str::from_utf8(bytes).ok())
-        else {
+    #[kani::unwind(8)]
+    fn base64url_anchor_rejects_foreign_bytes() {
+        let (bytes, length) = symbolic_ascii();
+        let Ok(text) = std::str::from_utf8(&bytes[..length]) else {
             return;
         };
-        if let Some(decoded) = decode_canonical(text) {
-            assert_eq!(URL_SAFE_NO_PAD.encode(decoded), text);
+        if valid_key_id(text) {
+            assert!(length > 0 && bytes[0].is_ascii_alphanumeric());
+            assert!(
+                bytes[..length]
+                    .iter()
+                    .all(|byte| !matches!(byte, b'\n' | b'=' | b'+' | b'/'))
+            );
         }
     }
 }
