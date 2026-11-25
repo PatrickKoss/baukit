@@ -6,7 +6,8 @@ use std::{
 
 use crate::{AmountBudgetStore, RateLimitFailMode};
 
-const UTC_DAY: Duration = Duration::from_secs(24 * 60 * 60);
+const UTC_DAY_MS: i64 = 24 * 60 * 60 * 1_000;
+const NANOS_PER_MILLI: u128 = 1_000_000;
 const MAX_NAMESPACE_LENGTH: usize = 64;
 
 /// Counter for amount-budget decisions, labeled exactly `namespace` and `outcome`.
@@ -32,14 +33,14 @@ pub struct AmountBudgetDecision {
 /// One fixed window, identified by its epoch-aligned index.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BudgetWindow {
-    index: i128,
+    index: i64,
     reset_at: SystemTime,
 }
 
 impl BudgetWindow {
     /// Returns the number of whole windows between the Unix epoch and this window.
     #[must_use]
-    pub const fn index(self) -> i128 {
+    pub const fn index(self) -> i64 {
         self.index
     }
 
@@ -90,40 +91,48 @@ impl BudgetClock for SystemBudgetClock {
 /// An epoch-aligned fixed-window definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FixedWindow {
-    duration: Duration,
+    duration_ms: i64,
 }
 
 impl FixedWindow {
     /// Returns a UTC calendar-day window that resets at `00:00:00Z`.
     #[must_use]
     pub const fn utc_day() -> Self {
-        Self { duration: UTC_DAY }
+        Self {
+            duration_ms: UTC_DAY_MS,
+        }
     }
 
     /// Creates a duration window aligned to the Unix epoch.
     ///
     /// # Errors
     ///
-    /// [`FixedWindowError::ZeroDuration`] when `duration` is zero.
+    /// The window works in whole milliseconds; a sub-millisecond remainder is dropped.
+    ///
+    /// # Errors
+    ///
+    /// [`FixedWindowError::TooShort`] below one millisecond and
+    /// [`FixedWindowError::TooLong`] above `i64::MAX` milliseconds.
     pub fn duration(duration: Duration) -> Result<Self, FixedWindowError> {
-        if duration.is_zero() {
-            return Err(FixedWindowError::ZeroDuration);
+        let duration_ms =
+            i64::try_from(duration.as_millis()).map_err(|_| FixedWindowError::TooLong)?;
+        if duration_ms < 1 {
+            return Err(FixedWindowError::TooShort);
         }
-        Ok(Self { duration })
+        Ok(Self { duration_ms })
     }
 
     /// Returns the window length.
     #[must_use]
-    pub const fn length(self) -> Duration {
-        self.duration
+    pub fn length(self) -> Duration {
+        Duration::from_millis(self.duration_ms.unsigned_abs())
     }
 
     fn at(self, now: SystemTime) -> Option<BudgetWindow> {
-        let duration_nanos = i128::try_from(self.duration.as_nanos()).ok()?;
-        let (index, reset_nanos) = window_bounds(epoch_nanos(now)?, duration_nanos)?;
+        let (index, reset_ms) = window_bounds(epoch_millis(now)?, self.duration_ms)?;
         Some(BudgetWindow {
             index,
-            reset_at: system_time_from_epoch_nanos(reset_nanos)?,
+            reset_at: system_time_from_epoch_millis(reset_ms)?,
         })
     }
 }
@@ -131,9 +140,12 @@ impl FixedWindow {
 /// Invalid fixed-window definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum FixedWindowError {
-    /// Duration windows must have a positive length.
-    #[error("fixed-window duration must be non-zero")]
-    ZeroDuration,
+    /// Duration windows must last at least one millisecond.
+    #[error("fixed-window duration must be at least one millisecond")]
+    TooShort,
+    /// Duration windows must fit in `i64` milliseconds.
+    #[error("fixed-window duration must be at most i64::MAX milliseconds")]
+    TooLong,
 }
 
 /// Validated options for a fixed-window amount budget.
@@ -397,34 +409,33 @@ impl<S, C> FixedWindowAmountBudget<S, C> {
     }
 }
 
-/// Returns the index of the window holding `now_nanos` and the epoch nanos it resets at.
-fn window_bounds(now_nanos: i128, duration_nanos: i128) -> Option<(i128, i128)> {
-    if duration_nanos <= 0 {
+/// Returns the index of the window holding `now_ms` and the epoch millisecond it resets at.
+fn window_bounds(now_ms: i64, duration_ms: i64) -> Option<(i64, i64)> {
+    if duration_ms <= 0 {
         return None;
     }
-    let index = now_nanos.div_euclid(duration_nanos);
-    let reset_nanos = index.checked_add(1)?.checked_mul(duration_nanos)?;
-    Some((index, reset_nanos))
+    let index = now_ms.div_euclid(duration_ms);
+    let start_ms = index.checked_mul(duration_ms)?;
+    let reset_ms = start_ms.checked_add(duration_ms)?;
+    Some((index, reset_ms))
 }
 
-fn epoch_nanos(time: SystemTime) -> Option<i128> {
+/// Milliseconds since the epoch, rounded toward negative infinity.
+fn epoch_millis(time: SystemTime) -> Option<i64> {
     match time.duration_since(UNIX_EPOCH) {
-        Ok(duration) => i128::try_from(duration.as_nanos()).ok(),
-        Err(error) => i128::try_from(error.duration().as_nanos())
+        Ok(after) => i64::try_from(after.as_millis()).ok(),
+        Err(error) => i64::try_from(error.duration().as_nanos().div_ceil(NANOS_PER_MILLI))
             .ok()
-            .and_then(i128::checked_neg),
+            .and_then(i64::checked_neg),
     }
 }
 
-fn system_time_from_epoch_nanos(nanos: i128) -> Option<SystemTime> {
-    let magnitude = nanos.unsigned_abs();
-    let seconds = u64::try_from(magnitude / 1_000_000_000).ok()?;
-    let subsecond_nanos = u32::try_from(magnitude % 1_000_000_000).ok()?;
-    let duration = Duration::new(seconds, subsecond_nanos);
-    if nanos >= 0 {
-        UNIX_EPOCH.checked_add(duration)
+fn system_time_from_epoch_millis(millis: i64) -> Option<SystemTime> {
+    let offset = Duration::from_millis(millis.unsigned_abs());
+    if millis >= 0 {
+        UNIX_EPOCH.checked_add(offset)
     } else {
-        UNIX_EPOCH.checked_sub(duration)
+        UNIX_EPOCH.checked_sub(offset)
     }
 }
 
@@ -560,7 +571,7 @@ mod tests {
                 let budget = uploads_budget(clock.clone());
                 let mut now = start;
                 let mut held: Vec<(u64, BudgetWindow)> = Vec::new();
-                let mut net: std::collections::BTreeMap<i128, i128> = Default::default();
+                let mut net: std::collections::BTreeMap<i64, i128> = Default::default();
                 for (step, amount, release) in ops {
                     now += step;
                     clock.set(UNIX_EPOCH + Duration::from_secs(now));
@@ -580,7 +591,7 @@ mod tests {
                         let used = net.entry(window.index()).or_default();
                         *used += i128::from(amount);
                         prop_assert!(*used <= i128::from(LIMIT));
-                        prop_assert_eq!(window.index(), i128::from(now / WINDOW_SECS));
+                        prop_assert_eq!(u64::try_from(window.index()).expect("index"), now / WINDOW_SECS);
                     }
                 }
             }
@@ -595,7 +606,10 @@ mod tests {
         assert_eq!(window.reset_at, midnight);
 
         let next = FixedWindow::utc_day().at(midnight).expect("window");
-        assert_eq!(next.reset_at, midnight + UTC_DAY);
+        assert_eq!(
+            next.reset_at,
+            midnight + Duration::from_millis(UTC_DAY_MS.unsigned_abs())
+        );
     }
 
     #[tokio::test]
@@ -656,10 +670,59 @@ mod tests {
     }
 
     #[test]
+    fn rejects_sub_millisecond_and_unrepresentable_durations() {
+        assert_eq!(
+            FixedWindow::duration(Duration::from_micros(999)),
+            Err(FixedWindowError::TooShort)
+        );
+        assert_eq!(
+            FixedWindow::duration(Duration::MAX),
+            Err(FixedWindowError::TooLong)
+        );
+        assert!(FixedWindow::duration(Duration::from_millis(1)).is_ok());
+    }
+
+    #[test]
+    fn pre_epoch_instants_fall_in_the_window_before_zero() {
+        let window = FixedWindow::duration(Duration::from_secs(10)).expect("window");
+        let before = UNIX_EPOCH - Duration::from_micros(500);
+        let selected = window.at(before).expect("window");
+        assert_eq!(selected.index(), -1);
+        assert_eq!(selected.reset_at(), UNIX_EPOCH);
+    }
+
+    #[test]
+    fn unrepresentable_window_start_is_rejected() {
+        assert_eq!(window_bounds(i64::MIN, i64::MAX), None);
+        assert_eq!(window_bounds(i64::MIN, 1), Some((i64::MIN, i64::MIN + 1)));
+    }
+
+    mod window_properties {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            /// K-12's assertions, sampled over the full `i64` range.
+            #[test]
+            fn window_bounds_contain_now(now in any::<i64>(), duration in 1..=i64::MAX) {
+                if let Some((index, reset)) = window_bounds(now, duration) {
+                    prop_assert!(reset - duration <= now);
+                    prop_assert!(now < reset);
+                    prop_assert_eq!(index.checked_mul(duration), Some(reset - duration));
+                } else {
+                    let start = now.div_euclid(duration).checked_mul(duration);
+                    prop_assert!(start.and_then(|start| start.checked_add(duration)).is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
     fn rejects_zero_duration_and_unbounded_namespace_values() {
         assert_eq!(
             FixedWindow::duration(Duration::ZERO),
-            Err(FixedWindowError::ZeroDuration)
+            Err(FixedWindowError::TooShort)
         );
         assert_eq!(
             FixedWindowBudgetOptions::new(
@@ -717,16 +780,18 @@ mod proofs {
     use super::*;
 
     /// K-12: the selected window contains `now`: `reset - duration <= now < reset`,
-    /// and no arithmetic overflows. Proved on the nanosecond kernel behind
-    /// `FixedWindow::at`, the `SystemTime` conversion around it is not modelled.
-    /// Bounds: `now` over all `i32` values and `duration` in `1..=65_536`. No loops.
-    /// Unverified so far: CBMC bit-blasts the 128-bit `div_euclid` and neither these
-    /// bounds nor the full `i64`/`u64` ranges finished within 30 minutes at 8 GB.
+    /// and no arithmetic overflows. Proved on the millisecond kernel behind
+    /// `FixedWindow::at`; the `SystemTime` conversion around it is not modelled.
+    /// Bounds: `now` is any `i64`, `duration` is `1..=i64::MAX`; the proptest
+    /// `window_properties::window_bounds_contain_now` checks the same range. No loops.
     #[kani::proof]
     fn window_bounds_contain_now() {
-        let now = i128::from(kani::any::<i32>());
-        let duration = i128::from(kani::any::<u16>()) + 1;
-        let (index, reset) = window_bounds(now, duration).expect("in range");
+        let now: i64 = kani::any();
+        let duration: i64 = kani::any();
+        kani::assume(duration >= 1);
+        let Some((index, reset)) = window_bounds(now, duration) else {
+            return;
+        };
         assert!(reset - duration <= now);
         assert!(now < reset);
         assert!(index * duration == reset - duration);

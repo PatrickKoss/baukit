@@ -54,9 +54,15 @@ availability.
 `consume` (a new `Option<BudgetWindow>` field on `AmountBudgetDecision`). A
 release after that window ended is a no-op instead of crediting the new window.
 
+`BudgetWindow::index()` returns `i64` (was `i128`); windows now count whole
+milliseconds. `FixedWindow::duration` returns `FixedWindowError::TooShort` below
+1 ms (this replaces `ZeroDuration`) and `FixedWindowError::TooLong` above
+`i64::MAX` ms. `FixedWindow::length` is no longer `const`.
+
 ## Redis Sentinel retries
 
 After a failed script call the Sentinel store re-resolves the master but only
 retries when the connection was refused. A request that may have run is no
 longer replayed, so a lost reply surfaces as a store error and follows
-`fail_mode`.
+`fail_mode`. The first call after a Sentinel failover returns a store error,
+and `fail_mode` decides.
