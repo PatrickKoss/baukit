@@ -9,8 +9,8 @@ use std::{
 
 use baukit_egress::{
     AddressPolicy, AllowedEndpoint, DestinationRejection, EgressError, EgressOptions,
-    EgressRequest, GuardedClient, PrivateNetworks, ResolveFuture, Resolver, resolve_destination,
-    validate_destination,
+    EgressRequest, EndpointOrigin, GuardedClient, PrivateNetworks, ResolveFuture, Resolver,
+    resolve_destination, validate_destination,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -378,6 +378,83 @@ fn endpoint_from_url_pins_scheme_host_and_effective_port() -> Result<(), Box<dyn
             AllowedEndpoint::from_url(&Url::parse(rejected)?).is_err(),
             "{rejected}"
         );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn tenant_endpoint_rejects_private_and_loopback_answers() -> Result<(), Box<dyn Error>> {
+    let endpoint = AllowedEndpoint::tenant("hooks.tenant.example", 443, false)?;
+    assert_eq!(endpoint.origin(), EndpointOrigin::Tenant);
+    let policy = AddressPolicy::OnlyEndpoint(endpoint);
+    for inward in ["10.0.0.3", "127.0.0.1", "::1", "fd12::1", "100.64.0.1"] {
+        let resolver = ChangingResolver::new(&[&[inward]]);
+        let result = resolve_destination(
+            &resolver,
+            "hooks.tenant.example",
+            &policy,
+            Duration::from_secs(1),
+        )
+        .await;
+        assert!(
+            matches!(result, Err(EgressError::BlockedAddress)),
+            "{inward}"
+        );
+    }
+    let resolver = ChangingResolver::new(&[&["8.8.8.8"]]);
+    let resolved = resolve_destination(
+        &resolver,
+        "hooks.tenant.example",
+        &policy,
+        Duration::from_secs(1),
+    )
+    .await?;
+    assert_eq!(resolved, vec!["8.8.8.8".parse::<IpAddr>()?]);
+    Ok(())
+}
+
+#[test]
+fn tenant_endpoint_rejects_non_public_literals() -> Result<(), Box<dyn Error>> {
+    for host in [
+        "10.0.0.3",
+        "127.0.0.1",
+        "[::1]",
+        "[fd12::1]",
+        "168.63.129.16",
+    ] {
+        assert!(AllowedEndpoint::tenant(host, 443, false).is_err(), "{host}");
+    }
+    for url in [
+        "https://10.0.0.3/",
+        "http://localhost.:80/",
+        "https://[::1]/",
+    ] {
+        assert!(
+            AllowedEndpoint::tenant_from_url(&Url::parse(url)?).is_err(),
+            "{url}"
+        );
+    }
+    let public = AllowedEndpoint::tenant_from_url(&Url::parse("https://8.8.8.8/hook")?)?;
+    assert_eq!(public.origin(), EndpointOrigin::Tenant);
+    assert_eq!(
+        AllowedEndpoint::new("proxy.internal", 4000, false)?.origin(),
+        EndpointOrigin::OperatorInternal
+    );
+    Ok(())
+}
+
+#[test]
+fn azure_wireserver_is_always_denied() -> Result<(), Box<dyn Error>> {
+    assert!(AllowedEndpoint::new("168.63.129.16", 80, true).is_err());
+    let wireserver: IpAddr = "168.63.129.16".parse()?;
+    let mapped: IpAddr = "::ffff:168.63.129.16".parse()?;
+    for policy in [
+        AddressPolicy::PublicOnly,
+        AddressPolicy::PublicHttp,
+        AddressPolicy::AllowLoopback,
+    ] {
+        assert!(!policy.permits(wireserver), "{policy:?}");
+        assert!(!policy.permits(mapped), "{policy:?}");
     }
     Ok(())
 }
