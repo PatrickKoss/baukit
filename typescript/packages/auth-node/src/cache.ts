@@ -1,7 +1,16 @@
 /// <reference types="node" />
 
 import { constants, type Stats } from 'node:fs';
-import { chmod, lstat, mkdir, open, rename, unlink, type FileHandle } from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  unlink,
+  type FileHandle,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, parse, resolve, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -14,6 +23,7 @@ const CACHE_VERSION = 1;
 const CACHE_MAX_BYTES = 256 * 1024;
 const DEFAULT_LOCK_TIMEOUT_MS = 10_000;
 const DEFAULT_LOCK_RETRY_MS = 50;
+const DEFAULT_STALE_LOCK_MS = 60_000;
 const PRIVATE_FILE_MODE = 0o600;
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const UNSAFE_MODE_BITS = 0o077;
@@ -52,6 +62,9 @@ export interface NodeTokenCacheOptions {
   readonly sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   readonly lockTimeoutMs?: number;
   readonly lockRetryMs?: number;
+  /** A lock older than this, or held by a dead process, is removed. */
+  readonly staleLockMs?: number;
+  readonly isProcessAlive?: (pid: number) => boolean;
 }
 
 export function defaultTokenCachePath(
@@ -76,6 +89,8 @@ export class NodeTokenCache {
   readonly #sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   readonly #lockTimeoutMs: number;
   readonly #lockRetryMs: number;
+  readonly #staleLockMs: number;
+  readonly #isProcessAlive: (pid: number) => boolean;
 
   public constructor(options: NodeTokenCacheOptions) {
     validateName(options.namespace, 'cache namespace');
@@ -92,6 +107,11 @@ export class NodeTokenCache {
       options.lockRetryMs ?? DEFAULT_LOCK_RETRY_MS,
       'cache lock retry interval',
     );
+    this.#staleLockMs = positiveInteger(
+      options.staleLockMs ?? DEFAULT_STALE_LOCK_MS,
+      'cache stale lock age',
+    );
+    this.#isProcessAlive = options.isProcessAlive ?? processAlive;
   }
 
   public async read(profile = 'default'): Promise<CachedTokenProfile | undefined> {
@@ -211,14 +231,30 @@ export class NodeTokenCache {
       throwIfAborted(signal);
       await assertNoSymlink(lockPath, true);
       try {
-        return await open(lockPath, 'wx', PRIVATE_FILE_MODE);
+        const handle = await open(lockPath, 'wx', PRIVATE_FILE_MODE);
+        await handle.writeFile(JSON.stringify({ pid: process.pid, createdAt: this.#now() }));
+        return handle;
       } catch (error) {
         if (!nodeError(error, 'EEXIST')) throw cacheIoError(error, 'cache_write_failed');
       }
+      if (await this.#removeStaleLock(lockPath)) continue;
       if (this.#now() >= deadline)
         throw new AuthNodeError('cache_lock_timeout', { retryable: true });
       await this.#sleep(this.#lockRetryMs, signal);
     }
+  }
+
+  async #removeStaleLock(lockPath: string): Promise<boolean> {
+    const judged = await lstat(lockPath).catch(() => undefined);
+    if (judged === undefined) return true;
+    const holder = await readFile(lockPath, 'utf8').then(lockHolder, () => undefined);
+    const createdAt = holder?.createdAt ?? judged.mtimeMs;
+    const dead = holder !== undefined && !this.#isProcessAlive(holder.pid);
+    if (!dead && this.#now() - createdAt < this.#staleLockMs) return false;
+    const current = await lstat(lockPath).catch(() => undefined);
+    if (current?.ino !== judged.ino || current.dev !== judged.dev) return true;
+    await unlink(lockPath).catch(() => undefined);
+    return true;
   }
 
   async #releaseLock(handle: FileHandle): Promise<void> {
@@ -233,6 +269,33 @@ export class NodeTokenCache {
     }
     await handle.close().catch(() => undefined);
     if (stillOwned) await unlink(lockPath).catch(() => undefined);
+  }
+}
+
+interface LockHolder {
+  readonly pid: number;
+  readonly createdAt: number;
+}
+
+function lockHolder(contents: string): LockHolder | undefined {
+  try {
+    const value = JSON.parse(contents) as unknown;
+    if (!isRecord(value)) return undefined;
+    const { pid, createdAt } = value;
+    return Number.isSafeInteger(pid) && Number.isFinite(createdAt) && (pid as number) > 0
+      ? { pid: pid as number, createdAt: createdAt as number }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !nodeError(error, 'ESRCH');
   }
 }
 
