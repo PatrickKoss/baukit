@@ -6,6 +6,17 @@ const mockSecureStore = new Map<string, string>();
 function mockValidateSecureStoreKey(key: string): void {
   if (!/^[\w.-]+$/.test(key)) throw new Error('Invalid SecureStore key');
 }
+const REGISTRY_CHUNK = /\.local-data-registry\.v1\.(\d+)$/u;
+function storedRegistry(): string {
+  return [...mockSecureStore.entries()]
+    .flatMap(([key, value]) => {
+      const index = REGISTRY_CHUNK.exec(key)?.[1];
+      return index === undefined ? [] : [{ index: Number(index), value }];
+    })
+    .sort((left, right) => left.index - right.index)
+    .map(({ value }) => value)
+    .join('');
+}
 const mockAnalyticsReset = jest.fn();
 const mockOpenDatabase = jest.fn((name: string) => Promise.resolve({ name }));
 const mockStoreInitialize = jest.fn(() => Promise.resolve());
@@ -123,10 +134,7 @@ describe('authenticated local data', () => {
         expect(rendered.result.current.state).toMatchObject({ partition: { subject } });
       });
     }
-    const stored = [...mockSecureStore.entries()]
-      .filter(([key]) => /\.local-data-registry\.v1\.\d+$/u.test(key))
-      .map(([, value]) => value)
-      .join('');
+    const stored = storedRegistry();
     const count = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.chunks'))?.[1];
     expect(Number(count)).toBeGreaterThan(1);
     for (const subject of subjects) expect(stored).toContain(subject);
@@ -153,11 +161,8 @@ describe('authenticated local data', () => {
       { closeDatabase: true },
     );
     expect(mockAnalyticsReset).toHaveBeenCalled();
-    const registry = [...mockSecureStore.entries()].find(([key]) =>
-      key.endsWith('.local-data-registry.v1.0'),
-    );
-    expect(registry).toBeDefined();
-    expect(registry?.[1]).toContain('subject-open');
+    const registry = storedRegistry();
+    expect(registry).toContain('subject-open');
   });
 
   it('closes the partition on sign-out', async () => {
@@ -179,8 +184,8 @@ describe('authenticated local data', () => {
     expect(mockStoreClose).toHaveBeenCalledTimes(1);
     expect(mockDeleteDatabase).toHaveBeenCalledWith(`${state.partition.storeName}.db`);
     expect(result.current.state.status).toBe('signed-out');
-    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1.0'));
-    expect(registry?.[1]).not.toContain('subject-erase');
+    const registry = storedRegistry();
+    expect(registry).not.toContain('subject-erase');
   });
 
   it('blocks local data when the session expires', async () => {
@@ -214,8 +219,8 @@ describe('authenticated local data', () => {
     expect(mockStoreClose).toHaveBeenCalledTimes(1);
     expect(mockDeleteDatabase).toHaveBeenCalledTimes(1);
     expect(mockDeleteDatabase).toHaveBeenCalledWith(`${state.partition.storeName}.db`);
-    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1.0'));
-    expect(registry?.[1]).not.toContain(state.partition.subject);
+    const registry = storedRegistry();
+    expect(registry).not.toContain(state.partition.subject);
   });
 
   it('preserves ownership and reports a failed expiry deletion', async () => {
@@ -228,8 +233,8 @@ describe('authenticated local data', () => {
     await waitFor(() => {
       expect(result.current.state).toEqual({ status: 'blocked', reason: 'profile-erased', cleanup: 'failed', error: failure });
     });
-    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1.0'));
-    expect(registry?.[1]).toContain('profile-delete-failed');
+    const registry = storedRegistry();
+    expect(registry).toContain('profile-delete-failed');
   });
 
   it('does not repeat erasure when profile confirmation clears after the expiry reason', async () => {
@@ -295,9 +300,9 @@ describe('authenticated local data', () => {
     expect(newState.partition.storeName).not.toBe(oldState.partition.storeName);
     expect(mockOpenDatabase).toHaveBeenLastCalledWith(`${newState.partition.storeName}.db`);
     expect(mockDeleteDatabase).not.toHaveBeenCalled();
-    const registry = [...mockSecureStore.entries()].find(([key]) => key.endsWith('.local-data-registry.v1.0'));
-    expect(registry?.[1]).toContain('old-profile');
-    expect(registry?.[1]).toContain('new-profile');
+    const registry = storedRegistry();
+    expect(registry).toContain('old-profile');
+    expect(registry).toContain('new-profile');
   });
 
   it('blocks local data after an identity mismatch', async () => {

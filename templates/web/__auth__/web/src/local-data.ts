@@ -80,7 +80,9 @@ export function useAuthenticatedLocalData(
   const [state, setState] = useState<LocalDataState>(lifecycle.state);
   const selectedProfileId = sessionExpiredReason === undefined ? profileId : undefined;
   const lastProfileId = useRef<string | undefined>(undefined);
-  if (profileId !== undefined) lastProfileId.current = profileId;
+  useEffect(() => {
+    if (profileId !== undefined) lastProfileId.current = profileId;
+  }, [profileId]);
 
   useEffect(() => {
     let active = true;

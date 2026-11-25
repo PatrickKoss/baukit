@@ -266,6 +266,7 @@ async fn composed_router(
     let mut config = baukit_config::BaukitConfig::<ProductConfig>::default();
     config.product.auth.issuer = issuer.issuer().to_owned();
     config.product.auth.audience = AUDIENCE.to_owned();
+    config.http.cors_allowed_origins = vec!["http://localhost:5173".to_owned()];
     let verifier: Arc<dyn baukit_auth::IdentityVerifier> =
         Arc::new(OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?);
     let items = ItemService::new(Arc::new(InMemoryItemRepository::new()));
@@ -284,7 +285,16 @@ async fn composed_router(
             baukit_ratelimit::InMemoryRateLimitStore::default(),
         )),
     };
-    Ok(compose_api(&config, &deps).await?.router)
+    let router = compose_api(&config, &deps).await?.router;
+    Ok(router.layer(axum::middleware::map_request(
+        |mut request: Request<Body>| async move {
+            let peer = std::net::SocketAddr::from(([127, 0, 0, 1], 40_000));
+            request
+                .extensions_mut()
+                .insert(axum::extract::ConnectInfo(peer));
+            request
+        },
+    )))
 }
 
 async fn create_item(

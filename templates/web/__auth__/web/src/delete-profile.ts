@@ -75,10 +75,9 @@ export function deleteProfile(options: {
 }): ReturnType<typeof eraseProductProfile> {
   let keyCleanupError: ProfileErasureKeyCleanupError | undefined;
   return eraseProductProfile({
-    erasureMarker:
-      options.profileId === undefined
-        ? undefined
-        : { subject: options.profileId, store: profileErasureMarker },
+    ...(options.profileId === undefined
+      ? {}
+      : { erasureMarker: { subject: options.profileId, store: profileErasureMarker } }),
     eraseServerProfile: async () => {
       try {
         return await options.client.erase();

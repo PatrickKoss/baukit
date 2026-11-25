@@ -29,7 +29,7 @@ export function DeleteProfileRoute({
         if (subject === undefined) throw new Error('No signed-in account.');
         client.current = await createDeleteProfileClient(subject);
         return deleteProfile({
-          profileId,
+          ...(profileId === undefined ? {} : { profileId }),
           client: client.current,
           eraseLocalPartition,
           onSignedOut,

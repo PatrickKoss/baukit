@@ -19,6 +19,7 @@ describe('profile erasure marker', () => {
       registry: new InMemoryScopedPersistenceRegistryStore(),
       digest: () => Promise.resolve('e'.repeat(64)),
       erasureMarker: profileErasureMarker,
+      resetUserScopedState: () => undefined,
       open,
       erase,
     });
