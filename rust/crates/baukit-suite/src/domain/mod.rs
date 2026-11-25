@@ -24,6 +24,7 @@ pub use payloads::*;
 pub const SUITE_EVENT_NAMESPACE: Uuid = Uuid::from_u128(0x5f0e8c1a_3b7d_4c2e_9a61_2d8f4b7e0c95);
 pub const SUITE_EVENTS_DELIVER_JOB_TYPE: &str = "suite.events.deliver";
 pub const SUITE_LINKS_REVOKE_JOB_TYPE: &str = "suite.links.revoke";
+const DEV_SCHEME_SUFFIX: &str = "-dev";
 /// Job kinds whose terminal history is managed by suite cleanup.
 pub const SUITE_JOB_TYPES: [&str; 2] = [SUITE_EVENTS_DELIVER_JOB_TYPE, SUITE_LINKS_REVOKE_JOB_TYPE];
 pub const SUITE_QUEUE: &str = "suite-events";
@@ -389,7 +390,8 @@ pub(crate) fn validate_authorize_url(
 ///
 /// `SuiteDataError::ReturnUrlInvalid` when either URL does not parse, either carries
 /// credentials, the origin has a path, query or fragment, or `value` is neither
-/// `<origin>/suite/linked` nor `<own_scheme>://suite/linked`.
+/// `<origin>/suite/linked` nor `<own_scheme>://suite/linked`. The template's `dev` build variant
+/// registers `<own_scheme>-dev`, so that scheme is accepted too.
 pub fn validate_return_url(
     value: &str,
     own_web_origin: &str,
@@ -411,7 +413,7 @@ pub fn validate_return_url(
     let web = matches!(url.scheme(), "https" | "http")
         && url.origin() == origin.origin()
         && url.path() == "/suite/linked";
-    let native = url.scheme() == own_scheme
+    let native = is_own_native_scheme(url.scheme(), own_scheme)
         && url.host_str() == Some("suite")
         && url.port().is_none()
         && url.path() == "/linked";
@@ -420,6 +422,13 @@ pub fn validate_return_url(
     } else {
         Err(invalid())
     }
+}
+
+fn is_own_native_scheme(scheme: &str, own_scheme: &str) -> bool {
+    scheme == own_scheme
+        || scheme
+            .strip_suffix(DEV_SCHEME_SUFFIX)
+            .is_some_and(|base| base == own_scheme)
 }
 
 #[derive(Clone, Debug, PartialEq)]

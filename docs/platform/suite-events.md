@@ -20,7 +20,12 @@ server stores a hashed state and sealed PKCE verifier, then returns the peer's
 authorize URL. The authorize page checks the account hint, asks for consent
 or approves a matching account, and issues a short-lived code. The callback
 checks `from`, relays the code to the recorded return URL and echoes the client
-nonce. Only the initiating owner can complete the request. Completion exchanges
+nonce. `start` accepts only two return URLs: `<public web URL>/suite/linked`
+and `<scheme>://suite/linked`, where `scheme` is the own app's entry in
+`peers.json`. It also accepts `<scheme>-dev://suite/linked`, the scheme the
+template's `dev` build variant registers. Lab and production builds register
+the plain scheme. Any other scheme, host or path returns
+`suite_return_url_invalid`. Only the initiating owner can complete the request. Completion exchanges
 the code, verifier, initiator link id and secret with the peer outside the
 database transaction, then commits the link and its initial replay.
 
@@ -340,7 +345,8 @@ a product prefix or labels.
    `appScheme()` in the template's `mobile/src/app-scheme.ts`, never from the
    product name. The `dev` build variant registers `<scheme>-dev`, so a fixed
    `<scheme>://suite/linked` return opens the plain app instead of the dev
-   build. `baukit doctor` prints a warning note for such a literal.
+   build. `baukit doctor` prints a warning note for such a literal. The
+   backend accepts the `-dev` return, so `peers.json` keeps the plain scheme.
 10. Run the shared fixture checks and product conformance tests. Copy protocol
     vectors only when the product needs a vendored copy. Check `sha256sum -c
     SHA256SUMS` from `fixtures/suite-events/v1`, and compare its protocol fixtures

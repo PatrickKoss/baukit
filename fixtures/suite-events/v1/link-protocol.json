@@ -1244,6 +1244,10 @@
       },
       {
         "expected": true,
+        "url": "heldengang-dev://suite/linked"
+      },
+      {
+        "expected": true,
         "url": "https://alpha.example/suite/linked?status=connected"
       },
       {
@@ -1277,6 +1281,50 @@
       {
         "expected": false,
         "url": "https://alpha.example/suite/%6cinked"
+      },
+      {
+        "expected": false,
+        "url": "beta://suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "beta-dev://suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "heldengang-devx://suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "heldengangdev://suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "heldengang-dev-dev://suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "heldengang-lab://suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "heldengang-dev://other/linked"
+      },
+      {
+        "expected": false,
+        "url": "heldengang-dev://suite/other"
+      },
+      {
+        "expected": false,
+        "url": "heldengang-dev://suite:1/linked"
+      },
+      {
+        "expected": false,
+        "url": "heldengang-dev://user@suite/linked"
+      },
+      {
+        "expected": false,
+        "url": "dev-heldengang://suite/linked"
       }
     ],
     "webOrigin": "https://alpha.example"
