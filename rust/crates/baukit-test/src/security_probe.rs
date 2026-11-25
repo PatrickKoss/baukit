@@ -97,7 +97,7 @@ impl OperationFixtures {
         &'a self,
         operation: &'a Operation,
         uri: &'a str,
-        authorization: Option<&'a str>,
+        authorization: &'a [String],
     ) -> ProbeRequest<'a> {
         ProbeRequest {
             method: &operation.method,
@@ -183,7 +183,8 @@ fn percent_encode(value: &str) -> String {
 pub(crate) struct ProbeRequest<'a> {
     method: &'a str,
     uri: &'a str,
-    authorization: Option<&'a str>,
+    /// Raw `Authorization` header values, sent in order.
+    authorization: &'a [String],
     headers: &'a [(String, String)],
     body: Option<&'a Value>,
 }
@@ -191,6 +192,12 @@ pub(crate) struct ProbeRequest<'a> {
 pub(crate) struct ProbeResponse {
     pub(crate) status: u16,
     pub(crate) body: String,
+    pub(crate) www_authenticate: bool,
+}
+
+/// `Authorization` header values for a bearer token.
+pub(crate) fn bearer(token: &str) -> Vec<String> {
+    vec![format!("Bearer {token}")]
 }
 
 fn method(name: &str) -> Result<Method, String> {
@@ -207,8 +214,11 @@ async fn send_to_router(router: &Router, probe: ProbeRequest<'_>) -> Result<Prob
             HeaderValue::try_from(value.as_str()).map_err(|error| error.to_string())?,
         );
     }
-    if let Some(token) = probe.authorization {
-        builder = builder.header(header::AUTHORIZATION, format!("Bearer {token}"));
+    for value in probe.authorization {
+        builder = builder.header(
+            header::AUTHORIZATION,
+            HeaderValue::try_from(value.as_str()).map_err(|error| error.to_string())?,
+        );
     }
     let body = match probe.body {
         Some(body) => {
@@ -220,12 +230,14 @@ async fn send_to_router(router: &Router, probe: ProbeRequest<'_>) -> Result<Prob
     let request = builder.body(body).map_err(|error| error.to_string())?;
     let Ok(response) = router.clone().oneshot(request).await;
     let status = response.status().as_u16();
+    let www_authenticate = response.headers().contains_key(header::WWW_AUTHENTICATE);
     let bytes = to_bytes(response.into_body(), BODY_LIMIT)
         .await
         .map_err(|error| error.to_string())?;
     Ok(ProbeResponse {
         status,
         body: String::from_utf8_lossy(&bytes).into_owned(),
+        www_authenticate,
     })
 }
 
@@ -239,16 +251,23 @@ async fn send_to_url(base_url: &str, probe: ProbeRequest<'_>) -> Result<ProbeRes
     for (name, value) in probe.headers {
         request = request.header(name, value);
     }
-    if let Some(token) = probe.authorization {
-        request = request.bearer_auth(token);
+    for value in probe.authorization {
+        request = request.header(reqwest::header::AUTHORIZATION, value);
     }
     if let Some(body) = probe.body {
         request = request.json(body);
     }
     let response = request.send().await.map_err(|error| error.to_string())?;
     let status = response.status().as_u16();
+    let www_authenticate = response
+        .headers()
+        .contains_key(reqwest::header::WWW_AUTHENTICATE);
     let body = response.text().await.map_err(|error| error.to_string())?;
-    Ok(ProbeResponse { status, body })
+    Ok(ProbeResponse {
+        status,
+        body,
+        www_authenticate,
+    })
 }
 
 /// A route left out of a probe, with the reason printed in every report.
