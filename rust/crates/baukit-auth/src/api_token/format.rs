@@ -68,11 +68,12 @@ impl ApiTokenFormat {
     /// Returns whether a presented credential has the exact shape of a token.
     #[must_use]
     pub fn is_well_formed(&self, presented: &str) -> bool {
-        presented.len() == self.marker.len() + SECRET_LENGTH
-            && presented.starts_with(&self.marker)
-            && presented[self.marker.len()..]
-                .bytes()
-                .all(|byte| BASE62.contains(&byte))
+        let bytes = presented.as_bytes();
+        bytes.len() == self.marker.len() + SECRET_LENGTH
+            && bytes.starts_with(self.marker.as_bytes())
+            && bytes
+                .get(self.marker.len()..)
+                .is_some_and(|body| body.iter().all(|byte| BASE62.contains(byte)))
     }
 
     /// Generates a token secret, hash, and display prefix without a store.
@@ -160,4 +161,37 @@ pub fn hash_api_token(presented: &str) -> Vec<u8> {
     digest::digest(&digest::SHA256, presented.as_bytes())
         .as_ref()
         .to_vec()
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    const MAX_INPUT: usize = 96;
+
+    /// K-07: for any UTF-8 input up to 96 bytes and the default marker,
+    /// `is_well_formed` never panics and accepts iff the length, marker prefix
+    /// and base62 body all match. Unwind 97.
+    #[kani::proof]
+    #[kani::unwind(97)]
+    fn is_well_formed_matches_the_token_shape() {
+        let format = ApiTokenFormat::default();
+        let bytes: [u8; MAX_INPUT] = kani::any();
+        let len: usize = kani::any();
+        kani::assume(len <= MAX_INPUT);
+        let Some(input) = bytes.get(..len) else {
+            return;
+        };
+        let Ok(presented) = std::str::from_utf8(input) else {
+            return;
+        };
+        let marker = format.marker().as_bytes();
+        let expected = len == marker.len() + SECRET_LENGTH
+            && input.starts_with(marker)
+            && input
+                .iter()
+                .skip(marker.len())
+                .all(|byte| byte.is_ascii_alphanumeric());
+        assert_eq!(format.is_well_formed(presented), expected);
+    }
 }
