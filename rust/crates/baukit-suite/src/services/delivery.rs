@@ -26,7 +26,7 @@ impl SuiteDeliveryService {
         &self,
         job: SuiteDeliverJobV1,
         now: Timestamp,
-        completion: Option<(Uuid, &str)>,
+        completion: Option<&DeliveryLease>,
     ) -> Result<DeliveryAction, SuiteServiceError> {
         let link = self.context.store.find_link(job.link_id).await?;
         if let Some(action) = delivery_preflight(link.as_ref()) {
@@ -60,11 +60,11 @@ impl SuiteDeliveryService {
             .await;
         let action = peer_action(&response);
         if action == DeliveryAction::Delivered
-            && let Some((job_id, worker_id)) = completion
+            && let Some(lease) = completion
         {
             self.context
                 .store
-                .complete_delivery(link.user_id, link.id, job_id, worker_id, now)
+                .complete_delivery(link.user_id, link.id, lease, now)
                 .await?;
         } else {
             self.context

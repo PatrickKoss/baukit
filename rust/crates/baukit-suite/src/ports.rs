@@ -15,6 +15,18 @@ use jiff::civil::Date;
 use thiserror::Error;
 use uuid::Uuid;
 
+/// The claimed job attempt a delivery completes. Completion fails once
+/// another attempt of the same job holds the lease.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeliveryLease {
+    /// Claimed job id.
+    pub job_id: Uuid,
+    /// Lease owner.
+    pub worker_id: String,
+    /// Attempt number the claim returned.
+    pub attempt: u32,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AppliedOutcomeStatus {
     Granted,
@@ -255,8 +267,7 @@ pub trait SuiteLinkStore: Send + Sync {
         &self,
         owner_id: Uuid,
         link_id: Uuid,
-        job_id: Uuid,
-        worker_id: &str,
+        lease: &DeliveryLease,
         now: Timestamp,
     ) -> Result<(), SuiteStoreError>;
     async fn inbox_in_transaction(

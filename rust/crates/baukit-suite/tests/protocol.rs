@@ -2562,6 +2562,47 @@ async fn link_in_process(
     Ok(link)
 }
 
+/// F-05: a reclaimed delivery job's stale attempt must not complete it.
+async fn assert_stale_delivery_attempt_cannot_complete(
+    pool: &PgPool,
+    context: &SuiteContext,
+    owner: Uuid,
+    link_id: Uuid,
+) -> TestResult {
+    const WORKER: &str = "suite-worker";
+    const KIND: &str = "suite.lease.check";
+    let jobs = PostgresJobStore::new(pool.clone());
+    let job = jobs.enqueue(NewJob::new(KIND, json!({}), 3)).await?.job;
+    let start = Timestamp::now();
+    let lease_for = std::time::Duration::from_secs(30);
+    let first = jobs
+        .claim(WORKER, &[KIND], start, lease_for)
+        .await?
+        .ok_or("first claim")?;
+    let later = start + SignedDuration::from_mins(1);
+    let second = jobs
+        .claim(WORKER, &[KIND], later, lease_for)
+        .await?
+        .ok_or("reclaim")?;
+    let lease = |attempt| DeliveryLease {
+        job_id: job.id,
+        worker_id: WORKER.to_owned(),
+        attempt,
+    };
+    assert!(
+        context
+            .store
+            .complete_delivery(owner, link_id, &lease(first.attempts), later)
+            .await
+            .is_err()
+    );
+    context
+        .store
+        .complete_delivery(owner, link_id, &lease(second.attempts), later)
+        .await?;
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn in_process_peer_links_the_second_app_and_delivers_to_its_real_router() -> TestResult {
@@ -2594,7 +2635,7 @@ async fn in_process_peer_links_the_second_app_and_delivers_to_its_real_router() 
     let remote = b_api.get(b_owner, link.remote_link_id).await?.link;
     assert_eq!(secret(&link), secret(&remote));
     let event = activity(15, Some(4));
-    let delivery = SuiteDeliveryService::new(a_context);
+    let delivery = SuiteDeliveryService::new(a_context.clone());
     assert_eq!(
         delivery
             .deliver(
@@ -2612,6 +2653,7 @@ async fn in_process_peer_links_the_second_app_and_delivers_to_its_real_router() 
         b_applier.calls.lock().expect("calls").as_slice(),
         &[(b_owner, RewardMode::Native, false)]
     );
+    assert_stale_delivery_attempt_cannot_complete(&db.pool, &a_context, a_owner, link.id).await?;
     a_api.disconnect(a_owner, link.id, Timestamp::now()).await?;
     assert_eq!(
         delivery
