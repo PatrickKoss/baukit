@@ -10,14 +10,24 @@
 -- the installation registers again with a secret.
 --
 -- The column is nullable with no default, so adding it does not rewrite the
--- table. The check starts NOT VALID and is validated without blocking writes.
+-- table. The check starts NOT VALID; 0007 validates it in its own transaction
+-- without blocking writes.
 
 SET lock_timeout = '5s';
+SET statement_timeout = '1min';
 
-ALTER TABLE push_devices ADD COLUMN install_secret_hash BYTEA;
+ALTER TABLE push_devices ADD COLUMN IF NOT EXISTS install_secret_hash BYTEA;
 
-ALTER TABLE push_devices
-    ADD CONSTRAINT push_devices_install_secret_hash_length
-    CHECK (install_secret_hash IS NULL OR octet_length(install_secret_hash) = 32) NOT VALID;
-
-ALTER TABLE push_devices VALIDATE CONSTRAINT push_devices_install_secret_hash_length;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conrelid = 'push_devices'::regclass
+          AND conname = 'push_devices_install_secret_hash_length'
+    ) THEN
+        ALTER TABLE push_devices
+            ADD CONSTRAINT push_devices_install_secret_hash_length
+            CHECK (install_secret_hash IS NULL OR octet_length(install_secret_hash) = 32) NOT VALID;
+    END IF;
+END
+$$;

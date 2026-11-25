@@ -73,7 +73,21 @@ def lint(plan: Plan) -> int:
     if not new_files:
         print("check-migrations: no migrations newer than the shipped baseline")
         return 0
-    command = ["squawk", f"--pg-version={PG_VERSION}", *new_files]
+    outside = [file for file in new_files if runs_outside_transaction(ROOT / file)]
+    in_transaction = [file for file in new_files if file not in outside]
+    status = 0
+    for files, flags in ((in_transaction, ["--assume-in-transaction"]), (outside, [])):
+        if files:
+            status |= squawk(files, flags)
+    return status
+
+
+def runs_outside_transaction(path: Path) -> bool:
+    return path.read_text().lstrip().startswith(NO_TRANSACTION)
+
+
+def squawk(files: list[str], flags: list[str]) -> int:
+    command = ["squawk", f"--pg-version={PG_VERSION}", *flags, *files]
     return subprocess.run(command, cwd=ROOT, check=False).returncode  # noqa: S603 -- argv list from a checked-in manifest, no shell
 
 

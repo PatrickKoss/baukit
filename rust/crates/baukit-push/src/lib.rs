@@ -160,7 +160,8 @@ pub const POSTGRES_PUSH_PENDING_RECEIPT_OWNERS_MIGRATION_SQL: &str =
 /// Reference PostgreSQL migration that adds per-install secrets to device rows.
 ///
 /// Apply it after [`POSTGRES_PUSH_PENDING_RECEIPT_OWNERS_MIGRATION_SQL`]. It is safe on a live
-/// database: a nullable column without a rewrite, and a check validated separately.
+/// database: a nullable column without a rewrite, and a check that
+/// [`POSTGRES_PUSH_VALIDATE_INSTALL_SECRET_HASH_MIGRATION_SQL`] validates.
 pub const POSTGRES_PUSH_INSTALL_SECRETS_MIGRATION_SQL: &str =
     include_str!("../migrations/0005_baukit_push_install_secrets.sql");
 
@@ -170,6 +171,13 @@ pub const POSTGRES_PUSH_INSTALL_SECRETS_MIGRATION_SQL: &str =
 /// without a table rewrite.
 pub const POSTGRES_PUSH_DELIVERY_CLAIM_IDS_MIGRATION_SQL: &str =
     include_str!("../migrations/0006_baukit_push_delivery_claim_ids.sql");
+
+/// Reference PostgreSQL migration that validates the install secret length check.
+///
+/// Apply it after [`POSTGRES_PUSH_DELIVERY_CLAIM_IDS_MIGRATION_SQL`]. It scans `push_devices`
+/// without blocking writes.
+pub const POSTGRES_PUSH_VALIDATE_INSTALL_SECRET_HASH_MIGRATION_SQL: &str =
+    include_str!("../migrations/0007_baukit_push_validate_install_secret_hash.sql");
 
 // Compiles the README's examples so they cannot drift from the API.
 #[doc = include_str!("../README.md")]

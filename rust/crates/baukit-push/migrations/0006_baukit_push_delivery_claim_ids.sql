@@ -12,5 +12,6 @@
 -- A nullable column with no default does not rewrite the table.
 
 SET lock_timeout = '5s';
+SET statement_timeout = '1min';
 
-ALTER TABLE push_delivery_claims ADD COLUMN claim_id UUID;
+ALTER TABLE push_delivery_claims ADD COLUMN IF NOT EXISTS claim_id UUID;

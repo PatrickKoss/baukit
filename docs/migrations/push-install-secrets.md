@@ -6,7 +6,9 @@ stops one account from taking over another account's device by replaying its tok
 
 Copy `rust/crates/baukit-push/migrations/0005_baukit_push_install_secrets.sql` into the
 product's ordered migrations after `0004`. It adds a nullable column with no default, so
-Postgres does not rewrite the table, and validates its length check separately.
+Postgres does not rewrite the table, and adds its length check `NOT VALID`.
+`0007_baukit_push_validate_install_secret_hash.sql` validates that check in its own
+transaction. Apply it after `0006`.
 
 Then have the app generate a random secret once per install (16 to 256 visible ASCII
 characters), keep it in secure storage, and send it with every registration. The backend
