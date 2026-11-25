@@ -61,3 +61,7 @@ baukit-test = { path = "../baukit-test", features = ["suite"] }
 baukit-runtime = { path = "../baukit-runtime" }
 tower = { workspace = true, features = ["util"] }
 tokio = { workspace = true, features = ["test-util"] }
+
+[[example]]
+name = "gen_suite_vectors"
+required-features = ["platform"]

@@ -1,0 +1,984 @@
+{
+  "returnUrls": {
+    "cases": [
+      {
+        "allowDevScheme": false,
+        "url": "https://alpha.example/suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://alpha.example/suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "HTTPS://alpha.example/suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": "HTTPS://alpha.example/suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://alpha.example/suite/linked#x",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://alpha.example/suite/linked#x",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://alpha.example/suite/linked?x=1",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://alpha.example/suite/linked?x=1",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://alpha.example/suite/../suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://alpha.example/suite/../suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://alpha.example\\suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://alpha.example\\suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://alpha.example./suite/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://alpha.example./suite/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://alpha.example:443/suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://alpha.example:443/suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": " https://alpha.example/suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": " https://alpha.example/suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "http://alpha.example/suite/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "http://alpha.example/suite/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha://suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha://suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "ALPHA://suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": "ALPHA://suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha-dev://suite/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha-dev://suite/linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alphadev://suite/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alphadev://suite/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha://suite/linked#x",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha://suite/linked#x",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha://suite:1/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha://suite:1/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha://SUITE/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha://SUITE/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha://suite/./linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha://suite/./linked",
+        "valid": true
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://suite/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://suite/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "%2F\\/suite@x/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "%2F\\/suite@x/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha.example%2F.https://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha.example%2F.https://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://.",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://.",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "http://alpha.example#alpha.example/suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "http://alpha.example#alpha.example/suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": ".?a=1alpha-dev://.:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": ".?a=1alpha-dev://.:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "%2F:443https://alpha-dev://alpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "%2F:443https://alpha-dev://alpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "/suitealpha.examplealpha.example%2Falpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "/suitealpha.examplealpha.example%2Falpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "#http://@x",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "#http://@x",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha:///linkedhttps:///linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha:///linkedhttps:///linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "?a=1alpha-dev://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "?a=1alpha-dev://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "?a=1%2F",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "?a=1%2F",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "@xhttps://http://http://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "@xhttps://http://http://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": ":443\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": ":443\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "/linked:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "/linked:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "http://@xhttp:///suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "http://@xhttp:///suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "/suitehttps://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "/suitehttps://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha.example%2F#",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha.example%2F#",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://alpha://#http://http://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://alpha://#http://http://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": ":443alpha://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": ":443alpha://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://\\?a=1",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://\\?a=1",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "/suite.?a=1:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "/suite.?a=1:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "/suite/suite:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "/suite/suite:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": ".alpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": ".alpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https:///linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https:///linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": ".\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": ".\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "..@x",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "..@x",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": ".suite@x/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": ".suite@x/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "@xsuite\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "@xsuite\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha.example@x?a=1http://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha.example@x?a=1http://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha://alpha.examplesuite\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha://alpha.examplesuite\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "@x/suite#alpha-dev://suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "@x/suite#alpha-dev://suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "#./suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "#./suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "#alpha://\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "#alpha://\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "#alpha.example?a=1https://alpha://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "#alpha.example?a=1https://alpha://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "http://\\/suite?a=1http://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "http://\\/suite?a=1http://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha.example%2F.",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha.example%2F.",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha-dev://@xhttp:///linked/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha-dev://@xhttp:///linked/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://alpha.example?a=1#.",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://alpha.example?a=1#.",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "%2F\\alpha://.alpha-dev://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "%2F\\alpha://.alpha-dev://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha.examplealpha.examplealpha://?a=1",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha.examplealpha.examplealpha://?a=1",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha-dev://\\alpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha-dev://\\alpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "http://#suite%2Fhttps://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "http://#suite%2Fhttps://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": ".:443\\alpha:///suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": ".:443\\alpha:///suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "suitealpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "suitealpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha://?a=1",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha://?a=1",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha.example.",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha.example.",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "http://?a=1/suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "http://?a=1/suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "alpha://suitealpha://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "alpha://suitealpha://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "\\http://#alpha.example\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "\\http://#alpha.example\\",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": ".@x:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": ".@x:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "@x.alpha://.#",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "@x.alpha://.#",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "@xalpha.examplealpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "@xalpha.examplealpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "%2F/linked#http://alpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "%2F/linked#http://alpha.example",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://.alpha://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://.alpha://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "/linkedhttps://alpha.example?a=1suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "/linkedhttps://alpha.example?a=1suite",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "suite:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "suite:443",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "suitealpha://alpha-dev:///linkedalpha-dev://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "suitealpha://alpha-dev:///linkedalpha-dev://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "http://suitealpha://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "http://suitealpha://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "/linked.@x",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "/linked.@x",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "@x\\.https://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "@x\\.https://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": ".?a=1",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": ".?a=1",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "/suite#/linked?a=1/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "/suite#/linked?a=1/linked",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "https://#https://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "https://#https://",
+        "valid": false
+      },
+      {
+        "allowDevScheme": false,
+        "url": "%2F?a=1",
+        "valid": false
+      },
+      {
+        "allowDevScheme": true,
+        "url": "%2F?a=1",
+        "valid": false
+      }
+    ],
+    "origin": "https://alpha.example",
+    "scheme": "alpha"
+  },
+  "schemaVersion": 1,
+  "seed": 1592590339,
+  "tickets": {
+    "audience": "eigenruhe",
+    "cases": [
+      {
+        "name": "canonical",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIn0.fLM7xxFyWSjnhx7UOl1vefaevmBmaZrAMyxdQYJrBajZk50k8S97q-mimm1yniGU40TTmdFl7NYdfgcRcF6vCw",
+        "valid": true
+      },
+      {
+        "name": "duplicate aud",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIiwiYXVkIjoiZWlnZW5ydWhlIn0.IKAAagU310H4mj3SQh5aj-VQSsAUk8UptYCyqTI2On7nhovCo_YpPH0mwafKG1TKvLBqA8Av1WiPgRt-KEXICw",
+        "valid": false
+      },
+      {
+        "name": "duplicate billing",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIiwiYmlsbGluZyI6eyJjaGFubmVsIjoid2ViIiwibWFuYWdlVXJsIjoiaHR0cHM6Ly9hY2NvdW50cy5leGFtcGxlLnRlc3QvcGxhbnMifX0.6E679_-RDCULOTHB4xZUFR5tL5CsshlBtX2nyLKzfRQK5ORRGIup34-Dsw2zY9f8ZqJt5BQVWcUBDYmEJ12_Bg",
+        "valid": false
+      },
+      {
+        "name": "duplicate exp",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIiwiZXhwIjoxODAwNjA0NzQwfQ.jf3kFEEyBV7TlMCuUpVFN7fx0AKreGgkEtC2aQ7CKfEGrpqN2-ZBcY2U-nMYc2yZD727ubcRdpE4_wQE0OqHDA",
+        "valid": false
+      },
+      {
+        "name": "duplicate features",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIiwiZmVhdHVyZXMiOlsiZWlnZW5ydWhlLmN1c3RvbV9wcm9ncmFtcyJdfQ.q5XnWciJt9fWfaWz8ZBsiDuXLrfLZdHVVVFRX2Vu0oa0bdk77Iofry9zOCGyzHDikijX6a1T9u5f1YpKWf2WDg",
+        "valid": false
+      },
+      {
+        "name": "duplicate iat",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIiwiaWF0IjoxNzk5OTk5OTQwfQ.8Ptcw7fc-UVH8wP7PhtD7ulpzRK9W6l6rRhMIBxr-x-DjdEd9sckIB-ZXsNwz7Zx-qiB1j_MpLCBVGg1cSexDw",
+        "valid": false
+      },
+      {
+        "name": "duplicate iss",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIiwiaXNzIjoiaHR0cHM6Ly9hY2NvdW50cy5leGFtcGxlLnRlc3QifQ.hunBoKtOdAkmNdJPTVmojYeFvy-K1VskG6fOdKTXqMShIixYZUI6N2TUMfWi7XbY5MDjzbWacKuORSfZq3csDA",
+        "valid": false
+      },
+      {
+        "name": "duplicate rev",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIiwicmV2Ijo5fQ.rkGb9fSusA_KDdGmisTY-2x0dNohkeKFu-wB8HkFNh7gbqinhYHHHpPyUIojEeiMS07ztah12k44_aDpCQVSCw",
+        "valid": false
+      },
+      {
+        "name": "duplicate sub",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIiwic3ViIjoic3VpdGUtdGVzdHxhbGljZSJ9.cCv0OJBzptZciv613LR2SdVZFonMvwoQoUAmWDa2HEKv6HXmsjG8KcSP3bYfoK3457FYEOhkovmWADChKJgVDw",
+        "valid": false
+      },
+      {
+        "name": "duplicate tier",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIiwidGllciI6InByZW1pdW0ifQ.Hbargaw5T19q-h9WDYWYXwhorR5Dx0QdCFajPYKzM6rdy-Nr65KddbrdJ8xAHD1AM7Jlq_KHf-b3vsX7wdHeAw",
+        "valid": false
+      },
+      {
+        "name": "exp with .0",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAuMCwiZmVhdHVyZXMiOlsiZWlnZW5ydWhlLmN1c3RvbV9wcm9ncmFtcyJdLCJpYXQiOjE3OTk5OTk5NDAsImlzcyI6Imh0dHBzOi8vYWNjb3VudHMuZXhhbXBsZS50ZXN0IiwicmV2Ijo5LCJzdWIiOiJzdWl0ZS10ZXN0fGFsaWNlIiwidGllciI6InByZW1pdW0ifQ.4FBOA8CE46ZcqlELXlqiR1jqYcqrTuqUjaQFMTzhhEfGE9weSX3vR4F_MmBS1-L4z6gx6xrb5lTuau3pEzB0Dg",
+        "valid": false
+      },
+      {
+        "name": "exp with e0",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDBlMCwiZmVhdHVyZXMiOlsiZWlnZW5ydWhlLmN1c3RvbV9wcm9ncmFtcyJdLCJpYXQiOjE3OTk5OTk5NDAsImlzcyI6Imh0dHBzOi8vYWNjb3VudHMuZXhhbXBsZS50ZXN0IiwicmV2Ijo5LCJzdWIiOiJzdWl0ZS10ZXN0fGFsaWNlIiwidGllciI6InByZW1pdW0ifQ.pwg3pNOFN5UjGRQnvcF-M_7Ma9XoWgZ6EXamb2BYAKqnrB8A_-Gqy2TF_Y0U19L7hCnF657dOF7BhGDwgo4gBA",
+        "valid": false
+      },
+      {
+        "name": "exp with E0",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDBFMCwiZmVhdHVyZXMiOlsiZWlnZW5ydWhlLmN1c3RvbV9wcm9ncmFtcyJdLCJpYXQiOjE3OTk5OTk5NDAsImlzcyI6Imh0dHBzOi8vYWNjb3VudHMuZXhhbXBsZS50ZXN0IiwicmV2Ijo5LCJzdWIiOiJzdWl0ZS10ZXN0fGFsaWNlIiwidGllciI6InByZW1pdW0ifQ.y7NjvR81HwOcgM16S6lgcL9rVQP7QfgP5Zv7jP97NAX-nOrK7W1yOVpsZ2BAAGS5_oJMEIlEzbdxmPpd8yO6Aw",
+        "valid": false
+      },
+      {
+        "name": "exp with .5",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAuNSwiZmVhdHVyZXMiOlsiZWlnZW5ydWhlLmN1c3RvbV9wcm9ncmFtcyJdLCJpYXQiOjE3OTk5OTk5NDAsImlzcyI6Imh0dHBzOi8vYWNjb3VudHMuZXhhbXBsZS50ZXN0IiwicmV2Ijo5LCJzdWIiOiJzdWl0ZS10ZXN0fGFsaWNlIiwidGllciI6InByZW1pdW0ifQ.WJbpgwvbSHcOANJv9tdsL8eILgnvEGALvHzy6vKpad1PLyFwC2vOHUTMUemqOgzYK_ZbAAvEYlGLmR2vGteIBg",
+        "valid": false
+      },
+      {
+        "name": "manageUrl https://accounts.example.test/plans",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIn0.fLM7xxFyWSjnhx7UOl1vefaevmBmaZrAMyxdQYJrBajZk50k8S97q-mimm1yniGU40TTmdFl7NYdfgcRcF6vCw",
+        "valid": true
+      },
+      {
+        "name": "manageUrl HTTPS://accounts.example.test/plans",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJIVFRQUzovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIn0.6C6oG6ob7avJqMfqlR9M5m1jphjJ6IeE-isQBeTC05J0yaNw-iz87V0oTieUcetiRgSLLvOrVdU7rFw3j49KCA",
+        "valid": false
+      },
+      {
+        "name": "manageUrl https://accounts.example.test:65535/plans",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdDo2NTUzNS9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIn0.-oSSbNo9YC1GIev5L1bN9pI09F0U24-yj21_UPNwoOddENgf2KQvNr80DGtTf-mB-g9lPdvW3b0hBWGdAIQYBg",
+        "valid": true
+      },
+      {
+        "name": "manageUrl https://accounts.example.test:65536/plans",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdDo2NTUzNi9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIn0.9ifq5EF13Hd_p1kcrFAa17zQWCoI3O15VG4txEkyR6KjxDFUl96L_H_nXTew7KfS1TLe6162vHVOFTwzSDAPCw",
+        "valid": false
+      },
+      {
+        "name": "manageUrl https://accounts.example.test\\@evil.example/plans",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdFxcQGV2aWwuZXhhbXBsZS9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIn0.3k0KMr2ZpciMMol2HxfEhZ21J6Rm1wZCTV1D0HKDj_c8E4gwcSJ39YThm62csqxhrogknCu7ssy-pB7yMON2BA",
+        "valid": false
+      },
+      {
+        "name": "manageUrl https://[::1]/plans",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL1s6OjFdL3BsYW5zIn0sImV4cCI6MTgwMDYwNDc0MCwiZmVhdHVyZXMiOlsiZWlnZW5ydWhlLmN1c3RvbV9wcm9ncmFtcyJdLCJpYXQiOjE3OTk5OTk5NDAsImlzcyI6Imh0dHBzOi8vYWNjb3VudHMuZXhhbXBsZS50ZXN0IiwicmV2Ijo5LCJzdWIiOiJzdWl0ZS10ZXN0fGFsaWNlIiwidGllciI6InByZW1pdW0ifQ.slkadWROTzQoyNV5jKH655mT-boG13p19wovbgpfnZe7RKoBgHeSNMUjgGiCGQgrD8f_SRkELwiU28nQJvf4Cw",
+        "valid": true
+      },
+      {
+        "name": "manageUrl https://user@accounts.example.test/plans",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL3VzZXJAYWNjb3VudHMuZXhhbXBsZS50ZXN0L3BsYW5zIn0sImV4cCI6MTgwMDYwNDc0MCwiZmVhdHVyZXMiOlsiZWlnZW5ydWhlLmN1c3RvbV9wcm9ncmFtcyJdLCJpYXQiOjE3OTk5OTk5NDAsImlzcyI6Imh0dHBzOi8vYWNjb3VudHMuZXhhbXBsZS50ZXN0IiwicmV2Ijo5LCJzdWIiOiJzdWl0ZS10ZXN0fGFsaWNlIiwidGllciI6InByZW1pdW0ifQ.JcyUQWazjd4Ej_wa3Qbur0HscCuq-8rRrkrfa3Mx82oHSa_vTGB9dH0NPoPzC1tEm-gjU-9UI57jkmlBc4tVCQ",
+        "valid": false
+      },
+      {
+        "name": "manageUrl https://accounts.example.test/pl ans",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbCBhbnMifSwiZXhwIjoxODAwNjA0NzQwLCJmZWF0dXJlcyI6WyJlaWdlbnJ1aGUuY3VzdG9tX3Byb2dyYW1zIl0sImlhdCI6MTc5OTk5OTk0MCwiaXNzIjoiaHR0cHM6Ly9hY2NvdW50cy5leGFtcGxlLnRlc3QiLCJyZXYiOjksInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJ0aWVyIjoicHJlbWl1bSJ9.qi0asn1yB3baH67THw1wTWgMVkeceX1oSDaMqojyMXvm5UgcQhs6sGWlKkOMPh4PcvrS-qrVCqodIxhBehu2AA",
+        "valid": false
+      },
+      {
+        "name": "manageUrl javascript://accounts.example.test/%0aalert(1)",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJqYXZhc2NyaXB0Oi8vYWNjb3VudHMuZXhhbXBsZS50ZXN0LyUwYWFsZXJ0KDEpIn0sImV4cCI6MTgwMDYwNDc0MCwiZmVhdHVyZXMiOlsiZWlnZW5ydWhlLmN1c3RvbV9wcm9ncmFtcyJdLCJpYXQiOjE3OTk5OTk5NDAsImlzcyI6Imh0dHBzOi8vYWNjb3VudHMuZXhhbXBsZS50ZXN0IiwicmV2Ijo5LCJzdWIiOiJzdWl0ZS10ZXN0fGFsaWNlIiwidGllciI6InByZW1pdW0ifQ.Dod3xg2MzPVFFb2k3XlzhEuRPIuU5WyySJ3T88YW63SaoM7N_2dqBi_QiHCHi_210KpnIeH2u7IOu-t2ZyjWAQ",
+        "valid": false
+      },
+      {
+        "name": "manageUrl https://accounts.example.test?x=1",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiJ9.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdD94PTEifSwiZXhwIjoxODAwNjA0NzQwLCJmZWF0dXJlcyI6WyJlaWdlbnJ1aGUuY3VzdG9tX3Byb2dyYW1zIl0sImlhdCI6MTc5OTk5OTk0MCwiaXNzIjoiaHR0cHM6Ly9hY2NvdW50cy5leGFtcGxlLnRlc3QiLCJyZXYiOjksInN1YiI6InN1aXRlLXRlc3R8YWxpY2UiLCJ0aWVyIjoicHJlbWl1bSJ9.RyME-8IalrCuf4XDNV4ECemwWq3dJLQtuEu70Nuuwj1TKR0dhdccL6ZDInKQ4xxhVQ7cxwuDQIkJh9oXkk6iDw",
+        "valid": true
+      },
+      {
+        "name": "duplicate header alg",
+        "ticket": "eyJhbGciOiJFZERTQSIsImtpZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDA0MiIsImFsZyI6IkVkRFNBIn0.eyJhdWQiOiJlaWdlbnJ1aGUiLCJiaWxsaW5nIjp7ImNoYW5uZWwiOiJ3ZWIiLCJtYW5hZ2VVcmwiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdC9wbGFucyJ9LCJleHAiOjE4MDA2MDQ3NDAsImZlYXR1cmVzIjpbImVpZ2VucnVoZS5jdXN0b21fcHJvZ3JhbXMiXSwiaWF0IjoxNzk5OTk5OTQwLCJpc3MiOiJodHRwczovL2FjY291bnRzLmV4YW1wbGUudGVzdCIsInJldiI6OSwic3ViIjoic3VpdGUtdGVzdHxhbGljZSIsInRpZXIiOiJwcmVtaXVtIn0.hCvK9rLrv-aFFwfAiVLWIHfIFYDQmRXXCAOi3ncsu3VExAtGxV24CwHs8Fs_FhCtyWzK4r_-mc9q8lepN7FoDQ",
+        "valid": false
+      }
+    ],
+    "issuer": "https://accounts.example.test",
+    "jwks": {
+      "keys": [
+        {
+          "alg": "EdDSA",
+          "crv": "Ed25519",
+          "kid": "00000000-0000-4000-8000-000000000042",
+          "kty": "OKP",
+          "use": "sig",
+          "x": "GX9rI-FshTLGq8g4-s1ep4m-DHaykgM0A5v6iz02jWE"
+        }
+      ]
+    },
+    "now": 1800000000
+  }
+}
