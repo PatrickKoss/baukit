@@ -6,7 +6,7 @@
 #[cfg(doctest)]
 struct ReadmeDoctests;
 
-use jiff::{SignedDuration, Timestamp};
+use jiff::{RoundMode, SignedDuration, Timestamp, TimestampRound, Unit};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -50,7 +50,9 @@ pub struct EventEnvelope {
     pub event_type: String,
     /// Identity-service subject that owns the event.
     pub user_id: String,
-    /// UTC instant at which the domain action occurred.
+    /// UTC instant at which the domain action occurred. It serializes truncated to the
+    /// millisecond, the precision `occurredAt` carries on the wire.
+    #[serde(serialize_with = "serialize_wire_instant")]
     pub occurred_at: Timestamp,
     /// Stable sender identifier.
     pub source_app: String,
@@ -244,6 +246,24 @@ fn valid_payload_key(key: &str) -> bool {
     bytes.first().is_some_and(u8::is_ascii_lowercase)
         && bytes.len() <= MAX_EVENT_PAYLOAD_KEY_CHARACTERS
         && bytes.iter().all(u8::is_ascii_alphanumeric)
+}
+
+/// Truncates `instant` to the millisecond, the precision `occurredAt` keeps on the wire, so an
+/// envelope built from it equals the envelope parsed back from its JSON.
+#[must_use]
+pub fn wire_instant(instant: Timestamp) -> Timestamp {
+    let millisecond = TimestampRound::new()
+        .smallest(Unit::Millisecond)
+        .mode(RoundMode::Trunc);
+    // Truncating toward zero never leaves jiff's range, so the fallback is unreachable.
+    instant.round(millisecond).unwrap_or(instant)
+}
+
+fn serialize_wire_instant<S: serde::Serializer>(
+    instant: &Timestamp,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.collect_str(&wire_instant(*instant))
 }
 
 /// Accepts `YYYY-MM-DDTHH:MM:SS` with up to three fraction digits and `Z`,

@@ -591,7 +591,7 @@ impl SuiteEvent {
             event_id: self.event_id().to_string(),
             event_type: self.event_type.clone(),
             user_id: subject.to_owned(),
-            occurred_at: self.occurred_at,
+            occurred_at: baukit_events::wire_instant(self.occurred_at),
             source_app: source_app.to_owned(),
             schema_version: EVENT_SCHEMA_VERSION,
             payload: self.payload.clone(),
