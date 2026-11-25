@@ -22,6 +22,7 @@ import type { SessionExpiredReason } from '@baukit/auth-native';
 import { ExpoSqliteStore } from '@baukit/data-contracts-expo-sqlite';
 
 import type { Item } from './api';
+import { setApiSessionSubject } from './api-session';
 import { loadAnalytics } from './analytics';
 import { createProductPersistenceLifecycle } from './persistence-lifecycle';
 
@@ -121,6 +122,7 @@ function useAuthenticatedLocalDataState(
 
   useEffect(() => {
     let active = true;
+    setApiSessionSubject(selectedProfileId);
     const transition = sessionTransition(
       sessionExpiredReason,
       selectedProfileId,

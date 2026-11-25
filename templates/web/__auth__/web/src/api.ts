@@ -1,6 +1,7 @@
 import type { FetchImplementation } from '@baukit/api-runtime';
 
 import { createAuthenticatedApiRuntime } from './authenticated-api';
+import { apiSessionSubject } from './api-session';
 import { apiBaseUrl } from './api-base-url';
 import { authClient } from './auth';
 
@@ -16,6 +17,7 @@ export interface CurrentUser {
 
 const api = createAuthenticatedApiRuntime({
   auth: authClient,
+  sessionSubject: apiSessionSubject,
   baseUrl: apiBaseUrl,
   environment: import.meta.env.MODE,
 });

@@ -9,6 +9,7 @@ import {
 import type { SessionExpiredReason } from '@baukit/auth-web';
 
 import { analytics } from './analytics';
+import { setApiSessionSubject } from './api-session';
 import { createProductPersistenceLifecycle } from './persistence-lifecycle';
 import { PRODUCT_NAME } from './product';
 
@@ -70,6 +71,7 @@ export function useAuthenticatedLocalData(
 
   useEffect(() => {
     let active = true;
+    setApiSessionSubject(selectedProfileId);
     const transition = sessionTransition(
       lifecycle,
       sessionExpiredReason,
