@@ -455,6 +455,70 @@ class FakeClock:
         self.now += seconds
 
 
+ANR_FOCUS = "  mCurrentFocus=Window{8dbc30a u0 Application Not Responding: com.android.systemui}"
+LAUNCHER_FOCUS = "  mCurrentFocus=Window{1 u0 com.android.launcher3/.Launcher}"
+
+
+class AndroidIdleTests(unittest.TestCase):
+    def wait(self, windows, timeout=60):
+        clock = FakeClock()
+        commands = []
+        last = windows[-1]
+
+        def shell(adb, serial, timeout, *command):
+            commands.append(command)
+            if command[0] == "pidof":
+                return "964\n"
+            if command[0] == "dumpsys":
+                return windows.pop(0) if windows else last
+            return ""
+
+        error = io.StringIO()
+        with (
+            patch.object(android_adb, "shell", side_effect=shell),
+            patch.dict(android_adb.os.environ, {"BAUKIT_QA_POLL_SECONDS": "2"}),
+            contextlib.redirect_stderr(error),
+        ):
+            status = android_adb.wait_for_idle(
+                "adb",
+                "emulator-5556",
+                10,
+                timeout,
+                timing=android_adb.Timing(clock=clock, sleep=clock.sleep),
+            )
+        return status, error.getvalue(), commands
+
+    def test_three_matching_probes_are_idle(self):
+        status, error, commands = self.wait([LAUNCHER_FOCUS])
+        self.assertEqual((status, error), (0, ""))
+        self.assertNotIn("broadcast", [part for command in commands for part in command])
+
+    def test_an_anr_dialog_is_closed_and_the_wait_restarts(self):
+        status, error, commands = self.wait([ANR_FOCUS, LAUNCHER_FOCUS])
+        self.assertEqual(status, 0)
+        self.assertIn(
+            ("am", "broadcast", "-a", "android.intent.action.CLOSE_SYSTEM_DIALOGS"), commands
+        )
+        self.assertIn(f"qa: closing an ANR dialog on emulator-5556: {ANR_FOCUS.strip()}", error)
+        self.assertEqual(sum(command[0] == "pidof" for command in commands), 4)
+
+    def test_deadline_reports_the_last_probe(self):
+        for windows, focus in (
+            ("  mCurrentFocus=null", "mCurrentFocus=null"),
+            ("", "no mCurrentFocus line"),
+        ):
+            with self.subTest(focus=focus):
+                status, error, _ = self.wait([windows], timeout=10)
+                self.assertEqual(status, 124)
+                self.assertTrue(
+                    error.endswith(
+                        "qa: systemui did not settle before the idle deadline\n"
+                        f"qa: last idle probe: systemui pid 964, {focus}\n"
+                    ),
+                    error,
+                )
+
+
 class AndroidSettleTests(unittest.TestCase):
     def settle(self, samples, attached=0, timeout=60):
         clock = FakeClock()

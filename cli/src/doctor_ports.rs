@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
     path::Path,
 };
 
@@ -137,7 +136,7 @@ pub(crate) fn validate_port_configuration(
         if !path.is_file() {
             continue;
         }
-        let source = fs::read_to_string(&path)?;
+        let source = crate::doctor_layout::read_text(&path)?;
         if snippet_mismatches(&relative, &snippet, source, &ports)? {
             failures.push(if manifest.ports.is_empty() {
                 format!(
@@ -315,7 +314,7 @@ fn rust_identity_snippets(
     let mut expected = Vec::new();
     for krate in doctor_layout::rust_crates(root, manifest)? {
         for path in krate.sources {
-            let source = fs::read_to_string(&path)?;
+            let source = crate::doctor_layout::read_text(&path)?;
             let relative = path.strip_prefix(root)?.to_string_lossy().into_owned();
             if source.contains("identity_admin_realm:") {
                 expected.push((
@@ -526,7 +525,7 @@ pub(crate) fn validate_compose_ports(
     if !path.is_file() {
         return Ok(ports.redis);
     }
-    let compose: ComposeFile = serde_yaml_ng::from_str(&fs::read_to_string(&path)?)
+    let compose: ComposeFile = serde_yaml_ng::from_str(&crate::doctor_layout::read_text(&path)?)
         .context("could not parse compose.yaml")?;
     let mut mappings = vec![("postgres", POSTGRES_CONTAINER_PORT, ports.postgres)];
     if uses_bundled_keycloak(root, manifest)? {
@@ -748,8 +747,8 @@ pub(crate) fn uses_bundled_keycloak(root: &Path, manifest: &Manifest) -> Result<
     if !path.is_file() {
         return Ok(true);
     }
-    let config: toml::Value =
-        toml::from_str(&fs::read_to_string(path)?).context("could not parse config/local.toml")?;
+    let config: toml::Value = toml::from_str(&crate::doctor_layout::read_text(path)?)
+        .context("could not parse config/local.toml")?;
     let issuer = config
         .get("auth")
         .and_then(|auth| auth.get("issuer"))

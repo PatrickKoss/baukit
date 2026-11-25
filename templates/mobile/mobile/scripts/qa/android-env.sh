@@ -242,6 +242,19 @@ prepare_android() {
   echo "qa: run 'make e2e-android-live' or inspect the emulator, then 'make qa-android-down'"
 }
 
+# `prepare` installs on emulators that `boot` started; without them every adb call waits out its timeout.
+require_booted_emulators() {
+  local devices device missing=()
+  devices="$(adb_bounded devices)"
+  for device in "${serials[@]}"; do
+    awk -v serial="$device" '$1 == serial && $2 == "device" { found = 1 } END { exit !found }' <<<"$devices" ||
+      missing+=("$device")
+  done
+  [[ -n "${missing[*]:-}" ]] || return 0
+  echo "qa: no booted Android emulator on ${missing[*]}; run 'sh scripts/quality-gate.sh --step android-boot' (or 'bash mobile/scripts/qa/android-env.sh boot') first" >&2
+  exit 1
+}
+
 reject_foreign_emulators() {
   local devices candidate
   devices="$(adb_bounded devices)"
@@ -421,6 +434,11 @@ save_snapshot() {
   await_emulator "$serial"
 {% if context.auth_enabled %}  warm_chrome "$serial" || exit 1
 {% endif %}  python3 "$root/mobile/scripts/qa/android-adb.py" --settle "$adb" "$serial" || exit 1
+  # The snapshot keeps whatever window has focus, an ANR dialog from the settle included.
+  python3 "$root/mobile/scripts/qa/android-adb.py" --wait-for-idle "$adb" "$serial" || {
+    echo "qa: systemui did not become idle on $serial; not saving the snapshot" >&2
+    exit 1
+  }
   python3 "$root/mobile/scripts/qa/android-adb.py" --check-health "$adb" "$serial" "$state_dir/android-health.log"
   adb_bounded -s "$serial" logcat -b all -c >/dev/null
   rm -rf "$snapshot_dir"
@@ -526,7 +544,11 @@ case "$action" in
     echo "qa: Android emulators booted on ${serials[*]}"
     ;;
   prepare)
-    ! broker_enabled || mapfile -t serials <"$state_dir/android-serial"
+    if broker_enabled; then
+      mapfile -t serials <"$state_dir/android-serial"
+    else
+      require_booted_emulators
+    fi
     prepare_android
     ;;
   reverse)

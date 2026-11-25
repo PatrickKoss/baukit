@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-11-25
+
+{% if context.mobile %}- The Android idle wait closes a "System UI isn't responding" dialog with `CLOSE_SYSTEM_DIALOGS`, prints its last probe when the deadline passes, and runs again before a quick-boot snapshot save. A snapshot saved after a loaded settle could keep that dialog, and every restore then timed out the idle wait.
+{% endif %}
+{% if context.mobile %}- `docs/quality-gate.md` documents the Android emulator GPU settings (`BAUKIT_QA_ANDROID_GPU`, guest Vulkan off with `-feature -Vulkan`) and the `logcat-<device>.txt` and `chrome-version-<device>.txt` evidence a failed Maestro run keeps.
+{% endif %}
+{% if context.mobile and context.auth_enabled %}- Products with suite links pass `appScheme()` from `mobile/src/app-scheme.ts` to `createSuiteNativeIntentValidator` and build the native suite return origin as `${appScheme()}://suite`. With the product name there, the dev variant (`<app>-dev`) returned from the suite into the plain app. The template has no suite code of its own, so this is a product change; `baukit doctor` names each file that still uses the fixed scheme.
+{% endif %}
+{% if context.mobile and context.auth_enabled %}- `[auth] mobile_client_id` and `[auth] mobile_redirect_path` in `baukit.toml` name the mobile Keycloak client and its callback path (defaults `<app>-mobile` and `oauth`). `mobile/src/product.ts` exports them as `MOBILE_OIDC_CLIENT_ID` and `OIDC_REDIRECT_PATH`, and the lab variant's default client in `src/build-variant.ts`, the redirect in `src/sign-in/lab.ts` and `src/sign-in/local.ts` (or `src/auth.ts` for OIDC), `app/+native-intent.ts`, the realm files and the QA build scripts read them, so a product whose client or callback differs sets the two keys and re-renders instead of editing each file. Products that hand-edited these files set the keys, copy the listed files and drop their divergences.
+{% endif %}
+{% if context.mobile %}- `mobile/scripts/qa/android-env.sh prepare` checks `adb devices` first and exits 1 within seconds when an expected emulator is not booted, naming the serials and `sh scripts/quality-gate.sh --step android-boot`. Products that split `android-boot` from `android-e2e` waited about 20 minutes for `adb device not found` when they ran `--step android-e2e` alone. The template's own `android-e2e` still boots its emulators through `android-env.sh start` and is unchanged. Copy `android-env.sh` from the template.
+{% endif %}
 ## [0.30.3] - 2026-11-24
 
 {% if context.mobile %}- `mobile/scripts/qa/run-maestro.sh` passes the device target before `test`. Maestro 2.8.0 accepts `--host`, `--port` and `--device` only as global options, so since 0.30.2 every single-device Android run failed with `Unknown options: '--host', '--port'`. The sharded run moves `--device` in front of `test` as well. Products that hand-merged 0.30.2 must move `"${target[@]}"` in front of `test` at the three `run_maestro` calls (`run_declared_shard`, `run_device_flows` and the single-device loop), and `--device "$device_list"` in front of `test` in the sharded run.

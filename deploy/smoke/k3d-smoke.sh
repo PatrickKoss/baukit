@@ -110,6 +110,12 @@ set -- cluster create "$cluster_name" \
 for port_mapping in $k3d_ports; do
     set -- "$@" --port "$port_mapping"
 done
+# Absolute eviction thresholds; the stock 5% one taints a test node on a busy 1 TB host.
+kubelet_args=$(bash -c '. "$1" && platform_local_kubelet_args' platform_local_kubelet_args \
+    "$deploy_root/platform/local-git-http.sh")
+for kubelet_arg in $kubelet_args; do
+    set -- "$@" "$kubelet_arg"
+done
 # The shared pull-through mirrors are used when all of them run. Arguments hold no whitespace.
 if bash -c '. "$1" && registry_mirrors_running' registry_mirrors_running "$registry_mirrors"; then
     mirror_args=$(bash -c '. "$1" && registry_mirrors_k3d_args "$2"' registry_mirrors_k3d_args \

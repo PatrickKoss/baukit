@@ -313,3 +313,48 @@ fn doctor_accepts_the_derived_qa_keycloak_port() -> anyhow::Result<()> {
     baukit_cli::doctor(&root)?;
     Ok(())
 }
+
+#[test]
+fn doctor_warns_about_qa_ports_pinned_to_the_old_template_defaults() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut options = mobile_options(parent.path(), "qa-pinned", Some(AuthProvider::Clerk));
+    options.port_offset = 400;
+    let root = generate_new(&options)?;
+    fs::write(
+        root.join("mobile/scripts/qa/local.sh"),
+        "postgres_port=15432\nkeycloak_port=18081\n",
+    )?;
+    let notes = baukit_cli::doctor(&root)?
+        .into_iter()
+        .filter(|finding| finding.starts_with("note: warning:"))
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 2, "{notes:?}");
+    assert!(notes.iter().any(
+        |note| note.contains("pins `postgres_port` to 15432") && note.contains("default 15832")
+    ));
+    assert!(notes.iter().any(
+        |note| note.contains("pins `keycloak_port` to 18081") && note.contains("default 18481")
+    ));
+    Ok(())
+}
+
+#[test]
+fn quality_gate_docs_name_the_emulator_gpu_settings_and_chrome_evidence() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&mobile_options(parent.path(), "qa-docs", None))?;
+    let docs = fs::read_to_string(root.join("docs/quality-gate.md"))?;
+    let android_env = fs::read_to_string(root.join("mobile/scripts/qa/android-env.sh"))?;
+    let run_maestro = fs::read_to_string(root.join("mobile/scripts/qa/run-maestro.sh"))?;
+    assert!(android_env.contains("${BAUKIT_QA_ANDROID_GPU:-swiftshader_indirect}"));
+    assert!(android_env.contains("emulator_features=\"-Vulkan\""));
+    assert!(run_maestro.contains("chrome-version-$device.txt"));
+    for fact in [
+        "`BAUKIT_QA_ANDROID_GPU`",
+        "`-feature -Vulkan`",
+        "`chrome-version-<device>.txt`",
+        "`logcat-<device>.txt`",
+    ] {
+        assert!(docs.contains(fact), "docs/quality-gate.md lacks {fact}");
+    }
+    Ok(())
+}

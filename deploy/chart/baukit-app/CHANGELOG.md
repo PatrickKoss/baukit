@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-11-25
+
 ## [0.30.3] - 2026-11-24
 
 - With `redis.replicas` of 3 or more, each Sentinel marks a dead master down after its own delay (5 s in pod 0, then 2 s more per ordinal) and the failover timeout drops from 30 s to 10 s. Sentinels that lost the master together reached odown together, each voted for itself, and the retry 60 s later could split again, the same race as platform redis-ha (CI run 45368520390). Updating restarts the Redis pods once.

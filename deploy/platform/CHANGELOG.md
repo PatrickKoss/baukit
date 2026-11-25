@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-11-25
+
+- `deploy/smoke/k3d-smoke.sh` passes `platform_local_kubelet_args` to `k3d cluster create`, so throwaway smoke clusters evict at 20 GiB free instead of k3s's 5% (about 50 GB on a 1 TB disk). No other k3d create in baukit or the product templates existed outside `deploy/platform`.
+
 ## [0.30.3] - 2026-11-24
 
 - Local and e2e k3d clusters (`platform-up.sh`, `platform-lifecycle.sh`, `e2e/run.sh`) evict on absolute disk thresholds. k3s's defaults, `nodefs.available<5%` and `imagefs.available<5%` with a 10% minimum reclaim, gave a node on a 1 TB disk shared with gate runs the disk-pressure taint and kept it until 15% (about 160 GB) was free; Kyverno was evicted and the whole platform stalled. New `platform_local_kubelet_args` in `local-git-http.sh` prints `--kubelet-arg=eviction-hard=memory.available<100Mi,nodefs.available<20Gi,imagefs.available<20Gi` and `--kubelet-arg=eviction-minimum-reclaim=nodefs.available=2Gi,imagefs.available=2Gi` for `server:0`, and the three k3d create sites pass them next to `platform_local_etcd_args`. `platform_k3s_server_args` and `platform_local_etcd_args` are unchanged, so VMs and ansible nodes keep the stock policy and copies of those two helpers need no update. Existing local clusters keep the old thresholds until recreated.

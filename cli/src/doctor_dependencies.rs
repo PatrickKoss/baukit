@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
@@ -68,7 +68,7 @@ pub(super) fn validate_registry_pins(
                 continue;
             }
             let relative = relative.display().to_string();
-            let source = fs::read_to_string(&path)?;
+            let source = crate::doctor_layout::read_text(&path)?;
             let pins = read_pins(filename, &source)
                 .with_context(|| format!("could not read Baukit pins in `{relative}`"))?;
             for pin in pins {

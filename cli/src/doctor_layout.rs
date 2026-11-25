@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{Manifest, doctor_host::DoctorHost, doctor_screens, identity};
 
+use crate::doctor_walk::skipped_directory;
+pub(super) use crate::doctor_walk::{read_text, read_walked, walk_product_tree};
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DoctorPaths {
@@ -126,13 +129,12 @@ pub(super) fn is_fixture_path(relative: &Path) -> bool {
 pub(super) fn cargo_workspaces(root: &Path, manifest: &Manifest) -> Result<Vec<PathBuf>> {
     let mut workspaces = Vec::new();
     for path in cargo_manifests(root)? {
-        let cargo: toml::Value =
-            toml::from_str(&fs::read_to_string(&path)?).with_context(|| {
-                format!(
-                    "could not parse `{}`",
-                    path.strip_prefix(root).unwrap_or(&path).display()
-                )
-            })?;
+        let cargo: toml::Value = toml::from_str(&read_text(&path)?).with_context(|| {
+            format!(
+                "could not parse `{}`",
+                path.strip_prefix(root).unwrap_or(&path).display()
+            )
+        })?;
         if cargo.get("workspace").is_some() {
             workspaces.push(path);
         }
@@ -210,9 +212,15 @@ pub(super) fn files(directory: &Path, extension: &str) -> Result<Vec<PathBuf>> {
         .filter(|name| !name.is_empty())
     {
         let path = directory.join(std::str::from_utf8(name).context("non-UTF-8 Git path")?);
-        if path.strip_prefix(directory)?.components().any(
-            |part| matches!(part, Component::Normal(name) if excluded_directory(name.to_str())),
-        ) {
+        if path
+            .strip_prefix(directory)?
+            .parent()
+            .into_iter()
+            .flat_map(Path::ancestors)
+            .any(|ancestor| {
+                ancestor != Path::new("") && skipped_directory(&directory.join(ancestor))
+            })
+        {
             continue;
         }
         if path.extension().is_some_and(|value| value == extension)
@@ -238,34 +246,12 @@ pub(super) fn product_files(directory: &Path, extension: &str) -> Result<Vec<Pat
 }
 
 fn walk_files(directory: &Path, extension: &str, paths: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(directory)? {
-        let entry = entry?;
-        let path = entry.path();
-        let kind = entry.file_type()?;
-        if kind.is_dir() {
-            if !excluded_directory(entry.file_name().to_str()) {
-                walk_files(&path, extension, paths)?;
-            }
-        } else if kind.is_file() && path.extension().is_some_and(|value| value == extension) {
-            paths.push(path);
+    walk_product_tree(directory, &mut |path| {
+        if path.extension().is_some_and(|value| value == extension) {
+            paths.push(path.to_owned());
         }
-    }
-    Ok(())
-}
-
-fn excluded_directory(name: Option<&str>) -> bool {
-    matches!(
-        name,
-        Some(
-            "target"
-                | "node_modules"
-                | ".git"
-                | ".generated-fixture"
-                | ".playwright-browsers"
-                | "dist"
-                | "coverage"
-        )
-    )
+        Ok(())
+    })
 }
 
 pub(super) struct RustCrate {
@@ -302,7 +288,7 @@ fn workspace_crates(root: &Path, workspaces: &[PathBuf]) -> Result<Vec<RustCrate
 }
 
 fn workspace_members(root: &Path, workspace_path: &Path) -> Result<Vec<PathBuf>> {
-    let workspace: toml::Value = toml::from_str(&fs::read_to_string(workspace_path)?)?;
+    let workspace: toml::Value = toml::from_str(&read_text(workspace_path)?)?;
     let directory = workspace_path
         .parent()
         .context("backend manifest has no parent")?;
@@ -350,7 +336,7 @@ fn workspace_members(root: &Path, workspace_path: &Path) -> Result<Vec<PathBuf>>
 }
 
 fn rust_crate(root: &Path, path: PathBuf) -> Result<RustCrate> {
-    let cargo: toml::Value = toml::from_str(&fs::read_to_string(&path)?)?;
+    let cargo: toml::Value = toml::from_str(&read_text(&path)?)?;
     let directory = path.parent().context("crate manifest has no parent")?;
     let name = cargo
         .get("package")
@@ -439,7 +425,7 @@ pub(super) fn require_source(
         if !path.is_file() {
             continue;
         }
-        let source = fs::read_to_string(path)?;
+        let source = read_text(path)?;
         let entry = key != "worker_entry"
             || symbols(&source, true)
                 .split_whitespace()
@@ -459,11 +445,7 @@ pub(super) fn require_source(
 pub(super) fn uses_redis(root: &Path, manifest: &Manifest) -> Result<bool> {
     for krate in rust_crates(root, manifest)? {
         for path in krate.sources {
-            if has_symbol(
-                &fs::read_to_string(path)?,
-                &["RedisRateLimitStore", "redis::"],
-                true,
-            ) {
+            if has_symbol(&read_text(path)?, &["RedisRateLimitStore", "redis::"], true) {
                 return Ok(true);
             }
         }
@@ -478,7 +460,9 @@ fn validate_rendered_dockerfile(
 ) -> Result<()> {
     let dockerfile = crate::dockerfile::output_path(root, manifest)?;
     if dockerfile.is_file()
-        && fs::read(&dockerfile)? != crate::render_dockerfile(manifest)?.as_bytes()
+        && fs::read(&dockerfile)
+            .with_context(|| format!("could not read {}", dockerfile.display()))?
+            != crate::render_dockerfile(manifest)?.as_bytes()
     {
         failures.push(format!(
             "backend Dockerfile `{}` differs from the render; run `baukit generate dockerfile`",
@@ -508,7 +492,7 @@ fn validate_backend_auth_wiring(
     };
     let path = product_path(root, relative)?;
     let found = if path.is_file() {
-        let source = fs::read_to_string(path)?;
+        let source = read_text(path)?;
         source.contains("code_challenge") && source.contains("S256")
     } else {
         false
@@ -667,7 +651,7 @@ fn json_path(
     }
     let mut found = Vec::new();
     for path in paths {
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&fs::read_to_string(path)?)
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&read_text(path)?)
             && matches(&value)
         {
             found.push(path.clone());
@@ -712,7 +696,7 @@ fn tool_path(
         "def load_reconcile_config("
     };
     for path in paths {
-        let source = fs::read_to_string(path)?;
+        let source = read_text(path)?;
         if source.contains(marker) && source.contains("argparse.ArgumentParser") {
             found.push(path);
         }
@@ -754,8 +738,7 @@ pub(super) fn validate_keycloak_realm_tools(
     let Some(keycloak) = located else {
         return Ok(());
     };
-    let realm_document: serde_json::Value =
-        serde_json::from_str(&fs::read_to_string(&keycloak.realm)?)?;
+    let realm_document: serde_json::Value = serde_json::from_str(&read_text(&keycloak.realm)?)?;
     if let Some(name) = realm_document
         .get("realm")
         .and_then(serde_json::Value::as_str)
@@ -876,7 +859,7 @@ fn validate_keycloak_tool_tests(
         let mut found = false;
         for path in candidates {
             if path.is_file() {
-                let source = fs::read_to_string(path)?;
+                let source = read_text(path)?;
                 found |= source.contains("unittest")
                     && markers.iter().any(|marker| source.contains(marker));
             }

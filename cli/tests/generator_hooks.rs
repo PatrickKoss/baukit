@@ -75,6 +75,88 @@ fn a_login_theme_with_shell_characters_is_rejected() -> anyhow::Result<()> {
     Ok(())
 }
 
+fn render_mobile_with_manifest_edit(name: &str, extra: &str) -> anyhow::Result<std::path::PathBuf> {
+    let mobile_options = |directory: &Path| NewOptions {
+        components: Components::from([Component::Backend, Component::Mobile]),
+        auth: Some(AuthProvider::Clerk),
+        ..strict_auth_options(directory, name)
+    };
+    let seed = tempfile::tempdir()?;
+    let seeded = generate_new(&mobile_options(seed.path()))?;
+    let manifest = fs::read_to_string(seeded.join("baukit.toml"))?;
+    let product = tempfile::tempdir()?.keep();
+    fs::write(product.join("baukit.toml"), format!("{manifest}\n{extra}"))?;
+    let mut options = mobile_options(&product);
+    options.into_existing = true;
+    generate_new(&options)
+}
+
+#[test]
+fn mobile_client_and_redirect_path_come_from_the_manifest() -> anyhow::Result<()> {
+    let root = render_mobile_with_manifest_edit(
+        "hero-app",
+        "[auth]\nmobile_client_id = \"hero-native\"\nmobile_redirect_path = \"auth/callback\"\n",
+    )?;
+    let product = fs::read_to_string(root.join("mobile/src/product.ts"))?;
+    assert!(product.contains("export const MOBILE_OIDC_CLIENT_ID = 'hero-native';"));
+    assert!(product.contains("export const OIDC_REDIRECT_PATH = 'auth/callback';"));
+    for path in ["mobile/src/sign-in/lab.ts", "mobile/src/sign-in/local.ts"] {
+        let source = fs::read_to_string(root.join(path))?;
+        assert!(source.contains("path: OIDC_REDIRECT_PATH"), "{path}");
+        assert!(!source.contains("'oauth'"), "{path}");
+    }
+    let variant = fs::read_to_string(root.join("mobile/src/build-variant.ts"))?;
+    assert!(variant.contains("|| MOBILE_OIDC_CLIENT_ID"));
+    let realm = fs::read_to_string(root.join("keycloak/realm.json"))?;
+    assert!(realm.contains("\"clientId\": \"hero-native\""));
+    assert!(realm.contains(
+        "\"redirectUris\": [\"hero-app://auth/callback\", \"hero-app-dev://auth/callback\"]"
+    ));
+    let reconcile = fs::read_to_string(root.join("keycloak/reconcile.json"))?;
+    assert!(reconcile.contains("\"clientId\": \"hero-native\""));
+    assert!(!reconcile.contains("hero-app-mobile"));
+    Ok(())
+}
+
+#[test]
+fn mobile_client_and_redirect_path_default_to_the_template_names() -> anyhow::Result<()> {
+    let root = render_mobile_with_manifest_edit("plain-mobile-app", "")?;
+    let product = fs::read_to_string(root.join("mobile/src/product.ts"))?;
+    assert!(product.contains("export const MOBILE_OIDC_CLIENT_ID = 'plain-mobile-app-mobile';"));
+    assert!(product.contains("export const OIDC_REDIRECT_PATH = 'oauth';"));
+    let realm = fs::read_to_string(root.join("keycloak/realm.json"))?;
+    assert!(realm.contains("\"plain-mobile-app://oauth\", \"plain-mobile-app-dev://oauth\""));
+    Ok(())
+}
+
+#[test]
+fn unsafe_mobile_client_or_redirect_path_is_rejected() {
+    for (extra, field) in [
+        (
+            "[auth]\nmobile_client_id = \"a'b\"\n",
+            "auth.mobile_client_id",
+        ),
+        (
+            "[auth]\nmobile_redirect_path = \"/oauth\"\n",
+            "auth.mobile_redirect_path",
+        ),
+        (
+            "[auth]\nmobile_redirect_path = \"a//b\"\n",
+            "auth.mobile_redirect_path",
+        ),
+    ] {
+        let error = render_mobile_with_manifest_edit("unsafe-mobile-app", extra)
+            .err()
+            .map(|error| error.to_string());
+        assert!(
+            error
+                .as_deref()
+                .is_some_and(|message| message.contains(field)),
+            "{extra}: {error:?}"
+        );
+    }
+}
+
 #[test]
 fn doctor_rejects_invalid_ci_settings() -> anyhow::Result<()> {
     let seed = tempfile::tempdir()?;

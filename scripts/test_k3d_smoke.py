@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -313,6 +314,20 @@ class SmokeOrderTest(unittest.TestCase):
         image = args[args.index("--image") + 1]
         self.assertRegex(image, r"^rancher/k3s:v[0-9.]+-k3s[0-9]+@sha256:[0-9a-f]{64}$")
         self.assertIn(f"printf '%s\\n' {image}\n", PLATFORM_HELPERS.read_text())
+
+    def test_cluster_uses_the_platform_kubelet_eviction_args(self) -> None:
+        body = (
+            PLATFORM_HELPERS.read_text()
+            .split("platform_local_kubelet_args() {", 1)[1]
+            .split("\n}", 1)[0]
+        )
+        values = re.findall(r"--k3s-arg '([^']+)'", body)
+        with tempfile.TemporaryDirectory() as tmp:
+            args = self.cluster_create(self.run_smoke(Path(tmp)))
+        self.assertEqual(len(values), 2)
+        for value in values:
+            self.assertEqual(args[args.index(value) - 1], "--k3s-arg")
+        self.assertIn("--kubelet-arg=eviction-hard=", " ".join(args))
 
     def test_cluster_image_can_be_overridden(self) -> None:
         override = "rancher/k3s:v1.33.0-k3s1@sha256:" + "a" * 64

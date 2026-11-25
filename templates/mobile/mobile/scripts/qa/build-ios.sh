@@ -25,7 +25,7 @@ isolate_metro_cache() {
 export BAUKIT_QA_BUILD=1
 export EXPO_PUBLIC_API_URL="http://localhost:$api_port"
 {% if context.auth_oidc %}export EXPO_PUBLIC_OIDC_ISSUER="http://localhost:$keycloak_port/realms/{{ context.app_name }}"
-export EXPO_PUBLIC_OIDC_CLIENT_ID="{{ context.app_name }}-mobile"
+export EXPO_PUBLIC_OIDC_CLIENT_ID="{{ context.mobile_client_id }}"
 {% elif context.auth_enabled %}export EXPO_PUBLIC_LOCAL_OIDC_ISSUER="http://localhost:$keycloak_port/realms/{{ context.app_name }}"
 {% endif %}
 
@@ -39,7 +39,7 @@ fi
 export BAUKIT_QA_BUILD=1
 export EXPO_PUBLIC_API_URL="http://localhost:$api_port"
 {% if context.auth_oidc %}export EXPO_PUBLIC_OIDC_ISSUER="http://localhost:$keycloak_port/realms/{{ context.app_name }}"
-export EXPO_PUBLIC_OIDC_CLIENT_ID="{{ context.app_name }}-mobile"
+export EXPO_PUBLIC_OIDC_CLIENT_ID="{{ context.mobile_client_id }}"
 {% elif context.auth_enabled %}export EXPO_PUBLIC_LOCAL_OIDC_ISSUER="http://localhost:$keycloak_port/realms/{{ context.app_name }}"
 {% endif %}
 

@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
 use anyhow::Result;
 
@@ -49,7 +49,7 @@ fn validate_auth_config(
         return Ok(());
     }
     let name = provider_name(provider);
-    let config: toml::Value = toml::from_str(&fs::read_to_string(config_path)?)?;
+    let config: toml::Value = toml::from_str(&crate::doctor_layout::read_text(config_path)?)?;
     if let Some(actual) = config
         .get("auth")
         .and_then(|auth| auth.get("provider"))
@@ -100,7 +100,8 @@ fn validate_auth_sdk_dependencies(
         if !enabled || !path.is_file() {
             continue;
         }
-        let package: serde_json::Value = serde_json::from_str(&fs::read_to_string(path)?)?;
+        let package: serde_json::Value =
+            serde_json::from_str(&crate::doctor_layout::read_text(path)?)?;
         if package
             .get("dependencies")
             .and_then(|dependencies| dependencies.get(dependency))
@@ -127,7 +128,9 @@ pub(crate) const QA_BUILD_FLAG: &str = "BAUKIT_QA_BUILD";
 pub(crate) fn validate_mobile_qa_build_flag(root: &Path, failures: &mut Vec<String>) -> Result<()> {
     for relative in MOBILE_ENV_FILES {
         let path = root.join(relative);
-        if path.is_file() && declares_env_assignment(&fs::read_to_string(path)?, QA_BUILD_FLAG) {
+        if path.is_file()
+            && declares_env_assignment(&crate::doctor_layout::read_text(path)?, QA_BUILD_FLAG)
+        {
             failures.push(format!(
                 "{relative} sets `{QA_BUILD_FLAG}`; Expo loads it into every export, so a production bundle would sign in locally. Set it only in the QA scripts' shell"
             ));
@@ -142,7 +145,7 @@ pub(crate) fn validate_workos_mobile_configuration(
 ) -> Result<()> {
     let config_path = root.join("mobile/app.config.ts");
     if config_path.is_file() {
-        let config = fs::read_to_string(config_path)?;
+        let config = crate::doctor_layout::read_text(config_path)?;
         for setting in WORKOS_MOBILE_SETTINGS {
             if !config.contains(&format!("'{setting}'")) {
                 failures.push(format!(
@@ -156,7 +159,7 @@ pub(crate) fn validate_workos_mobile_configuration(
         if !path.is_file() {
             continue;
         }
-        let source = fs::read_to_string(path)?;
+        let source = crate::doctor_layout::read_text(path)?;
         if relative.ends_with(".example") {
             for setting in WORKOS_MOBILE_SETTINGS {
                 if !declares_env_assignment(&source, setting) {

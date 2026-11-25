@@ -28,13 +28,13 @@ path and trailing slash. Create public authorization-code clients with PKCE S256
 Grant the backend audience in access tokens. ID tokens do not authenticate the
 API. Configure the web `VITE_OIDC_ISSUER` and `VITE_OIDC_CLIENT_ID`, and mobile
 `EXPO_PUBLIC_OIDC_ISSUER` and `EXPO_PUBLIC_OIDC_CLIENT_ID` with those clients.
-Register the generated web callback and mobile `{{ context.app_name }}://oauth`
+Register the generated web callback and mobile `{{ context.app_name }}://{{ context.mobile_redirect_path }}`
 redirect. The native adapter needs UserInfo and supports refresh-token rotation.
 The backend discovers JWKS at startup. `auth.jwks_uri` explicitly overrides
 that endpoint for a proxy or test; issuer and audience checks still apply.
 
 Set `auth.authorized_parties` to the OIDC client IDs allowed to create REST
-sessions, for example `["{{ context.app_name }}-web", "{{ context.app_name }}-mobile"]`.
+sessions, for example `["{{ context.app_name }}-web", "{{ context.mobile_client_id }}"]`.
 The default is empty for OIDC. A nonempty list calls `OidcConfig::with_allowed_clients`
 and requires a matching access-token `azp`. This rejects foreign clients even
 when their tokens contain the backend audience. The environment key is
@@ -253,7 +253,7 @@ every adapter. It reads claims for display only; the backend verifies the token.
 Each app has two adapters. `src/sign-in/local.ts` runs the authorization-code flow
 with PKCE S256 against this realm: in the browser through the
 `{{ context.app_name }}-web` client, and on mobile through the system browser and the
-`{{ context.app_name }}-mobile` client with the `{{ context.app_name }}://oauth` redirect. Sign in as
+`{{ context.mobile_client_id }}` client with the `{{ context.app_name }}://{{ context.mobile_redirect_path }}` redirect. Sign in as
 `test` with `development-password`. `src/sign-in/production.ts` uses the {{ "Clerk" if context.auth_clerk else "WorkOS" }}
 SDK described above.
 

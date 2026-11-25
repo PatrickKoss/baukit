@@ -158,7 +158,14 @@ case "$*" in
   *'get-state')
     if [[ -f "$ATTACHED" ]]; then echo device; else exit 1; fi ;;
   *'pidof com.android.systemui') echo 321 ;;
-  *'dumpsys window displays') echo '  mCurrentFocus=Window{1 u0 com.android.launcher3/.Launcher}' ;;
+  *'dumpsys window displays')
+    focus='Window{1 u0 com.android.launcher3/.Launcher}'
+    anr='Window{8dbc30a u0 Application Not Responding: com.android.systemui}'
+    case "$FAILURE" in
+      anr-dialog) grep -q CLOSE_SYSTEM_DIALOGS "$EVENTS" || focus="$anr" ;;
+      anr-after-settle) ! grep -q 'cat /proc/stat' "$EVENTS" || focus="$anr" ;;
+    esac
+    echo "  mCurrentFocus=$focus" ;;
   *'cat /proc/stat') printf 'cpu  10 0 10 80 0 0 0 0 0 0\ncpu0 10 0 10 80 0 0 0 0 0 0\n' ;;
   *'ip -4 route get 10.0.2.2')
     if [[ "$FAILURE" != wifi ]]; then
@@ -538,9 +545,10 @@ printf '{{"args": "%s"}}\\n' "$*" >> "$EVENTS"
         boot = next(i for i, event in enumerate(events) if "getprop" in event)
         idle = [i for i, event in enumerate(events) if "dumpsys window displays" in event]
         health = next(i for i, event in enumerate(events) if "logcat" in event)
-        self.assertGreaterEqual(len(idle), 3)
+        settle = next(i for i, event in enumerate(events) if "cat /proc/stat" in event)
+        self.assertGreaterEqual(len([i for i in idle if i < health]), 3)
         self.assertLess(boot, idle[0])
-        self.assertLess(idle[-1], health)
+        self.assertGreaterEqual(len([i for i in idle if i > settle]), 3)
 
     def test_port_comes_from_manifest_and_environment_overrides_it(self):
         self.prepare_start()

@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -25,7 +22,7 @@ fn source(
         if !path.is_file() {
             continue;
         }
-        let text = fs::read_to_string(path)?;
+        let text = crate::doctor_layout::read_text(path)?;
         let symbols = if production {
             production_symbols(&text)
         } else {
@@ -310,7 +307,7 @@ fn returned_router_merged(
 ) -> Result<bool> {
     for krate in crates {
         for path in &krate.sources {
-            let text = fs::read_to_string(path)?;
+            let text = crate::doctor_layout::read_text(path)?;
             let code = production_symbols(&text);
             for (name, _, body) in functions(&code) {
                 if !router.contains(body) || !returns_mcp_router(body) {
@@ -353,7 +350,8 @@ fn mcp_tool_sources(
             continue;
         }
         tools.extend(krate.sources.iter().cloned());
-        let cargo: toml::Value = toml::from_str(&fs::read_to_string(&krate.manifest)?)?;
+        let cargo: toml::Value =
+            toml::from_str(&crate::doctor_layout::read_text(&krate.manifest)?)?;
         dependency |= cargo
             .get("dependencies")
             .and_then(toml::Value::as_table)

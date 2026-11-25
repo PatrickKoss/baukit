@@ -33,6 +33,11 @@ Upgrade every Baukit component as one release train. Do not invent or call a `ba
    ```
 
 5. Refresh Cargo and pnpm lockfiles. Do not mix unrelated dependency upgrades into this change.
+   pnpm refuses a `@baukit/*` release for a day after the publish (`minimumReleaseAge`). Inside that window, listing only the packages the app pins is not enough: `@baukit/suite-client@0.30.3` pulls in `@baukit/type-guards@^0.30.3` and others, and `pnpm install --lockfile-only` fails with `ERR_PNPM_NO_MATURE_MATCHING_VERSION` on those. Print the full list from the target checkout and paste each block into the named `pnpm-workspace.yaml` as `minimumReleaseAgeExclude`, then remove it once the release is a day old:
+
+   ```sh
+   cargo run --manifest-path <target-baukit>/cli/Cargo.toml --bin baukit -- generate release-age-excludes
+   ```
 
 ## Validate and verify
 

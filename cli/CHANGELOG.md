@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-11-25
+
+- The CLI build script watches `typescript/pnpm-lock.yaml` instead of the whole `typescript/packages` tree, so a `pnpm install` no longer rebuilds the CLI.
+
+- `baukit generate release-age-excludes` prints, per pnpm app, the `minimumReleaseAgeExclude` entries a fresh `@baukit/*` re-pin needs: every pinned `@baukit/*` package plus every `@baukit/*` package those depend on, at the pinned version. Listing only the pinned packages failed `pnpm install --lockfile-only` with `ERR_PNPM_NO_MATURE_MATCHING_VERSION` on the transitive ones. The baukit-upgrade skill uses it.
+
+- `baukit doctor` prints a warning note, not a failure, for each line of `mobile/scripts/qa/local.sh` that pins a QA port to a fixed default of templates before 0.30.3 (15432, 16379, 18080, 19090, 18081) when the product's derived default differs. The note names the variable and the derived port.
+
+- `baukit doctor` prints a warning note when a product with `mobile/src/app-scheme.ts` builds suite links from the fixed scheme (`<app>://suite`, `<app>:///suite` or `createSuiteNativeIntentValidator('<app>')` in non-test sources under `mobile/src` or `mobile/app`). The dev variant registers `<app>-dev`, so such a return opens the plain app.
+
+- `baukit.toml` accepts `[auth] mobile_client_id` and `[auth] mobile_redirect_path`. Rendering and `baukit doctor` reject values outside letters, digits, `.`, `_`, `-` (and `/` between path segments).
+
+- `baukit doctor` no longer fails with a bare `No such file or directory` when another gate lane rewrites build output during its walks. The walks skip Gradle and Xcode `build/` directories, `.expo`, `.qa`, `.quality-gate`, `.ci-gate`, `.gradle`, `.cxx`, `.turbo`, `__pycache__` and `maestro-debug*`, treat an entry deleted mid-walk as gone, and every read or listing error names its path.
+
 ## [0.30.3] - 2026-11-24
 
 ## [0.30.2] - 2026-11-24

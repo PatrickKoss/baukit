@@ -70,6 +70,7 @@ jest.mock('@baukit/auth-native/expo', () => {
 import { unverifiedSignInSessionFromJwt } from '@baukit/api-runtime';
 import Constants from 'expo-constants';
 
+import { OIDC_REDIRECT_PATH } from '../product';
 import { signInAdapter } from './lab';
 
 function unsignedJwt(payload: unknown): string {
@@ -123,7 +124,7 @@ describe('lab realm sign-in adapter', () => {
     expect(calls[0]?.url).toBe('https://id.lab.example.test/realms/demo/.well-known/openid-configuration');
     expect(mockBrowser.requests[0]).toMatchObject({
       clientId: 'demo-mobile',
-      redirectUri: 'demo-dev://oauth',
+      redirectUri: `demo-dev://${OIDC_REDIRECT_PATH}`,
       usePKCE: true,
       scopes: ['openid', 'offline_access'],
     });

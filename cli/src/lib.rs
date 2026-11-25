@@ -12,12 +12,14 @@ mod doctor_gitops;
 mod doctor_host;
 mod doctor_layout;
 mod doctor_mcp;
+mod doctor_mobile_notes;
 mod doctor_platform;
 mod doctor_ports;
 mod doctor_postgres;
 mod doctor_screens;
 #[cfg(test)]
 mod doctor_tests;
+mod doctor_walk;
 mod gate_settings;
 mod gate_worker_caps;
 mod generate;
@@ -25,6 +27,7 @@ mod identity;
 mod manifest;
 mod openapi_client;
 mod ports;
+mod release_age;
 mod ts_aliases;
 
 pub use ports::{PortDeclaration, PortMapping};
@@ -43,6 +46,7 @@ pub use manifest::{
     QualityManifest, QualityProfile, read_manifest,
 };
 pub use openapi_client::generate_openapi_client;
+pub use release_age::release_age_excludes;
 
 use include_dir::{Dir, include_dir};
 

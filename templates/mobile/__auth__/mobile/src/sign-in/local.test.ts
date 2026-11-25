@@ -61,6 +61,7 @@ jest.mock('@baukit/auth-native/expo', () => {
 
 import { unverifiedSignInSessionFromJwt } from '@baukit/api-runtime';
 
+import { MOBILE_OIDC_CLIENT_ID, OIDC_REDIRECT_PATH, PRODUCT_NAME } from '../product';
 import { signInAdapter } from './local';
 
 function unsignedJwt(payload: unknown): string {
@@ -113,8 +114,8 @@ describe('local Keycloak sign-in adapter', () => {
 
     expect(calls[0]?.url).toMatch(/^http:\/\/localhost:\d+\/realms\/[^/]+\/\.well-known\/openid-configuration$/u);
     expect(mockBrowser.requests[0]).toMatchObject({
-      clientId: expect.stringMatching(/-mobile$/u),
-      redirectUri: expect.stringMatching(/:\/\/oauth$/u),
+      clientId: MOBILE_OIDC_CLIENT_ID,
+      redirectUri: `${PRODUCT_NAME}://${OIDC_REDIRECT_PATH}`,
       usePKCE: true,
       scopes: ['openid'],
     });

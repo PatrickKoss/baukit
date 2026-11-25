@@ -1,4 +1,4 @@
-use std::{fs, path::Path};
+use std::path::Path;
 
 use anyhow::Result;
 
@@ -86,7 +86,7 @@ fn read_optional(root: &Path, relative: &str) -> Result<Option<String>> {
     if !path.is_file() {
         return Ok(None);
     }
-    Ok(Some(fs::read_to_string(path)?))
+    Ok(Some(crate::doctor_layout::read_text(path)?))
 }
 
 fn check_vite(root: &Path, port: u16, failures: &mut Vec<String>) -> Result<()> {
@@ -191,7 +191,7 @@ fn check_authorized_parties(
 ) -> Result<()> {
     for krate in crate::doctor_layout::rust_crates(root, manifest)? {
         for path in krate.sources {
-            let source = fs::read_to_string(&path)?;
+            let source = crate::doctor_layout::read_text(&path)?;
             let relative = path.strip_prefix(root)?.to_string_lossy();
             for (index, marker) in source.match_indices("authorized_parties:") {
                 let section = &source[index + marker.len()..];
@@ -349,30 +349,15 @@ fn check_metro_directory(
     port: u16,
     failures: &mut Vec<String>,
 ) -> Result<()> {
-    if !directory.is_dir() {
-        return Ok(());
-    }
-    for entry in fs::read_dir(directory)? {
-        let entry = entry?;
-        let kind = entry.file_type()?;
-        let skipped_directory = matches!(
-            entry.file_name().to_str(),
-            Some("node_modules" | ".git" | "target" | "__pycache__")
-        );
-        if kind.is_dir() && !skipped_directory {
-            check_metro_directory(root, &entry.path(), port, failures)?;
-        } else if kind.is_file() {
-            check_metro_file(root, &entry.path(), port, failures)?;
-        }
-    }
-    Ok(())
+    crate::doctor_layout::walk_product_tree(directory, &mut |path| {
+        check_metro_file(root, path, port, failures)
+    })
 }
 
 fn check_metro_file(root: &Path, path: &Path, port: u16, failures: &mut Vec<String>) -> Result<()> {
-    if !path.is_file() {
+    let Some(bytes) = crate::doctor_layout::read_walked(path)? else {
         return Ok(());
-    }
-    let bytes = fs::read(path)?;
+    };
     let Ok(source) = std::str::from_utf8(&bytes) else {
         return Ok(());
     };

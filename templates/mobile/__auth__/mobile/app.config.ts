@@ -1,7 +1,7 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
 import { type BuildVariant, buildVariantFrom, withBuildVariant } from './src/build-variant.ts';
-import { PRODUCT_NAME } from './src/product.ts';
+import { {% if context.auth_oidc %}MOBILE_OIDC_CLIENT_ID, {% elif context.auth_workos %}OIDC_REDIRECT_PATH, {% endif %}PRODUCT_NAME } from './src/product.ts';
 
 const configuredApiUrl: unknown = process.env['EXPO_PUBLIC_API_URL'];
 const configuredKey: unknown = process.env['EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY'];
@@ -54,11 +54,11 @@ const baseConfig = ({ config }: ConfigContext): ExpoConfig => ({
         ? configuredIssuer
         : `http://localhost:{{ context.keycloak_host_port }}/realms/${PRODUCT_NAME}`,
     oidcClientId:
-      typeof configuredClientId === 'string' ? configuredClientId : `${PRODUCT_NAME}-mobile`,
+      typeof configuredClientId === 'string' ? configuredClientId : MOBILE_OIDC_CLIENT_ID,
 {% if context.pwa and not context.web %}    oidcWebClientId: environmentText('EXPO_PUBLIC_OIDC_WEB_CLIENT_ID') || `${PRODUCT_NAME}-web`,
 {% endif %}{% elif context.auth_workos %}    workosClientId: environmentText('EXPO_PUBLIC_WORKOS_CLIENT_ID'),
     workosApiHostname: environmentText('EXPO_PUBLIC_WORKOS_API_HOSTNAME') || 'api.workos.com',
-    workosRedirectUri: environmentText('EXPO_PUBLIC_WORKOS_REDIRECT_URI') || `${PRODUCT_NAME}://oauth`,
+    workosRedirectUri: environmentText('EXPO_PUBLIC_WORKOS_REDIRECT_URI') || `${PRODUCT_NAME}://${OIDC_REDIRECT_PATH}`,
 {% endif %}{% if context.auth_oidc %}    oidcAudience: typeof configuredAudience === 'string' ? configuredAudience : undefined,
     oidcResource: typeof configuredResource === 'string' ? configuredResource : undefined,
     oidcScopes: typeof configuredScopes === 'string' ? configuredScopes : undefined,

@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeSet, VecDeque},
-    fs,
     path::{Path, PathBuf},
 };
 
@@ -64,7 +63,7 @@ pub(super) fn screen_modules(root: &Path, screens: Vec<PathBuf>) -> Result<Vec<P
         if !path.starts_with(&root) || !modules.insert(path.clone()) {
             continue;
         }
-        let source = identity::uncommented(&fs::read_to_string(&path)?, false);
+        let source = identity::uncommented(&crate::doctor_layout::read_text(&path)?, false);
         if depth == MAX_IMPORT_DEPTH {
             continue;
         }
@@ -82,6 +81,7 @@ pub(super) fn screen_modules(root: &Path, screens: Vec<PathBuf>) -> Result<Vec<P
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn screen_imports_follow_rendered_bindings_and_reexports() {

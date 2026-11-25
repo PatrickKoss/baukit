@@ -60,7 +60,8 @@ runs once, refreshes connected apps and creates a notice in `SuiteNavigationStor
 Scope that store to the product's authenticated session.
 
 `createSuiteNativeIntentValidator(scheme)` permits only the suite authorize and linked
-pages. `openSuitePeer` tries the peer scheme before the configured web fallback.
+pages. Pass the scheme the build registered (`appScheme()` in generated products), not the
+product name, so a dev build on `<scheme>-dev` gets its own suite returns. `openSuitePeer` tries the peer scheme before the configured web fallback.
 HTTPS is required unless the product explicitly enables loopback HTTP.
 
 Register `suiteMessages` with `@baukit/localization-core`. Products replace

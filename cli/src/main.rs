@@ -5,6 +5,7 @@ use baukit_cli::{
     AuthProvider, Component, Components, NewOptions, QualityProfile,
     check::{CheckOptions, CheckRequest, run_check},
     doctor, generate_dockerfile, generate_gitops, generate_new, generate_openapi_client,
+    release_age_excludes,
 };
 use clap::{Args, Parser, Subcommand};
 
@@ -139,6 +140,8 @@ enum GenerateCommand {
     OpenapiClient,
     /// Add the deploy/gitops overlays and the release and promote workflows that are missing.
     Gitops,
+    /// Print the minimumReleaseAgeExclude entries a fresh @baukit/* re-pin needs, transitive packages included.
+    ReleaseAgeExcludes,
 }
 
 fn main() -> ExitCode {
@@ -211,6 +214,7 @@ fn generate(command: &GenerateCommand) -> Result<Vec<String>> {
             Ok(vec![format!("{verb} {}", path.display())])
         }
         GenerateCommand::Gitops => generate_gitops(&env::current_dir()?),
+        GenerateCommand::ReleaseAgeExcludes => release_age_excludes(&env::current_dir()?),
         GenerateCommand::OpenapiClient => {
             generate_openapi_client(&env::current_dir()?)?;
             Ok(vec![

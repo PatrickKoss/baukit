@@ -42,6 +42,8 @@ MAESTRO_LISTING = (
     "Maestro reports every Android device as not connected while any adb transport is not ready"
 )
 SYSTEMUI = "com.android.systemui"
+ANR_DIALOG = "Not Responding"
+CLOSE_SYSTEM_DIALOGS = "android.intent.action.CLOSE_SYSTEM_DIALOGS"
 CRITICAL_PACKAGES = {
     SYSTEMUI,
     "com.android.inputmethod.latin",
@@ -120,14 +122,36 @@ def shell(adb: str, serial: str, timeout: float, *command: str) -> str | None:
     return result.stdout if result.returncode == 0 else None
 
 
-def systemui_idle_probe(adb: str, serial: str, timeout: float) -> str | None:
-    """Return the systemui PID when systemui runs and the focused window is no ANR dialog."""
+@dataclass(frozen=True)
+class IdleProbe:
+    pid: str = ""
+    focus: str = ""
+
+    @property
+    def anr_dialog(self) -> bool:
+        return ANR_DIALOG in self.focus
+
+    @property
+    def idle(self) -> bool:
+        focused = bool(self.focus) and "null" not in self.focus
+        return bool(self.pid) and focused and not self.anr_dialog
+
+    def describe(self) -> str:
+        return f"systemui pid {self.pid or 'none'}, {self.focus or 'no mCurrentFocus line'}"
+
+
+def systemui_idle_probe(adb: str, serial: str, timeout: float) -> IdleProbe:
     pid = (shell(adb, serial, timeout, "pidof", SYSTEMUI) or "").strip()
     windows = shell(adb, serial, timeout, "dumpsys", "window", "displays") or ""
-    focus = [line for line in windows.splitlines() if "mCurrentFocus=" in line]
-    if not pid or not focus or "null" in focus[0] or "Not Responding" in focus[0]:
-        return None
-    return pid
+    focus = next((line.strip() for line in windows.splitlines() if "mCurrentFocus=" in line), "")
+    return IdleProbe(pid, focus)
+
+
+def close_anr_dialog(adb: str, serial: str, timeout: float, probe: IdleProbe) -> None:
+    """A quick-boot snapshot keeps an ANR dialog that was open when it was saved, and only
+    CLOSE_SYSTEM_DIALOGS closes it; hide_error_dialogs and KEYCODE_BACK leave it focused."""
+    print(f"qa: closing an ANR dialog on {serial}: {probe.focus}", file=sys.stderr)
+    shell(adb, serial, timeout, "am", "broadcast", "-a", CLOSE_SYSTEM_DIALOGS)
 
 
 def poll_interval() -> float:
@@ -160,18 +184,30 @@ def wait_for_wifi_route(adb: str, serial: str, probe_timeout: float, wifi_timeou
     return 124
 
 
-def wait_for_idle(adb: str, serial: str, probe_timeout: float, idle_timeout: float) -> int:
-    deadline = time.monotonic() + idle_timeout
+def wait_for_idle(
+    adb: str,
+    serial: str,
+    probe_timeout: float,
+    idle_timeout: float,
+    *,
+    timing: Timing = SYSTEM_TIMING,
+) -> int:
+    deadline = timing.clock() + idle_timeout
     stable = 0
     last_pid = None
-    while deadline - time.monotonic() > 0:
-        pid = systemui_idle_probe(adb, serial, probe_timeout)
+    probe = IdleProbe()
+    while deadline - timing.clock() > 0:
+        probe = systemui_idle_probe(adb, serial, probe_timeout)
+        if probe.anr_dialog:
+            close_anr_dialog(adb, serial, probe_timeout, probe)
+        pid = probe.pid if probe.idle else None
         stable = stable + 1 if pid is not None and pid == last_pid else 0
         last_pid = pid
         if stable >= IDLE_STABLE_PROBES - 1:
             return 0
-        time.sleep(min(poll_interval(), max(0, deadline - time.monotonic())))
+        timing.sleep(min(poll_interval(), max(0, deadline - timing.clock())))
     print("qa: systemui did not settle before the idle deadline", file=sys.stderr)
+    print(f"qa: last idle probe: {probe.describe()}", file=sys.stderr)
     return 124
 
 
