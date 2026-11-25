@@ -40,7 +40,9 @@ config:
   envPrefix: ""
   otlpEndpoint: ""
   # Keys are suffixes such as MAX_NOTES or DATABASE__MAX_CONNECTIONS.
-  overrides: {}
+  overrides:
+    # Assumes one ingress hop (Traefik) in front of the API.
+    RATE_LIMIT__TRUSTED_PROXY_HOPS: "1"
   # Existing Secrets are mounted with envFrom. Secret values never belong here.
   existingSecretRefs: []
 
