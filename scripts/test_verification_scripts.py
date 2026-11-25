@@ -175,6 +175,28 @@ class MigrationOrderTest(unittest.TestCase):
         self.assertIn("baukit-extra has migrations but is not listed", errors)
 
 
+class DoubleApplyTest(unittest.TestCase):
+    def test_second_pass_reruns_only_files_newer_than_the_shipped_baseline(self) -> None:
+        plan = migrations.load_plan()
+        shipped = next(iter(plan.shipped))
+        files = plan.files()
+        newer = [path for path in files if not plan.is_shipped(path)]
+
+        reruns = migrations.rerun_files(plan)
+
+        self.assertEqual(reruns, newer)
+        self.assertNotIn(migrations.ROOT / shipped, reruns)
+
+    def test_schema_comparison_ignores_pg_dump_restrict_keys(self) -> None:
+        first = "\\restrict abc\nCREATE TABLE t ();\n\\unrestrict abc\n"
+        second = "\\restrict xyz\nCREATE TABLE t ();\n\\unrestrict xyz\n"
+
+        self.assertEqual(migrations.normalized_schema(first), migrations.normalized_schema(second))
+        self.assertNotEqual(
+            migrations.normalized_schema(first), migrations.normalized_schema("CREATE TABLE u ();")
+        )
+
+
 class VectorRegistryTest(unittest.TestCase):
     def test_every_generated_vector_needs_one_generator(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

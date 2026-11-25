@@ -13,8 +13,8 @@ cd "$repository_root"
 if [ -n "${TLA2TOOLS_JAR:-}" ]; then
   jar=$TLA2TOOLS_JAR
 else
-  scripts/install-deploy-tools.sh --only tla2tools.jar
-  jar=${BAUKIT_TOOLS_DIR:-$repository_root/.tools}/bin/tla2tools.jar
+  scripts/install-deploy-tools.sh --only tla2tools
+  jar=${BAUKIT_TOOLS_DIR:-$repository_root/.tools}/bin/tla2tools
 fi
 if [ ! -f "$jar" ]; then
   echo "check-models: TLA2TOOLS_JAR=$jar does not exist" >&2

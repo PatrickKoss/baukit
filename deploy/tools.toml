@@ -103,8 +103,8 @@ requirements = [
 ]
 
 # TLC for the models gate step. One platform-independent jar, so every platform has the same digest.
-# It installs as .tools/bin/tla2tools.jar and runs with `java -cp`.
-[tools."tla2tools.jar"]
+# It installs as .tools/bin/tla2tools (still a jar) and runs with `java -cp`.
+[tools.tla2tools]
 version = "1.8.0"
 url = "https://github.com/tlaplus/tlaplus/releases/download/v{version}/tla2tools.jar"
 sha256 = { linux-amd64 = "fdffef247f563ef6edbfd44958d2a82db79e7564e07cb673262d896353fa6713", linux-arm64 = "fdffef247f563ef6edbfd44958d2a82db79e7564e07cb673262d896353fa6713", darwin-arm64 = "fdffef247f563ef6edbfd44958d2a82db79e7564e07cb673262d896353fa6713" }

@@ -26,6 +26,7 @@ NO_TRANSACTION = "-- no-transaction"
 PG_VERSION = "18"
 READY_ATTEMPTS = 60
 READY_POLL_SECONDS = 1.0
+RESTRICT_PREFIXES = ("\\restrict ", "\\unrestrict ")
 CONTAINER_LABEL = "baukit.check-migrations=1"
 
 
@@ -140,8 +141,14 @@ def apply(container: str, path: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+def normalized_schema(dump: str) -> str:
+    """pg_dump 17.6 and later wrap the dump in `\\restrict <random key>` lines."""
+    return "\n".join(line for line in dump.splitlines() if not line.startswith(RESTRICT_PREFIXES))
+
+
 def schema(container: str) -> str:
-    return docker("exec", container, "pg_dump", "-U", "postgres", "--schema-only").stdout
+    dump = docker("exec", container, "pg_dump", "-U", "postgres", "--schema-only").stdout
+    return normalized_schema(dump)
 
 
 def apply_all(container: str, files: list[Path]) -> list[str]:
@@ -153,21 +160,27 @@ def apply_all(container: str, files: list[Path]) -> list[str]:
     return errors
 
 
+def rerun_files(plan: Plan) -> list[Path]:
+    """Files the second pass applies. Shipped files are skipped: their reruns may fail or
+    duplicate objects, and that would mask what a new file does on its second run."""
+    return [path for path in plan.files() if not plan.is_shipped(path)]
+
+
 def double_apply(plan: Plan) -> int:
     files = plan.files()
+    reruns = rerun_files(plan)
     with postgres(plan.image) as container:
         errors = apply_all(container, files)
         before = schema(container)
-        for path in files:
+        for path in reruns:
             result = apply(container, path)
-            if result.returncode == 0 or plan.is_shipped(path):
-                continue
-            errors.append(f"{path.relative_to(ROOT)} is not re-runnable:\n{result.stderr}")
+            if result.returncode != 0:
+                errors.append(f"{path.relative_to(ROOT)} is not re-runnable:\n{result.stderr}")
         if schema(container) != before:
             errors.append("the second run changed the schema")
     for error in errors:
         print(f"ERROR: {error}", file=sys.stderr)
-    print(f"check-migrations: applied {len(files)} migrations twice")
+    print(f"check-migrations: applied {len(files)} migrations, reran {len(reruns)} new ones")
     return 1 if errors else 0
 
 
