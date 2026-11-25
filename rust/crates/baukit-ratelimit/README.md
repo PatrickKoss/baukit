@@ -103,8 +103,9 @@ discovered node is the master. The client's `CLIENT SETINFO` on connect may be
 refused; the redis crate ignores that reply.
 
 Sentinel mode resolves and verifies the writable master at startup. If a token
-bucket `EVAL` fails, the store asks Sentinel for the master again and retries the
-decision once on the newly resolved connection. Requests can still observe a
+script call fails, the store asks Sentinel for the master again. It retries once
+on the new connection only when the old one refused the connection, because the
+scripts are not idempotent and a call that may have run is never replayed. Requests can still observe a
 transient store error while Sentinel is converging; the existing fail-open or
 fail-closed middleware policy handles that error unchanged. Clones share the
 resolved connection and refresh state.

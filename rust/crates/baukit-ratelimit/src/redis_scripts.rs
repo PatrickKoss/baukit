@@ -27,7 +27,6 @@ end
 
 redis.call('HSET', KEYS[1], 'scaled_tokens', string.format('%d', tokens),
   'last_ms', string.format('%d', math.max(now_ms, last_ms)))
-redis.call('HDEL', KEYS[1], 'tokens', 'last_refill_ms')
 redis.call('PEXPIRE', KEYS[1], ttl_ms)
 return {allowed, math.floor(tokens / cost), retry_ms}
 "#

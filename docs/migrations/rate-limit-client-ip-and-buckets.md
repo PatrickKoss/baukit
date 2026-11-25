@@ -36,7 +36,8 @@ expire on their own TTL, so each IPv6 client starts with a full bucket once.
 ## Redis token-bucket fields
 
 The token-bucket script now stores integer `scaled_tokens` and `last_ms` hash
-fields and deletes the old `tokens` and `last_refill_ms` fields. Existing
+fields. The old `tokens` and `last_refill_ms` fields stay until the key's TTL
+ends; tenant ACLs need no new commands. Existing
 buckets start full once after the upgrade. No action is needed.
 
 ## Validation outside local
