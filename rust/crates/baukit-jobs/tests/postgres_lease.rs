@@ -93,7 +93,13 @@ async fn sql_lease_predicate_agrees_with_the_mirror() -> Result<(), Box<dyn Erro
             for attempts in [1_u32, 2] {
                 for locked_until in times {
                     for cancel_requested in [false, true] {
-                        if cancel_requested && status != JobStatus::Running {
+                        let running = status == JobStatus::Running;
+                        let locked = locked_by.is_some() && locked_until.is_some();
+                        let unlocked = locked_by.is_none() && locked_until.is_none();
+                        if (cancel_requested && !running)
+                            || (running && !locked)
+                            || (!running && !unlocked)
+                        {
                             continue;
                         }
                         let row = LeaseRow {

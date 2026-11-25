@@ -280,7 +280,7 @@ async fn assert_permanent_failure_is_terminal(
     assert_eq!(
         store
             .record_failure(
-                &JobLease::new(permanent.id, "worker-c", permanent.attempts),
+                &JobLease::new(permanent.id, "worker-c", 1),
                 false,
                 permanent_now,
                 "invalid payload",

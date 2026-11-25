@@ -511,6 +511,10 @@ async fn pull(
     let window = match open_pull_window(&mut transaction, owner, after).await {
         Ok(window) => window,
         Err(PullGuardError::Cursor(PullCursorError::ResyncRequired { .. })) => {
+            transaction.rollback().await?;
+            if let Some((writer, writes)) = interleaved {
+                write(pool, writer, writes).await?;
+            }
             return Ok(Pulled::Resync);
         }
         Err(error) => return Err(error.into()),

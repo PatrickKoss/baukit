@@ -44,19 +44,13 @@ async fn postgres_cancellation_covers_pending_and_running_lifecycle() -> Result<
     assert!(store.cancellation_requested(running.id).await?);
     assert!(
         !store
-            .complete(
-                &JobLease::new(running.id, "worker-a", running.attempts),
-                now
-            )
+            .complete(&JobLease::new(running.id, "worker-a", 1), now)
             .await?,
         "completion must not overtake cancellation"
     );
     assert!(
         store
-            .cancel(
-                &JobLease::new(running.id, "worker-a", running.attempts),
-                now
-            )
+            .cancel(&JobLease::new(running.id, "worker-a", 1), now)
             .await?
     );
     assert_eq!(status(&pool, running.id).await?, "cancelled");
@@ -237,7 +231,7 @@ impl KeyCancellationCase<'_> {
                 assert_eq!(after["locked_until"], before["locked_until"]);
                 assert!(!after["cancel_requested_at"].is_null());
                 assert!(self.store.cancellation_requested(matching).await?);
-                let lease = JobLease::new(matching, "cancel-worker", 1);
+                let lease = JobLease::new(matching, "cancel-worker", 0);
                 assert!(!self.store.complete(&lease, now).await?);
                 assert!(self.store.cancel(&lease, now).await?);
             }
@@ -424,7 +418,7 @@ async fn postgres_transaction_lease_check_matches_completion_ownership()
     transaction.commit().await?;
     assert!(
         store
-            .cancel(&JobLease::new(job.id, "worker-a", job.attempts), now)
+            .cancel(&JobLease::new(job.id, "worker-a", 1), now)
             .await?
     );
     assert_completed_job_has_no_lease(&store, &pool).await?;
@@ -453,10 +447,7 @@ async fn assert_completed_job_has_no_lease(
         .expect("job claimed");
     assert!(
         store
-            .complete(
-                &JobLease::new(completed.id, "worker-a", completed.attempts),
-                now
-            )
+            .complete(&JobLease::new(completed.id, "worker-a", 1), now)
             .await?
     );
     let mut transaction = pool.begin().await?;
