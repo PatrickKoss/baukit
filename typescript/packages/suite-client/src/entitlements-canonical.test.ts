@@ -71,8 +71,8 @@ describe('ticket JSON matches the Rust decoder', () => {
   it('keeps accepting strings that merely contain dots, braces or quotes', () => {
     fc.assert(
       fc.property(fc.string(), (text) => {
-        const tagged = JSON.stringify({ ...claims, note: text });
-        expect(verify(header, tagged)).toMatchObject({ sub: claims.sub });
+        const sub = `${claims.sub}${text}`;
+        expect(verify(header, JSON.stringify({ ...claims, sub }))).toMatchObject({ sub });
       }),
       { numRuns: 200 },
     );
