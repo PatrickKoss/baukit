@@ -10,7 +10,7 @@ use baukit_core::{
 };
 use serde_json::{Value, json};
 
-const SEED: u64 = 0x5eed_d06d_07;
+const SEED: u64 = 0x005e_edd0_6d07;
 const RANDOM_CASES: usize = 200;
 const MAX_CELLS: u64 = 4;
 const MAX_UNITS: u64 = 6;
