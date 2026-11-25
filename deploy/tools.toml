@@ -102,6 +102,31 @@ requirements = [
   "pyyaml==6.0.3 --hash=sha256:b8bb0864c5a28024fac8a632c443c87c5aa6f215c0b126c449ae1a150412f31d --hash=sha256:10892704fc220243f5305762e276552a0395f7beb4dbf9b14ec8fd43b57f126c --hash=sha256:652cb6edd41e718550aad172851962662ff2681490a8a711af6a4d288dd96824 --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc --hash=sha256:9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28 --hash=sha256:fc09d0aa354569bc501d4e787133afc08552722d3ab34836a80547331bb5d4a0 --hash=sha256:0f29edc409a6392443abf94b9cf89ce99889a1dd5376d94316ae5145dfedd5d6 --hash=sha256:ee2922902c45ae8ccada2c5b501ab86c36525b883eff4255313a253a3160861c --hash=sha256:2283a07e2c21a2aa78d9c4442724ec1eb15f5e42a723b99cb3d822d48f5f7ad1 --hash=sha256:c458b6d084f9b935061bc36216e8a69a7e293a2f1e68bf956dcd9e6cbcd143f5 --hash=sha256:501a031947e3a9025ed4405a168e6ef5ae3126c59f90ce0cd6f2bfc477be31b7 --hash=sha256:34d5fcd24b8445fadc33f9cf348c1047101756fd760b4dacb5c3e99755703310",
 ]
 
+# Lints new migrations in the migrations gate step. Digests are the GitHub release asset digests.
+[tools.squawk]
+version = "2.74.0"
+url = "https://github.com/sbdchd/squawk/releases/download/v{version}/squawk-{os}-{arch}"
+arch_names = { amd64 = "x64" }
+version_args = ["--version"]
+sha256 = { linux-amd64 = "62e2df12169cfdc77bb5f151261cdce419db9b72c49816d6fbcc421314bf1083", linux-arm64 = "89aacf30e03ab578b4c750a111fbfc9eb9077ea5a485b22cc5d8f8be03aa815d", darwin-arm64 = "026890261715b55cd5bbc591ce763b485d72fff5252a5bf2bd035b9f8ea54f09" }
+
+# Same version as the mise.toml pin; the workflows gate step installs it here so CI needs no mise.
+[tools.zizmor]
+version = "1.32.0"
+url = "https://github.com/zizmorcore/zizmor/releases/download/v{version}/zizmor-{arch}-{os}.tar.gz"
+member = "zizmor"
+os_names = { linux = "unknown-linux-gnu", darwin = "apple-darwin" }
+arch_names = { amd64 = "x86_64", arm64 = "aarch64" }
+version_args = ["--version"]
+sha256 = { linux-amd64 = "bb110cc765eca9cd7efb2e284a956be5974c60027b0970f16397d86208a9957b", linux-arm64 = "cb152b207f815116d7fa1c1ee4614f61578803351395052908095e79adfd9fd0", darwin-arm64 = "6efed18c4539a663fd3c851a2be9533fd8456c4e646d9416206da059154a0d3c" }
+
+# TLC for the models gate step. One platform-independent jar, so every platform has the same digest.
+# It installs as .tools/bin/tla2tools.jar and runs with `java -cp`.
+[tools."tla2tools.jar"]
+version = "1.8.0"
+url = "https://github.com/tlaplus/tlaplus/releases/download/v{version}/tla2tools.jar"
+sha256 = { linux-amd64 = "fdffef247f563ef6edbfd44958d2a82db79e7564e07cb673262d896353fa6713", linux-arm64 = "fdffef247f563ef6edbfd44958d2a82db79e7564e07cb673262d896353fa6713", darwin-arm64 = "fdffef247f563ef6edbfd44958d2a82db79e7564e07cb673262d896353fa6713" }
+
 # Images run by validators, pinned by digest.
 [images]
 prometheus = "prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06"
