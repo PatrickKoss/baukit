@@ -209,23 +209,38 @@ async fn timeout_records_a_retry_and_runner_poll_honors_cancellation() {
 
 #[tokio::test]
 async fn provider_retry_delay_overrides_exponential_backoff() {
+    let config = WorkerConfig {
+        retry_max: Duration::from_secs(60),
+        ..test_config()
+    };
+    assert_eq!(
+        recorded_retry_delay(config).await,
+        Some(SignedDuration::from_secs(42))
+    );
+}
+
+#[tokio::test]
+async fn provider_retry_delay_is_capped_at_retry_max() {
+    assert_eq!(
+        recorded_retry_delay(test_config()).await,
+        Some(SignedDuration::from_secs(1))
+    );
+}
+
+async fn recorded_retry_delay(config: WorkerConfig) -> Option<SignedDuration> {
     let store = Arc::new(FakeStore::with_jobs(0));
     process_claimed_job(
         store.clone(),
         Arc::new(RetryAfterHandler),
-        test_config(),
+        config,
         fake_job(0),
     )
     .await
     .expect("attempt recorded");
-
-    assert_eq!(
-        *store
-            .recorded_retry_delay
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner),
-        Some(SignedDuration::from_secs(42))
-    );
+    *store
+        .recorded_retry_delay
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[tokio::test]

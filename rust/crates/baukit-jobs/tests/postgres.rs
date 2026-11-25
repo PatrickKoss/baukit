@@ -203,7 +203,7 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
     assert_eq!(
         store
             .record_failure(
-                &JobLease::new(retried.id, "worker-a", retried.attempts),
+                &JobLease::new(retried.id, "worker-a", 1),
                 true,
                 retry_at,
                 "temporary",
@@ -232,7 +232,7 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
     assert_eq!(
         store
             .record_failure(
-                &JobLease::new(retried.id, "worker-b", retried.attempts),
+                &JobLease::of(&second, "worker-b"),
                 true,
                 retry_at + SignedDuration::from_secs(20),
                 "still temporary",
@@ -875,7 +875,7 @@ async fn postgres_v051_schema_upgrades_to_failure_reasons() -> Result<(), Box<dy
     assert_eq!(
         store
             .record_failure(
-                &JobLease::new(current.id, "upgrade-worker", current.attempts),
+                &JobLease::new(current.id, "upgrade-worker", 1),
                 false,
                 now,
                 "permanent failure",
