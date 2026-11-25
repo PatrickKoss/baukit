@@ -169,9 +169,15 @@ describe('HybridLogicalClock', () => {
 
   it('validates client timestamps against the server clock', () => {
     const timestamp = encodeHybridLogicalTimestamp(2_000, 0);
-    expect(() => validateClientTimestamp(timestamp, 1_000, 1_000)).not.toThrow();
-    expect(() => validateClientTimestamp(timestamp, 999, 1_000)).toThrow(HybridLogicalClockError);
-    expect(() => validateClientTimestamp(0, 1_000)).toThrow(HybridLogicalClockError);
+    expect(() => {
+      validateClientTimestamp(timestamp, 1_000, 1_000);
+    }).not.toThrow();
+    expect(() => {
+      validateClientTimestamp(timestamp, 999, 1_000);
+    }).toThrow(HybridLogicalClockError);
+    expect(() => {
+      validateClientTimestamp(0, 1_000);
+    }).toThrow(HybridLogicalClockError);
   });
 
   it('two clocks sharing one storage never issue the same timestamp', async () => {

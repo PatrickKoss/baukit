@@ -162,13 +162,12 @@ export class HybridLogicalClock {
   #queue: Promise<void> = Promise.resolve();
 
   private constructor(
-    deviceId: string,
     physicalClock: HlcPhysicalClock,
     storage: HlcStorage | undefined,
     state: HybridLogicalClockState,
     maxDriftMs: number,
   ) {
-    this.#deviceId = deviceId;
+    this.#deviceId = state.deviceId;
     this.#physicalClock = physicalClock;
     this.#storage = storage;
     this.#state = state;
@@ -191,7 +190,7 @@ export class HybridLogicalClock {
     validateMaxDrift(maxDriftMs);
     const stored: unknown = storage ? await storage.get(HLC_STORAGE_KEY) : undefined;
     const state = initialState(stored, deviceId, physicalClock);
-    return new HybridLogicalClock(deviceId, physicalClock, storage, state, maxDriftMs);
+    return new HybridLogicalClock(physicalClock, storage, state, maxDriftMs);
   }
 
   /** Returns the next local timestamp after committing its state. */
@@ -245,9 +244,7 @@ export class HybridLogicalClock {
       return operation();
     };
     const locks = webLocks();
-    const run = locks
-      ? () => locks.request(`baukit-hlc:${this.#deviceId}`, locked)
-      : locked;
+    const run = locks ? () => locks.request(`baukit-hlc:${this.#deviceId}`, locked) : locked;
     const result = this.#queue.then(run, run);
     this.#queue = result.then(
       () => undefined,
