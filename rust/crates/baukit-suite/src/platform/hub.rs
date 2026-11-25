@@ -532,27 +532,60 @@ mod tests {
     }
 }
 
+/// The K-21 property, shared by the Kani proofs and the proptest.
+#[cfg(any(kani, test))]
+fn segment_stays_in_its_slot(segment: &str) -> bool {
+    encode_segment(segment).is_none_or(|encoded| {
+        !encoded.contains(['/', '?', '#', '\\'])
+            && ![".", "..", "%2e", "%2e%2e"]
+                .iter()
+                .any(|dot| encoded.eq_ignore_ascii_case(dot))
+    })
+}
+
+#[cfg(test)]
+mod segment_tests {
+    use super::segment_stays_in_its_slot;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// K-21 beyond the Kani bound: up to 16 arbitrary chars.
+        #[test]
+        fn any_segment_stays_in_its_slot(segment in "\\PC{0,16}") {
+            prop_assert!(segment_stays_in_its_slot(&segment));
+        }
+
+        #[test]
+        fn dot_like_segments_stay_in_their_slot(segment in "[.%2eE]{0,6}") {
+            prop_assert!(segment_stays_in_its_slot(&segment));
+        }
+    }
+}
+
 #[cfg(kani)]
 mod proofs {
-    use super::encode_segment;
+    use super::segment_stays_in_its_slot;
 
-    /// K-21: an encoded segment never adds a path, query or fragment delimiter
-    /// and is never a dot segment.
+    /// K-21 over every byte string of up to 3 bytes that is valid UTF-8, which
+    /// includes every 3-byte character. Bounds: 3 bytes, unwind 8.
     #[kani::proof]
-    #[kani::unwind(5)]
+    #[kani::unwind(8)]
     fn an_encoded_segment_cannot_leave_its_slot() {
         let bytes: [u8; 3] = kani::any();
         let len: usize = kani::any();
         kani::assume(len <= bytes.len());
-        let Ok(segment) = std::str::from_utf8(&bytes[..len]) else {
-            return;
-        };
-        if let Some(encoded) = encode_segment(segment) {
-            assert!(!encoded.contains(['/', '?', '#', '\\']));
-            assert!(!encoded.eq_ignore_ascii_case(".") && !encoded.eq_ignore_ascii_case(".."));
-            assert!(
-                !encoded.eq_ignore_ascii_case("%2e") && !encoded.eq_ignore_ascii_case("%2e%2e")
-            );
+        if let Ok(segment) = std::str::from_utf8(&bytes[..len]) {
+            assert!(segment_stays_in_its_slot(segment));
         }
+    }
+
+    /// K-21 for any single `char`, 1 to 4 bytes, without `from_utf8` on the
+    /// symbolic path. Bounds: one char, unwind 8.
+    #[kani::proof]
+    #[kani::unwind(8)]
+    fn any_single_char_segment_stays_in_its_slot() {
+        let c: char = kani::any();
+        let mut buffer = [0_u8; 4];
+        assert!(segment_stays_in_its_slot(c.encode_utf8(&mut buffer)));
     }
 }
