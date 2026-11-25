@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 62c4bf53d97b510de29ad353dcfb84bc3c2a048620b0f589da188b08b657b73a # shrinks to steps = [(Reserve { key: 2, amount: 11 }, None), (Release { key: 2 }, None), (Reserve { key: 2, amount: 11 }, Status(Pending))]
