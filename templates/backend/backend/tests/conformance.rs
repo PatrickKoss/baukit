@@ -205,16 +205,7 @@ async fn in_memory_items_are_owner_scoped() -> Result<(), Box<dyn Error>> {
 async fn item_routes_deny_other_tenants_and_invalid_tokens() -> Result<(), Box<dyn Error>> {
     let fixture = erasure::erasure_fixture().await?;
     let issuer = baukit_test::MockOidcServer::start().await?;
-    let verifier = OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?;
-    let api = router(
-        ApiState {
-            items: ItemService::new(Arc::new(InMemoryItemRepository::new())),
-            users: UserService::new(Arc::new(InMemoryUserRepository::new())),
-            auth: AuthState::new(verifier),
-            erasure: fixture.erasure.clone(),
-        },
-        &HttpConfig::default(),
-    )?;
+    let api = composed_router(&issuer, fixture.erasure.clone()).await?;
     let token = |subject: &str| -> Result<String, Box<dyn Error>> {
         Ok(issuer.mint(&issuer.claims(subject, AUDIENCE, Duration::from_secs(60))?)?)
     };
@@ -235,11 +226,17 @@ async fn item_routes_deny_other_tenants_and_invalid_tokens() -> Result<(), Box<d
         &target,
         &fixtures,
         &baukit_test::CrossTenantCase::new(token("bob")?)
+            .owner(token("alice")?)
             .leak_marker("alice-private-item")
             .exclude(
                 "get",
                 "/me/erasures/{operationId}",
                 "erasure status is scoped to the caller's own operation id",
+            )
+            .exclude(
+                "delete",
+                "/me",
+                "acts only on the caller and would end bob's session mid-probe",
             ),
     )
     .await;
@@ -253,6 +250,35 @@ async fn item_routes_deny_other_tenants_and_invalid_tokens() -> Result<(), Box<d
     .await;
     assert!(!negative.probed.is_empty(), "{negative}");
     Ok(())
+}
+
+/// The router the binary serves, so the probes cover every layer in front of the handlers.
+async fn composed_router(
+    issuer: &baukit_test::MockOidcServer,
+    erasure: {{ context.app_crate }}_api::ErasureApi,
+) -> Result<axum::Router, Box<dyn Error>> {
+    let mut config = baukit_config::BaukitConfig::<{{ context.app_crate }}_bin::ProductConfig>::default();
+    config.product.auth.issuer = issuer.issuer().to_owned();
+    config.product.auth.audience = AUDIENCE.to_owned();
+    let verifier: Arc<dyn baukit_auth::IdentityVerifier> =
+        Arc::new(OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?);
+    let items = ItemService::new(Arc::new(InMemoryItemRepository::new()));
+    let deps = {{ context.app_crate }}_bin::ApiDependencies {
+        pool: sqlx::PgPool::connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")?,
+        item_service: items.clone(),
+        api_state: ApiState {
+            items,
+            users: UserService::new(Arc::new(InMemoryUserRepository::new())),
+            auth: AuthState::from_shared(verifier.clone()),
+            erasure,
+        },
+        auth: AuthState::from_shared(verifier{% if context.mcp %}.clone(){% endif %}),
+{% if context.mcp %}        verifier,
+{% endif %}        rate_limit_store: Some(baukit_ratelimit::SharedRateLimitStore::new(
+            baukit_ratelimit::InMemoryRateLimitStore::default(),
+        )),
+    };
+    Ok({{ context.app_crate }}_bin::compose_api(&config, &deps).await?.router)
 }
 
 async fn create_item(

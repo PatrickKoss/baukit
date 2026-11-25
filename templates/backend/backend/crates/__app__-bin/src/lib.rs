@@ -24,9 +24,11 @@ use {{ context.app_crate }}_services::ItemService;
 use serde::Deserialize;
 use uuid::Uuid;
 
+mod compose;
 mod config;
 {% if context.platform %}pub mod platform;
 {% endif %}mod rate_limits;
+pub use compose::{ApiDependencies, ComposedApi, compose_api};
 pub use config::config_loader;
 pub use rate_limits::{RateLimits, {% if context.auth_enabled %}protect_routes, {% endif %}rate_limited};
 

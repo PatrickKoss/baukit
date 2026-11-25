@@ -31,6 +31,9 @@ pub fn rate_limited(router: Router, limits: Option<&RateLimits>) -> Router {
 
 /// Authenticates and limits `items`, then merges each router in `late` behind its own limiter.
 ///
+/// The IP limiter runs before `establish_principal`, so junk bearers are throttled per client
+/// before any token verification. The identity limiter runs after it.
+///
 /// Routers in `late` verify callers themselves (MCP, browser sessions, signed webhooks), so
 /// they skip `establish_principal` and fall into the IP bucket.
 ///
@@ -53,14 +56,35 @@ pub fn protect_routes(
         ),
         None => items,
     };
-    // Axum runs the last added layer first, so Principal exists before the limiter picks a bucket.
-    let items = rate_limited(items, limits).layer(middleware::from_fn_with_state(
+    // Axum runs the last added layer first: IP pre-limit, then auth, then the identity limiter.
+    let identity = limits.map(|limits| only_scope(limits, Scope::Identity));
+    let ip = limits.map(|limits| only_scope(limits, Scope::Ip));
+    let items = rate_limited(items, identity.as_ref()).layer(middleware::from_fn_with_state(
         auth,
         baukit_auth::establish_principal,
     ));
+    let items = rate_limited(items, ip.as_ref());
     Ok(late.into_iter().fold(items, |router, late| {
         router.merge(rate_limited(late, limits))
     }))
+}
+
+#[derive(Clone, Copy)]
+enum Scope {
+    Identity,
+    Ip,
+}
+
+fn only_scope(limits: &RateLimits, scope: Scope) -> RateLimits {
+    let mut options = limits.options.clone();
+    match scope {
+        Scope::Identity => options.ip.enabled = false,
+        Scope::Ip => options.identity.enabled = false,
+    }
+    RateLimits {
+        store: limits.store.clone(),
+        options,
+    }
 }
 
 fn item_write_options(
