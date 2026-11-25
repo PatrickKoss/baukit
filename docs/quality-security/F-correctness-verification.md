@@ -533,11 +533,11 @@ here.
 
 Three kernels, chosen because Kani's bounds are exactly where their bugs would hide:
 
-| ID | Kernel | Theorem |
-|---|---|---|
-| V-01 | HLC | For every sequence of `now` and `observe` calls of any length, outputs strictly increase, and wall time never exceeds the maximum physical time seen plus `max_drift`. |
-| V-02 | Token bucket | For every admission trace of any length, admitted cost over `[t0, t]` is at most `capacity + rate * (t - t0)`. |
-| V-03 | Pull cursor progress | With the Phase 1 tuple cursor, every page either advances the cursor strictly or returns `hasMore = false`, and no row with `(revision, id)` above the cursor and at or below `hi` is skipped. |
+| ID | Kernel | Theorem | Proof |
+|---|---|---|---|
+| V-01 | HLC | For every sequence of `now` and `observe` calls of any length, outputs strictly increase, and wall time never exceeds the maximum physical time seen plus `max_drift`. | `rust/verus/src/hlc.rs` `replay`. The bound as written is false: 1000 `now` calls at a stalled clock roll the counter over and push the wall time 1 ms past it. Proven instead: `wall * 1000 + counter <= max(start, (max_physical + max_drift) * 1000 + 999) + calls`. |
+| V-02 | Token bucket | For every admission trace of any length, admitted cost over `[t0, t]` is at most `capacity + rate * (t - t0)`. | `rust/verus/src/bucket.rs` `replay`, for one key with a fixed scaled quota, starting full at `t0`, `t` the latest request time. |
+| V-03 | Pull cursor progress | With the Phase 1 tuple cursor, every page either advances the cursor strictly or returns `hasMore = false`, and no row with `(revision, id)` above the cursor and at or below `hi` is skipped. | `rust/verus/src/pull.rs` `page_progress_and_no_skip`. Needs `limit >= 1`; with `limit = 0` every row is skipped. |
 
 The layout follows the Phase 0 decision. With the twin layout, each Verus kernel gets a Kani harness proving twin
 and production equal within bounds, plus a proptest over random inputs. Without that link, the Verus proof would

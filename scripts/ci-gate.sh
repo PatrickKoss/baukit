@@ -217,6 +217,9 @@ step_verus() {
     return 0
   fi
   cargo verus verify --manifest-path rust/verus/Cargo.toml
+  cargo test --locked --manifest-path rust/verus/equivalence/Cargo.toml
+  cargo kani setup
+  (cd rust/verus/equivalence && timeout "${BAUKIT_KANI_TIMEOUT_SECONDS:-1800}" cargo kani)
 }
 # Prints TLA2TOOLS_JAR, or installs the deploy/tools.toml pin and prints its path.
 tla2tools_jar() {
