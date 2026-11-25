@@ -4,6 +4,12 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- CORS origins must be `https://host[:port]` with no path, query or user info. `null` is rejected. `http://` is accepted for `localhost`, `127.0.0.1` and `[::1]` everywhere, and for any host only through `HttpOptions::from_config_in(config, DeploymentEnvironment::Local)`. `from_config` behaves like a non-local environment.
+- A client `X-Request-ID` is kept only when it is 1 to `MAX_REQUEST_ID_BYTES` (128) bytes of `[A-Za-z0-9._-]`. Anything else gets a fresh UUID.
+- `RevisionEtag` prefixes may not end in a digit, because `"v1" + 2` and `"v" + 12` both format as `"v12"`. See [docs/migrations/boundary-hardening.md](../../../docs/migrations/boundary-hardening.md).
+
 ## [0.30.4] - 2026-11-25
 
 ## [0.30.3] - 2026-11-24
