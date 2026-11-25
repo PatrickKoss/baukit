@@ -450,11 +450,14 @@ async fn reusing_a_rotated_cookie_after_the_grace_window_revokes_the_session() -
     let response = refresh(&fixture, &first).await?;
     assert_eq!(response.status(), StatusCode::OK);
     let second = cookie_of(&response)?;
-    let live_refresh = stored_refresh_token(&fixture.pool, session_id(&second)?).await?;
 
     let grace = refresh(&fixture, &first).await?;
     assert_eq!(grace.status(), StatusCode::OK);
     assert!(grace.headers().get(SET_COOKIE).is_none());
+    let used = refresh(&fixture, &second).await?;
+    assert_eq!(used.status(), StatusCode::OK);
+    let third = cookie_of(&used)?;
+    let live_refresh = stored_refresh_token(&fixture.pool, session_id(&third)?).await?;
 
     tokio::time::sleep(Duration::from_secs(11)).await;
     let reuse = refresh(&fixture, &first).await?;
