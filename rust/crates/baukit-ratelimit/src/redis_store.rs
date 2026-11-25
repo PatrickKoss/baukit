@@ -15,63 +15,9 @@ use tokio::sync::{Mutex, RwLock};
 use crate::{
     AmountBudgetStore, AmountBudgetStoreDecision, Quota, RateLimitDecision, RateLimitOptions,
     RateLimitStore, RateLimitStoreError,
+    kernels::bucket::ScaledQuota,
+    redis_scripts::{AMOUNT_BUDGET_SCRIPT, RELEASE_AMOUNT_SCRIPT, TOKEN_BUCKET_SCRIPT},
 };
-
-const TOKEN_BUCKET_SCRIPT: &str = r#"
-local current = redis.call('TIME')
-local now_ms = (current[1] * 1000) + math.floor(current[2] / 1000)
-local capacity = tonumber(ARGV[1])
-local requests = tonumber(ARGV[2])
-local period_ms = tonumber(ARGV[3])
-local ttl_ms = tonumber(ARGV[4])
-local values = redis.call('HMGET', KEYS[1], 'tokens', 'last_refill_ms')
-local tokens = tonumber(values[1]) or capacity
-local last_refill_ms = tonumber(values[2]) or now_ms
-local elapsed_ms = math.max(0, now_ms - last_refill_ms)
-tokens = math.min(capacity, tokens + (elapsed_ms * requests / period_ms))
-
-local allowed = 0
-local retry_ms = 0
-if tokens >= 1 then
-  allowed = 1
-  tokens = tokens - 1
-else
-  retry_ms = math.ceil((1 - tokens) * period_ms / requests)
-end
-
-redis.call('HSET', KEYS[1], 'tokens', tokens, 'last_refill_ms', now_ms)
-redis.call('PEXPIRE', KEYS[1], ttl_ms)
-return {allowed, math.floor(tokens), retry_ms}
-"#;
-
-const AMOUNT_BUDGET_SCRIPT: &str = r#"
-local current = tonumber(redis.call('GET', KEYS[1])) or 0
-local amount = tonumber(ARGV[1])
-local limit = tonumber(ARGV[2])
-local allowed = 0
-
-if current <= limit and amount <= (limit - current) then
-  current = redis.call('INCRBY', KEYS[1], ARGV[1])
-  redis.call('PEXPIREAT', KEYS[1], ARGV[3])
-  allowed = 1
-end
-
-return {allowed, limit - math.min(current, limit)}
-"#;
-
-const RELEASE_AMOUNT_SCRIPT: &str = r#"
-local current = tonumber(redis.call('GET', KEYS[1])) or 0
-local amount = tonumber(ARGV[1])
-local limit = tonumber(ARGV[2])
-
-if current > 0 then
-  current = math.max(0, current - amount)
-  redis.call('SET', KEYS[1], current)
-  redis.call('PEXPIREAT', KEYS[1], ARGV[3])
-end
-
-return {1, limit - math.min(current, limit)}
-"#;
 
 /// Redis adapter using one atomic Lua token-bucket script.
 ///
@@ -325,15 +271,18 @@ impl RateLimitStore for RedisRateLimitStore {
         Box::pin(async move {
             let key = self.store_key(key);
             let key = key.as_ref();
-            let period_ms = duration_millis_ceil(quota.period());
+            let scaled = ScaledQuota::from_quota(quota);
             let ttl_ms = duration_millis_ceil(quota.idle_ttl());
             let (allowed, remaining, retry_ms) = match &self.connection {
                 StoreConnection::Direct(connection) => {
                     let mut connection = connection.clone();
-                    eval_token_bucket(&mut connection, key, quota, period_ms, ttl_ms).await
+                    eval_token_bucket(&mut connection, key, scaled, ttl_ms).await
                 }
                 StoreConnection::Sentinel(state) => {
-                    eval_with_sentinel_retry(state, key, quota, period_ms, ttl_ms).await
+                    with_sentinel_retry(state, |mut connection| async move {
+                        eval_token_bucket(&mut connection, key, scaled, ttl_ms).await
+                    })
+                    .await
                 }
             }
             .map_err(RateLimitStoreError::new)?;
@@ -382,7 +331,10 @@ impl AmountBudgetStore for RedisRateLimitStore {
                     eval_amount_budget(&mut connection, key, amount, limit, reset_at_ms).await
                 }
                 StoreConnection::Sentinel(state) => {
-                    eval_amount_with_sentinel_retry(state, key, amount, limit, reset_at_ms).await
+                    with_sentinel_retry(state, |mut connection| async move {
+                        eval_amount_budget(&mut connection, key, amount, limit, reset_at_ms).await
+                    })
+                    .await
                 }
             }
             .map_err(RateLimitStoreError::new)?;
@@ -428,7 +380,10 @@ impl AmountBudgetStore for RedisRateLimitStore {
                     eval_release_amount(&mut connection, key, amount, limit, reset_at_ms).await
                 }
                 StoreConnection::Sentinel(state) => {
-                    eval_release_with_sentinel_retry(state, key, amount, limit, reset_at_ms).await
+                    with_sentinel_retry(state, |mut connection| async move {
+                        eval_release_amount(&mut connection, key, amount, limit, reset_at_ms).await
+                    })
+                    .await
                 }
             }
             .map_err(RateLimitStoreError::new)?;
@@ -440,95 +395,56 @@ impl AmountBudgetStore for RedisRateLimitStore {
     }
 }
 
-async fn eval_with_sentinel_retry(
+/// Runs `operation` on the current master, re-resolving it after a failure.
+///
+/// The scripts are not idempotent, so the operation is retried only when the
+/// connection was refused and the command therefore never reached Redis. Any
+/// other failure re-resolves the master for later calls and returns the error.
+async fn with_sentinel_retry<T, F, Fut>(
     state: &SentinelState,
-    key: &str,
-    quota: Quota,
-    period_ms: u64,
-    ttl_ms: u64,
-) -> redis::RedisResult<(i64, u64, u64)> {
-    let (mut connection, generation) = {
+    operation: F,
+) -> redis::RedisResult<T>
+where
+    F: Fn(MultiplexedConnection) -> Fut,
+    Fut: std::future::Future<Output = redis::RedisResult<T>>,
+{
+    let (connection, generation) = {
         let current = state.current.read().await;
         (current.connection.clone(), current.generation)
     };
-    match eval_token_bucket(&mut connection, key, quota, period_ms, ttl_ms).await {
-        Ok(decision) => Ok(decision),
-        Err(_) => {
-            let mut client = state.client.lock().await;
-            let mut current = state.current.write().await;
-            if current.generation == generation {
-                current.connection = client.get_async_connection().await?;
-                current.generation = current.generation.wrapping_add(1);
-            }
-            let mut connection = current.connection.clone();
-            drop(current);
-            drop(client);
-            eval_token_bucket(&mut connection, key, quota, period_ms, ttl_ms).await
-        }
+    let error = match operation(connection).await {
+        Ok(value) => return Ok(value),
+        Err(error) => error,
+    };
+    let connection = reresolve_master(state, generation).await?;
+    if is_safe_to_retry(&error) {
+        operation(connection).await
+    } else {
+        Err(error)
     }
 }
 
-async fn eval_amount_with_sentinel_retry(
-    state: &SentinelState,
-    key: &str,
-    amount: i64,
-    limit: i64,
-    reset_at_ms: i64,
-) -> redis::RedisResult<(i64, u64)> {
-    let (mut connection, generation) = {
-        let current = state.current.read().await;
-        (current.connection.clone(), current.generation)
-    };
-    match eval_amount_budget(&mut connection, key, amount, limit, reset_at_ms).await {
-        Ok(decision) => Ok(decision),
-        Err(_) => {
-            let mut client = state.client.lock().await;
-            let mut current = state.current.write().await;
-            if current.generation == generation {
-                current.connection = client.get_async_connection().await?;
-                current.generation = current.generation.wrapping_add(1);
-            }
-            let mut connection = current.connection.clone();
-            drop(current);
-            drop(client);
-            eval_amount_budget(&mut connection, key, amount, limit, reset_at_ms).await
-        }
-    }
+fn is_safe_to_retry(error: &redis::RedisError) -> bool {
+    error.is_connection_refusal()
 }
 
-async fn eval_release_with_sentinel_retry(
+async fn reresolve_master(
     state: &SentinelState,
-    key: &str,
-    amount: i64,
-    limit: i64,
-    reset_at_ms: i64,
-) -> redis::RedisResult<(i64, u64)> {
-    let (mut connection, generation) = {
-        let current = state.current.read().await;
-        (current.connection.clone(), current.generation)
-    };
-    match eval_release_amount(&mut connection, key, amount, limit, reset_at_ms).await {
-        Ok(decision) => Ok(decision),
-        Err(_) => {
-            let mut client = state.client.lock().await;
-            let mut current = state.current.write().await;
-            if current.generation == generation {
-                current.connection = client.get_async_connection().await?;
-                current.generation = current.generation.wrapping_add(1);
-            }
-            let mut connection = current.connection.clone();
-            drop(current);
-            drop(client);
-            eval_release_amount(&mut connection, key, amount, limit, reset_at_ms).await
-        }
+    generation: u64,
+) -> redis::RedisResult<MultiplexedConnection> {
+    let mut client = state.client.lock().await;
+    let mut current = state.current.write().await;
+    if current.generation == generation {
+        current.connection = client.get_async_connection().await?;
+        current.generation = current.generation.wrapping_add(1);
     }
+    Ok(current.connection.clone())
 }
 
 async fn eval_token_bucket<C>(
     connection: &mut C,
     key: &str,
-    quota: Quota,
-    period_ms: u64,
+    scaled: ScaledQuota,
     ttl_ms: u64,
 ) -> redis::RedisResult<(i64, u64, u64)>
 where
@@ -538,9 +454,9 @@ where
         .arg(TOKEN_BUCKET_SCRIPT)
         .arg(1)
         .arg(key)
-        .arg(quota.capacity())
-        .arg(quota.requests_per_period())
-        .arg(period_ms)
+        .arg(scaled.capacity)
+        .arg(scaled.rate)
+        .arg(scaled.cost)
         .arg(ttl_ms)
         .query_async(connection)
         .await

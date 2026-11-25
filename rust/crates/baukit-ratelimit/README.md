@@ -34,8 +34,14 @@ let app = layers(
 Axum runs the last added layer first. A valid credential therefore selects the
 identity bucket. A missing credential uses only the IP bucket. A presented bad
 credential returns an authentication response before either bucket is consumed.
-Client IP resolution trusts only the configured number of rightmost proxy hops
-and otherwise falls back to Axum `ConnectInfo<SocketAddr>`.
+Client IP resolution reads Axum `ConnectInfo<SocketAddr>`, so serve the router
+with `into_make_service_with_connect_info::<SocketAddr>()` (`baukit-runtime`
+listeners do). With the IP scope enabled, a request without a peer address gets
+a 500 and an error log instead of a shared bucket. `trusted_proxy_hops`
+defaults to 0, which ignores `X-Forwarded-For`. With `n` hops only the entry at
+`len - n` is parsed; client-written entries to its left are never read. IPv6
+clients share a bucket per `ipv6_prefix_len` network (default /64), and
+IPv4-mapped IPv6 addresses bucket as IPv4.
 
 `RedisRateLimitStore::connect_if_enabled` returns `None` without parsing the URL
 or opening a connection when both scopes are disabled. This lets deployments
@@ -202,8 +208,10 @@ normalizers that only copied the retry delay into the standard error body.
 
 `FixedWindowAmountBudget` limits units rather than requests. A caller supplies
 an opaque subject and the number of units to consume. The budget admits the
-whole amount or leaves the counter unchanged. Call `release` to return units
-that the product did not accept after reserving a larger amount. Decisions
+whole amount or leaves the counter unchanged. Call `release` with the
+decision's `window` to return units that the product did not accept after
+reserving a larger amount. Units go back to the window they came from, and a
+release after that window ended changes nothing. Decisions
 include the units left and the UTC reset instant, which callers can convert to
 `Retry-After`.
 
