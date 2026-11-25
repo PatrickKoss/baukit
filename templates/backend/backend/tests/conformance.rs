@@ -257,13 +257,17 @@ async fn composed_router(
     issuer: &baukit_test::MockOidcServer,
     erasure: {{ context.app_crate }}_api::ErasureApi,
 ) -> Result<axum::Router, Box<dyn Error>> {
-    let mut config = baukit_config::BaukitConfig::<{{ context.app_crate }}_bin::ProductConfig>::default();
+    use {{ context.app_crate }}_bin::ApiDependencies;
+    use {{ context.app_crate }}_bin::ProductConfig;
+    use {{ context.app_crate }}_bin::compose_api;
+
+    let mut config = baukit_config::BaukitConfig::<ProductConfig>::default();
     config.product.auth.issuer = issuer.issuer().to_owned();
     config.product.auth.audience = AUDIENCE.to_owned();
     let verifier: Arc<dyn baukit_auth::IdentityVerifier> =
         Arc::new(OidcVerifier::discover(OidcConfig::new(issuer.issuer(), AUDIENCE)?).await?);
     let items = ItemService::new(Arc::new(InMemoryItemRepository::new()));
-    let deps = {{ context.app_crate }}_bin::ApiDependencies {
+    let deps = ApiDependencies {
         pool: sqlx::PgPool::connect_lazy("postgres://unused:unused@127.0.0.1:1/unused")?,
         item_service: items.clone(),
         api_state: ApiState {
@@ -278,7 +282,7 @@ async fn composed_router(
             baukit_ratelimit::InMemoryRateLimitStore::default(),
         )),
     };
-    Ok({{ context.app_crate }}_bin::compose_api(&config, &deps).await?.router)
+    Ok(compose_api(&config, &deps).await?.router)
 }
 
 async fn create_item(

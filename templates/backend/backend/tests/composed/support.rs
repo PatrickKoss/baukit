@@ -21,7 +21,8 @@ use {{ context.app_crate }}_bin::InMemoryItemRepository;
 {% if context.auth_enabled %}use {{ context.app_crate }}_bin::InMemoryUserRepository;
 {% endif %}use {{ context.app_crate }}_bin::ProductConfig;
 use {{ context.app_crate }}_bin::compose_api;
-use {{ context.app_crate }}_services::ItemService;
+{% if context.auth_enabled %}use {{ context.app_crate }}_postgres::PostgresProfileErasure;
+{% endif %}use {{ context.app_crate }}_services::ItemService;
 {% if context.auth_enabled %}use {{ context.app_crate }}_services::UserService;
 {% endif %}
 {% if context.auth_enabled %}const WEB_ORIGIN: &str = "http://localhost:5173";
@@ -143,7 +144,7 @@ fn unreachable_erasure(pool: sqlx::PgPool) -> Result<ErasureApi, Box<dyn Error>>
                 max_attempts: 3,
             },
         )?,
-        product: Arc::new({{ context.app_crate }}_postgres::PostgresProfileErasure),
+        product: Arc::new(PostgresProfileErasure),
     })
 }
 {% else %}

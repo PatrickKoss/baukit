@@ -75,7 +75,7 @@ jobs:
           git clone --branch v{{ context.template_version }} --depth 1 https://github.com/PatrickKoss/baukit.git "$RUNNER_TEMP/baukit"
           cargo run --quiet --locked --manifest-path "$RUNNER_TEMP/baukit/cli/Cargo.toml" --bin baukit -- doctor
       - name: Check agent docs, file sizes, suppressions, lints, patterns, observability, template files and the fuzz lockfile with baukit check
-        run: cargo run --quiet --locked --manifest-path "$RUNNER_TEMP/baukit/cli/Cargo.toml" --bin baukit -- check agent-docs file-size suppressions lints patterns observability template-files fuzz-lockfile --root .
+        run: cargo run --quiet --locked --manifest-path "$RUNNER_TEMP/baukit/cli/Cargo.toml" --bin baukit -- check agent-docs file-size suppressions lints patterns observability template-files fuzz-lockfile security --root .
 
 {% endif %}{% if context.quality_strict %}  strict-quality:
     name: Strict quality profile

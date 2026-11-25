@@ -184,7 +184,7 @@ step_baukit_doctor() {
 step_baukit_check() {
   use_baukit_root
   cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- \
-    check agent-docs file-size suppressions lints patterns observability template-files fuzz-lockfile --root .
+    check agent-docs file-size suppressions lints patterns observability template-files fuzz-lockfile security --root .
 }
 
 step_workflow_lint() {
