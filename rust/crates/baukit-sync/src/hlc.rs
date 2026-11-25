@@ -16,6 +16,12 @@ pub const COUNTERS_PER_MILLISECOND: i64 = 1_000;
 /// Largest encoded timestamp that every JavaScript runtime can represent exactly.
 pub const MAX_ENCODED_TIMESTAMP: i64 = 9_007_199_254_740_991;
 
+/// Default bound on how far a remote wall time may lead the local physical clock.
+pub const DEFAULT_MAX_DRIFT_MS: i64 = 24 * 60 * 60 * 1_000;
+
+/// Wall time and logical counter of a clock.
+pub type HlcStep = (i64, i64);
+
 /// Serializable state needed to restore a clock.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +53,105 @@ pub enum HlcError {
     /// The caller supplied a blank clock identifier.
     #[error("HLC device id must not be empty")]
     EmptyDeviceId,
+    /// A remote wall time leads the local physical clock by more than the drift bound.
+    #[error("remote hybrid logical timestamp is too far ahead of the local clock")]
+    RemoteTooFarAhead,
+    /// The configured drift bound is negative.
+    #[error("HLC max drift must not be negative")]
+    InvalidMaxDrift,
+}
+
+/// Computes the state after a local event, without side effects.
+///
+/// # Errors
+///
+/// [`HlcError::InvalidPhysicalClock`] for a physical time outside
+/// `0..=MAX_ENCODED_TIMESTAMP`, [`HlcError::InvalidComponent`] for an invalid
+/// state, and [`HlcError::ExceedsSafeInteger`] when no later timestamp exists.
+pub fn now_step(state: HlcStep, physical: i64) -> Result<HlcStep, HlcError> {
+    check_physical(physical)?;
+    encode(state.0, state.1)?;
+    let wall = physical.max(state.0);
+    let counter = if physical > state.0 { 0 } else { state.1 + 1 };
+    roll_over(wall, counter)
+}
+
+/// Computes the state after receiving `remote`, without side effects.
+///
+/// # Errors
+///
+/// [`HlcError::InvalidTimestamp`] for an invalid remote,
+/// [`HlcError::RemoteTooFarAhead`] when the remote wall time exceeds
+/// `physical + max_drift_ms`, [`HlcError::InvalidMaxDrift`] for a negative
+/// bound, and the errors of [`now_step`].
+pub fn observe_step(
+    state: HlcStep,
+    physical: i64,
+    remote: i64,
+    max_drift_ms: i64,
+) -> Result<HlcStep, HlcError> {
+    let (remote_wall, remote_counter) = decode(remote)?;
+    check_physical(physical)?;
+    encode(state.0, state.1)?;
+    check_drift(remote_wall, physical, max_drift_ms)?;
+    let wall = physical.max(state.0).max(remote_wall);
+    let counter = if wall == state.0 && wall == remote_wall {
+        state.1.max(remote_counter) + 1
+    } else if wall == state.0 {
+        state.1 + 1
+    } else if wall == remote_wall {
+        remote_counter + 1
+    } else {
+        0
+    };
+    roll_over(wall, counter)
+}
+
+/// Rejects a client timestamp whose wall time leads the server clock by more
+/// than `max_drift_ms`. Push handlers call this before accepting a change.
+///
+/// # Errors
+///
+/// [`HlcError::InvalidTimestamp`] for an invalid timestamp,
+/// [`HlcError::InvalidPhysicalClock`] for an invalid server time,
+/// [`HlcError::InvalidMaxDrift`] for a negative bound, and
+/// [`HlcError::RemoteTooFarAhead`] when the timestamp is too far ahead.
+pub fn validate_client_timestamp(
+    timestamp: i64,
+    server_now_ms: i64,
+    max_drift_ms: i64,
+) -> Result<(), HlcError> {
+    let (wall, _) = decode(timestamp)?;
+    check_physical(server_now_ms)?;
+    check_drift(wall, server_now_ms, max_drift_ms)
+}
+
+fn check_physical(physical: i64) -> Result<(), HlcError> {
+    if (0..=MAX_ENCODED_TIMESTAMP).contains(&physical) {
+        Ok(())
+    } else {
+        Err(HlcError::InvalidPhysicalClock)
+    }
+}
+
+fn check_drift(remote_wall: i64, physical: i64, max_drift_ms: i64) -> Result<(), HlcError> {
+    if max_drift_ms < 0 {
+        return Err(HlcError::InvalidMaxDrift);
+    }
+    if remote_wall > physical.saturating_add(max_drift_ms) {
+        return Err(HlcError::RemoteTooFarAhead);
+    }
+    Ok(())
+}
+
+fn roll_over(wall: i64, counter: i64) -> Result<HlcStep, HlcError> {
+    let step = if counter >= COUNTERS_PER_MILLISECOND {
+        (wall.checked_add(1).ok_or(HlcError::ExceedsSafeInteger)?, 0)
+    } else {
+        (wall, counter)
+    };
+    encode(step.0, step.1)?;
+    Ok(step)
 }
 
 /// Encodes physical milliseconds and a logical counter into one timestamp.
@@ -104,6 +209,7 @@ pub struct HybridLogicalClock<C> {
     device_id: String,
     physical_clock: C,
     state: HybridLogicalClockState,
+    max_drift_ms: i64,
 }
 
 impl<C> HybridLogicalClock<C>
@@ -112,16 +218,21 @@ where
 {
     /// Opens a clock from optional persisted state.
     ///
-    /// State with invalid components, an unencodable value, or a different
-    /// `device_id` is treated as corrupt and replaced with zero state. The
-    /// caller owns loading and saving the snapshot.
+    /// Without persisted state the clock starts at wall time zero. State with
+    /// invalid components, an unencodable value, or a different `device_id`
+    /// is corrupt; the clock then starts at the current physical time instead
+    /// of zero, so it does not reissue timestamps below those it handed out
+    /// before. The caller owns loading and saving the snapshot. The drift
+    /// bound defaults to [`DEFAULT_MAX_DRIFT_MS`].
     ///
     /// # Errors
     ///
-    /// Returns [`HlcError::EmptyDeviceId`] when `device_id` is blank.
+    /// Returns [`HlcError::EmptyDeviceId`] when `device_id` is blank and
+    /// [`HlcError::InvalidPhysicalClock`] when corrupt state meets an invalid
+    /// physical reading.
     pub fn open(
         device_id: impl Into<String>,
-        physical_clock: C,
+        mut physical_clock: C,
         persisted: Option<HybridLogicalClockState>,
     ) -> Result<Self, HlcError> {
         let device_id = device_id.into();
@@ -129,25 +240,52 @@ where
             return Err(HlcError::EmptyDeviceId);
         }
 
-        let state = match persisted {
+        let wall_time_ms = match persisted {
             Some(state)
                 if state.device_id == device_id
                     && encode(state.wall_time_ms, state.counter).is_ok() =>
             {
-                state
+                return Ok(Self::with_state(device_id, physical_clock, state));
             }
-            _ => HybridLogicalClockState {
-                wall_time_ms: 0,
-                counter: 0,
-                device_id: device_id.clone(),
-            },
+            Some(_) => {
+                let physical = physical_clock();
+                check_physical(physical)?;
+                physical
+            }
+            None => 0,
         };
+        let state = HybridLogicalClockState {
+            wall_time_ms,
+            counter: 0,
+            device_id: device_id.clone(),
+        };
+        Ok(Self::with_state(device_id, physical_clock, state))
+    }
 
-        Ok(Self {
+    /// Sets how far a remote wall time may lead the physical clock in [`Self::observe`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`HlcError::InvalidMaxDrift`] for a negative bound.
+    pub fn with_max_drift_ms(mut self, max_drift_ms: i64) -> Result<Self, HlcError> {
+        if max_drift_ms < 0 {
+            return Err(HlcError::InvalidMaxDrift);
+        }
+        self.max_drift_ms = max_drift_ms;
+        Ok(self)
+    }
+
+    const fn with_state(
+        device_id: String,
+        physical_clock: C,
+        state: HybridLogicalClockState,
+    ) -> Self {
+        Self {
             device_id,
             physical_clock,
             state,
-        })
+            max_drift_ms: DEFAULT_MAX_DRIFT_MS,
+        }
     }
 
     /// Returns the next local timestamp and advances the clock.
@@ -158,14 +296,9 @@ where
     /// Returns [`HlcError::ExceedsSafeInteger`] when no later safe timestamp is
     /// available. State remains unchanged on error.
     pub fn now(&mut self) -> Result<i64, HlcError> {
-        let physical = self.read_physical_time()?;
-        let wall_time_ms = physical.max(self.state.wall_time_ms);
-        let counter = if physical > self.state.wall_time_ms {
-            0
-        } else {
-            self.state.counter + 1
-        };
-        self.advance(wall_time_ms, counter)
+        let physical = (self.physical_clock)();
+        let step = now_step(self.step(), physical)?;
+        self.commit(step)
     }
 
     /// Observes a remote timestamp and returns a timestamp ordered after it.
@@ -173,26 +306,14 @@ where
     /// # Errors
     ///
     /// Returns [`HlcError::InvalidTimestamp`] for invalid remote input,
-    /// [`HlcError::InvalidPhysicalClock`] for an invalid local clock reading,
-    /// or [`HlcError::ExceedsSafeInteger`] when no later timestamp is available.
-    /// State remains unchanged on error.
+    /// [`HlcError::RemoteTooFarAhead`] when the remote leads the physical clock
+    /// by more than the drift bound, [`HlcError::InvalidPhysicalClock`] for an
+    /// invalid local clock reading, or [`HlcError::ExceedsSafeInteger`] when
+    /// no later timestamp is available. State remains unchanged on error.
     pub fn observe(&mut self, remote_timestamp: i64) -> Result<i64, HlcError> {
-        let (remote_wall_time_ms, remote_counter) = decode(remote_timestamp)?;
-        let physical = self.read_physical_time()?;
-        let wall_time_ms = physical
-            .max(self.state.wall_time_ms)
-            .max(remote_wall_time_ms);
-        let counter =
-            if wall_time_ms == self.state.wall_time_ms && wall_time_ms == remote_wall_time_ms {
-                self.state.counter.max(remote_counter) + 1
-            } else if wall_time_ms == self.state.wall_time_ms {
-                self.state.counter + 1
-            } else if wall_time_ms == remote_wall_time_ms {
-                remote_counter + 1
-            } else {
-                0
-            };
-        self.advance(wall_time_ms, counter)
+        let physical = (self.physical_clock)();
+        let step = observe_step(self.step(), physical, remote_timestamp, self.max_drift_ms)?;
+        self.commit(step)
     }
 
     /// Returns an owned snapshot suitable for caller-controlled persistence.
@@ -201,22 +322,11 @@ where
         self.state.clone()
     }
 
-    fn read_physical_time(&mut self) -> Result<i64, HlcError> {
-        let value = (self.physical_clock)();
-        if !(0..=MAX_ENCODED_TIMESTAMP).contains(&value) {
-            return Err(HlcError::InvalidPhysicalClock);
-        }
-        Ok(value)
+    const fn step(&self) -> HlcStep {
+        (self.state.wall_time_ms, self.state.counter)
     }
 
-    fn advance(&mut self, mut wall_time_ms: i64, mut counter: i64) -> Result<i64, HlcError> {
-        if counter >= COUNTERS_PER_MILLISECOND {
-            wall_time_ms = wall_time_ms
-                .checked_add(1)
-                .ok_or(HlcError::ExceedsSafeInteger)?;
-            counter = 0;
-        }
-
+    fn commit(&mut self, (wall_time_ms, counter): HlcStep) -> Result<i64, HlcError> {
         let timestamp = encode(wall_time_ms, counter)?;
         self.state = HybridLogicalClockState {
             wall_time_ms,
@@ -224,6 +334,72 @@ where
             device_id: self.device_id.clone(),
         };
         Ok(timestamp)
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    fn any_valid_step() -> HlcStep {
+        let step: HlcStep = (kani::any(), kani::any());
+        kani::assume(encode(step.0, step.1).is_ok());
+        step
+    }
+
+    fn encoded(step: HlcStep) -> i64 {
+        encode(step.0, step.1).unwrap_or(0)
+    }
+
+    /// K-09 for `now_step`: Ok advances the state; the wall time is at most
+    /// `max(physical, state.wall) + 1` (the +1 is counter rollover); Err never
+    /// changes a value (the function is pure) and nothing panics.
+    /// Bounds: any `i64` inputs, no loops, no unwind bound needed.
+    #[kani::proof]
+    fn now_step_advances_within_bound() {
+        let state = any_valid_step();
+        let physical: i64 = kani::any();
+        if let Ok(next) = now_step(state, physical) {
+            assert!(encoded(next) > encoded(state));
+            assert!(next.0 <= physical.max(state.0) + 1);
+        }
+    }
+
+    /// K-09 for `observe_step`: Ok is above both the state and the remote,
+    /// with wall time at most `max(physical + max_drift, state.wall) + 1`
+    /// (the +1 is counter rollover). A remote beyond the drift bound is
+    /// rejected. No panic. Bounds: any `i64` inputs, no loops.
+    #[kani::proof]
+    fn observe_step_respects_drift_bound() {
+        let state = any_valid_step();
+        let physical: i64 = kani::any();
+        let remote: i64 = kani::any();
+        let max_drift: i64 = kani::any();
+        let result = observe_step(state, physical, remote, max_drift);
+        if let Ok((remote_wall, _)) = decode(remote)
+            && max_drift >= 0
+            && check_physical(physical).is_ok()
+            && remote_wall > physical.saturating_add(max_drift)
+        {
+            assert!(result == Err(HlcError::RemoteTooFarAhead));
+        }
+        if let Ok(next) = result {
+            assert!(encoded(next) > encoded(state));
+            assert!(encoded(next) > remote);
+            assert!(next.0 <= physical.saturating_add(max_drift).max(state.0) + 1);
+        }
+    }
+
+    /// K-10: encode and decode round trip over all valid components, and
+    /// `compare` orders valid timestamps exactly like their components.
+    /// Bounds: any `i64` inputs, no loops.
+    #[kani::proof]
+    fn encode_round_trips_and_compare_is_lexicographic() {
+        let left = any_valid_step();
+        let right = any_valid_step();
+        let (left_encoded, right_encoded) = (encoded(left), encoded(right));
+        assert!(decode(left_encoded) == Ok(left));
+        assert!(compare(left_encoded, right_encoded) == Some(left.cmp(&right)));
     }
 }
 
@@ -326,7 +502,67 @@ mod tests {
         };
         let mut reset = HybridLogicalClock::open("device-a", || 10, Some(corrupt))
             .expect("corrupt state should reset");
-        assert_eq!(reset.now(), Ok(10_001));
+        assert_eq!(
+            reset.snapshot().wall_time_ms,
+            10,
+            "corrupt state starts at physical time, not zero"
+        );
+        assert_eq!(reset.now(), Ok(10_002));
+    }
+
+    #[test]
+    fn observe_rejects_remotes_beyond_the_drift_bound_without_changing_state() {
+        let mut clock = HybridLogicalClock::open("device-a", || 1_000, None)
+            .expect("clock")
+            .with_max_drift_ms(500)
+            .expect("drift");
+        let before = clock.snapshot();
+        let too_far = encode(1_501, 0).expect("encode");
+        assert_eq!(clock.observe(too_far), Err(HlcError::RemoteTooFarAhead));
+        assert_eq!(clock.snapshot(), before);
+        assert_eq!(
+            clock.observe(encode(1_500, 3).expect("encode")),
+            Ok(1_500_005)
+        );
+        assert_eq!(
+            clock.observe(MAX_ENCODED_TIMESTAMP),
+            Err(HlcError::RemoteTooFarAhead)
+        );
+        assert!(
+            clock.now().is_ok(),
+            "a far-future remote must not wedge the clock"
+        );
+    }
+
+    #[test]
+    fn default_drift_bound_is_one_day_and_negative_bounds_are_rejected() {
+        let day = super::DEFAULT_MAX_DRIFT_MS;
+        let mut clock = HybridLogicalClock::open("device-a", || 0, None).expect("clock");
+        assert!(clock.observe(encode(day, 0).expect("encode")).is_ok());
+        assert_eq!(
+            clock.observe(encode(day + 1, 0).expect("encode")),
+            Err(HlcError::RemoteTooFarAhead)
+        );
+        assert!(matches!(
+            HybridLogicalClock::open("device-a", || 0, None)
+                .expect("clock")
+                .with_max_drift_ms(-1),
+            Err(HlcError::InvalidMaxDrift)
+        ));
+    }
+
+    #[test]
+    fn server_validates_client_timestamps_against_its_clock() {
+        let ok = encode(2_000, 0).expect("encode");
+        assert_eq!(super::validate_client_timestamp(ok, 1_000, 1_000), Ok(()));
+        assert_eq!(
+            super::validate_client_timestamp(ok, 999, 1_000),
+            Err(HlcError::RemoteTooFarAhead)
+        );
+        assert_eq!(
+            super::validate_client_timestamp(0, 1_000, 1_000),
+            Err(HlcError::InvalidTimestamp)
+        );
     }
 
     #[test]
