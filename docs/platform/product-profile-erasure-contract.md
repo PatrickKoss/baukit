@@ -507,7 +507,7 @@ with an `ApiError` whose code is `profile_erased`. The response body remains
 available to the handler. Handler failures do not replace the API error.
 
 Authenticated templates call `clearSession({ reason: 'profile_erased' })`.
-The session-expired listener calls `ScopedPersistenceLifecycle.handleProfileErased()`
+The session-expired listener calls `ScopedPersistenceLifecycle.handleProfileErased(subject)`
 to block local access, erase the last selected partition, and remove its registry
 entry. The lifecycle keeps that context after token clearing closes the store.
 Web shows its signed-out page; mobile's auth guard

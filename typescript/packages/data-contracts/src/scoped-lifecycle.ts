@@ -53,7 +53,7 @@ export interface ScopedPersistenceLifecycleOptions<
   /** Overrides registry resolution while retaining lifecycle transition guarantees. */
   readonly resolveStore?: ScopedPersistenceResolver;
   readonly open: (context: OpenScopedPersistenceContext) => Promise<TPersistence>;
-  /** Deletes a closed partition. Required by eraseActivePartition and handleProfileErased. */
+  /** Deletes a closed partition. Required by eraseActivePartition and handleProfileErased(subject). */
   readonly erase?: (context: OpenScopedPersistenceContext) => Promise<void>;
   readonly resetUserScopedState: () => MaybePromise<void>;
 }
@@ -127,17 +127,22 @@ export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersi
     });
   }
 
-  /** Erases the last selected partition, even after session cleanup closed it. */
-  public handleProfileErased(): Promise<void> {
+  /**
+   * Erases `subject`'s last selected partition, even after session cleanup closed it.
+   * A no-op while another subject is selected, so a stale signal cannot erase it.
+   */
+  public handleProfileErased(subject: string): Promise<void> {
+    requiredIdentityPart(subject, 'Erased subject');
+    if (this.anotherSubjectSelected(subject)) return Promise.resolve();
     const erase = this.options.erase;
     const revision = ++this.revision;
     let cleanup: ProfileErasureCleanup = 'pending';
     let error = new Error('The server profile was erased; sign in again to continue.');
     this.lifecycleState = { status: 'blocked', reason: 'profile-erased', cleanup, error };
     return this.enqueue(async () => {
-      const partition = this.lastSelectedPartition;
-      if (partition !== undefined)
-        this.erasedProfile = { subject: partition.subject, cleanup, error };
+      const partition =
+        this.lastSelectedPartition?.subject === subject ? this.lastSelectedPartition : undefined;
+      if (partition !== undefined) this.erasedProfile = { subject, cleanup, error };
       try {
         if (partition !== undefined) await this.closeAndReset();
         if (erase === undefined) {
@@ -161,28 +166,43 @@ export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersi
     });
   }
 
-  /** Terminal auth expiry closes the current partition and remains blocked. */
-  public handleSessionExpired(): Promise<void> {
-    const revision = ++this.revision;
+  /** Terminal auth expiry for `subject` closes its partition and remains blocked. */
+  public handleSessionExpired(subject: string): Promise<void> {
     const error = new Error('The authenticated session expired; sign in again to continue.');
-    this.lifecycleState = { status: 'blocked', reason: 'session-expired', error };
-    return this.enqueue(async () => {
-      await this.closeAndReset();
-      if (revision === this.revision) {
-        this.lifecycleState = { status: 'blocked', reason: 'session-expired', error };
-      }
-    });
+    return this.closeAndBlock(subject, { status: 'blocked', reason: 'session-expired', error });
   }
 
-  /** Blocks an already-open partition after a server subject recheck fails. */
-  public blockIdentityMismatch(error: PersistenceIdentityMismatchError): Promise<void> {
+  /** Blocks `subject`'s open partition after a server subject recheck fails. */
+  public blockIdentityMismatch(
+    subject: string,
+    error: PersistenceIdentityMismatchError,
+  ): Promise<void> {
+    return this.closeAndBlock(subject, { status: 'blocked', reason: 'identity-mismatch', error });
+  }
+
+  /** Increments on every transition; a value captured before async work fences it. */
+  public get transitionRevision(): number {
+    return this.revision;
+  }
+
+  private anotherSubjectSelected(subject: string): boolean {
+    const state = this.lifecycleState;
+    if (state.status === 'ready') return state.partition.subject !== subject;
+    if (state.status === 'initializing') return state.subject !== subject;
+    return false;
+  }
+
+  private closeAndBlock(
+    subject: string,
+    blocked: ScopedPersistenceLifecycleState<TPersistence>,
+  ): Promise<void> {
+    requiredIdentityPart(subject, 'Signalled subject');
+    if (this.anotherSubjectSelected(subject)) return Promise.resolve();
     const revision = ++this.revision;
-    this.lifecycleState = { status: 'blocked', reason: 'identity-mismatch', error };
+    this.lifecycleState = blocked;
     return this.enqueue(async () => {
       await this.closeAndReset();
-      if (revision === this.revision) {
-        this.lifecycleState = { status: 'blocked', reason: 'identity-mismatch', error };
-      }
+      if (revision === this.revision) this.lifecycleState = blocked;
     });
   }
 

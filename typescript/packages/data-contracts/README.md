@@ -421,9 +421,9 @@ including across namespaces.
 
 `ScopedPersistenceLifecycle` immediately hides stale handles, closes before it
 opens another subject, resets product-provided user-scoped memory, and publishes
-only an open/migrated/hydrated partition. Call `handleSessionExpired()` for a
+only an open/migrated/hydrated partition. Call `handleSessionExpired(subject)` for a
 terminal authentication expiry; it closes and blocks without inventing a
-subject switch. For the auth reason `profile_erased`, call `handleProfileErased()`
+subject switch. For the auth reason `profile_erased`, call `handleProfileErased(subject)`
 with a configured `erase` hook. It closes and deletes the last selected partition,
 removes its registry entry, and ends blocked with reason `profile-erased`. The
 `cleanup` field is `pending` while the transition is queued or running, `complete`
@@ -431,7 +431,7 @@ after erasure or when no partition needs erasing, and `failed` if closing or
 erasing fails or no `erase` hook is configured. The `error` is a sign-in reminder
 unless cleanup fails, when it holds the cleanup error. Show a cleanup-failure
 alert only when `cleanup === 'failed'`. The lifecycle retains the partition
-context after `clear()` or `handleSessionExpired()`, so token clearing can happen
+context after `clear()` or `handleSessionExpired(subject)`, so token clearing can happen
 before the erasure event. Cleanup failures retain the registry entry. Selecting
 the erased subject again preserves its cleanup outcome and error. Concurrent
 selection cannot reopen the erased profile; a new profile ID opens a fresh

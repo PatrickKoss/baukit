@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactElement,
 } from 'react';
@@ -76,7 +77,10 @@ export type LocalDataState = ScopedPersistenceLifecycleState<ExpoSqliteStore<Ite
 export interface AuthenticatedLocalData {
   readonly state: LocalDataState;
   readonly erase: (profileId: string) => Promise<void>;
-  readonly blockIdentityMismatch: (error: PersistenceIdentityMismatchError) => Promise<void>;
+  readonly blockIdentityMismatch: (
+    subject: string,
+    error: PersistenceIdentityMismatchError,
+  ) => Promise<void>;
 }
 
 const AuthenticatedLocalDataContext = createContext<AuthenticatedLocalData | undefined>(undefined);
@@ -112,16 +116,16 @@ function useAuthenticatedLocalDataState(
 ): AuthenticatedLocalData {
   const [state, setState] = useState<LocalDataState>(localDataLifecycle.state);
   const selectedProfileId = sessionExpiredReason === undefined ? profileId : undefined;
+  const lastProfileId = useRef<string | undefined>(undefined);
+  if (profileId !== undefined) lastProfileId.current = profileId;
 
   useEffect(() => {
     let active = true;
-    const transition = sessionExpiredReason !== undefined
-      ? sessionExpiredReason === 'profile_erased'
-        ? localDataLifecycle.handleProfileErased()
-        : localDataLifecycle.handleSessionExpired()
-      : selectedProfileId === undefined
-        ? localDataLifecycle.clear()
-        : localDataLifecycle.selectSubject(selectedProfileId);
+    const transition = sessionTransition(
+      sessionExpiredReason,
+      selectedProfileId,
+      lastProfileId.current,
+    );
     const updateState = () => {
       if (active) setState(localDataLifecycle.state);
     };
@@ -133,8 +137,8 @@ function useAuthenticatedLocalDataState(
   }, [selectedProfileId, sessionExpiredReason]);
 
   const blockIdentityMismatch = useCallback(
-    async (error: PersistenceIdentityMismatchError): Promise<void> => {
-      await localDataLifecycle.blockIdentityMismatch(error);
+    async (subject: string, error: PersistenceIdentityMismatchError): Promise<void> => {
+      await localDataLifecycle.blockIdentityMismatch(subject, error);
       setState(localDataLifecycle.state);
     },
     [],
@@ -154,4 +158,20 @@ function useAuthenticatedLocalDataState(
     (state.partition.subject !== profileId || sessionExpiredReason !== undefined)
       ? { status: 'signed-out' } : state;
   return { state: visibleState, erase, blockIdentityMismatch };
+}
+
+function sessionTransition(
+  reason: SessionExpiredReason | undefined,
+  profileId: string | undefined,
+  expiredProfileId: string | undefined,
+): Promise<unknown> {
+  if (reason === undefined) {
+    return profileId === undefined
+      ? localDataLifecycle.clear()
+      : localDataLifecycle.selectSubject(profileId);
+  }
+  if (expiredProfileId === undefined) return localDataLifecycle.clear();
+  return reason === 'profile_erased'
+    ? localDataLifecycle.handleProfileErased(expiredProfileId)
+    : localDataLifecycle.handleSessionExpired(expiredProfileId);
 }

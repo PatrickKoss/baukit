@@ -85,7 +85,7 @@ function useAuthenticatedItems(
       .catch(async (cause: unknown) => {
         if (isPersistenceIdentityMismatchError(cause)) {
           try {
-            await blockIdentityMismatch(cause);
+            await blockIdentityMismatch(partition.subject, cause);
           } catch {
             if (active) setError('Could not safely close local account data.');
             return;

@@ -151,7 +151,7 @@ function useSyncAdoption(
       },
     }).catch((cause: unknown) => {
       if (isPersistenceIdentityMismatchError(cause)) {
-        void blockIdentityMismatch(cause).catch(() => {
+        void blockIdentityMismatch(partition.subject, cause).catch(() => {
           setAuthError('Could not safely close local account data.');
         });
       }

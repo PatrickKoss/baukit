@@ -280,7 +280,7 @@ describe('authenticated local data', () => {
     const { result } = await renderReady('subject-mismatch');
     const error = new PersistenceIdentityMismatchError();
 
-    await act(() => result.current.blockIdentityMismatch(error));
+    await act(() => result.current.blockIdentityMismatch('subject-mismatch', error));
 
     expect(result.current.state).toEqual({ status: 'blocked', reason: 'identity-mismatch', error });
     expect(mockStoreClose).toHaveBeenCalledTimes(1);

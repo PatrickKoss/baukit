@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import {
   PersistenceIdentityMismatchError,
@@ -36,6 +36,7 @@ export interface AuthenticatedLocalData {
   readonly clear: () => Promise<void>;
   readonly erase: (profileId: string) => Promise<void>;
   readonly blockIdentityMismatch: (
+    subject: string,
     error: PersistenceIdentityMismatchError,
   ) => Promise<void>;
 }
@@ -64,10 +65,17 @@ export function useAuthenticatedLocalData(
   );
   const [state, setState] = useState<LocalDataState>(lifecycle.state);
   const selectedProfileId = sessionExpiredReason === undefined ? profileId : undefined;
+  const lastProfileId = useRef<string | undefined>(undefined);
+  if (profileId !== undefined) lastProfileId.current = profileId;
 
   useEffect(() => {
     let active = true;
-    const transition = sessionTransition(lifecycle, sessionExpiredReason, selectedProfileId);
+    const transition = sessionTransition(
+      lifecycle,
+      sessionExpiredReason,
+      selectedProfileId,
+      lastProfileId.current,
+    );
     const updateState = () => {
       if (active) setState(lifecycle.state);
     };
@@ -94,8 +102,8 @@ export function useAuthenticatedLocalData(
   }, [lifecycle]);
 
   const blockIdentityMismatch = useCallback(
-    async (error: PersistenceIdentityMismatchError): Promise<void> => {
-      await lifecycle.blockIdentityMismatch(error);
+    async (subject: string, error: PersistenceIdentityMismatchError): Promise<void> => {
+      await lifecycle.blockIdentityMismatch(subject, error);
       setState(lifecycle.state);
     },
     [lifecycle],
@@ -108,15 +116,13 @@ function sessionTransition(
   lifecycle: ScopedPersistenceLifecycle<CachePartition>,
   reason: SessionExpiredReason | undefined,
   profileId: string | undefined,
+  expiredProfileId: string | undefined,
 ): Promise<unknown> {
-  switch (reason) {
-    case 'profile_erased':
-      return lifecycle.handleProfileErased();
-    case 'refresh_rejected':
-      return lifecycle.handleSessionExpired();
-    case 'signed_out':
-      return lifecycle.clear();
-    case undefined:
-      return profileId === undefined ? lifecycle.clear() : lifecycle.selectSubject(profileId);
+  if (reason === undefined) {
+    return profileId === undefined ? lifecycle.clear() : lifecycle.selectSubject(profileId);
   }
+  if (reason === 'signed_out' || expiredProfileId === undefined) return lifecycle.clear();
+  return reason === 'profile_erased'
+    ? lifecycle.handleProfileErased(expiredProfileId)
+    : lifecycle.handleSessionExpired(expiredProfileId);
 }
