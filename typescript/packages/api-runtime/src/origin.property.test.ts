@@ -15,9 +15,9 @@ const input = fc.oneof(
   fc.tuple(host, path).map(([name, value]) => `//${name}/${value}`),
   fc.tuple(host, path).map(([name, value]) => `/\\${name}/${value}`),
   fc.tuple(host, path).map(([name, value]) => `\\\\${name}/${value}`),
-  fc.tuple(fc.constantFrom('https', 'http'), host, path).map(
-    ([scheme, name, value]) => `${scheme}://${name}/${value}`,
-  ),
+  fc
+    .tuple(fc.constantFrom('https', 'http'), host, path)
+    .map(([scheme, name, value]) => `${scheme}://${name}/${value}`),
 );
 const requestInput = fc.oneof(
   input,
@@ -34,7 +34,9 @@ function underBase(url: string): boolean {
 
 function erasedResponse(): Response {
   return new Response(
-    JSON.stringify({ error: { code: 'profile_erased', message: 'x', requestId: 'r', details: {} } }),
+    JSON.stringify({
+      error: { code: 'profile_erased', message: 'x', requestId: 'r', details: {} },
+    }),
     { status: 401, headers: { 'content-type': 'application/json' } },
   );
 }
@@ -48,7 +50,7 @@ describe('C-01 api-runtime origin property', () => {
           baseUrl,
           environment: 'test',
           fetch: transport.fetch,
-          tokenProvider: () => 't',
+          tokenProvider: () => Promise.resolve('t'),
         });
         const outcome = await fetch(value).catch((cause: unknown) => cause);
         if (transport.requests.length === 0) {
@@ -78,7 +80,7 @@ describe('C-01 api-runtime origin property', () => {
           baseUrl,
           environment: 'test',
           fetch: transport.fetch,
-          tokenProvider: () => 't',
+          tokenProvider: () => Promise.resolve('t'),
           onProfileErased,
           onUnauthorized,
         });

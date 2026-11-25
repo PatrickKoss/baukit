@@ -128,13 +128,16 @@ class SessionExpired implements fc.AsyncCommand<Model, Real> {
 }
 
 const subject = fc.constantFrom(...subjects);
-const commands = fc.commands<Model, Real>(
+type LifecycleCommand = fc.AsyncCommand<Model, Real>;
+const command = (create: () => LifecycleCommand): fc.Arbitrary<LifecycleCommand> =>
+  fc.constant(null).map(create);
+const commands = fc.commands<Model, Real, false>(
   [
-    subject.map((value) => new Select(value)),
-    fc.constant(new Clear()),
-    fc.constant(new EraseActive()),
-    subject.map((value) => new ProfileErased(value)),
-    subject.map((value) => new SessionExpired(value)),
+    subject.map((value): LifecycleCommand => new Select(value)),
+    command(() => new Clear()),
+    command(() => new EraseActive()),
+    subject.map((value): LifecycleCommand => new ProfileErased(value)),
+    subject.map((value): LifecycleCommand => new SessionExpired(value)),
   ],
   { maxCommands: 12 },
 );

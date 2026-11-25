@@ -5,7 +5,9 @@ import { ApiError, MockFetch, createApiFetch } from './index.js';
 const baseUrl = 'https://api.example.test/v1';
 const erased = () =>
   new Response(
-    JSON.stringify({ error: { code: 'profile_erased', message: 'gone', requestId: 'r', details: {} } }),
+    JSON.stringify({
+      error: { code: 'profile_erased', message: 'gone', requestId: 'r', details: {} },
+    }),
     { status: 401, headers: { 'content-type': 'application/json' } },
   );
 
@@ -17,7 +19,7 @@ function setup(sessionSubject?: () => string | undefined) {
     baseUrl,
     environment: 'test',
     fetch: transport.fetch,
-    tokenProvider: () => 'secret',
+    tokenProvider: () => Promise.resolve('secret'),
     onProfileErased,
     onUnauthorized,
     ...(sessionSubject === undefined ? {} : { sessionSubject }),

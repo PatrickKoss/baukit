@@ -9,30 +9,41 @@ import {
   type ScopedPersistenceRegistryStore,
 } from './identity.js';
 
-const hex = (value: string): string =>
-  [...value].reduce((hash, char) => (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0, 7)
-    .toString(16)
-    .padStart(64, '0');
+const hex = (value: string): string => {
+  let hash = 7;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(16).padStart(64, '0');
+};
 const digest = (value: string): Promise<string> => Promise.resolve(hex(value));
-const identityPart = fc.oneof(
-  fc.string({ unit: 'grapheme', minLength: 1, maxLength: 6 }),
-  fc.constantFrom('a:b', ':', 'a', 'a:', ':b', '\u{1F600}', 'x\u{10FFFF}'),
-).filter((value) => value.trim().length > 0);
+const identityPart = fc
+  .oneof(
+    fc.string({ unit: 'grapheme', minLength: 1, maxLength: 6 }),
+    fc.constantFrom('a:b', ':', 'a', 'a:', ':b', '\u{1F600}', 'x\u{10FFFF}'),
+  )
+  .filter((value) => value.trim().length > 0);
 
 describe('C-03 registry properties', () => {
   it('canonicalIdentity is injective, including ":" and astral characters', async () => {
     await fc.assert(
-      fc.asyncProperty(identityPart, identityPart, identityPart, identityPart, async (n1, s1, n2, s2) => {
-        fc.pre(n1 !== n2 || s1 !== s2);
-        const seen: string[] = [];
-        const capture = (value: string): Promise<string> => {
-          seen.push(value);
-          return digest(value);
-        };
-        await deriveScopedStoreName(n1, s1, capture);
-        await deriveScopedStoreName(n2, s2, capture);
-        expect(seen[0]).not.toBe(seen[1]);
-      }),
+      fc.asyncProperty(
+        identityPart,
+        identityPart,
+        identityPart,
+        identityPart,
+        async (n1, s1, n2, s2) => {
+          fc.pre(n1 !== n2 || s1 !== s2);
+          const seen: string[] = [];
+          const capture = (value: string): Promise<string> => {
+            seen.push(value);
+            return digest(value);
+          };
+          await deriveScopedStoreName(n1, s1, capture);
+          await deriveScopedStoreName(n2, s2, capture);
+          expect(seen[0]).not.toBe(seen[1]);
+        },
+      ),
     );
   });
 
@@ -65,7 +76,7 @@ describe('C-03 registry properties', () => {
           maxLength: 10,
         }),
         async (scheduler, operations) => {
-          let document: string | null = null;
+          let document = null as string | null;
           const adapter = (): ScopedPersistenceRegistryStore => ({
             read: () => scheduler.schedule(Promise.resolve(document)),
             write: async (next) => {

@@ -49,25 +49,32 @@ const textWithTriggers = fc.oneof(
 describe('C-05 import, export and erasure', () => {
   it('encodeCsv round-trips and never leaves a trigger first', () => {
     fc.assert(
-      fc.property(fc.array(fc.array(textWithTriggers, { minLength: 2, maxLength: 4 }), { maxLength: 5 }), (rows) => {
-        const parsed = parseCsv(encodeCsv(rows));
-        expect(parsed).toHaveLength(rows.length);
-        parsed.forEach((record, rowIndex) => {
-          record.forEach((cell, columnIndex) => {
-            const original = rows[rowIndex]?.[columnIndex] ?? '';
-            expect(cell === original || cell === `'${original}`).toBe(true);
-            const trimmed = cell.replace(/^[ \t\r\n]*/u, '');
-            expect(TRIGGERS.includes(cell.charAt(0)) || TRIGGERS.includes(trimmed.charAt(0))).toBe(false);
+      fc.property(
+        fc.array(fc.array(textWithTriggers, { minLength: 2, maxLength: 4 }), { maxLength: 5 }),
+        (rows) => {
+          const parsed = parseCsv(encodeCsv(rows));
+          expect(parsed).toHaveLength(rows.length);
+          parsed.forEach((record, rowIndex) => {
+            record.forEach((cell, columnIndex) => {
+              const original = rows[rowIndex]?.[columnIndex] ?? '';
+              expect(cell === original || cell === `'${original}`).toBe(true);
+              const trimmed = cell.replace(/^[ \t\r\n]*/u, '');
+              expect(
+                TRIGGERS.includes(cell.charAt(0)) || TRIGGERS.includes(trimmed.charAt(0)),
+              ).toBe(false);
+            });
           });
-        });
-      }),
+        },
+      ),
     );
   });
 
   it('prepareImportEnvelope returns a bounded preview or ImportEnvelopeError', async () => {
     await fc.assert(
       fc.asyncProperty(
-        fc.array(fc.dictionary(fc.constantFrom('title', 'body', 'owner_id'), fc.jsonValue()), { maxLength: 6 }),
+        fc.array(fc.dictionary(fc.constantFrom('title', 'body', 'owner_id'), fc.jsonValue()), {
+          maxLength: 6,
+        }),
         fc.nat(4),
         async (rows, maxRows) => {
           try {
@@ -93,33 +100,39 @@ describe('C-05 import, export and erasure', () => {
 
   it('a write failing at step k leaves committed state unchanged', async () => {
     await fc.assert(
-      fc.asyncProperty(fc.array(fc.string(), { minLength: 1, maxLength: 6 }), fc.nat(6), async (ids, failAt) => {
-        let committed = new Map<string, string>([['existing', 'kept']]);
-        const before = new Map(committed);
-        const transaction = {
-          async withTransaction<T>(operation: (tx: Map<string, string>) => Promise<T>): Promise<T> {
-            const working = new Map(committed);
-            const result = await operation(working);
-            committed = working;
-            return result;
-          },
-        };
-        const outcome = commitImportEnvelope({
-          preview: { rowCount: ids.length, plan: ids },
-          transaction,
-          write: (tx, plan) => {
-            plan.forEach((id, step) => {
-              if (step === failAt) throw new Error('write failed');
-              tx.set(id, 'imported');
-            });
-            return Promise.resolve();
-          },
-        });
-        if (failAt < ids.length) {
-          await expect(outcome).rejects.toThrow('write failed');
-          expect(committed).toEqual(before);
-        } else await expect(outcome).resolves.toBeUndefined();
-      }),
+      fc.asyncProperty(
+        fc.array(fc.string(), { minLength: 1, maxLength: 6 }),
+        fc.nat(6),
+        async (ids, failAt) => {
+          let committed = new Map<string, string>([['existing', 'kept']]);
+          const before = new Map(committed);
+          const transaction = {
+            async withTransaction<T>(
+              operation: (tx: Map<string, string>) => Promise<T>,
+            ): Promise<T> {
+              const working = new Map(committed);
+              const result = await operation(working);
+              committed = working;
+              return result;
+            },
+          };
+          const outcome = commitImportEnvelope({
+            preview: { rowCount: ids.length, plan: ids },
+            transaction,
+            write: (tx, plan) => {
+              plan.forEach((id, step) => {
+                if (step === failAt) throw new Error('write failed');
+                tx.set(id, 'imported');
+              });
+              return Promise.resolve();
+            },
+          });
+          if (failAt < ids.length) {
+            await expect(outcome).rejects.toThrow('write failed');
+            expect(committed).toEqual(before);
+          } else await expect(outcome).resolves.toBeUndefined();
+        },
+      ),
     );
   });
 
@@ -132,7 +145,8 @@ describe('C-05 import, export and erasure', () => {
           const events: string[] = [];
           await eraseProductProfile({
             beforeServerErase: [
-              () => (server === 'hook-fail' ? Promise.reject(new Error('flush')) : Promise.resolve()),
+              () =>
+                server === 'hook-fail' ? Promise.reject(new Error('flush')) : Promise.resolve(),
             ],
             eraseServerProfile: () => {
               events.push('server');

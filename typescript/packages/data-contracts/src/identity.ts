@@ -39,9 +39,11 @@ export function withWebLock<TResult>(
   if (typeof locks !== 'object' || locks === null) return operation();
   const request = Reflect.get(locks, 'request') as unknown;
   if (typeof request !== 'function') return operation();
-  return (
-    request as (name: string, callback: () => Promise<TResult>) => Promise<TResult>
-  ).call(locks, name, operation);
+  return (request as (name: string, callback: () => Promise<TResult>) => Promise<TResult>).call(
+    locks,
+    name,
+    operation,
+  );
 }
 
 /** A digest seam for runtimes that install their Web Crypto implementation explicitly. */

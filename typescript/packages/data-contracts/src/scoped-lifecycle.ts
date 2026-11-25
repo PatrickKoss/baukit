@@ -289,7 +289,12 @@ export class ScopedPersistenceLifecycle<TPersistence extends ClosableScopedPersi
     const error = new Error('The server profile was erased; sign in again to continue.');
     this.erasedProfile = { subject: context.subject, cleanup: 'complete', error };
     if (revision === this.revision) {
-      this.lifecycleState = { status: 'blocked', reason: 'profile-erased', cleanup: 'complete', error };
+      this.lifecycleState = {
+        status: 'blocked',
+        reason: 'profile-erased',
+        cleanup: 'complete',
+        error,
+      };
     }
     return true;
   }

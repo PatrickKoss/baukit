@@ -22,7 +22,9 @@ class MapStorage implements WebStorageLike {
   }
 }
 
-const namespace = fc.string({ minLength: 1, maxLength: 4 }).filter((value) => !value.includes('\u001f'));
+const namespace = fc
+  .string({ minLength: 1, maxLength: 4 })
+  .filter((value) => !value.includes('\u001f'));
 const key = fc.string({ maxLength: 4 });
 const operation = fc.oneof(
   fc.tuple(fc.constant('set' as const), key, fc.integer()),
@@ -49,7 +51,9 @@ describe('C-04 web storage namespace isolation', () => {
           const first = new WebStorageKeyValueStore(storage, n1);
           const second = new WebStorageKeyValueStore(storage, n2);
           for (const [name, value] of seed) await second.set(name, value);
-          const keys = [...new Set([...seed.map(([name]) => name), ...operations.map(([, name]) => name)])];
+          const keys = [
+            ...new Set([...seed.map(([name]) => name), ...operations.map(([, name]) => name)]),
+          ];
           const before = await snapshot(second, keys);
           for (const [kind, name, value] of operations) {
             if (kind === 'set') await first.set(name, value);

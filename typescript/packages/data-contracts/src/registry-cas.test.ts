@@ -7,7 +7,9 @@ import {
 } from './identity.js';
 
 const digest = (value: string): Promise<string> =>
-  Promise.resolve(value.endsWith(':a') ? 'a'.repeat(64) : value.endsWith(':b') ? 'b'.repeat(64) : 'c'.repeat(64));
+  Promise.resolve(
+    value.endsWith(':a') ? 'a'.repeat(64) : value.endsWith(':b') ? 'b'.repeat(64) : 'c'.repeat(64),
+  );
 
 /** Two adapter objects over one document, each yielding between read and write like a tab. */
 class SharedDocument {
@@ -48,7 +50,11 @@ describe('registry updates across adapter instances', () => {
     const shared = new SharedDocument();
     await resolveScopedStore({ namespace: 'ns', subject: 'a', registry: shared.adapter(), digest });
     await Promise.all([
-      removeScopedPersistenceRegistryEntry({ namespace: 'ns', subject: 'a', registry: shared.adapter() }),
+      removeScopedPersistenceRegistryEntry({
+        namespace: 'ns',
+        subject: 'a',
+        registry: shared.adapter(),
+      }),
       resolveScopedStore({ namespace: 'ns', subject: 'c', registry: shared.adapter(), digest }),
     ]);
     expect(shared.value).not.toContain('"a"');

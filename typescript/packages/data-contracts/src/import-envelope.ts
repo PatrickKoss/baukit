@@ -236,8 +236,7 @@ function sanitizeFields(
       descriptor.value,
       maxStringBytes,
       { collection, rowIndex, field },
-      new WeakSet(),
-      0,
+      { ancestors: new WeakSet(), depth: 0 },
     );
     entries.push([field, descriptor.value]);
   }
@@ -248,9 +247,9 @@ function assertBoundedStrings(
   value: unknown,
   allowed: number,
   location: Required<Pick<ImportEnvelopeErrorDetails, 'collection' | 'rowIndex' | 'field'>>,
-  ancestors: WeakSet<object>,
-  depth: number,
+  walk: { readonly ancestors: WeakSet<object>; readonly depth: number },
 ): void {
+  const { ancestors, depth } = walk;
   if (typeof value === 'string') {
     const measured = utf8StringBytes(value);
     if (measured > allowed) {
@@ -279,7 +278,7 @@ function assertBoundedStrings(
       if (descriptor === undefined || !('value' in descriptor)) {
         throw new ImportEnvelopeError('invalid_row_value', location);
       }
-      assertBoundedStrings(descriptor.value, allowed, location, ancestors, depth + 1);
+      assertBoundedStrings(descriptor.value, allowed, location, { ancestors, depth: depth + 1 });
     }
   } finally {
     ancestors.delete(value);
