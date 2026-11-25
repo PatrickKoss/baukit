@@ -5,6 +5,7 @@ import {
   type ScopedPersistenceLifecycle,
   type ScopedPersistenceLifecycleState,
   type ScopedPersistenceRegistryStore,
+  withWebLock,
 } from '@baukit/data-contracts';
 import type { SessionExpiredReason } from '@baukit/auth-web';
 
@@ -27,6 +28,16 @@ class LocalStorageRegistry implements ScopedPersistenceRegistryStore {
   public write(serialized: string): Promise<void> {
     localStorage.setItem(REGISTRY_KEY, serialized);
     return Promise.resolve();
+  }
+
+  public compareAndSet(expected: string | null, next: string): Promise<boolean> {
+    if (localStorage.getItem(REGISTRY_KEY) !== expected) return Promise.resolve(false);
+    localStorage.setItem(REGISTRY_KEY, next);
+    return Promise.resolve(true);
+  }
+
+  public withLock<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
+    return withWebLock(REGISTRY_KEY, operation);
   }
 }
 
