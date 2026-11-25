@@ -1,4 +1,8 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    net::{IpAddr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -8,7 +12,8 @@ use axum::{
 };
 use baukit_http::ApiError;
 use baukit_ratelimit::{
-    Quota, QuotaError, RateLimitFailMode, RateLimitOptions, RateLimitStore, resolve_client_ip,
+    Quota, QuotaError, RateLimitFailMode, RateLimitOptions, RateLimitStore, ip_bucket,
+    resolve_client_ip,
 };
 
 use super::http::{SuiteHttpState, inbound_router, public_router, user_router};
@@ -16,6 +21,7 @@ use super::http::{SuiteHttpState, inbound_router, public_router, user_router};
 const DEFAULT_REQUESTS_PER_MINUTE: u64 = 60;
 const DEFAULT_BURST: u64 = 10;
 const MINUTE: Duration = Duration::from_secs(60);
+const DEFAULT_IPV6_PREFIX_LEN: u8 = 64;
 const KEY_SCOPE: &str = "suite-public:ip:";
 
 /// Per-client-IP bucket for the unauthenticated callback, exchange and revoke routes.
@@ -26,12 +32,15 @@ pub struct SuitePublicRateLimit {
     pub quota: Quota,
     /// Reverse-proxy hops trusted in `X-Forwarded-For`, including the socket peer.
     pub trusted_proxy_hops: usize,
+    /// IPv6 prefix length that shares one bucket.
+    pub ipv6_prefix_len: u8,
     pub fail_mode: RateLimitFailMode,
     pub key_prefix: String,
 }
 
 impl SuitePublicRateLimit {
-    /// 60 requests per minute and IP with a burst of 10, one trusted hop, fail closed.
+    /// 60 requests per minute and IP with a burst of 10, no trusted proxy hop, IPv6 per /64,
+    /// fail closed.
     ///
     /// # Errors
     ///
@@ -40,7 +49,8 @@ impl SuitePublicRateLimit {
     pub fn new() -> Result<Self, QuotaError> {
         Ok(Self {
             quota: Quota::new(DEFAULT_REQUESTS_PER_MINUTE, MINUTE, DEFAULT_BURST)?,
-            trusted_proxy_hops: 1,
+            trusted_proxy_hops: 0,
+            ipv6_prefix_len: DEFAULT_IPV6_PREFIX_LEN,
             fail_mode: RateLimitFailMode::Closed,
             key_prefix: "rl:".into(),
         })
@@ -54,6 +64,7 @@ impl SuitePublicRateLimit {
     pub fn from_options(options: &RateLimitOptions) -> Result<Self, QuotaError> {
         Ok(Self {
             trusted_proxy_hops: options.trusted_proxy_hops,
+            ipv6_prefix_len: options.ipv6_prefix_len,
             fail_mode: options.fail_mode,
             key_prefix: options.key_prefix().to_owned(),
             ..Self::new()?
@@ -65,6 +76,10 @@ impl SuitePublicRateLimit {
         Self { quota, ..self }
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("request has no socket peer address for the suite public rate limit")]
+struct MissingPeerAddress;
 
 #[derive(Clone)]
 struct LimitState {
@@ -92,13 +107,29 @@ async fn limit_public_request(
     request: Request,
     next: Next,
 ) -> Response {
-    let peer = request
+    let Some(ConnectInfo(peer)) = request
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
-        .map(|info| info.0);
-    let address = resolve_client_ip(request.headers(), peer, state.limit.trusted_proxy_hops)
-        .map_or_else(|| "unknown".to_owned(), |address| address.to_string());
-    let key = format!("{}{KEY_SCOPE}{address}", state.limit.key_prefix);
+        .copied()
+    else {
+        tracing::error!(
+            "suite public rate limit has no ConnectInfo<SocketAddr>; \
+             serve the router with into_make_service_with_connect_info"
+        );
+        return ApiError::internal(MissingPeerAddress).into_response();
+    };
+    let Some(address) = resolve_client_ip(
+        request.headers(),
+        Some(peer),
+        state.limit.trusted_proxy_hops,
+    ) else {
+        return ApiError::internal(MissingPeerAddress).into_response();
+    };
+    let bucket = match ip_bucket(address, state.limit.ipv6_prefix_len) {
+        IpAddr::V4(address) => address.to_string(),
+        IpAddr::V6(network) => format!("{network}/{}", state.limit.ipv6_prefix_len),
+    };
+    let key = format!("{}{KEY_SCOPE}{bucket}", state.limit.key_prefix);
     let retry_after = match state.store.check_and_consume(&key, state.limit.quota).await {
         Ok(decision) if decision.allowed => return next.run(request).await,
         Ok(decision) => decision.retry_after,
