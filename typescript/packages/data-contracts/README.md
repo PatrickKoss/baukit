@@ -30,7 +30,10 @@ clears the store. `clear()` still empties the whole store.
 
 `WebStorageKeyValueStore` is a `KeyValueStore` over `sessionStorage` or `localStorage`. It stores
 each value as JSON text under a namespace you pass, so `clear()` and `clearPrefix()` never remove
-other keys of the origin. An empty namespace throws a `RangeError`. Storage failures reject the
+other keys of the origin. The stored key is the namespace, U+001F and the key, so namespace
+`drafts:u1` never clears `drafts:u10`. An empty namespace or one containing U+001F throws a
+`RangeError`. Pass `{ migrateLegacyKeys: true }` to move keys written by versions before the
+delimiter on first use. Storage failures reject the
 returned promise, and a full storage rejects with `StorageError.code === "storage_quota_exceeded"`.
 
 ```ts
