@@ -62,10 +62,9 @@ impl DataSubjectHandler {
         let jobs = PostgresJobStore::new(self.store.pool.clone());
         let mut transaction = self.store.pool.begin().await?;
         if !jobs
-            .check_lease_in_transaction(
+            .check_lease_held_in_transaction(
                 &mut transaction,
-                job.id,
-                cancellation.worker_id(),
+                cancellation.lease(),
                 Timestamp::now(),
             )
             .await?
@@ -76,12 +75,7 @@ impl DataSubjectHandler {
             .advance_operation(&mut transaction, job, id, subjects)
             .await?;
         if !jobs
-            .complete_in_transaction(
-                &mut transaction,
-                job.id,
-                cancellation.worker_id(),
-                Timestamp::now(),
-            )
+            .complete_lease_in_transaction(&mut transaction, cancellation.lease(), Timestamp::now())
             .await?
         {
             return Err(DataSubjectError::Jobs);

@@ -4,7 +4,7 @@ use jiff_sqlx::ToSqlx;
 use std::{collections::HashSet, error::Error, path::PathBuf, sync::Arc, time::Duration};
 
 use baukit_jobs::{
-    FailureDisposition, FixedUtcInterval, JobFailureReason, JobStatus, JobStore as _,
+    FailureDisposition, FixedUtcInterval, JobFailureReason, JobLease, JobStatus, JobStore as _,
     MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE, NewJob, POSTGRES_MIGRATION_0002_SQL,
     POSTGRES_MIGRATION_0003_SQL, POSTGRES_MIGRATION_0004_SQL, POSTGRES_MIGRATION_SQL,
     PostgresJobStore, StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
@@ -142,7 +142,10 @@ async fn postgres_expired_lease_is_reclaimed_without_a_sweep_process() -> Result
 
     assert!(
         store
-            .complete(reclaimed.id, "worker-b", now + SignedDuration::from_secs(2))
+            .complete(
+                &JobLease::new(reclaimed.id, "worker-b", reclaimed.attempts),
+                now + SignedDuration::from_secs(2)
+            )
             .await?
     );
     let exhausted = store
@@ -199,7 +202,13 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
     let retry_at = now + SignedDuration::from_secs(10);
     assert_eq!(
         store
-            .record_failure(retried.id, "worker-a", true, retry_at, "temporary", now,)
+            .record_failure(
+                &JobLease::new(retried.id, "worker-a", retried.attempts),
+                true,
+                retry_at,
+                "temporary",
+                now,
+            )
             .await?,
         Some(FailureDisposition::Retry)
     );
@@ -223,8 +232,7 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
     assert_eq!(
         store
             .record_failure(
-                retried.id,
-                "worker-b",
+                &JobLease::new(retried.id, "worker-b", retried.attempts),
                 true,
                 retry_at + SignedDuration::from_secs(20),
                 "still temporary",
@@ -272,8 +280,7 @@ async fn assert_permanent_failure_is_terminal(
     assert_eq!(
         store
             .record_failure(
-                permanent.id,
-                "worker-c",
+                &JobLease::new(permanent.id, "worker-c", permanent.attempts),
                 false,
                 permanent_now,
                 "invalid payload",
@@ -308,7 +315,11 @@ async fn postgres_completion_is_atomic_lease_owned_and_not_duplicated() -> Resul
         .await?
         .expect("job claim");
 
-    assert!(!store.complete(job.id, "worker-b", now).await?);
+    assert!(
+        !store
+            .complete(&JobLease::new(job.id, "worker-b", job.attempts), now)
+            .await?
+    );
     let mut transaction = pool.begin().await?;
     assert!(
         store
@@ -326,7 +337,11 @@ async fn postgres_completion_is_atomic_lease_owned_and_not_duplicated() -> Resul
     );
     transaction.commit().await?;
     assert_eq!(status(&pool, job.id).await?, "succeeded");
-    assert!(!store.complete(job.id, "worker-a", now).await?);
+    assert!(
+        !store
+            .complete(&JobLease::new(job.id, "worker-a", job.attempts), now)
+            .await?
+    );
 
     pool.close().await;
     drop(fixture);
@@ -860,8 +875,7 @@ async fn postgres_v051_schema_upgrades_to_failure_reasons() -> Result<(), Box<dy
     assert_eq!(
         store
             .record_failure(
-                current.id,
-                "upgrade-worker",
+                &JobLease::new(current.id, "upgrade-worker", current.attempts),
                 false,
                 now,
                 "permanent failure",

@@ -3,7 +3,7 @@ use jiff::Timestamp;
 use std::{error::Error, path::PathBuf, sync::Arc, time::Duration};
 
 use baukit_jobs::{
-    FailureDisposition, JobStatus, JobStore as _, NewJob, POSTGRES_MIGRATION_0002_SQL,
+    FailureDisposition, JobLease, JobStatus, JobStore as _, NewJob, POSTGRES_MIGRATION_0002_SQL,
     POSTGRES_MIGRATION_0003_SQL, POSTGRES_MIGRATION_0004_SQL, POSTGRES_MIGRATION_SQL,
     PostgresJobStore,
 };
@@ -55,7 +55,13 @@ async fn terminal_jobs_release_the_key_and_running_jobs_keep_it() -> Result<(), 
             }
             JobStatus::Failed => assert_eq!(
                 store
-                    .record_failure(claimed.id, "worker", false, now, "permanent", now)
+                    .record_failure(
+                        &JobLease::new(claimed.id, "worker", claimed.attempts),
+                        false,
+                        now,
+                        "permanent",
+                        now
+                    )
                     .await?,
                 Some(FailureDisposition::Failed)
             ),
@@ -64,7 +70,11 @@ async fn terminal_jobs_release_the_key_and_running_jobs_keep_it() -> Result<(), 
                 let duplicate = store.enqueue_deduplicated(new_job(), KEY).await?;
                 assert!(!duplicate.created, "a running cancellation is still active");
                 assert_eq!(duplicate.job.id, claimed.id);
-                assert!(store.cancel(claimed.id, "worker", now).await?);
+                assert!(
+                    store
+                        .cancel(&JobLease::new(claimed.id, "worker", claimed.attempts), now)
+                        .await?
+                );
             }
             other => panic!("unexpected test status {other:?}"),
         }
@@ -109,7 +119,13 @@ async fn pending_retries_and_expired_leases_keep_the_key_until_terminal()
     let retry_at = scheduled + SignedDuration::from_mins(1);
     assert_eq!(
         store
-            .record_failure(first.id, "worker-a", true, retry_at, "temporary", scheduled)
+            .record_failure(
+                &JobLease::new(first.id, "worker-a", first.attempts),
+                true,
+                retry_at,
+                "temporary",
+                scheduled
+            )
             .await?,
         Some(FailureDisposition::Retry)
     );
@@ -271,7 +287,7 @@ async fn returning_an_active_job_holds_its_lock_until_transaction_end() -> Resul
     let completion_store = store.clone();
     let completion = tokio::spawn(async move {
         completion_store
-            .complete(original.job.id, "worker", now)
+            .complete(&JobLease::new(original.job.id, "worker", 1), now)
             .await
     });
     wait_for_blocked_query(&pool, blocker).await?;
@@ -451,13 +467,22 @@ async fn pending_jobs_allow_one_followup_per_claim() -> Result<(), Box<dyn Error
 
     assert!(
         store
-            .complete(running.id, "worker-a", Timestamp::now())
+            .complete(
+                &JobLease::new(running.id, "worker-a", running.attempts),
+                Timestamp::now()
+            )
             .await?
     );
     let now = Timestamp::now();
     assert_eq!(
         store
-            .record_failure(second.id, "worker-b", false, now, "permanent", now)
+            .record_failure(
+                &JobLease::new(second.id, "worker-b", second.attempts),
+                false,
+                now,
+                "permanent",
+                now
+            )
             .await?,
         Some(FailureDisposition::Failed)
     );
@@ -551,7 +576,13 @@ async fn pending_retries_and_lease_recovery_do_not_collide_with_followups()
     let retry_at = now + SignedDuration::from_secs(2);
     assert_eq!(
         store
-            .record_failure(running.id, "worker-a", true, retry_at, "temporary", now)
+            .record_failure(
+                &JobLease::new(running.id, "worker-a", running.attempts),
+                true,
+                retry_at,
+                "temporary",
+                now
+            )
             .await?,
         Some(FailureDisposition::Retry)
     );
@@ -640,7 +671,10 @@ async fn mixed_deduplication_modes_reserve_independent_keys() -> Result<(), Box<
     assert_eq!(duplicate.job, running_active);
     assert!(
         store
-            .complete(running_active.id, "worker-a", Timestamp::now())
+            .complete(
+                &JobLease::new(running_active.id, "worker-a", running_active.attempts),
+                Timestamp::now()
+            )
             .await?
     );
     let replacement = store.enqueue_deduplicated(new_job(), KEY).await?;

@@ -33,6 +33,7 @@
 #![deny(missing_docs)]
 
 mod error;
+mod lease;
 mod metrics;
 mod model;
 mod recurring;
@@ -40,6 +41,7 @@ mod runner;
 mod store;
 
 pub use error::{JobError, RunnerError, StoreError};
+pub use lease::{JobLease, LeaseRow, lease_predicate_holds};
 pub use model::{
     CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobFailureReason,
     JobStatus, NewJob, TerminalJobCleanupOutcome, TerminalJobCutoffs,

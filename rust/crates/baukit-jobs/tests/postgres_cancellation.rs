@@ -3,7 +3,9 @@ use jiff::Timestamp;
 use jiff_sqlx::ToSqlx;
 use std::{error::Error, path::PathBuf, time::Duration};
 
-use baukit_jobs::{CancellationOutcome, JobStore as _, NewJob, PostgresJobStore, StoreError};
+use baukit_jobs::{
+    CancellationOutcome, JobLease, JobStore as _, NewJob, PostgresJobStore, StoreError,
+};
 use jiff::SignedDuration;
 use serde_json::json;
 use sqlx::PgPool;
@@ -41,10 +43,22 @@ async fn postgres_cancellation_covers_pending_and_running_lifecycle() -> Result<
     assert!(store.request_cancellation(running.id, now).await?);
     assert!(store.cancellation_requested(running.id).await?);
     assert!(
-        !store.complete(running.id, "worker-a", now).await?,
+        !store
+            .complete(
+                &JobLease::new(running.id, "worker-a", running.attempts),
+                now
+            )
+            .await?,
         "completion must not overtake cancellation"
     );
-    assert!(store.cancel(running.id, "worker-a", now).await?);
+    assert!(
+        store
+            .cancel(
+                &JobLease::new(running.id, "worker-a", running.attempts),
+                now
+            )
+            .await?
+    );
     assert_eq!(status(&pool, running.id).await?, "cancelled");
     assert!(!store.request_cancellation(running.id, now).await?);
 
@@ -223,8 +237,9 @@ impl KeyCancellationCase<'_> {
                 assert_eq!(after["locked_until"], before["locked_until"]);
                 assert!(!after["cancel_requested_at"].is_null());
                 assert!(self.store.cancellation_requested(matching).await?);
-                assert!(!self.store.complete(matching, "cancel-worker", now).await?);
-                assert!(self.store.cancel(matching, "cancel-worker", now).await?);
+                let lease = JobLease::new(matching, "cancel-worker", 1);
+                assert!(!self.store.complete(&lease, now).await?);
+                assert!(self.store.cancel(&lease, now).await?);
             }
             _ => assert_eq!(&after, before, "terminal rows stay untouched"),
         }
@@ -407,7 +422,11 @@ async fn postgres_transaction_lease_check_matches_completion_ownership()
             .await?
     );
     transaction.commit().await?;
-    assert!(store.cancel(job.id, "worker-a", now).await?);
+    assert!(
+        store
+            .cancel(&JobLease::new(job.id, "worker-a", job.attempts), now)
+            .await?
+    );
     assert_completed_job_has_no_lease(&store, &pool).await?;
     pool.close().await;
     drop(fixture);
@@ -432,7 +451,14 @@ async fn assert_completed_job_has_no_lease(
         )
         .await?
         .expect("job claimed");
-    assert!(store.complete(completed.id, "worker-a", now).await?);
+    assert!(
+        store
+            .complete(
+                &JobLease::new(completed.id, "worker-a", completed.attempts),
+                now
+            )
+            .await?
+    );
     let mut transaction = pool.begin().await?;
     assert!(
         !store

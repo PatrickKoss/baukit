@@ -4,6 +4,15 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Breaking: `JobStore::complete`, `record_failure` and `cancel` take a `&JobLease`, and every lease predicate checks the attempt. See `docs/migrations/job-lease-attempt.md`.
+- The runner logs a failed attempt and keeps polling, and caps `retry_after` at `retry_max`.
+
+### Added
+
+- `complete_lease_in_transaction`, `check_lease_held_in_transaction`, `JobCancellation::lease` and `lease_predicate_holds`.
+
 ## [0.30.4] - 2026-11-25
 
 ## [0.30.3] - 2026-11-24
