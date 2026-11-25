@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-11-25
+
 - `deploy/smoke/k3d-smoke.sh` passes `platform_local_kubelet_args` to `k3d cluster create`, so throwaway smoke clusters evict at 20 GiB free instead of k3s's 5% (about 50 GB on a 1 TB disk). No other k3d create in baukit or the product templates existed outside `deploy/platform`.
 
 ## [0.30.3] - 2026-11-24

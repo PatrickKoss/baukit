@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-11-25
+
+- The CLI build script watches `typescript/pnpm-lock.yaml` instead of the whole `typescript/packages` tree, so a `pnpm install` no longer rebuilds the CLI.
+
 - `baukit generate release-age-excludes` prints, per pnpm app, the `minimumReleaseAgeExclude` entries a fresh `@baukit/*` re-pin needs: every pinned `@baukit/*` package plus every `@baukit/*` package those depend on, at the pinned version. Listing only the pinned packages failed `pnpm install --lockfile-only` with `ERR_PNPM_NO_MATURE_MATCHING_VERSION` on the transitive ones. The baukit-upgrade skill uses it.
 
 - `baukit doctor` prints a warning note, not a failure, for each line of `mobile/scripts/qa/local.sh` that pins a QA port to a fixed default of templates before 0.30.3 (15432, 16379, 18080, 19090, 18081) when the product's derived default differs. The note names the variable and the derived port.

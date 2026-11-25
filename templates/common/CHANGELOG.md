@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [0.30.4] - 2026-11-25
+
+{% if context.mobile %}- The Android idle wait closes a "System UI isn't responding" dialog with `CLOSE_SYSTEM_DIALOGS`, prints its last probe when the deadline passes, and runs again before a quick-boot snapshot save. A snapshot saved after a loaded settle could keep that dialog, and every restore then timed out the idle wait.
+{% endif %}
 {% if context.mobile %}- `docs/quality-gate.md` documents the Android emulator GPU settings (`BAUKIT_QA_ANDROID_GPU`, guest Vulkan off with `-feature -Vulkan`) and the `logcat-<device>.txt` and `chrome-version-<device>.txt` evidence a failed Maestro run keeps.
 {% endif %}
 {% if context.mobile and context.auth_enabled %}- Products with suite links pass `appScheme()` from `mobile/src/app-scheme.ts` to `createSuiteNativeIntentValidator` and build the native suite return origin as `${appScheme()}://suite`. With the product name there, the dev variant (`<app>-dev`) returned from the suite into the plain app. The template has no suite code of its own, so this is a product change; `baukit doctor` names each file that still uses the fixed scheme.
