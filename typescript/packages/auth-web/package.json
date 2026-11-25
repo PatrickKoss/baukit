@@ -55,6 +55,7 @@
     "@baukit/api-runtime": "workspace:*",
     "@clerk/clerk-js": "6.38.0",
     "@workos-inc/authkit-js": "0.20.4",
+    "fast-check": "catalog:",
     "jsdom": "30.1.1",
     "typescript": "6.0.3"
   },
