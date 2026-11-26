@@ -302,6 +302,8 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "baukit-auth",
+ "baukit-config",
+ "baukit-core",
  "baukit-credential-vault",
  "baukit-egress",
  "baukit-http",
