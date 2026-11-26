@@ -7,7 +7,7 @@
 
 The boring 80% of a Rust backend and its TypeScript clients, already built and already tested.
 
-*Baukit* is German for a construction kit, and that is the whole idea. Twenty-one Rust crates and twenty-four npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
+*Baukit* is German for a construction kit, and that is the whole idea. Rust crates and npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
 
 > [!WARNING]
 > **Under heavy development. Expect breaking changes.**
@@ -23,7 +23,7 @@ Baukit is that work, extracted from real products, with the tests attached.
 
 ## Quickstart
 
-Scaffold a product:
+You need Docker, because `make test` runs the Docker-backed integration tests. Scaffold a product:
 
 ```bash
 cargo install --git https://github.com/PatrickKoss/baukit --tag v0.31.0 --locked baukit-cli
@@ -31,23 +31,21 @@ baukit new orders --backend --web
 cd orders && make check
 ```
 
-Add `--quality strict` to generate capability-specific coverage, migration, OpenAPI, browser, image, and native gates. The generated `scripts/quality-gate.sh` runs the same checks locally. Standard remains the default.
+You get a hexagonal Rust backend (`orders-domain`, `-ports`, `-services`, `-api`, `-postgres`, `-bin`), a Vite React app with a typed client generated from the backend's OpenAPI schema, Docker builds, a Helm values file, CI, and conformance tests that fail if the health and metrics contracts drift. Add `--quality strict` for the stricter gate with coverage, migration, OpenAPI, browser, image and native checks. [Getting started](docs/guide/getting-started.md) has the prerequisites per flavor and the full walkthrough.
 
-You get a hexagonal Rust backend (`orders-domain`, `-ports`, `-services`, `-api`, `-postgres`, `-bin`), a Vite React app with a typed client generated from the backend's OpenAPI schema, Docker builds, a Helm values file, CI, and conformance tests that fail if the health and metrics contracts drift.
-
-Generated products pull Baukit from crates.io and npm by pinned version, so nothing here needs repository access or an SSH key. Point the CLI at a local checkout with `--baukit-path rust` when you want path and `file:` dependencies instead.
+Generated products pull baukit from crates.io and npm by pinned version, so nothing here needs repository access or an SSH key. Point the CLI at a local checkout with `--baukit-path rust` when you want path and `file:` dependencies instead.
 
 Or add one crate to a service you already have:
 
 ```toml
 [dependencies]
-baukit-http = "0.1"
-baukit-ops = "0.1"
+baukit-http = "0.31"
+baukit-ops = "0.31"
 ```
 
 ## What it looks like running
 
-The [`examples/minimal-api`](examples/minimal-api) notes service is 433 lines of Rust, comments included. Start it:
+The [`examples/minimal-api`](examples/minimal-api) notes service fits in one short file. Start it:
 
 ```console
 $ cargo run --manifest-path examples/minimal-api/Cargo.toml
@@ -96,101 +94,84 @@ $ curl localhost:9090/buildinfo
 
 Metrics come out already named the way the shipped Grafana dashboards expect: `http_requests_total`, `http_request_duration_seconds`, `http_requests_in_flight`, `build_info`. A linter in CI keeps them that way.
 
-## Pick what you need
+## Capabilities
 
-Nothing here depends on the CLI, and no crate drags in the rest. Take the error envelope and skip the job queue.
+Nothing here depends on the CLI, and no crate drags in the rest. Take the error envelope and skip the job queue. The [guide index](docs/guide/README.md) has one line per crate and package.
 
-### Rust
+| Capability | Crates | Packages | Guide |
+|---|---|---|---|
+| A service that starts, drains and reports health | [`baukit-runtime`](rust/crates/baukit-runtime), [`baukit-config`](rust/crates/baukit-config), [`baukit-http`](rust/crates/baukit-http), [`baukit-ops`](rust/crates/baukit-ops), [`baukit-openapi`](rust/crates/baukit-openapi), [`baukit-core`](rust/crates/baukit-core) | [`@baukit/api-runtime`](typescript/packages/api-runtime) | [Backend](docs/guide/backend.md) |
+| Sign-in and token verification | [`baukit-auth`](rust/crates/baukit-auth) | [`@baukit/auth-web`](typescript/packages/auth-web), [`@baukit/auth-native`](typescript/packages/auth-native), [`@baukit/auth-node`](typescript/packages/auth-node) | [Authentication](docs/guide/auth.md) |
+| Offline data and sync | [`baukit-sync`](rust/crates/baukit-sync) | [`@baukit/sync-client`](typescript/packages/sync-client), [`@baukit/data-contracts`](typescript/packages/data-contracts), [`@baukit/data-contracts-dexie`](typescript/packages/data-contracts-dexie), [`@baukit/data-contracts-expo-sqlite`](typescript/packages/data-contracts-expo-sqlite) | [Data and sync](docs/guide/data-and-sync.md) |
+| Background jobs | [`baukit-jobs`](rust/crates/baukit-jobs) | none | [Jobs](docs/guide/jobs.md) |
+| Remote MCP for AI clients | [`baukit-mcp`](rust/crates/baukit-mcp) | none | [Remote MCP](docs/guide/mcp.md) |
+| Suites of linked products and entitlements | [`baukit-suite`](rust/crates/baukit-suite), [`baukit-events`](rust/crates/baukit-events) | [`@baukit/suite-client`](typescript/packages/suite-client), [`@baukit/events`](typescript/packages/events), [`@baukit/purchases-core`](typescript/packages/purchases-core), [`@baukit/purchases-revenuecat`](typescript/packages/purchases-revenuecat) | [Suite and platform](docs/guide/suite-and-platform.md) |
+| Third-party integrations | [`baukit-integrations`](rust/crates/baukit-integrations), [`baukit-credential-vault`](rust/crates/baukit-credential-vault) | [`@baukit/integrations-client`](typescript/packages/integrations-client) | [Integrations](docs/guide/integrations.md) |
+| Push and local notifications | [`baukit-push`](rust/crates/baukit-push) | [`@baukit/notifications-core`](typescript/packages/notifications-core), [`@baukit/notifications-expo`](typescript/packages/notifications-expo) | [Push and notifications](docs/guide/push-and-notifications.md) |
+| Erasure and data-subject requests | [`baukit-erasure`](rust/crates/baukit-erasure), [`baukit-data-subject`](rust/crates/baukit-data-subject) | [`@baukit/analytics-core`](typescript/packages/analytics-core) | [Privacy](docs/guide/privacy.md) |
+| Outbound HTTP and rate limits | [`baukit-egress`](rust/crates/baukit-egress), [`baukit-ratelimit`](rust/crates/baukit-ratelimit) | none | [Outbound HTTP and limits](docs/guide/outbound-and-limits.md) |
+| Web and native UI foundations | none | [`@baukit/ui-tokens`](typescript/packages/ui-tokens), [`@baukit/a11y-core`](typescript/packages/a11y-core), [`@baukit/navigation`](typescript/packages/navigation), [`@baukit/localization-core`](typescript/packages/localization-core), [`@baukit/preferences-core`](typescript/packages/preferences-core), [`@baukit/pwa-web`](typescript/packages/pwa-web), [`@baukit/csp`](typescript/packages/csp), [`@baukit/type-guards`](typescript/packages/type-guards), [`@baukit/eslint-config`](typescript/packages/eslint-config), [`@baukit/analytics-posthog-web`](typescript/packages/analytics-posthog-web), [`@baukit/analytics-posthog-native`](typescript/packages/analytics-posthog-native) | [Frontend](docs/guide/frontend.md) |
+| Logs, traces and metrics | [`baukit-telemetry`](rust/crates/baukit-telemetry) | none | [Observability](docs/guide/observability.md) |
+| Tests and conformance suites | [`baukit-test`](rust/crates/baukit-test) | none | [Quality gates](docs/guide/quality-gates.md) |
 
-| Crate | What it gives you |
-|---|---|
-| [`baukit-runtime`](rust/crates/baukit-runtime) | Process lifecycle, graceful drain, supervised background tasks, listener composition |
-| [`baukit-config`](rust/crates/baukit-config) | Layered file and environment config, validation, secret wrappers that refuse to print |
-| [`baukit-http`](rust/crates/baukit-http) | Axum middleware, the error envelope, upstream retry classification, CORS, default cache policy |
-| [`baukit-ops`](rust/crates/baukit-ops) | Separate liveness, readiness, metrics, and build-info endpoints |
-| [`baukit-telemetry`](rust/crates/baukit-telemetry) | Structured logs, OpenTelemetry traces, Prometheus metrics from one builder |
-| [`baukit-auth`](rust/crates/baukit-auth) | OIDC, Clerk, and WorkOS verification; personal access tokens; Axum principal extraction |
-| [`baukit-mcp`](rust/crates/baukit-mcp) | OAuth-protected Streamable HTTP, scoped tool ports, resource metadata, body limits, and quotas |
-| [`baukit-jobs`](rust/crates/baukit-jobs) | Durable PostgreSQL outbox and supervised workers |
-| [`baukit-openapi`](rust/crates/baukit-openapi) | Utoipa metadata, deterministic schema output, drift checks |
-| [`baukit-ratelimit`](rust/crates/baukit-ratelimit) | Redis token buckets keyed by identity or client IP |
-| [`baukit-sync`](rust/crates/baukit-sync) | Per-owner revision allocation for offline clients |
-| [`baukit-events`](rust/crates/baukit-events) | Versioned event envelope with stable validation codes |
-| [`baukit-integrations`](rust/crates/baukit-integrations) | Connector contract for cursor-paged imports, verified webhooks, health |
-| [`baukit-credential-vault`](rust/crates/baukit-credential-vault) | Versioned AES-256-GCM encryption behind a storage-neutral port |
-| [`baukit-push`](rust/crates/baukit-push) | Provider-neutral push delivery with an Expo adapter, a device registry, and daily delivery claims |
-| [`baukit-egress`](rust/crates/baukit-egress) | Outbound HTTP client for user-supplied URLs that pins DNS answers to public addresses |
-| [`baukit-data-subject`](rust/crates/baukit-data-subject) | Data subject wire types, identifier normalization, and Ed25519 DSSE receipts |
-| [`baukit-erasure`](rust/crates/baukit-erasure) | Transactional profile erasure, keyed receipts and fences, durable identity account deletion |
-| [`baukit-core`](rust/crates/baukit-core) | Dependency-light vocabulary shared by the others, plus optional keyset pagination |
-| [`baukit-suite`](rust/crates/baukit-suite) | Peer linking, signed event delivery and transactional ingestion |
-| [`baukit-test`](rust/crates/baukit-test) | Docker PostgreSQL and Redis fixtures, a mock OIDC issuer, conformance suites |
+Every package ships ES modules. The Rust and TypeScript halves are written against the same contracts, and in the case of the event envelope both test suites read the same `fixtures/events/event-envelope-v1.json`. Drift between the browser and the server shows up as a failing test rather than a bad payload in production.
 
-### TypeScript
+## How it stays correct
 
-| Package | What it gives you |
-|---|---|
-| [`@baukit/api-runtime`](typescript/packages/api-runtime) | Auth and request-ID headers, trace propagation, normalized errors, safe retries |
-| [`@baukit/auth-web`](typescript/packages/auth-web) · [`-native`](typescript/packages/auth-native) | OIDC PKCE, Clerk and WorkOS adapters, refresh rotation |
-| [`@baukit/auth-node`](typescript/packages/auth-node) | OIDC device authorization with S256 PKCE, bounded polling, refresh rotation, and a locked profile cache |
-| [`@baukit/data-contracts`](typescript/packages/data-contracts) | Storage contracts plus conformance suites you run against your adapter |
-| [`@baukit/data-contracts-dexie`](typescript/packages/data-contracts-dexie) · [`-expo-sqlite`](typescript/packages/data-contracts-expo-sqlite) | IndexedDB and Expo SQLite adapters, verified in a real browser and on a real Android device in CI |
-| [`@baukit/integrations-client`](typescript/packages/integrations-client) | Connection health, OAuth session coordination, provider registry |
-| [`@baukit/suite-client`](typescript/packages/suite-client) | Suite linking, authorization and connected-app state for web and native clients |
-| [`@baukit/sync-client`](typescript/packages/sync-client) | Sync scheduling, transport, status store, push-batch ordering |
-| [`@baukit/ui-tokens`](typescript/packages/ui-tokens) | Design-token schema, contrast checker, CSS and React Native compilers, a `no-raw-color` eslint rule |
-| [`@baukit/a11y-core`](typescript/packages/a11y-core) | Focus traps, inert backgrounds, announcements, reduced motion, on both web and native |
-| [`@baukit/navigation`](typescript/packages/navigation) | Collapsible navigation for React DOM and React Native with product-owned routes and tokens |
-| [`@baukit/analytics-core`](typescript/packages/analytics-core) | Typed events with consent and privacy controls, PostHog transports for [web](typescript/packages/analytics-posthog-web) and [native](typescript/packages/analytics-posthog-native) |
-| [`@baukit/localization-core`](typescript/packages/localization-core) | Locale resolution, formatting policy, timezone-safe civil-date math |
-| [`@baukit/notifications-core`](typescript/packages/notifications-core) · [`-expo`](typescript/packages/notifications-expo) | Local notification planning across DST and time zones, and replacement that touches only the requests one namespace owns |
-| [`@baukit/purchases-core`](typescript/packages/purchases-core) · [`-revenuecat`](typescript/packages/purchases-revenuecat) | Mobile purchases that wait for the suite login, confirm through the backend-verified entitlement, and gate on its feature keys |
-| [`@baukit/preferences-core`](typescript/packages/preferences-core) | Identity-guarded preference controller |
-| [`@baukit/pwa-web`](typescript/packages/pwa-web) | Request classification and cache strategies for a service worker you own |
-| [`@baukit/events`](typescript/packages/events) | Zod schemas for the same envelope `baukit-events` speaks |
+The generated product isn't a snapshot that rots. On every push CI scaffolds fresh products in each fixture flavor that [CLAUDE.md](CLAUDE.md) lists, then runs `cargo fmt --check`, `clippy -D warnings`, the full test suite with the Docker-backed tests, and an OpenAPI drift check against them. Template code is linted exactly like committed code. `sh scripts/ci-gate.sh` runs the same jobs locally in parallel lanes.
 
-Every package ships ES modules. Each export lists `import` and a matching `default` condition, so bundlers, Node, and Jest resolve `@baukit/*` without a module map; Jest still needs to transform them. The `./vitest` test subpaths list only `import`, because Vitest itself is ESM-only.
+Each product inherits security suites from `baukit-test`. The generated `tests/conformance.rs` calls `assert_auth_negative_suite`, which sends forged, expired and wrong-issuer tokens to every operation in the OpenAPI document, and `assert_cross_tenant_denied`, which fails when a second principal can read the first one's data. `assert_ops_router_conformance` and `assert_metrics_conformance` pin the health and metrics contracts.
 
-The Rust and TypeScript halves are written against the same contracts, and in the case of the event envelope both test suites read the same `fixtures/events/event-envelope-v1.json`. Drift between the browser and the server shows up as a failing test rather than a bad payload in production.
+Tests check the inputs someone thought of, and some bugs live outside them. So baukit picks one tool per class of property, and every tool runs as a gate step ([ADR 0027](docs/adr/0027-verification-strategy.md)):
 
-## Why it holds up
+- Kani proves that pure kernels such as the egress address classifier and the rate-limit bucket hold for every input within the bounds each harness states.
+- Verus proves twins of the HLC clock, the token bucket and the pull-page merge over traces of any length, and equivalence tests tie each twin to production code.
+- TLA+ models in `models/` check protocols such as the job lease, the erasure saga and the sync pull over every interleaving. A `_current` config reproduces the old bug and must still fail.
+- cargo-fuzz runs every decoder of untrusted bytes in `rust/fuzz`, such as JWT, webhook and suite ticket parsing, and fails on any crash.
+- Generated vectors in `fixtures/` make the Rust and TypeScript halves agree case by case.
 
-The generated product isn't a snapshot that rots. CI scaffolds a fresh one on every push and runs `cargo fmt --check`, `clippy -D warnings`, the full test suite, and an OpenAPI drift check against it, in backend, web, and combined flavors. Template code is linted exactly like committed code.
+A proof only covers what its harness or model states. [Verification targets](docs/verification.md) lists every harness with its bounds and the known gaps, and the [security guide](docs/guide/security.md) says what a product still owns.
 
-The rest of the gate is similar. MSRV stays pinned at Rust 1.95 and CI checks it separately. `cargo deny` runs on advisories and licenses. A metric-name linter keeps dashboards and alerts honest. Dexie conformance runs in a real browser and the Expo SQLite adapter runs on a real Android device. Nobody skips the Docker-backed integration tests.
+## Deploy and operate
 
-The repo also ships a [Helm chart](deploy/chart) and [Grafana dashboards, alerts, and recording rules](deploy/observability) matched to the metric names above, plus an [nginx njs verifier for signed media grants](deploy/media-grants) that checks the same vectors as `baukit-core`'s signer. The [agent skills](agent-skills/README.md) teach Claude Code and Codex the conventions for product work. The QA audit runs as `/qa` in Claude Code or `$qa` in Codex.
+The repo ships a [Helm chart](deploy/chart), [Grafana dashboards, alerts and recording rules](deploy/observability) matched to the metric names above, and an [nginx njs verifier for signed media grants](deploy/media-grants) that checks the same vectors as `baukit-core`'s signer. [`deploy/platform`](deploy/platform) runs the whole platform on a local k3d cluster, and [runbooks](docs/runbooks) cover every alert. See [deploying](docs/guide/deploying.md) and [local platform](docs/guide/local-platform.md).
 
 ## Documentation
 
-The [Baukit jingle](docs/JINGLE.md) has English and German lyrics, video storyboards, and reproducible ElevenLabs generation commands.
+- The [guide](docs/guide/README.md) walks through one task per page.
+- [Contracts](docs/platform) hold the rules a product must follow or can rely on.
+- [ADRs](docs/adr/README.md) explain why the architecture is the way it is.
+- [Migrations](docs/migrations/README.md) say what changes for each breaking release.
+- [Runbooks](docs/runbooks) say what to do when an alert fires.
+- The [agent skills](agent-skills/README.md) teach Claude Code and Codex the conventions for product work.
 
-See [remote MCP](docs/remote-mcp.md) for tool adapters, client setup, and the OAuth flow.
-
-Contracts and recipes live in [`docs/platform/`](docs/platform): [local-data ownership](docs/platform/local-data-ownership-contract.md), [offline readiness](docs/platform/offline-readiness-contract.md), [integration reliability](docs/platform/integration-reliability.md), [accessibility](docs/platform/accessibility-contract.md), [localization](docs/platform/localization-contract.md), [native quality gates](docs/platform/native-quality-gates.md), [telemetry](docs/platform/telemetry-spec.md), [onboarding](docs/platform/onboarding-recipe.md), [calendar export](docs/platform/calendar-export-recipe.md), and [mirrored Rust/TypeScript domain logic](docs/platform/mirrored-domain-logic.md). Release process is in [`docs/releasing.md`](docs/releasing.md).
+[`docs/README.md`](docs/README.md) maps the rest.
 
 ## Working on baukit itself
 
 Three workspaces, no root workspace, so always pass a manifest path.
 
 ```text
-rust/        19 library crates
-typescript/  21 packages, pnpm + Turborepo
+rust/        library crates, plus rust/fuzz and rust/verus
+typescript/  npm packages, pnpm + Turborepo
 cli/         the baukit binary
 templates/   what the CLI renders
-examples/    minimal-api, expo-sqlite-conformance
+models/      TLA+ models
+examples/    minimal-api and the Expo conformance apps
 ```
 
 ```bash
-make toolchain          # mise: Node 26, Temurin 25.0.4.1+1, Rust 1.100.0
-mise exec -- make ci    # fmt, clippy, tests, and the TypeScript gates
+make toolchain          # mise: Node 26.10.0, Temurin 25.0.4, Rust 1.100.0, Kani, Verus and the linters
+mise exec -- make ci    # fmt, clippy, tests, the TypeScript gates and make verify
 mise exec -- sh scripts/ci-gate.sh    # every CI job in parallel lanes
 ```
 
-Mise installs Corepack 0.36.0 with Node. Corepack reads the pnpm 12.9.1 pin in `typescript/package.json`. Docker and the Android SDK stay system dependencies. iOS work needs xtool with a Darwin SDK you generate from a manually downloaded `Xcode.xip`, and Linux has no iOS simulator.
+`make ci` ends with `make verify`, which runs Kani, the TLA+ models, the vector check, the migration checks and the workflow audit, so it needs Docker and Java. Mise installs Corepack 0.36.0 with Node. Corepack reads the pnpm pin in `typescript/package.json`. Docker and the Android SDK stay system dependencies. iOS work needs xtool with a Darwin SDK you generate from a manually downloaded `Xcode.xip`, and Linux has no iOS simulator. [Verification](docs/verification.md) and [releasing](docs/releasing.md) cover the rest.
 
 ## Status and license
 
-The `@baukit/*` packages publish to npm and the eighteen library crates publish to crates.io. The CLI installs from a Git tag. Crates, packages, and templates move together under one `vX.Y.Z` tag.
+Every crate publishes to crates.io and every `@baukit/*` package to npm. The CLI installs from a Git tag. Crates, packages and templates move together under one `vX.Y.Z` tag.
 
 MIT. See [LICENSE](LICENSE).
+
+The [baukit jingle](docs/JINGLE.md) has English and German lyrics, video storyboards and reproducible ElevenLabs generation commands.

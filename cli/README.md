@@ -255,8 +255,8 @@ Debian slim.
 `BAUKIT_DESTINATION`, `LIMITS_FILE` and `GIT_COMMIT` remain available, including
 for builds of local-path fixtures from the Baukit repository root.
 
-See the [migration guide](../docs/migrations/backend-dockerfile-generation.md)
-for the existing product patterns.
+See the [`[backend.image]` reference](../docs/guide/manifest.md#backendimage)
+for every key and its validation.
 
 ## Doctor paths for existing products
 

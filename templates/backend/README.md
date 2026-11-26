@@ -8,7 +8,7 @@ cargo install --git https://github.com/PatrickKoss/baukit --tag v{{ context.temp
 
 {{ context.product_description }} generated with Baukit template {{ context.template_version }}.
 
-The development database uses PostgreSQL 18.6 Alpine. Its named volume mounts
+The development database uses PostgreSQL 18.7 Alpine. Its named volume mounts
 `/var/lib/postgresql`, and the image stores data at
 `/var/lib/postgresql/18/docker`. Recreate this project's local volume when
 switching PostgreSQL major versions. New clusters keep data checksums enabled
@@ -56,6 +56,8 @@ Every generated API route requires a bearer token. `GET /me` also maps the token
 The development realm selects the unbranded `baukit-accessible` login theme. Compose mounts `keycloak/themes` read-only at `/opt/keycloak/themes`. The theme inherits `keycloak.v2` and adds two scripts. It does not copy Keycloak FreeMarker templates. The first script adds required-field semantics, linked live errors, and deliberate error focus to the inherited login and registration forms. A second script reads the app's appearance from the OAuth `state`. When the state looks like `ap1.<d|l|s>[.<PRIMARY>.<SECONDARY>].<nonce>`, the page keeps the requested light or dark mode even if the operating system prefers the other one, and it sets `--baukit-auth-primary`, `--baukit-auth-secondary`, and `--baukit-auth-on-primary` on the root element. The base theme does not paint with those colors, but a product child's CSS can. `@baukit/auth-native` builds that state with `appearanceStateDecoration`. Any other state leaves the page on its defaults. Registration remains disabled by default. Set `registrationAllowed` to `true` in `keycloak/realm.json` when the product needs self-registration, then run `make dev` to reconcile the retained realm.
 
 Products can select `baukit-accessible` directly or add a product theme under `keycloak/themes/PRODUCT/login` with `parent=baukit-accessible`. Put product CSS in `resources/css`, translated message overrides in `messages`, and list the CSS in the child `theme.properties`. A child that adds its own `scripts` property must also list `js/accessibility.js` and `js/theme-preferences.js`, which Keycloak resolves through the parent. The generated `baukit-accessible-test` child is a neutral fixture that proves CSS, message, script, and parent lookup. Do not use that fixture as a product theme.
+
+The appearance hint in detail: the nonce in `ap1.<d|l|s>[.<PRIMARY>.<SECONDARY>].<nonce>` is at least 64 lowercase hex characters, and the colors are six-digit hex values. `js/theme-preferences.js` reads `state` from the authorization URL, or `st` from the base64url `client_data` parameter that Keycloak adds after a form post. For `d` or `l` it sets `data-baukit-theme` on the root element and pins the `pf-v5-theme-dark` class. `keycloak.v2` toggles that class from `prefers-color-scheme` in its own module script, so the script watches the class list and restores the requested mode. For `s` it leaves Keycloak's handling alone. `--baukit-auth-on-primary` is dark or light text, whichever contrasts more with the primary color. The hint carries no user data. The provider and its access logs see the whole state, so do not add anything else to it.
 
 Restart Keycloak after editing a mounted theme so cached resources and theme properties cannot hide a change. Keycloak runs only on developer machines and in E2E, so the theme has no production packaging.
 

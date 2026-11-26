@@ -289,7 +289,60 @@ from `mobile/public/` as unmapped code, fails if
 only when product or `@baukit` code emits it, since React Native and Expo Router
 ship their own development-server defaults. The strict gate runs them as the `web-bundle` and `mobile-bundle` steps, and the standard profile's CI runs the mobile check in its `mobile` job.
 
-{% endif %}## Erasure secrets
+{% endif %}## Development Keycloak realm
+
+Every `--auth` provider renders a Keycloak development realm in `keycloak/`.
+Keycloak runs only on developer machines and in E2E. Compose imports
+`keycloak/realm.json`, mounts `keycloak/themes` read-only and keeps the realm in
+the `keycloak-data` volume across container replacement.
+
+The product owns `keycloak/realm.json`: the realm name, registration setting,
+password rules, clients, redirects and development accounts. It also owns the
+limits in `keycloak/realm-policy.json` and the selections in
+`keycloak/reconcile.json`. The scripts own the checks and the reconciliation.
+
+`make keycloak-policy` runs
+`python3 scripts/keycloak_policy.py --environment-class development`. The policy
+declares password length bounds, whether passwords must exclude the username or
+email, whether brute-force protection is required and the minimum TLS setting.
+Its redirect rules cap the redirects per public client, allow or refuse loopback
+HTTP and list product application schemes. The validator requires disabled
+direct-access grants on every client and PKCE S256 on public clients. A redirect
+wildcard may only be a trailing path `/*`. Plain HTTP passes only for a loopback
+address under a development policy.
+
+`make dev` runs the policy check, starts Keycloak, runs
+`scripts/reconcile_keycloak.py` and then starts Redis. `make keycloak-reconcile`
+does the same without Redis. `reconcile.json` lists:
+
+- `realmFields`, the top-level realm settings copied from `realm.json`
+- `clients`, the public clients and the origins and redirects to merge
+- `users`, the development users to create or update
+- `serviceAccountRoles`, the realm-management roles for the confidential backend client
+
+The reconciler keeps live fields that the desired state does not name, and keeps
+existing origins and redirects when it adds one. Pass a changed port without
+editing the declaration:
+
+```sh
+python3 scripts/reconcile_keycloak.py \
+  --client-origin {{ context.app_name }}-web=http://localhost:6173 \
+  --client-redirect '{{ context.app_name }}-web=http://localhost:6173/*'
+```
+
+Existing passwords stay as they are. `--reset-password USERNAME` resets one to
+its credential in `realm.json`. If the configured master administrator cannot
+sign in, the script creates a temporary administrator with Keycloak's
+`bootstrap-admin` command, repairs the configured one and removes the temporary
+account afterwards. Its logs omit passwords, tokens and response bodies.
+
+The backend confidential client holds `manage-users` so identity deletion works
+locally. Keycloak has no delete-only role, so treat that client secret as a
+user-management credential. Access tokens carry `auth_time` from the `basic`
+client scope, and refresh keeps it. After `profile_erased`, a shared SSO client
+must sign in again with `prompt=login` to get a fresh login time.
+
+## Erasure secrets
 
 Set `{{ context.app_env }}__AUTH__ERASURE_HASH_KEY` to at least 32 random bytes.
 Keep it stable so erased identities remain fenced. Clerk and WorkOS always
