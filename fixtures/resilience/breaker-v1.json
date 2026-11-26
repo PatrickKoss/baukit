@@ -1,0 +1,889 @@
+{
+  "version": 1,
+  "policy": {
+    "window": 20,
+    "min_calls": 10,
+    "failure_rate_percent": 50,
+    "consecutive_timeouts": 5,
+    "open_base_ms": 30000,
+    "open_max_ms": 300000,
+    "jitter_percent": 20,
+    "probe_timeout_ms": 30000
+  },
+  "scenarios": [
+    {
+      "name": "consecutive timeouts open the breaker",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.5,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 1000,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 26000
+        },
+        {
+          "at_ms": 27000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 27001,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "half_open",
+          "expect_retry_after_ms": 29999
+        },
+        {
+          "at_ms": 27500,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 27500,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed"
+        }
+      ]
+    },
+    {
+      "name": "failure rate needs the minimum calls",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 30000
+        }
+      ]
+    },
+    {
+      "name": "half the window failing opens the breaker",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 1,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 2,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 3,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 4,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 5,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 6,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 7,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 8,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 9,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.999,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 9,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 24006
+        }
+      ]
+    },
+    {
+      "name": "old calls slide out of the window",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "open"
+        }
+      ]
+    },
+    {
+      "name": "re-opens double up to the cap and a success resets the count",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 29999,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 1
+        },
+        {
+          "at_ms": 30000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 30000,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 89999,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 1
+        },
+        {
+          "at_ms": 90000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 90000,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 209999,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 1
+        },
+        {
+          "at_ms": 210000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 210000,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 449999,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 1
+        },
+        {
+          "at_ms": 450000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 450000,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 749999,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 1
+        },
+        {
+          "at_ms": 750000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 750000,
+          "op": "record",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 1050000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 1050000,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 1050000,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 1050000,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 1050000,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 1050000,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 1050000,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 1050000,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 30000
+        }
+      ]
+    },
+    {
+      "name": "retry-after holds the breaker without counting a failure",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "hold_for",
+          "fraction": 0.0,
+          "expect_state": "open",
+          "hold_for_ms": 60000
+        },
+        {
+          "at_ms": 59999,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 1
+        },
+        {
+          "at_ms": 60000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 60000,
+          "op": "record",
+          "outcome": "ignored",
+          "fraction": 0.0,
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 60001,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 60001,
+          "op": "record",
+          "outcome": "hold_for",
+          "fraction": 0.0,
+          "expect_state": "open",
+          "hold_for_ms": 600000
+        },
+        {
+          "at_ms": 60001,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 300000
+        },
+        {
+          "at_ms": 360001,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 360001,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        }
+      ]
+    },
+    {
+      "name": "ignored outcomes and successes reset nothing they should not",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "ignored",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed"
+        }
+      ]
+    },
+    {
+      "name": "an abandoned probe is replaced after the probe timeout",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 30000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 59999,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "half_open",
+          "expect_retry_after_ms": 1
+        },
+        {
+          "at_ms": 60000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 60000,
+          "op": "record",
+          "outcome": "timeout",
+          "fraction": 0.5,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 60000,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 54000
+        }
+      ]
+    }
+  ]
+}
