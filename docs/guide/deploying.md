@@ -154,4 +154,4 @@ The harness creates the product namespace with Pod Security `restricted` and fai
 - [observability guide](observability.md)
 - [ADR 0026: reference SQL migrations](../adr/0026-reference-sql-migrations.md)
 - [ADR 0030: deployment platform](../adr/0030-deployment-platform.md)
-- [migration guide: backend Dockerfile generation](../migrations/backend-dockerfile-generation.md)
+- [`[backend.image]` reference](manifest.md#backendimage)

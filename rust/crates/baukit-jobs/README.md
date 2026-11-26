@@ -5,7 +5,7 @@ worker runner. Products own job identifiers, JSON payload types, handlers, and
 migration order.
 
 Optional owner-scoped enqueue and erasure are not implemented. The accepted
-[durable job ownership design](../../../docs/platform/durable-job-ownership.md)
+[durable job ownership decision](../../../docs/adr/0021-job-ownership-keys-for-erasure.md)
 defines the compatibility and migration requirements for that later change.
 
 ## Migration
