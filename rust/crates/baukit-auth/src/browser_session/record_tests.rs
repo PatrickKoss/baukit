@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, error::Error};
+use std::error::Error;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use baukit_credential_vault::{CredentialCipher, CredentialSecrets};
@@ -105,6 +105,15 @@ async fn execute(pool: &PgPool, sql: &'static str, first: Uuid, second: Uuid) ->
     Ok(())
 }
 
+const TAMPERING: [&str; 4] = [
+    "UPDATE baukit_auth_browser_sessions SET id_token = NULL WHERE id = $1 AND $2 = $2",
+    "UPDATE baukit_auth_browser_sessions SET record_id = NULL WHERE id = $1 AND $2 = $2",
+    "UPDATE baukit_auth_browser_sessions t SET id_token = d.id_token
+     FROM baukit_auth_browser_sessions d WHERE t.id = $1 AND d.id = $2",
+    "UPDATE baukit_auth_browser_sessions t SET record_id = d.record_id
+     FROM baukit_auth_browser_sessions d WHERE t.id = $1 AND d.id = $2",
+];
+
 #[tokio::test]
 #[ignore = "requires Docker; mandatory in the full local gate"]
 async fn v2_rows_reject_tampering_and_v1_rows_written_before_the_migration_still_open() -> TestResult
@@ -138,49 +147,15 @@ async fn v2_rows_reject_tampering_and_v1_rows_written_before_the_migration_still
     let opened = crypto::open(&cipher, &load(&store, legacy).await?, REFRESH_TOKEN_FIELD)?;
     assert_eq!(opened.as_str(), "legacy-refresh");
 
-    let rows = [
-        sealed_row(&cipher, "intact")?,
-        sealed_row(&cipher, "dropped")?,
-        sealed_row(&cipher, "swapped-field")?,
-        sealed_row(&cipher, "swapped-record")?,
-        sealed_row(&cipher, "donor")?,
-    ];
-    for row in &rows {
-        insert(&store, row).await?;
+    let donor = sealed_row(&cipher, "donor")?;
+    insert(&store, &donor).await?;
+    for sql in TAMPERING {
+        let target = sealed_row(&cipher, "target")?;
+        insert(&store, &target).await?;
+        assert!(opens(&store, &cipher, target.id).await, "{sql}");
+        execute(&pool, sql, target.id, donor.id).await?;
+        assert!(!opens(&store, &cipher, target.id).await, "{sql}");
     }
-    let [intact, dropped, swapped_field, swapped_record, donor] = rows.map(|row| row.id);
-    let tampering: BTreeMap<Uuid, (&'static str, Uuid)> = BTreeMap::from([
-        (
-            dropped,
-            (
-                "UPDATE baukit_auth_browser_sessions SET id_token = NULL WHERE id = $1 AND $2 = $2",
-                donor,
-            ),
-        ),
-        (
-            swapped_field,
-            (
-                "UPDATE baukit_auth_browser_sessions SET id_token = (SELECT id_token FROM baukit_auth_browser_sessions WHERE id = $2) WHERE id = $1",
-                donor,
-            ),
-        ),
-        (
-            swapped_record,
-            (
-                "UPDATE baukit_auth_browser_sessions SET record_id = (SELECT record_id FROM baukit_auth_browser_sessions WHERE id = $2) WHERE id = $1",
-                donor,
-            ),
-        ),
-    ]);
-    for (target, (sql, source)) in &tampering {
-        assert!(
-            opens(&store, &cipher, *target).await,
-            "opens before tampering"
-        );
-        execute(&pool, sql, *target, *source).await?;
-        assert!(!opens(&store, &cipher, *target).await, "{sql}");
-    }
-    assert!(opens(&store, &cipher, intact).await);
-    assert!(opens(&store, &cipher, donor).await);
+    assert!(opens(&store, &cipher, donor.id).await);
     Ok(())
 }
