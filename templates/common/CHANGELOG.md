@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.30.5] - 2026-11-26
+{% if context.quality_strict %}- Since 0.30.5 `scripts/quality-gate.sh` runs `git clone --quiet` and caches the checkout in `${XDG_CACHE_HOME:-$HOME/.cache}/baukit/checkouts/<tag>`. Product tests that fake the old `git clone` argv must accept `--quiet` and set `XDG_CACHE_HOME` to a temporary directory, or a cached checkout from an earlier run skips the fake clone. lesezeichen did this in 5fed90b9.
+
+{% endif %}## [0.30.5] - 2026-11-26
 
 {% if context.quality_strict %}- `scripts/quality-gate.sh` keeps the baukit checkout it needs for `baukit-doctor`, `baukit-check`, `deploy-values`, `metric-names` and the OpenAPI compatibility check in `${XDG_CACHE_HOME:-$HOME/.cache}/baukit/checkouts/v<version>` and reuses it without network on later gates. Before, every gate cloned the tag from GitHub into a temporary directory, so a short GitHub outage failed the whole gate with git exit 128. A missing checkout is cloned into a temporary directory beside the cache path and renamed into place, so concurrent gates never see a partial clone. A failed clone is retried once after 5 seconds, then the gate exits 2 with a message that names the remote and the cache path. `baukit-doctor` and `baukit-check` build the baukit CLI into `.quality-gate/baukit-target` (or `$BAUKIT_GATE_LOG_DIR/baukit-target`), so the cached checkout stays unchanged. Copy `scripts/quality-gate.sh` from the template, or copy `clone_baukit_tag`, `move_into_place`, `cached_baukit_checkout`, `use_baukit_root`, `run_baukit_cli`, `step_baukit_doctor` and `step_baukit_check`.
 
