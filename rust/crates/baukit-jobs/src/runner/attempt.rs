@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    ClaimedJob, FailureDisposition, JobError, JobStore, RunnerError, StoreError,
+    ClaimedJob, FailureDisposition, JobError, JobStore, ReleaseReason, RunnerError, StoreError,
     metrics::{self, CANCELLED, FAILURE, RETRY, SUCCESS},
 };
 
@@ -149,7 +149,13 @@ async fn release_for_shutdown(
     let now = Timestamp::now();
     let released = context
         .store
-        .release(job.id, &context.config.worker_id, now, false, now)
+        .release(
+            job.id,
+            &context.config.worker_id,
+            now,
+            ReleaseReason::Shutdown,
+            now,
+        )
         .await?;
     disposition_outcome(context, job, released, now).await
 }
@@ -160,18 +166,16 @@ async fn defer(
     delay: Duration,
 ) -> Result<&'static str, Unsettled> {
     metrics::record_deferral(&job.job_type, context.handler.job_types());
-    let consume_attempt = job.deferrals >= context.config.max_deferrals;
+    let reason = if job.deferrals >= context.config.max_deferrals {
+        ReleaseReason::DeferredPastCap
+    } else {
+        ReleaseReason::Deferred
+    };
     let now = Timestamp::now();
     let run_after = add_duration(now, delay).map_err(Unsettled::Fatal)?;
     let released = context
         .store
-        .release(
-            job.id,
-            &context.config.worker_id,
-            run_after,
-            consume_attempt,
-            now,
-        )
+        .release(job.id, &context.config.worker_id, run_after, reason, now)
         .await?;
     disposition_outcome(context, job, released, now).await
 }

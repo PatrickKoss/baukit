@@ -5,7 +5,7 @@ use jiff_sqlx::ToSqlx;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{FailureDisposition, StoreError};
+use crate::{FailureDisposition, ReleaseReason, StoreError};
 
 pub(super) fn lease_deadline(now: Timestamp, lease_for: Duration) -> Result<Timestamp, StoreError> {
     if lease_for.is_zero() {
@@ -44,7 +44,7 @@ pub(super) async fn release_on(
     job_id: Uuid,
     worker_id: &str,
     run_after: Timestamp,
-    consume_attempt: bool,
+    reason: ReleaseReason,
     now: Timestamp,
 ) -> Result<Option<FailureDisposition>, StoreError> {
     let status = sqlx::query_scalar::<_, String>(
@@ -52,7 +52,7 @@ pub(super) async fn release_on(
          status = CASE WHEN $5 AND attempts >= max_attempts THEN 'failed' ELSE 'pending' END, \
          run_after = CASE WHEN $5 AND attempts >= max_attempts THEN run_after ELSE $4 END, \
          attempts = CASE WHEN $5 THEN attempts ELSE GREATEST(attempts - 1, 0) END, \
-         deferrals = CASE WHEN $5 THEN deferrals ELSE deferrals + 1 END, \
+         deferrals = CASE WHEN $6 THEN deferrals + 1 ELSE deferrals END, \
          failure_reason = CASE WHEN $5 AND attempts >= max_attempts THEN 'attempts_exhausted' ELSE NULL END, \
          last_error = CASE WHEN $5 AND attempts >= max_attempts THEN COALESCE(last_error, 'deferral consumed the final attempt') ELSE last_error END, \
          locked_by = NULL, locked_until = NULL, updated_at = $3 \
@@ -63,7 +63,8 @@ pub(super) async fn release_on(
     .bind(worker_id)
     .bind(now.to_sqlx())
     .bind(run_after.to_sqlx())
-    .bind(consume_attempt)
+    .bind(reason.consumes_attempt())
+    .bind(reason.counts_deferral())
     .fetch_optional(pool)
     .await
     .map_err(StoreError::database)?;

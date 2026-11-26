@@ -48,7 +48,7 @@ mod store;
 pub use error::{JobError, RunnerError, StoreError};
 pub use model::{
     CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobFailureReason,
-    JobStatus, NewJob, QueueDepth, TerminalJobCleanupOutcome, TerminalJobCutoffs,
+    JobStatus, NewJob, QueueDepth, ReleaseReason, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
 pub use recurring::{FixedUtcInterval, FixedUtcIntervalError, FixedUtcJitter, FixedUtcSlot};
 pub use runner::{JobCancellation, JobFuture, JobHandler, StoreHealth, WorkerConfig, WorkerRunner};

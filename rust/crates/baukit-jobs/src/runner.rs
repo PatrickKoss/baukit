@@ -17,7 +17,7 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::{ClaimedJob, JobError, JobStore, RunnerError, StoreError, metrics};
+use crate::{ClaimedJob, JobError, JobStore, ReleaseReason, RunnerError, StoreError, metrics};
 
 mod attempt;
 mod backoff;
@@ -293,7 +293,7 @@ impl WorkerRunner {
                 biased;
                 result = &mut claim => claim_result(result)?,
                 () = shutdown.cancelled() => {
-                    release_late_claim(context, claim).await;
+                    release_late_claim(context, claim, release_deadline(shutdown, &self.config)).await;
                     return Ok(());
                 }
             };
@@ -336,8 +336,15 @@ fn claim_result(
 async fn release_late_claim(
     context: &AttemptContext,
     claim: JoinHandle<Result<Option<ClaimedJob>, StoreError>>,
+    release_at: Instant,
 ) {
-    match claim.await {
+    let Ok(claimed) = tokio::time::timeout_at(release_at, claim).await else {
+        tracing::warn!(
+            "claim in flight at shutdown outlived the drain budget; its lease expiry recovers the job"
+        );
+        return;
+    };
+    match claimed {
         Ok(Ok(Some(job))) => release_claimed(context, &job).await,
         Ok(Ok(None)) => {}
         Ok(Err(error)) => tracing::warn!(%error, "claim in flight at shutdown failed"),
@@ -349,7 +356,13 @@ async fn release_claimed(context: &AttemptContext, job: &ClaimedJob) {
     let now = Timestamp::now();
     match context
         .store
-        .release(job.id, &context.config.worker_id, now, false, now)
+        .release(
+            job.id,
+            &context.config.worker_id,
+            now,
+            ReleaseReason::Shutdown,
+            now,
+        )
         .await
     {
         Ok(Some(_)) => {}
@@ -391,17 +404,21 @@ fn drain_finished(running: &mut JoinSet<Result<(), RunnerError>>) -> Result<(), 
     Ok(())
 }
 
+fn release_deadline(shutdown: &ShutdownToken, config: &WorkerConfig) -> Instant {
+    shutdown
+        .deadline()
+        .unwrap_or_else(|| Instant::now() + shutdown.drain_timeout())
+        .checked_sub(config.release_reserve)
+        .unwrap_or_else(Instant::now)
+}
+
 async fn drain_attempts(
     mut running: JoinSet<Result<(), RunnerError>>,
     context: &AttemptContext,
     shutdown: &ShutdownToken,
 ) -> Result<(), RunnerError> {
     context.drain.cancel();
-    let release_at = shutdown
-        .deadline()
-        .unwrap_or_else(|| Instant::now() + shutdown.drain_timeout())
-        .checked_sub(context.config.release_reserve)
-        .unwrap_or_else(Instant::now);
+    let release_at = release_deadline(shutdown, &context.config);
     let mut first_error = None;
     loop {
         let next = tokio::select! {

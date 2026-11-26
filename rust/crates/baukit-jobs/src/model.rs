@@ -151,6 +151,28 @@ pub enum FailureDisposition {
     Failed,
 }
 
+/// Why a running job goes back to pending through [`crate::JobStore::release`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReleaseReason {
+    /// The worker is shutting down. The attempt is given back and `deferrals` is unchanged.
+    Shutdown,
+    /// The handler deferred the job. The attempt is given back and `deferrals` grows by one.
+    Deferred,
+    /// The handler deferred the job past the deferral cap. The attempt stays
+    /// used, so a final attempt fails with `attempts_exhausted`.
+    DeferredPastCap,
+}
+
+impl ReleaseReason {
+    pub(crate) const fn consumes_attempt(self) -> bool {
+        matches!(self, Self::DeferredPastCap)
+    }
+
+    pub(crate) const fn counts_deferral(self) -> bool {
+        matches!(self, Self::Deferred)
+    }
+}
+
 /// Outbox row counts for a runner's job types, sampled for telemetry.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct QueueDepth {

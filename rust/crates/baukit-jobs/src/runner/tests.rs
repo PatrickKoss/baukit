@@ -13,7 +13,8 @@ use tokio::sync::Notify;
 
 use super::{attempt::retry_delay, *};
 use crate::{
-    EnqueueOutcome, FailureDisposition, Job, JobStatus, NewJob, QueueDepth, StoreError, StoreFuture,
+    EnqueueOutcome, FailureDisposition, Job, JobStatus, NewJob, QueueDepth, ReleaseReason,
+    StoreError, StoreFuture,
 };
 
 mod lifecycle;
@@ -370,7 +371,7 @@ struct FakeStore {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Release {
-    consume_attempt: bool,
+    reason: ReleaseReason,
     delay: SignedDuration,
 }
 
@@ -569,7 +570,7 @@ impl JobStore for FakeStore {
         _job_id: Uuid,
         _worker_id: &'a str,
         run_after: jiff::Timestamp,
-        consume_attempt: bool,
+        reason: ReleaseReason,
         now: jiff::Timestamp,
     ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>> {
         Box::pin(async move {
@@ -577,7 +578,7 @@ impl JobStore for FakeStore {
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push(Release {
-                    consume_attempt,
+                    reason,
                     delay: run_after - now,
                 });
             self.transition.notify_one();

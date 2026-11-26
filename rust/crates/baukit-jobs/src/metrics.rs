@@ -8,9 +8,7 @@ pub(crate) const SUCCESS: &str = "success";
 pub(crate) const FAILURE: &str = "failure";
 pub(crate) const RETRY: &str = "retry";
 pub(crate) const CANCELLED: &str = "cancelled";
-// `cancelled` is emitted on first use only until baukit-test's worker
-// conformance check accepts it in zero-valued startup output.
-const PREREGISTERED_OUTCOMES: [&str; 3] = [SUCCESS, FAILURE, RETRY];
+const PREREGISTERED_OUTCOMES: [&str; 4] = [SUCCESS, FAILURE, RETRY, CANCELLED];
 const UNKNOWN_JOB: &str = "unknown";
 const DEPTH_STATUSES: [&str; 3] = ["pending", "running", "failed"];
 
@@ -142,7 +140,7 @@ mod tests {
         }
         assert_eq!(
             outcomes,
-            BTreeSet::from([FAILURE.to_owned(), RETRY.to_owned(), SUCCESS.to_owned()])
+            BTreeSet::from(PREREGISTERED_OUTCOMES.map(str::to_owned))
         );
         assert!(saw_empty_histogram);
         assert!(saw_queue_gauge);

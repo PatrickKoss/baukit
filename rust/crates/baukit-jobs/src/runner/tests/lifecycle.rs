@@ -123,7 +123,7 @@ async fn shutdown_releases_a_long_job_without_consuming_its_attempt() {
     assert_eq!(
         store.releases(),
         [Release {
-            consume_attempt: false,
+            reason: ReleaseReason::Shutdown,
             delay: SignedDuration::ZERO,
         }]
     );
@@ -162,7 +162,7 @@ async fn a_final_attempt_stopped_by_shutdown_is_released_not_failed() {
         store
             .releases()
             .iter()
-            .all(|release| !release.consume_attempt)
+            .all(|release| release.reason == ReleaseReason::Shutdown)
     );
 }
 
@@ -185,6 +185,30 @@ async fn a_claim_that_commits_after_shutdown_is_released() {
     assert_eq!(store.remaining(), 0, "the claim committed");
     assert_eq!(store.completed.load(Ordering::SeqCst), 0);
     assert_eq!(store.releases().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_hanging_claim_at_shutdown_is_abandoned_at_the_drain_budget() {
+    let store = Arc::new(FakeStore::with_jobs(1));
+    store.block_claim.store(true, Ordering::SeqCst);
+    let shutdown = ShutdownToken::new(Duration::from_secs(1));
+    let runner = WorkerRunner::new(store.clone(), Arc::new(SucceedingHandler), test_config())
+        .expect("valid runner");
+    let task = tokio::spawn(runner.run(shutdown.clone()));
+    tokio::time::timeout(WAIT, store.claim_started.notified())
+        .await
+        .expect("claim starts");
+
+    let started = Instant::now();
+    shutdown.trigger();
+    tokio::time::timeout(Duration::from_secs(2), task)
+        .await
+        .expect("run ends within the drain deadline")
+        .expect("runner task")
+        .expect("clean shutdown");
+
+    assert!(started.elapsed() <= Duration::from_secs(1));
+    assert!(store.releases().is_empty());
 }
 
 #[tokio::test(start_paused = true)]
@@ -263,11 +287,11 @@ async fn deferrals_keep_the_attempt_until_the_cap_and_are_counted() {
         store.releases(),
         [
             Release {
-                consume_attempt: false,
+                reason: ReleaseReason::Deferred,
                 delay: SignedDuration::from_secs(30),
             },
             Release {
-                consume_attempt: true,
+                reason: ReleaseReason::DeferredPastCap,
                 delay: SignedDuration::from_secs(30),
             },
         ]

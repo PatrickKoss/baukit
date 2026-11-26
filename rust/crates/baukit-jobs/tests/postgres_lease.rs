@@ -3,7 +3,7 @@ use std::{error::Error, path::PathBuf, sync::Arc, time::Duration};
 
 use baukit_jobs::{
     ClaimedJob, FailureDisposition, JobCancellation, JobError, JobFuture, JobHandler,
-    JobStore as _, NewJob, PostgresJobStore, QueueDepth, WorkerConfig, WorkerRunner,
+    JobStore as _, NewJob, PostgresJobStore, QueueDepth, ReleaseReason, WorkerConfig, WorkerRunner,
 };
 use baukit_runtime::ShutdownToken;
 use jiff::{SignedDuration, Timestamp};
@@ -75,14 +75,14 @@ async fn postgres_release_without_attempt_gives_it_back_and_counts_a_deferral()
 
     assert_eq!(
         store
-            .release(job.id, "worker-b", run_after, false, now)
+            .release(job.id, "worker-b", run_after, ReleaseReason::Deferred, now)
             .await?,
         None,
         "another worker cannot release the job"
     );
     assert_eq!(
         store
-            .release(job.id, "worker-a", run_after, false, now)
+            .release(job.id, "worker-a", run_after, ReleaseReason::Deferred, now)
             .await?,
         Some(FailureDisposition::Retry)
     );
@@ -107,6 +107,31 @@ async fn postgres_release_without_attempt_gives_it_back_and_counts_a_deferral()
 
 #[tokio::test]
 #[ignore = "requires Docker; mandatory in the full local gate"]
+async fn postgres_shutdown_release_gives_the_attempt_back_without_a_deferral()
+-> Result<(), Box<dyn Error>> {
+    let (fixture, pool, store) = fixture().await?;
+    let job = store.enqueue(NewJob::new(KIND, json!({}), 1)).await?.job;
+    let now = Timestamp::now();
+    store
+        .claim("worker-a", &[KIND], now, LEASE)
+        .await?
+        .expect("final attempt claimed");
+
+    assert_eq!(
+        store
+            .release(job.id, "worker-a", now, ReleaseReason::Shutdown, now)
+            .await?,
+        Some(FailureDisposition::Retry)
+    );
+    assert_eq!(counters(&pool, job.id).await?, ("pending".to_owned(), 0, 0));
+
+    pool.close().await;
+    drop(fixture);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker; mandatory in the full local gate"]
 async fn postgres_release_with_attempt_retries_and_fails_on_the_final_attempt()
 -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;
@@ -117,7 +142,9 @@ async fn postgres_release_with_attempt_retries_and_fails_on_the_final_attempt()
         .await?
         .expect("first");
     assert_eq!(
-        store.release(job.id, "worker-a", now, true, now).await?,
+        store
+            .release(job.id, "worker-a", now, ReleaseReason::DeferredPastCap, now)
+            .await?,
         Some(FailureDisposition::Retry)
     );
     assert_eq!(counters(&pool, job.id).await?, ("pending".to_owned(), 1, 0));
@@ -127,7 +154,9 @@ async fn postgres_release_with_attempt_retries_and_fails_on_the_final_attempt()
         .await?
         .expect("second");
     assert_eq!(
-        store.release(job.id, "worker-a", now, true, now).await?,
+        store
+            .release(job.id, "worker-a", now, ReleaseReason::DeferredPastCap, now)
+            .await?,
         Some(FailureDisposition::Failed),
         "a deferral past the cap on the final attempt fails the job"
     );
@@ -157,7 +186,9 @@ async fn postgres_release_leaves_a_cancellation_request_to_the_runner() -> Resul
         .expect("claimed");
     assert!(store.request_cancellation(job.id, now).await?);
     assert_eq!(
-        store.release(job.id, "worker-a", now, false, now).await?,
+        store
+            .release(job.id, "worker-a", now, ReleaseReason::Shutdown, now)
+            .await?,
         None
     );
     assert_eq!(counters(&pool, job.id).await?, ("running".to_owned(), 1, 0));
@@ -294,7 +325,7 @@ async fn postgres_shutdown_hands_a_long_final_attempt_to_another_worker()
 
     first_shutdown.trigger();
     first_task.await??;
-    assert_eq!(counters(&pool, job.id).await?, ("pending".to_owned(), 0, 1));
+    assert_eq!(counters(&pool, job.id).await?, ("pending".to_owned(), 0, 0));
 
     let second_shutdown = ShutdownToken::new(WAIT_LIMIT);
     let second = WorkerRunner::new(

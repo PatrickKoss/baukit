@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobStatus, NewJob,
-    QueueDepth, StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
+    QueueDepth, ReleaseReason, StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
 
 mod enqueue;
@@ -128,9 +128,8 @@ pub trait JobStore: Send + Sync + 'static {
 
     /// Returns an owned running job to pending at `run_after`.
     ///
-    /// Without `consume_attempt` the attempt is given back and `deferrals`
-    /// grows by one. With `consume_attempt` the attempt stays used, and a job
-    /// on its final attempt fails with `attempts_exhausted` instead. A job with
+    /// `reason` decides whether the attempt is given back and whether
+    /// `deferrals` grows; see [`ReleaseReason`]. A job with
     /// a cancellation request is not released. Returns `None` when this worker
     /// no longer owns the job.
     fn release<'a>(
@@ -138,7 +137,7 @@ pub trait JobStore: Send + Sync + 'static {
         job_id: Uuid,
         worker_id: &'a str,
         run_after: Timestamp,
-        consume_attempt: bool,
+        reason: ReleaseReason,
         now: Timestamp,
     ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>>;
 
@@ -695,20 +694,12 @@ impl JobStore for PostgresJobStore {
         job_id: Uuid,
         worker_id: &'a str,
         run_after: Timestamp,
-        consume_attempt: bool,
+        reason: ReleaseReason,
         now: Timestamp,
     ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>> {
         Box::pin(async move {
             validate_worker_id(worker_id)?;
-            release_on(
-                &self.pool,
-                job_id,
-                worker_id,
-                run_after,
-                consume_attempt,
-                now,
-            )
-            .await
+            release_on(&self.pool, job_id, worker_id, run_after, reason, now).await
         })
     }
 

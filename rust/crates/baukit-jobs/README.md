@@ -369,12 +369,14 @@ no longer has to be shorter than the lease.
 On shutdown the runner stops claiming and cancels every attempt's
 `JobCancellation`. It waits for attempts until `release_reserve` (default 5 s)
 before the `ShutdownToken` deadline. Then it drops the handlers still running
-and calls `JobStore::release(.., consume_attempt: false)` for each, so another
+and calls `JobStore::release(.., ReleaseReason::Shutdown, ..)` for each, so another
 worker claims them at once with the same attempt count. An attempt that ends in
 a retryable error after shutdown began is released the same way, so a job on
 its final attempt is not failed by a rollout. A claim still in flight when
-shutdown begins is awaited and released. Shutdown releases count as
-deferrals.
+shutdown begins is awaited until the same point and released. If it is still
+running then, the runner stops waiting and lease expiry recovers the job.
+Shutdown releases leave `deferrals` unchanged, so rollouts never push a job
+toward `max_deferrals`.
 
 The runner emits the telemetry-spec §2.4 families. Job and queue labels come
 only from the handler and runner's static identifiers. Configure process
