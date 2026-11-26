@@ -4,6 +4,8 @@ All notable changes to `baukit-events` are documented here.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
 ### Changed
 
 - `EventEnvelope` serializes `occurredAt` truncated to the millisecond, so its own output parses again; before, a `Timestamp::now()` envelope serialized nanoseconds that the parser rejects. New `wire_instant` truncates the same way for code that compares an envelope with its parsed JSON.

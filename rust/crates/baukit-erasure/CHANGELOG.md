@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
 ### Changed
 
 - A `404` counts as deleted only when the provider body names a missing user (Clerk `resource_not_found`, WorkOS `entity_not_found`, Keycloak `User not found`). A bare `404` is now a permanent error.

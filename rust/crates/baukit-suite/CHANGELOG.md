@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
 - Breaking: link secrets and PKCE verifiers are sealed as credential-vault v2 records. Apply `migrations/005_suite_record_ids.sql` (`SUITE_RECORD_IDS_MIGRATION_SQL`) before deploying. `EncryptedPayload` gains `record_id: Option<Uuid>`; `None` opens through v1. See docs/migrations/boundary-hardening.md.
 - `SuiteDeliveryService::reseal_legacy_secrets` re-seals v1 link and open request secrets as v2 records in batches. The hourly cleanup runs it, and `SuiteCleanupOutcome` gains `resealed_secrets` and `unreadable_secrets`. The `SuiteLinkStore` port gains `legacy_secrets_in_transaction` and `reseal_secret_in_transaction` with no-op defaults.
 - Suite envelope validation reports `event_in_future` for an event more than the allowed clock skew ahead, the new `baukit-events` code. `SUITE_ERROR_CODES` and the shared fixture list it.

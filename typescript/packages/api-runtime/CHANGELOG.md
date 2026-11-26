@@ -2,11 +2,22 @@
 
 ## [Unreleased]
 
+## 0.31.0
+
 - Breaking: a path starting with `/` stays under the base path, so `/items` on base `https://api.example.test/v1` goes to `/v1/items`.
 - `Authorization`, `onUnauthorized`, the 401 replay and `onProfileErased` apply only to requests for the base origin under the base path.
 - New `sessionSubject` option. The runtime drops a 401 or erasure signal when the subject changed while the request was in flight.
 
 See `docs/migrations/client-identity-signals.md`.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.31.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/type-guards@0.31.0
 
 ## 0.30.6
 

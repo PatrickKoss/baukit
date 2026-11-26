@@ -4,6 +4,8 @@ All notable changes to `baukit-sync` are documented here.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
 ### Added
 
 - `pull::open_pull_window`, `PullCursor` and `merge_pull_page` for pulls that lose no rows. See `docs/migrations/sync-pull-window.md`.

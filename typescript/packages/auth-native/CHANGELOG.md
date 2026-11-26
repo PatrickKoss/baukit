@@ -2,7 +2,18 @@
 
 ## Unreleased
 
+## 0.31.0
+
 - A rotated session stays in memory when secure storage fails, and is no longer dropped when the stored session object is replaced by one with the same refresh token.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.31.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/type-guards@0.31.0
 
 ## 0.30.6
 

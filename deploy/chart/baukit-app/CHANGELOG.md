@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
 - `opsService.type` accepts only `ClusterIP`. The ops port serves metrics and admin endpoints and must not leave the cluster; values with `NodePort` or `LoadBalancer` now fail schema validation.
 - `config.overrides` sets `RATE_LIMIT__TRUSTED_PROXY_HOPS` to `1` because the library default is now `0`. The chart assumes one Traefik hop in front of the API; override it if your ingress path differs.
 

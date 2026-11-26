@@ -2,7 +2,18 @@
 
 ## Unreleased
 
+## 0.31.0
+
 - `BrowserSessionClient` computes token expiry from the backend's `expiresIn` and its own receipt time, so a skewed server clock no longer forces a refresh on every call. `expiresAt` is still read when `expiresIn` is absent.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.31.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/type-guards@0.31.0
 
 ## 0.30.6
 

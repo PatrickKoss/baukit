@@ -2,11 +2,17 @@
 
 ## Unreleased
 
+## 0.31.0
+
 ### Changed
 
 - `userId` is no longer trimmed. Padded values are rejected, like `eventId`.
 - `occurredAt` must be `YYYY-MM-DDTHH:MM:SS[.fff]Z` and a real calendar date. `Date.parse` used to roll `2026-02-30` into March and drop digits past milliseconds.
 - New `event_in_future` code when `occurredAt` is more than `MAX_EVENT_CLOCK_SKEW_SECONDS` (300) ahead. See `docs/migrations/boundary-hardening.md`.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.31.0 train.
 
 ## 0.30.6
 

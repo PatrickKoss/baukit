@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
 - New `baukit check security` rule. It fails when an `axum::serve` call lacks `into_make_service_with_connect_info`, a router is merged without `rate_limited` or `protect_routes`, an ops service is not `ClusterIP`, or a CORS origin is `null` or plain `http` outside local config.
 - `baukit check` lists files through git inside a work tree, so a force-added file under an ignored directory is still checked.
 - `baukit generate release-age-excludes` skips `fixtures/` and `vendor/` directories, as `scripts/repo-lint.sh` does, so a test fixture's pnpm workspace no longer gets a block.

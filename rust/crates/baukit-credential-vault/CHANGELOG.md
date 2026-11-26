@@ -4,6 +4,8 @@ All notable changes to `baukit-credential-vault` are documented here.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
 ### Added
 
 - `CredentialCipher::seal_record` and `open_record` with `SealedCredentials` (format v2). The AAD binds a per-seal record id and the full field list, so dropping, adding or swapping a field from an earlier seal fails. `encrypt` and `decrypt` are unchanged and still read existing rows. `baukit-auth` and `baukit-suite` now write only v2 records; their v1 rows still open through `decrypt`. See [docs/migrations/boundary-hardening.md](../../../docs/migrations/boundary-hardening.md).

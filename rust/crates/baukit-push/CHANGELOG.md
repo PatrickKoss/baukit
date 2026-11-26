@@ -4,6 +4,8 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
 ### Changed
 
 - Breaking: `DeviceRegistration` has a new public field `install_secret`. Build registrations with `DeviceRegistration::new` and `with_install_secret`.

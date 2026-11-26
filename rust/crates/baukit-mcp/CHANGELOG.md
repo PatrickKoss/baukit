@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
 ### Changed
 
 - A POST body that is not JSON gets `400 invalid_json` before dispatch.

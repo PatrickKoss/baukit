@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
 ### Changed
 
 - CORS origins must be `https://host[:port]` with no path, query or user info. `null` is rejected. `http://` is accepted for `localhost`, `127.0.0.1` and `[::1]` everywhere, and for any host only through `HttpOptions::from_config_in(config, DeploymentEnvironment::Local)`. `from_config` behaves like a non-local environment.
