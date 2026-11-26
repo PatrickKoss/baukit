@@ -83,6 +83,22 @@ synchronous hook that fires once on the first `trigger`, before cancellation wak
 hook is the seam for closing a `baukit_ops::TrafficGate` with no watcher task and no dependency from
 runtime onto ops.
 
+Build the token with `ShutdownToken::with_budget(DrainBudget::new(drain_timeout, request_timeout)?)`
+in a service that flushes telemetry at the end. `DrainBudget::new` refuses a drain timeout that cannot
+fit one full request plus the 3 second flush reserve, so a misconfigured pod fails at startup instead
+of losing its last spans at SIGKILL. Listener drain, `TaskSupervisor::join` and `run_during_drain`
+stop when only the reserve is left. `run_flush` may use the reserve, so call it once, last, for the
+telemetry flush.
+
+## Connection limits
+
+The listeners serve through hyper-util with a timer, so `ServerOptions` can bound each connection: a
+10 second header read timeout (a client that sends half a header gets disconnected instead of holding
+a socket forever), a 60 second idle timeout, and at most 4096 open connections. Pass them through
+`serve_listener_pair_with_options`, or use `serve` for a single listener. HTTP/1.1 also applies the
+header read timeout while a keep-alive connection waits for its next request, so a proxy in front
+should close idle upstream connections sooner than that.
+
 ## Listener ordering
 
 `ShutdownOrder::Together` stops both listeners at once. `OpsOutlivesApi` keeps operations serving

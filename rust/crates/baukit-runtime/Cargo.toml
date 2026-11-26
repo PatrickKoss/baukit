@@ -17,9 +17,12 @@ workspace = true
 [dependencies]
 axum.workspace = true
 baukit-core.workspace = true
+hyper = { workspace = true, features = ["http1", "http2", "server"] }
+hyper-util = { workspace = true, features = ["server-auto", "service", "tokio"] }
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+tower.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
