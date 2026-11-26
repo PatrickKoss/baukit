@@ -288,10 +288,12 @@ use std::collections::BTreeMap;
 use axum::http::StatusCode;
 use baukit_http::ApiError;
 use baukit_sync::horizon::{HORIZON_REVISION_DETAIL, PullCursorError, RESYNC_REQUIRED_CODE};
+use std::num::NonZeroUsize;
+
 use baukit_sync::pull::{MergedPullPage, PullCursor, merge_pull_page, open_pull_window};
 use baukit_sync::purge::PullGuardError;
 
-const PAGE_SIZE: usize = 100;
+const PAGE_SIZE: NonZeroUsize = NonZeroUsize::MIN.saturating_add(99);
 const TABLES: [&str; 2] = ["product_records", "product_tags"];
 
 type Row = (i64, uuid::Uuid);
@@ -316,7 +318,7 @@ async fn pull_page(
         .bind(window.hi)
         .bind(window.after.revision)
         .bind(window.after.id)
-        .bind(i64::try_from(PAGE_SIZE).map_err(ApiError::internal)?)
+        .bind(i64::try_from(PAGE_SIZE.get()).map_err(ApiError::internal)?)
         .fetch_all(&mut *transaction)
         .await
         .map_err(ApiError::internal)?;

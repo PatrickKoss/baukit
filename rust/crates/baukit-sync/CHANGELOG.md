@@ -12,6 +12,7 @@ All notable changes to `baukit-sync` are documented here.
 ### Changed
 
 - Breaking: `observe` rejects remote timestamps more than 24 hours ahead. Corrupt persisted HLC state restarts at physical time. See `docs/migrations/hlc-drift-bound.md`.
+- Breaking: `merge_pull_page` takes `limit: NonZeroUsize`. A zero limit returned an empty page with a drained cursor and skipped every row in the window. See `docs/migrations/sync-pull-window.md`.
 
 ## [0.30.4] - 2026-11-25
 

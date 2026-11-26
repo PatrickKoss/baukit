@@ -23,6 +23,12 @@ the response with `merge_pull_page`. Return the new cursor as both
 `revision` and `id`. A client that still sends a bare revision maps to
 `PullCursor::after_revision(n)`, which is safe.
 
+`merge_pull_page` takes the per-table limit as `NonZeroUsize`. Keep the page
+size in one constant, for example
+`const PAGE_SIZE: NonZeroUsize = NonZeroUsize::MIN.saturating_add(99);`, and
+bind `PAGE_SIZE.get()` as the SQL `LIMIT`. A zero limit would fill no table and
+skip every row up to `hi`, so the type rejects it.
+
 Test the endpoint with `baukit_test::check_pull_conformance` (two tables,
 per-table limit 1, writes during paging).
 

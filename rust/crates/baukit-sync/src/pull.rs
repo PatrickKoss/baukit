@@ -25,6 +25,8 @@
 //! cuts every table at the lowest last position among tables that filled
 //! their limit and reports `more`.
 
+use std::num::NonZeroUsize;
+
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -98,17 +100,18 @@ pub struct MergedPullPage<T> {
 /// the [module docs](self) returns them. A table that returned `limit` rows
 /// may have more, so the page ends at the lowest last position among those
 /// tables, rows above it are dropped, and `more` is set. When no table filled
-/// its limit the page drains the window.
+/// its limit the page drains the window. `limit` is non-zero because a zero
+/// limit fills no table and would drain the window without returning its rows.
 #[must_use]
 pub fn merge_pull_page<T>(
     window: &PullWindow,
     tables: Vec<Vec<T>>,
-    limit: usize,
+    limit: NonZeroUsize,
     position: impl Fn(&T) -> PullCursor,
 ) -> MergedPullPage<T> {
     let cut = tables
         .iter()
-        .filter(|rows| rows.len() >= limit)
+        .filter(|rows| rows.len() >= limit.get())
         .filter_map(|rows| rows.last().map(&position))
         .min();
     let mut rows: Vec<T> = tables
@@ -179,6 +182,8 @@ pub async fn open_pull_window(
 mod tests {
     use super::*;
 
+    const TWO: NonZeroUsize = NonZeroUsize::MIN.saturating_add(1);
+
     #[test]
     fn legacy_cursor_sorts_after_every_row_of_its_revision() {
         let row = PullCursor::after_row(7, Uuid::now_v7());
@@ -196,7 +201,7 @@ mod tests {
         let id = Uuid::nil();
         let notes = vec![(8, id), (9, id)];
         let tags = vec![(4, id), (5, id)];
-        let page = merge_pull_page(&window, vec![notes, tags], 2, |&(revision, id)| {
+        let page = merge_pull_page(&window, vec![notes, tags], TWO, |&(revision, id)| {
             PullCursor::after_row(revision, id)
         });
         assert_eq!(page.rows, vec![(4, id), (5, id)]);
@@ -213,10 +218,27 @@ mod tests {
         let page = merge_pull_page(
             &window,
             vec![vec![(3, Uuid::nil())], Vec::new()],
-            2,
+            TWO,
             |&(r, id)| PullCursor::after_row(r, id),
         );
         assert_eq!(page.next, PullCursor::after_revision(9));
         assert!(!page.more);
+    }
+
+    /// A zero limit used to return an empty, drained page and skip every row
+    /// in the window. The smallest limit the type allows still pages.
+    #[test]
+    fn smallest_limit_returns_the_row_and_keeps_paging() {
+        let window = PullWindow {
+            hi: 9,
+            after: PullCursor::START,
+        };
+        let row = (1, Uuid::max());
+        let page = merge_pull_page(&window, vec![vec![row]], NonZeroUsize::MIN, |&(r, id)| {
+            PullCursor::after_row(r, id)
+        });
+        assert_eq!(page.rows, vec![row]);
+        assert_eq!(page.next, PullCursor::after_row(1, Uuid::max()));
+        assert!(page.more);
     }
 }

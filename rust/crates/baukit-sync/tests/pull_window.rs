@@ -1,6 +1,11 @@
 #![cfg(test)]
 //! F-06/F-07 regressions, the pull-conformance helper, and the P-11 sync state machine.
-use std::{collections::BTreeMap, error::Error, num::NonZeroU32, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    num::{NonZeroU32, NonZeroUsize},
+    path::PathBuf,
+};
 
 use baukit_sync::{
     horizon::PullCursorError,
@@ -535,6 +540,7 @@ async fn pull(
         write(pool, writer, writes).await?;
     }
     let limit = usize::try_from(limit)?;
+    let limit = NonZeroUsize::new(limit).ok_or("pull limit must be positive")?;
     Ok(Pulled::Page(match cursor {
         Cursor::Window => {
             let page = merge_pull_page(&window, per_table, limit, |row: &Row| {
@@ -554,8 +560,13 @@ async fn pull(
 
 /// The buggy merges kept as negative controls: a revision-only cursor, or the
 /// highest last position across tables with per-table limits.
-fn unsafe_merge(per_table: Vec<Vec<Row>>, limit: usize, after: PullCursor, cursor: Cursor) -> Page {
-    let more = per_table.iter().any(|rows| rows.len() >= limit);
+fn unsafe_merge(
+    per_table: Vec<Vec<Row>>,
+    limit: NonZeroUsize,
+    after: PullCursor,
+    cursor: Cursor,
+) -> Page {
+    let more = per_table.iter().any(|rows| rows.len() >= limit.get());
     let mut rows: Vec<Row> = per_table.into_iter().flatten().collect();
     rows.sort_by_key(|row| (row.revision, row.id));
     let next = rows.last().map_or(after, |row| match cursor {
