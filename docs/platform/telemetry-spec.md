@@ -102,18 +102,10 @@ outcomes `allowed` or `limited`.
 
 ## 5. Retention budgets (starting points)
 
-Metrics 30 days, logs 14 days, traces 7 days. Adjust from observed cost and incident value, per section 8.5 of the analysis.
+Metrics 30 days, logs 14 days, traces 7 days. Adjust them from observed cost and incident value.
 
 ## 6. Conformance
 
 - `baukit-test` ships a conformance test: boot the service, scrape `/metrics`, assert the section 2 names and labels exist, and assert no forbidden names (plural duration, app-prefixed HTTP metrics) appear.
 - Dashboards, recording rules, and alerts in `deploy/observability/` are linted in CI against the names in this file.
 - Changes to this specification are SemVer-relevant for `baukit-telemetry` and `baukit-http` and require a migration note in the release.
-
-## 7. Migration checklist for the existing apps
-
-| App | Required changes |
-|---|---|
-| Fitness Tracker | duration metric plural → singular; log label `service_name` → `service` |
-| OpenDialog | remove duplicate HTTP recording (custom RED middleware plus `axum-prometheus`); keep exactly one recorder |
-| Heldengang | drop app-prefixed HTTP metric names; status class → raw status code |
