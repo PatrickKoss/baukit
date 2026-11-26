@@ -1,0 +1,29 @@
+# Two echo API replicas behind Traefik for the rollout and pod-kill cases. The rollout changes
+# api.image.tag from local to next, two tags run.sh imports for the same image.
+fullnameOverride: echo
+product: e2e-disruption
+deploymentEnvironment: local
+api:
+  replicas: 2
+  image:
+    repository: localhost/baukit-e2e/echo
+    tag: local
+    pullPolicy: Never
+  command:
+    - nginx
+    - -g
+    - daemon off;
+  # The smallest grace the chart renders with the default 5 s preStop; see tests/ingress/values.yaml.
+  terminationGracePeriodSeconds: 11
+migration:
+  enabled: false
+networkPolicy:
+  dns:
+    k3sCompatible: true
+ingress:
+  enabled: true
+  hosts:
+    - host: echo-disruption.localhost
+      paths:
+        - path: /
+          pathType: Prefix

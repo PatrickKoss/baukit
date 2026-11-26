@@ -44,3 +44,67 @@ deploy/smoke/k3d-smoke.sh
 ```
 
 The token command owns sign-in. A product whose deployed issuer is Clerk or WorkOS mints a test token through that provider; a product testing against its local Keycloak realm can call its generated `scripts/pkce-login.py`. The harness never prints the token. Baukit ships no production Keycloak, so the harness no longer logs in through a Keycloak form itself.
+
+## Load smoke
+
+`api-load.js` pushes a generated API past its concurrency limit with k6 and checks how it sheds. It is
+opt-in: CI does not run it, because the numbers depend on the machine.
+
+The `overload` scenario ramps an open request rate on `GET /items` from 50 to `PEAK_RPS` in
+`RAMP_SECONDS`, then holds it for `HOLD_SECONDS`. An open rate keeps arriving while the API queues, so
+the queue fills and baukit-http sheds a request once it has waited longer than the 1 s queue timeout.
+A `liveness` scenario polls `/healthz` on the ops listener once a second for the whole run and five
+seconds after it.
+
+| Threshold | Passes when |
+|---|---|
+| `shed_responses` | at least one 503 came back, so the run really went past the limit |
+| `shed_without_retry_after` | every 503 carried a numeric `Retry-After` header |
+| `unexpected_status` | every response was a 200 or a 503; a timeout, 429 or 500 fails |
+| `admitted_duration` | the p99 of the 200 responses stayed under `ADMITTED_P99_MS`, 1500 ms by default |
+| `process_up` | every `/healthz` poll answered 200, during the load and after it |
+
+The 1500 ms target is the 1 s queue timeout plus 500 ms for the handler. An admitted request can wait
+the full queue timeout before it gets a permit, so a lower target would fail a healthy API.
+
+### Running it against a fixture
+
+Generate a backend-only fixture (no auth, so `/items` needs no token), start its database and run the
+API with a low concurrency limit. The config prefix is the fixture name in upper case with
+underscores, `LOAD_FIXTURE` here.
+
+```bash
+cargo build --manifest-path cli/Cargo.toml --bin baukit
+cli/target/debug/baukit new load-fixture --backend --dir .generated-fixture --baukit-path rust
+cd .generated-fixture/load-fixture
+make db-up migrate
+LOAD_FIXTURE__HTTP__CONCURRENCY_LIMIT=2 make run
+```
+
+Then, from the repository root in a second shell:
+
+```bash
+make load-smoke
+```
+
+`make load-smoke` calls `run-load-smoke.sh`, which runs the k6 image pinned by version and digest in
+`deploy/tools.toml` with `docker run --network host`, so k6 reaches the API on `127.0.0.1`. Host
+networking reaches the host's loopback only on Linux. k6 exits 99 when a threshold fails.
+
+The script passes these variables into the container only when they are set:
+
+| Variable | Default |
+|---|---|
+| `API_URL` | `http://127.0.0.1:8080` |
+| `OPS_URL` | `http://127.0.0.1:9090` |
+| `SMOKE_PATH` | `/items` |
+| `SMOKE_TOKEN` | empty; sent as a bearer token when set, for fixtures with auth |
+| `PEAK_RPS` | `2000` |
+| `RAMP_SECONDS` | `10` |
+| `HOLD_SECONDS` | `20` |
+| `MAX_VUS` | `400` |
+| `ADMITTED_P99_MS` | `1500` |
+
+If `shed_responses` fails, the API kept up with `PEAK_RPS`. Lower the concurrency limit or raise
+`PEAK_RPS`. If the fixture runs the rate limiter, its 429s count as unexpected. Turn the limiter off
+for the run, since the smoke measures the concurrency gate.

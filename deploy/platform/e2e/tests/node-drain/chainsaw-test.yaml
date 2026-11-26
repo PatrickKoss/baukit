@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: node-drain
+spec:
+  description: >-
+    A server-side dry-run drain of every node evicts every pod on it, so no PodDisruptionBudget in the
+    composed platform blocks a kured reboot. The single-instance CNPG cluster runs with enablePDB
+    false, and every other budget leaves a disruption allowed. Other suites kill or roll pods at the
+    same time, which can hold a budget at zero for a few seconds, so the drain retries until
+    drain_window_seconds pass and then prints the budgets that still block.
+  timeouts:
+    exec: 5m
+  steps:
+    - name: drain-dry-run
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              drain_window_seconds=180
+              retry_seconds=10
+              out=$(mktemp)
+              trap 'rm -f "$out"' EXIT
+              for node in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
+                deadline=$(($(date +%s) + drain_window_seconds))
+                until kubectl drain "$node" --dry-run=server --ignore-daemonsets --delete-emptydir-data \
+                  --force --timeout=60s >"$out" 2>&1; do
+                  if [ "$(date +%s)" -ge "$deadline" ]; then
+                    echo "drain of $node is still blocked after ${drain_window_seconds}s" >&2
+                    grep -i 'disruption budget\|error' "$out" >&2 || cat "$out" >&2
+                    kubectl get pdb -A -o custom-columns='NAMESPACE:.metadata.namespace,NAME:.metadata.name,ALLOWED:.status.disruptionsAllowed,HEALTHY:.status.currentHealthy,EXPECTED:.status.expectedPods' >&2
+                    exit 1
+                  fi
+                  sleep "$retry_seconds"
+                done
+                evicted=$(grep -c 'evict.*(server dry run)' "$out" || true)
+                [ "$evicted" -gt 0 ] || { echo "drain of $node evicted nothing" >&2; cat "$out" >&2; exit 1; }
+                echo "drain of $node: $evicted pods evictable, no PodDisruptionBudget blocks"
+              done
+        - script:
+            content: kubectl get nodes -o jsonpath='{range .items[*]}{.spec.unschedulable}{end}'
+            check:
+              ($stdout): ''
+      catch:
+        - script:
+            content: kubectl get pdb -A -o wide

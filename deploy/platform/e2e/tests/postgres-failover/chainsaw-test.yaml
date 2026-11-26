@@ -1,0 +1,213 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: postgres-failover
+spec:
+  description: >-
+    A single-instance CNPG cluster in e2e-tenant loses its primary pod. The operator recreates the
+    instance on the same PVC, and a client pod that runs a query every second sees it fail and then
+    succeed again without the client restarting. The suite uses its own cluster so the shared
+    postgres-cluster keeps serving the other suites, and one instance because a real switchover
+    needs a second instance (another 192Mi request and a base backup) on a cluster sized for one.
+  timeouts:
+    exec: 15m
+  steps:
+    - name: primary-delete
+      try:
+        - script:
+            timeout: 14m
+            content: |
+              set -eu
+              ns=e2e-tenant
+              name=e2e-failover
+              client=e2e-failover-client
+              as=system:serviceaccount:$ns:flux-reconciler
+              recovery_seconds=240
+              image="$(kubectl -n postgres get cluster postgres-cluster -o jsonpath='{.spec.imageName}')"
+              node_ip="$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')"
+
+              kubectl -n "$ns" --as="$as" apply -f - <<YAML
+              apiVersion: postgresql.cnpg.io/v1
+              kind: Cluster
+              metadata:
+                name: $name
+              spec:
+                instances: 1
+                enablePDB: false
+                imageName: $image
+                enableSuperuserAccess: false
+                inheritedMetadata:
+                  labels:
+                    app.kubernetes.io/part-of: e2e
+                    baukit.dev/product: e2e
+                    baukit.dev/process: postgres
+                bootstrap:
+                  initdb:
+                    database: app
+                    owner: app
+                resources:
+                  requests: {cpu: 50m, memory: 192Mi}
+                  limits: {cpu: 300m, memory: 384Mi}
+                storage:
+                  size: 1Gi
+              ---
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: $name
+              spec:
+                podSelector:
+                  matchLabels:
+                    cnpg.io/cluster: $name
+                policyTypes: [Ingress, Egress]
+                ingress:
+                  - from:
+                      - podSelector:
+                          matchLabels:
+                            cnpg.io/cluster: $name
+                      - podSelector:
+                          matchLabels:
+                            app.kubernetes.io/name: $client
+                    ports:
+                      - {protocol: TCP, port: 5432}
+                  - from:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: cnpg-system
+                        podSelector:
+                          matchLabels:
+                            app.kubernetes.io/name: cloudnative-pg
+                    ports:
+                      - {protocol: TCP, port: 5432}
+                      - {protocol: TCP, port: 8000}
+                egress:
+                  - to:
+                      - podSelector:
+                          matchLabels:
+                            cnpg.io/cluster: $name
+                    ports:
+                      - {protocol: TCP, port: 5432}
+                  - to:
+                      - ipBlock:
+                          cidr: $node_ip/32
+                    ports:
+                      - {protocol: TCP, port: 6443}
+                  - to:
+                      - ipBlock:
+                          cidr: 10.43.0.1/32
+                    ports:
+                      - {protocol: TCP, port: 443}
+              ---
+              apiVersion: networking.k8s.io/v1
+              kind: NetworkPolicy
+              metadata:
+                name: $client
+              spec:
+                podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: $client
+                policyTypes: [Egress]
+                egress:
+                  - to:
+                      - podSelector:
+                          matchLabels:
+                            cnpg.io/cluster: $name
+                    ports:
+                      - {protocol: TCP, port: 5432}
+              YAML
+              kubectl -n "$ns" wait cluster/"$name" --for=condition=Ready --timeout=8m
+
+              kubectl -n "$ns" apply -f - <<YAML
+              apiVersion: v1
+              kind: Pod
+              metadata:
+                name: $client
+                labels:
+                  app.kubernetes.io/name: $client
+              spec:
+                restartPolicy: Never
+                activeDeadlineSeconds: 600
+                automountServiceAccountToken: false
+                enableServiceLinks: false
+                terminationGracePeriodSeconds: 0
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: 26
+                  runAsGroup: 26
+                  seccompProfile: {type: RuntimeDefault}
+                containers:
+                  - name: psql
+                    image: $image
+                    command: [bash, -c]
+                    args:
+                      - |
+                        while :; do
+                          if out="\$(psql -XtAq -v ON_ERROR_STOP=1 -c 'select 1' 2>&1)"; then
+                            echo "\$(date +%T) ok"
+                          else
+                            echo "\$(date +%T) fail: \$(printf %s "\$out" | head -c 200)"
+                          fi
+                          sleep 1
+                        done
+                    env:
+                      - {name: PGHOST, value: $name-rw}
+                      - {name: PGDATABASE, value: app}
+                      - {name: PGSSLMODE, value: require}
+                      - {name: PGCONNECT_TIMEOUT, value: "2"}
+                      - name: PGUSER
+                        valueFrom: {secretKeyRef: {name: $name-app, key: username}}
+                      - name: PGPASSWORD
+                        valueFrom: {secretKeyRef: {name: $name-app, key: password}}
+                    resources:
+                      requests: {cpu: 10m, memory: 32Mi}
+                      limits: {cpu: 200m, memory: 128Mi}
+                    securityContext:
+                      allowPrivilegeEscalation: false
+                      readOnlyRootFilesystem: true
+                      capabilities: {drop: [ALL]}
+              YAML
+
+              oks() { kubectl -n "$ns" logs "$client" 2>/dev/null | grep -c ' ok$' || true; }
+              deadline=$(($(date +%s) + 120))
+              until [ "$(oks)" -gt 0 ]; do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo 'the client never reached the primary' >&2; kubectl -n "$ns" logs "$client" >&2 || true; exit 1; }
+                sleep 2
+              done
+
+              primary="$(kubectl -n "$ns" get cluster "$name" -o jsonpath='{.status.currentPrimary}')"
+              old_uid="$(kubectl -n "$ns" get pod "$primary" -o jsonpath='{.metadata.uid}')"
+              kubectl -n "$ns" delete pod "$primary" --wait=false
+              echo "deleted primary $primary"
+
+              deadline=$(($(date +%s) + recovery_seconds))
+              until uid="$(kubectl -n "$ns" get pod "$primary" -o jsonpath='{.metadata.uid}' 2>/dev/null)" &&
+                [ -n "$uid" ] && [ "$uid" != "$old_uid" ] &&
+                [ "$(kubectl -n "$ns" get pod "$primary" -o jsonpath='{.status.containerStatuses[?(@.name=="postgres")].ready}')" = true ]; do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo "no new $primary became ready" >&2; exit 1; }
+                sleep 2
+              done
+              echo "new $primary is ready"
+
+              settled=$(oks)
+              until [ "$(oks)" -gt "$settled" ]; do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo 'the client did not reconnect to the new primary' >&2; kubectl -n "$ns" logs "$client" >&2; exit 1; }
+                sleep 2
+              done
+              kubectl -n "$ns" logs "$client" | tail -n 40
+              kubectl -n "$ns" get pod "$client" -o jsonpath='{.status.phase} {.status.containerStatuses[0].restartCount}' |
+                grep -qx 'Running 0' || { echo 'the client pod did not keep running' >&2; exit 1; }
+              echo 'the client reconnected to the recreated primary without restarting'
+      catch:
+        - script:
+            content: |
+              kubectl -n e2e-tenant get cluster,pods -o wide
+              kubectl -n e2e-tenant describe cluster e2e-failover | tail -40
+              kubectl -n e2e-tenant logs e2e-failover-client --tail=60
+      finally:
+        - script:
+            timeout: 5m
+            content: |
+              kubectl -n e2e-tenant delete pod e2e-failover-client --ignore-not-found --wait=false
+              kubectl -n e2e-tenant delete cluster e2e-failover --ignore-not-found --wait=true --timeout=4m
+              kubectl -n e2e-tenant delete networkpolicy e2e-failover e2e-failover-client --ignore-not-found

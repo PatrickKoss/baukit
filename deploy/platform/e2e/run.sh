@@ -21,6 +21,8 @@ source "$e2e_dir/k3s-checks.sh"
 snapshot_port=9418
 echo_image=localhost/baukit-e2e/echo:local
 echo_faulty_image=localhost/baukit-e2e/echo-faulty:local
+# A second tag of the echo image, so tests/api-disruption can roll out an image tag change.
+echo_next_image=localhost/baukit-e2e/echo:next
 ready_timeout=30m
 stats_interval_seconds=15
 e2e_subnet_first=100
@@ -303,7 +305,8 @@ serve_snapshot() {
 import_echo_image() {
   docker build -q -t "$echo_image" "$e2e_dir/echo" >/dev/null
   docker build -q -t "$echo_faulty_image" --build-arg ECHO_CONF=faulty.conf "$e2e_dir/echo" >/dev/null
-  k3d image import -c "$cluster_name" "$echo_image" "$echo_faulty_image" >/dev/null
+  docker tag "$echo_image" "$echo_next_image"
+  k3d image import -c "$cluster_name" "$echo_image" "$echo_next_image" "$echo_faulty_image" >/dev/null
 }
 
 apply_runtime_identity() {
