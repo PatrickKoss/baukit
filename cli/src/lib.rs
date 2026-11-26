@@ -64,8 +64,8 @@ pub const TEMPLATE_VERSION: &str = include_str!("../../templates/VERSION").trim_
 
 const OPENAPI_TYPESCRIPT_PACKAGE: &str = "openapi-typescript@7.13.0";
 const MAX_APPLICATION_NAME_LEN: usize = 41;
-const PLATFORM_MIGRATION_PATH: &str = "backend/migrations/0009_platform.sql";
-const LAST_TEMPLATE_MIGRATION_VERSION: u64 = 8;
+const PLATFORM_MIGRATION_PATH: &str = "backend/migrations/0011_platform.sql";
+const LAST_TEMPLATE_MIGRATION_VERSION: u64 = 10;
 
 const EXPECTED_BACKEND_FILES: &[&str] = &[
     "README.md",
