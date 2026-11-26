@@ -1,13 +1,18 @@
 use super::*;
 use async_trait::async_trait;
+use baukit_resilience::{Clock, SystemClock};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Weak},
+    sync::{Arc, PoisonError, Weak},
+    time::{Duration, Instant},
 };
 use tokio::sync::{Mutex, RwLock};
 
 pub const FREE_CACHE_TTL_SECONDS: i64 = 60;
+/// After a failed hub pull, reads skip the hub for this long and serve a
+/// snapshot in its grace window, or fail with this `Retry-After`.
+pub const ENTITLEMENT_FAILURE_COOLDOWN: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -57,6 +62,13 @@ pub trait EntitlementCache: Send + Sync {
         product_id: &str,
         now: i64,
     ) -> Result<Option<EntitlementSnapshot>, PlatformError>;
+    /// The stored snapshot even after `valid_until`, so reads can serve it
+    /// until `grace_until` while the source fails.
+    async fn retained(
+        &self,
+        subject: &str,
+        product_id: &str,
+    ) -> Result<Option<EntitlementSnapshot>, PlatformError>;
     /// The retained revision cursor, including expired snapshots.
     async fn revision(&self, subject: &str, product_id: &str) -> Result<u64, PlatformError>;
     /// Remove every product snapshot and revision cursor for this subject.
@@ -94,6 +106,18 @@ impl EntitlementCache for InMemoryEntitlementCache {
             .await
             .get(&(subject.into(), product_id.into()))
             .filter(|s| now < s.valid_until)
+            .cloned())
+    }
+    async fn retained(
+        &self,
+        subject: &str,
+        product_id: &str,
+    ) -> Result<Option<EntitlementSnapshot>, PlatformError> {
+        Ok(self
+            .entries
+            .read()
+            .await
+            .get(&(subject.into(), product_id.into()))
             .cloned())
     }
     async fn revision(&self, subject: &str, product_id: &str) -> Result<u64, PlatformError> {
@@ -138,6 +162,37 @@ impl Default for StandaloneEntitlements {
         }
     }
 }
+/// A snapshot and whether it is past `valid_until`, served within its grace
+/// window because the hub failed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EntitlementRead {
+    pub snapshot: EntitlementSnapshot,
+    pub stale: bool,
+}
+
+/// Why [`Entitlements`] returned no snapshot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum EntitlementError {
+    /// The hub failed and no snapshot is within its grace window. Answer
+    /// `503` with this `Retry-After`; `From<EntitlementError> for ApiError` does.
+    #[error("entitlements_unavailable")]
+    Unavailable { retry_after: Duration },
+    /// The entitlement cache failed.
+    #[error(transparent)]
+    Platform(#[from] PlatformError),
+}
+impl From<EntitlementError> for baukit_http::ApiError {
+    fn from(error: EntitlementError) -> Self {
+        match error {
+            EntitlementError::Unavailable { retry_after } => Self::unavailable(retry_after),
+            EntitlementError::Platform(PlatformError::Unavailable) => {
+                Self::unavailable(ENTITLEMENT_FAILURE_COOLDOWN)
+            }
+            EntitlementError::Platform(error) => Self::internal(error),
+        }
+    }
+}
+
 /// The same read API serves hub and standalone products. Tier meanings remain
 /// product policy; this crate only compares tier and feature keys exactly.
 #[derive(Clone)]
@@ -147,12 +202,15 @@ pub struct Entitlements {
 }
 #[derive(Clone)]
 enum EntitlementMode {
-    Hub {
-        cache: Arc<dyn EntitlementCache>,
-        source: Arc<dyn EntitlementSource>,
-        flights: Arc<Mutex<BTreeMap<String, Weak<Mutex<()>>>>>,
-    },
+    Hub(Arc<HubEntitlements>),
     Standalone(StandaloneEntitlements),
+}
+struct HubEntitlements {
+    cache: Arc<dyn EntitlementCache>,
+    source: Arc<dyn EntitlementSource>,
+    flights: Mutex<BTreeMap<String, Weak<Mutex<()>>>>,
+    clock: Arc<dyn Clock>,
+    cooldown: std::sync::Mutex<Option<Instant>>,
 }
 impl Entitlements {
     pub fn hub(
@@ -160,13 +218,24 @@ impl Entitlements {
         cache: Arc<dyn EntitlementCache>,
         source: Arc<dyn EntitlementSource>,
     ) -> Self {
+        Self::hub_with_clock(product_id, cache, source, Arc::new(SystemClock))
+    }
+    /// [`Self::hub`] with the clock that drives the failure cooldown.
+    pub fn hub_with_clock(
+        product_id: String,
+        cache: Arc<dyn EntitlementCache>,
+        source: Arc<dyn EntitlementSource>,
+        clock: Arc<dyn Clock>,
+    ) -> Self {
         Self {
             product_id,
-            mode: EntitlementMode::Hub {
+            mode: EntitlementMode::Hub(Arc::new(HubEntitlements {
                 cache,
                 source,
-                flights: Arc::default(),
-            },
+                flights: Mutex::default(),
+                clock,
+                cooldown: std::sync::Mutex::new(None),
+            })),
         }
     }
     pub fn standalone(product_id: String, default: StandaloneEntitlements) -> Self {
@@ -175,77 +244,56 @@ impl Entitlements {
             mode: EntitlementMode::Standalone(default),
         }
     }
+    /// The current snapshot. While the hub fails, a snapshot past `valid_until`
+    /// but before `grace_until` is returned with `stale: true`.
+    ///
     /// # Errors
     ///
-    /// `PlatformError::Unavailable` in hub mode when the source fails with anything but
-    /// `NoEntitlements`, or returns a snapshot that is invalid, already expired, for another
-    /// subject or product, or older than the cached revision, or when the snapshot is gone after
-    /// the store. Cache read and write errors pass through. Standalone mode never fails.
+    /// `EntitlementError::Unavailable` in hub mode when the pull fails or is cooling down after a
+    /// failure, and no snapshot is within its grace window. A pull fails when the source fails
+    /// with anything but `NoEntitlements`, or returns a snapshot that is invalid, already expired,
+    /// for another subject or product, or older than the cached revision. `retry_after` is the
+    /// source's own delay (an open breaker) or the remaining [`ENTITLEMENT_FAILURE_COOLDOWN`].
+    /// `Platform` for cache read and write errors and when the snapshot is gone after the store.
+    /// Standalone mode never fails.
+    pub async fn read(&self, subject: &str, now: i64) -> Result<EntitlementRead, EntitlementError> {
+        match &self.mode {
+            EntitlementMode::Hub(hub) => hub.read(subject, &self.product_id, now).await,
+            EntitlementMode::Standalone(default) => Ok(EntitlementRead {
+                snapshot: EntitlementSnapshot {
+                    subject: subject.into(),
+                    product_id: self.product_id.clone(),
+                    tier: default.tier.clone(),
+                    features: default.features.clone(),
+                    revision: 0,
+                    valid_until: i64::MAX,
+                    grace_until: None,
+                },
+                stale: false,
+            }),
+        }
+    }
+    /// [`Self::read`] without the staleness flag.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::read`].
     pub async fn current(
         &self,
         subject: &str,
         now: i64,
-    ) -> Result<Option<EntitlementSnapshot>, PlatformError> {
-        match &self.mode {
-            EntitlementMode::Hub {
-                cache,
-                source,
-                flights,
-            } => {
-                if let Some(snapshot) = cache.get(subject, &self.product_id, now).await? {
-                    return Ok(Some(snapshot));
-                }
-                let flight = {
-                    let mut flights = flights.lock().await;
-                    flights.retain(|_, lock| lock.strong_count() > 0);
-                    match flights.get(subject).and_then(Weak::upgrade) {
-                        Some(lock) => lock,
-                        None => {
-                            let lock = Arc::new(Mutex::new(()));
-                            flights.insert(subject.into(), Arc::downgrade(&lock));
-                            lock
-                        }
-                    }
-                };
-                let _guard = flight.lock().await;
-                if let Some(snapshot) = cache.get(subject, &self.product_id, now).await? {
-                    return Ok(Some(snapshot));
-                }
-                let revision = cache.revision(subject, &self.product_id).await?;
-                let snapshot =
-                    pull_snapshot(source.as_ref(), subject, &self.product_id, revision, now)
-                        .await?;
-                if snapshot.valid_until <= now {
-                    return Err(PlatformError::Unavailable);
-                }
-                cache.store(&snapshot).await?;
-                // A concurrent event may have stored a newer revision during the pull.
-                cache
-                    .get(subject, &self.product_id, now)
-                    .await?
-                    .map(Some)
-                    .ok_or(PlatformError::Unavailable)
-            }
-            EntitlementMode::Standalone(default) => Ok(Some(EntitlementSnapshot {
-                subject: subject.into(),
-                product_id: self.product_id.clone(),
-                tier: default.tier.clone(),
-                features: default.features.clone(),
-                revision: 0,
-                valid_until: i64::MAX,
-                grace_until: None,
-            })),
-        }
+    ) -> Result<Option<EntitlementSnapshot>, EntitlementError> {
+        Ok(Some(self.read(subject, now).await?.snapshot))
     }
     /// # Errors
     ///
-    /// The errors of [`Self::current`].
+    /// The errors of [`Self::read`].
     pub async fn has_entitlement(
         &self,
         subject: &str,
         feature: &str,
         now: i64,
-    ) -> Result<bool, PlatformError> {
+    ) -> Result<bool, EntitlementError> {
         Ok(self
             .current(subject, now)
             .await?
@@ -253,18 +301,132 @@ impl Entitlements {
     }
     /// # Errors
     ///
-    /// The errors of [`Self::current`].
+    /// The errors of [`Self::read`].
     pub async fn has_tier(
         &self,
         subject: &str,
         tier: &str,
         now: i64,
-    ) -> Result<bool, PlatformError> {
+    ) -> Result<bool, EntitlementError> {
         Ok(self
             .current(subject, now)
             .await?
             .is_some_and(|s| s.tier == tier))
     }
+}
+impl HubEntitlements {
+    async fn read(
+        &self,
+        subject: &str,
+        product_id: &str,
+        now: i64,
+    ) -> Result<EntitlementRead, EntitlementError> {
+        if let Some(read) = self.fresh(subject, product_id, now).await? {
+            return Ok(read);
+        }
+        if let Some(retry_after) = self.cooling_down() {
+            return self.grace(subject, product_id, now, retry_after).await;
+        }
+        let flight = self.flight(subject).await;
+        let _guard = flight.lock().await;
+        if let Some(read) = self.fresh(subject, product_id, now).await? {
+            return Ok(read);
+        }
+        if let Some(retry_after) = self.cooling_down() {
+            return self.grace(subject, product_id, now, retry_after).await;
+        }
+        let revision = self.cache.revision(subject, product_id).await?;
+        let snapshot = match pull_checked(self.source.as_ref(), subject, product_id, revision, now)
+            .await
+            .and_then(|snapshot| unexpired(snapshot, now))
+        {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                let retry_after = self.failed(error);
+                return self.grace(subject, product_id, now, retry_after).await;
+            }
+        };
+        self.cache.store(&snapshot).await?;
+        // A concurrent event may have stored a newer revision during the pull.
+        self.fresh(subject, product_id, now)
+            .await?
+            .ok_or(EntitlementError::Platform(PlatformError::Unavailable))
+    }
+    async fn fresh(
+        &self,
+        subject: &str,
+        product_id: &str,
+        now: i64,
+    ) -> Result<Option<EntitlementRead>, PlatformError> {
+        Ok(self
+            .cache
+            .get(subject, product_id, now)
+            .await?
+            .map(|snapshot| EntitlementRead {
+                snapshot,
+                stale: false,
+            }))
+    }
+    async fn grace(
+        &self,
+        subject: &str,
+        product_id: &str,
+        now: i64,
+        retry_after: Duration,
+    ) -> Result<EntitlementRead, EntitlementError> {
+        self.cache
+            .retained(subject, product_id)
+            .await?
+            .filter(|snapshot| snapshot.grace_until.is_some_and(|grace| now < grace))
+            .map(|snapshot| EntitlementRead {
+                snapshot,
+                stale: true,
+            })
+            .ok_or(EntitlementError::Unavailable { retry_after })
+    }
+    async fn flight(&self, subject: &str) -> Arc<Mutex<()>> {
+        let mut flights = self.flights.lock().await;
+        flights.retain(|_, lock| lock.strong_count() > 0);
+        if let Some(lock) = flights.get(subject).and_then(Weak::upgrade) {
+            return lock;
+        }
+        let lock = Arc::new(Mutex::new(()));
+        flights.insert(subject.into(), Arc::downgrade(&lock));
+        lock
+    }
+    fn cooling_down(&self) -> Option<Duration> {
+        let until = (*self.lock_cooldown())?;
+        until
+            .checked_duration_since(self.clock.now())
+            .filter(|remaining| !remaining.is_zero())
+    }
+    /// Starts the cooldown when the hub itself failed and returns the delay
+    /// callers should wait.
+    fn failed(&self, error: EntitlementSourceError) -> Duration {
+        let retry_after = match error {
+            EntitlementSourceError::CoolingDown { retry_after } => retry_after,
+            _ => ENTITLEMENT_FAILURE_COOLDOWN,
+        };
+        if matches!(
+            error,
+            EntitlementSourceError::Unavailable | EntitlementSourceError::CoolingDown { .. }
+        ) {
+            *self.lock_cooldown() = self.clock.now().checked_add(retry_after);
+        }
+        retry_after
+    }
+    fn lock_cooldown(&self) -> std::sync::MutexGuard<'_, Option<Instant>> {
+        self.cooldown.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+fn unexpired(
+    snapshot: EntitlementSnapshot,
+    now: i64,
+) -> Result<EntitlementSnapshot, EntitlementSourceError> {
+    if snapshot.valid_until <= now {
+        return Err(EntitlementSourceError::Invalid);
+    }
+    Ok(snapshot)
 }
 #[async_trait]
 pub trait EntitlementSource: Send + Sync {
@@ -313,6 +475,15 @@ async fn pull_snapshot(
     revision: u64,
     now: i64,
 ) -> Result<EntitlementSnapshot, PlatformError> {
+    Ok(pull_checked(source, subject, product_id, revision, now).await?)
+}
+async fn pull_checked(
+    source: &dyn EntitlementSource,
+    subject: &str,
+    product_id: &str,
+    revision: u64,
+    now: i64,
+) -> Result<EntitlementSnapshot, EntitlementSourceError> {
     let snapshot = match source.pull(subject, product_id).await {
         Ok(snapshot) => snapshot,
         Err(EntitlementSourceError::NoEntitlements) => EntitlementSnapshot {
@@ -324,16 +495,16 @@ async fn pull_snapshot(
             valid_until: now.saturating_add(FREE_CACHE_TTL_SECONDS),
             grace_until: None,
         },
-        Err(error) => return Err(error.into()),
+        Err(error) => return Err(error),
     };
     snapshot
         .validate()
-        .map_err(|_| PlatformError::Unavailable)?;
+        .map_err(|_| EntitlementSourceError::Invalid)?;
     if snapshot.subject != subject
         || snapshot.product_id != product_id
         || snapshot.revision < revision
     {
-        return Err(PlatformError::Unavailable);
+        return Err(EntitlementSourceError::Invalid);
     }
     Ok(snapshot)
 }

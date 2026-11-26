@@ -18,6 +18,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
+use std::time::Duration;
 use tower::ServiceExt;
 
 const EVENTS: &str = include_str!("../../../../fixtures/platform-events/v1/envelopes.json");
@@ -1064,7 +1065,13 @@ async fn hub_reads_pull_on_first_use_and_expiry_with_single_flight() {
         calls: AtomicUsize::new(0),
         value: std::sync::Mutex::new(Ok(snapshot(7, 100))),
     });
-    let reads = Entitlements::hub("hebkit".into(), cache.clone(), source.clone());
+    let clock = Arc::new(ManualClock::new());
+    let reads = Entitlements::hub_with_clock(
+        "hebkit".into(),
+        cache.clone(),
+        source.clone(),
+        clock.clone(),
+    );
     let mut tasks = Vec::new();
     for _ in 0..20 {
         let reads = reads.clone();
@@ -1099,7 +1106,9 @@ async fn hub_reads_pull_on_first_use_and_expiry_with_single_flight() {
     *source.value.lock().expect("value") = Err(EntitlementSourceError::Unavailable);
     assert_eq!(
         reads.has_tier("suite|person-123", "premium", 200).await,
-        Err(PlatformError::Unavailable)
+        Err(EntitlementError::Unavailable {
+            retry_after: ENTITLEMENT_FAILURE_COOLDOWN
+        })
     );
     assert_eq!(
         cache
@@ -1109,9 +1118,84 @@ async fn hub_reads_pull_on_first_use_and_expiry_with_single_flight() {
         None
     );
     *source.value.lock().expect("value") = Ok(snapshot(7, 300));
+    clock.advance(ENTITLEMENT_FAILURE_COOLDOWN);
     assert_eq!(
         reads.current("suite|person-123", 200).await,
-        Err(PlatformError::Unavailable)
+        Err(EntitlementError::Unavailable {
+            retry_after: ENTITLEMENT_FAILURE_COOLDOWN
+        })
+    );
+}
+#[tokio::test]
+async fn hub_outages_serve_the_last_snapshot_until_grace_then_fail_with_retry_after() {
+    let subject = "suite|person-123";
+    let cache = Arc::new(InMemoryEntitlementCache::default());
+    let source = Arc::new(CountingPull {
+        calls: AtomicUsize::new(0),
+        value: std::sync::Mutex::new(Ok(EntitlementSnapshot {
+            grace_until: Some(500),
+            ..snapshot(7, 100)
+        })),
+    });
+    let clock = Arc::new(ManualClock::new());
+    let reads = Entitlements::hub_with_clock("hebkit".into(), cache, source.clone(), clock.clone());
+    assert_eq!(
+        reads.read(subject, 0).await.map(|read| read.stale),
+        Ok(false)
+    );
+
+    *source.value.lock().expect("value") = Err(EntitlementSourceError::Unavailable);
+    let stale = reads.read(subject, 100).await.expect("grace");
+    assert!(stale.stale);
+    assert_eq!(stale.snapshot.revision, 7);
+    assert_eq!(source.calls.load(Ordering::SeqCst), 2);
+    assert!(reads.read(subject, 300).await.expect("grace").stale);
+    assert_eq!(
+        source.calls.load(Ordering::SeqCst),
+        2,
+        "the cooldown skips the hub"
+    );
+
+    clock.advance(Duration::from_secs(4));
+    assert_eq!(
+        reads.read(subject, 500).await,
+        Err(EntitlementError::Unavailable {
+            retry_after: ENTITLEMENT_FAILURE_COOLDOWN - Duration::from_secs(4)
+        })
+    );
+    let response = axum::response::IntoResponse::into_response(baukit_http::ApiError::from(
+        EntitlementError::Unavailable {
+            retry_after: Duration::from_secs(6),
+        },
+    ));
+    assert_eq!(
+        response.status(),
+        axum::http::StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(
+        response.headers().get(axum::http::header::RETRY_AFTER),
+        Some(&axum::http::HeaderValue::from_static("6"))
+    );
+
+    clock.advance(ENTITLEMENT_FAILURE_COOLDOWN);
+    *source.value.lock().expect("value") = Err(EntitlementSourceError::CoolingDown {
+        retry_after: Duration::from_secs(42),
+    });
+    assert_eq!(
+        reads.read(subject, 500).await,
+        Err(EntitlementError::Unavailable {
+            retry_after: Duration::from_secs(42)
+        }),
+        "an open breaker sets Retry-After"
+    );
+    clock.advance(Duration::from_secs(42));
+    *source.value.lock().expect("value") = Ok(snapshot(8, 900));
+    assert_eq!(
+        reads.read(subject, 500).await,
+        Ok(EntitlementRead {
+            snapshot: snapshot(8, 900),
+            stale: false
+        })
     );
 }
 #[tokio::test]
