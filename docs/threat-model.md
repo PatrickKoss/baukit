@@ -9,7 +9,7 @@ Baukit is a library, so this model covers the controls the crates, packages, tem
 | Class | Kind | Stores | Retention and erasure |
 |---|---|---|---|
 | Identity claims (subject, email, org) | personal | PostgreSQL via `baukit-auth` principal, logs as hashed or bounded fields | `baukit-erasure`, `baukit-data-subject` |
-| Access and refresh tokens | credential | browser storage via `@baukit/auth-web` (S-01), native secure store via `@baukit/auth-native` | token lifetime |
+| Access and refresh tokens | credential | web: refresh token sealed server side by the `/auth/session` BFF, access token in memory in `@baukit/auth-web`, no token in browser storage (S-01); native: secure store via `@baukit/auth-native` | token lifetime |
 | API tokens | credential | PostgreSQL, hashed (`baukit-auth/src/api_token.rs`) | revocation and expiry |
 | Pending OAuth flows (state hash, binding hash, user, provider, PKCE verifier) | credential | PostgreSQL `oauth_states` and `oauth_states_used` via `baukit-integrations` `oauth-state` | 10 minute TTL, `purge_expired` |
 | Third-party secrets | credential | PostgreSQL, AES-256-GCM (`baukit-credential-vault`) | deleted with the connection |
