@@ -165,9 +165,6 @@ for chart in deploy/chart/baukit-app/Chart.yaml deploy/observability/Chart.yaml 
     's{^version: .+$}{"version: ".$ENV{TRAIN_VERSION}}egm; s{^appVersion: .+$}{"appVersion: \"".$ENV{TRAIN_VERSION}."\""}egm' \
     "$chart"
 done
-TRAIN_VERSION="$next" perl -0pi -e \
-  's{(^  - name: baukit-app\n    version: ).+$}{$1.$ENV{TRAIN_VERSION}}egm' \
-  deploy/chart/baukit-app/README.md
 TRAIN_VERSION="$next" perl -pi -e \
   's#^\| Baukit \| [^ |]+ \|#"| Baukit | ".$ENV{TRAIN_VERSION}." |"#e' \
   docs/platform/compatibility-matrix.md

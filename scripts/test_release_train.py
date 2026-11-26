@@ -414,7 +414,6 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 "deploy/platform/CHANGELOG.md": "## [Unreleased]\n\n- Pending platform fix.\n",
                 "deploy/observability/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
                 "deploy/observability-platform/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
-                "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.0\n",
                 "cli/tests/snapshots/backend.tree": "0000  baukit.toml\n",
             }
             for relative, source in files.items():
@@ -702,7 +701,6 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             "deploy/platform/CHANGELOG.md": "## [Unreleased]\n\n- Pending platform fix.\n",
             "deploy/observability/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
             "deploy/observability-platform/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
-            "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.1\n",
             "README.md": f"{INSTALL_PREFIX}0.7.1 --locked baukit-cli\n",
             "cli/README.md": f"{INSTALL_PREFIX}0.7.1 --locked baukit-cli\n",
             "docs/platform/compatibility-matrix.md": "| Baukit | 0.7.1 |\n",
