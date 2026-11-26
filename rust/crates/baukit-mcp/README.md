@@ -67,7 +67,8 @@ resolve a different product subject in a trusted verifier with
 
 Products set server identity and instructions on `McpServices`:
 
-```rust
+<!-- Not compiled: a fragment; `tools` is the product's tool registry. -->
+```rust,ignore
 use baukit_mcp::{Implementation, McpServices};
 
 let services = McpServices::new(tools)

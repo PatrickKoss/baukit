@@ -177,7 +177,8 @@ method. Add the separate `DataSubjectExportProduct` implementation to the
 product's existing adapter, here named `BillingProduct`, and enable it before
 constructing the store:
 
-```rust,no_run
+<!-- Not compiled: a fragment that names product types such as `BillingProduct`. -->
+```rust,ignore
 use std::sync::Arc;
 use baukit_data_subject::{
     DataSubjectConfig, DataSubjectExportProduct, DataSubjectFuture, ExportCategory,

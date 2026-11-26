@@ -139,7 +139,8 @@ pending or running job of a type should exist for a key. For a domain mutation
 and enqueue that must commit together, call
 `enqueue_deduplicated_in_transaction(&mut transaction, job, dedupe_key)`.
 
-```rust,no_run
+<!-- Not compiled: a fragment that uses a job store the product builds. -->
+```rust,ignore
 use baukit_jobs::NewJob;
 use serde_json::json;
 

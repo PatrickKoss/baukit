@@ -6,7 +6,8 @@ Pass an explicit `IdentityRetention` to `ErasureService::new`.
 Use `IdentityRetention::Retain` when several apps share one provider account,
 such as a Clerk instance with satellite domains:
 
-```rust
+<!-- Not compiled: a fragment; `store` is the product's erasure store. -->
+```rust,ignore
 let service = ErasureService::new(store, IdentityRetention::Retain)?;
 ```
 
@@ -21,7 +22,8 @@ account.
 Use `IdentityRetention::Delete` when erasure should also delete the provider
 account:
 
-```rust
+<!-- Not compiled: a fragment; `store` and `deleter` are product adapters. -->
+```rust,ignore
 let service = ErasureService::new(
     store,
     IdentityRetention::Delete {

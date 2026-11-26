@@ -14,7 +14,8 @@ The middleware reads an already verified `baukit_auth::Principal` from request
 extensions. Use `baukit_auth::establish_principal` as the outer layer when
 identity limiting is enabled:
 
-```rust
+<!-- Not compiled: a fragment that uses product state and handlers. -->
+```rust,ignore
 use axum::{Router, middleware, routing::get};
 use baukit_auth::{AuthState, IdentityVerifier, establish_principal};
 use baukit_ratelimit::{InMemoryRateLimitStore, RateLimitOptions, layers};

@@ -78,7 +78,8 @@ baukit-suite = { version = "0.10.0", features = ["http", "jobs", "delivery"] }
 peer client, delivery service and erasure adapter. A product supplies its four
 port implementations and catalog constants:
 
-```rust
+<!-- Not compiled: a fragment that uses product adapters. -->
+```rust,ignore
 let cipher = config.credential_vault.cipher()?;
 let settings = SuiteSettings::new(APP_ID, PEERS_JSON, CATALOG_JSON, &config.suite, cipher)?;
 let suite = PostgresSuite::builder(pool.clone(), settings, limiter)
