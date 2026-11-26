@@ -301,6 +301,5 @@ class DocsInventoryCheckTests(unittest.TestCase):
         self.assertEqual(home_path_failures(self.root, ("docs",)), {"docs/a.md: /home/ path"})
 
 
-
 if __name__ == "__main__":
     sys.exit(unittest.main())

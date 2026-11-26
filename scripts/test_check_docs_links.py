@@ -61,5 +61,6 @@ class CheckDocsLinksTests(unittest.TestCase):
         self.assertGreater(checked, 0)
         self.assertEqual(missing, [])
 
+
 if __name__ == "__main__":
     unittest.main()
