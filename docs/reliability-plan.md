@@ -234,7 +234,7 @@ them.
   respects the cooldown. Acceptance: tests with `ManualClock` for fresh hit, stale serve while the
   source fails, cooldown stops a fetch per request, expiry of the stale window, and N concurrent
   readers triggering one fetch.
-- [ ] **RC3 Resilience contract doc**: `docs/platform/resilience-contract.md` states the end-to-end
+- [x] **RC3 Resilience contract doc**: `docs/platform/resilience-contract.md` states the end-to-end
   rules (who returns 503, who honours `Retry-After`, default policies, which destinations exist) and
   links `integration-reliability.md`, which drops its own retry prose in favour of it.
 
@@ -471,12 +471,12 @@ FX tests come first in each phase where they apply: write the failing test, then
   Postgres and asserts `/healthz` 200, `/readyz` 503, API `503` with `Retry-After` within the queue
   timeout, and recovery after restart without a process restart. The worker template ships a test that
   pauses Postgres mid-job (WK1). Both run in every fixture flavor that has the component.
-- [ ] **FX3 Platform e2e cases** (RL-88): the two missing hardening tests (rollout under a curl loop with
+- [~] **FX3 Platform e2e cases** (RL-88): the two missing hardening tests (rollout under a curl loop with
   zero failed requests; `kubectl drain --dry-run=server` with no blocking PDB), plus API pod kill under
   load with two replicas (zero 5xx at the edge beyond the shed budget), CNPG switchover with the app
   reconnecting, and a Flagger rollback (PL6). Each case runs inside `make platform-e2e` under the host
   locks and heavy-run slots.
-- [ ] **FX4 Load smoke**: a short `k6` (pinned, digest) script in `deploy/smoke` that drives the
+- [~] **FX4 Load smoke**: a short `k6` (pinned, digest) script in `deploy/smoke` that drives the
   generated API past its concurrency limit and asserts shed responses are 503 with `Retry-After`, p99
   of admitted requests stays under the target, and the process stays up.
 
@@ -575,8 +575,10 @@ PL6; FX3, FX4; REL1-REL3.
 | rel-tpl-clients | CL2, CL4 (mobile), CL5 (templates) | merged, verified |
 | rel-platform | PL6, PL4 rest, PL7 rest | merged after two rounds plus an orchestrator guard; e2e and trivy pending |
 | rel-tpl-backend | CB3 helper, WK5 suite key, CB8, IN2/IN4/IN5/IN6 wiring, migrations, CL6, FX2 | merged after three rounds; Docker and fixture gates pending |
-| rel-fx | FX3 platform e2e cases, FX4 k6 load smoke | running |
-| orchestrator | RC3 contract doc, REL1-REL3, Docker and fixture gates | after the agents merge |
+| rel-fx | FX3 platform e2e cases, FX4 k6 load smoke | merged; suites and the smoke not run yet |
+| rel-docs | RC3 contract doc, crate and package changelogs | merged, numbers spot-checked against code |
+| rel-merge | merge origin/main (baukit 0.31.0) | running |
+| orchestrator | REL1-REL3, Docker and fixture gates, platform e2e, full gate | Docker tests green on the pre-merge head |
 
 ## Open questions
 
@@ -765,3 +767,26 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   - The requeue route is mounted on the ops router only with a token (J-06, router tests).
   - Round 3 split auth-native `index.ts` (563 to 475 lines, allowlist entry dropped). rel-tpl-clients
     had pushed it past its entry, and I missed it because I ran `baukit check` before that merge.
+- rel-fx merged: chainsaw suites `api-disruption` (rollout and pod kill under an in-cluster request
+  loop), `node-drain` (server dry-run drain) and `postgres-failover` (primary delete on a
+  one-instance cluster). The Flagger rollback is the existing `tests/canary`. FX4 ships
+  `deploy/smoke/api-load.js` with k6 2.4.0 pinned by digest under `[images]`, and `make load-smoke`.
+  Nothing has run yet: FX3 and FX4 stay `[~]` until `make platform-e2e` and one load smoke against a
+  generated API pass. The kill budget of 20 failed requests is an estimate, to be checked on that run.
+- rel-docs merged: `docs/platform/resilience-contract.md` cites a file and constant for every
+  number. I checked twelve of them against the code, and all matched. Unreleased changelog entries
+  are filled in for every changed crate and package.
+- First full Docker run (`--include-ignored`, all features): 1439 passed, 107 failed. Causes:
+  - The jobs enqueue SQL bound `concurrency_key` into `created_at` and `updated_at`. This broke
+    every Postgres enqueue, and through it data-subject, erasure, suite and parts of baukit-jobs.
+    rel-jobs2 never ran Docker tests, and the unit fakes do not run SQL.
+  - Fault `start()` read the host port of a stopped container. Fixtures now pass the port their
+    clients hold.
+  - The store-health unit test blocked one claim, so a full-jitter retry near 0 ms could turn health
+    green before the poll looked. It now hangs every claim.
+  - The suite probes migration test inserted two active links to one peer.
+  Re-runs of the affected crates after the fixes: 694 plus 538 tests, 0 failed.
+- The browser-session `idp_unavailable` 503 now sends `Retry-After` (the circuit's delay or 5 s),
+  which the contract requires. rel-docs found the gap.
+- origin/main moved to 0.31.0 (183 commits) and conflicts in 69 files. rel-merge is resolving it.
+  It keeps main's attempt-bound lease API and renumbers our migrations after main's.
