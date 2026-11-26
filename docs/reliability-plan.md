@@ -310,24 +310,24 @@ them.
 
 ## Phase IN: inbound serving and startup
 
-- [ ] **IN1 Load shedding** (RL-20): a bounded wait in front of the concurrency limit
+- [x] **IN1 Load shedding** (RL-20): a bounded wait in front of the concurrency limit
   (`HttpOptions::with_queue_timeout`, default 1 s). A request that cannot get a permit in time gets
   `503` with `Retry-After: 1` and the standard problem envelope, counted in `http_requests_shed_total`.
   The in-flight gauge stops counting queued requests.
   Acceptance: a test with `max_concurrency(2)` and five slow requests; three return 503 within the
   queue timeout, two succeed.
-- [ ] **IN2 Honest 5xx** (RL-21, RL-22): `ApiError::unavailable(retry_after)` returning `503` with
+- [~] **IN2 Honest 5xx** (RL-21, RL-22): `ApiError::unavailable(retry_after)` returning `503` with
   `Retry-After`. The template maps `RepositoryError::Unavailable`, `LimitError::PolicyUnavailable` and
   pool acquire timeouts to it. Closed-mode rate limiting returns `503` with a short `Retry-After`
   instead of `429` with the quota period.
   Acceptance: template test with Postgres stopped (FX1) gets `503` plus `Retry-After`; ratelimit test
   for closed mode.
-- [ ] **IN3 Connection-level timeouts** (RL-23): `baukit-runtime` serves through hyper-util with
+- [x] **IN3 Connection-level timeouts** (RL-23): `baukit-runtime` serves through hyper-util with
   `TokioTimer`, `header_read_timeout` (10 s), an idle keep-alive timeout and a connection cap.
   `baukit_http::route_timeout(duration)` adds a per-route override inside the global one.
   Acceptance: a slowloris test (open a connection, send half a header) closes after the header
   timeout; a route with a 1 s override times out at 1 s.
-- [ ] **IN4 Drain that finishes** (RL-24, RL-25): the template switches to
+- [~] **IN4 Drain that finishes** (RL-24, RL-25): the template switches to
   `serve_listener_pair_with_shutdown_order(.., ShutdownOrder::OpsOutlivesApi)` so `/readyz` reports
   draining. `baukit-runtime` validates at startup that `request_timeout + flush_reserve <
   drain_timeout` and refuses to start otherwise. Telemetry flush gets its own 3 s reserve that the
@@ -349,7 +349,7 @@ them.
   gets its own `statement_timeout` from the job timeout.
   Acceptance: a Postgres test where `pg_sleep(60)` fails at the statement timeout and the connection
   returns to the pool; a template test that `db_pool_acquire_duration_seconds_count` increases.
-- [ ] **IN7 Saturation metrics** (RL-29): a `30` bucket on the HTTP histogram, process metrics
+- [x] **IN7 Saturation metrics** (RL-29): a `30` bucket on the HTTP histogram, process metrics
   (`process_*` from the exporter), and Tokio runtime metrics behind a feature where the pinned tokio
   allows it without `tokio_unstable`. Spec and lint updated.
 - [ ] **IN8 Deadline propagation** (RL-08): the lifecycle middleware stores a `Deadline` in a task
@@ -538,10 +538,10 @@ run in the orchestrator under the heavy-slot protocol (owner `baukit-rel`, one s
 |---|---|---|---|
 | rel-core | RC1, RC2 | `rust/crates/baukit-resilience`, `fixtures/resilience`, workspace `Cargo.toml` entry | running |
 | rel-faults | FX1 | `rust/crates/baukit-test` | queued (host load) |
-| rel-http | IN1, IN2 (`baukit-http` part), IN3, IN4 (`baukit-runtime` part), IN7 | `baukit-http`, `baukit-runtime`, `baukit-telemetry` | running |
+| rel-http | IN1, IN2 (`baukit-http` part), IN3, IN4 (`baukit-runtime` part), IN7 | `baukit-http`, `baukit-runtime`, `baukit-telemetry` | merged, verified (fmt, clippy, tests; shed log lowered to debug) |
 | rel-jobs | WK1, WK2, WK4 (crate part), CB3 | `baukit-jobs` | running |
 | rel-ts | CL1 (without fixture replay), CL3, CL4 (`auth-web` part), CL5 (`pwa-web` part) | `typescript/packages/{api-runtime,sync-client,auth-web,pwa-web}` | merged, verified (4 packages build, format, lint, test) |
-| rel-db | IN6 (crate part), IN2 (`baukit-ratelimit` part) | `baukit-config`, `baukit-ops`, `baukit-ratelimit` | queued (host load) |
+| rel-db | IN6 (crate part), IN2 (`baukit-ratelimit` part) | `baukit-config`, `baukit-ops`, `baukit-ratelimit` | running |
 | rel-deploy | PL1, PL2, PL3, PL5 | `deploy/chart`, `deploy/platform/traefik`, `deploy/observability-platform` (redis alerts), `templates/backend/deploy` | running |
 | rel-obs | PL4, PL7, the RL-43 alert text fix | `deploy/platform/postgres-cluster`, `deploy/observability` | running |
 
@@ -580,3 +580,10 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   CL5 web. Orchestrator re-ran all four packages green. Follow-ups for wave 3: the cooldown is per runtime
   instance, so CL2 must share one runtime in the template; a `Retry-After` cooldown is clamped to
   `maxRetryAfterMs` (30 s); the request timeout ends when headers arrive, not after the body.
+- rel-http merged: IN1 (semaphore gate with 1 s queue timeout, 503 plus `Retry-After: 1`,
+  `http_requests_shed_total{reason="concurrency"}` only), IN2 http, IN3 (`baukit_runtime::serve` on
+  hyper-util, `ServerOptions`, `route_timeout`), IN4 runtime (`DrainBudget`, `ShutdownToken::with_budget`,
+  `run_flush`), IN7 (30 s bucket, `/proc` process gauges, stable Tokio gauges). Wave 3 wiring: api.rs
+  lines 294, 325, 343-347 and `examples/minimal-api` need `with_budget`, `OpsOutlivesApi` and
+  `run_flush`. baukit-config has no fields for the queue timeout or `ServerOptions` yet. hyper arms the
+  header timeout on idle keep-alive connections, so PL3 sets Traefik `idleConnTimeout` below 10 s.
