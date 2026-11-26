@@ -127,7 +127,6 @@ impl PullConformanceAdapter for NotesAdapter {
             i64::from(limit),
             Isolation::ReadCommitted,
             self.cursor,
-            &TABLES,
             None,
         )
         .await?;
@@ -203,7 +202,6 @@ async fn per_table_limits_do_not_skip_rows_of_the_shorter_table() -> Result<(), 
             1,
             Isolation::ReadCommitted,
             Cursor::Window,
-            &TABLES,
             None,
         )
         .await?
@@ -237,7 +235,6 @@ async fn window_bounds_a_read_committed_pull_across_tables() -> Result<(), TestE
         10,
         Isolation::ReadCommitted,
         Cursor::Window,
-        &TABLES,
         Some((owner, &late)),
     )
     .await?
@@ -392,7 +389,6 @@ impl<'a> Machine<'a> {
                 limit,
                 isolation,
                 Cursor::Window,
-                &TABLES,
                 interleaved,
             )
             .await?;
@@ -494,9 +490,8 @@ async fn upsert(
     Ok(())
 }
 
-/// Serves one page across `tables`, optionally committing `interleaved`
+/// Serves one page across [`TABLES`], optionally committing `interleaved`
 /// writes from another connection between the first and second table read.
-#[expect(clippy::too_many_arguments, reason = "test driver with explicit knobs")]
 async fn pull(
     pool: &PgPool,
     owner: Uuid,
@@ -504,7 +499,6 @@ async fn pull(
     limit: i64,
     isolation: Isolation,
     cursor: Cursor,
-    tables: &[&'static str],
     interleaved: Option<(Uuid, &[Write])>,
 ) -> Result<Pulled, TestError> {
     let mut transaction = pool.begin().await?;
@@ -525,7 +519,7 @@ async fn pull(
         Err(error) => return Err(error.into()),
     };
     let mut per_table = Vec::new();
-    for (index, table) in tables.iter().enumerate() {
+    for (index, table) in TABLES.iter().enumerate() {
         if index == 1
             && let Some((writer, writes)) = interleaved
         {
@@ -534,7 +528,7 @@ async fn pull(
         per_table.push(read_table(&mut transaction, owner, table, &window, limit, cursor).await?);
     }
     transaction.commit().await?;
-    if tables.len() < 2
+    if TABLES.len() < 2
         && let Some((writer, writes)) = interleaved
     {
         write(pool, writer, writes).await?;
