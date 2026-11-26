@@ -4,6 +4,7 @@ All notable changes to `baukit-config` are documented here.
 
 ## [Unreleased]
 
+- Breaking: `shutdown.drain_timeout` defaults to 35 seconds instead of 30, so the default 30 second request timeout plus the 3 second telemetry flush reserve fits `baukit_runtime::DrainBudget`.
 - New `startup` section with `budget` (seconds, default 60, must be non-zero): how long a process waits for PostgreSQL, Redis and the identity provider at startup. `startup` is now a reserved top-level key.
 
 ## [0.30.6] - 2026-11-26

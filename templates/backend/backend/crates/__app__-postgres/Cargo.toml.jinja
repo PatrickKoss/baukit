@@ -14,7 +14,7 @@ async-trait.workspace = true
 {% endif %}{% if context.auth_enabled %}baukit-auth = { workspace = true, features = ["browser-session"] }
 baukit-erasure.workspace = true
 jiff.workspace = true
-{% endif %}
+{% endif %}baukit-ops = { workspace = true, features = ["sqlx-postgres"] }
 {{ context.app_crate }}-domain.workspace = true
 {{ context.app_crate }}-ports.workspace = true
 {% if context.worker %}baukit-jobs.workspace = true

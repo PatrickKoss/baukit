@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Delivery jobs carry the peer app as `concurrency_key` (`suite_delivery_concurrency_key`), and `default_worker_config` sets `max_per_key` to `SUITE_DELIVERY_MAX_PER_KEY` (1). Needs `baukit-jobs` migration 0006.
 - `TicketVerifier` keeps its keys in `baukit_auth::KeySetCache` with metric source `ticket` and a 5 second refresh cooldown. Known keys keep verifying for an hour while the key endpoint is down, and no caller waits on a refresh.
 - Hub tokens come from a single-flight `StaleCache` with a 5 second failure cooldown. `HubRequest` decides replay after a 401. GETs, `HubRequest::idempotent` and requests with an `Idempotency-Key` replay once; `HubRequest::post` never does. `HubClient::post_json` is gone; use `send_json`. An open egress breaker maps to `HubError::CoolingDown { retry_after }`.
 - Breaking: `Entitlements::current`, `has_entitlement` and `has_tier` return `EntitlementError`. While the hub fails, `Entitlements::read` serves the last snapshot until `grace_until` with `stale: true`. After that it returns `EntitlementError::Unavailable { retry_after }`, which converts to a 503 with `Retry-After`. `EntitlementCache` gains `retained`. `EntitlementSourceError::CoolingDown` carries a source's own delay.

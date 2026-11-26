@@ -4251,7 +4251,7 @@ fn doctor_requires_redis_only_for_redis_backed_features() -> anyhow::Result<()> 
         browser_session_source.replace("RedisRateLimitStore", "PostgresRateLimitStore"),
     )?;
     fs::write(
-        root.join("backend/migrations/0009_product_rate_limits.sql"),
+        root.join("backend/migrations/0011_product_rate_limits.sql"),
         "CREATE TABLE product_rate_limits (subject TEXT NOT NULL, window_start TIMESTAMPTZ NOT NULL, consumed BIGINT NOT NULL, PRIMARY KEY (subject, window_start));\n",
     )?;
     doctor(&root)?;
@@ -6446,7 +6446,7 @@ fn platform_generation_matches_golden_trees() -> anyhow::Result<()> {
 #[test]
 fn platform_existing_product_uses_the_next_free_migration_number() -> anyhow::Result<()> {
     let parent = tempfile::tempdir()?;
-    for highest in [9_u64, 12, 9999] {
+    for highest in [11_u64, 12, 9999] {
         let root = parent.path().join(format!("existing-{highest}"));
         fs::create_dir_all(root.join("backend/migrations"))?;
         let existing = root.join(format!("backend/migrations/{highest:04}_product.sql"));
@@ -6468,7 +6468,7 @@ fn platform_existing_product_uses_the_next_free_migration_number() -> anyhow::Re
             path
         );
         assert!(root.join(path).is_file());
-        assert!(!root.join("backend/migrations/0009_platform.sql").exists());
+        assert!(!root.join("backend/migrations/0011_platform.sql").exists());
     }
     Ok(())
 }
@@ -6500,7 +6500,7 @@ fn platform_existing_manifest_uses_its_migration_directory_without_platform_meta
     assert_eq!(generate_new(&generated)?, root);
     assert_eq!(fs::read_to_string(root.join("baukit.toml"))?, source);
     assert!(root.join("backend/schema/0013_platform.sql").is_file());
-    assert!(!root.join("backend/migrations/0009_platform.sql").exists());
+    assert!(!root.join("backend/migrations/0011_platform.sql").exists());
     Ok(())
 }
 
@@ -6511,7 +6511,7 @@ fn doctor_rejects_missing_platform_migration_and_capability_mismatch() -> anyhow
     generated.components.insert(Component::Platform);
     generated.baukit_path = Some(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../rust"));
     let root = generate_new(&generated)?;
-    fs::remove_file(root.join("backend/migrations/0009_platform.sql"))?;
+    fs::remove_file(root.join("backend/migrations/0011_platform.sql"))?;
     let error = doctor(&root)
         .expect_err("missing platform migration")
         .to_string();
@@ -6541,7 +6541,7 @@ fn platform_rerender_uses_the_declared_product_migration_path() -> anyhow::Resul
     let root = generate_new(&generated)?;
     let manifest_path = root.join("baukit.toml");
     let source =
-        fs::read_to_string(&manifest_path)?.replace("0009_platform.sql", "0012_platform.sql");
+        fs::read_to_string(&manifest_path)?.replace("0011_platform.sql", "0012_platform.sql");
     fs::remove_dir_all(&root)?;
     fs::create_dir(&root)?;
     fs::write(&manifest_path, &source)?;
@@ -6550,7 +6550,7 @@ fn platform_rerender_uses_the_declared_product_migration_path() -> anyhow::Resul
     assert_eq!(generate_new(&generated)?, root);
     assert_eq!(fs::read_to_string(&manifest_path)?, source);
     assert!(root.join("backend/migrations/0012_platform.sql").is_file());
-    assert!(!root.join("backend/migrations/0009_platform.sql").exists());
+    assert!(!root.join("backend/migrations/0011_platform.sql").exists());
     Ok(())
 }
 

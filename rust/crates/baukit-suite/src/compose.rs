@@ -353,7 +353,8 @@ impl PostgresSuite {
 
 #[cfg(feature = "jobs")]
 impl PostgresSuite {
-    /// Delivery worker on `SUITE_QUEUE` with four slots and 30 s to 6 h retry backoff.
+    /// Delivery worker on `SUITE_QUEUE` with four slots, 30 s to 6 h retry
+    /// backoff and one running delivery per peer app.
     ///
     /// # Errors
     ///
@@ -366,6 +367,11 @@ impl PostgresSuite {
     }
 
     /// Worker for a product delivery runner that wraps [`PostgresSuite::delivery`].
+    ///
+    /// Start from [`default_worker_config`] so `max_per_key` stays at
+    /// [`SUITE_DELIVERY_MAX_PER_KEY`](crate::domain::SUITE_DELIVERY_MAX_PER_KEY):
+    /// deliveries carry the peer app as their concurrency key, and without the
+    /// limit one hanging peer can hold every worker slot.
     ///
     /// # Errors
     ///
@@ -398,6 +404,23 @@ pub fn default_worker_config() -> baukit_jobs::WorkerConfig {
         concurrency: WORKER_CONCURRENCY,
         retry_initial: RETRY_INITIAL,
         retry_max: RETRY_MAX,
+        max_per_key: std::num::NonZeroU32::new(crate::domain::SUITE_DELIVERY_MAX_PER_KEY),
         ..baukit_jobs::WorkerConfig::default()
+    }
+}
+
+#[cfg(all(test, feature = "jobs"))]
+mod worker_config_tests {
+    use super::default_worker_config;
+    use crate::domain::SUITE_DELIVERY_MAX_PER_KEY;
+
+    #[test]
+    fn default_worker_runs_one_delivery_per_peer() {
+        let config = default_worker_config();
+
+        assert_eq!(
+            config.max_per_key.map(std::num::NonZeroU32::get),
+            Some(SUITE_DELIVERY_MAX_PER_KEY)
+        );
     }
 }

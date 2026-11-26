@@ -395,10 +395,14 @@ pub struct ShutdownConfig {
     pub drain_timeout: Duration,
 }
 
+/// Fits the default 30 second request timeout plus a 3 second telemetry flush
+/// reserve, so `baukit_runtime::DrainBudget` accepts the defaults.
+const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_secs(35);
+
 impl Default for ShutdownConfig {
     fn default() -> Self {
         Self {
-            drain_timeout: Duration::from_secs(30),
+            drain_timeout: DEFAULT_DRAIN_TIMEOUT,
         }
     }
 }

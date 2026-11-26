@@ -17,8 +17,10 @@ use uuid::Uuid;
 mod link_protocol;
 pub use link_protocol::*;
 
+mod delivery_key;
 mod payloads;
 mod probe;
+pub use delivery_key::{SUITE_DELIVERY_MAX_PER_KEY, suite_delivery_concurrency_key};
 pub use probe::*;
 pub mod validation;
 pub use payloads::*;

@@ -3,7 +3,7 @@ pub use platform::*;
 
 {% endif %}{% if context.worker %}use baukit_jobs::{NewJob, PostgresJobStore};
 
-{% endif %}use sqlx::PgPool;
+{% endif %}use sqlx::{PgPool, Postgres, pool::PoolConnection};
 use uuid::Uuid;
 
 {% if context.auth_enabled %}use {{ context.app_crate }}_domain::InternalUser;
@@ -29,6 +29,12 @@ impl PostgresItemRepository {
 
     pub fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    async fn connection(&self) -> Result<PoolConnection<Postgres>, RepositoryError> {
+        baukit_ops::acquire(&self.pool)
+            .await
+            .map_err(RepositoryError::unavailable)
     }
 }{% if context.auth_enabled %}
 
@@ -61,11 +67,12 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
 impl ItemRepository for PostgresItemRepository {
     fn list<'a>(&'a self, owner_id: &'a str) -> PortFuture<'a, Result<Vec<Item>, RepositoryError>> {
         Box::pin(async move {
+            let mut connection = self.connection().await?;
             sqlx::query_as::<_, ItemRow>(
                 "SELECT id, owner_id, name FROM items WHERE owner_id = $1 ORDER BY created_at, id",
             )
             .bind(owner_id)
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *connection)
             .await
             .map(|rows| rows.into_iter().map(item_from_row).collect())
             .map_err(RepositoryError::unavailable)
@@ -78,12 +85,13 @@ impl ItemRepository for PostgresItemRepository {
         id: Uuid,
     ) -> PortFuture<'a, Result<Option<Item>, RepositoryError>> {
         Box::pin(async move {
+            let mut connection = self.connection().await?;
             sqlx::query_as::<_, ItemRow>(
                 "SELECT id, owner_id, name FROM items WHERE owner_id = $1 AND id = $2",
             )
             .bind(owner_id)
             .bind(id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *connection)
             .await
             .map(|row| row.map(item_from_row))
             .map_err(RepositoryError::unavailable)
@@ -92,9 +100,7 @@ impl ItemRepository for PostgresItemRepository {
 
     fn create(&self, item: Item) -> PortFuture<'_, Result<Item, RepositoryError>> {
         Box::pin(async move {
-{% if context.worker %}            let mut transaction = self
-                .pool
-                .begin()
+{% if context.worker %}            let mut transaction = baukit_ops::begin(&self.pool)
                 .await
                 .map_err(RepositoryError::unavailable)?;
             let created = sqlx::query_as::<_, ItemRow>(
@@ -131,14 +137,15 @@ impl ItemRepository for PostgresItemRepository {
                 .await
                 .map_err(RepositoryError::unavailable)?;
             Ok(created)
-{% else %}            sqlx::query_as::<_, ItemRow>(
+{% else %}            let mut connection = self.connection().await?;
+            sqlx::query_as::<_, ItemRow>(
                 "INSERT INTO items (id, owner_id, name) VALUES ($1, $2, $3) \
                  RETURNING id, owner_id, name",
             )
             .bind(item.id)
             .bind(item.owner_id)
             .bind(item.name)
-            .fetch_one(&self.pool)
+            .fetch_one(&mut *connection)
             .await
             .map(item_from_row)
             .map_err(|error| {
@@ -153,6 +160,7 @@ impl ItemRepository for PostgresItemRepository {
 
     fn update(&self, item: Item) -> PortFuture<'_, Result<Option<Item>, RepositoryError>> {
         Box::pin(async move {
+            let mut connection = self.connection().await?;
             sqlx::query_as::<_, ItemRow>(
                 "UPDATE items SET name = $3 WHERE owner_id = $1 AND id = $2 \
                  RETURNING id, owner_id, name",
@@ -160,7 +168,7 @@ impl ItemRepository for PostgresItemRepository {
             .bind(item.owner_id)
             .bind(item.id)
             .bind(item.name)
-            .fetch_optional(&self.pool)
+            .fetch_optional(&mut *connection)
             .await
             .map(|row| row.map(item_from_row))
             .map_err(RepositoryError::unavailable)
@@ -173,10 +181,11 @@ impl ItemRepository for PostgresItemRepository {
         id: Uuid,
     ) -> PortFuture<'a, Result<bool, RepositoryError>> {
         Box::pin(async move {
+            let mut connection = self.connection().await?;
             sqlx::query("DELETE FROM items WHERE owner_id = $1 AND id = $2")
                 .bind(owner_id)
                 .bind(id)
-                .execute(&self.pool)
+                .execute(&mut *connection)
                 .await
                 .map(|result| result.rows_affected() == 1)
                 .map_err(RepositoryError::unavailable)
@@ -184,13 +193,7 @@ impl ItemRepository for PostgresItemRepository {
     }
 
     fn ready(&self) -> PortFuture<'_, Result<(), RepositoryError>> {
-        Box::pin(async move {
-            self.pool
-                .acquire()
-                .await
-                .map(|_| ())
-                .map_err(RepositoryError::unavailable)
-        })
+        Box::pin(async move { self.connection().await.map(|_| ()) })
     }
 }{% if context.auth_enabled %}
 
@@ -201,9 +204,7 @@ impl UserRepository for PostgresUserRepository {
         authenticated_at: Option<jiff::Timestamp>,
     ) -> PortFuture<'_, Result<InternalUser, RepositoryError>> {
         Box::pin(async move {
-            let mut transaction = self
-                .pool
-                .begin()
+            let mut transaction = baukit_ops::begin(&self.pool)
                 .await
                 .map_err(RepositoryError::unavailable)?;
             self.erasures

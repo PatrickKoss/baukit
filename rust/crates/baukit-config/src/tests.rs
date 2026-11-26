@@ -46,7 +46,7 @@ fn default_layer_supplies_standard_values() {
     assert_eq!(config.http.hsts_max_age, None);
     assert_eq!(config.ops.port, 9090);
     assert!(config.database.is_none());
-    assert_eq!(config.shutdown.drain_timeout, Duration::from_secs(30));
+    assert_eq!(config.shutdown.drain_timeout, Duration::from_secs(35));
     assert_eq!(config.startup.budget, Duration::from_secs(60));
     assert_eq!(config.product.feature_limit, 0);
 }

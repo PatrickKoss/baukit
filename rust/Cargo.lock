@@ -519,6 +519,7 @@ dependencies = [
 name = "baukit-jobs"
 version = "0.30.6"
 dependencies = [
+ "baukit-egress",
  "baukit-resilience",
  "baukit-runtime",
  "baukit-telemetry",
