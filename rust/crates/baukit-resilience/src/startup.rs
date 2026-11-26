@@ -2,15 +2,30 @@
 //!
 //! A process that starts while a dependency is still coming up waits with
 //! jittered backoff inside a startup budget instead of exiting on the first
-//! failed connect.
+//! failed connect. Needs the `startup` feature.
 
 use std::{error::Error, fmt, future::Future, time::Duration};
 
-use baukit_resilience::{Backoff, JitterSource, SplitMixJitter};
+use crate::{Backoff, JitterSource, SplitMixJitter};
 use tokio::time::Instant;
 
-const RETRY_INITIAL: Duration = Duration::from_millis(250);
-const RETRY_MAX: Duration = Duration::from_secs(5);
+/// Delay bound of the first retry in [`retry_within`].
+pub const RETRY_INITIAL: Duration = Duration::from_millis(250);
+/// Upper bound of every retry delay in [`retry_within`].
+pub const RETRY_MAX: Duration = Duration::from_secs(5);
+
+/// One failed transient attempt, handed to the `on_retry` callback of [`retry_within`].
+#[derive(Debug)]
+pub struct RetryAttempt<'a, E> {
+    /// Dependency name passed to [`retry_within`].
+    pub dependency: &'static str,
+    /// One-based number of the attempt that failed.
+    pub attempt: u32,
+    /// Sleep before the next attempt.
+    pub delay: Duration,
+    /// The error of the failed attempt.
+    pub error: &'a E,
+}
 
 /// Why [`retry_within`] gave up.
 #[derive(Debug)]
@@ -74,7 +89,8 @@ impl<E: Error + 'static> Error for StartupError<E> {
 /// Runs `attempt` until it succeeds, fails permanently, or `budget` runs out.
 ///
 /// Errors for which `is_transient` returns `false` end the loop at once.
-/// Each retry logs a warning with the dependency, attempt number and delay.
+/// Before each sleep `on_retry` gets the attempt, the delay and the error, so
+/// the caller can log it; this crate does no I/O of its own.
 /// Delays use [`Backoff`] with full jitter between 250 ms and 5 s. An attempt
 /// that starts before the budget ends runs to completion, so the total can
 /// exceed `budget` by one connect timeout.
@@ -87,10 +103,10 @@ pub async fn retry_within<T, E, F, Fut>(
     dependency: &'static str,
     budget: Duration,
     is_transient: impl Fn(&E) -> bool,
+    mut on_retry: impl FnMut(&RetryAttempt<'_, E>),
     mut attempt: F,
 ) -> Result<T, StartupError<E>>
 where
-    E: fmt::Display,
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
 {
@@ -122,13 +138,12 @@ where
                 &mut jitter as &mut dyn JitterSource,
             )
             .min(remaining);
-        tracing::warn!(
+        on_retry(&RetryAttempt {
             dependency,
-            attempt = attempts,
-            delay_ms = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX),
-            error = %error,
-            "dependency unavailable at startup, retrying"
-        );
+            attempt: attempts,
+            delay,
+            error: &error,
+        });
         tokio::time::sleep(delay).await;
     }
 }

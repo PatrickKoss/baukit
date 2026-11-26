@@ -6,6 +6,7 @@
 //! - [`breaker_set`]: [`BreakerSet`], one breaker per key under a shared policy.
 //! - [`deadline`]: [`Deadline`], a fixed point in time that caps timeouts, and
 //!   with the `task-deadline` feature a task-local current deadline.
+//! - `startup` (feature `startup`): `retry_within`, bounded connect retries at startup.
 //! - [`stale`]: [`StaleCache`], a single-flight cache that serves stale values on error.
 //!
 //! Every time-dependent decision takes `now` from a [`Clock`] and every random
@@ -20,6 +21,8 @@ pub mod deadline;
 pub mod jitter;
 mod millis;
 pub mod stale;
+#[cfg(feature = "startup")]
+pub mod startup;
 
 pub use backoff::{Backoff, BackoffStrategy};
 pub use breaker::{

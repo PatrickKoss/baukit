@@ -4,6 +4,8 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- OIDC and browser-session discovery retries now run on `baukit_resilience::startup::retry_within`. Their behaviour and errors are unchanged.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

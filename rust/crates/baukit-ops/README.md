@@ -103,7 +103,8 @@ retries the same way and opens a single-connection pool that keeps `lock_timeout
 `statement_timeout` and `idle_in_transaction_session_timeout`, so a long migration step is not
 cancelled at the request limit. Run the migrator on the returned pool.
 
-`baukit_ops::startup::retry_within` is the generic loop behind both, for other dependencies.
+Both use `baukit_resilience::startup::retry_within`, the shared loop, and log each retry with
+`tracing`. `StartupError` and `RetryAttempt` are re-exported here.
 
 ## Scope
 

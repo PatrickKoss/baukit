@@ -4,7 +4,7 @@ All notable changes to `baukit-ops` are documented here.
 
 ## [Unreleased]
 
-- `connect_with_backoff` and `connect_for_migrations` retry transient PostgreSQL connect errors within a startup budget and fail fast on auth and configuration errors. `is_transient_connect_error` exposes the classification, and `startup::retry_within` with `StartupError` is the generic loop.
+- `connect_with_backoff` and `connect_for_migrations` retry transient PostgreSQL connect errors within a startup budget and fail fast on auth and configuration errors. `is_transient_connect_error` exposes the classification. `StartupError` and `RetryAttempt` are re-exported from `baukit_resilience::startup`.
 
 ## [0.30.6] - 2026-11-26
 

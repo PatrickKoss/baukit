@@ -30,6 +30,7 @@ breaker.record(permit, outcome);
 | `breaker` | `BreakerMachine` (pure), `CircuitBreaker` (mutex and clock around it), `BreakerPolicy`, `Outcome`, `Admission`, `BreakerState`. |
 | `breaker_set` | `BreakerSet<K>`: one breaker per key, at most 256 keys, evicting the longest-idle closed key first. `worst_state()` feeds a gauge. |
 | `deadline` | `Deadline::cap(timeout, now)` shortens a timeout to the budget left. With the `task-deadline` feature, `deadline::scope(deadline, future)` sets a task-local deadline (a nested scope keeps the earlier one) and `deadline::current()` reads it. |
+| `startup` | With the `startup` feature, `retry_within(dependency, budget, is_transient, on_retry, attempt)` retries until success, a permanent error (`StartupError::Permanent`) or the end of the budget (`StartupError::BudgetExhausted`, with the attempt count and last error). `on_retry` gets each `RetryAttempt` so the caller can log it. baukit-ops, baukit-ratelimit and baukit-auth use it at startup. |
 | `stale` | `StaleCache<T>`: fresh TTL, stale-on-error window, failure cooldown and single flight. Uses `tokio` (`sync` only). |
 
 ## Breaker policy

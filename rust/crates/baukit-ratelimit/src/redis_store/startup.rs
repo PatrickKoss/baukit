@@ -5,8 +5,10 @@ use std::{
     time::Duration,
 };
 
-use baukit_ops::startup::{StartupError, retry_within};
-use baukit_resilience::{Backoff, JitterSource, SplitMixJitter};
+use baukit_resilience::{
+    Backoff, JitterSource, SplitMixJitter,
+    startup::{RetryAttempt, StartupError, retry_within},
+};
 use redis::{ErrorKind, RedisError, ServerErrorKind};
 use tokio::sync::OnceCell;
 
@@ -32,7 +34,7 @@ impl RedisRateLimitStore {
         redis_url: &str,
         budget: Duration,
     ) -> Result<Self, StartupError<RateLimitStoreError>> {
-        retry_within(DEPENDENCY, budget, is_transient, || {
+        retry_within(DEPENDENCY, budget, is_transient, log_retry, || {
             open_connection(redis_url)
         })
         .await
@@ -136,6 +138,16 @@ async fn reconnect(slot: Weak<OnceCell<StoreConnection>>, redis_url: String) {
             ),
         }
     }
+}
+
+fn log_retry(retry: &RetryAttempt<'_, RateLimitStoreError>) {
+    tracing::warn!(
+        dependency = retry.dependency,
+        attempt = retry.attempt,
+        delay_ms = u64::try_from(retry.delay.as_millis()).unwrap_or(u64::MAX),
+        error = %retry.error,
+        "dependency unavailable at startup, retrying"
+    );
 }
 
 /// Returns `true` when a Redis connect error may clear up by waiting.

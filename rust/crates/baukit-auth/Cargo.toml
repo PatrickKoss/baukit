@@ -28,7 +28,7 @@ axum.workspace = true
 base64.workspace = true
 baukit-credential-vault = { workspace = true, optional = true }
 baukit-egress.workspace = true
-baukit-resilience.workspace = true
+baukit-resilience = { workspace = true, features = ["startup"] }
 baukit-http.workspace = true
 baukit-openapi.workspace = true
 jiff.workspace = true
@@ -50,7 +50,7 @@ zeroize.workspace = true
 
 [dev-dependencies]
 baukit-auth = { path = ".", features = ["browser-session"] }
-baukit-resilience = { path = "../baukit-resilience", features = ["test-support"] }
+baukit-resilience = { path = "../baukit-resilience", features = ["test-support", "startup"] }
 baukit-ratelimit = { path = "../baukit-ratelimit", features = ["browser-session"] }
 baukit-test = { path = "../baukit-test", features = ["sqlx-postgres"] }
 tokio = { workspace = true, features = ["test-util"] }

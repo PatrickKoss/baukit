@@ -632,7 +632,6 @@ dependencies = [
  "baukit-auth",
  "baukit-config",
  "baukit-http",
- "baukit-ops",
  "baukit-resilience",
  "baukit-test",
  "metrics",

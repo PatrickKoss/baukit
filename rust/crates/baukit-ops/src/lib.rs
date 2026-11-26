@@ -97,7 +97,8 @@ pub use baukit_telemetry::PrometheusHandle;
 use serde::Serialize;
 use tokio::task::JoinSet;
 
-pub mod startup;
+#[cfg(feature = "sqlx-postgres")]
+pub use baukit_resilience::startup::{RetryAttempt, StartupError};
 
 #[cfg(feature = "sqlx-postgres")]
 mod postgres;

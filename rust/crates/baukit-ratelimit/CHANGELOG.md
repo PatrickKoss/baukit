@@ -4,7 +4,7 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 ## [Unreleased]
 
-- Breaking: `RedisRateLimitStore::connect_if_enabled` takes a startup budget, returns `StartupError<RateLimitStoreError>`, and starts with a degraded store that reconnects in the background when Redis is still down after the budget. New `connect_with_backoff`, `connect_or_degraded` and `is_connected`. `from_connection_manager` is no longer `const`.
+- Breaking: `RedisRateLimitStore::connect_if_enabled` takes a startup budget, returns `StartupError<RateLimitStoreError>` (re-exported from `baukit_resilience::startup`), and starts with a degraded store that reconnects in the background when Redis is still down after the budget. New `connect_with_backoff`, `connect_or_degraded` and `is_connected`. `from_connection_manager` is no longer `const`.
 
 ## [0.30.6] - 2026-11-26
 
