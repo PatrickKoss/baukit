@@ -177,14 +177,31 @@ method. Add the separate `DataSubjectExportProduct` implementation to the
 product's existing adapter, here named `BillingProduct`, and enable it before
 constructing the store:
 
-<!-- Not compiled: a fragment that names product types such as `BillingProduct`. -->
-```rust,ignore
+```rust
 use std::sync::Arc;
 use baukit_data_subject::{
     DataSubjectConfig, DataSubjectExportProduct, DataSubjectFuture, ExportCategory,
     LocalSubject,
 };
 use sqlx::PgConnection;
+# use baukit_data_subject::{DataSubjectProduct, ErasureReport, NormalizedIdentifier};
+# struct BillingProduct;
+# impl DataSubjectProduct for BillingProduct {
+#     fn resolve<'a>(
+#         &'a self,
+#         _connection: &'a mut PgConnection,
+#         _identifiers: &'a [NormalizedIdentifier],
+#     ) -> DataSubjectFuture<'a, Result<Vec<LocalSubject>, sqlx::Error>> {
+#         Box::pin(async { Ok(Vec::new()) })
+#     }
+#     fn erase<'a>(
+#         &'a self,
+#         _connection: &'a mut PgConnection,
+#         _subject: &'a LocalSubject,
+#     ) -> DataSubjectFuture<'a, Result<ErasureReport, sqlx::Error>> {
+#         Box::pin(async { Ok(ErasureReport::default()) })
+#     }
+# }
 
 impl DataSubjectExportProduct for BillingProduct {
     fn export<'a>(

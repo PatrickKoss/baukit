@@ -139,10 +139,11 @@ pending or running job of a type should exist for a key. For a domain mutation
 and enqueue that must commit together, call
 `enqueue_deduplicated_in_transaction(&mut transaction, job, dedupe_key)`.
 
-<!-- Not compiled: a fragment that uses a job store the product builds. -->
-```rust,ignore
+```rust
 use baukit_jobs::NewJob;
 use serde_json::json;
+# use baukit_jobs::{EnqueueOutcome, PostgresJobStore, StoreError};
+# async fn example(jobs: PostgresJobStore) -> Result<EnqueueOutcome, StoreError> {
 
 let outcome = jobs
     .enqueue_deduplicated(
@@ -150,6 +151,8 @@ let outcome = jobs
         "resource:42",
     )
     .await?;
+# Ok(outcome)
+# }
 ```
 
 The key is scoped to `job_type`, must contain 1 to 500 characters, and cannot
