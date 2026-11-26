@@ -128,6 +128,9 @@ pub struct WorkerConfig {
     pub queue_sample_interval: Duration,
     /// Time kept before the shutdown drain deadline to release attempts still running.
     pub release_reserve: Duration,
+    /// Upper bound for each claim and queue sample in the runner loop. A call
+    /// that takes longer counts as a store error.
+    pub store_call_timeout: Duration,
 }
 
 impl Default for WorkerConfig {
@@ -145,6 +148,7 @@ impl Default for WorkerConfig {
             max_deferrals: 100,
             queue_sample_interval: Duration::from_secs(15),
             release_reserve: Duration::from_secs(5),
+            store_call_timeout: Duration::from_secs(5),
         }
     }
 }
@@ -270,11 +274,13 @@ impl WorkerRunner {
             return Ok(());
         }
         let job_types = self.handler.job_types();
-        let age = self
-            .store
-            .oldest_pending_age(job_types, Timestamp::now())
-            .await?;
-        let depth = self.store.queue_depth(job_types).await?;
+        let limit = self.config.store_call_timeout;
+        let age = bounded(
+            limit,
+            self.store.oldest_pending_age(job_types, Timestamp::now()),
+        )
+        .await?;
+        let depth = bounded(limit, self.store.queue_depth(job_types)).await?;
         metrics::set_queue_age(self.config.queue, age);
         metrics::set_queue_depth(self.config.queue, depth);
         *next_sample = Instant::now() + self.config.queue_sample_interval;
@@ -291,7 +297,12 @@ impl WorkerRunner {
             let mut claim = self.spawn_claim();
             let claimed = tokio::select! {
                 biased;
-                result = &mut claim => claim_result(result)?,
+                result = tokio::time::timeout(self.config.store_call_timeout, &mut claim) => {
+                    let Ok(result) = result else {
+                        return Err(ClaimError::Store(StoreError::Timeout(self.config.store_call_timeout)));
+                    };
+                    claim_result(result)?
+                }
                 () = shutdown.cancelled() => {
                     release_late_claim(context, claim, release_deadline(shutdown, &self.config)).await;
                     return Ok(());
@@ -322,6 +333,15 @@ impl WorkerRunner {
                 .await
         })
     }
+}
+
+async fn bounded<T>(
+    limit: Duration,
+    call: impl Future<Output = Result<T, StoreError>>,
+) -> Result<T, StoreError> {
+    tokio::time::timeout(limit, call)
+        .await
+        .map_err(|_| StoreError::Timeout(limit))?
 }
 
 fn claim_result(

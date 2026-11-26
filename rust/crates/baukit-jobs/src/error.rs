@@ -17,6 +17,10 @@ pub enum StoreError {
     /// Stored data does not satisfy Baukit's model.
     #[error("invalid job outbox data: {0}")]
     InvalidData(String),
+    /// A runner loop store call did not finish within
+    /// [`crate::WorkerConfig::store_call_timeout`].
+    #[error("job store call timed out after {0:?}")]
+    Timeout(Duration),
 }
 
 impl StoreError {

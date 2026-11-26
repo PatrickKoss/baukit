@@ -27,6 +27,7 @@ pub(super) struct AttemptContext {
 
 enum AttemptResult {
     Handled(Result<(), JobError>),
+    TimedOut,
     Cancelled,
     LeaseLost,
     Interrupted,
@@ -97,7 +98,7 @@ async fn run_attempt(
 
     let result = tokio::select! {
         result = &mut future => return AttemptResult::Handled(result),
-        () = &mut timeout => AttemptResult::Handled(Err(JobError::retryable("job timed out"))),
+        () = &mut timeout => AttemptResult::TimedOut,
         () = &mut cancellation_poll => AttemptResult::Cancelled,
         () = &mut lease => AttemptResult::LeaseLost,
         () = context.release_now.cancelled() => AttemptResult::Interrupted,
@@ -123,6 +124,9 @@ async fn settle_attempt(
         }
         AttemptResult::LeaseLost => Err(Unsettled::LeaseLost),
         AttemptResult::Interrupted => release_for_shutdown(context, job).await,
+        AttemptResult::TimedOut => {
+            record_failure(context, job, &JobError::retryable("job timed out")).await
+        }
         AttemptResult::Handled(Ok(())) => {
             let now = Timestamp::now();
             if store.complete(job.id, worker_id, now).await? {

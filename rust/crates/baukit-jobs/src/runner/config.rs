@@ -36,6 +36,7 @@ pub(super) fn validate_config(
         ("retry_initial", config.retry_initial),
         ("retry_max", config.retry_max),
         ("queue_sample_interval", config.queue_sample_interval),
+        ("store_call_timeout", config.store_call_timeout),
     ] {
         if duration.is_zero() {
             return Err(RunnerError::InvalidConfig(format!(

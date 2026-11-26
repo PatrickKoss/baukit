@@ -238,8 +238,8 @@ async fn postgres_disjoint_runners_never_claim_each_others_jobs() -> Result<(), 
         let age = gauge_value(&rendered, "worker_queue_oldest_age_seconds", queue)
             .expect("queue age gauge is exported");
         assert!(
-            age >= f64::from(UNHANDLED_AGE_SECONDS - 60),
-            "the unhandled pending job keeps queue {queue} aged, got {age}"
+            age < f64::from(UNHANDLED_AGE_SECONDS - 60),
+            "queue {queue} only ages on its own job types, got {age}"
         );
     }
 

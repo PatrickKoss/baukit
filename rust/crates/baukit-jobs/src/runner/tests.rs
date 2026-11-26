@@ -329,6 +329,7 @@ fn test_config() -> WorkerConfig {
         max_deferrals: 2,
         queue_sample_interval: Duration::from_millis(5),
         release_reserve: Duration::from_millis(100),
+        store_call_timeout: Duration::from_millis(200),
     }
 }
 

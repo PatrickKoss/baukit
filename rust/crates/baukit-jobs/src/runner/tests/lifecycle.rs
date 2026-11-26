@@ -188,6 +188,26 @@ async fn a_claim_that_commits_after_shutdown_is_released() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_hanging_store_call_turns_store_health_red() {
+    let store = Arc::new(FakeStore::with_jobs(1));
+    store.block_claim.store(true, Ordering::SeqCst);
+    let shutdown = ShutdownToken::new(Duration::from_secs(1));
+    let runner = WorkerRunner::new(store.clone(), Arc::new(SucceedingHandler), test_config())
+        .expect("valid runner");
+    let health = runner.store_health();
+    let task = tokio::spawn(runner.run(shutdown.clone()));
+
+    wait_until(|| !health.is_healthy()).await;
+    assert!(
+        !task.is_finished(),
+        "a hanging store call must not end the runner"
+    );
+
+    shutdown.trigger();
+    task.await.expect("runner task").expect("clean shutdown");
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_hanging_claim_at_shutdown_is_abandoned_at_the_drain_budget() {
     let store = Arc::new(FakeStore::with_jobs(1));
     store.block_claim.store(true, Ordering::SeqCst);

@@ -272,11 +272,11 @@ async fn postgres_queue_age_ignores_future_rows_and_other_types() -> Result<(), 
 #[ignore = "requires Docker; mandatory in the full local gate"]
 async fn postgres_queue_depth_counts_the_runner_types_by_status() -> Result<(), Box<dyn Error>> {
     let (fixture, pool, store) = fixture().await?;
-    let now = Timestamp::now();
     for _ in 0..3 {
         store.enqueue(NewJob::new(KIND, json!({}), 1)).await?;
     }
     store.enqueue(NewJob::new(OTHER_KIND, json!({}), 1)).await?;
+    let now = Timestamp::now();
     let running = store
         .claim("worker-a", &[KIND], now, LEASE)
         .await?
@@ -371,6 +371,7 @@ async fn postgres_pause_mid_run_keeps_the_runner_and_its_attempt_alive()
         Arc::new(SleepingHandler(Duration::from_secs(15))),
         WorkerConfig {
             lease_duration: Duration::from_secs(60),
+            queue_sample_interval: Duration::from_secs(1),
             ..config("paused-worker")
         },
     )?;

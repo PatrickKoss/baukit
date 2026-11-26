@@ -356,7 +356,10 @@ runner loop and back to true at the next success.
 
 Store errors in the loop do not end `run`. The runner logs them and retries
 with jittered exponential backoff that starts at `poll_interval` and stops
-growing at 30 s. Running attempts keep going. An attempt that cannot record its
+growing at 30 s. Each claim and queue sample is bounded by
+`WorkerConfig::store_call_timeout` (default 5 s), so a database that hangs
+instead of failing also turns health red, as `StoreError::Timeout`. Running
+attempts keep going. An attempt that cannot record its
 outcome because its lease is gone logs a warning and increments
 `worker_lease_expired_total{queue}`. Only invalid configuration and a panicking
 claim or attempt task end `run` with an error.
@@ -372,7 +375,8 @@ before the `ShutdownToken` deadline. Then it drops the handlers still running
 and calls `JobStore::release(.., ReleaseReason::Shutdown, ..)` for each, so another
 worker claims them at once with the same attempt count. An attempt that ends in
 a retryable error after shutdown began is released the same way, so a job on
-its final attempt is not failed by a rollout. A claim still in flight when
+its final attempt is not failed by a rollout. A `job_timeout` that fires during
+drain is still recorded as a failure. A claim still in flight when
 shutdown begins is awaited until the same point and released. If it is still
 running then, the runner stops waiting and lease expiry recovers the job.
 Shutdown releases leave `deferrals` unchanged, so rollouts never push a job
