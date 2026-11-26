@@ -13,6 +13,9 @@ RULES = (
     f'-A KUBE-ROUTER-FORWARD -s {POD_IP}/32 -m comment --comment "ns/{POD} out" -j KUBE-POD-FW-X\n'
     f'-A KUBE-POD-FW-X -m comment --comment "ns/{POD} reject" -j REJECT\n'
 )
+POLICY_JUMP = '-A KUBE-POD-FW-X -m comment --comment "ns/allow-x policy" -j KUBE-NWPLCY-Y\n'
+DEFAULT_EGRESS = '-A KUBE-POD-FW-X -m comment --comment "default egress" -j KUBE-NWPLCY-DEFAULT\n'
+ALLOW_X = {"metadata": {"name": "allow-x"}, "spec": {"podSelector": {"matchLabels": {"app": "x"}}}}
 TERMINATING = {"metadata": {"namespace": "other", "name": "old"}, "status": {"phase": "Running"}}
 
 
@@ -26,6 +29,7 @@ class FakeRunner:
 
     def __init__(self, connects=(0,), sentinel=(0,), lookup=0, endpoints=True, rules=RULES):
         self.sharers = []
+        self.policies = []
         self.connects = list(connects)
         self.sentinel = list(sentinel)
         self.lookup = lookup
@@ -58,6 +62,7 @@ class FakeRunner:
             ("get", "node"): {"status": {"addresses": addresses}},
             ("get", "service"): {"spec": {"ports": [{"name": "http", "port": 80}]}},
             ("get", "endpointslices"): {"items": [slice_]},
+            ("get", "networkpolicies"): {"items": self.policies},
         }
 
     def exec(self, script):
@@ -162,6 +167,24 @@ class RunRowTests(unittest.TestCase):
         self.assertEqual(outcome.status, "ERROR")
         self.assertIn("dropped the probe pod's firewall chain", outcome.detail)
 
+    def test_it_waits_until_the_chain_jumps_to_the_selecting_policy(self):
+        dumps = [RULES + DEFAULT_EGRESS] + [RULES + POLICY_JUMP] * 2
+        runner = FakeRunner(connects=[1], rules=dumps)
+        runner.policies = [ALLOW_X]
+        with mock.patch.object(probe, "POLL_SECONDS", 0):
+            outcome = self.run_row(runner, row("deny", "  to: {host: node, port: 10250}\n"))
+        self.assertEqual(outcome.status, "PASS")
+        self.assertEqual(len(runner.ran("iptables-save")), 3)
+
+    def test_a_chain_that_never_reaches_the_selecting_policy_is_never_probed(self):
+        runner = FakeRunner(connects=[0], rules=RULES + DEFAULT_EGRESS)
+        runner.policies = [ALLOW_X]
+        with mock.patch.object(probe, "FENCE_TIMEOUT_SECONDS", -1):
+            outcome = self.run_row(runner, row("deny"))
+        self.assertEqual(outcome.status, "ERROR")
+        self.assertIn("no firewall chain", outcome.detail)
+        self.assertEqual(runner.ran(" nc "), [])
+
     def test_node_host_resolves_to_the_probe_node(self):
         runner = FakeRunner(connects=[0])
         outcome = self.run_row(runner, row("allow", "  to: {host: node, port: 6443}\n"))
@@ -213,6 +236,27 @@ class HelperTests(unittest.TestCase):
         self.assertFalse(probe.fenced(RULES, "ns", POD, "10.42.0.10"))
         self.assertFalse(probe.fenced(RULES, "other", POD, POD_IP))
         self.assertFalse(probe.fenced(RULES, "ns", f"{POD}0", POD_IP))
+
+    def test_fenced_needs_a_jump_to_each_selecting_policy_from_the_pod_chain(self):
+        policies = ("allow-x",)
+        self.assertTrue(probe.fenced(RULES + POLICY_JUMP, "ns", POD, POD_IP, policies))
+        self.assertFalse(probe.fenced(RULES + DEFAULT_EGRESS, "ns", POD, POD_IP, policies))
+        elsewhere = POLICY_JUMP.replace("KUBE-POD-FW-X", "KUBE-POD-FW-Z")
+        self.assertFalse(probe.fenced(RULES + elsewhere, "ns", POD, POD_IP, policies))
+
+    def test_selects_matches_labels_and_expressions(self):
+        labels = {"app": "x", "tier": "web"}
+        self.assertTrue(probe.selects({}, labels))
+        self.assertTrue(probe.selects({"matchLabels": {"app": "x"}}, labels))
+        self.assertFalse(probe.selects({"matchLabels": {"app": "y"}}, labels))
+        expressions = [
+            ({"key": "tier", "operator": "In", "values": ["web"]}, True),
+            ({"key": "tier", "operator": "NotIn", "values": ["web"]}, False),
+            ({"key": "app", "operator": "Exists"}, True),
+            ({"key": "app", "operator": "DoesNotExist"}, False),
+        ]
+        for expression, expected in expressions:
+            self.assertEqual(probe.selects({"matchExpressions": [expression]}, labels), expected)
 
     def test_classify(self):
         self.assertEqual(probe.classify(0, ""), ("allow", "connected"))

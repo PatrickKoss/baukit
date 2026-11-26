@@ -3,7 +3,8 @@
 
 A probe pod starts in the row's source namespace with the row's labels. Before it probes, the runner
 waits until no other unfinished pod holds the probe pod's IP, kube-router has written the pod's
-firewall chain with its egress jump on its node, and a DNS lookup from the pod works, so a new pod's
+firewall chain with its egress jump and a jump to every NetworkPolicy that selects the pod on its
+node, and a DNS lookup from the pod works, so a new pod's
 unfenced first seconds cannot pass a deny row and its not yet admitted first seconds cannot fail an
 allow row. kube-router keys local pods by IP, so a terminating pod still holding a recycled IP can
 take over the chain. The chain is checked again after the connection, and a lost chain is an error.
@@ -109,12 +110,52 @@ class Cluster:
             return rules
 
 
-def fenced(rules: str, namespace: str, pod: str, address: str) -> bool:
-    """kube-router writes a per-pod chain with a reject rule and an egress jump from the pod IP."""
-    reject = f'"{namespace}/{pod} reject"'
+def fenced(
+    rules: str, namespace: str, pod: str, address: str, policies: tuple[str, ...] = ()
+) -> bool:
+    """kube-router writes a per-pod chain with a reject rule, an egress jump from the pod IP and a
+    jump to each selecting policy; a chain built before the pod matched a policy falls back to the
+    allowing default chain instead."""
+    lines = rules.splitlines()
     egress = f'"{namespace}/{pod} out"'
-    jumps = (line for line in rules.splitlines() if egress in line)
-    return reject in rules and any(f"-s {address}/32 " in line for line in jumps)
+    if not any(egress in line and f"-s {address}/32 " in line for line in lines):
+        return False
+    reject = f'"{namespace}/{pod} reject"'
+    chains = {line.split()[1] for line in lines if reject in line and line.startswith("-A ")}
+    return bool(chains) and all(
+        any(
+            line.startswith(f"-A {chain} ") and f'"{namespace}/{policy} policy"' in line
+            for line in lines
+        )
+        for chain in chains
+        for policy in policies
+    )
+
+
+def selects(selector: dict, labels: dict[str, str]) -> bool:
+    if any(labels.get(key) != value for key, value in (selector.get("matchLabels") or {}).items()):
+        return False
+    for expression in selector.get("matchExpressions") or []:
+        present = expression["key"] in labels
+        listed = labels.get(expression["key"]) in (expression.get("values") or [])
+        matches = {
+            "In": present and listed,
+            "NotIn": not (present and listed),
+            "Exists": present,
+            "DoesNotExist": not present,
+        }
+        if not matches[expression["operator"]]:
+            return False
+    return True
+
+
+def selecting_policies(cluster: Cluster, namespace: str, labels: dict[str, str]) -> tuple[str, ...]:
+    policies = cluster.json("get", "networkpolicies", "-n", namespace)
+    return tuple(
+        item["metadata"]["name"]
+        for item in policies.get("items") or []
+        if selects(item["spec"].get("podSelector") or {}, labels)
+    )
 
 
 def other_pods_with_ip(cluster: Cluster, namespace: str, pod: str, address: str) -> list[str]:
@@ -137,8 +178,12 @@ def classify(code: int, output: str) -> tuple[str, str]:
     return "deny", "refused" if not output else f"refused ({output})"
 
 
+def probe_labels(row: Row) -> dict[str, str]:
+    return {**row.labels, PROBE_LABEL: "true"}
+
+
 def pod_manifest(row: Row, name: str) -> dict:
-    labels = {**row.labels, PROBE_LABEL: "true"}
+    labels = probe_labels(row)
     return {
         "apiVersion": "v1",
         "kind": "Pod",
@@ -233,6 +278,7 @@ class Probe:
         self.name = f"{prefix}-{row.number}"
         self.node = ""
         self.address = ""
+        self.policies: tuple[str, ...] = ()
 
     def start(self) -> tuple[str, str]:
         namespace = self.row.namespace
@@ -253,6 +299,7 @@ class Probe:
         pod = self.cluster.json("get", "pod", "-n", namespace, self.name)
         node = pod["spec"]["nodeName"]
         address = pod["status"]["podIP"]
+        self.policies = selecting_policies(self.cluster, namespace, probe_labels(self.row))
         wait_until(
             lambda: not other_pods_with_ip(self.cluster, namespace, self.name, address),
             FENCE_TIMEOUT_SECONDS,
@@ -273,7 +320,7 @@ class Probe:
 
     def fenced(self, node: str, address: str, max_age: float = POLL_SECONDS) -> bool:
         rules = self.cluster.node_rules(node, max_age)
-        return fenced(rules, self.row.namespace, self.name, address)
+        return fenced(rules, self.row.namespace, self.name, address, self.policies)
 
     def check_still_fenced(self) -> None:
         if not self.fenced(self.node, self.address, max_age=0):
