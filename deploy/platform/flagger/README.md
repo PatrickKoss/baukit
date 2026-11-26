@@ -60,7 +60,7 @@ values:
 ```
 
 Build the custom image FROM a small runtime, copy in the upstream
-`/home/app/loadtester` binary from
+`loadtester` binary from
 `ghcr.io/fluxcd/flagger-loadtester:0.38.0`, and add the pinned product smoke
 executable. The Canary `pre-rollout` webhook uses `type: cmd` and invokes that
 executable against `<product>-canary` directly. Credentials remain in an

@@ -67,9 +67,9 @@ Use `runtime` with a product-owned `SuitePeerClient` to omit the supplied delive
 
 ```toml
 # Domain and ports crates:
-baukit-suite = { version = "0.10.0", default-features = false }
+baukit-suite = { version = "0.31", default-features = false }
 # Product adapter crate:
-baukit-suite = { version = "0.10.0", features = ["http", "jobs", "delivery"] }
+baukit-suite = { version = "0.31", features = ["http", "jobs", "delivery"] }
 ```
 
 ## Product composition
