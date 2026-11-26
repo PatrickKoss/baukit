@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Generated OIDC products set `auth.authorized_parties` in `config/local.toml` to the realm's web, mobile and local client IDs, so access tokens from other clients fail even when they carry the backend audience.
+
 ## [0.30.5] - 2026-11-26
 
 - `baukit generate release-age-excludes` prints a block for every top-level directory that holds a `package.json` next to a `pnpm-workspace.yaml` or `pnpm-lock.yaml`, sorted by name. It read only `mobile/` and `web/`, so the `@baukit/*` pins of a browser extension in `extension/` got no entries.

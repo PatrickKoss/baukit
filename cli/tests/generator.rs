@@ -6718,3 +6718,24 @@ fn both_quality_profiles_run_baukit_doctor() -> anyhow::Result<()> {
     assert!(gate.contains("\n  run_baukit_cli doctor\n"));
     Ok(())
 }
+
+#[test]
+fn oidc_local_config_restricts_rest_clients_to_generated_ones() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "snapshot-app");
+    generated.components.set(Component::Backend, true);
+    generated.components.set(Component::Web, true);
+    generated.components.set(Component::Mobile, true);
+    generated.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&generated)?;
+    let local: toml::Value = toml::from_str(&fs::read_to_string(root.join("config/local.toml"))?)?;
+    assert_eq!(
+        local["auth"]["authorized_parties"],
+        toml::Value::try_from([
+            "snapshot-app-web",
+            "snapshot-app-mobile",
+            "snapshot-app-local"
+        ])?
+    );
+    Ok(())
+}

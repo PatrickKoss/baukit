@@ -135,13 +135,7 @@ fn validate_oidc_authorized_party(
             _ => Err(VerificationError::WrongAuthorizedParty),
         };
     }
-    if !has_several_audiences(claims) {
-        return Ok(());
-    }
-    match (claims.extra.get("azp"), config.client_id.as_deref()) {
-        (Some(Value::String(client)), Some(expected)) if client == expected => Ok(()),
-        _ => Err(VerificationError::WrongAuthorizedParty),
-    }
+    Ok(())
 }
 
 fn validate_id_token_client(claims: &JwtClaims, client_id: &str) -> Result<(), VerificationError> {

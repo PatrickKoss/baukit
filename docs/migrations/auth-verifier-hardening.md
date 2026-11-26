@@ -1,19 +1,21 @@
 # Auth verifier hardening
 
-`baukit-auth` rejects two token shapes it used to accept, and the JWKS cache
+`baukit-auth` rejects access tokens that carry `nonce`, and the JWKS cache
 has two new settings.
 
-## Several audiences need a matching `azp`
+## Restricting clients stays opt-in
 
-A token whose `aud` lists more than one audience now needs `azp`. With
-`with_allowed_clients`, `azp` must be in that list. Otherwise `azp` must equal
-the `with_client_id` value, and without a client ID such tokens fail. The
-error is `VerificationError::WrongAuthorizedParty`.
+Access tokens are checked against the audience, as RFC 9068 describes. `azp`
+names the requesting client, so the verifier checks it only when you call
+`with_allowed_clients`. That holds for multi-audience tokens too, such as
+Keycloak's default `aud: ["app-backend", "account"]`.
 
-If your IdP issues multi-audience access tokens, set the client:
+Generated products set `auth.authorized_parties` in `config/local.toml` to
+their web, mobile and local client IDs. Set the same list in every other
+environment:
 
 ```rust
-OidcConfig::new(issuer, "api")?.with_client_id("web")?
+OidcConfig::new(issuer, "api")?.with_allowed_clients(["app-web", "app-mobile"])?
 ```
 
 ## `nonce` on the access path
