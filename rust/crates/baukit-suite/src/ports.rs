@@ -251,6 +251,14 @@ pub trait SuiteLinkStore: Send + Sync {
         action: DeliveryAction,
         now: Timestamp,
     ) -> Result<DeliveryState, SuiteStoreError>;
+    /// Claims the due probe of a disabled link before the peer call. Returns
+    /// `false` when no probe is due or another worker claimed it.
+    async fn claim_probe(
+        &self,
+        owner_id: Uuid,
+        link_id: Uuid,
+        now: Timestamp,
+    ) -> Result<bool, SuiteStoreError>;
     async fn complete_delivery(
         &self,
         owner_id: Uuid,
@@ -345,6 +353,10 @@ pub enum SuitePeerError {
     Rejected { status: u16, code: String },
     #[error("suite peer returned an invalid response")]
     InvalidResponse,
+    /// The egress breaker is open or the peer's concurrency limit is full;
+    /// the request was not sent.
+    #[error("suite peer call deferred for {retry_after:?}")]
+    Deferred { retry_after: std::time::Duration },
 }
 
 pub struct SuiteSignedCall<'a> {

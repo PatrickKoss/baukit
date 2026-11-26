@@ -16,8 +16,7 @@ pub(super) async fn lock_cleanup_owners(
         UNION SELECT user_id FROM suite_links WHERE (status='revoked' AND revoked_at<$2)
             OR (created_at<$3 AND last_delivery_at IS NULL AND last_received_at IS NULL)
         UNION SELECT l.user_id FROM suite_links l WHERE
-            EXISTS(SELECT 1 FROM suite_failed_delivery_jobs f WHERE f.link_id=l.id AND NOT f.accounted)
-            OR EXISTS(SELECT 1 FROM job_outbox j WHERE j.payload->>'link_id'=l.id::text
+            EXISTS(SELECT 1 FROM job_outbox j WHERE j.payload->>'link_id'=l.id::text
                 AND j.job_type=ANY($5)
                 AND j.status IN ('succeeded','failed','cancelled') AND j.updated_at<$4)
         ORDER BY user_id"#,

@@ -1006,6 +1006,9 @@ async fn assert_permanent_failures_disable_delivery(
         .bind(job.id)
         .execute(pool)
         .await?;
+        c.store
+            .record_delivery(owner, link_id, DeliveryAction::Rejected, Timestamp::now())
+            .await?;
     }
     let deliveries = c.store.deliveries(owner, link_id, 20).await?;
     assert_eq!(deliveries.len(), 20);
@@ -1017,19 +1020,26 @@ async fn assert_permanent_failures_disable_delivery(
                 && delivery.last_error_code.as_deref() == Some("suite_rejected"))
     );
     let disabled = service.get(owner, link_id).await?;
-    assert_eq!(disabled.consecutive_failures, 20);
+    assert_eq!(disabled.consecutive_failures, SUITE_CIRCUIT_FAILURES);
     assert_eq!(disabled.delivery_health, DeliveryHealth::Disabled);
+    assert!(
+        disabled
+            .next_probe_at
+            .is_some_and(|at| at > Timestamp::now())
+    );
     Ok(())
 }
 
+/// The `Unauthorized` delivery before this call counted as the first failure.
 async fn assert_attention_failures_escalate(
+    c: &SuiteContext,
     service: &SuiteLinkService,
     jobs: &PostgresJobStore,
     owner: Uuid,
     link_id: Uuid,
     pool: &PgPool,
 ) -> TestResult {
-    for n in 1..=SUITE_CIRCUIT_FAILURES {
+    for n in 2..=SUITE_CIRCUIT_FAILURES {
         let job = jobs
             .enqueue(NewJob::new(
                 SUITE_EVENTS_DELIVER_JOB_TYPE,
@@ -1040,6 +1050,9 @@ async fn assert_attention_failures_escalate(
             .job;
         sqlx::query("UPDATE job_outbox SET status='failed',last_error='suite_rejected',failure_reason='permanent',updated_at=now() WHERE id=$1")
             .bind(job.id).execute(pool).await?;
+        c.store
+            .record_delivery(owner, link_id, DeliveryAction::Rejected, Timestamp::now())
+            .await?;
         let link = service.get(owner, link_id).await?;
         assert_eq!(link.status, LinkStatus::NeedsAttention);
         assert_eq!(link.consecutive_failures, n);
@@ -1112,7 +1125,7 @@ async fn outbox_rollbacks_xp_signatures_retry_and_terminal_health() -> TestResul
             Timestamp::now(),
         )
         .await?;
-    assert_attention_failures_escalate(&service, &jobs, owner, link.id, &db.pool).await?;
+    assert_attention_failures_escalate(&c, &service, &jobs, owner, link.id, &db.pool).await?;
     assert_eq!(
         service
             .reenable(owner, link.id, Timestamp::now())
@@ -1971,6 +1984,13 @@ mod common {
         pub _container: baukit_test::PostgresTestContainer,
     }
     pub async fn postgres_database() -> Result<TestDatabase, Box<dyn Error>> {
+        let database = postgres_database_before_probes().await?;
+        sqlx::raw_sql(SUITE_DELIVERY_PROBES_MIGRATION_SQL)
+            .execute(&database.pool)
+            .await?;
+        Ok(database)
+    }
+    pub async fn postgres_database_before_probes() -> Result<TestDatabase, Box<dyn Error>> {
         let database = postgres_database_before_lock_order().await?;
         sqlx::raw_sql(SUITE_LOCK_ORDER_MIGRATION_SQL)
             .execute(&database.pool)
@@ -2400,9 +2420,9 @@ async fn assert_owner_suite_rows_erased(pool: &PgPool, owner: Uuid) -> TestResul
     let remaining: (i64, i64) = sqlx::query_as("SELECT (SELECT count(*) FROM users WHERE id=$1), (SELECT count(*) FROM job_outbox WHERE job_type='identity.account.delete')")
             .bind(owner).fetch_one(pool).await?;
     assert_eq!(remaining, (0, 0));
-    let rows: (i64,i64,i64,i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM suite_links WHERE user_id=$1),(SELECT count(*) FROM suite_link_codes WHERE user_id=$1),(SELECT count(*) FROM suite_link_requests WHERE user_id=$1),(SELECT count(*) FROM suite_inbound_events WHERE user_id=$1),(SELECT count(*) FROM suite_failed_delivery_jobs),(SELECT count(*) FROM job_outbox WHERE job_type=ANY($2))")
+    let rows: (i64,i64,i64,i64,i64) = sqlx::query_as("SELECT (SELECT count(*) FROM suite_links WHERE user_id=$1),(SELECT count(*) FROM suite_link_codes WHERE user_id=$1),(SELECT count(*) FROM suite_link_requests WHERE user_id=$1),(SELECT count(*) FROM suite_inbound_events WHERE user_id=$1),(SELECT count(*) FROM job_outbox WHERE job_type=ANY($2))")
             .bind(owner).bind(SUITE_JOB_TYPES.as_slice()).fetch_one(pool).await?;
-    assert_eq!(rows, (0, 0, 0, 0, 0, 0));
+    assert_eq!(rows, (0, 0, 0, 0, 0));
     Ok(())
 }
 
@@ -3736,14 +3756,13 @@ async fn two_cleanups_delivery_failure_and_erasure_do_not_invert_link_and_job_lo
     let result = tokio::time::timeout(std::time::Duration::from_secs(5), cleanup).await???;
     assert_eq!(result.unused_links, 1);
     tokio::time::timeout(std::time::Duration::from_secs(5), erasure).await???;
-    let rows: (i64, i64, i64, i64, i64) = sqlx::query_as(
+    let rows: (i64, i64, i64, i64) = sqlx::query_as(
         "SELECT (SELECT count(*) FROM suite_links),(SELECT count(*) FROM job_outbox),
-        (SELECT count(*) FROM suite_failed_delivery_jobs),(SELECT count(*) FROM suite_link_codes),
-        (SELECT count(*) FROM suite_link_requests)",
+        (SELECT count(*) FROM suite_link_codes),(SELECT count(*) FROM suite_link_requests)",
     )
     .fetch_one(&db.pool)
     .await?;
-    assert_eq!(rows, (0, 0, 0, 0, 0));
+    assert_eq!(rows, (0, 0, 0, 0));
     Ok(())
 }
 
@@ -4073,105 +4092,118 @@ async fn failed_exchange_budget_counts_every_invalid_code_and_allows_a_fresh_val
     Ok(())
 }
 
-async fn assert_new_failures_accounted_once(
-    jobs: &PostgresJobStore,
-    store: &PostgresSuiteLinkStore,
-    link: Uuid,
-    pool: &PgPool,
-) -> TestResult {
-    let new_job = jobs
-        .enqueue(NewJob::new(
-            SUITE_EVENTS_DELIVER_JOB_TYPE,
-            json!({"link_id":link}),
-            1,
-        ))
-        .await?
-        .job;
-    sqlx::query("UPDATE job_outbox SET status='failed',failure_reason='permanent',last_error='suite_unauthorized' WHERE id=$1")
-        .bind(new_job.id).execute(pool).await?;
-    let pending: bool =
-        sqlx::query_scalar("SELECT NOT accounted FROM suite_failed_delivery_jobs WHERE job_id=$1")
-            .bind(new_job.id)
-            .fetch_one(pool)
-            .await?;
-    assert!(pending);
-    let counted = store.find_link(link).await?.expect("link");
-    assert_eq!(counted.consecutive_failures, 2);
-    assert_eq!(
-        counted.last_failure_code.as_deref(),
-        Some("suite_unauthorized")
-    );
-    sqlx::query("UPDATE job_outbox SET status='pending',failure_reason=NULL WHERE id=$1")
-        .bind(new_job.id)
-        .execute(pool)
-        .await?;
-    sqlx::query("UPDATE job_outbox SET status='failed',failure_reason='permanent' WHERE id=$1")
-        .bind(new_job.id)
-        .execute(pool)
-        .await?;
-    assert_eq!(
-        store
-            .find_link(link)
-            .await?
-            .expect("link")
-            .consecutive_failures,
-        2
-    );
-    let pending_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM suite_failed_delivery_jobs WHERE NOT accounted")
-            .fetch_one(pool)
-            .await?;
-    assert_eq!(pending_count, 0);
-    Ok(())
-}
-
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
-async fn lock_order_migration_preserves_old_failures_and_accounts_new_jobs_once() -> TestResult {
-    let db = common::postgres_database_before_lock_order().await?;
+async fn probes_migration_drops_sql_accounting_and_schedules_disabled_links() -> TestResult {
+    let db = common::postgres_database_before_probes().await?;
     let owner = user(&db.pool, "suite-upgrade").await?;
-    let link = Uuid::now_v7();
-    sqlx::query("INSERT INTO suite_links(id,user_id,peer_app,role,remote_link_id,remote_subject,secret_ciphertext,secret_nonce,secret_key_version,sends,receives) VALUES($1,$2,'beta','authorizer',$3,'remote',$4,$5,1,'{}','{}')")
-        .bind(link).bind(owner).bind(Uuid::now_v7()).bind(vec![1u8]).bind(vec![2u8])
-        .execute(&db.pool).await?;
+    let (disabled, degraded) = (Uuid::now_v7(), Uuid::now_v7());
+    for (link, health, failures) in [(disabled, "disabled", 20), (degraded, "degraded", 3)] {
+        sqlx::query("INSERT INTO suite_links(id,user_id,peer_app,role,remote_link_id,remote_subject,secret_ciphertext,secret_nonce,secret_key_version,sends,receives,delivery_health,consecutive_failures) VALUES($1,$2,'beta','authorizer',$3,'remote',$4,$5,1,'{}','{}',$6,$7)")
+            .bind(link).bind(owner).bind(Uuid::now_v7()).bind(vec![1u8]).bind(vec![2u8]).bind(health).bind(failures)
+            .execute(&db.pool).await?;
+    }
+    sqlx::raw_sql(SUITE_DELIVERY_PROBES_MIGRATION_SQL)
+        .execute(&db.pool)
+        .await?;
+    let accounting: Option<String> =
+        sqlx::query_scalar("SELECT to_regclass('suite_failed_delivery_jobs')::text")
+            .fetch_one(&db.pool)
+            .await?;
+    assert_eq!(accounting, None);
+    let store = PostgresSuiteLinkStore::new(db.pool.clone());
+    let upgraded = store.find_link(disabled).await?.ok_or("disabled link")?;
+    assert_eq!(upgraded.consecutive_failures, 20);
+    assert!(upgraded.next_probe_at.is_some());
+    let kept = store.find_link(degraded).await?.ok_or("degraded link")?;
+    assert_eq!((kept.consecutive_failures, kept.next_probe_at), (3, None));
+
     let jobs = PostgresJobStore::new(db.pool.clone());
-    let old_job = jobs
+    let job = jobs
         .enqueue(NewJob::new(
             SUITE_EVENTS_DELIVER_JOB_TYPE,
-            json!({"link_id":link}),
+            json!({"link_id":degraded}),
             1,
         ))
         .await?
         .job;
     sqlx::query("UPDATE job_outbox SET status='failed',failure_reason='permanent',last_error='suite_rejected' WHERE id=$1")
-        .bind(old_job.id).execute(&db.pool).await?;
-    let old_count: i32 =
-        sqlx::query_scalar("SELECT consecutive_failures FROM suite_links WHERE id=$1")
-            .bind(link)
-            .fetch_one(&db.pool)
-            .await?;
-    assert_eq!(old_count, 1);
-
-    sqlx::raw_sql(SUITE_LOCK_ORDER_MIGRATION_SQL)
-        .execute(&db.pool)
-        .await?;
-    let store = PostgresSuiteLinkStore::new(db.pool.clone());
+        .bind(job.id).execute(&db.pool).await?;
     assert_eq!(
         store
-            .find_link(link)
+            .find_link(degraded)
             .await?
-            .expect("link")
+            .ok_or("degraded link")?
             .consecutive_failures,
-        1
+        3,
+        "failed jobs no longer count in SQL"
     );
-    let old_accounted: bool =
-        sqlx::query_scalar("SELECT accounted FROM suite_failed_delivery_jobs WHERE job_id=$1")
-            .bind(old_job.id)
-            .fetch_one(&db.pool)
-            .await?;
-    assert!(old_accounted);
+    sqlx::query("UPDATE suite_links SET consecutive_failures=21 WHERE id=$1")
+        .bind(degraded)
+        .execute(&db.pool)
+        .await
+        .map_err(|error| format!("the counter is no longer capped in SQL: {error}"))?;
+    Ok(())
+}
 
-    assert_new_failures_accounted_once(&jobs, &store, link, &db.pool).await?;
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn one_worker_claims_a_due_probe_and_a_delivered_probe_heals_the_link() -> TestResult {
+    let (db, context, owner) = authorizer_fixture().await?;
+    let service = SuiteLinkService::new(context.clone());
+    let (link, _) = exchange_link(&service, owner, None, None).await?;
+    let now = Timestamp::now();
+    for _ in 0..SUITE_CIRCUIT_FAILURES {
+        context
+            .store
+            .record_delivery(owner, link.id, DeliveryAction::Retry { after: None }, now)
+            .await?;
+    }
+    let disabled = service.get(owner, link.id).await?;
+    assert_eq!(disabled.delivery_health, DeliveryHealth::Disabled);
+    let due = disabled.next_probe_at.ok_or("probe scheduled")?;
+    assert!(!context.store.claim_probe(owner, link.id, now).await?);
+
+    let mut claims = tokio::task::JoinSet::new();
+    for _ in 0..4 {
+        let store = context.store.clone();
+        claims.spawn(async move { store.claim_probe(owner, link.id, due).await });
+    }
+    let mut won = 0;
+    while let Some(claim) = claims.join_next().await {
+        won += usize::from(claim??);
+    }
+    assert_eq!(won, 1);
+    let claimed = service.get(owner, link.id).await?;
+    assert_eq!(claimed.failed_probes, 1);
+    assert_eq!(
+        claimed.next_probe_at,
+        Some(due + SignedDuration::from_hours(2))
+    );
+    let stranger = user(&db.pool, "probe-stranger").await?;
+    assert_eq!(
+        context
+            .store
+            .claim_probe(stranger, link.id, due)
+            .await
+            .err(),
+        Some(SuiteStoreError::NotFound)
+    );
+
+    context
+        .store
+        .record_delivery(owner, link.id, DeliveryAction::Delivered, due)
+        .await?;
+    let healed = service.get(owner, link.id).await?;
+    assert_eq!(healed.delivery_health, DeliveryHealth::Healthy);
+    assert_eq!(
+        (
+            healed.consecutive_failures,
+            healed.next_probe_at,
+            healed.failed_probes
+        ),
+        (0, None, 0)
+    );
     Ok(())
 }
 
@@ -4309,35 +4341,22 @@ async fn read_only_link_service_port_keeps_owner_isolation() -> TestResult {
 
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
-async fn foreign_owner_lookup_returns_none_without_accounting_failures() -> TestResult {
+async fn foreign_owner_lookup_returns_none_and_leaves_the_link_untouched() -> TestResult {
     let db = common::postgres_database().await?;
     let context = make_context(&db.pool, registry("alpha", "beta", 12340, 12341));
     let owner = user(&db.pool, "suite-owner-a").await?;
     let stranger = user(&db.pool, "suite-owner-b").await?;
     let links = SuiteLinkService::new(context.clone());
     let (link, _) = exchange_link(&links, owner, None, None).await?;
-    let job = PostgresJobStore::new(db.pool.clone())
-        .enqueue(NewJob::new(
-            SUITE_EVENTS_DELIVER_JOB_TYPE,
-            json!({"link_id":link.id.to_string()}),
-            1,
-        ))
-        .await?
-        .job;
-    sqlx::query("UPDATE job_outbox SET status='failed',last_error='suite_peer_unreachable',failure_reason='permanent',updated_at=now() WHERE id=$1")
-        .bind(job.id)
-        .execute(&db.pool)
-        .await?;
     let snapshot = || async {
-        sqlx::query_as::<_, (i32, jiff_sqlx::Timestamp, bool)>(
-            "SELECT l.consecutive_failures, l.updated_at, f.accounted FROM suite_links l JOIN suite_failed_delivery_jobs f ON f.link_id=l.id WHERE l.id=$1",
+        sqlx::query_as::<_, (i32, jiff_sqlx::Timestamp)>(
+            "SELECT consecutive_failures, updated_at FROM suite_links WHERE id=$1",
         )
         .bind(link.id)
         .fetch_one(&db.pool)
         .await
     };
     let before = snapshot().await?;
-    assert!(!before.2);
     assert!(
         context
             .store
@@ -4348,7 +4367,6 @@ async fn foreign_owner_lookup_returns_none_without_accounting_failures() -> Test
     assert_eq!(snapshot().await?, before);
     let own = context.store.find_link_for_owner(link.id, owner).await?;
     assert_eq!(own.map(|found| found.id), Some(link.id));
-    assert!(snapshot().await?.2);
     Ok(())
 }
 

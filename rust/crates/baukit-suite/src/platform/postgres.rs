@@ -139,6 +139,19 @@ struct SnapshotRow {
     valid_until: i64,
     grace_until: Option<i64>,
 }
+impl SnapshotRow {
+    fn into_snapshot(self) -> Result<EntitlementSnapshot, PlatformError> {
+        Ok(EntitlementSnapshot {
+            subject: self.subject,
+            product_id: self.product_id,
+            tier: self.tier,
+            features: self.features.0,
+            revision: u64::try_from(self.revision).map_err(|_| PlatformError::Invalid)?,
+            valid_until: self.valid_until,
+            grace_until: self.grace_until,
+        })
+    }
+}
 #[async_trait]
 impl EntitlementCache for PostgresEntitlementCache {
     async fn get(
@@ -149,18 +162,16 @@ impl EntitlementCache for PostgresEntitlementCache {
     ) -> Result<Option<EntitlementSnapshot>, PlatformError> {
         let row: Option<SnapshotRow> = sqlx::query_as("SELECT subject,product_id,tier,features,revision,valid_until,grace_until FROM platform_entitlement_cache WHERE subject=$1 AND product_id=$2 AND valid_until>$3")
             .bind(subject).bind(product_id).bind(now).fetch_optional(&self.pool).await.map_err(storage)?;
-        row.map(|row| {
-            Ok(EntitlementSnapshot {
-                subject: row.subject,
-                product_id: row.product_id,
-                tier: row.tier,
-                features: row.features.0,
-                revision: u64::try_from(row.revision).map_err(|_| PlatformError::Invalid)?,
-                valid_until: row.valid_until,
-                grace_until: row.grace_until,
-            })
-        })
-        .transpose()
+        row.map(SnapshotRow::into_snapshot).transpose()
+    }
+    async fn retained(
+        &self,
+        subject: &str,
+        product_id: &str,
+    ) -> Result<Option<EntitlementSnapshot>, PlatformError> {
+        let row: Option<SnapshotRow> = sqlx::query_as("SELECT subject,product_id,tier,features,revision,valid_until,grace_until FROM platform_entitlement_cache WHERE subject=$1 AND product_id=$2")
+            .bind(subject).bind(product_id).fetch_optional(&self.pool).await.map_err(storage)?;
+        row.map(SnapshotRow::into_snapshot).transpose()
     }
     async fn revision(&self, subject: &str, product_id: &str) -> Result<u64, PlatformError> {
         let revision: Option<i64> = sqlx::query_scalar(

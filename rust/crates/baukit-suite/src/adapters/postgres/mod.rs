@@ -1,6 +1,9 @@
 use crate::domain::*;
 use crate::ports::*;
-pub use crate::{SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL};
+pub use crate::{
+    SUITE_DELIVERY_PROBES_MIGRATION_SQL, SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_MIGRATION_SQL,
+    SUITE_RUNTIME_MIGRATION_SQL,
+};
 use async_trait::async_trait;
 use jiff::{SignedDuration, Timestamp};
 use jiff_sqlx::{Timestamp as SqlTimestamp, ToSqlx};
@@ -13,6 +16,7 @@ use cleanup::{
     delete_expired_links, delete_expired_requests, delete_terminal_jobs, lock_cleanup_owners,
 };
 mod outbox;
+mod probe;
 pub use erasure::{PostgresSuiteErasure, SuiteErasureOwnerLookup};
 mod rows;
 pub use outbox::PostgresSuiteEventOutbox;
@@ -37,15 +41,11 @@ impl PostgresSuiteLinkStore {
     ) -> Result<DeliveryState, SuiteStoreError> {
         let mut tx = self.begin_transaction().await?;
         let link = self.link_for_update(&mut tx, owner, id).await?;
-        let before = DeliveryState {
-            status: link.status,
-            health: link.delivery_health,
-            consecutive_failures: link.consecutive_failures,
-        };
+        let before = DeliveryState::from(&link);
         let after = if before.status == LinkStatus::Revoked {
             before
         } else {
-            after_delivery(before, action)
+            after_delivery(before, action, now)
         };
         sqlx::query(
             r#"UPDATE suite_links
@@ -67,7 +67,7 @@ impl PostgresSuiteLinkStore {
             THEN COALESCE(revoked_at,
             $6)
             ELSE revoked_at END,
-            updated_at=$6
+            updated_at=$6, next_probe_at=$9, failed_probes=$10
             WHERE id=$1 AND user_id=$8"#,
         )
         .bind(id)
@@ -76,8 +76,10 @@ impl PostgresSuiteLinkStore {
         .bind(i32::try_from(after.consecutive_failures).map_err(invalid)?)
         .bind(action == DeliveryAction::Delivered)
         .bind(now.to_sqlx())
-        .bind(action.permanent_code())
+        .bind(action.failure_code())
         .bind(owner)
+        .bind(after.next_probe_at.map(|at| at.to_sqlx()))
+        .bind(i32::try_from(after.failed_probes).map_err(invalid)?)
         .execute(&mut *tx)
         .await
         .map_err(storage)?;
@@ -382,7 +384,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         tx: &mut sqlx::PgConnection,
         hash: [u8; 32],
     ) -> Result<Option<SuiteLink>, SuiteStoreError> {
-        sqlx::query_as::<_, LinkRow>(r#"SELECT l.id, l.user_id, l.peer_app, l.role, l.remote_link_id, l.remote_subject, l.remote_display_name, l.suite_subject, l.status, l.secret_ciphertext, l.secret_nonce, l.secret_key_version, l.sends, l.receives, l.share_xp, l.reward_mode, l.delivery_health, l.consecutive_failures, l.last_delivery_at, l.last_failure_at, l.last_failure_code, l.last_received_at, l.created_at, l.updated_at, l.revoked_at FROM suite_links l JOIN suite_link_codes c ON c.link_id=l.id WHERE c.code_hash=$1"#)
+        sqlx::query_as::<_, LinkRow>(r#"SELECT l.id, l.user_id, l.peer_app, l.role, l.remote_link_id, l.remote_subject, l.remote_display_name, l.suite_subject, l.status, l.secret_ciphertext, l.secret_nonce, l.secret_key_version, l.sends, l.receives, l.share_xp, l.reward_mode, l.delivery_health, l.consecutive_failures, l.next_probe_at, l.failed_probes, l.last_delivery_at, l.last_failure_at, l.last_failure_code, l.last_received_at, l.created_at, l.updated_at, l.revoked_at FROM suite_links l JOIN suite_link_codes c ON c.link_id=l.id WHERE c.code_hash=$1"#)
 .bind(hash.as_slice())
         .fetch_optional(&mut *tx)
         .await
@@ -430,8 +432,6 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         id: Uuid,
     ) -> Result<SuiteLink, SuiteStoreError> {
         lock_owner(tx, owner).await?;
-        lock_link_row(tx, owner, id).await?;
-        account_failures(tx, id).await?;
         lock_link_row(tx, owner, id).await
     }
     async fn active_link_for_update(
@@ -441,11 +441,10 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         peer: &str,
     ) -> Result<Option<SuiteLink>, SuiteStoreError> {
         lock_owner(tx, owner).await?;
-        account_owner_failures(tx, owner).await?;
         sqlx::query_as::<_, LinkRow>(r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE user_id=$1 AND peer_app=$2 AND status<>'revoked' ORDER BY id FOR UPDATE"#)
 .bind(owner)
 .bind(peer)
@@ -522,12 +521,11 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .map_err(storage)?.rows_affected())
     }
     async fn find_link(&self, id: Uuid) -> Result<Option<SuiteLink>, SuiteStoreError> {
-        self.refresh_failures(id).await?;
         sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE id=$1"#,
         )
         .bind(id)
@@ -553,12 +551,11 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         if !owned {
             return Ok(None);
         }
-        self.refresh_failures(id).await?;
         sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE id=$1 AND user_id=$2"#,
         )
         .bind(id)
@@ -570,19 +567,10 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .transpose()
     }
     async fn list_links(&self, owner: Uuid) -> Result<Vec<SuiteLink>, SuiteStoreError> {
-        let ids: Vec<Uuid> =
-            sqlx::query_scalar("SELECT id FROM suite_links WHERE user_id=$1 ORDER BY id")
-                .bind(owner)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(storage)?;
-        for id in ids {
-            self.refresh_failures(id).await?;
-        }
         sqlx::query_as::<_, LinkRow>(r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE user_id=$1 AND status<>'revoked' ORDER BY created_at,id"#)
 .bind(owner)
         .fetch_all(&self.pool)
@@ -610,7 +598,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
             RETURNING id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at"#,
         )
         .bind(id)
@@ -635,14 +623,14 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         let mut tx = self.begin_transaction().await?;
         self.link_for_update(&mut tx, owner, id).await?;
         let row = sqlx::query_as::<_, LinkRow>(r#"UPDATE suite_links
-            SET delivery_health='healthy',consecutive_failures=0,last_failure_code=NULL,updated_at=$3
+            SET delivery_health='healthy',consecutive_failures=0,next_probe_at=NULL,failed_probes=0,last_failure_code=NULL,updated_at=$3
             WHERE id=$1
             AND user_id=$2
             AND status='active'
             RETURNING id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at"#)
 .bind(id)
 .bind(owner)
@@ -662,6 +650,14 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
     ) -> Result<DeliveryState, SuiteStoreError> {
         self.health(owner, id, action, now).await
     }
+    async fn claim_probe(
+        &self,
+        owner: Uuid,
+        id: Uuid,
+        now: Timestamp,
+    ) -> Result<bool, SuiteStoreError> {
+        probe::claim(self, owner, id, now).await
+    }
     async fn complete_delivery(
         &self,
         owner: Uuid,
@@ -672,18 +668,11 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
     ) -> Result<(), SuiteStoreError> {
         let mut tx = self.begin_transaction().await?;
         let link = self.link_for_update(&mut tx, owner, id).await?;
-        let state = after_delivery(
-            DeliveryState {
-                status: link.status,
-                health: link.delivery_health,
-                consecutive_failures: link.consecutive_failures,
-            },
-            DeliveryAction::Delivered,
-        );
+        let state = after_delivery(DeliveryState::from(&link), DeliveryAction::Delivered, now);
         changed(
             sqlx::query(
                 r#"UPDATE suite_links SET delivery_health=$2,
-            consecutive_failures=$3,
+            consecutive_failures=$3, next_probe_at=NULL, failed_probes=0,
             last_delivery_at=$4,
             updated_at=$4 WHERE id=$1 AND user_id=$5"#,
             )
@@ -866,9 +855,6 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .fetch_all(&mut *tx)
         .await
         .map_err(storage)?;
-        for id in &links {
-            account_failures(&mut tx, *id).await?;
-        }
         let (requests, codes) = delete_expired_requests(&mut tx, now, &owners).await?;
         let (revoked_links, unused_links) = delete_expired_links(&mut tx, now, &owners).await?;
         let terminal_jobs = delete_terminal_jobs(&mut tx, now, &links).await?;
@@ -891,7 +877,7 @@ pub(crate) async fn links_for_erasure(
         r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links
             WHERE user_id=$1 AND (status IN ('active','needs_attention') OR (status='revoked'
             AND EXISTS(SELECT 1 FROM job_outbox WHERE job_type='suite.links.revoke'
@@ -948,16 +934,6 @@ struct DeliveryRow {
 }
 
 impl PostgresSuiteLinkStore {
-    async fn refresh_failures(&self, id: Uuid) -> Result<(), SuiteStoreError> {
-        let pending: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM suite_failed_delivery_jobs WHERE link_id=$1 AND NOT accounted)")
-            .bind(id).fetch_one(&self.pool).await.map_err(storage)?;
-        if pending {
-            let mut tx = self.begin_transaction().await?;
-            account_failures(&mut tx, id).await?;
-            self.commit_transaction(tx).await?;
-        }
-        Ok(())
-    }
     /// Links that a peer may still consider active. Call before the erasure transaction.
     ///
     /// # Errors
@@ -1021,32 +997,4 @@ async fn lock_link_row(
         .map_err(storage)?
         .ok_or(SuiteStoreError::NotFound)?
         .try_into()
-}
-
-pub(super) async fn account_failures(
-    tx: &mut sqlx::PgConnection,
-    id: Uuid,
-) -> Result<(), SuiteStoreError> {
-    sqlx::query("SELECT account_suite_delivery_failures($1)")
-        .bind(id)
-        .execute(tx)
-        .await
-        .map_err(storage)?;
-    Ok(())
-}
-
-pub(super) async fn account_owner_failures(
-    tx: &mut sqlx::PgConnection,
-    owner: Uuid,
-) -> Result<(), SuiteStoreError> {
-    let ids: Vec<Uuid> =
-        sqlx::query_scalar("SELECT id FROM suite_links WHERE user_id=$1 ORDER BY id FOR UPDATE")
-            .bind(owner)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(storage)?;
-    for id in ids {
-        account_failures(tx, id).await?;
-    }
-    Ok(())
 }

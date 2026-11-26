@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+- `TicketVerifier` keeps its keys in `baukit_auth::KeySetCache` with metric source `ticket` and a 5 second refresh cooldown. Known keys keep verifying for an hour while the key endpoint is down, and no caller waits on a refresh.
+- Hub tokens come from a single-flight `StaleCache` with a 5 second failure cooldown. `HubRequest` decides replay after a 401. GETs, `HubRequest::idempotent` and requests with an `Idempotency-Key` replay once; `HubRequest::post` never does. `HubClient::post_json` is gone; use `send_json`. An open egress breaker maps to `HubError::CoolingDown { retry_after }`.
+- Breaking: `Entitlements::current`, `has_entitlement` and `has_tier` return `EntitlementError`. While the hub fails, `Entitlements::read` serves the last snapshot until `grace_until` with `stale: true`. After that it returns `EntitlementError::Unavailable { retry_after }`, which converts to a 503 with `Retry-After`. `EntitlementCache` gains `retained`. `EntitlementSourceError::CoolingDown` carries a source's own delay.
+- Breaking: delivery failures count per attempt in the store, against `SUITE_CIRCUIT_FAILURES`, instead of per terminal job in a SQL trigger. Disabled links get probe deliveries after 1 hour, doubling up to 24 hours. Apply `SUITE_DELIVERY_PROBES_MIGRATION_SQL` (`005_suite_delivery_probes.sql`). An open egress breaker defers the job with `JobError::deferred` and does not count. `SuiteLinkStore` gains `claim_probe`, `SuiteLink` gains `next_probe_at` and `failed_probes`, `delivery_preflight` and `after_delivery` take `now`.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

@@ -10,6 +10,7 @@ mod config;
 mod credits;
 mod events;
 mod hub;
+mod hub_request;
 mod memory;
 mod organizations;
 mod plan;

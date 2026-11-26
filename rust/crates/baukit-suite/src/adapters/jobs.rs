@@ -69,6 +69,10 @@ impl JobHandler for SuiteJobHandler {
                     DeliveryAction::Retry { after: None } => Err(JobError::retryable(
                         SuiteErrorCode::SuitePeerUnreachable.as_str(),
                     )),
+                    DeliveryAction::Deferred { after } => Err(JobError::deferred(
+                        SuiteErrorCode::SuitePeerUnreachable.as_str(),
+                        after,
+                    )),
                     a if a.permanent_code().is_some() => Err(JobError::permanent(
                         a.permanent_code()
                             .unwrap_or(SuiteErrorCode::SuiteRejected.as_str()),

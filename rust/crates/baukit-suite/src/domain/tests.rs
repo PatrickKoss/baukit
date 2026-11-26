@@ -48,6 +48,8 @@ fn test_link() -> SuiteLink {
         reward_mode: RewardMode::Native,
         delivery_health: DeliveryHealth::Healthy,
         consecutive_failures: 0,
+        next_probe_at: None,
+        failed_probes: 0,
         last_delivery_at: None,
         last_failure_at: None,
         last_failure_code: None,
@@ -379,35 +381,114 @@ fn every_delivery_status_class_and_transport_failure_maps_to_the_required_action
     assert_eq!(DeliveryAction::Delivered.outcome(), Some("delivered"));
 }
 
+fn at(text: &str) -> Timestamp {
+    text.parse().expect("valid fixture")
+}
+
 #[test]
 fn successful_delivery_resets_failures_and_attention_and_revocation_are_preserved() {
+    let now = at("2026-10-06T09:00:00Z");
     let state = DeliveryState {
         status: LinkStatus::Active,
-        health: DeliveryHealth::Disabled,
-        consecutive_failures: 20,
+        health: DeliveryHealth::Degraded,
+        consecutive_failures: 19,
+        next_probe_at: None,
+        failed_probes: 0,
     };
-    assert_eq!(after_delivery(state, DeliveryAction::Delivered), state);
-    let reset = after_delivery(
-        DeliveryState {
-            health: DeliveryHealth::Degraded,
-            consecutive_failures: 19,
-            ..state
-        },
-        DeliveryAction::Delivered,
-    );
+    let reset = after_delivery(state, DeliveryAction::Delivered, now);
     assert_eq!(reset.consecutive_failures, 0);
     assert_eq!(reset.health, DeliveryHealth::Healthy);
-    let attention = after_delivery(reset, DeliveryAction::Unauthorized);
+    let attention = after_delivery(reset, DeliveryAction::Unauthorized, now);
     assert_eq!(attention.status, LinkStatus::NeedsAttention);
     assert_eq!(attention.health, DeliveryHealth::NeedsAttention);
+    assert_eq!(attention.consecutive_failures, 1);
     assert_eq!(
-        after_delivery(reset, DeliveryAction::Revoked).status,
+        after_delivery(reset, DeliveryAction::Revoked, now).status,
         LinkStatus::Revoked
     );
+    let retried = after_delivery(reset, DeliveryAction::Retry { after: None }, now);
     assert_eq!(
-        after_delivery(reset, DeliveryAction::Retry { after: None }),
-        reset
+        (retried.health, retried.consecutive_failures),
+        (DeliveryHealth::Degraded, 1)
     );
+    let deferred = DeliveryAction::Deferred {
+        after: Duration::from_secs(30),
+    };
+    assert_eq!(after_delivery(retried, deferred, now), retried);
+}
+
+#[test]
+fn the_failure_threshold_disables_and_schedules_doubling_probes() {
+    let now = at("2026-10-06T09:00:00Z");
+    let mut state = DeliveryState {
+        status: LinkStatus::Active,
+        health: DeliveryHealth::Healthy,
+        consecutive_failures: 0,
+        next_probe_at: None,
+        failed_probes: 0,
+    };
+    for _ in 1..SUITE_CIRCUIT_FAILURES {
+        state = after_delivery(state, DeliveryAction::Rejected, now);
+    }
+    assert_eq!(state.health, DeliveryHealth::Degraded);
+    state = after_delivery(state, DeliveryAction::Retry { after: None }, now);
+    assert_eq!(state.health, DeliveryHealth::Disabled);
+    assert_eq!(state.consecutive_failures, SUITE_CIRCUIT_FAILURES);
+    assert_eq!(state.next_probe_at, Some(at("2026-10-06T10:00:00Z")));
+    assert_eq!(
+        after_delivery(state, DeliveryAction::Retry { after: None }, now),
+        state,
+        "a disabled link stops counting"
+    );
+
+    let probe_time = at("2026-10-06T10:00:00Z");
+    let claimed = claim_probe(state, probe_time);
+    assert_eq!(claimed.failed_probes, 1);
+    assert_eq!(claimed.next_probe_at, Some(at("2026-10-06T12:00:00Z")));
+    let again = claim_probe(claimed, at("2026-10-06T12:00:00Z"));
+    assert_eq!(again.next_probe_at, Some(at("2026-10-06T16:00:00Z")));
+
+    let healed = after_delivery(again, DeliveryAction::Delivered, probe_time);
+    assert_eq!(healed.health, DeliveryHealth::Healthy);
+    assert_eq!(
+        (
+            healed.consecutive_failures,
+            healed.next_probe_at,
+            healed.failed_probes
+        ),
+        (0, None, 0)
+    );
+}
+
+#[test]
+fn probe_delays_double_from_an_hour_up_to_a_day() {
+    let hours: Vec<u64> = (0..7).map(|n| probe_delay(n).as_secs() / 3_600).collect();
+    assert_eq!(hours, [1, 2, 4, 8, 16, 24, 24]);
+    assert_eq!(probe_delay(u32::MAX), SUITE_MAX_PROBE_DELAY);
+}
+
+#[test]
+fn only_a_due_probe_lets_a_disabled_link_through_preflight() {
+    let now = at("2026-10-06T09:00:00Z");
+    let link = SuiteLink {
+        delivery_health: DeliveryHealth::Disabled,
+        consecutive_failures: SUITE_CIRCUIT_FAILURES,
+        next_probe_at: Some(now),
+        ..test_link()
+    };
+    assert!(link.probe_due(now));
+    assert_eq!(delivery_preflight(Some(&link), now), None);
+    assert!(!link.can_enqueue());
+    let early = at("2026-10-06T08:59:59Z");
+    assert_eq!(
+        delivery_preflight(Some(&link), early),
+        Some(DeliveryAction::Disabled)
+    );
+    let revoked = SuiteLink {
+        status: LinkStatus::Revoked,
+        ..link
+    };
+    assert!(!revoked.probe_due(now));
 }
 
 #[test]
@@ -643,6 +724,8 @@ fn assert_delivery_action_outcomes() {
         status: LinkStatus::Active,
         health: DeliveryHealth::Degraded,
         consecutive_failures: 7,
+        next_probe_at: None,
+        failed_probes: 0,
     };
     for (action, outcome) in [
         (DeliveryAction::LinkMissing, None),
@@ -650,6 +733,12 @@ fn assert_delivery_action_outcomes() {
         (DeliveryAction::Disabled, Some("disabled")),
         (DeliveryAction::Delivered, Some("delivered")),
         (DeliveryAction::Retry { after: None }, Some("retry")),
+        (
+            DeliveryAction::Deferred {
+                after: Duration::from_secs(1),
+            },
+            Some("deferred"),
+        ),
         (DeliveryAction::Rejected, Some("rejected")),
         (DeliveryAction::Unauthorized, Some("unauthorized")),
         (DeliveryAction::Revoked, Some("revoked")),
@@ -669,7 +758,7 @@ fn assert_delivery_action_outcomes() {
                 None
             }
         );
-        assert_eq!(after_delivery(state, action), state);
+        assert_eq!(after_delivery(state, action, test_link().created_at), state);
     }
 }
 
@@ -736,9 +825,12 @@ fn enqueue_gate_and_delivery_preflight_respect_status_and_the_breaker() {
             ..test_link()
         };
         assert_eq!(link.can_enqueue(), enqueue);
-        assert_eq!(delivery_preflight(Some(&link)), action);
+        assert_eq!(delivery_preflight(Some(&link), link.created_at), action);
     }
-    assert_eq!(delivery_preflight(None), Some(DeliveryAction::LinkMissing));
+    assert_eq!(
+        delivery_preflight(None, test_link().created_at),
+        Some(DeliveryAction::LinkMissing)
+    );
     assert_delivery_action_outcomes();
 }
 
