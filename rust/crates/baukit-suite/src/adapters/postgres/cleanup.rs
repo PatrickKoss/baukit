@@ -1,12 +1,50 @@
-use super::{lock_owner, storage};
+use super::{account_failures, lock_owner, storage};
 use crate::domain::*;
 use crate::ports::*;
 use jiff::{SignedDuration, Timestamp};
 use jiff_sqlx::ToSqlx;
 use uuid::Uuid;
 
+/// Runs one cleanup pass unless another replica holds the cleanup lock.
+pub(super) async fn cleanup_in_transaction(
+    tx: &mut sqlx::PgConnection,
+    now: Timestamp,
+) -> Result<SuiteCleanupOutcome, SuiteStoreError> {
+    let acquired: bool = sqlx::query_scalar(
+        "SELECT pg_try_advisory_xact_lock(hashtextextended('baukit_suite.cleanup',0))",
+    )
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(storage)?;
+    if !acquired {
+        return Ok(SuiteCleanupOutcome::default());
+    }
+    let owners = lock_cleanup_owners(tx, now).await?;
+    let links: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT id FROM suite_links WHERE user_id=ANY($1) ORDER BY id FOR UPDATE",
+    )
+    .bind(&owners)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(storage)?;
+    for id in &links {
+        account_failures(tx, *id).await?;
+    }
+    let (requests, codes) = delete_expired_requests(tx, now, &owners).await?;
+    let (revoked_links, unused_links) = delete_expired_links(tx, now, &owners).await?;
+    let terminal_jobs = delete_terminal_jobs(tx, now, &links).await?;
+    Ok(SuiteCleanupOutcome {
+        requests,
+        codes,
+        revoked_links,
+        unused_links,
+        terminal_jobs,
+        ..SuiteCleanupOutcome::default()
+    })
+}
+
 /// Locks and returns every owner with rows the cleanup pass may delete.
-pub(super) async fn lock_cleanup_owners(
+async fn lock_cleanup_owners(
     tx: &mut sqlx::PgConnection,
     now: Timestamp,
 ) -> Result<Vec<Uuid>, SuiteStoreError> {
@@ -37,7 +75,7 @@ pub(super) async fn lock_cleanup_owners(
 }
 
 /// Deletes expired link requests and codes, returning both counts.
-pub(super) async fn delete_expired_requests(
+async fn delete_expired_requests(
     tx: &mut sqlx::PgConnection,
     now: Timestamp,
     owners: &[Uuid],
@@ -62,7 +100,7 @@ pub(super) async fn delete_expired_requests(
 }
 
 /// Deletes long-revoked and never-used links with their jobs, returning both link counts.
-pub(super) async fn delete_expired_links(
+async fn delete_expired_links(
     tx: &mut sqlx::PgConnection,
     now: Timestamp,
     owners: &[Uuid],
@@ -109,7 +147,7 @@ pub(super) async fn delete_expired_links(
 }
 
 /// Deletes finished suite jobs past retention for the given links or for links that no longer exist.
-pub(super) async fn delete_terminal_jobs(
+async fn delete_terminal_jobs(
     tx: &mut sqlx::PgConnection,
     now: Timestamp,
     links: &[Uuid],

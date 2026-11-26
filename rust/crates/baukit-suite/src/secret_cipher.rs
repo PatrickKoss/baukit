@@ -15,6 +15,10 @@ impl SecretCipher {
         Self(cipher)
     }
 
+    pub(crate) const fn is_configured(&self) -> bool {
+        self.0.is_some()
+    }
+
     pub(crate) fn encrypt(
         &self,
         scope_id: Uuid,

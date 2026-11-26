@@ -12,10 +12,9 @@ use uuid::Uuid;
 
 mod cleanup;
 mod erasure;
-use cleanup::{
-    delete_expired_links, delete_expired_requests, delete_terminal_jobs, lock_cleanup_owners,
-};
+use cleanup::cleanup_in_transaction;
 mod outbox;
+mod reseal;
 pub use erasure::{PostgresSuiteErasure, SuiteErasureOwnerLookup};
 mod rows;
 pub use outbox::PostgresSuiteEventOutbox;
@@ -861,37 +860,27 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
     }
     async fn cleanup(&self, now: Timestamp) -> Result<SuiteCleanupOutcome, SuiteStoreError> {
         let mut tx = self.begin_transaction().await?;
-        let acquired: bool = sqlx::query_scalar(
-            "SELECT pg_try_advisory_xact_lock(hashtextextended('baukit_suite.cleanup',0))",
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(storage)?;
-        if !acquired {
-            return Ok(SuiteCleanupOutcome::default());
-        }
-        let owners = lock_cleanup_owners(&mut tx, now).await?;
-        let links: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM suite_links WHERE user_id=ANY($1) ORDER BY id FOR UPDATE",
-        )
-        .bind(&owners)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(storage)?;
-        for id in &links {
-            account_failures(&mut tx, *id).await?;
-        }
-        let (requests, codes) = delete_expired_requests(&mut tx, now, &owners).await?;
-        let (revoked_links, unused_links) = delete_expired_links(&mut tx, now, &owners).await?;
-        let terminal_jobs = delete_terminal_jobs(&mut tx, now, &links).await?;
+        let outcome = cleanup_in_transaction(&mut tx, now).await?;
         self.commit_transaction(tx).await?;
-        Ok(SuiteCleanupOutcome {
-            requests,
-            codes,
-            revoked_links,
-            unused_links,
-            terminal_jobs,
-        })
+        Ok(outcome)
+    }
+    async fn legacy_secrets_in_transaction(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        kind: LegacySecretKind,
+        after: Uuid,
+        limit: u32,
+    ) -> Result<Vec<LegacySecret>, SuiteStoreError> {
+        reseal::lock_legacy_secrets(tx, kind, after, limit).await
+    }
+    async fn reseal_secret_in_transaction(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        kind: LegacySecretKind,
+        row_id: Uuid,
+        sealed: &EncryptedPayload,
+    ) -> Result<bool, SuiteStoreError> {
+        reseal::store_resealed_secret(tx, kind, row_id, sealed).await
     }
 }
 

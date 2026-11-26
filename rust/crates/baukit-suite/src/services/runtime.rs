@@ -22,10 +22,13 @@ mod erasure;
 mod ingest;
 #[path = "link.rs"]
 mod link;
+#[path = "reseal.rs"]
+pub(crate) mod reseal;
 pub use delivery::SuiteDeliveryService;
 pub use erasure::{SuiteErasureNotificationService, erase_with_suite};
 pub use ingest::{IngestResult, SignedHeaders, SuiteIngestService};
 pub use link::SuiteLinkService;
+pub use reseal::SUITE_RESEAL_BATCH;
 
 #[derive(Debug, Error)]
 pub enum SuiteServiceError {
