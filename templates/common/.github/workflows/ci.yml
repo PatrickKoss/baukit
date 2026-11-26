@@ -18,6 +18,7 @@ jobs:
           persist-credentials: false
       - run: python3 scripts/reconcile-env.test.py
       - run: python3 scripts/lockfiles.test.py
+      - run: python3 scripts/repo-lint.test.py
       - run: python3 scripts/rust-toolchain-pin.test.py
 {% if context.backend %}      - run: python3 scripts/gitops-pins.test.py
       - run: python3 scripts/release-dry-run.test.py
