@@ -180,6 +180,33 @@ step_fuzz() {
 kani_crates() {
   grep -rl --include='*.rs' 'cfg(kani)' rust/crates 2>/dev/null | cut -d/ -f3 | sort -u
 }
+# Off-by-default features that compile a crate's harness modules.
+kani_features() {
+  case "$1" in
+    baukit-core) echo media-grants ;;
+    baukit-integrations) echo oauth-state ;;
+    baukit-suite) echo platform ;;
+  esac
+}
+kani_verified_total() {
+  sed -n 's/^Complete - [0-9]* successfully verified harnesses, [0-9]* failures, \([0-9]*\) total\.$/\1/p' "$1" | tail -n 1
+}
+run_kani_crate() {
+  crate=$1
+  log=$2
+  features=$(kani_features "$crate")
+  expected=$(python3 scripts/list-proofs.py --count "$crate")
+  # Kani 0.68 has no timeout flag; bound each crate's harness run instead.
+  status=0
+  (cd rust && timeout "${BAUKIT_KANI_TIMEOUT_SECONDS:-1800}" cargo kani -p "$crate" ${features:+--features "$features"}) >"$log" 2>&1 || status=$?
+  cat "$log"
+  [ "$status" -eq 0 ] || return "$status"
+  verified=$(kani_verified_total "$log")
+  if [ "${verified:-0}" -ne "$expected" ]; then
+    echo "kani: $crate verified ${verified:-0} of its $expected listed harnesses; add its harness feature to kani_features" >&2
+    return 1
+  fi
+}
 run_kani() {
   if [ "$#" -eq 0 ]; then
     echo "kani: no crate has cfg(kani) harnesses"
@@ -187,10 +214,11 @@ run_kani() {
   fi
   # Idempotent; also installs the nightly toolchain Kani pins, which runner caches miss.
   cargo kani setup
+  kani_log=$(mktemp)
   for crate in "$@"; do
-    # Kani 0.68 has no timeout flag; bound each crate's harness run instead.
-    (cd rust && timeout "${BAUKIT_KANI_TIMEOUT_SECONDS:-1800}" cargo kani -p "$crate")
+    run_kani_crate "$crate" "$kani_log" || { rm -f "$kani_log"; return 1; }
   done
+  rm -f "$kani_log"
 }
 step_kani() {
   python3 scripts/list-proofs.py --check

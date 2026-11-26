@@ -2,7 +2,8 @@
 """List the Kani harnesses under rust/ with the bounds their doc comments state.
 
 Prints a markdown table (plan ID, crate, harness, bounds). `--check` fails when a `#[kani::proof]`
-has no doc comment with a `Bounds:` line.
+has no doc comment with a `Bounds:` line. `--count CRATE` prints how many harnesses one crate has,
+which the Kani gate compares with the number Kani verified.
 """
 
 from __future__ import annotations
@@ -105,9 +106,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--check", action="store_true", help="fail on a harness without a Bounds: line"
     )
+    parser.add_argument("--count", metavar="CRATE", help="print how many harnesses CRATE has")
     parser.add_argument("--root", type=Path, default=ROOT / "rust")
     args = parser.parse_args(argv)
     harnesses = collect(args.root)
+    if args.count:
+        print(sum(1 for harness in harnesses if harness.crate == args.count))
+        return 0
     if not args.check:
         print(table(harnesses))
         return 0

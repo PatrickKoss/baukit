@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import sys
 import tempfile
 import unittest
@@ -148,6 +150,20 @@ class ListProofsTest(unittest.TestCase):
             self.assertIn(admit_row, table)
             self.assertIn("| - | baukit-ratelimit | `missing_bounds` | missing |", table)
             self.assertEqual(list_proofs.main(["--check", "--root", str(root)]), 1)
+
+    def test_counts_harnesses_per_crate(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "crates" / "baukit-ratelimit" / "src" / "bucket.rs"
+            source.parent.mkdir(parents=True)
+            source.write_text(HARNESSES, encoding="utf-8")
+            output = io.StringIO()
+
+            with contextlib.redirect_stdout(output):
+                list_proofs.main(["--count", "baukit-ratelimit", "--root", str(root)])
+                list_proofs.main(["--count", "baukit-core", "--root", str(root)])
+
+            self.assertEqual(output.getvalue().split(), ["3", "0"])
 
 
 class MigrationOrderTest(unittest.TestCase):
