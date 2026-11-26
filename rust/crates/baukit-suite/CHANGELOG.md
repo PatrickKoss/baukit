@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.30.6] - 2026-11-26
+
 ## [0.30.5] - 2026-11-26
 
 - Accept `<scheme>-dev://suite/linked` as a suite `start` return URL next to `<scheme>://suite/linked`. The template's `dev` build variant registers `<scheme>-dev` and builds its return from `appScheme()`, so every dev build got `suite_return_url_invalid`. Lookalikes such as `<scheme>-devx`, `<scheme>dev` and other apps' schemes stay rejected.

@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.30.6] - 2026-11-26
+
 ## [0.30.5] - 2026-11-26
 
 - `registry-mirrors.sh start` (and e2e `run.sh`, which calls it) removes repository layer links whose blob data is gone from every existing mirror and restarts a mirror it cleaned. The proxy in `registry:3.1.2` expires cache entries per repository and digest after 7 days, and the first expiry of a layer shared by several repositories deletes its blob data while the other repositories keep their link and their descriptor cache entry (distribution/distribution#2367, #4872 still open). Those repositories then answered 200 with 0 bytes: on 2026-11-25 the ghcr mirror served `kyverno/kyverno-cli` layer `sha256:d24cadba...` empty 96 times in 2 hours, containerd failed with `short read`, the Kyverno hook `kyverno-check-legacy-policies` never started and two `platform-e2e` runs failed at Flux reconciliation. After the restart the mirror fetches the blob from upstream again. Expiry itself stays on, so a link can still go dangling while a run is in progress; the next `start` cleans it.
