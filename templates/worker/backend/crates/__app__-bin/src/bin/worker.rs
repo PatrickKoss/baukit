@@ -2,7 +2,7 @@ use std::{env, error::Error, io, net::SocketAddr, sync::Arc, time::Duration};
 
 use baukit_config::{BaukitConfig, Environment};
 use baukit_jobs::{JobHandler, PostgresJobStore, WorkerConfig, WorkerRunner};
-use baukit_ops::{TrafficGate, jobs_admin::requeue_failed_jobs_router, spawn_pool_metrics_sampler};
+use baukit_ops::{TrafficGate, spawn_pool_metrics_sampler};
 use baukit_runtime::{
     DrainBudget, ProcessKind, RestartPolicy, ServiceInfo, ShutdownToken, TaskSupervisor, build_info,
 };
@@ -12,6 +12,7 @@ use tokio::net::TcpListener;
 
 use {{ context.app_crate }}_bin::ProductConfig;
 use {{ context.app_crate }}_bin::config_loader;
+use {{ context.app_crate }}_bin::mount_requeue_route;
 use {{ context.app_crate }}_bin::worker_operations_router;
 {% if context.platform or context.auth_enabled %}use {{ context.app_crate }}_worker::retention::RetentionJobHandler;
 {% else %}use {{ context.app_crate }}_worker::DemoJobHandler;
@@ -67,14 +68,12 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         telemetry.prometheus_handle().clone(),
         traffic_gate,
     )?;
-    let operations = match &config.product.worker.admin_token {
-        Some(token) => operations.merge(requeue_failed_jobs_router(
-            Arc::new(job_store(&pool)),
-            job_types,
-            token.clone(),
-        )),
-        None => operations,
-    };
+    let operations = mount_requeue_route(
+        operations,
+        Arc::new(job_store(&pool)),
+        job_types,
+        config.product.worker.admin_token.as_ref(),
+    );
     let listener =
         TcpListener::bind(SocketAddr::new(config.ops.bind_address, config.ops.port)).await?;
     tracing::info!(

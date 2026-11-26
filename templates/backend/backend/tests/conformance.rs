@@ -65,9 +65,18 @@ use {{ context.app_crate }}_services::UserService;
         axum::http::header::AUTHORIZATION,
         baukit_test::authorization_header(&token)?,
     );
-{% endif %}    let response = api.oneshot(request.body(Body::empty())?).await?;
+{% endif %}    let response = api.clone().oneshot(request.body(Body::empty())?).await?;
     assert_eq!(response.status(), StatusCode::OK);
-
+{% if context.worker %}    let requeue = Request::post(baukit_ops::jobs_admin::REQUEUE_PATH)
+        .header(header::AUTHORIZATION, "Bearer any-token")
+        .body(Body::empty())?;
+    let response = api.oneshot(requeue).await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_FOUND,
+        "the public API must not expose requeue"
+    );
+{% endif %}
     let (ops, readiness) = operations_router(
         items,
         service_info.telemetry_identity().clone(),

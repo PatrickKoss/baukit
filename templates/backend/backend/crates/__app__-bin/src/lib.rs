@@ -406,6 +406,23 @@ pub fn worker_operations_router(
         .with_traffic_gate(traffic_gate)
         .into_router();
     Ok((router, readiness))
+}
+
+/// Merges the failed-job requeue route into `operations` only when an admin token is configured.
+pub fn mount_requeue_route(
+    operations: Router,
+    requeue: std::sync::Arc<dyn baukit_ops::jobs_admin::FailedJobRequeue>,
+    job_types: &'static [&'static str],
+    admin_token: Option<&baukit_config::Secret<String>>,
+) -> Router {
+    match admin_token {
+        Some(token) => operations.merge(baukit_ops::jobs_admin::requeue_failed_jobs_router(
+            requeue,
+            job_types,
+            token.clone(),
+        )),
+        None => operations,
+    }
 }{% endif %}{% if context.auth_enabled %}
 
 pub fn identity_erasure(

@@ -86,6 +86,10 @@ name = "postgres_outage"
 path = "../../tests/postgres_outage.rs"
 {% if context.worker %}
 [[test]]
+name = "requeue_mount"
+path = "../../tests/requeue_mount.rs"
+
+[[test]]
 name = "worker_integration"
 path = "../../tests/worker_integration.rs"
 {% endif -%}
