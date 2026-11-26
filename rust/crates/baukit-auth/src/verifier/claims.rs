@@ -135,7 +135,11 @@ fn validate_oidc_authorized_party(
             _ => Err(VerificationError::WrongAuthorizedParty),
         };
     }
-    Ok(())
+    match claims.extra.get("azp") {
+        Some(Value::String(_)) => Ok(()),
+        _ if !has_several_audiences(claims) => Ok(()),
+        _ => Err(VerificationError::WrongAuthorizedParty),
+    }
 }
 
 fn validate_id_token_client(claims: &JwtClaims, client_id: &str) -> Result<(), VerificationError> {

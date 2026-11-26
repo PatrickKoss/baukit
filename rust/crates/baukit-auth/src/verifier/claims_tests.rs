@@ -61,10 +61,13 @@ fn expected(
     if has_audience_rule && !audiences.contains(&"api") {
         return "WrongAudience";
     }
+    let several = audiences.len() > 1;
     match (profile, azp) {
         (Profile::OidcAllowList, Value::String(azp)) if azp == "web" => "Ok",
         (Profile::OidcAllowList, _) => "WrongAuthorizedParty",
-        (Profile::Oidc | Profile::OidcWithClient, _) => "Ok",
+        (Profile::Oidc | Profile::OidcWithClient, Value::String(_)) => "Ok",
+        (Profile::Oidc | Profile::OidcWithClient, _) if !several => "Ok",
+        (Profile::Oidc | Profile::OidcWithClient, _) => "WrongAuthorizedParty",
         (
             Profile::Clerk {
                 allow_missing: true,

@@ -6,9 +6,10 @@ has two new settings.
 ## Restricting clients stays opt-in
 
 Access tokens are checked against the audience, as RFC 9068 describes. `azp`
-names the requesting client, so the verifier checks it only when you call
-`with_allowed_clients`. That holds for multi-audience tokens too, such as
-Keycloak's default `aud: ["app-backend", "account"]`.
+names the requesting client, so the verifier matches it against a list only
+when you call `with_allowed_clients`. Without one, a multi-audience token such
+as Keycloak's default `aud: ["app-backend", "account"]` needs a string `azp`
+of any value, as before.
 
 Generated products set `auth.authorized_parties` in `config/local.toml` to
 their web, mobile and local client IDs. Set the same list in every other
