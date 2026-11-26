@@ -21,7 +21,7 @@ run_tlc() {
     (
         cd "$dir"
         java -XX:+UseParallelGC -cp "$jar" tlc2.TLC -workers "$workers" -deadlock \
-            -cleanup -noGenerateSpecTE -metadir "$scratch/states-$(basename "$cfg" .cfg)" \
+            -cleanup -metadir "$scratch/states-$(basename "$cfg" .cfg)" \
             -config "$cfg" "$spec.tla"
     ) >"$log" 2>&1 || true
     printf '%s\n' "$log"
