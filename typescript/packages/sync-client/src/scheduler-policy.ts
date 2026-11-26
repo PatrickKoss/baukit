@@ -5,6 +5,8 @@ export const DEFAULT_SYNC_MAX_RETRIES = 5;
 const DEFAULT_BASE_DELAY_MS = 1_000;
 const DEFAULT_MAX_DELAY_MS = 60_000;
 const EXPONENT_BASE = 2;
+/** Products saturate here, as in `fixtures/resilience/backoff-v1.json`. */
+const SATURATION_MS = 2 ** 32 - 1;
 const SYMMETRIC_SPAN = 2;
 /** Recovery triggers (foreground, online) wait a random delay up to this bound. */
 export const RECOVERY_JITTER_MAX_MS = 5_000;
@@ -18,13 +20,26 @@ function sample(random: RandomSource): number {
   return Math.max(0, Math.min(1, random()));
 }
 
-/** Full jitter: a delay between 0 and `min(max, base * 2 ** retryIndex)`. */
-export function fullJitterDelayMs(retryIndex: number, random: RandomSource): number {
-  const ceiling = Math.min(
-    DEFAULT_MAX_DELAY_MS,
-    DEFAULT_BASE_DELAY_MS * EXPONENT_BASE ** retryIndex,
-  );
-  return ceiling * sample(random);
+/** Full jitter bounds. */
+export interface FullJitterBounds {
+  readonly baseDelayMs: number;
+  readonly maxDelayMs: number;
+}
+
+const DEFAULT_BOUNDS: FullJitterBounds = {
+  baseDelayMs: DEFAULT_BASE_DELAY_MS,
+  maxDelayMs: DEFAULT_MAX_DELAY_MS,
+};
+
+/** Full jitter: `floor(min(max, base * 2 ** retryIndex) * random)` in whole milliseconds. */
+export function fullJitterDelayMs(
+  retryIndex: number,
+  random: RandomSource,
+  bounds: FullJitterBounds = DEFAULT_BOUNDS,
+): number {
+  const product = Math.min(SATURATION_MS, bounds.baseDelayMs * EXPONENT_BASE ** retryIndex);
+  const ceiling = Math.min(bounds.maxDelayMs, product);
+  return Math.floor(ceiling * sample(random));
 }
 
 /**

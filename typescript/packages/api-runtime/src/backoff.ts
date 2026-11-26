@@ -9,14 +9,17 @@ export interface BackoffPolicy {
 }
 
 const EXPONENT_BASE = 2;
+/** Products saturate here, as in `fixtures/resilience/backoff-v1.json`. */
+const SATURATION_MS = 2 ** 32 - 1;
 
 /**
- * Returns a delay between 0 and `min(maxDelayMs, baseDelayMs * 2 ** retryIndex)`.
+ * Returns `floor(min(maxDelayMs, baseDelayMs * 2 ** retryIndex) * random)` in whole milliseconds.
  *
  * Full jitter spreads clients that failed together, so they do not retry together.
  */
 export function fullJitterBackoffMs(retryIndex: number, policy: BackoffPolicy): number {
-  const ceiling = Math.min(policy.maxDelayMs, policy.baseDelayMs * EXPONENT_BASE ** retryIndex);
+  const product = Math.min(SATURATION_MS, policy.baseDelayMs * EXPONENT_BASE ** retryIndex);
+  const ceiling = Math.min(policy.maxDelayMs, product);
   const sample = (policy.random ?? Math.random)();
-  return ceiling * Math.max(0, Math.min(1, sample));
+  return Math.floor(ceiling * Math.max(0, Math.min(1, sample)));
 }
