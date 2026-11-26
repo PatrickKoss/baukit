@@ -12,7 +12,6 @@ ts-max-lines = 500
 "rust/crates/baukit-suite/src/adapters/http.rs" = 1033
 "rust/crates/baukit-test/src/data_subject_conformance.rs" = 1026
 "rust/crates/baukit-test/src/jwt.rs" = 1031
-"typescript/packages/auth-native/src/index.ts" = 542
 "typescript/packages/auth-node/src/device-flow.ts" = 524
 "typescript/packages/auth-web/src/silent-token-broker.ts" = 543
 "typescript/packages/data-contracts/src/durable-draft.ts" = 502
