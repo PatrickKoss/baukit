@@ -1,7 +1,7 @@
 export interface PlansLinkContext {
-  /** The product the visitor comes from, for example `eigenruhe`. */
+  /** The product the visitor comes from, for example `beta`. */
   readonly from?: string;
-  /** The locked feature key, for example `eigenruhe.studio`. Dropped without `from`. */
+  /** The locked feature key, for example `beta.studio`. Dropped without `from`. */
   readonly feature?: string;
 }
 

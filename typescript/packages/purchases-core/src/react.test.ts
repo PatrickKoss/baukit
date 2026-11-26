@@ -31,7 +31,7 @@ function setup() {
     },
   });
   const wrapper = ({ children }: { children: ReactNode }) =>
-    createElement(PurchasesProvider, { flow, productId: 'hebkit' }, children);
+    createElement(PurchasesProvider, { flow, productId: 'alpha' }, children);
   const grant = (
     features: string[],
     revision: number,
@@ -77,7 +77,7 @@ describe('purchase hooks', () => {
     });
     expect(view.result.current.exports).toMatchObject({
       status: 'locked',
-      paywall: { kind: 'purchase', plansUrl: `${PLANS}?from=hebkit&feature=export` },
+      paywall: { kind: 'purchase', plansUrl: `${PLANS}?from=alpha&feature=export` },
     });
 
     await act(async () => {
@@ -147,7 +147,7 @@ describe('LockedFeature', () => {
     });
     expect(screen.container.textContent).toBe('loading');
     await act(async () => {
-      grant([], 1, { channel: 'play_store', soldBy: 'eigenruhe' });
+      grant([], 1, { channel: 'play_store', soldBy: 'beta' });
       await flow.refreshEntitlement();
     });
     expect(screen.container.textContent).toBe('locked:manage');
