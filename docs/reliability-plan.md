@@ -256,7 +256,7 @@ them.
   gets a promtool test that fires and one that stays quiet, a runbook under `docs/runbooks/app/`, and a
   panel in `baukit-service-overview.json`.
   Acceptance: `--step metric-names`, `--step observability-rules`, `--step observability-tests`.
-- [ ] **CB3 Deferred job outcome** (D7): `JobError::deferred(delay)`; store method
+- [~] **CB3 Deferred job outcome** (D7): `JobError::deferred(delay)`; store method
   `release(job_id, worker_id, run_after, consume_attempt: bool)` that resets to `pending`, decrements
   `attempts` when not consuming, and increments `deferrals`. Migration adds `deferrals integer not null
   default 0`. `WorkerConfig.max_deferrals` (default 100). A helper maps `EgressError` with
@@ -359,13 +359,13 @@ them.
 
 ## Phase WK: workers and delivery
 
-- [ ] **WK1 Runner survives transient errors** (RL-40): store errors in the loop are retried with
+- [x] **WK1 Runner survives transient errors** (RL-40): store errors in the loop are retried with
   `Backoff` (capped at 30 s) and logged, readiness turns red while the store fails, and the loop keeps
   running. `LeaseLost` becomes a per-job warning plus `worker_lease_expired_total`. Only
   configuration errors and panics in the runner itself end `run`.
   Acceptance: a Postgres test that pauses the container for 10 s mid-run; the runner resumes, no
   in-flight attempt is aborted by the runner, readiness flips red and back.
-- [ ] **WK2 Heartbeat and release** (RL-41): `heartbeat(job_id, worker_id, lease)` extends
+- [x] **WK2 Heartbeat and release** (RL-41): `heartbeat(job_id, worker_id, lease)` extends
   `locked_until` every lease/3 while the handler runs. On drain the runner stops claiming, signals
   `JobCancellation`, waits up to the drain budget, and calls `release(.., consume_attempt: false)` for
   every attempt still running. The default lease drops to 60 s now that it is renewed; the generated
@@ -375,7 +375,7 @@ them.
 - [ ] **WK3 Jitter** (RL-42): `retry_delay` uses `baukit_resilience::Backoff` with full jitter.
   Acceptance: the shared backoff vectors; a statistical test that 1000 jobs failed at once spread
   over the window.
-- [ ] **WK4 Honest queue metrics** (RL-43, RL-44): the age query uses `MIN(run_after)` over
+- [~] **WK4 Honest queue metrics** (RL-43, RL-44): the age query uses `MIN(run_after)` over
   `status = 'pending' AND run_after <= now AND job_type = ANY($types)`. `worker_queue_depth` and
   `cancelled` outcome added. The alert text uses `queue`. Sample age and depth every 15 s, not every
   loop.
@@ -539,7 +539,7 @@ run in the orchestrator under the heavy-slot protocol (owner `baukit-rel`, one s
 | rel-core | RC1, RC2 | `rust/crates/baukit-resilience`, `fixtures/resilience`, workspace `Cargo.toml` entry | merged, verified (28 tests; review round fixed late outcomes deciding half-open) |
 | rel-faults | FX1 | `rust/crates/baukit-test` | queued (host load) |
 | rel-http | IN1, IN2 (`baukit-http` part), IN3, IN4 (`baukit-runtime` part), IN7 | `baukit-http`, `baukit-runtime`, `baukit-telemetry` | merged, verified (fmt, clippy, tests; shed log lowered to debug) |
-| rel-jobs | WK1, WK2, WK4 (crate part), CB3 | `baukit-jobs` | running |
+| rel-jobs | WK1, WK2, WK4 (crate part), CB3 | `baukit-jobs` | merged, verified (two review rounds; Docker: jobs 51, suite 178, erasure 34, data-subject 53) |
 | rel-ts | CL1 (without fixture replay), CL3, CL4 (`auth-web` part), CL5 (`pwa-web` part) | `typescript/packages/{api-runtime,sync-client,auth-web,pwa-web}` | merged, verified (4 packages build, format, lint, test) |
 | rel-db | IN6 (crate part), IN2 (`baukit-ratelimit` part) | `baukit-config`, `baukit-ops`, `baukit-ratelimit` | merged, verified (unit tests plus Docker: 2 Postgres, 12 Redis) |
 | rel-deploy | PL1, PL2, PL3, PL5 | `deploy/chart`, `deploy/platform/traefik`, `deploy/observability-platform` (redis alerts), `templates/backend/deploy` | running |
@@ -549,6 +549,12 @@ Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/chec
 `rust/Cargo.toml`) get additive edits only; the orchestrator resolves merge conflicts.
 
 ### Wave 2 (after RC1 and RC2 merge)
+
+| Agent | Tasks | Status |
+|---|---|---|
+| rel-egress | CB1, CB2, IN8 | running |
+| rel-auth | ID1 (OIDC part), ID2, IN2 (browser session) | review round 1 |
+
 
 CB1, CB2 (`baukit-egress`); WK3, WK5, WK6, WK8, WK9 (`baukit-jobs`); ID1, ID2 (`baukit-auth`); IN5, IN8;
 CL1 fixture replay; CB4, CB5, ID3, ID4 (`baukit-suite`); CB6, CB7 (push, erasure, mcp); WK7; RC3.
@@ -603,3 +609,15 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   pooler, the pooler enforces `query_timeout` and `idle_transaction_timeout`, and the tenant role gets
   `ALTER ROLE ... SET lock_timeout, statement_timeout`. `DatabaseConfig` then needs a switch that stops
   sending startup parameters.
+- rel-jobs merged after two review rounds:
+  - The first round made shutdown releases stop counting as deferrals (`ReleaseReason`), bounded the
+    in-flight claim at shutdown, and updated the `job_outbox` 0005 test fixtures in suite, erasure and
+    data-subject. `baukit-test` now accepts `cancelled`.
+  - The Docker run found two real bugs, which the second round fixed. A paused Postgres hung loop
+    queries: `WorkerConfig::store_call_timeout` (5 s) now bounds them. A job timeout during drain gave
+    the attempt back instead of failing it.
+  - Queue age now counts only the runner's own job types, as WK4 intends. A job type no runner handles
+    therefore never ages any gauge. Worth an alert on `worker_queue_depth` for unknown types later.
+  - Wave 3 template work: copy migration 0005 into the worker and auth templates, drop the 900 s lease,
+    make readiness check `store_health()`, and review `RestartPolicy::FailProcess`.
+  - Still open: the CB3 `EgressError` to `deferred` helper, which needs CB1.
