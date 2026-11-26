@@ -873,29 +873,23 @@ async fn grace_token_sealed_for_one_row_fails_under_another_aad() -> TestResult 
         .as_ref()
         .ok_or("no grace token")?;
     let cipher = cipher()?;
-    let opened = crypto::open(
-        &cipher,
-        successor.id,
-        &successor.subject,
-        successor.key_version,
-        GRACE_ACCESS_TOKEN_FIELD,
-        sealed,
-    )?;
+    let opened = crypto::open(&cipher, successor, GRACE_ACCESS_TOKEN_FIELD)?;
     assert_eq!(opened.as_str(), "access-1");
-    for (row_id, subject, field) in [
-        (original.id, SUBJECT, GRACE_ACCESS_TOKEN_FIELD),
-        (successor.id, "mallory", GRACE_ACCESS_TOKEN_FIELD),
-        (successor.id, SUBJECT, REFRESH_TOKEN_FIELD),
-    ] {
-        let result = crypto::open(
-            &cipher,
-            row_id,
-            subject,
-            successor.key_version,
-            field,
-            sealed,
-        );
-        assert!(result.is_err());
+    let moved = SessionRow {
+        id: original.id,
+        ..successor.clone()
+    };
+    let other_subject = SessionRow {
+        subject: "mallory".to_owned(),
+        ..successor.clone()
+    };
+    let swapped_columns = SessionRow {
+        refresh_token: sealed.clone(),
+        ..successor.clone()
+    };
+    for row in [moved, other_subject, swapped_columns] {
+        assert!(crypto::open(&cipher, &row, GRACE_ACCESS_TOKEN_FIELD).is_err());
+        assert!(crypto::open(&cipher, &row, REFRESH_TOKEN_FIELD).is_err());
     }
     Ok(())
 }

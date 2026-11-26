@@ -215,7 +215,7 @@ impl SessionService {
             transaction.commit().await?;
             return Err(SessionError::SessionExpired);
         }
-        let refresh_token = self.open(&row, REFRESH_TOKEN_FIELD, &row.refresh_token)?;
+        let refresh_token = self.open(&row, REFRESH_TOKEN_FIELD)?;
         let tokens = match self.idp.refresh(&refresh_token).await {
             Ok(tokens) => tokens,
             Err(IdpError::InvalidGrant) => {
@@ -298,7 +298,7 @@ impl SessionService {
         let previous_id_token = row
             .id_token
             .as_ref()
-            .map(|sealed| self.open(row, ID_TOKEN_FIELD, sealed))
+            .map(|_| self.open(row, ID_TOKEN_FIELD))
             .transpose()?;
         let id_token = tokens.id_token.as_ref().or(previous_id_token.as_ref());
         let refresh_token = tokens
@@ -345,14 +345,14 @@ impl SessionService {
         }
         if let Some(successor) = successor
             && successor.revoked_at.is_none()
-            && let (Some(sealed), Some(expires_at), Some(grace_until)) = (
+            && let (Some(_), Some(expires_at), Some(grace_until)) = (
                 &successor.grace_access_token,
                 successor.grace_expires_at,
                 successor.grace_until,
             )
             && now <= grace_until
         {
-            let access_token = self.open(&successor, GRACE_ACCESS_TOKEN_FIELD, sealed)?;
+            let access_token = self.open(&successor, GRACE_ACCESS_TOKEN_FIELD)?;
             return Ok(Issued {
                 access_token,
                 expires_at,
@@ -390,7 +390,7 @@ impl SessionService {
         now: Timestamp,
     ) -> Result<Issued, SessionError> {
         tracing::info!(family_id = %head.family_id, "re-issuing an unused session head");
-        let refresh_token = self.open(head, REFRESH_TOKEN_FIELD, &head.refresh_token)?;
+        let refresh_token = self.open(head, REFRESH_TOKEN_FIELD)?;
         let tokens = self.idp.refresh(&refresh_token).await.map_err(idp_error)?;
         self.rotate(transaction, head, &refresh_token, &tokens, now)
             .await
@@ -423,7 +423,7 @@ impl SessionService {
         let id_token = head
             .id_token
             .as_ref()
-            .map(|sealed| self.open(&head, ID_TOKEN_FIELD, sealed))
+            .map(|_| self.open(&head, ID_TOKEN_FIELD))
             .transpose()?;
         Ok(self
             .idp
@@ -447,7 +447,7 @@ impl SessionService {
     }
 
     async fn revoke_at_idp(&self, row: &SessionRow) {
-        let refresh_token = match self.open(row, REFRESH_TOKEN_FIELD, &row.refresh_token) {
+        let refresh_token = match self.open(row, REFRESH_TOKEN_FIELD) {
             Ok(token) => token,
             Err(error) => {
                 tracing::warn!(error = %error, "could not decrypt refresh token for revocation");
@@ -463,16 +463,8 @@ impl SessionService {
         &self,
         row: &SessionRow,
         field: &'static str,
-        sealed: &[u8],
     ) -> Result<Zeroizing<String>, CryptoError> {
-        crypto::open(
-            &self.settings.cipher,
-            row.id,
-            &row.subject,
-            row.key_version,
-            field,
-            sealed,
-        )
+        crypto::open(&self.settings.cipher, row, field)
     }
 
     fn lifetimes(
@@ -530,6 +522,7 @@ impl SessionService {
             family_id,
             subject: subject.to_owned(),
             key_version: sealed.key_version,
+            record_id: Some(sealed.record_id),
             refresh_token,
             id_token: sealed.fields.remove(ID_TOKEN_FIELD),
             created_at: now,

@@ -5,16 +5,9 @@ fn stored_refresh_tokens(rows: &BTreeMap<Uuid, SessionRow>) -> Result<Vec<String
     rows.values()
         .filter(|row| row.rotated_to.is_none() && row.revoked_at.is_none())
         .map(|row| {
-            crypto::open(
-                &cipher,
-                row.id,
-                &row.subject,
-                row.key_version,
-                REFRESH_TOKEN_FIELD,
-                &row.refresh_token,
-            )
-            .map(|token| token.to_string())
-            .map_err(Into::into)
+            crypto::open(&cipher, row, REFRESH_TOKEN_FIELD)
+                .map(|token| token.to_string())
+                .map_err(Into::into)
         })
         .collect()
 }

@@ -39,7 +39,7 @@ reqwest.workspace = true
 aws-lc-rs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sqlx = { workspace = true, optional = true }
+sqlx = { workspace = true, features = ["derive"], optional = true }
 subtle.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
