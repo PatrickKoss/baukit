@@ -1,0 +1,124 @@
+rule_files:
+  - ../recording-rules/baukit-red.rules.yml
+  - ../alerts/baukit.rules.yml
+evaluation_interval: 5m
+group_eval_order:
+  - baukit-red-recording
+  - baukit-error-budget-recording
+  - baukit-latency-recording
+  - baukit-slo-traffic-recording
+  - baukit-error-budget-long-recording
+  - baukit-slo-alerts
+tests:
+  - name: a 2% 5xx ratio for four days fires BaukitErrorBudgetBurnTicket
+    interval: 10m
+    input_series:
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="200"}'
+        values: '0+98x600'
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="500"}'
+        values: '0+2x600'
+    promql_expr_test:
+      - expr: baukit:http_requests_5xx:error_budget_burn_rate3d{service!=""}
+        eval_time: 4d
+        exp_samples:
+          - labels: 'baukit:http_requests_5xx:error_budget_burn_rate3d{product="fixture",service="fixture-api",environment="test"}'
+            value: 20
+    alert_rule_test:
+      - eval_time: 4d
+        alertname: BaukitErrorBudgetBurnTicket
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              severity: warning
+            exp_annotations:
+              summary: 5xx errors spend the error budget faster than it accrues
+              description: 'The 1d and 3d windows exceed 1x the 5xx budget for fixture-api in test, so the 30-day budget runs out before the month ends.'
+              runbook_url: RUNBOOK_BASE_URL/error-budget-burn-ticket
+
+  - name: a 0.05% 5xx ratio burns half the budget and stays quiet
+    interval: 10m
+    input_series:
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="200"}'
+        values: '0+1999x600'
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="500"}'
+        values: '0+1x600'
+    alert_rule_test:
+      - eval_time: 4d
+        alertname: BaukitErrorBudgetBurnTicket
+        exp_alerts: []
+
+  - name: an idle service with only failing requests stays under the 100-request floor
+    interval: 1h
+    input_series:
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="500"}'
+        values: '0+1x100'
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",status="500",le="0.5"}'
+        values: '0x100'
+      - series: 'http_request_duration_seconds_count{product="fixture",service="fixture-api",environment="test",route="/items",status="500"}'
+        values: '0+1x100'
+    alert_rule_test:
+      - eval_time: 4d
+        alertname: BaukitErrorBudgetBurnTicket
+        exp_alerts: []
+      - eval_time: 4d
+        alertname: BaukitLatencyBudgetBurnTicket
+        exp_alerts: []
+
+  - name: 5% of requests over 0.5s for four days fires BaukitLatencyBudgetBurnTicket
+    interval: 10m
+    input_series:
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="200"}'
+        values: '0+100x600'
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",status="200",le="0.5"}'
+        values: '0+95x600'
+      - series: 'http_request_duration_seconds_count{product="fixture",service="fixture-api",environment="test",route="/items",status="200"}'
+        values: '0+100x600'
+    promql_expr_test:
+      - expr: round(baukit:http_request_latency:error_budget_burn_rate3d, 0.001)
+        eval_time: 4d
+        exp_samples:
+          - labels: '{product="fixture",service="fixture-api",environment="test"}'
+            value: 5
+    alert_rule_test:
+      - eval_time: 4d
+        alertname: BaukitLatencyBudgetBurnTicket
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              severity: warning
+            exp_annotations:
+              summary: Slow requests spend the latency budget faster than it accrues
+              description: 'More than 1% of requests took over 0.5s in the 1d and 3d windows for fixture-api in test.'
+              runbook_url: RUNBOOK_BASE_URL/latency-budget-burn-ticket
+
+  - name: 0.5% of requests over 0.5s stays inside the latency budget
+    interval: 10m
+    input_series:
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="200"}'
+        values: '0+200x600'
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",status="200",le="0.5"}'
+        values: '0+199x600'
+      - series: 'http_request_duration_seconds_count{product="fixture",service="fixture-api",environment="test",route="/items",status="200"}'
+        values: '0+200x600'
+    alert_rule_test:
+      - eval_time: 4d
+        alertname: BaukitLatencyBudgetBurnTicket
+        exp_alerts: []
+
+  - name: the per-route latency SLI is the share of requests under 0.5s
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",route="/items",status="200",le="0.5"}'
+        values: '0+75x20'
+      - series: 'http_request_duration_seconds_count{product="fixture",service="fixture-api",environment="test",route="/items",status="200"}'
+        values: '0+100x20'
+    promql_expr_test:
+      - expr: baukit:http_requests_under_target:ratio5m
+        eval_time: 15m
+        exp_samples:
+          - labels: 'baukit:http_requests_under_target:ratio5m{product="fixture",service="fixture-api",environment="test",route="/items"}'
+            value: 0.75

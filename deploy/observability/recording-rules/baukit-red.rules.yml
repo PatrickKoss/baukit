@@ -93,6 +93,98 @@ groups:
             )
           ) / 0.001 or on() vector(0)
 
+  # Latency SLI: share of requests that finish within the 0.5s target, the le="0.5" bucket.
+  # Default SLO: 99% of requests under the target, hence a 0.01 error budget.
+  - name: baukit-latency-recording
+    interval: 30s
+    rules:
+      - record: baukit:http_requests_under_target:ratio5m
+        expr: |
+          sum by (product, service, environment, route) (
+            rate(http_request_duration_seconds_bucket{le="0.5"}[5m])
+          )
+          /
+          sum by (product, service, environment, route) (
+            rate(http_request_duration_seconds_count[5m])
+          )
+
+  # Request counts per long window, the low-traffic floors of every burn-rate alert.
+  - name: baukit-slo-traffic-recording
+    interval: 1m
+    rules:
+      - record: baukit:http_requests:increase1h
+        expr: |
+          sum by (product, service, environment) (
+            increase(http_requests_total[1h])
+          )
+
+      - record: baukit:http_requests:increase6h
+        expr: |
+          sum by (product, service, environment) (
+            increase(http_requests_total[6h])
+          )
+
+
+  # Ticket tier: 1d and 3d windows. Long ranges are expensive, so this group runs every 5m.
+  - name: baukit-error-budget-long-recording
+    interval: 5m
+    rules:
+      - record: baukit:http_requests:increase3d
+        expr: |
+          sum by (product, service, environment) (
+            increase(http_requests_total[3d])
+          )
+
+      - record: baukit:http_requests_5xx:error_budget_burn_rate1d
+        expr: |
+          (
+            sum by (product, service, environment) (
+              rate(http_requests_total{status=~"5.."}[1d])
+            )
+            /
+            sum by (product, service, environment) (
+              rate(http_requests_total[1d])
+            )
+          ) / 0.001
+
+      - record: baukit:http_requests_5xx:error_budget_burn_rate3d
+        expr: |
+          (
+            sum by (product, service, environment) (
+              rate(http_requests_total{status=~"5.."}[3d])
+            )
+            /
+            sum by (product, service, environment) (
+              rate(http_requests_total[3d])
+            )
+          ) / 0.001
+
+      - record: baukit:http_request_latency:error_budget_burn_rate1d
+        expr: |
+          (
+            1 -
+            sum by (product, service, environment) (
+              rate(http_request_duration_seconds_bucket{le="0.5"}[1d])
+            )
+            /
+            sum by (product, service, environment) (
+              rate(http_request_duration_seconds_count[1d])
+            )
+          ) / 0.01
+
+      - record: baukit:http_request_latency:error_budget_burn_rate3d
+        expr: |
+          (
+            1 -
+            sum by (product, service, environment) (
+              rate(http_request_duration_seconds_bucket{le="0.5"}[3d])
+            )
+            /
+            sum by (product, service, environment) (
+              rate(http_request_duration_seconds_count[3d])
+            )
+          ) / 0.01
+
   - name: baukit-worker
     rules:
       - record: baukit:worker_job_runs:rate5m
