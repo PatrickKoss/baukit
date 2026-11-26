@@ -178,6 +178,7 @@ mod proofs {
     /// secret, the shape kernel behind `is_well_formed` never panics and
     /// accepts iff the length, marker prefix and alphanumeric body all match.
     /// The kernel is generic in the secret length. Unwind 9.
+    /// Bounds: inputs of 0 to 8 bytes, a 4-byte secret, unwind 9.
     #[kani::proof]
     #[kani::unwind(9)]
     fn well_formed_bytes_matches_the_token_shape() {

@@ -424,7 +424,8 @@ mod proofs {
             && !(first == 0x3fff && segments[1] < 0x1000)
     }
 
-    /// Every `u32`: `is_public_address` equals the IANA spec. No unwinding needed.
+    /// K-03: every `u32`: `is_public_address` equals the IANA spec. No unwinding needed.
+    /// Bounds: every `u32` address, no loops.
     #[kani::proof]
     fn ipv4_public_matches_spec() {
         let bits: u32 = kani::any();
@@ -435,9 +436,10 @@ mod proofs {
         );
     }
 
-    /// Every `u128`: `is_public_address` equals the IANA spec, which covers each
+    /// K-03: every `u128`: `is_public_address` equals the IANA spec, which covers each
     /// listed prefix (mapped, NAT64, 6to4, Teredo, ULA, link-local, multicast)
     /// with all bits symbolic.
+    /// Bounds: every `u128` address, unwind 17.
     #[kani::proof]
     #[kani::unwind(17)]
     fn ipv6_public_matches_spec() {
@@ -448,8 +450,9 @@ mod proofs {
         );
     }
 
-    /// Every `u32` under `PublicOnly`: `permits` equals the spec, so metadata
+    /// K-03: every `u32` under `PublicOnly`: `permits` equals the spec, so metadata
     /// and non-global addresses are denied.
+    /// Bounds: every `u32` address, no loops.
     #[kani::proof]
     fn public_only_permits_matches_spec() {
         let address = Ipv4Addr::from_bits(kani::any());
@@ -463,7 +466,8 @@ mod proofs {
         );
     }
 
-    /// Prefix 0 to 32: no panic and exactly `prefix` leading ones.
+    /// K-04: prefix 0 to 32: no panic and exactly `prefix` leading ones.
+    /// Bounds: prefix 0 to 32, no loops.
     #[kani::proof]
     fn ipv4_mask_has_prefix_leading_ones() {
         let prefix: u32 = kani::any();
@@ -473,7 +477,8 @@ mod proofs {
         assert_eq!(mask.count_ones(), prefix);
     }
 
-    /// Prefix 0 to 128: no panic and exactly `prefix` leading ones.
+    /// K-04: prefix 0 to 128: no panic and exactly `prefix` leading ones.
+    /// Bounds: prefix 0 to 128, no loops.
     #[kani::proof]
     fn ipv6_mask_has_prefix_leading_ones() {
         let prefix: u32 = kani::any();

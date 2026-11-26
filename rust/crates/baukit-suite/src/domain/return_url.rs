@@ -73,6 +73,7 @@ mod proofs {
     }
 
     /// K-15
+    /// Bounds: every `i64` timestamp and now, no loops.
     #[kani::proof]
     fn signature_window_is_symmetric_without_overflow() {
         let timestamp: i64 = kani::any();
@@ -85,6 +86,7 @@ mod proofs {
     }
 
     /// K-16
+    /// Bounds: ASCII schemes of 0 to 7 bytes, own scheme of 0 to 3 bytes, unwind 8.
     #[kani::proof]
     #[kani::unwind(8)]
     fn native_scheme_is_own_or_opted_in_dev() {

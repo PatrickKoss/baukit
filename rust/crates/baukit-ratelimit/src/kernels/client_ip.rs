@@ -144,6 +144,7 @@ mod proofs {
     /// unparseable string) because CBMC cannot handle `str::parse` symbolically; the
     /// parser is the only part of [`select_forwarded_ip`] this abstracts. Lists hold at
     /// most 6 entries and hops ranges over 0..=4. Unwind 8 covers the suffix comparison.
+    /// Bounds: lists of 0 to 6 IPv4 or unparseable entries, hops 0 to 4, unwind 8.
     #[kani::proof]
     #[kani::unwind(8)]
     fn forwarded_selection_ignores_client_controlled_entries() {
@@ -163,6 +164,7 @@ mod proofs {
 
     /// K-02: the result is the peer or the entry at `len - hops`, never anything else.
     /// Same entry model and bounds as K-01.
+    /// Bounds: lists of 0 to 6 IPv4 or unparseable entries, hops 0 to 4, unwind 8.
     #[kani::proof]
     #[kani::unwind(8)]
     fn forwarded_selection_is_peer_or_trusted_entry() {
@@ -181,6 +183,7 @@ mod proofs {
     /// K-19: two IPv6 addresses share a bucket iff they share the first `prefix` bits;
     /// IPv4-mapped addresses bucket as their IPv4 address. Symbolic 128-bit addresses
     /// and prefixes 0..=128; no loops.
+    /// Bounds: every pair of 128-bit addresses, prefix 0 to 128, no loops.
     #[kani::proof]
     fn ip_bucket_groups_exactly_by_prefix() {
         let prefix: u8 = kani::any();

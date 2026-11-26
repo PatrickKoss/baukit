@@ -45,6 +45,7 @@ mod proofs {
 
     /// K-08: for byte strings up to 8 bytes each, `constant_time_eq` equals `==`.
     /// Unwind 9.
+    /// Bounds: two byte strings of 0 to 8 bytes, unwind 9.
     #[kani::proof]
     #[kani::unwind(9)]
     fn constant_time_eq_matches_equality() {

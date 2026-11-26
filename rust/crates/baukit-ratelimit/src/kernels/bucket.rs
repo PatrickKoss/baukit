@@ -94,6 +94,7 @@ mod proofs {
 
     /// K-11: one `admit` step never exceeds capacity or underflows, and admission
     /// implies `cost <= refilled tokens`. Inputs are unbounded `u64`; no loops, no unwind.
+    /// Bounds: every `u64` input, no loops.
     #[kani::proof]
     fn admit_keeps_tokens_in_bounds() {
         let (tokens, last, now, rate, capacity, cost): (u64, u64, u64, u64, u64, u64) = (

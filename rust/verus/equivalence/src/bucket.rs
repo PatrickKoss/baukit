@@ -65,28 +65,28 @@ mod proofs {
         ));
     }
 
-    /// Twin and production `refill` and `admit` agree with a stopped refill.
+    /// V-02: twin and production `refill` and `admit` agree with a stopped refill.
     /// Bounds: rate 0; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`.
     #[kani::proof]
     fn admit_equivalent_rate_zero() {
         admit_matches_at_rate(0);
     }
 
-    /// The same with the smallest non-zero rate.
+    /// V-02: the same with the smallest non-zero rate.
     /// Bounds: rate 1; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`.
     #[kani::proof]
     fn admit_equivalent_rate_one() {
         admit_matches_at_rate(1);
     }
 
-    /// The same with a rate that leaves a remainder in `retry_ms`.
+    /// V-02: the same with a rate that leaves a remainder in `retry_ms`.
     /// Bounds: rate 7; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`.
     #[kani::proof]
     fn admit_equivalent_rate_seven() {
         admit_matches_at_rate(7);
     }
 
-    /// The same with a rate whose refill saturates after one millisecond.
+    /// V-02: the same with a rate whose refill saturates after one millisecond.
     /// Bounds: rate `u64::MAX`; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`.
     #[kani::proof]
     fn admit_equivalent_rate_max() {

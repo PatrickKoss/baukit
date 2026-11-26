@@ -112,14 +112,14 @@ mod tests {
 mod proofs {
     use super::*;
 
-    /// Twin and production `now_step` agree on every input.
+    /// V-01: twin and production `now_step` agree on every input.
     /// Bounds: none, straight-line code over unconstrained `i64`.
     #[kani::proof]
     fn now_step_equivalent() {
         assert!(now_matches((kani::any(), kani::any()), kani::any()));
     }
 
-    /// Twin and production `observe_step` agree on every input.
+    /// V-01: twin and production `observe_step` agree on every input.
     /// Bounds: none, straight-line code over unconstrained `i64`.
     #[kani::proof]
     fn observe_step_equivalent() {
@@ -131,7 +131,7 @@ mod proofs {
         ));
     }
 
-    /// Twin and production `encode` and `decode` agree on every input.
+    /// V-01: twin and production `encode` and `decode` agree on every input.
     /// Bounds: none, straight-line code over unconstrained `i64`.
     #[kani::proof]
     fn codec_equivalent() {

@@ -96,6 +96,7 @@ mod proofs {
     /// there was no attempt or a full cooldown has passed since it. Recording
     /// each allowed attempt therefore spaces allowed refetches at least one
     /// cooldown apart, which bounds them to `1 + span / cooldown` over any span.
+    /// Bounds: every non-zero `u64` cooldown, optional `u64` last attempt and `u64` now, no loops.
     #[kani::proof]
     fn refresh_allowed_spaces_attempts_by_the_cooldown() {
         let cooldown_secs: u64 = kani::any();
@@ -113,6 +114,7 @@ mod proofs {
 
     /// K-06: for every `i64` input the kernel never overflows, and it accepts
     /// iff `nbf - skew <= now <= exp + skew` in exact integer arithmetic.
+    /// Bounds: every `i64` exp, nbf, now and skew, no loops.
     #[kani::proof]
     fn claims_time_valid_matches_exact_window() {
         let exp: i64 = kani::any();

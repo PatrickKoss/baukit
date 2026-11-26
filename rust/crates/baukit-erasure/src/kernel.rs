@@ -92,6 +92,7 @@ mod proofs {
     use super::*;
 
     /// K-23: every `u16` status, both body answers. No loops, so no unwind bound.
+    /// Bounds: every `u16` status, both body answers, no loops.
     #[kani::proof]
     fn deletion_outcome_ok_only_for_2xx_or_missing_404() {
         let status: u16 = kani::any();
@@ -105,6 +106,7 @@ mod proofs {
     }
 
     /// K-22: every fence row and session time over the full `i64` range. No loops.
+    /// Bounds: every fence row and `i64` login time, no loops.
     #[kani::proof]
     fn fence_matches_truth_table() {
         let present: bool = kani::any();
@@ -128,6 +130,7 @@ mod proofs {
     }
 
     /// K-22: all four replay inputs. No loops.
+    /// Bounds: all four boolean inputs, no loops.
     #[kani::proof]
     fn replay_matches_truth_table() {
         let exists: bool = kani::any();

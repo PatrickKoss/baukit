@@ -87,6 +87,7 @@ mod proofs {
     /// K-24: any part length at least its header, any record length and any limit, all
     /// below 2^20 bytes. No loops. Whatever the placement, the closed part stays within
     /// `limit`, and a record is too large only when it cannot fit in an empty part.
+    /// Bounds: part, record and limit below 2^20 bytes, no loops.
     #[kani::proof]
     fn placement_keeps_every_part_within_the_limit() {
         const BOUND: usize = 1 << 20;

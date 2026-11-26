@@ -507,7 +507,7 @@ mod proofs {
         (bytes, length)
     }
 
-    /// Bounds: all `u64` triples, no loops. `Ok` implies
+    /// K-13. Bounds: all `u64` triples, no loops. `Ok` implies
     /// `now < expires <= now + max_ahead` with the sum taken in `u128`.
     #[kani::proof]
     fn check_expiry_bounds() {
@@ -518,7 +518,7 @@ mod proofs {
         }
     }
 
-    /// Bounds: ASCII strings of 0 to 4 bytes, unwind 8. An accepted expiry is
+    /// K-14. Bounds: ASCII strings of 0 to 4 bytes, unwind 8. An accepted expiry is
     /// non-empty decimal digits without a leading zero whose value matches the text.
     #[kani::proof]
     #[kani::unwind(8)]
@@ -539,7 +539,7 @@ mod proofs {
         assert_eq!(value, expected);
     }
 
-    /// Bounds: ASCII strings of 0 to 4 bytes, unwind 8. Every accepted string
+    /// K-14. Bounds: ASCII strings of 0 to 4 bytes, unwind 8. Every accepted string
     /// is non-empty and uses only the base64url alphabet, so `\n`, `=` and `+`
     /// never pass; the round-trip check itself runs in the unit tests.
     #[kani::proof]

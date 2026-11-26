@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """List the Kani harnesses under rust/ with the bounds their doc comments state.
 
-Prints a markdown table (ID, crate, harness, bounds). `--check` fails when a `#[kani::proof]`
+Prints a markdown table (plan ID, crate, harness, bounds). `--check` fails when a `#[kani::proof]`
 has no doc comment with a `Bounds:` line.
 """
 
@@ -19,7 +19,8 @@ ATTRIBUTE = re.compile(r"^\s*#\[")
 DOC_LINE = re.compile(r"^\s*///\s?(?P<text>.*)$")
 FUNCTION = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+(?P<name>\w+)")
 CRATE_PATH_DEPTH = 2
-BOUNDS = re.compile(r"^Bounds:\s*(?P<bounds>.+)$")
+BOUNDS = re.compile(r"\bBounds:\s*(?P<bounds>.+)$")
+PLAN_ID = re.compile(r"^(?P<id>[KV]-\d+)\b")
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class Harness:
     crate: str
     path: Path
     name: str
+    plan_id: str | None
     bounds: str | None
 
 
@@ -65,15 +67,18 @@ def harnesses_in(path: Path, root: Path) -> list[Harness]:
     for index, line in enumerate(lines):
         if not PROOF_ATTRIBUTE.match(line):
             continue
-        bounds = next(
-            (
-                match.group("bounds").strip()
-                for doc in _doc_above(lines, index)
-                if (match := BOUNDS.match(doc))
-            ),
-            None,
+        doc = " ".join(_doc_above(lines, index))
+        bounds = BOUNDS.search(doc)
+        plan_id = PLAN_ID.match(doc)
+        found.append(
+            Harness(
+                crate_of(path, root),
+                path,
+                _function_below(lines, index),
+                plan_id.group("id") if plan_id else None,
+                bounds.group("bounds").strip() if bounds else None,
+            )
         )
-        found.append(Harness(crate_of(path, root), path, _function_below(lines, index), bounds))
     return found
 
 
@@ -87,10 +92,11 @@ def collect(root: Path) -> list[Harness]:
 
 
 def table(harnesses: list[Harness]) -> str:
-    rows = ["| ID | Crate | Harness | Bounds |", "|---|---|---|---|"]
-    for number, harness in enumerate(harnesses, start=1):
+    rows = ["| Plan ID | Crate | Harness | Bounds |", "|---|---|---|---|"]
+    for harness in harnesses:
+        plan_id = harness.plan_id or "-"
         bounds = harness.bounds or "missing"
-        rows.append(f"| K-{number:02d} | {harness.crate} | `{harness.name}` | {bounds} |")
+        rows.append(f"| {plan_id} | {harness.crate} | `{harness.name}` | {bounds} |")
     return "\n".join(rows)
 
 

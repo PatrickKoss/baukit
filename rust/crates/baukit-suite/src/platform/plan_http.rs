@@ -231,6 +231,7 @@ mod proofs {
     use super::*;
 
     /// K-20
+    /// Bounds: every optional token organization and named `u128` UUID, no loops.
     #[kani::proof]
     fn an_organization_subject_is_always_the_token_organization() {
         let token = kani::any::<bool>().then(|| PlanOrganization(Uuid::from_u128(kani::any())));

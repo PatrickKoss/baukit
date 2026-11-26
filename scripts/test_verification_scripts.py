@@ -108,12 +108,16 @@ class ReleaseShapeTest(unittest.TestCase):
 HARNESSES = """
 #[cfg(kani)]
 mod proofs {
-    /// Admission never exceeds capacity.
+    /// K-11: admission never exceeds capacity.
     ///
     /// Bounds: unwind 4, cost <= 8.
     #[kani::proof]
     #[kani::unwind(4)]
     fn admit_bounded() {}
+
+    /// Refill is monotone. No panic. Bounds: every `u64`, no loops.
+    #[kani::proof]
+    fn inline_bounds() {}
 
     #[kani::proof]
     fn missing_bounds() {}
@@ -122,7 +126,7 @@ mod proofs {
 
 
 class ListProofsTest(unittest.TestCase):
-    def test_reads_bounds_and_flags_missing_ones(self) -> None:
+    def test_reads_plan_ids_and_bounds_and_flags_missing_ones(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             source = root / "crates" / "baukit-ratelimit" / "src" / "bucket.rs"
@@ -132,16 +136,17 @@ class ListProofsTest(unittest.TestCase):
             harnesses = list_proofs.collect(root)
 
             self.assertEqual(
-                [(h.crate, h.name, h.bounds) for h in harnesses],
+                [(h.crate, h.name, h.plan_id, h.bounds) for h in harnesses],
                 [
-                    ("baukit-ratelimit", "admit_bounded", "unwind 4, cost <= 8."),
-                    ("baukit-ratelimit", "missing_bounds", None),
+                    ("baukit-ratelimit", "admit_bounded", "K-11", "unwind 4, cost <= 8."),
+                    ("baukit-ratelimit", "inline_bounds", None, "every `u64`, no loops."),
+                    ("baukit-ratelimit", "missing_bounds", None, None),
                 ],
             )
-            self.assertIn(
-                "| K-01 | baukit-ratelimit | `admit_bounded` | unwind 4, cost <= 8. |",
-                list_proofs.table(harnesses),
-            )
+            table = list_proofs.table(harnesses)
+            admit_row = "| K-11 | baukit-ratelimit | `admit_bounded` | unwind 4, cost <= 8. |"
+            self.assertIn(admit_row, table)
+            self.assertIn("| - | baukit-ratelimit | `missing_bounds` | missing |", table)
             self.assertEqual(list_proofs.main(["--check", "--root", str(root)]), 1)
 
 

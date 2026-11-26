@@ -180,6 +180,7 @@ mod proofs {
     /// base64url acceptance at that length is checked by the
     /// `oauth_state_parse` fuzz oracle, since CBMC cannot bound the decoder.
     /// No loops run, so no unwind bound is set.
+    /// Bounds: inputs of 0 to 44 characters, no loops.
     #[kani::proof]
     fn token_length_gate_admits_only_43_characters() {
         let len: usize = kani::any();
