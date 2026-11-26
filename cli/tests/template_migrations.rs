@@ -65,6 +65,9 @@ fn auth_template_copies_every_browser_session_migration() -> Result<()> {
         );
         checked += 1;
     }
-    ensure!(checked > 0, "no browser session migrations found in baukit-auth");
+    ensure!(
+        checked > 0,
+        "no browser session migrations found in baukit-auth"
+    );
     Ok(())
 }

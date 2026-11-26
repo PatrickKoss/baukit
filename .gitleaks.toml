@@ -13,6 +13,8 @@ paths = [
   '''^fixtures/media-grants/vectors-v1\.json$''',
   '''^fixtures/platform-api/v1/responses\.json$''',
   '''^fixtures/suite-events/v1/link-protocol\.json$''',
+  '''^fixtures/suite/generated-v1\.json$''',
+  '''^rust/fuzz/corpus/suite_ticket/seed-[0-9]+$''',
   '''^rust/crates/baukit-test/src/jwt/fixtures/oidc-key-[12]\.pem$''',
   '''^rust/crates/baukit-test/src/suite/fixtures/v1/link-protocol\.json$''',
   '''^typescript/packages/analytics-core/src/scrubber\.test\.ts$''',
