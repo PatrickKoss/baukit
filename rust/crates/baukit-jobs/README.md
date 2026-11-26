@@ -375,7 +375,10 @@ now. It takes 1 to `MAX_REQUEUE_BATCH_SIZE` (1000) ids, ignores ids of other
 types or statuses, and returns the ids it requeued. A failed row whose active
 dedupe key is held by a pending or running row stays failed. The `jobs`
 feature of `baukit-ops` serves it as `POST /admin/jobs/requeue` for the
-private operations listener.
+private operations listener. `requeue_failed_jobs_router(store, job_types,
+admin_token)` takes the token as a `baukit_config::Secret<String>` and requires
+`Authorization: Bearer <token>`, compared in constant time. A missing, wrong or
+empty token gets `401 unauthenticated` in the standard error envelope.
 
 ## Runtime and operations
 

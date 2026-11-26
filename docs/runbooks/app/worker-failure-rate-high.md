@@ -41,6 +41,7 @@ Worker errors:
   ```bash
   kubectl -n <namespace> port-forward deploy/<service>-worker 9090:<ops-port>
   curl -sS -X POST localhost:9090/admin/jobs/requeue \
+    -H "Authorization: Bearer $JOBS_ADMIN_TOKEN" \
     -H 'content-type: application/json' \
     -d '{"jobType": "<job_kind>", "ids": ["<id>", "<id>"]}'
   ```
@@ -48,7 +49,8 @@ Worker errors:
   The answer lists the ids that went back to pending with a fresh attempt budget. Ids that are
   not failed, or whose dedupe key a newer active job holds, are left alone. A product that has
   not mounted `baukit_ops::jobs_admin::requeue_failed_jobs_router` on its ops listener gets a
-  404; mount it rather than editing rows by hand.
+  404; mount it rather than editing rows by hand. `JOBS_ADMIN_TOKEN` is the admin token the
+  product passes to that router, read from its secret store; a missing or wrong token gets 401.
 - A code bug in the handler: roll back the worker image, then requeue.
 - Bad payloads from one producer: fix the producer. Do not requeue rows that will fail again.
 
