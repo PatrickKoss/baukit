@@ -447,7 +447,7 @@ them.
   `local-footprint.md`.
 - [x] **PL5 Redis platform alerts** (RL-86): master down, Sentinel quorum lost, replication link down,
   evictions, memory near maxmemory, each with promtool tests and a runbook.
-- [ ] **PL6 Flagger that can gate** (RL-83): add `baukit.dev/workload` to the chart selector (breaking,
+- [~] **PL6 Flagger that can gate** (RL-83): add `baukit.dev/workload` to the chart selector (breaking,
   fine per principle 8), relabel `rollout` in the ServiceMonitor from the pod's canary/primary label,
   and add an opt-in Canary plus TraefikService to the template with error-ratio and p95 gates from the
   existing metric templates.
@@ -713,3 +713,23 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
     outage.
 - Release to-do, all waves: no TypeScript package has CHANGELOG `Unreleased` entries yet (api-runtime,
   auth-web, auth-native, sync-client, pwa-web). They get written in REL1.
+- rel-platform merged after two rounds.
+  - PL6: the chart selects on `baukit.dev/workload`. An opt-in Flagger Canary with a TraefikService
+    and 5xx and p95 gates is added, and the ServiceMonitor relabels `rollout`. There is a new
+    `tests/canary` e2e suite, not run yet.
+  - Round 2 fix: the target Deployment drops `replicas` under canary. I added a render guard because
+    Flagger runs one primary pod unless the HPA sets the count.
+  - PL4: only the API goes through PgBouncer. Worker, migrate and seed get a direct URL Secret
+    (`directUrlSecretRef`), because the pooler drops startup `options`.
+    - The owner role carries the timeouts, a limit of 25 connections (12 pooled, 13 direct), and
+      `query_timeout` 35 s.
+    - The backing NetworkPolicy now admits the pooler pods. Before this, a pooler URL would have
+      been blocked.
+  - PL7: the worker failure alert gets a traffic floor, and the new `BaukitWorkerJobsFailed` alert
+    fires on growth of `worker_queue_depth{status="failed"}`.
+  - Missing metrics: baukit-push emits none, and the suite delivery metric has a per-product prefix
+    that is not in telemetry-spec. Both need fixed names before PL7 can alert on them.
+  - Still to run: `platform-images` (trivy) and the platform e2e, including the canary, tenant-postgres
+    and ingress suites.
+- `scripts/publish-crates.sh` now publishes `baukit-resilience` before `baukit-http`, which depends on
+  it. scripts-tests caught the wrong order.
