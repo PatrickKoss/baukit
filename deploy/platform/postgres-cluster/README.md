@@ -80,6 +80,7 @@ on different nodes with a PDB of `maxUnavailable: 1`.
 | PgBouncer `max_client_conn` | 500 | `pooler.yaml` |
 | Tenant owner `connectionLimit` | 25 | `product-database.example.yaml` |
 | Keycloak pool (`KC_DB_POOL_MAX_SIZE`) | 10 | `keycloak/statefulset.yaml` |
+| Keycloak owner `connectionLimit` | 12 | `keycloak/database.yaml` |
 | PostgreSQL `max_connections` | 150 | `cluster.yaml` |
 
 An app pod opens up to 10 client connections to PgBouncer, and every pod of a
@@ -89,6 +90,25 @@ connections: 20 through the pooler and 5 direct ones for migrations and
 listeners. Five tenants at their limit (125), Keycloak (10), CNPG's own
 connections and the 3 superuser slots fit under 150. Raise `max_connections`
 before the sixth tenant, and size memory with it.
+
+### Timeouts through the pooler
+
+baukit-config sends `statement_timeout` (29 s), `lock_timeout` (5 s) and
+`idle_in_transaction_session_timeout` (60 s) as startup `options`. PgBouncer
+cannot forward those to a shared server connection, so the pooler lists
+`options` in `ignore_startup_parameters` and the owner role carries the same
+values through `ALTER ROLE ... SET`. `cluster.yaml` sets them for the bootstrap
+owner in `postInitApplicationSQL`; every other tenant owner gets them once by
+hand, as `product-database.example.yaml` shows. A product that overrides a
+timeout in its config gets the role's value through the pooler. Migrations run
+on a direct connection to `postgres-cluster-rw`, where startup options still
+apply and the migration connection drops `statement_timeout`.
+
+PgBouncer adds two limits of its own. `query_timeout` 35 s sits above the role's
+`statement_timeout`, so PostgreSQL cancels a slow statement first and the
+client sees its error; the pooler only cuts a server that stopped answering.
+`idle_transaction_timeout` 60 s matches `idle_in_transaction_session_timeout`.
+Keycloak connects directly and keeps its own timeouts.
 
 ## Synchronous replication
 

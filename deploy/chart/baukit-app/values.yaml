@@ -354,6 +354,28 @@ serviceMonitor:
   scrapeTimeout: 10s
   labels: {}
 
+# Flagger progressive delivery for the API Deployment. Needs the Flagger and Traefik CRDs.
+# Flagger routes through a TraefikService named <fullname>-api, so the chart renders an
+# IngressRoute to it instead of the Ingress.
+canary:
+  enabled: false
+  # Flagger's provider address for the chart's MetricTemplates. Empty means the
+  # tenant-metrics-proxy in the release namespace, which tenant namespaces require.
+  prometheusAddress: ""
+  progressDeadlineSeconds: 600
+  analysis:
+    interval: 1m
+    # Failed checks before Flagger rolls back.
+    threshold: 5
+    stepWeight: 10
+    maxWeight: 50
+  metrics:
+    # Range of the rate() windows in the error and p95 queries.
+    interval: 1m
+    maxErrorPercent: 1
+    # The 0.5 s latency SLI target in deploy/observability.
+    maxP95Seconds: 0.5
+
 networkPolicy:
   enabled: true
   # Matches the Traefik base in deploy/platform/traefik (release traefik in

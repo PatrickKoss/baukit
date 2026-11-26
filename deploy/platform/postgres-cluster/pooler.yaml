@@ -21,6 +21,14 @@ spec:
       max_db_connections: "20"
       max_client_conn: "500"
       max_prepared_statements: "200"
+      # Clients send their timeouts as startup options, which PgBouncer cannot forward. The
+      # tenant role's ALTER ROLE ... SET values apply instead.
+      ignore_startup_parameters: extra_float_digits,options
+      # Seconds. Above the role's 29 s statement_timeout, so PostgreSQL cancels first and
+      # the client sees its error; this only catches a server that stopped answering.
+      query_timeout: "35"
+      # Matches the role's idle_in_transaction_session_timeout of 60 s.
+      idle_transaction_timeout: "60"
   template:
     metadata:
       labels:

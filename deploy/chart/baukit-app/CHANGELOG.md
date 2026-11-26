@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Breaking: the API and worker Deployment selectors and pod labels gain `baukit.dev/workload: <fullname>-<process>`, the label Flagger selects on and rewrites to `<fullname>-<process>-primary`. A selector is immutable, so delete both Deployments before upgrading. Services, PDBs and topology spread leave the label out, so they cover the `-primary` pods too.
+- `canary.enabled` hands the API Deployment to Flagger: a `Canary` with the Traefik provider, two `MetricTemplate`s copied from the platform's `baukit-http-error-percent` and `baukit-http-p95-seconds` (gates at 1% 5xx and 0.5 s p95), an `IngressRoute` to Flagger's `TraefikService` in place of the Ingress, and API ServiceMonitor relabelings that set `rollout="primary"` or `rollout="canary"` from the pod's workload label. The templates query the release namespace's `tenant-metrics-proxy` unless `canary.prometheusAddress` is set. cert-manager annotations do not apply to an IngressRoute, so `ingress.certManager.clusterIssuer` is refused with a canary.
 - The API grace period defaults to 45 s and the drain is the grace minus the preStop sleep minus 5 s (35 s), above the 30 s request timeout. Rendering fails when nothing is left for the drain.
 - The worker grace period defaults to 60 s and the worker drains for the grace minus 15 s, so it no longer runs into SIGKILL.
 - API and worker readiness probes time out after 4 s instead of 2 s, above the 2 s readiness check.

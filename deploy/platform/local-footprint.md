@@ -84,8 +84,25 @@ PL4 put a PgBouncer `Pooler` (transaction mode, one pod requesting 10m CPU and
 `max_connections` to 150. Each app pod pools 10 connections to PgBouncer;
 PgBouncer opens at most `default_pool_size` 10 (plus 2 reserve, capped at
 `max_db_connections` 20) server connections per product database, however many
-pods connect. Each tenant owner has `connectionLimit: 25`. The pooler pod is not
-in the August sample above. The full table lives in
+pods connect. Each tenant owner has `connectionLimit: 25`, which leaves 5
+direct connections for migrations and listeners next to the pooler's 20; the
+Keycloak owner has 12 for its pool of 10.
+
+| Pool | Size | Set in |
+|---|---:|---|
+| App pool per pod (`database.max_connections`) | 10 | `baukit-config` |
+| PgBouncer `default_pool_size` per database and user | 10 | `postgres-cluster/pooler.yaml` |
+| PgBouncer `reserve_pool_size` | 2 | `postgres-cluster/pooler.yaml` |
+| PgBouncer `max_db_connections` per database | 20 | `postgres-cluster/pooler.yaml` |
+
+Two app pods of one product hold up to 20 client connections to PgBouncer but
+share at most 12 server connections, so raising the app pool does not raise the
+load on PostgreSQL; raising `default_pool_size` does. Keep `default_pool_size`
+plus `reserve_pool_size` at or below `max_db_connections`, and
+`max_db_connections` below the owner's `connectionLimit`. Through the pooler the
+owner role's `ALTER ROLE ... SET` timeouts replace the app's startup options
+(see "Timeouts through the pooler" in `postgres-cluster/README.md`). The pooler
+pod is not in the August sample above. The full table lives in
 `postgres-cluster/README.md` under "Connection budget".
 
 ## Testing-node sizing implication

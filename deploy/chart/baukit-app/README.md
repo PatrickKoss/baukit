@@ -224,6 +224,11 @@ Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops a
 | `serviceMonitor.enabled` | `false` | Request capability-gated API/worker ServiceMonitors. |
 | `serviceMonitor.interval` / `scrapeTimeout` | `30s` / `10s` | ServiceMonitor endpoint timing. |
 | `serviceMonitor.labels` | `{}` | Extra labels used by the Prometheus Operator's monitor selector. |
+| `canary.enabled` | `false` | Render a Flagger `Canary` for the API Deployment, its two `MetricTemplate`s and an `IngressRoute` to Flagger's `TraefikService` instead of the Ingress. See "Progressive delivery". |
+| `canary.prometheusAddress` | `""` | Prometheus API the `MetricTemplate`s query. Empty means `http://tenant-metrics-proxy.<namespace>.svc.cluster.local:8080`, which tenant namespaces require. |
+| `canary.progressDeadlineSeconds` | `600` | Flagger's progress deadline for the canary Deployment. |
+| `canary.analysis.interval` / `threshold` / `stepWeight` / `maxWeight` | `1m` / `5` / `10` / `50` | Flagger analysis schedule; `threshold` failed checks roll back. |
+| `canary.metrics.interval` / `maxErrorPercent` / `maxP95Seconds` | `1m` / `1` / `0.5` | `rate()` window and the gates on the canary's 5xx percentage and p95 latency. |
 
 ### NetworkPolicy
 
@@ -239,6 +244,25 @@ Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops a
 | `networkPolicy.dns.k3sCompatible` | `false` | Add a destination-independent TCP/UDP port-53 rule for k3s Service-IP policy enforcement. |
 | `networkPolicy.additionalIngress` | `[]` | Raw NetworkPolicy ingress-rule list admitted to every process. |
 | `networkPolicy.additionalEgress` | `[]` | Raw NetworkPolicy egress-rule list appended after TCP/UDP DNS. |
+
+## Progressive delivery
+
+The API and worker Deployments select on `baukit.dev/workload: <fullname>-<process>`, the label the
+platform's Flagger base selects on. With `canary.enabled=true`, Flagger copies the API Deployment to
+`<fullname>-api-primary`, rewrites that label to `<fullname>-api-primary` there, scales the chart's
+Deployment to zero, and runs each new pod template as the canary. Traffic goes through the
+`TraefikService` named `<fullname>-api` that Flagger writes, which is why the chart renders an
+`IngressRoute` on `websecure` instead of the Ingress. Its TLS secret is `ingress.tls[0].secretName`, or
+Traefik's default certificate without one.
+
+The API ServiceMonitor sets `rollout="primary"` on series from pods whose workload label ends in
+`-primary` and `rollout="canary"` on the others. The two `MetricTemplate`s filter on
+`rollout="canary"`, so the gates see only the canary: the 5xx share of `http_requests_total` and the p95
+of `http_request_duration_seconds`. A gate with no data counts as a failed check, so the canary needs
+traffic during the analysis. Set `serviceMonitor.enabled=true` with the canary. The worker is not
+promoted. The chart keeps `replicas` on its Deployment, because Flagger sizes the primary from it. A
+Helm upgrade that changes no pod template therefore can leave the idle Deployment running at
+`api.replicas` next to the primary.
 
 ## Web app and CSP
 

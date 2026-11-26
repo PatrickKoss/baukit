@@ -1,0 +1,78 @@
+{{- if .Values.canary.enabled }}
+{{- $name := include "baukit-app.canaryServiceName" . }}
+{{- $selector := include "baukit-app.canarySelector" . }}
+{{- $interval := include "baukit-app.flaggerInterval" . }}
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: {{ $name }}-error-percent
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "api") | nindent 4 }}
+spec:
+  provider:
+    type: prometheus
+    address: {{ include "baukit-app.canaryPrometheusAddress" . | quote }}
+  # The query of flagger-system/baukit-http-error-percent with the release's identity.
+  query: |
+    100 *
+    sum(rate(http_requests_total{ {{- $selector }}, status=~"5.."}[{{ $interval }}]))
+    /
+    clamp_min(sum(rate(http_requests_total{ {{- $selector }}}[{{ $interval }}])), 0.001)
+---
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: {{ $name }}-p95-seconds
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "api") | nindent 4 }}
+spec:
+  provider:
+    type: prometheus
+    address: {{ include "baukit-app.canaryPrometheusAddress" . | quote }}
+  # The query of flagger-system/baukit-http-p95-seconds with the release's identity.
+  query: |
+    histogram_quantile(0.95,
+      sum by (le) (rate(http_request_duration_seconds_bucket{ {{- $selector }}}[{{ $interval }}])))
+---
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "api") | nindent 4 }}
+spec:
+  provider: traefik
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "baukit-app.fullname" . }}-api
+  {{- if .Values.autoscaling.enabled }}
+  autoscalerRef:
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    name: {{ include "baukit-app.fullname" . }}-api
+  {{- end }}
+  progressDeadlineSeconds: {{ .Values.canary.progressDeadlineSeconds }}
+  service:
+    name: {{ $name }}
+    port: {{ .Values.service.port }}
+    targetPort: http
+  analysis:
+    interval: {{ .Values.canary.analysis.interval }}
+    threshold: {{ .Values.canary.analysis.threshold }}
+    stepWeight: {{ .Values.canary.analysis.stepWeight }}
+    maxWeight: {{ .Values.canary.analysis.maxWeight }}
+    metrics:
+      - name: error-percent
+        templateRef:
+          name: {{ $name }}-error-percent
+        thresholdRange:
+          max: {{ .Values.canary.metrics.maxErrorPercent }}
+        interval: {{ .Values.canary.metrics.interval }}
+      - name: p95-seconds
+        templateRef:
+          name: {{ $name }}-p95-seconds
+        thresholdRange:
+          max: {{ .Values.canary.metrics.maxP95Seconds }}
+        interval: {{ .Values.canary.metrics.interval }}
+{{- end }}

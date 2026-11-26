@@ -12,8 +12,8 @@ api:
     - -g
     - daemon off;
   # The namespace controller rechecks a deleting namespace only after the pod's grace period, not when
-  # the container exits. nginx exits 0 about 8 s after deletion (5 s preStop), so 30 s ran into chainsaw's 30 s cleanup.
-  terminationGracePeriodSeconds: 10
+  # the container exits. nginx exits 0 about 8 s after deletion (5 s preStop), so 30 s ran into chainsaw's 30 s cleanup. The chart needs more than preStop plus 5 s.
+  terminationGracePeriodSeconds: 11
 migration:
   enabled: false
 networkPolicy:

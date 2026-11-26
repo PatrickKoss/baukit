@@ -27,6 +27,9 @@ spec:
     initialInterval: {{ $retry.initialInterval | quote }}
 ---
 {{- end }}
+{{- if .Values.canary.enabled }}
+{{ include "baukit-app.canaryIngressRoute" . }}
+{{- else }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -72,4 +75,4 @@ spec:
           {{- end }}
     {{- end }}
 {{- end }}
-
+{{- end }}

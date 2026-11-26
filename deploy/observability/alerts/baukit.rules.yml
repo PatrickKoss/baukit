@@ -224,12 +224,16 @@ groups:
             ),
             0.001
           ) > 0.1
+          and on (product, service, environment, namespace, job_kind)
+          sum by (product, service, environment, namespace, job_kind) (
+            baukit:worker_job_runs:rate5m{service!=""}
+          ) > 0.01
         for: 10m
         labels:
           severity: warning
         annotations:
           summary: Worker failure rate is high
-          description: 'More than 10% of worker runs are failing for job kind {{ $labels.job_kind }} in {{ $labels.service }}.'
+          description: 'More than 10% of worker runs are failing for job kind {{ $labels.job_kind }} in {{ $labels.service }}, at more than 3 runs per 5 minutes.'
           runbook_url: RUNBOOK_BASE_URL/worker-failure-rate-high
 
       - alert: BaukitWorkerRetryStorm
@@ -254,6 +258,18 @@ groups:
           summary: Worker queue age is high
           description: 'The oldest queued job is more than five minutes old in queue {{ $labels.queue }} of {{ $labels.service }}.'
           runbook_url: RUNBOOK_BASE_URL/worker-queue-oldest-age-high
+
+      - alert: BaukitWorkerJobsFailed
+        expr: |
+          max by (product, service, environment, namespace, queue) (
+            delta(worker_queue_depth{service!="", status="failed"}[15m])
+          ) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Worker jobs ended as failed
+          description: 'Queue {{ $labels.queue }} of {{ $labels.service }} gained failed jobs in the last 15 minutes. Their outbox rows, such as suite peer deliveries, are not retried.'
+          runbook_url: RUNBOOK_BASE_URL/worker-jobs-failed
 
   - name: baukit-egress-alerts
     rules:

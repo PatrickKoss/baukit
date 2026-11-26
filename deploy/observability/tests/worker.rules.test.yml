@@ -40,7 +40,7 @@ tests:
               severity: warning
             exp_annotations:
               summary: Worker failure rate is high
-              description: More than 10% of worker runs are failing for job kind failing in fixture-worker.
+              description: More than 10% of worker runs are failing for job kind failing in fixture-worker, at more than 3 runs per 5 minutes.
               runbook_url: RUNBOOK_BASE_URL/worker-failure-rate-high
       - eval_time: 5m
         alertname: BaukitWorkerRetryStorm
@@ -59,3 +59,36 @@ tests:
               summary: Worker retries are elevated
               description: Worker retry throughput exceeds one retry per second for job kind failing in fixture-worker.
               runbook_url: RUNBOOK_BASE_URL/worker-retry-storm
+  - interval: 1m
+    input_series:
+      # One failed run every 10 minutes: 100% failures, but below the 0.01 runs/s floor.
+      - series: 'worker_job_runs_total{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job="scrape-worker",job_kind="rare",outcome="failure"}'
+        values: '0+0.1x40'
+      - series: 'worker_queue_depth{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job="scrape-worker",queue="default",status="failed"}'
+        values: '2x20 3x20'
+      - series: 'worker_queue_depth{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job="scrape-worker",queue="steady",status="failed"}'
+        values: '5x40'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: BaukitWorkerFailureRateHigh
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitWorkerJobsFailed
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: BaukitWorkerJobsFailed
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-worker
+              environment: test
+              namespace: fixture
+              queue: default
+              severity: warning
+            exp_annotations:
+              summary: Worker jobs ended as failed
+              description: Queue default of fixture-worker gained failed jobs in the last 15 minutes. Their outbox rows, such as suite peer deliveries, are not retried.
+              runbook_url: RUNBOOK_BASE_URL/worker-jobs-failed
+      - eval_time: 40m
+        alertname: BaukitWorkerJobsFailed
+        exp_alerts: []

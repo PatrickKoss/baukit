@@ -32,6 +32,19 @@ spec:
         - action: replace
           targetLabel: environment
           replacement: {{ .Values.deploymentEnvironment | quote }}
+        {{- if .Values.canary.enabled }}
+        # Flagger rewrites baukit.dev/workload to <name>-primary on the primary pods.
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_label_baukit_dev_workload]
+          regex: ".+"
+          targetLabel: rollout
+          replacement: canary
+        - action: replace
+          sourceLabels: [__meta_kubernetes_pod_label_baukit_dev_workload]
+          regex: ".+-primary"
+          targetLabel: rollout
+          replacement: primary
+        {{- end }}
 {{- if and .Values.worker.enabled .Values.worker.ops.enabled }}
 ---
 apiVersion: monitoring.coreos.com/v1

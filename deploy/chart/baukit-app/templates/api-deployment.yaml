@@ -15,7 +15,7 @@ spec:
       maxSurge: {{ .Values.api.strategy.maxSurge }}
   selector:
     matchLabels:
-      {{- include "baukit-app.processSelectorLabels" (dict "root" . "process" "api") | nindent 6 }}
+      {{- include "baukit-app.workloadSelectorLabels" (dict "root" . "process" "api") | nindent 6 }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -24,6 +24,7 @@ spec:
       {{- end }}
       labels:
         {{- include "baukit-app.processLabels" (dict "root" . "process" "api") | nindent 8 }}
+        baukit.dev/workload: {{ printf "%s-api" (include "baukit-app.fullname" .) }}
         {{- with include "baukit-app.podLabels" (dict "root" . "process" "api") }}
         {{- . | nindent 8 }}
         {{- end }}
