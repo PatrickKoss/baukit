@@ -15,7 +15,10 @@ RULES = (
 )
 POLICY_JUMP = '-A KUBE-POD-FW-X -m comment --comment "ns/allow-x policy" -j KUBE-NWPLCY-Y\n'
 DEFAULT_EGRESS = '-A KUBE-POD-FW-X -m comment --comment "default egress" -j KUBE-NWPLCY-DEFAULT\n'
-ALLOW_X = {"metadata": {"name": "allow-x"}, "spec": {"podSelector": {"matchLabels": {"app": "x"}}}}
+ALLOW_X = {
+    "metadata": {"name": "allow-x"},
+    "spec": {"podSelector": {"matchLabels": {"app": "x"}}, "policyTypes": ["Egress"]},
+}
 TERMINATING = {"metadata": {"namespace": "other", "name": "old"}, "status": {"phase": "Running"}}
 
 
@@ -185,6 +188,19 @@ class RunRowTests(unittest.TestCase):
         self.assertIn("no firewall chain", outcome.detail)
         self.assertEqual(runner.ran(" nc "), [])
 
+    def test_a_policy_jump_lost_after_the_connection_keeps_the_verdict(self):
+        runner = FakeRunner(connects=[1], rules=[RULES + POLICY_JUMP, RULES])
+        runner.policies = [ALLOW_X]
+        outcome = self.run_row(runner, row("deny"))
+        self.assertEqual((outcome.status, outcome.detail), ("PASS", "deny (timed out)"))
+
+    def test_a_default_egress_fallback_after_the_connection_is_an_error(self):
+        runner = FakeRunner(connects=[0], rules=[RULES + POLICY_JUMP, RULES + DEFAULT_EGRESS])
+        runner.policies = [ALLOW_X]
+        outcome = self.run_row(runner, row("allow"))
+        self.assertEqual(outcome.status, "ERROR")
+        self.assertIn('"default egress"', outcome.detail)
+
     def test_node_host_resolves_to_the_probe_node(self):
         runner = FakeRunner(connects=[0])
         outcome = self.run_row(runner, row("allow", "  to: {host: node, port: 6443}\n"))
@@ -243,6 +259,12 @@ class HelperTests(unittest.TestCase):
         self.assertFalse(probe.fenced(RULES + DEFAULT_EGRESS, "ns", POD, POD_IP, policies))
         elsewhere = POLICY_JUMP.replace("KUBE-POD-FW-X", "KUBE-POD-FW-Z")
         self.assertFalse(probe.fenced(RULES + elsewhere, "ns", POD, POD_IP, policies))
+
+    def test_still_fenced_rejects_only_a_lost_chain_or_a_default_egress_fallback(self):
+        self.assertTrue(probe.still_fenced(RULES, "ns", POD, POD_IP, True))
+        self.assertTrue(probe.still_fenced(RULES + DEFAULT_EGRESS, "ns", POD, POD_IP, False))
+        self.assertFalse(probe.still_fenced(RULES + DEFAULT_EGRESS, "ns", POD, POD_IP, True))
+        self.assertFalse(probe.still_fenced("", "ns", POD, POD_IP, False))
 
     def test_selects_matches_labels_and_expressions(self):
         labels = {"app": "x", "tier": "web"}

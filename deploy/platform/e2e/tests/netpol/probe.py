@@ -7,7 +7,8 @@ firewall chain with its egress jump and a jump to every NetworkPolicy that selec
 node, and a DNS lookup from the pod works, so a new pod's
 unfenced first seconds cannot pass a deny row and its not yet admitted first seconds cannot fail an
 allow row. kube-router keys local pods by IP, so a terminating pod still holding a recycled IP can
-take over the chain. The chain is checked again after the connection, and a lost chain is an error.
+take over the chain. After the connection the pod must still own its chain without falling back to
+the allowing default egress chain, or the row is an error.
 A destination without a ready endpoint, a failed DNS lookup or a probe that never got that far is an
 error, never a verdict.
 """
@@ -45,6 +46,7 @@ FINISHED_PHASES = ("Succeeded", "Failed")
 TORN_DUMP = "in kernel doesn't exist"
 POD_DEADLINE_SECONDS = 900
 RC_MARKER = "probe-rc="
+DUMP_CHARS = 2000
 
 Runner = Callable[..., object]
 
@@ -110,25 +112,39 @@ class Cluster:
             return rules
 
 
-def fenced(
-    rules: str, namespace: str, pod: str, address: str, policies: tuple[str, ...] = ()
-) -> bool:
-    """kube-router writes a per-pod chain with a reject rule, an egress jump from the pod IP and a
-    jump to each selecting policy; a chain built before the pod matched a policy falls back to the
-    allowing default chain instead."""
+def pod_chains(rules: str, namespace: str, pod: str, address: str) -> dict[str, list[str]] | None:
+    """The pod's KUBE-POD-FW chains, keyed by the chain that holds its reject rule, while an egress
+    jump from the pod IP leads into them; None when kube-router does not fence the pod."""
     lines = rules.splitlines()
     egress = f'"{namespace}/{pod} out"'
     if not any(egress in line and f"-s {address}/32 " in line for line in lines):
-        return False
+        return None
     reject = f'"{namespace}/{pod} reject"'
-    chains = {line.split()[1] for line in lines if reject in line and line.startswith("-A ")}
-    return bool(chains) and all(
-        any(
-            line.startswith(f"-A {chain} ") and f'"{namespace}/{policy} policy"' in line
-            for line in lines
-        )
-        for chain in chains
+    names = {line.split()[1] for line in lines if reject in line and line.startswith("-A ")}
+    chains = {name: [line for line in lines if line.startswith(f"-A {name} ")] for name in names}
+    return chains or None
+
+
+def fenced(
+    rules: str, namespace: str, pod: str, address: str, policies: tuple[str, ...] = ()
+) -> bool:
+    """Before the probe: the pod's chain jumps to every selecting policy. A chain built before the
+    pod matched a policy falls back to the allowing default chain instead."""
+    chains = pod_chains(rules, namespace, pod, address)
+    return chains is not None and all(
+        any(f'"{namespace}/{policy} policy"' in line for line in lines)
+        for lines in chains.values()
         for policy in policies
+    )
+
+
+def still_fenced(rules: str, namespace: str, pod: str, address: str, egress_policed: bool) -> bool:
+    """After the probe: the pod still owns its chain and, if an egress policy selects it, the
+    chain did not fall back to the allowing default chain."""
+    chains = pod_chains(rules, namespace, pod, address)
+    return chains is not None and not (
+        egress_policed
+        and any('"default egress"' in line for lines in chains.values() for line in lines)
     )
 
 
@@ -149,13 +165,13 @@ def selects(selector: dict, labels: dict[str, str]) -> bool:
     return True
 
 
-def selecting_policies(cluster: Cluster, namespace: str, labels: dict[str, str]) -> tuple[str, ...]:
+def selecting_policies(cluster: Cluster, namespace: str, labels: dict[str, str]) -> list[dict]:
     policies = cluster.json("get", "networkpolicies", "-n", namespace)
-    return tuple(
-        item["metadata"]["name"]
+    return [
+        item
         for item in policies.get("items") or []
         if selects(item["spec"].get("podSelector") or {}, labels)
-    )
+    ]
 
 
 def other_pods_with_ip(cluster: Cluster, namespace: str, pod: str, address: str) -> list[str]:
@@ -279,6 +295,7 @@ class Probe:
         self.node = ""
         self.address = ""
         self.policies: tuple[str, ...] = ()
+        self.egress_policed = False
 
     def start(self) -> tuple[str, str]:
         namespace = self.row.namespace
@@ -299,7 +316,11 @@ class Probe:
         pod = self.cluster.json("get", "pod", "-n", namespace, self.name)
         node = pod["spec"]["nodeName"]
         address = pod["status"]["podIP"]
-        self.policies = selecting_policies(self.cluster, namespace, probe_labels(self.row))
+        selecting = selecting_policies(self.cluster, namespace, probe_labels(self.row))
+        self.policies = tuple(item["metadata"]["name"] for item in selecting)
+        self.egress_policed = any(
+            "Egress" in (item["spec"].get("policyTypes") or []) for item in selecting
+        )
         wait_until(
             lambda: not other_pods_with_ip(self.cluster, namespace, self.name, address),
             FENCE_TIMEOUT_SECONDS,
@@ -323,8 +344,16 @@ class Probe:
         return fenced(rules, self.row.namespace, self.name, address, self.policies)
 
     def check_still_fenced(self) -> None:
-        if not self.fenced(self.node, self.address, max_age=0):
-            raise ProbeError("kube-router dropped the probe pod's firewall chain during the probe")
+        rules = self.cluster.node_rules(self.node, max_age=0)
+        namespace = self.row.namespace
+        if still_fenced(rules, namespace, self.name, self.address, self.egress_policed):
+            return
+        chains = pod_chains(rules, namespace, self.name, self.address) or {}
+        dump = " | ".join(line for lines in chains.values() for line in lines)
+        raise ProbeError(
+            "kube-router dropped the probe pod's firewall chain during the probe: "
+            f"{dump[:DUMP_CHARS] or 'no chain'}"
+        )
 
     def node_ip(self, node: str) -> str:
         addresses = self.cluster.json("get", "node", node)["status"]["addresses"]
