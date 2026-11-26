@@ -351,10 +351,11 @@ async fn postgres_transaction_lease_check_matches_completion_ownership()
         .await?
         .job;
     let now = Timestamp::now();
+    let held = JobLease::new(job.id, "worker-a", 1);
     let mut transaction = pool.begin().await?;
     assert!(
         !store
-            .check_lease_in_transaction(&mut transaction, job.id, "worker-a", now)
+            .check_lease_held_in_transaction(&mut transaction, &held, now)
             .await?
     );
     transaction.commit().await?;
@@ -366,34 +367,35 @@ async fn postgres_transaction_lease_check_matches_completion_ownership()
     let mut transaction = pool.begin().await?;
     assert!(
         store
-            .check_lease_in_transaction(&mut transaction, job.id, "worker-a", now)
+            .check_lease_held_in_transaction(&mut transaction, &held, now)
             .await?
     );
-    assert!(
-        !store
-            .check_lease_in_transaction(&mut transaction, job.id, "worker-b", now)
-            .await?
-    );
-    for expired in [deadline, deadline + SignedDuration::from_secs(1)] {
+    for other in [
+        JobLease::new(job.id, "worker-b", 1),
+        JobLease::new(job.id, "worker-a", 2),
+        JobLease::new(uuid::Uuid::new_v4(), "worker-a", 1),
+    ] {
         assert!(
             !store
-                .check_lease_in_transaction(&mut transaction, job.id, "worker-a", expired)
-                .await?
-        );
-        assert!(
-            !store
-                .complete_in_transaction(&mut transaction, job.id, "worker-a", expired)
+                .check_lease_held_in_transaction(&mut transaction, &other, now)
                 .await?
         );
     }
-    assert!(
-        !store
-            .check_lease_in_transaction(&mut transaction, uuid::Uuid::new_v4(), "worker-a", now)
-            .await?
-    );
+    for expired in [deadline, deadline + SignedDuration::from_secs(1)] {
+        assert!(
+            !store
+                .check_lease_held_in_transaction(&mut transaction, &held, expired)
+                .await?
+        );
+        assert!(
+            !store
+                .complete_lease_in_transaction(&mut transaction, &held, expired)
+                .await?
+        );
+    }
     assert!(matches!(
         store
-            .check_lease_in_transaction(&mut transaction, job.id, "", now)
+            .check_lease_held_in_transaction(&mut transaction, &JobLease::new(job.id, "", 1), now)
             .await,
         Err(StoreError::InvalidInput(_))
     ));
@@ -407,20 +409,16 @@ async fn postgres_transaction_lease_check_matches_completion_ownership()
     let mut transaction = pool.begin().await?;
     assert!(
         !store
-            .check_lease_in_transaction(&mut transaction, job.id, "worker-a", now)
+            .check_lease_held_in_transaction(&mut transaction, &held, now)
             .await?
     );
     assert!(
         !store
-            .complete_in_transaction(&mut transaction, job.id, "worker-a", now)
+            .complete_lease_in_transaction(&mut transaction, &held, now)
             .await?
     );
     transaction.commit().await?;
-    assert!(
-        store
-            .cancel(&JobLease::new(job.id, "worker-a", 1), now)
-            .await?
-    );
+    assert!(store.cancel(&held, now).await?);
     assert_completed_job_has_no_lease(&store, &pool).await?;
     pool.close().await;
     drop(fixture);
@@ -453,7 +451,11 @@ async fn assert_completed_job_has_no_lease(
     let mut transaction = pool.begin().await?;
     assert!(
         !store
-            .check_lease_in_transaction(&mut transaction, completed.id, "worker-a", now)
+            .check_lease_held_in_transaction(
+                &mut transaction,
+                &JobLease::new(completed.id, "worker-a", 1),
+                now
+            )
             .await?
     );
     transaction.commit().await?;
@@ -477,7 +479,11 @@ async fn postgres_transaction_lease_check_blocks_cancellation_until_commit()
     let mut transaction = pool.begin().await?;
     assert!(
         store
-            .check_lease_in_transaction(&mut transaction, job.id, "worker-a", now)
+            .check_lease_held_in_transaction(
+                &mut transaction,
+                &JobLease::new(job.id, "worker-a", 1),
+                now
+            )
             .await?
     );
     let checker_pid: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")

@@ -78,7 +78,7 @@ impl JobCancellation {
 
     /// Reports that the handler committed its result and successful job transition together.
     ///
-    /// Call this only after the transaction containing `complete_in_transaction`
+    /// Call this only after the transaction containing `complete_lease_in_transaction`
     /// commits successfully, and return success immediately afterward. The runner
     /// then records success without attempting a second completion transition.
     pub fn mark_completed_in_transaction(&self) {

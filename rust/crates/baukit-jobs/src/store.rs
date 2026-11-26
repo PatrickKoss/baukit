@@ -33,11 +33,8 @@ enum Deduplication {
 macro_rules! owned_lease_predicate {
     ($attempt:literal) => {
         concat!(
-            "status = 'running' AND locked_by = $2 AND locked_until > $3 AND ($4 OR cancel_requested_at IS NULL) AND (",
-            $attempt,
-            "::INTEGER IS NULL OR attempts = ",
-            $attempt,
-            ")"
+            "status = 'running' AND locked_by = $2 AND locked_until > $3 AND ($4 OR cancel_requested_at IS NULL) AND attempts = ",
+            $attempt
         )
     };
 }
@@ -293,40 +290,11 @@ impl PostgresJobStore {
         enqueue_deduplicated_on(transaction, job, dedupe_key, Deduplication::Pending).await
     }
 
-    /// Marks a job successful inside a caller-owned transaction.
-    ///
-    /// Product writes performed earlier in the transaction and this lease-owned
-    /// transition commit or roll back together.
-    ///
-    /// Deprecated in favour of [`Self::complete_lease_in_transaction`]: this form
-    /// does not check the attempt, so a stale attempt of the same worker id can
-    /// complete a job a sibling slot reclaimed.
-    ///
-    /// # Errors
-    ///
-    /// [`StoreError::InvalidInput`] for an invalid `worker_id` and [`StoreError::Database`]
-    /// when the update fails.
-    pub async fn complete_in_transaction(
-        &self,
-        transaction: &mut Transaction<'_, Postgres>,
-        job_id: Uuid,
-        worker_id: &str,
-        now: Timestamp,
-    ) -> Result<bool, StoreError> {
-        validate_worker_id(worker_id)?;
-        finish_on(
-            transaction,
-            LeaseKey::any_attempt(job_id, worker_id),
-            JobStatus::Succeeded,
-            now,
-        )
-        .await
-    }
-
     /// Marks the job successful inside a caller-owned transaction while `lease` owns it.
     ///
-    /// Unlike [`Self::complete_in_transaction`], a stale attempt of the same
-    /// worker never matches after a sibling slot reclaimed the job.
+    /// Product writes made earlier in the transaction commit or roll back with
+    /// it. A stale attempt of the same worker never matches after a sibling
+    /// slot reclaimed the job.
     ///
     /// # Errors
     ///
@@ -350,7 +318,11 @@ impl PostgresJobStore {
 
     /// Checks that `lease` still owns the job, locking the row until commit.
     ///
-    /// The attempt-bound form of [`Self::check_lease_in_transaction`].
+    /// Returns true only for a running job held by the lease's worker and
+    /// attempt, with a lease strictly later than `now` and no cancellation
+    /// request. Concurrent cancellation or reclaim waits for the row lock, and
+    /// claim's `SKIP LOCKED` skips the row. Time can still pass the deadline,
+    /// so completion checks the lease again with a fresh timestamp.
     ///
     /// # Errors
     ///
@@ -364,33 +336,6 @@ impl PostgresJobStore {
     ) -> Result<bool, StoreError> {
         validate_worker_id(&lease.worker_id)?;
         check_lease_on(transaction, LeaseKey::attempt(lease)?, now).await
-    }
-
-    /// Checks lease ownership without completing the job, locking it until commit.
-    ///
-    /// Deprecated in favour of [`Self::check_lease_held_in_transaction`], which
-    /// also binds the attempt number.
-    ///
-    /// Returns true only for a running job owned by `worker_id`, with a lease
-    /// strictly later than `now` and no cancellation request. `SELECT FOR UPDATE`
-    /// holds the row lock until the caller commits or rolls back. Concurrent
-    /// cancellation or reclaim waits for that lock; claim's `SKIP LOCKED`
-    /// selection skips the row. Time can still pass beyond the lease deadline,
-    /// so completion must check the lease again using a fresh timestamp.
-    ///
-    /// # Errors
-    ///
-    /// [`StoreError::InvalidInput`] for an invalid `worker_id` and [`StoreError::Database`]
-    /// when the query fails.
-    pub async fn check_lease_in_transaction(
-        &self,
-        transaction: &mut Transaction<'_, Postgres>,
-        job_id: Uuid,
-        worker_id: &str,
-        now: Timestamp,
-    ) -> Result<bool, StoreError> {
-        validate_worker_id(worker_id)?;
-        check_lease_on(transaction, LeaseKey::any_attempt(job_id, worker_id), now).await
     }
 
     /// Cancels jobs with an exact idempotency key inside the caller's transaction.
@@ -822,12 +767,11 @@ async fn enqueue_deduplicated_on(
     }
 }
 
-/// Lease identity bound into an owned write; `attempt` is `None` only for the
-/// legacy attempt-agnostic transaction helpers.
+/// Lease identity bound into an owned write.
 struct LeaseKey<'a> {
     job_id: Uuid,
     worker_id: &'a str,
-    attempt: Option<i32>,
+    attempt: i32,
 }
 
 impl<'a> LeaseKey<'a> {
@@ -835,16 +779,8 @@ impl<'a> LeaseKey<'a> {
         Ok(Self {
             job_id: lease.job_id,
             worker_id: &lease.worker_id,
-            attempt: Some(attempt_param(lease.attempt)?),
+            attempt: attempt_param(lease.attempt)?,
         })
-    }
-
-    const fn any_attempt(job_id: Uuid, worker_id: &'a str) -> Self {
-        Self {
-            job_id,
-            worker_id,
-            attempt: None,
-        }
     }
 }
 

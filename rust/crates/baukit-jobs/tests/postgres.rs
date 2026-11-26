@@ -323,7 +323,11 @@ async fn postgres_completion_is_atomic_lease_owned_and_not_duplicated() -> Resul
     let mut transaction = pool.begin().await?;
     assert!(
         store
-            .complete_in_transaction(&mut transaction, job.id, "worker-a", now)
+            .complete_lease_in_transaction(
+                &mut transaction,
+                &JobLease::new(job.id, "worker-a", 1),
+                now
+            )
             .await?
     );
     transaction.rollback().await?;
@@ -332,7 +336,11 @@ async fn postgres_completion_is_atomic_lease_owned_and_not_duplicated() -> Resul
     let mut transaction = pool.begin().await?;
     assert!(
         store
-            .complete_in_transaction(&mut transaction, job.id, "worker-a", now)
+            .complete_lease_in_transaction(
+                &mut transaction,
+                &JobLease::new(job.id, "worker-a", 1),
+                now
+            )
             .await?
     );
     transaction.commit().await?;
@@ -747,11 +755,10 @@ async fn postgres_terminal_cleanup_skips_concurrent_claim_and_completion()
     let mut completion_transaction = pool.begin().await?;
     assert!(
         store
-            .complete_in_transaction(
+            .complete_lease_in_transaction(
                 &mut completion_transaction,
-                completing.id,
-                "complete-worker",
-                completion_now,
+                &JobLease::new(completing.id, "complete-worker", 1),
+                completion_now
             )
             .await?
     );

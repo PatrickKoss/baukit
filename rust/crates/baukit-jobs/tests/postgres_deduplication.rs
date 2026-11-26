@@ -43,25 +43,20 @@ async fn terminal_jobs_release_the_key_and_running_jobs_keep_it() -> Result<(), 
             "a duplicate does not update the row"
         );
 
+        let lease = JobLease::new(claimed.id, "worker", claimed.attempts);
         match terminal_status {
             JobStatus::Succeeded => {
                 let mut transaction = pool.begin().await?;
                 assert!(
                     store
-                        .complete_in_transaction(&mut transaction, claimed.id, "worker", now)
+                        .complete_lease_in_transaction(&mut transaction, &lease, now)
                         .await?
                 );
                 transaction.commit().await?;
             }
             JobStatus::Failed => assert_eq!(
                 store
-                    .record_failure(
-                        &JobLease::new(claimed.id, "worker", claimed.attempts),
-                        false,
-                        now,
-                        "permanent",
-                        now
-                    )
+                    .record_failure(&lease, false, now, "permanent", now)
                     .await?,
                 Some(FailureDisposition::Failed)
             ),
@@ -313,7 +308,11 @@ async fn completion_between_insert_and_lookup_retries_with_a_new_job() -> Result
     let mut transaction = pool.begin().await?;
     assert!(
         store
-            .check_lease_in_transaction(&mut transaction, original.job.id, "worker", now)
+            .check_lease_held_in_transaction(
+                &mut transaction,
+                &JobLease::new(original.job.id, "worker", 1),
+                now
+            )
             .await?
     );
     let blocker: i32 = sqlx::query_scalar("SELECT pg_backend_pid()")
@@ -332,7 +331,11 @@ async fn completion_between_insert_and_lookup_retries_with_a_new_job() -> Result
     );
     assert!(
         store
-            .complete_in_transaction(&mut transaction, original.job.id, "worker", now)
+            .complete_lease_in_transaction(
+                &mut transaction,
+                &JobLease::new(original.job.id, "worker", 1),
+                now
+            )
             .await?
     );
     transaction.commit().await?;

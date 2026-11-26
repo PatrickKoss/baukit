@@ -17,8 +17,16 @@ from `JobCancellation::lease()` inside a handler.
 | `complete_in_transaction(tx, job_id, worker, now)` | `complete_lease_in_transaction(tx, &lease, now)` |
 | `check_lease_in_transaction(tx, job_id, worker, now)` | `check_lease_held_in_transaction(tx, &lease, now)` |
 
-The two old transaction methods still compile but ignore the attempt. Move
-off them. Custom `JobStore` implementations must take the new signatures.
+`complete_in_transaction` and `check_lease_in_transaction` are removed. They
+ignored the attempt, which is the bug this change fixes. Replace them like this:
+
+```rust
+let lease = cancellation.lease();
+store.check_lease_held_in_transaction(&mut transaction, lease, now).await?;
+store.complete_lease_in_transaction(&mut transaction, lease, now).await?;
+```
+
+Custom `JobStore` implementations must take the new signatures.
 
 The runner now logs a failed attempt and keeps polling instead of stopping,
 and caps a handler's `retry_after` at `retry_max`.
