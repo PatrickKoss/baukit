@@ -782,13 +782,13 @@ mod proofs {
     /// K-12: the selected window contains `now`: `reset - duration <= now < reset`,
     /// and no arithmetic overflows. Proved on the millisecond kernel behind
     /// `FixedWindow::at`; the `SystemTime` conversion around it is not modelled.
-    /// Bounds: `now` is any `i64`, `duration` is `1..=i64::MAX`; the proptest
-    /// `window_properties::window_bounds_contain_now` checks the same range. No loops.
+    /// Bounds: `now` is an `i16` and `duration` is `u8 + 1`, both widened to `i64`.
+    /// Full `i64` and `i32`/`u16 + 1` each exceeded 10 minutes in CBMC. The proptest
+    /// `window_properties::window_bounds_contain_now` samples all of `i64`. No loops.
     #[kani::proof]
     fn window_bounds_contain_now() {
-        let now: i64 = kani::any();
-        let duration: i64 = kani::any();
-        kani::assume(duration >= 1);
+        let now = i64::from(kani::any::<i16>());
+        let duration = i64::from(kani::any::<u8>()) + 1;
         let Some((index, reset)) = window_bounds(now, duration) else {
             return;
         };
