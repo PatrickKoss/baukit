@@ -673,8 +673,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         &self,
         owner: Uuid,
         id: Uuid,
-        job_id: Uuid,
-        worker_id: &str,
+        lease: &DeliveryLease,
         now: Timestamp,
     ) -> Result<(), SuiteStoreError> {
         let mut tx = self.begin_transaction().await?;
@@ -705,7 +704,11 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
             .rows_affected(),
         )?;
         if !baukit_jobs::PostgresJobStore::new(self.pool.clone())
-            .complete_in_transaction(&mut tx, job_id, worker_id, now)
+            .complete_lease_in_transaction(
+                &mut tx,
+                &baukit_jobs::JobLease::new(lease.job_id, lease.worker_id.clone(), lease.attempt),
+                now,
+            )
             .await
             .map_err(storage)?
         {

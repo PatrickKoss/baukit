@@ -68,6 +68,7 @@ mod ops;
 mod postgres;
 #[cfg(feature = "sqlx-postgres")]
 mod postgres_database;
+mod pull_conformance;
 mod purge_horizon;
 mod redis;
 mod replay_safe_mutation;
@@ -173,6 +174,10 @@ pub use postgres::{
 pub use postgres_database::{
     PostgresAppRole, PostgresDatabaseName, PostgresMigrationOwner, PostgresTestDatabase,
     PostgresTestDatabases,
+};
+pub use pull_conformance::{
+    PULL_CONFORMANCE_TABLES, PullConformanceAdapter, PullConformanceCursor, PullConformanceError,
+    PullConformancePage, PulledRow, assert_pull_conformance, check_pull_conformance,
 };
 pub use purge_horizon::{
     PullPause, PurgeHorizonAdapter, PurgeHorizonConformanceError, PurgeHorizonPull,

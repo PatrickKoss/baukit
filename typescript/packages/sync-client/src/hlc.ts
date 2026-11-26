@@ -4,6 +4,18 @@ export const HLC_COUNTERS_PER_MILLISECOND = 1_000;
 /** Largest encoded timestamp JavaScript can represent exactly. */
 export const MAX_HLC_TIMESTAMP = Number.MAX_SAFE_INTEGER;
 
+/** Default bound on how far a remote wall time may lead the local physical clock. */
+export const DEFAULT_HLC_MAX_DRIFT_MS = 24 * 60 * 60 * 1_000;
+
+/** Wall time and logical counter of a clock. */
+export type HlcStep = readonly [wallTimeMs: number, counter: number];
+
+/** Options for {@link HybridLogicalClock.open}. */
+export interface HybridLogicalClockOptions {
+  /** How far a remote wall time may lead the physical clock. Defaults to 24 hours. */
+  readonly maxDriftMs?: number;
+}
+
 /** Key passed to an injected HLC store. */
 export const HLC_STORAGE_KEY = 'hlc-state';
 
@@ -31,7 +43,9 @@ export type HybridLogicalClockErrorCode =
   | 'invalid_timestamp'
   | 'exceeds_safe_integer'
   | 'invalid_physical_clock'
-  | 'empty_device_id';
+  | 'empty_device_id'
+  | 'remote_too_far_ahead'
+  | 'invalid_max_drift';
 
 /** Invalid HLC input or exhausted JavaScript-safe timestamp space. */
 export class HybridLogicalClockError extends Error {
@@ -96,65 +110,105 @@ export function compareHybridLogicalTimestamps(left: number, right: number): -1 
   return 0;
 }
 
+/** Computes the state after a local event, without side effects. */
+export function nowStep(state: HlcStep, physical: number): HlcStep {
+  checkPhysical(physical);
+  encodeHybridLogicalTimestamp(state[0], state[1]);
+  const wall = Math.max(physical, state[0]);
+  return rollOver(wall, physical > state[0] ? 0 : state[1] + 1);
+}
+
+/** Computes the state after receiving `remote`, rejecting remotes beyond `physical + maxDriftMs`. */
+export function observeStep(
+  state: HlcStep,
+  physical: number,
+  remote: number,
+  maxDriftMs: number,
+): HlcStep {
+  const decoded = decodeHybridLogicalTimestamp(remote);
+  checkPhysical(physical);
+  encodeHybridLogicalTimestamp(state[0], state[1]);
+  checkDrift(decoded.wallTimeMs, physical, maxDriftMs);
+  const wall = Math.max(physical, state[0], decoded.wallTimeMs);
+  let counter = 0;
+  if (wall === state[0] && wall === decoded.wallTimeMs) {
+    counter = Math.max(state[1], decoded.counter) + 1;
+  } else if (wall === state[0]) {
+    counter = state[1] + 1;
+  } else if (wall === decoded.wallTimeMs) {
+    counter = decoded.counter + 1;
+  }
+  return rollOver(wall, counter);
+}
+
+/** Rejects a client timestamp whose wall time leads `serverNowMs` by more than `maxDriftMs`. */
+export function validateClientTimestamp(
+  timestamp: number,
+  serverNowMs: number,
+  maxDriftMs: number = DEFAULT_HLC_MAX_DRIFT_MS,
+): void {
+  const { wallTimeMs } = decodeHybridLogicalTimestamp(timestamp);
+  checkPhysical(serverNowMs);
+  checkDrift(wallTimeMs, serverNowMs, maxDriftMs);
+}
+
 /** Hybrid logical clock with injected time and optional persistence. */
 export class HybridLogicalClock {
   readonly #deviceId: string;
   readonly #physicalClock: HlcPhysicalClock;
   readonly #storage: HlcStorage | undefined;
+  readonly #maxDriftMs: number;
   #state: HybridLogicalClockState;
   #queue: Promise<void> = Promise.resolve();
 
   private constructor(
-    deviceId: string,
     physicalClock: HlcPhysicalClock,
     storage: HlcStorage | undefined,
     state: HybridLogicalClockState,
+    maxDriftMs: number,
   ) {
-    this.#deviceId = deviceId;
+    this.#deviceId = state.deviceId;
     this.#physicalClock = physicalClock;
     this.#storage = storage;
     this.#state = state;
+    this.#maxDriftMs = maxDriftMs;
   }
 
-  /** Opens a clock from optional injected storage. Invalid stored state resets to zero. */
+  /**
+   * Opens a clock from optional injected storage. Missing state starts at wall time zero.
+   * Corrupt or foreign stored state starts at the current physical time, so the clock does
+   * not reissue timestamps below those it handed out before.
+   */
   public static async open(
     deviceId: string,
     storage?: HlcStorage,
     physicalClock: HlcPhysicalClock = Date.now,
+    options: HybridLogicalClockOptions = {},
   ): Promise<HybridLogicalClock> {
     validateDeviceId(deviceId);
-    const persisted = storage ? parseState(await storage.get(HLC_STORAGE_KEY), deviceId) : null;
-    const state = persisted ?? freezeState({ wallTimeMs: 0, counter: 0, deviceId });
-    return new HybridLogicalClock(deviceId, physicalClock, storage, state);
+    const maxDriftMs = options.maxDriftMs ?? DEFAULT_HLC_MAX_DRIFT_MS;
+    validateMaxDrift(maxDriftMs);
+    const stored: unknown = storage ? await storage.get(HLC_STORAGE_KEY) : undefined;
+    const state = initialState(stored, deviceId, physicalClock);
+    return new HybridLogicalClock(physicalClock, storage, state, maxDriftMs);
   }
 
   /** Returns the next local timestamp after committing its state. */
   public now(): Promise<number> {
     return this.#serialized(async () => {
       const physical = readPhysicalTime(this.#physicalClock);
-      const wallTimeMs = Math.max(physical, this.#state.wallTimeMs);
-      const counter = physical > this.#state.wallTimeMs ? 0 : this.#state.counter + 1;
-      return this.#advance(wallTimeMs, counter);
+      return this.#commit(nowStep(this.#step(), physical));
     });
   }
 
-  /** Observes a remote timestamp and returns a committed timestamp ordered after it. */
+  /**
+   * Observes a remote timestamp and returns a committed timestamp ordered after it. Rejects
+   * a remote whose wall time leads the physical clock by more than the drift bound.
+   */
   public observe(remoteTimestamp: number): Promise<number> {
     return this.#serialized(async () => {
-      const remote = decodeHybridLogicalTimestamp(remoteTimestamp);
       const physical = readPhysicalTime(this.#physicalClock);
-      const wallTimeMs = Math.max(physical, this.#state.wallTimeMs, remote.wallTimeMs);
-      let counter: number;
-      if (wallTimeMs === this.#state.wallTimeMs && wallTimeMs === remote.wallTimeMs) {
-        counter = Math.max(this.#state.counter, remote.counter) + 1;
-      } else if (wallTimeMs === this.#state.wallTimeMs) {
-        counter = this.#state.counter + 1;
-      } else if (wallTimeMs === remote.wallTimeMs) {
-        counter = remote.counter + 1;
-      } else {
-        counter = 0;
-      }
-      return this.#advance(wallTimeMs, counter);
+      return this.#commit(observeStep(this.#step(), physical, remoteTimestamp, this.#maxDriftMs));
     });
   }
 
@@ -163,12 +217,11 @@ export class HybridLogicalClock {
     return freezeState(this.#state);
   }
 
-  async #advance(wallTimeMs: number, counter: number): Promise<number> {
-    if (counter >= HLC_COUNTERS_PER_MILLISECOND) {
-      wallTimeMs += 1;
-      counter = 0;
-    }
+  #step(): HlcStep {
+    return [this.#state.wallTimeMs, this.#state.counter];
+  }
 
+  async #commit([wallTimeMs, counter]: HlcStep): Promise<number> {
     const timestamp = encodeHybridLogicalTimestamp(wallTimeMs, counter);
     const nextState = freezeState({ wallTimeMs, counter, deviceId: this.#deviceId });
     if (this.#storage) await this.#storage.set(HLC_STORAGE_KEY, nextState);
@@ -176,15 +229,85 @@ export class HybridLogicalClock {
     return timestamp;
   }
 
-  #serialized<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
-    if (!this.#storage) return operation();
+  /** Re-reads shared storage so another tab's advances are never reissued. */
+  async #refresh(storage: HlcStorage): Promise<void> {
+    const stored = parseState(await storage.get(HLC_STORAGE_KEY), this.#deviceId);
+    if (stored && compareStates(stored, this.#state) > 0) this.#state = stored;
+  }
 
-    const result = this.#queue.then(operation, operation);
+  #serialized<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
+    const storage = this.#storage;
+    if (!storage) return operation();
+
+    const locked = async (): Promise<TResult> => {
+      await this.#refresh(storage);
+      return operation();
+    };
+    const locks = webLocks();
+    const run = locks ? () => locks.request(`baukit-hlc:${this.#deviceId}`, locked) : locked;
+    const result = this.#queue.then(run, run);
     this.#queue = result.then(
       () => undefined,
       () => undefined,
     );
     return result;
+  }
+}
+
+interface WebLockManager {
+  request<T>(name: string, callback: () => Promise<T>): Promise<T>;
+}
+
+function webLocks(): WebLockManager | undefined {
+  const navigatorLike = (globalThis as { navigator?: { locks?: WebLockManager } }).navigator;
+  return navigatorLike?.locks;
+}
+
+function compareStates(left: HybridLogicalClockState, right: HybridLogicalClockState): number {
+  return left.wallTimeMs - right.wallTimeMs || left.counter - right.counter;
+}
+
+function initialState(
+  stored: unknown,
+  deviceId: string,
+  physicalClock: HlcPhysicalClock,
+): HybridLogicalClockState {
+  if (stored === undefined || stored === null) {
+    return freezeState({ wallTimeMs: 0, counter: 0, deviceId });
+  }
+  const parsed = parseState(stored, deviceId);
+  if (parsed) return parsed;
+  return freezeState({ wallTimeMs: readPhysicalTime(physicalClock), counter: 0, deviceId });
+}
+
+function rollOver(wall: number, counter: number): HlcStep {
+  const step: HlcStep = counter >= HLC_COUNTERS_PER_MILLISECOND ? [wall + 1, 0] : [wall, counter];
+  encodeHybridLogicalTimestamp(step[0], step[1]);
+  return step;
+}
+
+function checkPhysical(physical: number): void {
+  if (!Number.isSafeInteger(physical) || physical < 0) {
+    throw new HybridLogicalClockError(
+      'invalid_physical_clock',
+      'Physical clock must return a non-negative safe integer',
+    );
+  }
+}
+
+function validateMaxDrift(maxDriftMs: number): void {
+  if (!Number.isSafeInteger(maxDriftMs) || maxDriftMs < 0) {
+    throw new HybridLogicalClockError('invalid_max_drift', 'HLC max drift must not be negative');
+  }
+}
+
+function checkDrift(remoteWall: number, physical: number, maxDriftMs: number): void {
+  validateMaxDrift(maxDriftMs);
+  if (remoteWall > physical + maxDriftMs) {
+    throw new HybridLogicalClockError(
+      'remote_too_far_ahead',
+      'Remote hybrid logical timestamp is too far ahead of the local clock',
+    );
   }
 }
 
@@ -224,12 +347,7 @@ function parseState(value: unknown, deviceId: string): HybridLogicalClockState |
 
 function readPhysicalTime(clock: HlcPhysicalClock): number {
   const value = Math.floor(clock());
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new HybridLogicalClockError(
-      'invalid_physical_clock',
-      'Physical clock must return a non-negative safe integer',
-    );
-  }
+  checkPhysical(value);
   return value;
 }
 

@@ -91,7 +91,7 @@ Query pending and failed work in product operations surfaces so retry schedules,
 
 ## 4. Accepted deliveries and PostgreSQL inboxes
 
-When a domain mutation and its durable consequence use one PostgreSQL database, begin a product transaction, write the domain/inbox record, call `PostgresJobStore::enqueue_in_transaction`, and commit once. When a handler writes its result in PostgreSQL, write the result and call `PostgresJobStore::complete_in_transaction` last in the same transaction.
+When a domain mutation and its durable consequence use one PostgreSQL database, begin a product transaction, write the domain/inbox record, call `PostgresJobStore::enqueue_in_transaction`, and commit once. When a handler writes its result in PostgreSQL, write the result and call `PostgresJobStore::complete_lease_in_transaction` with `JobCancellation::lease()` last in the same transaction.
 
 Pass the attempt's `JobCancellation::worker_id()` to that completion call.
 After the transaction commits, call

@@ -93,10 +93,9 @@ impl JobHandler for IdentityDeletionHandler {
                 .await
                 .map_err(|_| JobError::retryable("erasure completion database unavailable"))?;
             let owned = PostgresJobStore::new(self.store.pool().clone())
-                .complete_in_transaction(
+                .complete_lease_in_transaction(
                     &mut transaction,
-                    job.id,
-                    cancellation.worker_id(),
+                    cancellation.lease(),
                     Timestamp::now(),
                 )
                 .await

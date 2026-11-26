@@ -205,3 +205,25 @@ describe('validatePushOutcomeCoverage', () => {
     expect(acknowledged).toEqual([]);
   });
 });
+
+describe('push batch keys', () => {
+  it('never merges entities whose type and id only collide when joined', () => {
+    const ranked = rankPushBatch(
+      [
+        { changeId: 'c1', entityType: 'a:b', entityId: 'c' },
+        { changeId: 'c2', entityType: 'a', entityId: 'b:c' },
+      ],
+      { rank: () => 0, batchSize: 10 },
+    );
+    expect(ranked.map((item) => item.coveredChangeIds)).toEqual([['c1'], ['c2']]);
+  });
+
+  it('rejects outcomes for entities that were not submitted', () => {
+    expect(() =>
+      validatePushOutcomeCoverage(['a'], ['a', 'b'], {
+        submittedKey: (key) => key,
+        outcomeKey: (key) => key,
+      }),
+    ).toThrow(SyncPayloadCompatibilityError);
+  });
+});

@@ -9,6 +9,7 @@ import {
   HybridLogicalClock,
   HybridLogicalClockError,
   MAX_HLC_TIMESTAMP,
+  validateClientTimestamp,
   type HlcStorage,
   type HybridLogicalClockState,
 } from './hlc.js';
@@ -134,17 +135,58 @@ describe('HybridLogicalClock', () => {
   });
 
   it.each([
-    null,
+    'garbage',
     { wallTimeMs: -1, counter: 0, deviceId: 'device-a' },
     { wallTimeMs: 1_000, counter: 1_000, deviceId: 'device-a' },
     { wallTimeMs: Number.MAX_SAFE_INTEGER, counter: 0, deviceId: 'device-a' },
     { wallTimeMs: 1_000, counter: 2, deviceId: 'device-b' },
-  ])('resets corrupt or foreign stored state %#', async (stored) => {
+  ])('moves corrupt or foreign stored state to physical time %#', async (stored) => {
     const storage = new MemoryStorage();
     storage.values.set('hlc-state', stored);
     const clock = await HybridLogicalClock.open('device-a', storage, () => 10);
 
-    await expect(clock.now()).resolves.toBe(10_001);
+    expect(clock.snapshot().wallTimeMs).toBe(10);
+    await expect(clock.now()).resolves.toBe(10_002);
+  });
+
+  it('rejects remotes beyond the drift bound without changing state', async () => {
+    const clock = await HybridLogicalClock.open('device-a', undefined, () => 1_000, {
+      maxDriftMs: 500,
+    });
+    const snapshot = clock.snapshot();
+    await expect(clock.observe(encodeHybridLogicalTimestamp(1_501, 0))).rejects.toMatchObject({
+      code: 'remote_too_far_ahead',
+    });
+    await expect(clock.observe(MAX_HLC_TIMESTAMP)).rejects.toMatchObject({
+      code: 'remote_too_far_ahead',
+    });
+    expect(clock.snapshot()).toEqual(snapshot);
+    await expect(clock.observe(encodeHybridLogicalTimestamp(1_500, 3))).resolves.toBe(1_500_005);
+    await expect(
+      HybridLogicalClock.open('device-a', undefined, () => 0, { maxDriftMs: -1 }),
+    ).rejects.toMatchObject({ code: 'invalid_max_drift' });
+  });
+
+  it('validates client timestamps against the server clock', () => {
+    const timestamp = encodeHybridLogicalTimestamp(2_000, 0);
+    expect(() => {
+      validateClientTimestamp(timestamp, 1_000, 1_000);
+    }).not.toThrow();
+    expect(() => {
+      validateClientTimestamp(timestamp, 999, 1_000);
+    }).toThrow(HybridLogicalClockError);
+    expect(() => {
+      validateClientTimestamp(0, 1_000);
+    }).toThrow(HybridLogicalClockError);
+  });
+
+  it('two clocks sharing one storage never issue the same timestamp', async () => {
+    const storage = new MemoryStorage();
+    const first = await HybridLogicalClock.open('device-a', storage, () => 1_000);
+    const second = await HybridLogicalClock.open('device-a', storage, () => 1_000);
+    const issued = [await first.now(), await second.now(), await first.now(), await second.now()];
+    expect(issued).toEqual([...issued].sort((left, right) => left - right));
+    expect(new Set(issued).size).toBe(issued.length);
   });
 
   it('observes remote time and leaves state unchanged for invalid input', async () => {

@@ -1,0 +1,3703 @@
+{
+  "maxDriftMs": 86400000,
+  "seed": "795834131700650277",
+  "traces": [
+    {
+      "name": "random-0",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600886, 0],
+            "timestamp": 1767225600886001
+          },
+          "op": "now",
+          "physical": 1767225600886,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600886, 1],
+            "timestamp": 1767225600886002
+          },
+          "op": "observe",
+          "physical": 1767225600884,
+          "remote": 1767225600879002
+        },
+        {
+          "expect": {
+            "state": [1767225600886, 2],
+            "timestamp": 1767225600886003
+          },
+          "op": "now",
+          "physical": 1767225600882,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600886, 3],
+            "timestamp": 1767225600886004
+          },
+          "op": "now",
+          "physical": 1767225600882,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600886, 4],
+            "timestamp": 1767225600886005
+          },
+          "op": "now",
+          "physical": 1767225600881,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600886, 5],
+            "timestamp": 1767225600886006
+          },
+          "op": "now",
+          "physical": 1767225600883,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600886, 6],
+            "timestamp": 1767225600886007
+          },
+          "op": "now",
+          "physical": 1767225600884,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600886, 7],
+            "timestamp": 1767225600886008
+          },
+          "op": "observe",
+          "physical": 1767225600882,
+          "remote": 1767225600880004
+        },
+        {
+          "expect": {
+            "state": [1767225600890, 4],
+            "timestamp": 1767225600890005
+          },
+          "op": "observe",
+          "physical": 1767225600883,
+          "remote": 1767225600890004
+        },
+        {
+          "expect": {
+            "state": [1767225600890, 5],
+            "timestamp": 1767225600890006
+          },
+          "op": "now",
+          "physical": 1767225600884,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600890, 6],
+            "timestamp": 1767225600890007
+          },
+          "op": "observe",
+          "physical": 1767225600883,
+          "remote": 1767225600876003
+        },
+        {
+          "expect": {
+            "state": [1767225600890, 7],
+            "timestamp": 1767225600890008
+          },
+          "op": "observe",
+          "physical": 1767225600883,
+          "remote": 1767225600876004
+        },
+        {
+          "expect": {
+            "state": [1767225600890, 8],
+            "timestamp": 1767225600890009
+          },
+          "op": "now",
+          "physical": 1767225600882,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600890, 9],
+            "timestamp": 1767225600890010
+          },
+          "op": "now",
+          "physical": 1767225600881,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600890, 10],
+            "timestamp": 1767225600890011
+          },
+          "op": "observe",
+          "physical": 1767225600880,
+          "remote": 1767225600886004
+        },
+        {
+          "expect": {
+            "state": [1767225600890, 11],
+            "timestamp": 1767225600890012
+          },
+          "op": "observe",
+          "physical": 1767225600878,
+          "remote": 1767225600881004
+        }
+      ]
+    },
+    {
+      "name": "random-1",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600227, 0],
+            "timestamp": 1767225600227001
+          },
+          "op": "observe",
+          "physical": 1767225600227,
+          "remote": 1767225600225001
+        },
+        {
+          "expect": {
+            "state": [1767225600227, 1],
+            "timestamp": 1767225600227002
+          },
+          "op": "now",
+          "physical": 1767225600226,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600227, 2],
+            "timestamp": 1767225600227003
+          },
+          "op": "observe",
+          "physical": 1767225600227,
+          "remote": 1767225600221004
+        },
+        {
+          "expect": {
+            "state": [1767225600227, 3],
+            "timestamp": 1767225600227004
+          },
+          "op": "now",
+          "physical": 1767225600227,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600229, 0],
+            "timestamp": 1767225600229001
+          },
+          "op": "now",
+          "physical": 1767225600229,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600230, 0],
+            "timestamp": 1767225600230001
+          },
+          "op": "observe",
+          "physical": 1767225600230,
+          "remote": 1767225600222001
+        },
+        {
+          "expect": {
+            "state": [1767225600230, 1],
+            "timestamp": 1767225600230002
+          },
+          "op": "now",
+          "physical": 1767225600229,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600231, 0],
+            "timestamp": 1767225600231001
+          },
+          "op": "observe",
+          "physical": 1767225600231,
+          "remote": 1767225600229003
+        },
+        {
+          "expect": {
+            "state": [1767225600233, 0],
+            "timestamp": 1767225600233001
+          },
+          "op": "observe",
+          "physical": 1767225600233,
+          "remote": 1767225600223003
+        },
+        {
+          "expect": {
+            "state": [1767225600233, 1],
+            "timestamp": 1767225600233002
+          },
+          "op": "now",
+          "physical": 1767225600232,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600237, 4],
+            "timestamp": 1767225600237005
+          },
+          "op": "observe",
+          "physical": 1767225600231,
+          "remote": 1767225600237004
+        },
+        {
+          "expect": {
+            "state": [1767225600237, 5],
+            "timestamp": 1767225600237006
+          },
+          "op": "now",
+          "physical": 1767225600233,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600237, 6],
+            "timestamp": 1767225600237007
+          },
+          "op": "now",
+          "physical": 1767225600232,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600237, 7],
+            "timestamp": 1767225600237008
+          },
+          "op": "observe",
+          "physical": 1767225600231,
+          "remote": 1767225600227004
+        },
+        {
+          "expect": {
+            "state": [1767225600237, 8],
+            "timestamp": 1767225600237009
+          },
+          "op": "now",
+          "physical": 1767225600232,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600237, 9],
+            "timestamp": 1767225600237010
+          },
+          "op": "now",
+          "physical": 1767225600231,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "random-2",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600445, 0],
+            "timestamp": 1767225600445001
+          },
+          "op": "now",
+          "physical": 1767225600445,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 2],
+            "timestamp": 1767225600452003
+          },
+          "op": "observe",
+          "physical": 1767225600444,
+          "remote": 1767225600452002
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 3],
+            "timestamp": 1767225600452004
+          },
+          "op": "observe",
+          "physical": 1767225600445,
+          "remote": 1767225600442001
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 4],
+            "timestamp": 1767225600452005
+          },
+          "op": "now",
+          "physical": 1767225600447,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 5],
+            "timestamp": 1767225600452006
+          },
+          "op": "observe",
+          "physical": 1767225600448,
+          "remote": 1767225600447001
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 6],
+            "timestamp": 1767225600452007
+          },
+          "op": "now",
+          "physical": 1767225600447,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 7],
+            "timestamp": 1767225600452008
+          },
+          "op": "now",
+          "physical": 1767225600446,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 8],
+            "timestamp": 1767225600452009
+          },
+          "op": "now",
+          "physical": 1767225600448,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 9],
+            "timestamp": 1767225600452010
+          },
+          "op": "now",
+          "physical": 1767225600449,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 10],
+            "timestamp": 1767225600452011
+          },
+          "op": "now",
+          "physical": 1767225600449,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 11],
+            "timestamp": 1767225600452012
+          },
+          "op": "now",
+          "physical": 1767225600447,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 12],
+            "timestamp": 1767225600452013
+          },
+          "op": "observe",
+          "physical": 1767225600449,
+          "remote": 1767225600449001
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 13],
+            "timestamp": 1767225600452014
+          },
+          "op": "now",
+          "physical": 1767225600448,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 14],
+            "timestamp": 1767225600452015
+          },
+          "op": "now",
+          "physical": 1767225600447,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 15],
+            "timestamp": 1767225600452016
+          },
+          "op": "observe",
+          "physical": 1767225600446,
+          "remote": 1767225600450004
+        },
+        {
+          "expect": {
+            "state": [1767225600452, 16],
+            "timestamp": 1767225600452017
+          },
+          "op": "now",
+          "physical": 1767225600447,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "random-3",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600262, 4],
+            "timestamp": 1767225600262005
+          },
+          "op": "observe",
+          "physical": 1767225600253,
+          "remote": 1767225600262004
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 5],
+            "timestamp": 1767225600262006
+          },
+          "op": "now",
+          "physical": 1767225600253,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 6],
+            "timestamp": 1767225600262007
+          },
+          "op": "observe",
+          "physical": 1767225600251,
+          "remote": 1767225600247002
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 7],
+            "timestamp": 1767225600262008
+          },
+          "op": "now",
+          "physical": 1767225600253,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 8],
+            "timestamp": 1767225600262009
+          },
+          "op": "now",
+          "physical": 1767225600254,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 9],
+            "timestamp": 1767225600262010
+          },
+          "op": "now",
+          "physical": 1767225600255,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 10],
+            "timestamp": 1767225600262011
+          },
+          "op": "now",
+          "physical": 1767225600253,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 11],
+            "timestamp": 1767225600262012
+          },
+          "op": "observe",
+          "physical": 1767225600254,
+          "remote": 1767225600250001
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 12],
+            "timestamp": 1767225600262013
+          },
+          "op": "now",
+          "physical": 1767225600253,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 13],
+            "timestamp": 1767225600262014
+          },
+          "op": "now",
+          "physical": 1767225600252,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 14],
+            "timestamp": 1767225600262015
+          },
+          "op": "now",
+          "physical": 1767225600252,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 15],
+            "timestamp": 1767225600262016
+          },
+          "op": "observe",
+          "physical": 1767225600253,
+          "remote": 1767225600255003
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 16],
+            "timestamp": 1767225600262017
+          },
+          "op": "observe",
+          "physical": 1767225600254,
+          "remote": 1767225600246002
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 17],
+            "timestamp": 1767225600262018
+          },
+          "op": "observe",
+          "physical": 1767225600254,
+          "remote": 1767225600250002
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 18],
+            "timestamp": 1767225600262019
+          },
+          "op": "now",
+          "physical": 1767225600255,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600262, 19],
+            "timestamp": 1767225600262020
+          },
+          "op": "now",
+          "physical": 1767225600255,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "random-4",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600183, 0],
+            "timestamp": 1767225600183001
+          },
+          "op": "now",
+          "physical": 1767225600183,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600183, 1],
+            "timestamp": 1767225600183002
+          },
+          "op": "observe",
+          "physical": 1767225600183,
+          "remote": 1767225600175001
+        },
+        {
+          "expect": {
+            "state": [1767225600183, 2],
+            "timestamp": 1767225600183003
+          },
+          "op": "now",
+          "physical": 1767225600183,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 2],
+            "timestamp": 1767225600190003
+          },
+          "op": "observe",
+          "physical": 1767225600183,
+          "remote": 1767225600190002
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 3],
+            "timestamp": 1767225600190004
+          },
+          "op": "now",
+          "physical": 1767225600183,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 4],
+            "timestamp": 1767225600190005
+          },
+          "op": "observe",
+          "physical": 1767225600185,
+          "remote": 1767225600176004
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 5],
+            "timestamp": 1767225600190006
+          },
+          "op": "observe",
+          "physical": 1767225600183,
+          "remote": 1767225600178003
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 6],
+            "timestamp": 1767225600190007
+          },
+          "op": "now",
+          "physical": 1767225600181,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 7],
+            "timestamp": 1767225600190008
+          },
+          "op": "now",
+          "physical": 1767225600179,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 8],
+            "timestamp": 1767225600190009
+          },
+          "op": "observe",
+          "physical": 1767225600180,
+          "remote": 1767225600180004
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 9],
+            "timestamp": 1767225600190010
+          },
+          "op": "observe",
+          "physical": 1767225600181,
+          "remote": 1767225600185003
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 10],
+            "timestamp": 1767225600190011
+          },
+          "op": "observe",
+          "physical": 1767225600180,
+          "remote": 1767225600181003
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 11],
+            "timestamp": 1767225600190012
+          },
+          "op": "observe",
+          "physical": 1767225600181,
+          "remote": 1767225600176004
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 12],
+            "timestamp": 1767225600190013
+          },
+          "op": "observe",
+          "physical": 1767225600183,
+          "remote": 1767225600187004
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 13],
+            "timestamp": 1767225600190014
+          },
+          "op": "now",
+          "physical": 1767225600182,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600190, 14],
+            "timestamp": 1767225600190015
+          },
+          "op": "observe",
+          "physical": 1767225600180,
+          "remote": 1767225600178001
+        }
+      ]
+    },
+    {
+      "name": "random-5",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600557, 1],
+            "timestamp": 1767225600557002
+          },
+          "op": "observe",
+          "physical": 1767225600557,
+          "remote": 1767225600557001
+        },
+        {
+          "expect": {
+            "state": [1767225600559, 0],
+            "timestamp": 1767225600559001
+          },
+          "op": "observe",
+          "physical": 1767225600559,
+          "remote": 1767225600557003
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 4],
+            "timestamp": 1767225600568005
+          },
+          "op": "observe",
+          "physical": 1767225600560,
+          "remote": 1767225600568004
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 5],
+            "timestamp": 1767225600568006
+          },
+          "op": "now",
+          "physical": 1767225600558,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 6],
+            "timestamp": 1767225600568007
+          },
+          "op": "now",
+          "physical": 1767225600559,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 7],
+            "timestamp": 1767225600568008
+          },
+          "op": "observe",
+          "physical": 1767225600561,
+          "remote": 1767225600567001
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 8],
+            "timestamp": 1767225600568009
+          },
+          "op": "observe",
+          "physical": 1767225600559,
+          "remote": 1767225600559001
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 9],
+            "timestamp": 1767225600568010
+          },
+          "op": "observe",
+          "physical": 1767225600560,
+          "remote": 1767225600558004
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 10],
+            "timestamp": 1767225600568011
+          },
+          "op": "now",
+          "physical": 1767225600559,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 11],
+            "timestamp": 1767225600568012
+          },
+          "op": "now",
+          "physical": 1767225600558,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 12],
+            "timestamp": 1767225600568013
+          },
+          "op": "now",
+          "physical": 1767225600559,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 13],
+            "timestamp": 1767225600568014
+          },
+          "op": "observe",
+          "physical": 1767225600559,
+          "remote": 1767225600555003
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 14],
+            "timestamp": 1767225600568015
+          },
+          "op": "observe",
+          "physical": 1767225600561,
+          "remote": 1767225600564004
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 15],
+            "timestamp": 1767225600568016
+          },
+          "op": "now",
+          "physical": 1767225600561,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 16],
+            "timestamp": 1767225600568017
+          },
+          "op": "now",
+          "physical": 1767225600559,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600568, 17],
+            "timestamp": 1767225600568018
+          },
+          "op": "observe",
+          "physical": 1767225600557,
+          "remote": 1767225600558001
+        }
+      ]
+    },
+    {
+      "name": "random-6",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600770, 0],
+            "timestamp": 1767225600770001
+          },
+          "op": "now",
+          "physical": 1767225600770,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600772, 0],
+            "timestamp": 1767225600772001
+          },
+          "op": "observe",
+          "physical": 1767225600772,
+          "remote": 1767225600764002
+        },
+        {
+          "expect": {
+            "state": [1767225600773, 0],
+            "timestamp": 1767225600773001
+          },
+          "op": "now",
+          "physical": 1767225600773,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600773, 1],
+            "timestamp": 1767225600773002
+          },
+          "op": "now",
+          "physical": 1767225600773,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600773, 2],
+            "timestamp": 1767225600773003
+          },
+          "op": "observe",
+          "physical": 1767225600771,
+          "remote": 1767225600770002
+        },
+        {
+          "expect": {
+            "state": [1767225600773, 3],
+            "timestamp": 1767225600773004
+          },
+          "op": "observe",
+          "physical": 1767225600773,
+          "remote": 1767225600766004
+        },
+        {
+          "expect": {
+            "state": [1767225600775, 3],
+            "timestamp": 1767225600775004
+          },
+          "op": "observe",
+          "physical": 1767225600774,
+          "remote": 1767225600775003
+        },
+        {
+          "expect": {
+            "state": [1767225600780, 1],
+            "timestamp": 1767225600780002
+          },
+          "op": "observe",
+          "physical": 1767225600775,
+          "remote": 1767225600780001
+        },
+        {
+          "expect": {
+            "state": [1767225600780, 2],
+            "timestamp": 1767225600780003
+          },
+          "op": "now",
+          "physical": 1767225600776,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600780, 3],
+            "timestamp": 1767225600780004
+          },
+          "op": "now",
+          "physical": 1767225600775,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600780, 4],
+            "timestamp": 1767225600780005
+          },
+          "op": "observe",
+          "physical": 1767225600774,
+          "remote": 1767225600775004
+        },
+        {
+          "expect": {
+            "state": [1767225600780, 5],
+            "timestamp": 1767225600780006
+          },
+          "op": "observe",
+          "physical": 1767225600772,
+          "remote": 1767225600762002
+        },
+        {
+          "expect": {
+            "state": [1767225600780, 6],
+            "timestamp": 1767225600780007
+          },
+          "op": "now",
+          "physical": 1767225600773,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600780, 7],
+            "timestamp": 1767225600780008
+          },
+          "op": "now",
+          "physical": 1767225600772,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600780, 8],
+            "timestamp": 1767225600780009
+          },
+          "op": "observe",
+          "physical": 1767225600771,
+          "remote": 1767225600779001
+        },
+        {
+          "expect": {
+            "state": [1767225600780, 9],
+            "timestamp": 1767225600780010
+          },
+          "op": "observe",
+          "physical": 1767225600772,
+          "remote": 1767225600772002
+        }
+      ]
+    },
+    {
+      "name": "random-7",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600088, 0],
+            "timestamp": 1767225600088001
+          },
+          "op": "now",
+          "physical": 1767225600088,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600088, 1],
+            "timestamp": 1767225600088002
+          },
+          "op": "observe",
+          "physical": 1767225600086,
+          "remote": 1767225600087001
+        },
+        {
+          "expect": {
+            "state": [1767225600088, 2],
+            "timestamp": 1767225600088003
+          },
+          "op": "observe",
+          "physical": 1767225600087,
+          "remote": 1767225600083004
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 4],
+            "timestamp": 1767225600090005
+          },
+          "op": "observe",
+          "physical": 1767225600088,
+          "remote": 1767225600090004
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 5],
+            "timestamp": 1767225600090006
+          },
+          "op": "observe",
+          "physical": 1767225600086,
+          "remote": 1767225600077004
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 6],
+            "timestamp": 1767225600090007
+          },
+          "op": "now",
+          "physical": 1767225600086,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 7],
+            "timestamp": 1767225600090008
+          },
+          "op": "now",
+          "physical": 1767225600086,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 8],
+            "timestamp": 1767225600090009
+          },
+          "op": "now",
+          "physical": 1767225600084,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 9],
+            "timestamp": 1767225600090010
+          },
+          "op": "observe",
+          "physical": 1767225600084,
+          "remote": 1767225600081004
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 10],
+            "timestamp": 1767225600090011
+          },
+          "op": "now",
+          "physical": 1767225600083,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 11],
+            "timestamp": 1767225600090012
+          },
+          "op": "now",
+          "physical": 1767225600082,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 12],
+            "timestamp": 1767225600090013
+          },
+          "op": "observe",
+          "physical": 1767225600080,
+          "remote": 1767225600079003
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 13],
+            "timestamp": 1767225600090014
+          },
+          "op": "observe",
+          "physical": 1767225600078,
+          "remote": 1767225600080001
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 14],
+            "timestamp": 1767225600090015
+          },
+          "op": "observe",
+          "physical": 1767225600077,
+          "remote": 1767225600075002
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 15],
+            "timestamp": 1767225600090016
+          },
+          "op": "observe",
+          "physical": 1767225600077,
+          "remote": 1767225600084004
+        },
+        {
+          "expect": {
+            "state": [1767225600090, 16],
+            "timestamp": 1767225600090017
+          },
+          "op": "now",
+          "physical": 1767225600076,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "random-8",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600986, 0],
+            "timestamp": 1767225600986001
+          },
+          "op": "now",
+          "physical": 1767225600986,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600987, 0],
+            "timestamp": 1767225600987001
+          },
+          "op": "now",
+          "physical": 1767225600987,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600989, 0],
+            "timestamp": 1767225600989001
+          },
+          "op": "now",
+          "physical": 1767225600989,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600989, 1],
+            "timestamp": 1767225600989002
+          },
+          "op": "observe",
+          "physical": 1767225600989,
+          "remote": 1767225600984002
+        },
+        {
+          "expect": {
+            "state": [1767225600991, 0],
+            "timestamp": 1767225600991001
+          },
+          "op": "observe",
+          "physical": 1767225600991,
+          "remote": 1767225600985003
+        },
+        {
+          "expect": {
+            "state": [1767225600995, 3],
+            "timestamp": 1767225600995004
+          },
+          "op": "observe",
+          "physical": 1767225600992,
+          "remote": 1767225600995003
+        },
+        {
+          "expect": {
+            "state": [1767225600995, 4],
+            "timestamp": 1767225600995005
+          },
+          "op": "now",
+          "physical": 1767225600992,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600995, 5],
+            "timestamp": 1767225600995006
+          },
+          "op": "observe",
+          "physical": 1767225600992,
+          "remote": 1767225600983001
+        },
+        {
+          "expect": {
+            "state": [1767225600995, 6],
+            "timestamp": 1767225600995007
+          },
+          "op": "observe",
+          "physical": 1767225600994,
+          "remote": 1767225600992003
+        },
+        {
+          "expect": {
+            "state": [1767225600997, 2],
+            "timestamp": 1767225600997003
+          },
+          "op": "observe",
+          "physical": 1767225600994,
+          "remote": 1767225600997002
+        },
+        {
+          "expect": {
+            "state": [1767225600997, 3],
+            "timestamp": 1767225600997004
+          },
+          "op": "now",
+          "physical": 1767225600996,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600997, 4],
+            "timestamp": 1767225600997005
+          },
+          "op": "now",
+          "physical": 1767225600996,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600997, 5],
+            "timestamp": 1767225600997006
+          },
+          "op": "now",
+          "physical": 1767225600995,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600997, 6],
+            "timestamp": 1767225600997007
+          },
+          "op": "now",
+          "physical": 1767225600995,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600997, 7],
+            "timestamp": 1767225600997008
+          },
+          "op": "now",
+          "physical": 1767225600997,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225601004, 4],
+            "timestamp": 1767225601004005
+          },
+          "op": "observe",
+          "physical": 1767225600995,
+          "remote": 1767225601004004
+        }
+      ]
+    },
+    {
+      "name": "random-9",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600333, 0],
+            "timestamp": 1767225600333001
+          },
+          "op": "now",
+          "physical": 1767225600333,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600333, 1],
+            "timestamp": 1767225600333002
+          },
+          "op": "observe",
+          "physical": 1767225600332,
+          "remote": 1767225600324003
+        },
+        {
+          "expect": {
+            "state": [1767225600335, 1],
+            "timestamp": 1767225600335002
+          },
+          "op": "observe",
+          "physical": 1767225600330,
+          "remote": 1767225600335001
+        },
+        {
+          "expect": {
+            "state": [1767225600335, 2],
+            "timestamp": 1767225600335003
+          },
+          "op": "observe",
+          "physical": 1767225600329,
+          "remote": 1767225600326001
+        },
+        {
+          "expect": {
+            "state": [1767225600335, 3],
+            "timestamp": 1767225600335004
+          },
+          "op": "observe",
+          "physical": 1767225600328,
+          "remote": 1767225600330002
+        },
+        {
+          "expect": {
+            "state": [1767225600335, 4],
+            "timestamp": 1767225600335005
+          },
+          "op": "now",
+          "physical": 1767225600328,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600335, 5],
+            "timestamp": 1767225600335006
+          },
+          "op": "observe",
+          "physical": 1767225600330,
+          "remote": 1767225600331004
+        },
+        {
+          "expect": {
+            "state": [1767225600335, 6],
+            "timestamp": 1767225600335007
+          },
+          "op": "observe",
+          "physical": 1767225600328,
+          "remote": 1767225600331002
+        },
+        {
+          "expect": {
+            "state": [1767225600335, 7],
+            "timestamp": 1767225600335008
+          },
+          "op": "observe",
+          "physical": 1767225600329,
+          "remote": 1767225600334001
+        },
+        {
+          "expect": {
+            "state": [1767225600335, 8],
+            "timestamp": 1767225600335009
+          },
+          "op": "now",
+          "physical": 1767225600331,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600335, 9],
+            "timestamp": 1767225600335010
+          },
+          "op": "now",
+          "physical": 1767225600333,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600339, 1],
+            "timestamp": 1767225600339002
+          },
+          "op": "observe",
+          "physical": 1767225600335,
+          "remote": 1767225600339001
+        },
+        {
+          "expect": {
+            "state": [1767225600339, 2],
+            "timestamp": 1767225600339003
+          },
+          "op": "now",
+          "physical": 1767225600333,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600339, 3],
+            "timestamp": 1767225600339004
+          },
+          "op": "now",
+          "physical": 1767225600332,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600339, 4],
+            "timestamp": 1767225600339005
+          },
+          "op": "now",
+          "physical": 1767225600332,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600339, 5],
+            "timestamp": 1767225600339006
+          },
+          "op": "observe",
+          "physical": 1767225600331,
+          "remote": 1767225600331004
+        }
+      ]
+    },
+    {
+      "name": "random-10",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600858, 0],
+            "timestamp": 1767225600858001
+          },
+          "op": "now",
+          "physical": 1767225600858,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 2],
+            "timestamp": 1767225600861003
+          },
+          "op": "observe",
+          "physical": 1767225600859,
+          "remote": 1767225600861002
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 3],
+            "timestamp": 1767225600861004
+          },
+          "op": "observe",
+          "physical": 1767225600857,
+          "remote": 1767225600859001
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 4],
+            "timestamp": 1767225600861005
+          },
+          "op": "now",
+          "physical": 1767225600859,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 5],
+            "timestamp": 1767225600861006
+          },
+          "op": "now",
+          "physical": 1767225600860,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 6],
+            "timestamp": 1767225600861007
+          },
+          "op": "observe",
+          "physical": 1767225600861,
+          "remote": 1767225600851004
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 7],
+            "timestamp": 1767225600861008
+          },
+          "op": "now",
+          "physical": 1767225600859,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 8],
+            "timestamp": 1767225600861009
+          },
+          "op": "observe",
+          "physical": 1767225600857,
+          "remote": 1767225600856002
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 9],
+            "timestamp": 1767225600861010
+          },
+          "op": "now",
+          "physical": 1767225600857,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 10],
+            "timestamp": 1767225600861011
+          },
+          "op": "observe",
+          "physical": 1767225600858,
+          "remote": 1767225600860001
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 11],
+            "timestamp": 1767225600861012
+          },
+          "op": "now",
+          "physical": 1767225600857,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 12],
+            "timestamp": 1767225600861013
+          },
+          "op": "now",
+          "physical": 1767225600858,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 13],
+            "timestamp": 1767225600861014
+          },
+          "op": "now",
+          "physical": 1767225600859,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 14],
+            "timestamp": 1767225600861015
+          },
+          "op": "observe",
+          "physical": 1767225600859,
+          "remote": 1767225600858002
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 15],
+            "timestamp": 1767225600861016
+          },
+          "op": "now",
+          "physical": 1767225600857,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600861, 16],
+            "timestamp": 1767225600861017
+          },
+          "op": "observe",
+          "physical": 1767225600856,
+          "remote": 1767225600857001
+        }
+      ]
+    },
+    {
+      "name": "random-11",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600031, 0],
+            "timestamp": 1767225600031001
+          },
+          "op": "now",
+          "physical": 1767225600031,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600032, 4],
+            "timestamp": 1767225600032005
+          },
+          "op": "observe",
+          "physical": 1767225600029,
+          "remote": 1767225600032004
+        },
+        {
+          "expect": {
+            "state": [1767225600034, 1],
+            "timestamp": 1767225600034002
+          },
+          "op": "observe",
+          "physical": 1767225600027,
+          "remote": 1767225600034001
+        },
+        {
+          "expect": {
+            "state": [1767225600034, 2],
+            "timestamp": 1767225600034003
+          },
+          "op": "observe",
+          "physical": 1767225600025,
+          "remote": 1767225600029001
+        },
+        {
+          "expect": {
+            "state": [1767225600034, 3],
+            "timestamp": 1767225600034004
+          },
+          "op": "observe",
+          "physical": 1767225600026,
+          "remote": 1767225600017002
+        },
+        {
+          "expect": {
+            "state": [1767225600034, 4],
+            "timestamp": 1767225600034005
+          },
+          "op": "now",
+          "physical": 1767225600027,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600034, 5],
+            "timestamp": 1767225600034006
+          },
+          "op": "now",
+          "physical": 1767225600027,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600034, 6],
+            "timestamp": 1767225600034007
+          },
+          "op": "observe",
+          "physical": 1767225600027,
+          "remote": 1767225600018002
+        },
+        {
+          "expect": {
+            "state": [1767225600034, 7],
+            "timestamp": 1767225600034008
+          },
+          "op": "now",
+          "physical": 1767225600029,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600034, 8],
+            "timestamp": 1767225600034009
+          },
+          "op": "now",
+          "physical": 1767225600029,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600037, 3],
+            "timestamp": 1767225600037004
+          },
+          "op": "observe",
+          "physical": 1767225600030,
+          "remote": 1767225600037003
+        },
+        {
+          "expect": {
+            "state": [1767225600037, 4],
+            "timestamp": 1767225600037005
+          },
+          "op": "observe",
+          "physical": 1767225600028,
+          "remote": 1767225600037001
+        },
+        {
+          "expect": {
+            "state": [1767225600037, 5],
+            "timestamp": 1767225600037006
+          },
+          "op": "observe",
+          "physical": 1767225600030,
+          "remote": 1767225600035002
+        },
+        {
+          "expect": {
+            "state": [1767225600037, 6],
+            "timestamp": 1767225600037007
+          },
+          "op": "now",
+          "physical": 1767225600029,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600037, 7],
+            "timestamp": 1767225600037008
+          },
+          "op": "now",
+          "physical": 1767225600027,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600037, 8],
+            "timestamp": 1767225600037009
+          },
+          "op": "now",
+          "physical": 1767225600026,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "random-12",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600624, 0],
+            "timestamp": 1767225600624001
+          },
+          "op": "now",
+          "physical": 1767225600624,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600626, 0],
+            "timestamp": 1767225600626001
+          },
+          "op": "observe",
+          "physical": 1767225600626,
+          "remote": 1767225600617003
+        },
+        {
+          "expect": {
+            "state": [1767225600626, 1],
+            "timestamp": 1767225600626002
+          },
+          "op": "now",
+          "physical": 1767225600624,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600626, 2],
+            "timestamp": 1767225600626003
+          },
+          "op": "now",
+          "physical": 1767225600623,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600626, 3],
+            "timestamp": 1767225600626004
+          },
+          "op": "now",
+          "physical": 1767225600625,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600628, 4],
+            "timestamp": 1767225600628005
+          },
+          "op": "observe",
+          "physical": 1767225600627,
+          "remote": 1767225600628004
+        },
+        {
+          "expect": {
+            "state": [1767225600629, 3],
+            "timestamp": 1767225600629004
+          },
+          "op": "observe",
+          "physical": 1767225600628,
+          "remote": 1767225600629003
+        },
+        {
+          "expect": {
+            "state": [1767225600630, 0],
+            "timestamp": 1767225600630001
+          },
+          "op": "now",
+          "physical": 1767225600630,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600632, 0],
+            "timestamp": 1767225600632001
+          },
+          "op": "now",
+          "physical": 1767225600632,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600632, 1],
+            "timestamp": 1767225600632002
+          },
+          "op": "observe",
+          "physical": 1767225600631,
+          "remote": 1767225600624002
+        },
+        {
+          "expect": {
+            "state": [1767225600632, 2],
+            "timestamp": 1767225600632003
+          },
+          "op": "now",
+          "physical": 1767225600629,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600632, 3],
+            "timestamp": 1767225600632004
+          },
+          "op": "observe",
+          "physical": 1767225600630,
+          "remote": 1767225600628002
+        },
+        {
+          "expect": {
+            "state": [1767225600632, 4],
+            "timestamp": 1767225600632005
+          },
+          "op": "now",
+          "physical": 1767225600630,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600632, 5],
+            "timestamp": 1767225600632006
+          },
+          "op": "observe",
+          "physical": 1767225600630,
+          "remote": 1767225600631004
+        },
+        {
+          "expect": {
+            "state": [1767225600632, 6],
+            "timestamp": 1767225600632007
+          },
+          "op": "now",
+          "physical": 1767225600630,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600632, 7],
+            "timestamp": 1767225600632008
+          },
+          "op": "observe",
+          "physical": 1767225600631,
+          "remote": 1767225600623004
+        }
+      ]
+    },
+    {
+      "name": "random-13",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600204, 0],
+            "timestamp": 1767225600204001
+          },
+          "op": "now",
+          "physical": 1767225600204,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600204, 1],
+            "timestamp": 1767225600204002
+          },
+          "op": "now",
+          "physical": 1767225600202,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600204, 2],
+            "timestamp": 1767225600204003
+          },
+          "op": "now",
+          "physical": 1767225600200,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600204, 3],
+            "timestamp": 1767225600204004
+          },
+          "op": "now",
+          "physical": 1767225600202,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600204, 4],
+            "timestamp": 1767225600204005
+          },
+          "op": "now",
+          "physical": 1767225600202,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600204, 5],
+            "timestamp": 1767225600204006
+          },
+          "op": "now",
+          "physical": 1767225600202,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600204, 6],
+            "timestamp": 1767225600204007
+          },
+          "op": "now",
+          "physical": 1767225600204,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600205, 0],
+            "timestamp": 1767225600205001
+          },
+          "op": "now",
+          "physical": 1767225600205,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600205, 1],
+            "timestamp": 1767225600205002
+          },
+          "op": "now",
+          "physical": 1767225600205,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600205, 2],
+            "timestamp": 1767225600205003
+          },
+          "op": "now",
+          "physical": 1767225600204,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600205, 3],
+            "timestamp": 1767225600205004
+          },
+          "op": "now",
+          "physical": 1767225600204,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600205, 4],
+            "timestamp": 1767225600205005
+          },
+          "op": "observe",
+          "physical": 1767225600205,
+          "remote": 1767225600198003
+        },
+        {
+          "expect": {
+            "state": [1767225600210, 4],
+            "timestamp": 1767225600210005
+          },
+          "op": "observe",
+          "physical": 1767225600203,
+          "remote": 1767225600210004
+        },
+        {
+          "expect": {
+            "state": [1767225600210, 5],
+            "timestamp": 1767225600210006
+          },
+          "op": "now",
+          "physical": 1767225600202,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600210, 6],
+            "timestamp": 1767225600210007
+          },
+          "op": "observe",
+          "physical": 1767225600203,
+          "remote": 1767225600193001
+        },
+        {
+          "expect": {
+            "state": [1767225600210, 7],
+            "timestamp": 1767225600210008
+          },
+          "op": "observe",
+          "physical": 1767225600204,
+          "remote": 1767225600204001
+        }
+      ]
+    },
+    {
+      "name": "random-14",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600033, 0],
+            "timestamp": 1767225600033001
+          },
+          "op": "now",
+          "physical": 1767225600033,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600041, 4],
+            "timestamp": 1767225600041005
+          },
+          "op": "observe",
+          "physical": 1767225600035,
+          "remote": 1767225600041004
+        },
+        {
+          "expect": {
+            "state": [1767225600041, 5],
+            "timestamp": 1767225600041006
+          },
+          "op": "now",
+          "physical": 1767225600037,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600041, 6],
+            "timestamp": 1767225600041007
+          },
+          "op": "observe",
+          "physical": 1767225600036,
+          "remote": 1767225600035001
+        },
+        {
+          "expect": {
+            "state": [1767225600041, 7],
+            "timestamp": 1767225600041008
+          },
+          "op": "now",
+          "physical": 1767225600037,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600041, 8],
+            "timestamp": 1767225600041009
+          },
+          "op": "now",
+          "physical": 1767225600038,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600043, 3],
+            "timestamp": 1767225600043004
+          },
+          "op": "observe",
+          "physical": 1767225600037,
+          "remote": 1767225600043003
+        },
+        {
+          "expect": {
+            "state": [1767225600043, 4],
+            "timestamp": 1767225600043005
+          },
+          "op": "now",
+          "physical": 1767225600036,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600043, 5],
+            "timestamp": 1767225600043006
+          },
+          "op": "now",
+          "physical": 1767225600035,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600043, 6],
+            "timestamp": 1767225600043007
+          },
+          "op": "now",
+          "physical": 1767225600034,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600043, 7],
+            "timestamp": 1767225600043008
+          },
+          "op": "observe",
+          "physical": 1767225600032,
+          "remote": 1767225600040003
+        },
+        {
+          "expect": {
+            "state": [1767225600043, 8],
+            "timestamp": 1767225600043009
+          },
+          "op": "now",
+          "physical": 1767225600033,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600043, 9],
+            "timestamp": 1767225600043010
+          },
+          "op": "now",
+          "physical": 1767225600033,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600043, 10],
+            "timestamp": 1767225600043011
+          },
+          "op": "observe",
+          "physical": 1767225600031,
+          "remote": 1767225600035001
+        },
+        {
+          "expect": {
+            "state": [1767225600043, 11],
+            "timestamp": 1767225600043012
+          },
+          "op": "now",
+          "physical": 1767225600033,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600043, 12],
+            "timestamp": 1767225600043013
+          },
+          "op": "now",
+          "physical": 1767225600031,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "random-15",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600569, 0],
+            "timestamp": 1767225600569001
+          },
+          "op": "now",
+          "physical": 1767225600569,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600572, 2],
+            "timestamp": 1767225600572003
+          },
+          "op": "observe",
+          "physical": 1767225600569,
+          "remote": 1767225600572002
+        },
+        {
+          "expect": {
+            "state": [1767225600572, 3],
+            "timestamp": 1767225600572004
+          },
+          "op": "now",
+          "physical": 1767225600570,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600572, 4],
+            "timestamp": 1767225600572005
+          },
+          "op": "now",
+          "physical": 1767225600572,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600572, 5],
+            "timestamp": 1767225600572006
+          },
+          "op": "now",
+          "physical": 1767225600570,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600572, 6],
+            "timestamp": 1767225600572007
+          },
+          "op": "now",
+          "physical": 1767225600571,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600572, 7],
+            "timestamp": 1767225600572008
+          },
+          "op": "now",
+          "physical": 1767225600569,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600572, 8],
+            "timestamp": 1767225600572009
+          },
+          "op": "now",
+          "physical": 1767225600571,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600572, 9],
+            "timestamp": 1767225600572010
+          },
+          "op": "now",
+          "physical": 1767225600571,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600573, 0],
+            "timestamp": 1767225600573001
+          },
+          "op": "now",
+          "physical": 1767225600573,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600573, 1],
+            "timestamp": 1767225600573002
+          },
+          "op": "now",
+          "physical": 1767225600573,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600574, 0],
+            "timestamp": 1767225600574001
+          },
+          "op": "observe",
+          "physical": 1767225600574,
+          "remote": 1767225600565001
+        },
+        {
+          "expect": {
+            "state": [1767225600575, 0],
+            "timestamp": 1767225600575001
+          },
+          "op": "now",
+          "physical": 1767225600575,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600576, 0],
+            "timestamp": 1767225600576001
+          },
+          "op": "now",
+          "physical": 1767225600576,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600578, 1],
+            "timestamp": 1767225600578002
+          },
+          "op": "observe",
+          "physical": 1767225600578,
+          "remote": 1767225600578001
+        },
+        {
+          "expect": {
+            "state": [1767225600581, 2],
+            "timestamp": 1767225600581003
+          },
+          "op": "observe",
+          "physical": 1767225600580,
+          "remote": 1767225600581002
+        }
+      ]
+    },
+    {
+      "name": "random-16",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600150, 0],
+            "timestamp": 1767225600150001
+          },
+          "op": "observe",
+          "physical": 1767225600150,
+          "remote": 1767225600142002
+        },
+        {
+          "expect": {
+            "state": [1767225600151, 0],
+            "timestamp": 1767225600151001
+          },
+          "op": "now",
+          "physical": 1767225600151,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600151, 1],
+            "timestamp": 1767225600151002
+          },
+          "op": "observe",
+          "physical": 1767225600151,
+          "remote": 1767225600147002
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 1],
+            "timestamp": 1767225600157002
+          },
+          "op": "observe",
+          "physical": 1767225600151,
+          "remote": 1767225600157001
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 2],
+            "timestamp": 1767225600157003
+          },
+          "op": "now",
+          "physical": 1767225600151,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 3],
+            "timestamp": 1767225600157004
+          },
+          "op": "observe",
+          "physical": 1767225600150,
+          "remote": 1767225600149004
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 4],
+            "timestamp": 1767225600157005
+          },
+          "op": "observe",
+          "physical": 1767225600148,
+          "remote": 1767225600157003
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 5],
+            "timestamp": 1767225600157006
+          },
+          "op": "observe",
+          "physical": 1767225600147,
+          "remote": 1767225600144003
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 6],
+            "timestamp": 1767225600157007
+          },
+          "op": "now",
+          "physical": 1767225600145,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 7],
+            "timestamp": 1767225600157008
+          },
+          "op": "now",
+          "physical": 1767225600145,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 8],
+            "timestamp": 1767225600157009
+          },
+          "op": "observe",
+          "physical": 1767225600144,
+          "remote": 1767225600150001
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 9],
+            "timestamp": 1767225600157010
+          },
+          "op": "observe",
+          "physical": 1767225600146,
+          "remote": 1767225600150001
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 10],
+            "timestamp": 1767225600157011
+          },
+          "op": "now",
+          "physical": 1767225600144,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 11],
+            "timestamp": 1767225600157012
+          },
+          "op": "now",
+          "physical": 1767225600142,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 12],
+            "timestamp": 1767225600157013
+          },
+          "op": "now",
+          "physical": 1767225600142,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600157, 13],
+            "timestamp": 1767225600157014
+          },
+          "op": "observe",
+          "physical": 1767225600140,
+          "remote": 1767225600145003
+        }
+      ]
+    },
+    {
+      "name": "random-17",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600064, 0],
+            "timestamp": 1767225600064001
+          },
+          "op": "now",
+          "physical": 1767225600064,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600068, 4],
+            "timestamp": 1767225600068005
+          },
+          "op": "observe",
+          "physical": 1767225600064,
+          "remote": 1767225600068004
+        },
+        {
+          "expect": {
+            "state": [1767225600068, 5],
+            "timestamp": 1767225600068006
+          },
+          "op": "now",
+          "physical": 1767225600063,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600068, 6],
+            "timestamp": 1767225600068007
+          },
+          "op": "observe",
+          "physical": 1767225600061,
+          "remote": 1767225600054002
+        },
+        {
+          "expect": {
+            "state": [1767225600068, 7],
+            "timestamp": 1767225600068008
+          },
+          "op": "now",
+          "physical": 1767225600060,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600071, 1],
+            "timestamp": 1767225600071002
+          },
+          "op": "observe",
+          "physical": 1767225600062,
+          "remote": 1767225600071001
+        },
+        {
+          "expect": {
+            "state": [1767225600071, 2],
+            "timestamp": 1767225600071003
+          },
+          "op": "now",
+          "physical": 1767225600062,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600071, 3],
+            "timestamp": 1767225600071004
+          },
+          "op": "observe",
+          "physical": 1767225600062,
+          "remote": 1767225600067002
+        },
+        {
+          "expect": {
+            "state": [1767225600071, 4],
+            "timestamp": 1767225600071005
+          },
+          "op": "now",
+          "physical": 1767225600061,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600071, 5],
+            "timestamp": 1767225600071006
+          },
+          "op": "now",
+          "physical": 1767225600062,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600071, 6],
+            "timestamp": 1767225600071007
+          },
+          "op": "now",
+          "physical": 1767225600060,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600071, 7],
+            "timestamp": 1767225600071008
+          },
+          "op": "now",
+          "physical": 1767225600061,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600071, 8],
+            "timestamp": 1767225600071009
+          },
+          "op": "observe",
+          "physical": 1767225600060,
+          "remote": 1767225600060003
+        },
+        {
+          "expect": {
+            "state": [1767225600071, 9],
+            "timestamp": 1767225600071010
+          },
+          "op": "observe",
+          "physical": 1767225600059,
+          "remote": 1767225600060004
+        },
+        {
+          "expect": {
+            "state": [1767225600071, 10],
+            "timestamp": 1767225600071011
+          },
+          "op": "observe",
+          "physical": 1767225600058,
+          "remote": 1767225600065004
+        },
+        {
+          "expect": {
+            "state": [1767225600071, 11],
+            "timestamp": 1767225600071012
+          },
+          "op": "now",
+          "physical": 1767225600056,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "random-18",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600709, 0],
+            "timestamp": 1767225600709001
+          },
+          "op": "now",
+          "physical": 1767225600709,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600710, 0],
+            "timestamp": 1767225600710001
+          },
+          "op": "now",
+          "physical": 1767225600710,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600712, 0],
+            "timestamp": 1767225600712001
+          },
+          "op": "observe",
+          "physical": 1767225600712,
+          "remote": 1767225600708001
+        },
+        {
+          "expect": {
+            "state": [1767225600714, 0],
+            "timestamp": 1767225600714001
+          },
+          "op": "observe",
+          "physical": 1767225600714,
+          "remote": 1767225600707002
+        },
+        {
+          "expect": {
+            "state": [1767225600717, 3],
+            "timestamp": 1767225600717004
+          },
+          "op": "observe",
+          "physical": 1767225600715,
+          "remote": 1767225600717003
+        },
+        {
+          "expect": {
+            "state": [1767225600717, 4],
+            "timestamp": 1767225600717005
+          },
+          "op": "observe",
+          "physical": 1767225600716,
+          "remote": 1767225600713003
+        },
+        {
+          "expect": {
+            "state": [1767225600717, 5],
+            "timestamp": 1767225600717006
+          },
+          "op": "observe",
+          "physical": 1767225600716,
+          "remote": 1767225600715001
+        },
+        {
+          "expect": {
+            "state": [1767225600720, 2],
+            "timestamp": 1767225600720003
+          },
+          "op": "observe",
+          "physical": 1767225600715,
+          "remote": 1767225600720002
+        },
+        {
+          "expect": {
+            "state": [1767225600720, 3],
+            "timestamp": 1767225600720004
+          },
+          "op": "observe",
+          "physical": 1767225600717,
+          "remote": 1767225600713004
+        },
+        {
+          "expect": {
+            "state": [1767225600720, 4],
+            "timestamp": 1767225600720005
+          },
+          "op": "now",
+          "physical": 1767225600717,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600722, 4],
+            "timestamp": 1767225600722005
+          },
+          "op": "observe",
+          "physical": 1767225600717,
+          "remote": 1767225600722004
+        },
+        {
+          "expect": {
+            "state": [1767225600722, 5],
+            "timestamp": 1767225600722006
+          },
+          "op": "now",
+          "physical": 1767225600715,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600722, 6],
+            "timestamp": 1767225600722007
+          },
+          "op": "observe",
+          "physical": 1767225600717,
+          "remote": 1767225600721003
+        },
+        {
+          "expect": {
+            "state": [1767225600722, 7],
+            "timestamp": 1767225600722008
+          },
+          "op": "observe",
+          "physical": 1767225600715,
+          "remote": 1767225600717003
+        },
+        {
+          "expect": {
+            "state": [1767225600722, 8],
+            "timestamp": 1767225600722009
+          },
+          "op": "observe",
+          "physical": 1767225600715,
+          "remote": 1767225600710002
+        },
+        {
+          "expect": {
+            "state": [1767225600722, 9],
+            "timestamp": 1767225600722010
+          },
+          "op": "now",
+          "physical": 1767225600714,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "random-19",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600472, 3],
+            "timestamp": 1767225600472004
+          },
+          "op": "observe",
+          "physical": 1767225600469,
+          "remote": 1767225600472003
+        },
+        {
+          "expect": {
+            "state": [1767225600472, 4],
+            "timestamp": 1767225600472005
+          },
+          "op": "observe",
+          "physical": 1767225600467,
+          "remote": 1767225600463001
+        },
+        {
+          "expect": {
+            "state": [1767225600472, 5],
+            "timestamp": 1767225600472006
+          },
+          "op": "observe",
+          "physical": 1767225600469,
+          "remote": 1767225600463002
+        },
+        {
+          "expect": {
+            "state": [1767225600472, 6],
+            "timestamp": 1767225600472007
+          },
+          "op": "now",
+          "physical": 1767225600469,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600472, 7],
+            "timestamp": 1767225600472008
+          },
+          "op": "observe",
+          "physical": 1767225600471,
+          "remote": 1767225600464002
+        },
+        {
+          "expect": {
+            "state": [1767225600473, 0],
+            "timestamp": 1767225600473001
+          },
+          "op": "now",
+          "physical": 1767225600473,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600473, 1],
+            "timestamp": 1767225600473002
+          },
+          "op": "now",
+          "physical": 1767225600471,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600473, 2],
+            "timestamp": 1767225600473003
+          },
+          "op": "now",
+          "physical": 1767225600471,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600473, 3],
+            "timestamp": 1767225600473004
+          },
+          "op": "now",
+          "physical": 1767225600471,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600477, 1],
+            "timestamp": 1767225600477002
+          },
+          "op": "observe",
+          "physical": 1767225600473,
+          "remote": 1767225600477001
+        },
+        {
+          "expect": {
+            "state": [1767225600477, 2],
+            "timestamp": 1767225600477003
+          },
+          "op": "now",
+          "physical": 1767225600475,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600477, 3],
+            "timestamp": 1767225600477004
+          },
+          "op": "now",
+          "physical": 1767225600476,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600478, 0],
+            "timestamp": 1767225600478001
+          },
+          "op": "observe",
+          "physical": 1767225600478,
+          "remote": 1767225600474002
+        },
+        {
+          "expect": {
+            "state": [1767225600479, 0],
+            "timestamp": 1767225600479001
+          },
+          "op": "now",
+          "physical": 1767225600479,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600479, 1],
+            "timestamp": 1767225600479002
+          },
+          "op": "observe",
+          "physical": 1767225600477,
+          "remote": 1767225600467001
+        },
+        {
+          "expect": {
+            "state": [1767225600479, 2],
+            "timestamp": 1767225600479003
+          },
+          "op": "observe",
+          "physical": 1767225600476,
+          "remote": 1767225600472003
+        }
+      ]
+    },
+    {
+      "name": "random-20",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600449, 0],
+            "timestamp": 1767225600449001
+          },
+          "op": "now",
+          "physical": 1767225600449,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600449, 1],
+            "timestamp": 1767225600449002
+          },
+          "op": "now",
+          "physical": 1767225600449,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 3],
+            "timestamp": 1767225600453004
+          },
+          "op": "observe",
+          "physical": 1767225600447,
+          "remote": 1767225600453003
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 4],
+            "timestamp": 1767225600453005
+          },
+          "op": "observe",
+          "physical": 1767225600447,
+          "remote": 1767225600446003
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 5],
+            "timestamp": 1767225600453006
+          },
+          "op": "now",
+          "physical": 1767225600445,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 6],
+            "timestamp": 1767225600453007
+          },
+          "op": "observe",
+          "physical": 1767225600444,
+          "remote": 1767225600445004
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 7],
+            "timestamp": 1767225600453008
+          },
+          "op": "observe",
+          "physical": 1767225600445,
+          "remote": 1767225600441001
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 8],
+            "timestamp": 1767225600453009
+          },
+          "op": "observe",
+          "physical": 1767225600445,
+          "remote": 1767225600437004
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 9],
+            "timestamp": 1767225600453010
+          },
+          "op": "now",
+          "physical": 1767225600443,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 10],
+            "timestamp": 1767225600453011
+          },
+          "op": "now",
+          "physical": 1767225600445,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 11],
+            "timestamp": 1767225600453012
+          },
+          "op": "now",
+          "physical": 1767225600446,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 12],
+            "timestamp": 1767225600453013
+          },
+          "op": "observe",
+          "physical": 1767225600448,
+          "remote": 1767225600452004
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 13],
+            "timestamp": 1767225600453014
+          },
+          "op": "now",
+          "physical": 1767225600449,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 14],
+            "timestamp": 1767225600453015
+          },
+          "op": "observe",
+          "physical": 1767225600448,
+          "remote": 1767225600440002
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 15],
+            "timestamp": 1767225600453016
+          },
+          "op": "now",
+          "physical": 1767225600447,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600453, 16],
+            "timestamp": 1767225600453017
+          },
+          "op": "now",
+          "physical": 1767225600448,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "random-21",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600327, 0],
+            "timestamp": 1767225600327001
+          },
+          "op": "now",
+          "physical": 1767225600327,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600332, 4],
+            "timestamp": 1767225600332005
+          },
+          "op": "observe",
+          "physical": 1767225600329,
+          "remote": 1767225600332004
+        },
+        {
+          "expect": {
+            "state": [1767225600332, 5],
+            "timestamp": 1767225600332006
+          },
+          "op": "observe",
+          "physical": 1767225600328,
+          "remote": 1767225600326004
+        },
+        {
+          "expect": {
+            "state": [1767225600332, 6],
+            "timestamp": 1767225600332007
+          },
+          "op": "now",
+          "physical": 1767225600330,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600332, 7],
+            "timestamp": 1767225600332008
+          },
+          "op": "now",
+          "physical": 1767225600330,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600332, 8],
+            "timestamp": 1767225600332009
+          },
+          "op": "observe",
+          "physical": 1767225600330,
+          "remote": 1767225600320003
+        },
+        {
+          "expect": {
+            "state": [1767225600336, 3],
+            "timestamp": 1767225600336004
+          },
+          "op": "observe",
+          "physical": 1767225600328,
+          "remote": 1767225600336003
+        },
+        {
+          "expect": {
+            "state": [1767225600336, 4],
+            "timestamp": 1767225600336005
+          },
+          "op": "now",
+          "physical": 1767225600330,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600336, 5],
+            "timestamp": 1767225600336006
+          },
+          "op": "now",
+          "physical": 1767225600330,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600336, 6],
+            "timestamp": 1767225600336007
+          },
+          "op": "now",
+          "physical": 1767225600332,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600336, 7],
+            "timestamp": 1767225600336008
+          },
+          "op": "now",
+          "physical": 1767225600332,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600336, 8],
+            "timestamp": 1767225600336009
+          },
+          "op": "observe",
+          "physical": 1767225600334,
+          "remote": 1767225600326002
+        },
+        {
+          "expect": {
+            "state": [1767225600336, 9],
+            "timestamp": 1767225600336010
+          },
+          "op": "now",
+          "physical": 1767225600334,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600336, 10],
+            "timestamp": 1767225600336011
+          },
+          "op": "observe",
+          "physical": 1767225600334,
+          "remote": 1767225600336001
+        },
+        {
+          "expect": {
+            "state": [1767225600336, 11],
+            "timestamp": 1767225600336012
+          },
+          "op": "now",
+          "physical": 1767225600336,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600343, 4],
+            "timestamp": 1767225600343005
+          },
+          "op": "observe",
+          "physical": 1767225600338,
+          "remote": 1767225600343004
+        }
+      ]
+    },
+    {
+      "name": "random-22",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600526, 0],
+            "timestamp": 1767225600526001
+          },
+          "op": "now",
+          "physical": 1767225600526,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600527, 0],
+            "timestamp": 1767225600527001
+          },
+          "op": "observe",
+          "physical": 1767225600527,
+          "remote": 1767225600524003
+        },
+        {
+          "expect": {
+            "state": [1767225600534, 1],
+            "timestamp": 1767225600534002
+          },
+          "op": "observe",
+          "physical": 1767225600525,
+          "remote": 1767225600534001
+        },
+        {
+          "expect": {
+            "state": [1767225600534, 2],
+            "timestamp": 1767225600534003
+          },
+          "op": "observe",
+          "physical": 1767225600524,
+          "remote": 1767225600516002
+        },
+        {
+          "expect": {
+            "state": [1767225600534, 3],
+            "timestamp": 1767225600534004
+          },
+          "op": "now",
+          "physical": 1767225600526,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600534, 4],
+            "timestamp": 1767225600534005
+          },
+          "op": "now",
+          "physical": 1767225600528,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600534, 5],
+            "timestamp": 1767225600534006
+          },
+          "op": "observe",
+          "physical": 1767225600530,
+          "remote": 1767225600527003
+        },
+        {
+          "expect": {
+            "state": [1767225600536, 3],
+            "timestamp": 1767225600536004
+          },
+          "op": "observe",
+          "physical": 1767225600532,
+          "remote": 1767225600536003
+        },
+        {
+          "expect": {
+            "state": [1767225600536, 4],
+            "timestamp": 1767225600536005
+          },
+          "op": "observe",
+          "physical": 1767225600533,
+          "remote": 1767225600533004
+        },
+        {
+          "expect": {
+            "state": [1767225600536, 5],
+            "timestamp": 1767225600536006
+          },
+          "op": "now",
+          "physical": 1767225600532,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600536, 6],
+            "timestamp": 1767225600536007
+          },
+          "op": "now",
+          "physical": 1767225600534,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600536, 7],
+            "timestamp": 1767225600536008
+          },
+          "op": "now",
+          "physical": 1767225600533,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600541, 3],
+            "timestamp": 1767225600541004
+          },
+          "op": "observe",
+          "physical": 1767225600535,
+          "remote": 1767225600541003
+        },
+        {
+          "expect": {
+            "state": [1767225600541, 4],
+            "timestamp": 1767225600541005
+          },
+          "op": "observe",
+          "physical": 1767225600533,
+          "remote": 1767225600537003
+        },
+        {
+          "expect": {
+            "state": [1767225600541, 5],
+            "timestamp": 1767225600541006
+          },
+          "op": "now",
+          "physical": 1767225600532,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600541, 6],
+            "timestamp": 1767225600541007
+          },
+          "op": "now",
+          "physical": 1767225600532,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "random-23",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600567, 0],
+            "timestamp": 1767225600567001
+          },
+          "op": "now",
+          "physical": 1767225600567,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600567, 1],
+            "timestamp": 1767225600567002
+          },
+          "op": "now",
+          "physical": 1767225600565,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600571, 3],
+            "timestamp": 1767225600571004
+          },
+          "op": "observe",
+          "physical": 1767225600565,
+          "remote": 1767225600571003
+        },
+        {
+          "expect": {
+            "state": [1767225600571, 4],
+            "timestamp": 1767225600571005
+          },
+          "op": "now",
+          "physical": 1767225600563,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600571, 5],
+            "timestamp": 1767225600571006
+          },
+          "op": "observe",
+          "physical": 1767225600565,
+          "remote": 1767225600560002
+        },
+        {
+          "expect": {
+            "state": [1767225600571, 6],
+            "timestamp": 1767225600571007
+          },
+          "op": "now",
+          "physical": 1767225600564,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600572, 4],
+            "timestamp": 1767225600572005
+          },
+          "op": "observe",
+          "physical": 1767225600563,
+          "remote": 1767225600572004
+        },
+        {
+          "expect": {
+            "state": [1767225600572, 5],
+            "timestamp": 1767225600572006
+          },
+          "op": "observe",
+          "physical": 1767225600563,
+          "remote": 1767225600555004
+        },
+        {
+          "expect": {
+            "state": [1767225600572, 6],
+            "timestamp": 1767225600572007
+          },
+          "op": "observe",
+          "physical": 1767225600565,
+          "remote": 1767225600561004
+        },
+        {
+          "expect": {
+            "state": [1767225600574, 2],
+            "timestamp": 1767225600574003
+          },
+          "op": "observe",
+          "physical": 1767225600567,
+          "remote": 1767225600574002
+        },
+        {
+          "expect": {
+            "state": [1767225600574, 3],
+            "timestamp": 1767225600574004
+          },
+          "op": "observe",
+          "physical": 1767225600568,
+          "remote": 1767225600561001
+        },
+        {
+          "expect": {
+            "state": [1767225600574, 4],
+            "timestamp": 1767225600574005
+          },
+          "op": "now",
+          "physical": 1767225600568,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600574, 5],
+            "timestamp": 1767225600574006
+          },
+          "op": "now",
+          "physical": 1767225600569,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600574, 6],
+            "timestamp": 1767225600574007
+          },
+          "op": "now",
+          "physical": 1767225600569,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600574, 7],
+            "timestamp": 1767225600574008
+          },
+          "op": "now",
+          "physical": 1767225600571,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600574, 8],
+            "timestamp": 1767225600574009
+          },
+          "op": "observe",
+          "physical": 1767225600569,
+          "remote": 1767225600572003
+        }
+      ]
+    },
+    {
+      "name": "counter-rollover",
+      "start": [1767225600000, 998],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767225600000, 999],
+            "timestamp": 1767225600001000
+          },
+          "op": "now",
+          "physical": 1767225600000,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600001, 0],
+            "timestamp": 1767225600001001
+          },
+          "op": "now",
+          "physical": 1767225600000,
+          "remote": null
+        },
+        {
+          "expect": {
+            "state": [1767225600001, 1],
+            "timestamp": 1767225600001002
+          },
+          "op": "now",
+          "physical": 1767225600000,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "exhaustion",
+      "start": [9007199254740, 989],
+      "steps": [
+        {
+          "expect": {
+            "state": [9007199254740, 990],
+            "timestamp": 9007199254740991
+          },
+          "op": "now",
+          "physical": 9007199254740,
+          "remote": null
+        },
+        {
+          "expect": {
+            "error": "exceeds_safe_integer"
+          },
+          "op": "now",
+          "physical": 9007199254740,
+          "remote": null
+        },
+        {
+          "expect": {
+            "error": "exceeds_safe_integer"
+          },
+          "op": "now",
+          "physical": 9007199254740,
+          "remote": null
+        }
+      ]
+    },
+    {
+      "name": "drift-rejection",
+      "start": [1767225600000, 0],
+      "steps": [
+        {
+          "expect": {
+            "state": [1767312000000, 1],
+            "timestamp": 1767312000000002
+          },
+          "op": "observe",
+          "physical": 1767225600000,
+          "remote": 1767312000000001
+        },
+        {
+          "expect": {
+            "error": "remote_too_far_ahead"
+          },
+          "op": "observe",
+          "physical": 1767225600000,
+          "remote": 1767312000001001
+        },
+        {
+          "expect": {
+            "state": [1767312000000, 2],
+            "timestamp": 1767312000000003
+          },
+          "op": "now",
+          "physical": 1767225600000,
+          "remote": null
+        }
+      ]
+    }
+  ],
+  "version": 1
+}
