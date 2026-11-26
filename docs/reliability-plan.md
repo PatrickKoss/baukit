@@ -256,7 +256,7 @@ them.
   gets a promtool test that fires and one that stays quiet, a runbook under `docs/runbooks/app/`, and a
   panel in `baukit-service-overview.json`.
   Acceptance: `--step metric-names`, `--step observability-rules`, `--step observability-tests`.
-- [~] **CB3 Deferred job outcome** (D7): `JobError::deferred(delay)`; store method
+- [x] **CB3 Deferred job outcome** (D7): `JobError::deferred(delay)`; store method
   `release(job_id, worker_id, run_after, consume_attempt: bool)` that resets to `pending`, decrements
   `attempts` when not consuming, and increments `deferrals`. Migration adds `deferrals integer not null
   default 0`. `WorkerConfig.max_deferrals` (default 100). A helper maps `EgressError` with
@@ -280,7 +280,7 @@ them.
 - [x] **CB7 Remaining adopters**: browser-session IdP (`idp`), erasure Keycloak/API (`keycloak-admin`),
   MCP introspection (`mcp-introspection`), OIDC JWKS (`oidc`, with ID1). Each gets one test that an
   open circuit fails fast with the mapped error code.
-- [ ] **CB8 Template wiring**: every generated `GuardedClient` passes a destination name;
+- [x] **CB8 Template wiring**: every generated `GuardedClient` passes a destination name;
   `templates/backend/docs` shows how a product provider client picks its name and maps
   `CircuitOpen` in a job handler. Snapshot bless, `FIXTURE_FLAVORS="backend auth platform"`.
 
@@ -316,7 +316,7 @@ them.
   The in-flight gauge stops counting queued requests.
   Acceptance: a test with `max_concurrency(2)` and five slow requests; three return 503 within the
   queue timeout, two succeed.
-- [~] **IN2 Honest 5xx** (RL-21, RL-22): `ApiError::unavailable(retry_after)` returning `503` with
+- [x] **IN2 Honest 5xx** (RL-21, RL-22): `ApiError::unavailable(retry_after)` returning `503` with
   `Retry-After`. The template maps `RepositoryError::Unavailable`, `LimitError::PolicyUnavailable` and
   pool acquire timeouts to it. Closed-mode rate limiting returns `503` with a short `Retry-After`
   instead of `429` with the quota period.
@@ -327,7 +327,7 @@ them.
   `baukit_http::route_timeout(duration)` adds a per-route override inside the global one.
   Acceptance: a slowloris test (open a connection, send half a header) closes after the header
   timeout; a route with a 1 s override times out at 1 s.
-- [~] **IN4 Drain that finishes** (RL-24, RL-25): the template switches to
+- [x] **IN4 Drain that finishes** (RL-24, RL-25): the template switches to
   `serve_listener_pair_with_shutdown_order(.., ShutdownOrder::OpsOutlivesApi)` so `/readyz` reports
   draining. `baukit-runtime` validates at startup that `request_timeout + flush_reserve <
   drain_timeout` and refuses to start otherwise. Telemetry flush gets its own 3 s reserve that the
@@ -336,13 +336,13 @@ them.
   Acceptance: runtime test with a request that takes 20 s in flight at SIGTERM: it completes, readiness
   flips to 503 first, and the flush runs. A config with a 30 s request timeout and a 25 s drain fails
   validation.
-- [~] **IN5 Startup waits for dependencies** (RL-26, principle 5): a `baukit_ops::connect_with_backoff`
+- [x] **IN5 Startup waits for dependencies** (RL-26, principle 5): a `baukit_ops::connect_with_backoff`
   for the Postgres pool and the Redis store, bounded by the same startup budget as ID2. The API starts
   with the rate-limit store degraded (fail-open path) when Redis is still down after the budget,
   instead of exiting. The migrate binary gets the same connect retry.
   Acceptance: template tests where Postgres starts 5 s after the API; readiness turns green without a
   restart.
-- [~] **IN6 Database guardrails** (RL-27, RL-28): `DatabaseConfig` gains `statement_timeout` (default
+- [x] **IN6 Database guardrails** (RL-27, RL-28): `DatabaseConfig` gains `statement_timeout` (default
   just under the request timeout), `lock_timeout` (5 s), `idle_in_transaction_session_timeout` (60 s),
   `max_lifetime` (30 min) and `idle_timeout` (10 min), applied in `after_connect`. The template
   repository uses `baukit_ops::acquire`/`begin` everywhere so the pool metrics fire. The worker pool
@@ -375,13 +375,13 @@ them.
 - [x] **WK3 Jitter** (RL-42): `retry_delay` uses `baukit_resilience::Backoff` with full jitter.
   Acceptance: the shared backoff vectors; a statistical test that 1000 jobs failed at once spread
   over the window.
-- [~] **WK4 Honest queue metrics** (RL-43, RL-44): the age query uses `MIN(run_after)` over
+- [x] **WK4 Honest queue metrics** (RL-43, RL-44): the age query uses `MIN(run_after)` over
   `status = 'pending' AND run_after <= now AND job_type = ANY($types)`. `worker_queue_depth` and
   `cancelled` outcome added. The alert text uses `queue`. Sample age and depth every 15 s, not every
   loop.
   Acceptance: a test where a future recurring slot exists and the gauge reports 0; promtool test for
   the corrected alert.
-- [~] **WK5 Per-key fairness** (RL-45): `NewJob::concurrency_key(key)` plus
+- [x] **WK5 Per-key fairness** (RL-45): `NewJob::concurrency_key(key)` plus
   `WorkerConfig.max_per_key` (default 1 for suite deliveries, unset otherwise). The claim query skips
   pending rows whose key already has `max_per_key` running. Suite deliveries use the peer app as key.
   Acceptance: a hanging peer occupies at most `max_per_key` slots while deliveries to another peer
@@ -394,7 +394,7 @@ them.
   inline erasure path commits its lock before the IdP call and re-checks state after it.
   Acceptance: tests for both terminal paths; a test that no transaction is open during the IdP call
   (pool size 1 and a concurrent query succeeds).
-- [~] **WK8 Requeue API** (RL-48): `PostgresJobStore::requeue_failed(job_type, ids)` and a
+- [x] **WK8 Requeue API** (RL-48): `PostgresJobStore::requeue_failed(job_type, ids)` and a
   `baukit-ops` admin hook the template exposes on the ops listener only. The runbook replaces its SQL
   with it.
 - [x] **WK9 Polling cost** (RL-49): idle backoff on empty claims (250 ms doubling to 5 s, reset on a
@@ -420,7 +420,7 @@ them.
 - [x] **CL5 Degraded UI** (RL-66): `networkFirst` gains a network timeout (default 4 s) before falling
   back to cache; the web and mobile templates get a top-level error boundary and an "unavailable, retrying
   at HH:MM" banner driven by the cooldown, with a11y tests and localized strings.
-- [ ] **CL6 compose** (RL-67): `restart: unless-stopped` everywhere and a `/readyz` healthcheck for the
+- [x] **CL6 compose** (RL-67): `restart: unless-stopped` everywhere and a `/readyz` healthcheck for the
   backend service.
 
 ## Phase PL: platform
@@ -467,7 +467,7 @@ FX tests come first in each phase where they apply: write the failing test, then
   `RedisFault` (reusing `stop_master`), and a `Toxiproxy` fixture with latency, reset-peer and timeout
   toxics. The image is pinned by version and digest per the pin policy; testcontainers labels follow the
   existing cleanup convention.
-- [ ] **FX2 Generated dependency-loss tests** (RL-89): the backend template ships a test that stops
+- [x] **FX2 Generated dependency-loss tests** (RL-89): the backend template ships a test that stops
   Postgres and asserts `/healthz` 200, `/readyz` 503, API `503` with `Retry-After` within the queue
   timeout, and recovery after restart without a process restart. The worker template ships a test that
   pauses Postgres mid-job (WK1). Both run in every fixture flavor that has the component.
@@ -574,7 +574,7 @@ PL6; FX3, FX4; REL1-REL3.
 |---|---|---|
 | rel-tpl-clients | CL2, CL4 (mobile), CL5 (templates) | merged, verified |
 | rel-platform | PL6, PL4 rest, PL7 rest | merged after two rounds plus an orchestrator guard; e2e and trivy pending |
-| rel-tpl-backend | CB3 helper, WK5 suite key, CB8, IN2/IN4/IN5/IN6 wiring, migrations, CL6, FX2 | round 2 running |
+| rel-tpl-backend | CB3 helper, WK5 suite key, CB8, IN2/IN4/IN5/IN6 wiring, migrations, CL6, FX2 | merged after three rounds; Docker and fixture gates pending |
 | rel-fx | FX3 platform e2e cases, FX4 k6 load smoke | running |
 | orchestrator | RC3 contract doc, REL1-REL3, Docker and fixture gates | after the agents merge |
 
@@ -753,3 +753,15 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
     - Pause Postgres mid-job in the worker test.
     - Add the threat-model row.
 - rel-fx started on FX3 and FX4. It writes them only; I run them.
+- rel-tpl-backend merged after three rounds.
+  - Library: `egress_job_error` (feature `egress`), and suite deliveries keyed `suite-peer:{peer}` with
+    `max_per_key` 1.
+  - Templates ship jobs migrations 0009 and 0010, with a sync test. The platform migration is now 0011.
+  - Template wiring: budgeted startup connects, the drain budget with `OpsOutlivesApi` and the flush
+    reserve, `store_health()` readiness, a worker `statement_timeout` from the job timeout, a 60 s
+    lease, IN2 503 plus Retry-After, `RecurringJob` for retention, and compose `restart` with a
+    `--probe-readiness` healthcheck.
+  - FX2 Docker tests: Postgres outage, late start, and a pause mid-job.
+  - The requeue route is mounted on the ops router only with a token (J-06, router tests).
+  - Round 3 split auth-native `index.ts` (563 to 475 lines, allowlist entry dropped). rel-tpl-clients
+    had pushed it past its entry, and I missed it because I ran `baukit check` before that merge.
