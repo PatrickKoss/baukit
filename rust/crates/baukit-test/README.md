@@ -317,6 +317,54 @@ let pool = sqlx::PgPool::connect(database.connection_url()).await?;
 `PostgresDatabaseName::new` accepts only `[a-z_][a-z0-9_]*` up to 63 bytes, so the template and the
 clone are never built from free text. `drop_named` drops a database by such a name with `WITH (FORCE)`.
 
+### Dependency faults
+
+`PostgresTestContainer::fault` and `RedisTestContainer::fault` return a handle with `stop`, `start`,
+`pause` and `resume`. `stop` kills the container at once. `start` brings it back with its data and
+waits until `pg_isready` or `redis-cli ping` passes. `pause` freezes the server, so open connections
+get no answer until `resume`. Docker gives a restarted container a new random port, so start the
+fixture with `PostgresTestOptions::with_stable_host_port` or `start_redis_with_stable_port` when the
+test restarts it. `start` fails with `FaultError::PortChanged` otherwise.
+`RedisSentinelTestContainer::master_fault` does the same for the Sentinel master.
+
+```rust,no_run
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+let postgres = baukit_test::PostgresTestOptions::new()
+    .with_stable_host_port()
+    .start()
+    .await?;
+postgres.fault().stop().await?;
+// assert the service under test reports the outage
+postgres.fault().start().await?;
+# Ok(())
+# }
+```
+
+`start_toxiproxy` runs Toxiproxy 2.13.0 for faults on the wire. A proxy forwards a host port to an
+upstream, and toxics change the traffic: `Toxic::Latency` delays it, `Toxic::ResetPeer` sends a TCP
+reset, and `Toxic::Timeout` holds the data and closes the connection later. One fixture publishes 8
+proxy ports.
+
+```rust,no_run
+# async fn example() -> Result<(), Box<dyn std::error::Error>> {
+use std::time::Duration;
+use baukit_test::{Toxic, ToxicDirection};
+
+let redis = baukit_test::start_redis().await?;
+let toxiproxy = baukit_test::start_toxiproxy().await?;
+let proxy = toxiproxy.proxy_container("redis", redis.container(), 6379).await?;
+let toxic = proxy
+    .add_toxic(
+        Toxic::Latency { latency: Duration::from_millis(500), jitter: Duration::ZERO },
+        ToxicDirection::Downstream,
+    )
+    .await?;
+// connect the client under test to `proxy.address()`
+proxy.remove_toxic(&toxic).await?;
+# Ok(())
+# }
+```
+
 These need a running Docker daemon. Mark tests that use them `#[ignore]` and run them explicitly:
 
 ```bash

@@ -1,7 +1,8 @@
 //! Shared integration fixtures and conformance assertions for Baukit services.
 //!
 //! The crate provides Docker-backed PostgreSQL, direct Redis, and Redis Sentinel
-//! fixtures, compact test tracing, Prometheus contract checks, in-process or network
+//! fixtures with stop, restart, pause and resume faults, a Toxiproxy fixture for latency
+//! and connection faults, compact test tracing, Prometheus contract checks, in-process or network
 //! operations-endpoint checks, OpenAPI drift and response assertions, resource-limit
 //! conformance checks, tombstone purge-horizon conformance, replay-safe mutation conformance,
 //! and a mock OIDC/JWKS issuer with JWT fixtures.
@@ -52,6 +53,7 @@ mod data_subject;
 #[cfg(feature = "data-subject")]
 mod data_subject_conformance;
 mod erasure;
+mod fault;
 #[cfg(test)]
 mod fixture_tests;
 mod http_client;
@@ -72,6 +74,7 @@ mod purge_horizon;
 mod redis;
 mod replay_safe_mutation;
 mod security_probe;
+mod toxiproxy;
 mod tracing;
 mod webhook;
 
@@ -119,6 +122,7 @@ pub use erasure::{
     CleanupKind, ErasureConformanceError, OwnedResourceCheck, ProductProfileErasureAdapter,
     check_product_profile_erasure_conformance,
 };
+pub use fault::{FaultError, PostgresFault, RedisFault};
 pub use http_client::test_http_client;
 pub use identity_deleter::FakeIdentityAccountDeleter;
 pub use identity_erasure::{
@@ -177,7 +181,7 @@ pub use purge_horizon::{
 };
 pub use redis::{
     RedisSentinelTestContainer, RedisTestContainer, RedisTestError, start_redis,
-    start_redis_sentinel,
+    start_redis_sentinel, start_redis_with_stable_port,
 };
 pub use replay_safe_mutation::{
     CommitCheckpoint, InjectedRollback, ReplayConformanceError, ReplayConformanceInputs,
@@ -185,6 +189,9 @@ pub use replay_safe_mutation::{
     assert_replay_safe_mutation_conformance, check_replay_safe_mutation_conformance,
 };
 pub use security_probe::{OperationFixtures, RouteExclusion, SecurityTarget};
+pub use toxiproxy::{
+    Toxic, ToxicDirection, Toxiproxy, ToxiproxyError, ToxiproxyProxy, start_toxiproxy,
+};
 pub use tracing::init_test_tracing;
 pub use webhook::{
     MAX_SCRIPTED_WEBHOOK_BODY_BYTES, ReceivedWebhookRequest, ScriptedWebhookReceiver,
