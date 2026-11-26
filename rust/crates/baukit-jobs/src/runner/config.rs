@@ -1,6 +1,10 @@
+use std::time::Duration;
+
 use crate::RunnerError;
 
 use super::WorkerConfig;
+
+const MIN_LEASE_DURATION: Duration = Duration::from_secs(1);
 
 pub(super) fn validate_config(
     config: &WorkerConfig,
@@ -31,6 +35,7 @@ pub(super) fn validate_config(
         ),
         ("retry_initial", config.retry_initial),
         ("retry_max", config.retry_max),
+        ("queue_sample_interval", config.queue_sample_interval),
     ] {
         if duration.is_zero() {
             return Err(RunnerError::InvalidConfig(format!(
@@ -43,9 +48,9 @@ pub(super) fn validate_config(
             "retry_initial must not exceed retry_max".to_owned(),
         ));
     }
-    if config.lease_duration <= config.job_timeout {
+    if config.lease_duration < MIN_LEASE_DURATION {
         return Err(RunnerError::InvalidConfig(
-            "lease_duration must exceed job_timeout".to_owned(),
+            "lease_duration must be at least one second".to_owned(),
         ));
     }
     if job_types.is_empty() || job_types.iter().any(|job| job.trim().is_empty()) {

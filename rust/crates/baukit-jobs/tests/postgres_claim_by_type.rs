@@ -509,6 +509,7 @@ fn runner(
             cancellation_poll_interval: POLL,
             retry_initial: POLL,
             retry_max: Duration::from_secs(1),
+            ..WorkerConfig::default()
         },
     )
 }

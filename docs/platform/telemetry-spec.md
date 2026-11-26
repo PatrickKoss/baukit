@@ -58,11 +58,16 @@ Every process emits `build_info{version, commit, rust_version} = 1` (gauge).
 
 | Metric | Type | Labels |
 |---|---|---|
-| `worker_job_runs_total` | counter | `job_kind`, `outcome` (`success`, `failure`, `retry`) |
+| `worker_job_runs_total` | counter | `job_kind`, `outcome` (`success`, `failure`, `retry`, `cancelled`) |
 | `worker_job_duration_seconds` | histogram | `job_kind` |
 | `worker_queue_oldest_age_seconds` | gauge | `queue` |
+| `worker_queue_depth` | gauge | `queue`, `status` (`pending`, `running`, `failed`) |
+| `worker_lease_expired_total` | counter | `queue` |
+| `worker_job_deferrals_total` | counter | `job_kind` |
 
 `job_kind` and `queue` values are static identifiers defined in code, never derived from payload data.
+
+`worker_queue_oldest_age_seconds` is the time since `run_after` of the oldest due pending row of the runner's job types; rows scheduled for later count as zero. Runners sample it and `worker_queue_depth` every 15 s by default.
 
 ### 2.5 Label rules
 

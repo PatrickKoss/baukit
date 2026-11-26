@@ -4,6 +4,14 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+- Breaking: add `migrations/0005_baukit_jobs_deferrals.sql` and `POSTGRES_MIGRATION_0005_SQL`. Products must apply it before upgrading; `Job` gains `deferrals`.
+- Breaking: `JobStore` gains `heartbeat`, `release` and `queue_depth`, and `oldest_pending_age` takes the runner's job types. The age now counts from `MIN(run_after)` of due pending rows of those types.
+- Add `JobError::deferred(message, delay)`, `WorkerConfig::max_deferrals` (default 100) and `worker_job_deferrals_total{job_kind}`.
+- The runner survives store errors: it logs, retries with jittered backoff capped at 30 s and exposes `WorkerRunner::store_health()` for readiness. A lost lease is a warning plus `worker_lease_expired_total{queue}`. `RunnerError::LeaseLost` is removed.
+- Running attempts renew their lease every third of `lease_duration`, which now defaults to 60 s and no longer has to exceed `job_timeout`.
+- On shutdown the runner cancels attempts, waits until `release_reserve` before the drain deadline, then releases unfinished attempts without consuming an attempt. A claim that commits after shutdown began is released.
+- Add `worker_queue_depth{queue,status}`, sample queue gauges every `queue_sample_interval` (default 15 s), and count cancellations as `outcome="cancelled"`.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

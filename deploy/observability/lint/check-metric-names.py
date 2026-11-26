@@ -34,6 +34,9 @@ SPEC_METRICS = (
     "worker_job_runs_total",
     "worker_job_duration_seconds",
     "worker_queue_oldest_age_seconds",
+    "worker_queue_depth",
+    "worker_lease_expired_total",
+    "worker_job_deferrals_total",
 )
 
 PROMETHEUS_BUILTINS = {"up"}

@@ -8,8 +8,8 @@
 //! # Outbox composition
 //!
 //! Products must copy [`POSTGRES_MIGRATION_SQL`],
-//! [`POSTGRES_MIGRATION_0002_SQL`], [`POSTGRES_MIGRATION_0003_SQL`], and
-//! [`POSTGRES_MIGRATION_0004_SQL`] into their own ordered SQLx migrations.
+//! [`POSTGRES_MIGRATION_0002_SQL`], [`POSTGRES_MIGRATION_0003_SQL`],
+//! [`POSTGRES_MIGRATION_0004_SQL`], and [`POSTGRES_MIGRATION_0005_SQL`] into their own ordered SQLx migrations.
 //! The crate never runs migrations at process startup. Use
 //! [`PostgresJobStore::enqueue_in_transaction`] when a domain write and its
 //! job need to commit atomically. Likewise, a handler which writes PostgreSQL can
@@ -22,13 +22,19 @@
 //!
 //! A runner claims only rows whose `job_type` its handler declares in
 //! [`JobHandler::job_types`]. Several runners with disjoint handlers can share
-//! one outbox; a type no running handler declares stays pending and keeps the
-//! oldest-age gauge rising.
+//! one outbox; a type no running handler declares stays pending and no runner
+//! reports it in its queue gauges.
 //!
 //! [`WorkerRunner::run`] accepts [`baukit_runtime::ShutdownToken`]. It stops
-//! claiming after shutdown begins and drains its `JoinSet`; when spawned through
-//! [`baukit_runtime::TaskSupervisor`], the process-wide drain deadline remains
-//! the single upper bound.
+//! claiming after shutdown begins, cancels every running attempt's
+//! [`JobCancellation`], waits for attempts until
+//! [`WorkerConfig::release_reserve`] before the drain deadline, and then
+//! releases the attempts still running back to pending without consuming an
+//! attempt. Running attempts renew their lease every third of
+//! [`WorkerConfig::lease_duration`].
+//!
+//! Store errors inside the loop are logged and retried with capped, jittered
+//! backoff. [`WorkerRunner::store_health`] exposes the result for readiness.
 
 #![deny(missing_docs)]
 
@@ -42,10 +48,10 @@ mod store;
 pub use error::{JobError, RunnerError, StoreError};
 pub use model::{
     CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobFailureReason,
-    JobStatus, NewJob, TerminalJobCleanupOutcome, TerminalJobCutoffs,
+    JobStatus, NewJob, QueueDepth, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
 pub use recurring::{FixedUtcInterval, FixedUtcIntervalError, FixedUtcJitter, FixedUtcSlot};
-pub use runner::{JobCancellation, JobFuture, JobHandler, WorkerConfig, WorkerRunner};
+pub use runner::{JobCancellation, JobFuture, JobHandler, StoreHealth, WorkerConfig, WorkerRunner};
 pub use store::{JobStore, MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE, PostgresJobStore, StoreFuture};
 
 /// Reference PostgreSQL schema for product-owned migrations.
@@ -80,3 +86,11 @@ pub const POSTGRES_MIGRATION_0003_SQL: &str =
 /// keys before switching producers to either deduplicated enqueue method.
 pub const POSTGRES_MIGRATION_0004_SQL: &str =
     include_str!("../migrations/0004_baukit_jobs_active_deduplication.sql");
+
+/// Adds the `deferrals` counter used by [`JobError::deferred`] and shutdown release.
+///
+/// Apply this SQL as a new product-owned migration after
+/// [`POSTGRES_MIGRATION_0004_SQL`] before running this version. The store reads
+/// and writes the column on every claim and release.
+pub const POSTGRES_MIGRATION_0005_SQL: &str =
+    include_str!("../migrations/0005_baukit_jobs_deferrals.sql");

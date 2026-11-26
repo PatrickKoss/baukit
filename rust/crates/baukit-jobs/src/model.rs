@@ -62,7 +62,9 @@ pub struct Job {
     pub failure_reason: Option<JobFailureReason>,
     /// Time cancellation was requested for a running job.
     pub cancel_requested_at: Option<Timestamp>,
-    /// Creation timestamp used for queue-age telemetry.
+    /// Releases that returned an attempt instead of consuming it.
+    pub deferrals: u32,
+    /// Creation timestamp.
     pub created_at: Timestamp,
     /// Timestamp of the latest lifecycle transition.
     pub updated_at: Timestamp,
@@ -147,6 +149,17 @@ pub enum FailureDisposition {
     Retry,
     /// The job moved to terminal failure.
     Failed,
+}
+
+/// Outbox row counts for a runner's job types, sampled for telemetry.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct QueueDepth {
+    /// Pending rows, including rows scheduled for later.
+    pub pending: u64,
+    /// Running rows, including rows whose lease has expired.
+    pub running: u64,
+    /// Rows in terminal failure that cleanup has not removed yet.
+    pub failed: u64,
 }
 
 /// Per-status timestamps used to select terminal jobs for cleanup.
