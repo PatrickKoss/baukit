@@ -5,6 +5,10 @@ All notable changes to `baukit-http` are documented here.
 ## [Unreleased]
 
 - The lifecycle middleware sets a request deadline (start plus `request_timeout`), and `route_timeout` tightens it. `current_deadline()` reads it; `baukit-egress` caps outbound timeouts with it.
+- New `ApiError::unavailable(retry_after)` returns `503 unavailable` with `Retry-After`, rounded up to whole seconds with a floor of 1 second.
+- Overload no longer queues without bound. A request that gets no concurrency permit within `HttpOptions::with_queue_timeout` (default 1 s) is shed with `503` and `Retry-After: 1`, and counted in `http_requests_shed_total{reason="concurrency"}` (`HTTP_REQUESTS_SHED_TOTAL`). Shed requests are logged at debug level.
+- New `route_timeout(duration)` layer (`RouteTimeoutLayer`, `RouteTimeout`) tightens the timeout of a single route inside the global request timeout and answers the standard `504 request_timeout`.
+- `Deadline` is re-exported from `baukit-resilience`.
 
 ## [0.30.6] - 2026-11-26
 

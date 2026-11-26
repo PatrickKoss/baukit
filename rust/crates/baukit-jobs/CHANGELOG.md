@@ -12,6 +12,11 @@ All notable changes to `baukit-jobs` are documented here.
 - Running attempts renew their lease every third of `lease_duration`, which now defaults to 60 s and no longer has to exceed `job_timeout`.
 - On shutdown the runner cancels attempts, waits until `release_reserve` before the drain deadline, then releases unfinished attempts without consuming an attempt. A claim that commits after shutdown began is released; one still running at that point is left to lease expiry. Shutdown releases do not count as deferrals.
 - Add `worker_queue_depth{queue,status}`, sample queue gauges every `queue_sample_interval` (default 15 s), and count cancellations as `outcome="cancelled"`.
+- Job retries and store-error backoff use full jitter from `baukit_resilience::Backoff`. `WorkerRunner::with_jitter` injects the jitter source.
+- Breaking: add `migrations/0006_baukit_jobs_concurrency_key.sql` and `POSTGRES_MIGRATION_0006_SQL`, applied after 0005. `NewJob::concurrency_key` and `WorkerConfig::max_per_key` limit running jobs per key, so one slow destination cannot fill every slot.
+- New `RecurringJob` (`RecurringJobError`, `WorkerRunner::with_recurring`). The runner enqueues the next slot after a terminal failure, and `enqueue_initial` skips past a failed current slot, so a failed run no longer stops the chain.
+- New `PostgresJobStore::requeue_failed` (`MAX_REQUEUE_BATCH_SIZE`) puts failed jobs of one type back to pending. `baukit-ops` serves it on the ops port.
+- Idle polling backs off from `poll_interval` (250 ms) to `WorkerConfig::idle_poll_max` (5 s), and `cancellation_poll_interval` defaults to 2 s instead of 250 ms. Enqueue sends `NOTIFY` on `JOB_ENQUEUED_CHANNEL`, and `spawn_enqueue_listener` with `WorkerRunner::with_wakeup` (`JobWakeup`) wakes an idle runner early.
 
 ## [0.30.6] - 2026-11-26
 

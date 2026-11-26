@@ -4,7 +4,13 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
-- OIDC and browser-session discovery retries now run on `baukit_resilience::startup::retry_within`. Their behaviour and errors are unchanged.
+- `OidcVerifier::discover` and `BrowserSessionState::discover` retry transient discovery failures with jittered backoff within a startup budget (60 s, `OidcConfig::with_startup_budget`, `BrowserSessionConfig::with_startup_budget`) through `baukit_resilience::startup::retry_within`. After the budget they fail with the new `VerificationError::DiscoveryBudgetExhausted` or `IdpDiscoveryError::BudgetExhausted`. Issuer mismatches and invalid documents still fail at once.
+- `OidcConfig::with_jwks_uri` sets the JWKS URL and skips discovery, so the verifier starts without the issuer. Invalid URLs fail with the new `OidcConfigError::InvalidJwksUri`.
+- The OIDC verifier no longer holds a lock across the JWKS fetch. A set is fresh for the cache TTL (300 s) and then serves known key ids for a stale window (one hour, `with_jwks_stale_window`) while one background task refreshes it. An unknown key id forces at most one refresh per 10 s. Past the stale window verification fails with the new `VerificationError::JwksUnavailable`, which `is_unavailable()` reports and the extractor answers with `503`.
+- New public `key_set_cache` module: `KeySetCache<S>` behind a `KeySource` port, with `KeySet`, `KeySourceFuture` and `KeyLookupError`, for any signing-key source.
+- New metric `auth_key_cache_requests_total{source,result}`.
+- Breaking: `RateLimitOutcome` gains `Unavailable { retry_after }`. A browser-session rate limit that fails closed answers `503` with `Retry-After` instead of `429`.
+- Outbound clients use the destination names `oidc` and `idp`. An open `idp` circuit maps to `idp_unavailable` (503) and keeps the session.
 
 ## [0.30.6] - 2026-11-26
 
