@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A refresh without an entitlement clears the held one.
+- `useOrganizationPlan` rejects an answer for another organization.
+
 ## 0.30.5
 
 ### Patch Changes

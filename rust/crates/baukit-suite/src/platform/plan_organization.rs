@@ -110,9 +110,73 @@ impl OrganizationGrants for HubOrganizations {
     }
 }
 
-/// The cache key of an organization grant in the `EntitlementCache`.
+/// The cache subject of an organization grant in the `EntitlementCache`. It is
+/// stored under [`organization_cache_product`], so it never meets an account's key.
 pub fn organization_cache_subject(organization_id: Uuid) -> String {
     format!("organization:{organization_id}")
+}
+
+/// The cache product key of organization grants. Product ids never hold `/`,
+/// so no account snapshot shares it, whatever its suite subject.
+pub fn organization_cache_product(product_id: &str) -> String {
+    format!("{product_id}/organizations")
+}
+
+impl OrganizationRole {
+    /// Whether a member with this role may act where `required` is asked for.
+    /// Owners pass every check, admins pass `Admin` and `Member`, and `Billing`
+    /// passes only `Billing`.
+    pub fn satisfies(self, required: OrganizationRole) -> bool {
+        match self {
+            Self::Owner => true,
+            Self::Admin => matches!(required, Self::Admin | Self::Member),
+            Self::Billing => required == Self::Billing,
+            Self::Member => required == Self::Member,
+        }
+    }
+}
+
+/// A product-supplied answer to "may this subject act for this organization",
+/// used by `StandaloneAccountPlan`, which has no hub directory.
+#[async_trait]
+pub trait OrganizationMembership: Send + Sync {
+    async fn role(
+        &self,
+        organization_id: Uuid,
+        suite_subject: &str,
+    ) -> Result<Option<OrganizationRole>, PlanError>;
+}
+
+/// Standalone membership for a product without organizations: nobody is a member.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NoOrganizationMembers;
+#[async_trait]
+impl OrganizationMembership for NoOrganizationMembers {
+    async fn role(&self, _: Uuid, _: &str) -> Result<Option<OrganizationRole>, PlanError> {
+        Ok(None)
+    }
+}
+
+type MemberKey = (Uuid, String);
+
+/// Cached roles plus an eviction epoch per organization and per member. A hub read
+/// that started before an eviction must not write its answer back afterwards.
+#[derive(Default)]
+struct MemberCache {
+    roles: HashMap<MemberKey, (OrganizationRole, i64)>,
+    member_epochs: HashMap<MemberKey, u64>,
+    organization_epochs: HashMap<Uuid, u64>,
+}
+impl MemberCache {
+    fn epoch(&self, key: &MemberKey) -> (u64, u64) {
+        (
+            self.organization_epochs
+                .get(&key.0)
+                .copied()
+                .unwrap_or_default(),
+            self.member_epochs.get(key).copied().unwrap_or_default(),
+        )
+    }
 }
 
 /// Organization grants and memberships for `HubAccountPlan`, cached for
@@ -121,20 +185,57 @@ pub(crate) struct HubOrganizationPlans {
     product_id: String,
     grants: Arc<dyn OrganizationGrants>,
     cache: Arc<dyn EntitlementCache>,
-    members: Mutex<HashMap<(Uuid, String), i64>>,
+    clock: Arc<dyn PlatformClock>,
+    members: Mutex<MemberCache>,
 }
 impl HubOrganizationPlans {
     pub(crate) fn new(
         product_id: String,
         grants: Arc<dyn OrganizationGrants>,
         cache: Arc<dyn EntitlementCache>,
+        clock: Arc<dyn PlatformClock>,
     ) -> Self {
         Self {
             product_id,
             grants,
             cache,
+            clock,
             members: Mutex::default(),
         }
+    }
+
+    pub(crate) fn set_clock(&mut self, clock: Arc<dyn PlatformClock>) {
+        self.clock = clock;
+    }
+
+    fn now(&self) -> i64 {
+        self.clock.now().as_second()
+    }
+
+    pub(crate) fn evict(&self, organization_id: Uuid, suite_subject: &str) {
+        let key = (organization_id, suite_subject.to_owned());
+        let mut members = self.lock_members();
+        members.roles.remove(&key);
+        let epoch = members.member_epochs.entry(key).or_default();
+        *epoch = epoch.wrapping_add(1);
+    }
+
+    pub(crate) async fn evict_organization(&self, organization_id: Uuid) -> Result<(), PlanError> {
+        {
+            let mut members = self.lock_members();
+            members
+                .roles
+                .retain(|(organization, _), _| *organization != organization_id);
+            let epoch = members
+                .organization_epochs
+                .entry(organization_id)
+                .or_default();
+            *epoch = epoch.wrapping_add(1);
+        }
+        self.cache
+            .forget(&organization_cache_subject(organization_id))
+            .await
+            .map_err(|_| PlanError::EntitlementsUnavailable)
     }
 
     pub(crate) async fn refresh(
@@ -160,11 +261,11 @@ impl HubOrganizationPlans {
         };
         let snapshot = EntitlementSnapshot {
             subject: organization_cache_subject(organization_id),
-            product_id: self.product_id.clone(),
+            product_id: organization_cache_product(&self.product_id),
             tier: summary.tier,
             features,
             revision: summary.revision,
-            valid_until: now().saturating_add(ORGANIZATION_CACHE_TTL_SECONDS),
+            valid_until: self.now().saturating_add(ORGANIZATION_CACHE_TTL_SECONDS),
             grace_until: None,
         };
         self.cache
@@ -186,8 +287,8 @@ impl HubOrganizationPlans {
             .cache
             .get(
                 &organization_cache_subject(organization_id),
-                &self.product_id,
-                now(),
+                &organization_cache_product(&self.product_id),
+                self.now(),
             )
             .await
             .map_err(|_| PlanError::EntitlementsUnavailable)?;
@@ -197,41 +298,47 @@ impl HubOrganizationPlans {
         }
     }
 
-    pub(crate) async fn is_member(
+    pub(crate) async fn membership(
         &self,
         organization_id: Uuid,
         suite_subject: &str,
-    ) -> Result<bool, PlanError> {
+    ) -> Result<Option<OrganizationRole>, PlanError> {
         let key = (organization_id, suite_subject.to_owned());
-        if self.cached_member(&key) {
-            return Ok(true);
+        if let Some(role) = self.cached_member(&key) {
+            return Ok(Some(role));
         }
-        let member = self.hub_member(organization_id, suite_subject).await?;
-        if member {
-            self.lock_members()
-                .insert(key, now().saturating_add(ORGANIZATION_CACHE_TTL_SECONDS));
+        let started = self.lock_members().epoch(&key);
+        let role = self.hub_member(organization_id, suite_subject).await?;
+        let Some(role) = role else {
+            return Ok(None);
+        };
+        let until = self.now().saturating_add(ORGANIZATION_CACHE_TTL_SECONDS);
+        let mut members = self.lock_members();
+        if members.epoch(&key) != started {
+            return Ok(None);
         }
-        Ok(member)
+        members.roles.insert(key, (role, until));
+        Ok(Some(role))
     }
 
-    fn lock_members(&self) -> std::sync::MutexGuard<'_, HashMap<(Uuid, String), i64>> {
+    fn lock_members(&self) -> std::sync::MutexGuard<'_, MemberCache> {
         self.members
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn cached_member(&self, key: &(Uuid, String)) -> bool {
-        let now = now();
+    fn cached_member(&self, key: &MemberKey) -> Option<OrganizationRole> {
+        let now = self.now();
         let mut members = self.lock_members();
-        members.retain(|_, until| now < *until);
-        members.contains_key(key)
+        members.roles.retain(|_, (_, until)| now < *until);
+        members.roles.get(key).map(|(role, _)| *role)
     }
 
     async fn hub_member(
         &self,
         organization_id: Uuid,
         suite_subject: &str,
-    ) -> Result<bool, PlanError> {
+    ) -> Result<Option<OrganizationRole>, PlanError> {
         let mut seen = HashSet::new();
         let mut cursor: Option<String> = None;
         for _ in 0..MAX_MEMBERSHIP_PAGES {
@@ -240,15 +347,15 @@ impl HubOrganizationPlans {
                 .subject_organizations(suite_subject, cursor.as_deref())
                 .await
                 .map_err(|_| PlanError::EntitlementsUnavailable)?;
-            if page
+            if let Some(item) = page
                 .items
                 .iter()
-                .any(|item| item.organization_id == organization_id)
+                .find(|item| item.organization_id == organization_id)
             {
-                return Ok(true);
+                return Ok(Some(item.account_role));
             }
             let Some(next) = page.next_cursor else {
-                return Ok(false);
+                return Ok(None);
             };
             if !seen.insert(next.clone()) {
                 return Err(PlanError::EntitlementsUnavailable);
@@ -275,6 +382,63 @@ pub(crate) fn organization_entitlement(
     }
 }
 
-fn now() -> i64 {
-    jiff::Timestamp::now().as_second()
+/// Evicts cached memberships and organization grants when the hub reports a
+/// change, then passes every event to `next`. Without it a removed member keeps
+/// access until `ORGANIZATION_CACHE_TTL_SECONDS` pass.
+pub struct MembershipEvictionHandler {
+    plan: Arc<dyn AccountPlan>,
+    next: Arc<dyn PlatformEventHandler>,
+}
+impl MembershipEvictionHandler {
+    pub fn new(plan: Arc<dyn AccountPlan>, next: Arc<dyn PlatformEventHandler>) -> Self {
+        Self { plan, next }
+    }
+
+    async fn evict(&self, event: &PlatformEvent) -> Result<(), PlatformError> {
+        match event.kind() {
+            PlatformEventKind::OrganizationMembershipChanged(changed) => {
+                self.plan
+                    .evict_member(changed.organization_id, &changed.suite_subject)
+                    .await;
+            }
+            PlatformEventKind::SeatChanged(changed) => {
+                self.plan
+                    .evict_member(changed.organization_id, &changed.suite_subject)
+                    .await;
+            }
+            PlatformEventKind::OrganizationUpdated(changed) => {
+                self.plan
+                    .evict_organization(changed.organization_id)
+                    .await
+                    .map_err(|_| PlatformError::Unavailable)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+#[async_trait]
+impl PlatformEventHandler for MembershipEvictionHandler {
+    async fn prepare(
+        &self,
+        event: &PlatformEvent,
+    ) -> Result<Option<Arc<dyn PlatformEventHandler>>, PlatformError> {
+        self.prepare_at(event, SystemPlatformClock.now()).await
+    }
+    async fn prepare_at(
+        &self,
+        event: &PlatformEvent,
+        now: jiff::Timestamp,
+    ) -> Result<Option<Arc<dyn PlatformEventHandler>>, PlatformError> {
+        self.evict(event).await?;
+        self.next.prepare_at(event, now).await
+    }
+    async fn handle(
+        &self,
+        event: &PlatformEvent,
+        context: &mut EventContext<'_>,
+    ) -> Result<(), PlatformError> {
+        self.evict(event).await?;
+        self.next.handle(event, context).await
+    }
 }

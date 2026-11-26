@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- Breaking: tickets with duplicate JSON keys or non-integer numbers are rejected, matching Rust. `kid` length counts UTF-8 bytes. `manageUrl` rejects backslashes and ports above 65535.
+- `SuiteSession` validates the server authorize URL; `authorizeUrlPolicy.allowedOrigins` pins its origin.
+
 ## 0.30.5
 
 ### Patch Changes

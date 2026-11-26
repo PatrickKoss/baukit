@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { suiteAuthorizeUrl, validateSuiteAuthorizePeer } from './urls.js';
+import { checkedAuthorizeUrl, suiteAuthorizeUrl, validateSuiteAuthorizePeer } from './urls.js';
 
 const input = {
   client: 'alpha',
@@ -90,4 +90,27 @@ describe('suite authorize URLs', () => {
       );
     },
   );
+});
+
+describe('checkedAuthorizeUrl', () => {
+  it('accepts an https URL on an allowed origin', () => {
+    expect(
+      checkedAuthorizeUrl('https://beta.example/suite/authorize?r=1', {
+        allowedOrigins: ['https://beta.example'],
+      }),
+    ).toBe('https://beta.example/suite/authorize?r=1');
+  });
+
+  it.each([
+    'javascript:alert(1)',
+    'http://beta.example/suite/authorize',
+    'https://user@beta.example/suite/authorize',
+    'https://evil.example/suite/authorize',
+    'https://beta.example/suite/authorize#x',
+    'not a url',
+  ])('rejects %s', (value) => {
+    expect(() => checkedAuthorizeUrl(value, { allowedOrigins: ['https://beta.example'] })).toThrow(
+      TypeError,
+    );
+  });
 });

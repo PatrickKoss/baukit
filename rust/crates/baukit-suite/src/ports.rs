@@ -259,12 +259,13 @@ pub trait SuiteLinkStore: Send + Sync {
         worker_id: &str,
         now: Timestamp,
     ) -> Result<(), SuiteStoreError>;
+    /// `EventIdConflict` when a stored event with this id differs in payload hash,
+    /// event type or occurrence time.
     async fn inbox_in_transaction(
         &self,
         tx: &mut sqlx::PgConnection,
         link_id: Uuid,
-        event_id: &str,
-        payload_hash: [u8; 32],
+        event: InboxIdentity<'_>,
     ) -> Result<InboxLookup, SuiteStoreError>;
     /// Stores the outcome and updates the link's last_received_at in this transaction.
     async fn record_inbound_in_transaction(
@@ -345,6 +346,15 @@ pub enum SuitePeerError {
     Rejected { status: u16, code: String },
     #[error("suite peer returned an invalid response")]
     InvalidResponse,
+}
+
+/// What a stored inbound event must match to count as a duplicate.
+#[derive(Clone, Copy, Debug)]
+pub struct InboxIdentity<'a> {
+    pub event_id: &'a str,
+    pub event_type: &'a str,
+    pub occurred_at: Timestamp,
+    pub payload_hash: [u8; 32],
 }
 
 pub struct SuiteSignedCall<'a> {

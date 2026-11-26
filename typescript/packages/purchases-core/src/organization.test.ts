@@ -231,3 +231,16 @@ describe('useFeature with an organization plan', () => {
     expect(organizationEntitlement).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('useOrganizationPlan answer check', () => {
+  it('refuses a plan for another organization than the one asked for', async () => {
+    const backend = {
+      organizationEntitlement: () =>
+        Promise.resolve(organizationPlan(AGENCY, 'pro', [AUTOMATION], 3)),
+    };
+    const view = renderHook(() => useOrganizationPlan(backend, STUDIO));
+    await waitFor(() => {
+      expect(view.result.current.status).toBe('not_accessible');
+    });
+  });
+});

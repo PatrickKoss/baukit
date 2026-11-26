@@ -16,7 +16,7 @@ mod outbox;
 pub use erasure::{PostgresSuiteErasure, SuiteErasureOwnerLookup};
 mod rows;
 pub use outbox::PostgresSuiteEventOutbox;
-use rows::{CodeRow, LinkRow, RequestRow};
+use rows::{CodeRow, DeliveryRow, InboxRow, LinkRow, RequestRow, same_microsecond};
 
 pub type SuiteTransaction = Transaction<'static, Postgres>;
 
@@ -710,24 +710,28 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         &self,
         tx: &mut sqlx::PgConnection,
         id: Uuid,
-        event: &str,
-        hash: [u8; 32],
+        event: InboxIdentity<'_>,
     ) -> Result<InboxLookup, SuiteStoreError> {
         let row = sqlx::query_as::<_, InboxRow>(
             r#"SELECT payload_hash,
+            event_type,
+            occurred_at,
             outcome,
             ledger_entry_id FROM suite_inbound_events WHERE link_id=$1
             AND event_id=$2"#,
         )
         .bind(id)
-        .bind(event)
+        .bind(event.event_id)
         .fetch_optional(&mut *tx)
         .await
         .map_err(storage)?;
         let Some(row) = row else {
             return Ok(InboxLookup::New);
         };
-        if row.payload_hash != hash {
+        if row.payload_hash != event.payload_hash
+            || row.event_type != event.event_type
+            || !same_microsecond(row.occurred_at.to_jiff(), event.occurred_at)
+        {
             return Err(SuiteStoreError::EventIdConflict);
         }
         Ok(InboxLookup::Duplicate(AppliedOutcome {
@@ -930,23 +934,6 @@ async fn try_lock_owner(tx: &mut sqlx::PgConnection, owner: Uuid) -> Result<bool
         .map_err(storage)
 }
 
-#[derive(sqlx::FromRow)]
-struct InboxRow {
-    payload_hash: Vec<u8>,
-    outcome: String,
-    ledger_entry_id: Option<String>,
-}
-#[derive(sqlx::FromRow)]
-struct DeliveryRow {
-    id: Uuid,
-    event_type: Option<String>,
-    status: String,
-    attempt_count: i32,
-    last_error: Option<String>,
-    created_at: jiff_sqlx::Timestamp,
-    updated_at: jiff_sqlx::Timestamp,
-}
-
 impl PostgresSuiteLinkStore {
     async fn refresh_failures(&self, id: Uuid) -> Result<(), SuiteStoreError> {
         let pending: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM suite_failed_delivery_jobs WHERE link_id=$1 AND NOT accounted)")
@@ -955,54 +942,6 @@ impl PostgresSuiteLinkStore {
             let mut tx = self.begin_transaction().await?;
             account_failures(&mut tx, id).await?;
             self.commit_transaction(tx).await?;
-        }
-        Ok(())
-    }
-    /// Links that a peer may still consider active. Call before the erasure transaction.
-    ///
-    /// # Errors
-    ///
-    /// Returns the `sqlx::Error` when the link query fails.
-    pub async fn links_for_owner_erasure(
-        &self,
-        owner: Uuid,
-    ) -> Result<Vec<SuiteLink>, sqlx::Error> {
-        links_for_erasure(&self.pool, owner).await
-    }
-    /// Deletes suite jobs and every suite row in the product's erasure transaction.
-    /// Follow the crate lock order when locking product rows.
-    /// `PostgresSuiteErasure` takes the owner locks before calling this method.
-    ///
-    /// # Errors
-    ///
-    /// Returns `sqlx::Error::Protocol` when the owner lock fails and the `sqlx::Error` of any failed
-    /// select or delete.
-    pub async fn erase_owner(
-        &self,
-        connection: &mut sqlx::PgConnection,
-        owner: Uuid,
-    ) -> Result<(), sqlx::Error> {
-        lock_owner(connection, owner)
-            .await
-            .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
-        sqlx::query_scalar::<_, Uuid>(
-            "SELECT id FROM suite_links WHERE user_id=$1 ORDER BY id FOR UPDATE",
-        )
-        .bind(owner)
-        .fetch_all(&mut *connection)
-        .await?;
-        sqlx::query("DELETE FROM job_outbox WHERE job_type=ANY($2) AND payload->>'link_id' IN (SELECT id::text FROM suite_links WHERE user_id=$1)")
-            .bind(owner).bind(SUITE_JOB_TYPES.as_slice()).execute(&mut *connection).await?;
-        for statement in [
-            "DELETE FROM suite_inbound_events WHERE user_id=$1",
-            "DELETE FROM suite_link_codes WHERE user_id=$1",
-            "DELETE FROM suite_link_requests WHERE user_id=$1",
-            "DELETE FROM suite_links WHERE user_id=$1",
-        ] {
-            sqlx::query(statement)
-                .bind(owner)
-                .execute(&mut *connection)
-                .await?;
         }
         Ok(())
     }

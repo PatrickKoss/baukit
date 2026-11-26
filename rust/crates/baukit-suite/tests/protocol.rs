@@ -2129,6 +2129,10 @@ async fn signed_route(
         .header(
             "x-suite-signature",
             sign_webhook_hmac_sha256(key, timestamp, &event.event_id, &raw),
+        )
+        .header(
+            SUITE_SIGNATURE_V2_HEADER,
+            sign_suite_v2(key, timestamp, &event.event_id, replay, &raw),
         );
     if replay {
         request = request.header("x-suite-replay", "1");
@@ -2165,6 +2169,10 @@ async fn receiving_deduplicates_conflicts_isolates_owners_and_makes_replay_rewar
     let wrong_key = signed_route(&app, other_link.id, &event, &key, false).await?;
     assert_eq!(wrong_key.0, StatusCode::UNAUTHORIZED);
     assert_eq!(wrong_key.1["error"]["code"], "suite_signature_invalid");
+    let mut moved = event.clone();
+    moved.occurred_at -= SignedDuration::from_secs(60);
+    let moved = signed_route(&app, link.id, &moved, &key, false).await?;
+    assert_eq!(moved.1["error"]["code"], "suite_event_id_conflict");
     event.payload.insert("minutes".into(), json!(25));
     let conflict = signed_route(&app, link.id, &event, &key, false).await?;
     assert_eq!(conflict.0, StatusCode::UNPROCESSABLE_ENTITY);

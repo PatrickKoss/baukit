@@ -26,6 +26,7 @@ baukit-integrations = { path = "../crates/baukit-integrations", features = ["oau
 baukit-mcp = { path = "../crates/baukit-mcp" }
 baukit-push = { path = "../crates/baukit-push" }
 baukit-ratelimit = { path = "../crates/baukit-ratelimit" }
+baukit-suite = { path = "../crates/baukit-suite", features = ["platform"] }
 baukit-sync = { path = "../crates/baukit-sync", default-features = false }
 baukit-test = { path = "../crates/baukit-test", default-features = false }
 jiff = { version = "1.0.0", features = ["serde"] }
@@ -34,6 +35,7 @@ percent-encoding = "2.3.2"
 url = "2.5.8"
 serde_json = "1.0.151"
 tokio = { version = "1.53.2", features = ["full"] }
+uuid = "1"
 tower = { version = "0.5.3", features = ["util"] }
 
 [profile.release]
@@ -96,8 +98,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "suite_event_decode"
+path = "fuzz_targets/suite_event_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "egress_destination"
 path = "fuzz_targets/egress_destination.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "suite_ticket"
+path = "fuzz_targets/suite_ticket.rs"
 test = false
 doc = false
 bench = false
@@ -147,6 +163,13 @@ bench = false
 [[bin]]
 name = "xff_resolve"
 path = "fuzz_targets/xff_resolve.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "suite_return_url"
+path = "fuzz_targets/suite_return_url.rs"
 test = false
 doc = false
 bench = false

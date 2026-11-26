@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 - Suite envelope validation reports `event_in_future` for an event more than the allowed clock skew ahead, the new `baukit-events` code. `SUITE_ERROR_CODES` and the shared fixture list it.
+- Breaking: `StandaloneAccountPlan::new` takes an `OrganizationMembership` port; nobody is an organization member by default. See docs/migrations/suite-correctness-hardening.md.
+- Breaking: the `<scheme>-dev` return URL needs `suite.allow_dev_scheme = true`.
+- Breaking: peers sign the replay flag with `x-suite-signature-v2`; a replay flag without it is refused with 401.
+- Membership caches evict on hub events; a hub read in flight during eviction is discarded.
+- A reused event id with another type or time is a conflict, not a duplicate.
+- Credits answers from the hub are checked against the request; a settled reservation is refused on replay.
+- A free refresh replaces a cached paid plan. Organization grants use their own cache product key.
+- Ticket `manageUrl` follows the same host and port rule as the TS client.
 
 ## [0.30.5] - 2026-11-26
 

@@ -10,7 +10,6 @@ ts-max-lines = 500
 "rust/crates/baukit-auth/src/api_token.rs" = 1822
 "rust/crates/baukit-jobs/src/runner.rs" = 1057
 "rust/crates/baukit-suite/src/adapters/http.rs" = 1033
-"rust/crates/baukit-suite/src/adapters/postgres/mod.rs" = 1052
 "rust/crates/baukit-test/src/data_subject_conformance.rs" = 1026
 "rust/crates/baukit-test/src/jwt.rs" = 1031
 "typescript/packages/auth-native/src/index.ts" = 542
