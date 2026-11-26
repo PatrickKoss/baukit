@@ -7,6 +7,7 @@ use axum::{
 };
 use baukit_config::{Secret, Validate};
 use baukit_core::webhook_signature::sign_webhook_hmac_sha256;
+use baukit_resilience::ManualClock;
 use baukit_suite::platform::*;
 use jiff::SignedDuration;
 use jiff::Timestamp;
@@ -523,21 +524,40 @@ impl TicketJwksSource for Keys {
         Ok(self.keys.lock().expect("keys").clone())
     }
 }
-#[tokio::test(start_paused = true)]
-async fn jwks_cache_bounds_unknown_key_refresh_rotation_ttl_and_outages() {
-    let fixture: TicketFixture = serde_json::from_str(TICKETS).expect("fixture");
-    let vector = &fixture.vectors[0];
-    let source = Arc::new(Keys {
+fn keys(fixture: &TicketFixture) -> Arc<Keys> {
+    Arc::new(Keys {
         keys: std::sync::Mutex::new(fixture.jwks.clone()),
         calls: AtomicUsize::new(0),
         fail: AtomicUsize::new(0),
-    });
-    let verifier = TicketVerifier::with_source(
+    })
+}
+fn clocked_verifier(
+    fixture: &TicketFixture,
+    audience: &str,
+    source: Arc<dyn TicketJwksSource>,
+) -> (TicketVerifier, Arc<ManualClock>) {
+    let clock = Arc::new(ManualClock::new());
+    let verifier = TicketVerifier::with_source_and_clock(
         fixture.issuer.clone(),
-        vector.audience.clone(),
-        source.clone(),
+        audience.into(),
+        source,
+        clock.clone(),
     )
     .expect("verifier");
+    (verifier, clock)
+}
+async fn settle_background_refresh() {
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+}
+const SECOND: std::time::Duration = std::time::Duration::from_secs(1);
+#[tokio::test]
+async fn jwks_cache_bounds_unknown_key_refresh_rotation_and_cooldown() {
+    let fixture: TicketFixture = serde_json::from_str(TICKETS).expect("fixture");
+    let vector = &fixture.vectors[0];
+    let source = keys(&fixture);
+    let (verifier, clock) = clocked_verifier(&fixture, &vector.audience, source.clone());
     verifier
         .verify_at(&vector.ticket, vector.now)
         .await
@@ -559,7 +579,8 @@ async fn jwks_cache_bounds_unknown_key_refresh_rotation_ttl_and_outages() {
         );
     }
     assert_eq!(source.calls.load(Ordering::SeqCst), 2);
-    tokio::time::advance(std::time::Duration::from_secs(5)).await;
+    // An id missing from a fetched set is remembered for 30 s.
+    clock.advance(30 * SECOND);
     // The unknown-kid vector has a valid signature under the fixture public key.
     source.keys.lock().expect("keys").keys[0].kid = "missing".into();
     verifier
@@ -567,23 +588,94 @@ async fn jwks_cache_bounds_unknown_key_refresh_rotation_ttl_and_outages() {
         .await
         .expect("rotated kid");
     assert_eq!(source.calls.load(Ordering::SeqCst), 3);
-    tokio::time::advance(std::time::Duration::from_secs(300)).await;
+}
+#[tokio::test]
+async fn known_ticket_keys_verify_while_the_key_endpoint_is_down_within_the_stale_window() {
+    let fixture: TicketFixture = serde_json::from_str(TICKETS).expect("fixture");
+    let vector = &fixture.vectors[0];
+    let source = keys(&fixture);
+    let (verifier, clock) = clocked_verifier(&fixture, &vector.audience, source.clone());
+    verifier
+        .verify_at(&vector.ticket, vector.now)
+        .await
+        .expect("prime");
     source.fail.store(1, Ordering::SeqCst);
+    clock.advance(301 * SECOND);
     for _ in 0..100 {
-        assert_eq!(
-            verifier.verify_at(&unknown.ticket, unknown.now).await,
-            Err(TicketError::KeysUnavailable)
-        );
+        verifier
+            .verify_at(&vector.ticket, vector.now)
+            .await
+            .expect("stale key still verifies");
+        settle_background_refresh().await;
     }
-    assert_eq!(source.calls.load(Ordering::SeqCst), 4);
-    tokio::time::advance(std::time::Duration::from_secs(5)).await;
-    source.fail.store(0, Ordering::SeqCst);
-    let (a, b) = tokio::join!(
-        verifier.verify_at(&unknown.ticket, unknown.now),
-        verifier.verify_at(&unknown.ticket, unknown.now)
+    // One background refresh failed, then the 5 s cooldown blocks the next ones.
+    assert_eq!(source.calls.load(Ordering::SeqCst), 2);
+    let unknown = fixture
+        .vectors
+        .iter()
+        .find(|v| v.name == "unknown-kid")
+        .expect("unknown");
+    assert_eq!(
+        verifier.verify_at(&unknown.ticket, unknown.now).await,
+        Err(TicketError::Invalid),
+        "an unknown id never verifies against a stale set"
     );
-    assert!(a.is_ok() && b.is_ok());
-    assert_eq!(source.calls.load(Ordering::SeqCst), 5);
+    clock.advance(60 * 60 * SECOND);
+    assert_eq!(
+        verifier.verify_at(&vector.ticket, vector.now).await,
+        Err(TicketError::KeysUnavailable),
+        "past the stale window the key set is gone"
+    );
+    source.fail.store(0, Ordering::SeqCst);
+    clock.advance(6 * SECOND);
+    verifier
+        .verify_at(&vector.ticket, vector.now)
+        .await
+        .expect("recovered");
+}
+struct HangingKeys {
+    keys: TicketJwks,
+    calls: AtomicUsize,
+}
+#[async_trait]
+impl TicketJwksSource for HangingKeys {
+    async fn fetch(&self) -> Result<TicketJwks, TicketError> {
+        if self.calls.fetch_add(1, Ordering::SeqCst) > 0 {
+            std::future::pending::<()>().await;
+        }
+        Ok(self.keys.clone())
+    }
+}
+#[tokio::test]
+async fn concurrent_ticket_verifications_do_not_wait_for_a_hanging_refresh() {
+    let fixture: TicketFixture = serde_json::from_str(TICKETS).expect("fixture");
+    let vector = &fixture.vectors[0];
+    let source = Arc::new(HangingKeys {
+        keys: fixture.jwks.clone(),
+        calls: AtomicUsize::new(0),
+    });
+    let (verifier, clock) = clocked_verifier(&fixture, &vector.audience, source.clone());
+    verifier
+        .verify_at(&vector.ticket, vector.now)
+        .await
+        .expect("prime");
+    clock.advance(301 * SECOND);
+    let tasks: Vec<_> = (0..100)
+        .map(|_| {
+            let verifier = verifier.clone();
+            let ticket = vector.ticket.clone();
+            let now = vector.now;
+            tokio::spawn(async move { verifier.verify_at(&ticket, now).await })
+        })
+        .collect();
+    tokio::time::timeout(SECOND, async {
+        for task in tasks {
+            task.await.expect("join").expect("stale key verifies");
+        }
+    })
+    .await
+    .expect("no verification waits on the hanging fetch");
+    assert_eq!(source.calls.load(Ordering::SeqCst), 2);
 }
 #[tokio::test]
 async fn guarded_jwks_fetch_uses_network_adapter_and_rejects_redirects()
