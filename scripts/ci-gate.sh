@@ -55,6 +55,12 @@ native-android android ts-check selected -
 expo-sqlite android native-android selected -
 expo-notifications android expo-sqlite selected -
 fuzz fuzz - selected -
+workflows fast - always -
+models models - selected -
+kani kani - selected -
+verus verus - selected -
+migrations migrations - selected -
+vectors vectors - selected -
 platform-e2e platform-e2e - selected -
 STEPS
 }
@@ -167,6 +173,80 @@ step_fuzz() {
   cargo fmt --manifest-path rust/fuzz/Cargo.toml --all --check
   cargo clippy --manifest-path rust/fuzz/Cargo.toml --all-targets -- -D warnings
   sh scripts/fuzz.sh all "${BAUKIT_FUZZ_SECONDS:-60}"
+}
+
+# kani-full and fuzz-nightly are not in --list-steps: the nightly workflow calls them with
+# --step, and the full gate would otherwise spend hours on them.
+kani_crates() {
+  grep -rl --include='*.rs' 'cfg(kani)' rust/crates 2>/dev/null | cut -d/ -f3 | sort -u
+}
+run_kani() {
+  if [ "$#" -eq 0 ]; then
+    echo "kani: no crate has cfg(kani) harnesses"
+    return 0
+  fi
+  # Idempotent; also installs the nightly toolchain Kani pins, which runner caches miss.
+  cargo kani setup
+  for crate in "$@"; do
+    # Kani 0.68 has no timeout flag; bound each crate's harness run instead.
+    (cd rust && timeout "${BAUKIT_KANI_TIMEOUT_SECONDS:-1800}" cargo kani -p "$crate")
+  done
+}
+step_kani() {
+  python3 scripts/list-proofs.py --check
+  set --
+  for crate in $(kani_crates); do
+    if [ "$gate_mode" = affected ]; then
+      case " ${BAUKIT_GATE_RUST_PACKAGES:-} " in
+        *" $crate "*) ;;
+        *) continue ;;
+      esac
+    fi
+    set -- "$@" "$crate"
+  done
+  run_kani "$@"
+}
+step_kani_full() {
+  python3 scripts/list-proofs.py --check
+  # shellcheck disable=SC2046 # crate names are single words
+  run_kani $(kani_crates)
+}
+step_verus() {
+  if [ ! -d rust/verus ]; then
+    echo "verus: rust/verus does not exist yet"
+    return 0
+  fi
+  cargo verus verify --manifest-path rust/verus/Cargo.toml
+}
+# Prints TLA2TOOLS_JAR, or installs the deploy/tools.toml pin and prints its path.
+tla2tools_jar() {
+  if [ -n "${TLA2TOOLS_JAR:-}" ]; then
+    printf '%s\n' "$TLA2TOOLS_JAR"
+    return
+  fi
+  scripts/install-deploy-tools.sh --only tla2tools >&2
+  printf '%s\n' "${BAUKIT_TOOLS_DIR:-$repository_root/.tools}/bin/tla2tools"
+}
+step_models() {
+  jar=$(tla2tools_jar)
+  JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:--Xmx4g}" TLC_WORKERS="${TLC_WORKERS:-4}" \
+    TLA2TOOLS_JAR="$jar" sh models/check.sh
+}
+step_migrations() {
+  python3 scripts/check-migrations.py lint
+  python3 scripts/check-migrations.py double-apply
+  sh scripts/migrations-old-binary.sh
+}
+step_workflows() {
+  actionlint
+  zizmor --offline --persona auditor --min-severity low --config zizmor.yml .github/workflows
+  python3 scripts/check-release-shape.py .github/workflows
+}
+step_vectors() { python3 scripts/regenerate-vectors.py --check; }
+step_vectors_regenerate() { python3 scripts/regenerate-vectors.py; }
+step_fuzz_nightly() {
+  cargo fmt --manifest-path rust/fuzz/Cargo.toml --all --check
+  sh scripts/fuzz.sh "${BAUKIT_FUZZ_TARGET:-all}" "${BAUKIT_FUZZ_SECONDS:-1800}"
 }
 
 step_examples_test() {

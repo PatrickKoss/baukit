@@ -54,7 +54,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         let traffic_gate = traffic_gate.clone();
         move || traffic_gate.stop_accepting()
     });
-    let api = api_router(state.clone(), &config.http)?;
+    let api = api_router(state.clone(), &config.http, config.environment)?;
     let operations = ops_router(
         state.clone(),
         service.telemetry_identity().clone(),

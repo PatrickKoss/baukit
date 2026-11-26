@@ -2070,8 +2070,16 @@ fn inbound_type_source_future_and_error_codes_are_explicit_for_live_and_replay()
         };
         let error = validate_inbound(&catalog, &future, &link, link.created_at, replay)
             .expect_err("future");
-        assert_eq!(error, InboundValidationError::FutureOccurrence);
-        assert_eq!(error.code(), "suite_payload_invalid");
+        if replay {
+            assert_eq!(error, InboundValidationError::FutureOccurrence);
+            assert_eq!(error.code(), "suite_payload_invalid");
+        } else {
+            assert_eq!(
+                error,
+                InboundValidationError::Envelope(baukit_events::EventValidationCode::EventInFuture)
+            );
+            assert_eq!(error.code(), "event_in_future");
+        }
         let invalid = EventEnvelope {
             schema_version: 2,
             ..envelope.clone()

@@ -1,6 +1,6 @@
 {
   "name": "@baukit/auth-web",
-  "version": "0.30.4",
+  "version": "0.30.5",
   "description": "Browser sign-in for baukit products: OIDC authorization code with S256 PKCE redeemed by the product backend, a memory-only access token, and cross-tab session coordination.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -72,7 +72,7 @@
     }
   },
   "dependencies": {
-    "@baukit/type-guards": "^0.30.4",
+    "@baukit/type-guards": "^0.30.5",
     "jose": "6.2.12"
   }
 }

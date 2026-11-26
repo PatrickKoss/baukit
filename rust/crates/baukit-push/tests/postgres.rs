@@ -2,13 +2,14 @@
 use std::{collections::BTreeSet, error::Error, num::NonZeroU32, path::PathBuf};
 
 use baukit_push::{
-    DeliveryClaim, DeliveryClaimStore, DeliveryKind, DevicePlatform, DeviceRegistration,
-    DeviceRegistry, DeviceTimeZone, DeviceToken, FakePushSender, MAX_DEVICE_TOKEN_LENGTH,
-    MAX_PUSH_TICKET_ID_LENGTH, PendingReceipt, PendingReceiptStore, PostgresDeliveryClaimStore,
-    PostgresDeviceRegistry, PostgresPendingReceiptStore, PushDeliveryStatus, PushMessage,
-    PushOutcome, PushReceipt, PushRejection, PushSender, PushTicketId, RECEIPT_POLL_DELAY,
-    RECEIPT_RETENTION, ReceiptPoll, erase_owner_delivery_claims, erase_owner_pending_receipts,
-    erase_owner_push_devices, poll_pending_receipts, purge_delivery_claims,
+    ClaimToken, DeliveryClaim, DeliveryClaimStore, DeliveryKind, DevicePlatform,
+    DeviceRegistration, DeviceRegistry, DeviceTimeZone, DeviceToken, FakePushSender,
+    MAX_DEVICE_TOKEN_LENGTH, MAX_PUSH_TICKET_ID_LENGTH, PendingReceipt, PendingReceiptStore,
+    PostgresDeliveryClaimStore, PostgresDeviceRegistry, PostgresPendingReceiptStore,
+    PushDeliveryStatus, PushMessage, PushOutcome, PushReceipt, PushRejection, PushSender,
+    PushTicketId, RECEIPT_POLL_DELAY, RECEIPT_RETENTION, ReceiptPoll, erase_owner_delivery_claims,
+    erase_owner_pending_receipts, erase_owner_push_devices, poll_pending_receipts,
+    purge_delivery_claims,
 };
 use baukit_test::PostgresTestContainer;
 use jiff::{SignedDuration, Timestamp, civil::Date};
@@ -428,20 +429,31 @@ async fn a_daily_claim_has_exactly_one_winner_until_released() -> Result<(), Tes
         let claim = claim.clone();
         tasks.spawn(async move { claims.claim(claim, at(0)).await });
     }
-    let mut winners = 0;
+    let mut winners = Vec::new();
     while let Some(won) = tasks.join_next().await {
-        winners += usize::from(won??);
+        winners.extend(won??);
     }
-    assert_eq!(winners, 1);
+    assert_eq!(winners.len(), 1);
+    let first = winners[0];
 
     let other_kind = DeliveryClaim::new(alice, date(27), DeliveryKind::new("weekly_summary")?);
     let next_day = DeliveryClaim::new(alice, date(28), claim.kind.clone());
-    assert!(claims.claim(other_kind, at(0)).await?);
-    assert!(claims.claim(next_day, at(0)).await?);
+    assert!(claims.claim(other_kind, at(0)).await?.is_some());
+    assert!(claims.claim(next_day, at(0)).await?.is_some());
 
-    assert!(claims.release(claim.clone()).await?);
-    assert!(!claims.release(claim.clone()).await?);
-    assert!(claims.claim(claim, at(1)).await?);
+    assert!(!claims.release(claim.clone(), ClaimToken::new()).await?);
+    assert!(claims.release(claim.clone(), first).await?);
+    assert!(!claims.release(claim.clone(), first).await?);
+    let second = claims
+        .claim(claim.clone(), at(1))
+        .await?
+        .ok_or("the released claim is free again")?;
+    assert!(
+        !claims.release(claim.clone(), first).await?,
+        "a stale claimer's release is a no-op"
+    );
+    assert!(claims.claim(claim.clone(), at(2)).await?.is_none());
+    assert!(claims.release(claim, second).await?);
     Ok(())
 }
 

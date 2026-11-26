@@ -31,8 +31,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      contents: write # pushes the release-train branch
+      pull-requests: write # opens the release-train PR
     steps:
       - name: Checkout main with release history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -97,12 +97,42 @@ jobs:
           labels: release
           delete-branch: true
 
+  # Publishing is gated three ways (F-46):
+  # 1. tag-on-main refuses a tag whose commit is not on main.
+  # 2. build-crates and build-npm compile and install without any token, and hand their output
+  #    to the publish jobs as artifacts.
+  # 3. publish-crates and publish-npm hold id-token: write and run only in the `release`
+  #    environment. Configure it once under Settings > Environments > release: add required
+  #    reviewers (two maintainers, "Prevent self-review" on), limit deployment tags to `v*.*.*`,
+  #    and disallow admin bypass. The crates.io and npm trusted publishers must name this
+  #    environment so an OIDC token minted outside it is rejected.
+  # scripts/check-release-shape.py, run by the workflows gate step, enforces this shape.
+  tag-on-main:
+    name: Check the tag commit is on main
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Refuse tags outside main
+        run: |
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main; refusing to publish"
+            exit 1
+          fi
+
   publish-github-release:
     name: Validate tag and publish GitHub release
     if: github.event_name == 'push'
+    needs: tag-on-main
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # creates the GitHub release
     steps:
       - name: Checkout tagged train
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -160,14 +190,41 @@ jobs:
               --notes-file "$RUNNER_TEMP/release-notes.md"
           fi
 
+  build-crates:
+    name: Package and verify crates
+    if: github.event_name == 'push'
+    needs: tag-on-main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged train
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: "1.100.0"
+
+      - name: Package and compile every crate
+        run: cargo package --manifest-path rust/Cargo.toml --workspace --locked
+
+      - name: Upload packaged crates
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: crates
+          path: rust/target/package/*.crate
+          if-no-files-found: error
+          retention-days: 7
+
   publish-crates:
     name: Publish crates to crates.io
     if: github.event_name == 'push'
-    needs: publish-github-release
+    needs: [publish-github-release, build-crates]
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: read
-      id-token: write
+      id-token: write # trusted publishing exchanges the OIDC token for a registry token
     steps:
       - name: Checkout tagged train
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -181,24 +238,73 @@ jobs:
       - name: Validate unified tag and versions
         run: scripts/check-version-coherence.py --tag "$GITHUB_REF_NAME"
 
+      - name: Download packaged crates
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: crates
+          path: ${{ runner.temp }}/crates
+
       - name: Mint a short-lived crates.io token
         id: auth
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
 
+      # build-crates compiled every crate at this commit, so publishing skips the rebuild and
+      # only requires that each crate has a verified package in the artifact.
       - name: Publish crates in dependency order
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          BAUKIT_VERIFIED_CRATES: ${{ runner.temp }}/crates
         run: |
           TOKEN_DEADLINE=$(( $(date +%s) + 30 * 60 )) scripts/publish-crates.sh
+
+  build-npm:
+    name: Build npm packages
+    if: github.event_name == 'push'
+    needs: tag-on-main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tagged train
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: typescript/.nvmrc
+          package-manager-cache: false
+
+      - name: Enable pinned pnpm
+        working-directory: typescript
+        run: |
+          npm install --global corepack@0.36.0
+          corepack enable
+          corepack install
+
+      - name: Install TypeScript dependencies
+        working-directory: typescript
+        run: pnpm install --frozen-lockfile
+
+      - name: Build publishable packages
+        working-directory: typescript
+        run: pnpm build
+
+      - name: Upload package builds
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-dist
+          path: typescript/packages/*/dist
+          if-no-files-found: error
+          retention-days: 7
 
   publish-npm:
     name: Publish packages to npm
     if: github.event_name == 'push'
-    needs: publish-github-release
+    needs: [publish-github-release, build-npm]
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: read
-      id-token: write
+      id-token: write # trusted publishing exchanges the OIDC token for a registry token
     steps:
       - name: Checkout tagged train
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -211,13 +317,6 @@ jobs:
           package-manager-cache: false
           registry-url: https://registry.npmjs.org
 
-      - name: Enable pinned pnpm
-        working-directory: typescript
-        run: |
-          npm install --global corepack@0.36.0
-          corepack enable
-          corepack install
-
       # Trusted publishing needs the OIDC exchange added in npm 11.5.1.
       - name: Ensure npm supports trusted publishing
         run: |
@@ -227,13 +326,11 @@ jobs:
       - name: Validate unified tag and versions
         run: scripts/check-version-coherence.py --tag "$GITHUB_REF_NAME"
 
-      - name: Install TypeScript dependencies
-        working-directory: typescript
-        run: pnpm install --frozen-lockfile
-
-      - name: Build publishable packages
-        working-directory: typescript
-        run: pnpm build
+      - name: Download package builds
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-dist
+          path: typescript/packages
 
       - name: Publish packages in dependency order
         run: scripts/publish-packages.sh

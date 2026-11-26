@@ -106,7 +106,7 @@ impl PushRejection {
     /// token, an oversized payload, and a rejected credential all fail the same
     /// way again.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         matches!(self, Self::MessageRateExceeded | Self::ProviderError)
     }
 }
@@ -224,24 +224,47 @@ pub enum PushError {
     /// The provider answered with a body that does not match its contract.
     #[error("push provider returned an invalid response: {0}")]
     InvalidResponse(String),
+    /// Earlier provider requests of the batch succeeded before `error` stopped it.
+    ///
+    /// `outcomes` covers exactly the messages the provider already accepted or refused.
+    /// Record them like a successful result; never resend those messages. Retry only the
+    /// rest, by `error`'s classification.
+    #[error("push batch stopped after {} outcomes: {error}", outcomes.len())]
+    Partial {
+        /// Outcomes of the chunks that completed before the failure.
+        outcomes: Vec<PushOutcome>,
+        /// The failure that stopped the remaining chunks.
+        error: Box<PushError>,
+    },
 }
 
 impl PushError {
     /// Returns whether sending the same batch again can succeed.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         match self {
             Self::Transport { class } => class.is_retryable(),
             Self::InvalidResponse(_) => false,
+            Self::Partial { error, .. } => error.is_retryable(),
         }
     }
 
     /// Returns the wait the provider asked for, if it named one.
     #[must_use]
-    pub const fn retry_after(&self) -> Option<Duration> {
+    pub fn retry_after(&self) -> Option<Duration> {
         match self {
             Self::Transport { class } => class.retry_after(),
             Self::InvalidResponse(_) => None,
+            Self::Partial { error, .. } => error.retry_after(),
+        }
+    }
+
+    /// Returns the outcomes of the messages already handled before the failure.
+    #[must_use]
+    pub fn completed_outcomes(&self) -> &[PushOutcome] {
+        match self {
+            Self::Partial { outcomes, .. } => outcomes,
+            Self::Transport { .. } | Self::InvalidResponse(_) => &[],
         }
     }
 }

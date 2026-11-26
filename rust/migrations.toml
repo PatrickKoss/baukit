@@ -1,0 +1,71 @@
+# Order in which a product applies baukit's reference migrations, as data for
+# scripts/check-migrations.py and docs/migrations/authoring.md. Crates apply in list order, each
+# crate's files in file-name order. `after` names crates whose tables this crate's SQL touches;
+# the checker fails when a crate appears before one it names.
+schema = 1
+postgres_image = "postgres:18.7-alpine@sha256:b6972e1115a4ff8eba5d7f7d19184926d1e16d7d1136ae1e1a7ebf286da0f015"
+
+[[crate]]
+name = "baukit-jobs"
+after = []
+
+[[crate]]
+name = "baukit-auth"
+after = []
+
+[[crate]]
+name = "baukit-sync"
+after = []
+
+[[crate]]
+name = "baukit-push"
+after = []
+
+[[crate]]
+name = "baukit-integrations"
+after = []
+
+[[crate]]
+name = "baukit-erasure"
+after = ["baukit-jobs"]
+
+[[crate]]
+name = "baukit-data-subject"
+after = ["baukit-jobs"]
+
+[[crate]]
+name = "baukit-suite"
+after = ["baukit-jobs"]
+
+# Files shipped before docs/migrations/authoring.md. squawk skips them and the double-apply
+# check lets their second run fail, because sqlx checksums forbid editing them (F-58).
+# This list only shrinks: never add a new file to it.
+[shipped]
+files = [
+  "rust/crates/baukit-auth/migrations/0001_baukit_auth_api_tokens.sql",
+  "rust/crates/baukit-integrations/migrations/0001_baukit_integrations_oauth_state.sql",
+  "rust/crates/baukit-jobs/migrations/0001_baukit_jobs.sql",
+  "rust/crates/baukit-push/migrations/0001_baukit_push_devices.sql",
+  "rust/crates/baukit-sync/migrations/0001_baukit_sync.sql",
+  "rust/crates/baukit-data-subject/migrations/0001_data_subject.sql",
+  "rust/crates/baukit-erasure/migrations/0001_erasure.sql",
+  "rust/crates/baukit-auth/migrations/0002_baukit_auth_browser_sessions.sql",
+  "rust/crates/baukit-jobs/migrations/0002_baukit_jobs_failure_reason.sql",
+  "rust/crates/baukit-push/migrations/0002_baukit_push_delivery_claims.sql",
+  "rust/crates/baukit-sync/migrations/0002_baukit_sync_purge_horizons.sql",
+  "rust/crates/baukit-data-subject/migrations/0002_data_subject_exports.sql",
+  "rust/crates/baukit-erasure/migrations/0002_erasure_reonboarding.sql",
+  "rust/crates/baukit-jobs/migrations/0003_baukit_jobs_claim_by_type.sql",
+  "rust/crates/baukit-push/migrations/0003_baukit_push_pending_receipts.sql",
+  "rust/crates/baukit-jobs/migrations/0004_baukit_jobs_active_deduplication.sql",
+  "rust/crates/baukit-push/migrations/0004_baukit_push_pending_receipt_owners.sql",
+  "rust/crates/baukit-suite/migrations/001_suite.sql",
+  "rust/crates/baukit-suite/migrations/002_suite_runtime.sql",
+  "rust/crates/baukit-suite/migrations/003_suite_lock_order.sql",
+  "rust/crates/baukit-suite/migrations/004_platform.sql",
+]
+
+# Store tests of the previous release that scripts/migrations-old-binary.sh runs against HEAD's
+# schema, as "crate:test-target". Empty until baukit-test reads DATABASE_URL in a released version.
+[old_binary]
+tests = []

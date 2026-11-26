@@ -62,6 +62,11 @@ async fn assert_export_discovery_and_auth_errors(f: &Fixture) -> TestResult {
         ),
         (Some(f.api_token.clone()), 403, codes::CLIENT_NOT_ALLOWED),
         (
+            Some(f.user_token("privacy", "data-subject.export")?),
+            403,
+            codes::CLIENT_NOT_ALLOWED,
+        ),
+        (
             Some(f.token("privacy", "data-subject.erase")?),
             403,
             codes::INSUFFICIENT_SCOPE,

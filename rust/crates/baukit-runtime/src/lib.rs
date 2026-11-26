@@ -78,6 +78,7 @@ use std::{
     fmt,
     future::Future,
     io,
+    net::SocketAddr,
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
@@ -758,11 +759,14 @@ fn spawn_listener(
     shutdown: CancellationToken,
 ) {
     listeners.spawn(async move {
-        axum::serve(listener, router)
-            .with_graceful_shutdown(async move { shutdown.cancelled().await })
-            .await
-            .map(|()| kind)
-            .map_err(|error| (kind, error))
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move { shutdown.cancelled().await })
+        .await
+        .map(|()| kind)
+        .map_err(|error| (kind, error))
     });
 }
 

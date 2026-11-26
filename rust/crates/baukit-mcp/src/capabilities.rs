@@ -223,12 +223,17 @@ pub(crate) fn template_matches(template: &str, uri: &str) -> bool {
     template.split('/').all(|segment| {
         parts.next().is_some_and(|part| {
             if segment.starts_with('{') {
-                !part.is_empty() && !part.contains(['?', '#', '{', '}'])
+                !part.is_empty() && !part.contains(['?', '#', '{', '}']) && !is_dot_segment(part)
             } else {
                 segment == part
             }
         })
     }) && parts.next().is_none()
+}
+
+fn is_dot_segment(part: &str) -> bool {
+    let decoded = part.to_ascii_lowercase().replace("%2e", ".");
+    decoded == "." || decoded == ".."
 }
 
 pub(crate) fn validate_prompts(prompts: &[ScopedPrompt]) -> Result<(), McpConfigError> {
@@ -432,6 +437,10 @@ mod tests {
             "product://items/42?other=1",
             "product://items/42#fragment",
             "product://items/{id}",
+            "product://items/..",
+            "product://items/.",
+            "product://items/%2E%2e",
+            "product://items/.%2e",
         ] {
             assert!(!template_matches("product://items/{id}", uri), "{uri}");
         }

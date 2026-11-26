@@ -139,12 +139,7 @@ impl SessionTransaction for MemoryTransaction {
     }
 
     fn commit(mut self: Box<Self>) -> StoreFuture<'static, ()> {
-        let failing =
-            self.failing_commits
-                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
-                    left.checked_sub(1)
-                });
-        if failing.is_ok() {
+        if take_one(&self.failing_commits) {
             return Box::pin(std::future::ready(Err(sqlx::Error::PoolTimedOut)));
         }
         *self.guard = std::mem::take(&mut self.working);
@@ -347,6 +342,28 @@ fn production_config() -> Result<BrowserSessionConfig, TestError> {
     .with_redirect_uris(["https://app.example.com/auth/callback"]))
 }
 
+fn take_one(counter: &AtomicUsize) -> bool {
+    let mut current = counter.load(Ordering::SeqCst);
+    while let Some(next) = current.checked_sub(1) {
+        match counter.compare_exchange(current, next, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(_) => return true,
+            Err(actual) => current = actual,
+        }
+    }
+    false
+}
+
+fn local_http_options(origins: &[&str]) -> Result<HttpOptions, TestError> {
+    let config = baukit_config::HttpConfig {
+        cors_allowed_origins: origins.iter().map(|origin| (*origin).to_owned()).collect(),
+        ..baukit_config::HttpConfig::default()
+    };
+    let mut options =
+        HttpOptions::from_config_in(&config, baukit_core::DeploymentEnvironment::Local)?;
+    options.allow_credentials = true;
+    Ok(options)
+}
+
 fn http_options(origins: &[&str]) -> Result<HttpOptions, TestError> {
     let mut options = HttpOptions::default().with_allowed_origins(origins.iter().copied())?;
     options.allow_credentials = true;
@@ -527,7 +544,10 @@ fn insecure_local_cookie_is_refused_with_a_non_local_origin() -> TestResult {
         Err(BrowserSessionConfigError::InsecureCookieNotLocal)
     ));
     let mixed = local_config()?.with_insecure_local_cookie(true);
-    let result = mixed.validate(&http_options(&[WEB_ORIGIN, "http://app.localtest.me"])?);
+    let result = mixed.validate(&local_http_options(&[
+        WEB_ORIGIN,
+        "http://app.localtest.me",
+    ])?);
     assert!(matches!(
         result,
         Err(BrowserSessionConfigError::InsecureCookieNotLocal)

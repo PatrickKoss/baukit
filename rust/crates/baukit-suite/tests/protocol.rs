@@ -2040,6 +2040,20 @@ mod common {
                 })
                 .expect("test suite public quota is valid"),
         )
+        .layer(axum::middleware::from_fn(with_peer))
+    }
+
+    async fn with_peer(
+        mut request: axum::extract::Request,
+        next: axum::middleware::Next,
+    ) -> axum::response::Response {
+        request
+            .extensions_mut()
+            .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                [192, 0, 2, 1],
+                4000,
+            ))));
+        next.run(request).await
     }
     pub fn app_with_suite(_pool: &PgPool, api: Arc<dyn SuiteApi>) -> Router {
         Router::new()

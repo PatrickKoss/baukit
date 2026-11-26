@@ -51,7 +51,7 @@ describe('authenticated persistence composition', () => {
     });
     await lifecycle.selectSubject('account-e');
 
-    await lifecycle.handleSessionExpired();
+    await lifecycle.handleSessionExpired('account-e');
 
     expect(close).toHaveBeenCalledTimes(1);
     expect(lifecycle.current()).toBeUndefined();

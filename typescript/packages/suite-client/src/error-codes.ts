@@ -2,6 +2,7 @@
 export const SUITE_ERROR_CODES = [
   'bad_request',
   'event_id_invalid',
+  'event_in_future',
   'event_schema_unsupported',
   'event_too_old',
   'event_type_invalid',

@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 import type { FetchImplementation } from '@baukit/api-runtime';
 
 import { createAuthenticatedApiRuntime } from './authenticated-api';
+import { apiSessionSubject } from './api-session';
 import { authClient } from './auth';
 
 export interface Item {
@@ -23,6 +24,7 @@ const baseUrl =
       : '';
 const api = createAuthenticatedApiRuntime({
   auth: authClient,
+  sessionSubject: apiSessionSubject,
   baseUrl,
   environment: __DEV__ ? 'development' : 'production',
 });

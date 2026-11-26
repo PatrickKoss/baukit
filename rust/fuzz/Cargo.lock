@@ -253,7 +253,7 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "baukit-auth"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "axum",
@@ -280,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-config"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "baukit-core",
  "config",
@@ -293,7 +293,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-core"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-credential-vault"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -318,8 +318,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "baukit-data-subject"
+version = "0.30.5"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.23.1",
+ "jiff 1.0.0",
+ "pem",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
 name = "baukit-egress"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "axum",
  "baukit-http",
@@ -333,7 +348,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-erasure"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "axum",
@@ -355,7 +370,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-events"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "jiff 1.0.0",
  "serde",
@@ -371,24 +386,31 @@ dependencies = [
  "base64 0.23.1",
  "baukit-auth",
  "baukit-core",
+ "baukit-data-subject",
+ "baukit-egress",
+ "baukit-erasure",
  "baukit-events",
  "baukit-http",
  "baukit-integrations",
  "baukit-mcp",
+ "baukit-push",
  "baukit-ratelimit",
  "baukit-sync",
  "baukit-test",
  "http",
  "jiff 1.0.0",
  "libfuzzer-sys",
+ "pem",
+ "percent-encoding",
  "serde_json",
  "tokio",
  "tower",
+ "url",
 ]
 
 [[package]]
 name = "baukit-http"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "axum",
  "baukit-config",
@@ -411,7 +433,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-integrations"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -426,7 +448,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-jobs"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "baukit-runtime",
  "baukit-telemetry",
@@ -443,7 +465,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-mcp"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "axum",
@@ -466,7 +488,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-openapi"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "http",
  "serde",
@@ -477,7 +499,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-ops"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "axum",
  "baukit-core",
@@ -487,8 +509,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "baukit-push"
+version = "0.30.5"
+dependencies = [
+ "aws-lc-rs",
+ "axum",
+ "baukit-config",
+ "baukit-egress",
+ "baukit-http",
+ "jiff 1.0.0",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "baukit-ratelimit"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "axum",
  "baukit-auth",
@@ -503,7 +543,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-runtime"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "axum",
  "baukit-core",
@@ -515,7 +555,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-sync"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "serde",
  "thiserror",
@@ -523,7 +563,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-telemetry"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "baukit-core",
  "jiff 1.0.0",
@@ -542,7 +582,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-test"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
@@ -2755,9 +2795,9 @@ dependencies = [
 
 [[package]]
 name = "psl"
-version = "2.1.263"
+version = "2.1.264"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ce5fe095326c5a930f8f4af012fa5494c56587bcc02311dc80a8f6827f2742e"
+checksum = "8782e35cade255f17d5ad527b899ea5b4e6bef29dcdc3502965a7d8d2f3fc3f5"
 dependencies = [
  "psl-types",
 ]

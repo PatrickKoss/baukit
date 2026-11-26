@@ -11,20 +11,27 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-axum = "0.8.9"
 aws-lc-rs = "1.18.1"
 base64 = "0.23.1"
+pem = "4.0.0"
+axum = "0.8.9"
 baukit-auth = { path = "../crates/baukit-auth", features = ["browser-session", "fuzzing"] }
-baukit-core = { path = "../crates/baukit-core", features = ["media-grants"] }
+baukit-core = { path = "../crates/baukit-core", features = ["media-grants", "webhook-signature"] }
+baukit-data-subject = { path = "../crates/baukit-data-subject", default-features = false }
+baukit-egress = { path = "../crates/baukit-egress" }
+baukit-erasure = { path = "../crates/baukit-erasure", features = ["api-providers", "keycloak"] }
 baukit-events = { path = "../crates/baukit-events" }
 baukit-http = { path = "../crates/baukit-http" }
 baukit-integrations = { path = "../crates/baukit-integrations", features = ["oauth-state"] }
 baukit-mcp = { path = "../crates/baukit-mcp" }
+baukit-push = { path = "../crates/baukit-push" }
 baukit-ratelimit = { path = "../crates/baukit-ratelimit" }
 baukit-sync = { path = "../crates/baukit-sync", default-features = false }
 baukit-test = { path = "../crates/baukit-test", default-features = false }
 jiff = { version = "1.0.0", features = ["serde"] }
 http = "1.5.0"
+percent-encoding = "2.3.2"
+url = "2.5.8"
 serde_json = "1.0.151"
 tokio = { version = "1.53.2", features = ["full"] }
 tower = { version = "0.5.3", features = ["util"] }
@@ -89,8 +96,57 @@ doc = false
 bench = false
 
 [[bin]]
+name = "egress_destination"
+path = "fuzz_targets/egress_destination.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "session_cookie"
 path = "fuzz_targets/session_cookie.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "expo_responses"
+path = "fuzz_targets/expo_responses.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "receipt_verify"
+path = "fuzz_targets/receipt_verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "identity_deletion_payload"
+path = "fuzz_targets/identity_deletion_payload.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "webhook_verify"
+path = "fuzz_targets/webhook_verify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "idp_delete_url"
+path = "fuzz_targets/idp_delete_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xff_resolve"
+path = "fuzz_targets/xff_resolve.rs"
 test = false
 doc = false
 bench = false

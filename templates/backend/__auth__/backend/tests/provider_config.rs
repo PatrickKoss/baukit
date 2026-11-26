@@ -344,6 +344,7 @@ async fn configured_provider_authenticates_the_product_route_with_the_same_ident
                 erasure: fixture.erasure.clone(),
             },
             &baukit_config::HttpConfig::default(),
+            baukit_config::Environment::Local,
         )?;
         let claims = server
             .claims("user_123", "api", Duration::from_secs(300))?

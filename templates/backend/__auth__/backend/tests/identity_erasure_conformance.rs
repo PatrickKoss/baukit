@@ -146,6 +146,7 @@ impl IdentityErasureAdapter for EndpointAdapter {
                     },
                 },
                 &HttpConfig::default(),
+                baukit_config::Environment::Local,
             )?;
             self.app = Some(if self.prefix.is_empty() {
                 app
@@ -434,6 +435,7 @@ async fn retaining_adapter()
             },
         },
         &HttpConfig::default(),
+        baukit_config::Environment::Local,
     )?;
     let adapter = EndpointAdapter {
         pool,

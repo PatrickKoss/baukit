@@ -5,6 +5,9 @@
 # interrupted run can simply be restarted. crates.io rate-limits new crate
 # names to roughly one per ten minutes; a 429 makes this script wait until the
 # time the registry names and then retry the same crate.
+#
+# With BAUKIT_VERIFIED_CRATES set to a directory of `cargo package` output, each crate must
+# have its package there and publishes with --no-verify, so the OIDC job compiles nothing.
 set -euo pipefail
 
 repo_root=$(git rev-parse --show-toplevel)
@@ -50,6 +53,19 @@ MSG
   sleep "$wait_for"
 }
 
+publish_args=()
+if [[ -n "${BAUKIT_VERIFIED_CRATES:-}" ]]; then
+  publish_args=(--no-verify)
+fi
+
+require_verified_package() {
+  [[ -z "${BAUKIT_VERIFIED_CRATES:-}" ]] && return 0
+  if [[ ! -f "$BAUKIT_VERIFIED_CRATES/$1-$version.crate" ]]; then
+    echo "no verified package $1-$version.crate in $BAUKIT_VERIFIED_CRATES" >&2
+    exit 1
+  fi
+}
+
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 
@@ -59,9 +75,10 @@ for crate in "${ORDER[@]}"; do
     continue
   fi
 
+  require_verified_package "$crate"
   while true; do
     echo "== publishing $crate $version"
-    if cargo publish --manifest-path "rust/crates/$crate/Cargo.toml" 2>&1 | tee "$log"; then
+    if cargo publish "${publish_args[@]}" --manifest-path "rust/crates/$crate/Cargo.toml" 2>&1 | tee "$log"; then
       break
     fi
     if grep -q '429 Too Many Requests' "$log"; then

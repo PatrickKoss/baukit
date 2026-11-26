@@ -1,8 +1,8 @@
 #![cfg(test)]
 use baukit_events::{
     EVENT_SCHEMA_VERSION, EventEnvelope, EventValidationCode, MAX_EVENT_AGE_SECONDS,
-    MAX_EVENT_ID_CHARACTERS, MAX_EVENT_PAYLOAD_KEYS, MAX_EVENT_TYPE_SEGMENT_CHARACTERS,
-    validate_event_envelope,
+    MAX_EVENT_CLOCK_SKEW_SECONDS, MAX_EVENT_ID_CHARACTERS, MAX_EVENT_PAYLOAD_KEYS,
+    MAX_EVENT_TYPE_SEGMENT_CHARACTERS, validate_event_envelope,
 };
 use jiff::Timestamp;
 use serde::Deserialize;
@@ -23,6 +23,7 @@ struct FixtureConstants {
     maximum_event_type_segment_characters: usize,
     maximum_event_age_seconds: i64,
     maximum_payload_keys: usize,
+    maximum_clock_skew_seconds: i64,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +63,10 @@ fn event_envelope_matches_shared_fixtures() {
     assert_eq!(
         fixtures.constants.maximum_payload_keys,
         MAX_EVENT_PAYLOAD_KEYS
+    );
+    assert_eq!(
+        fixtures.constants.maximum_clock_skew_seconds,
+        MAX_EVENT_CLOCK_SKEW_SECONDS
     );
     assert_eq!(fixtures.representation["timestamps"], "rfc3339_utc_z");
     for fixture in fixtures.cases {

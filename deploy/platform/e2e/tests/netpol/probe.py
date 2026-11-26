@@ -2,10 +2,13 @@
 """Run every row of the NetworkPolicy matrix as a short-lived probe pod and compare the verdict.
 
 A probe pod starts in the row's source namespace with the row's labels. Before it probes, the runner
-waits until kube-router has written the pod's firewall chain on its node and a DNS lookup from the
-pod works, so a new pod's unfenced first seconds cannot pass a deny row and its not yet admitted
-first seconds cannot fail an allow row. A destination without a ready endpoint, a failed DNS lookup
-or a probe that never got that far is an error, never a verdict.
+waits until no other unfinished pod holds the probe pod's IP, kube-router has written the pod's
+firewall chain with its egress jump on its node, and a DNS lookup from the pod works, so a new pod's
+unfenced first seconds cannot pass a deny row and its not yet admitted first seconds cannot fail an
+allow row. kube-router keys local pods by IP, so a terminating pod still holding a recycled IP can
+take over the chain. The chain is checked again after the connection, and a lost chain is an error.
+A destination without a ready endpoint, a failed DNS lookup or a probe that never got that far is an
+error, never a verdict.
 """
 
 from __future__ import annotations
@@ -37,6 +40,7 @@ START_TIMEOUT_SECONDS = 180
 FENCE_TIMEOUT_SECONDS = 120
 SENTINEL_TIMEOUT_SECONDS = 60
 POLL_SECONDS = 1
+FINISHED_PHASES = ("Succeeded", "Failed")
 TORN_DUMP = "in kernel doesn't exist"
 POD_DEADLINE_SECONDS = 900
 RC_MARKER = "probe-rc="
@@ -84,10 +88,10 @@ class Cluster:
             raise ProbeError(f"no exit status from the probe pod: {output.strip()[-200:]}")
         return int(code.strip()), head.strip()
 
-    def node_rules(self, node: str) -> str:
+    def node_rules(self, node: str, max_age: float = POLL_SECONDS) -> str:
         with self.lock:
             stamp, rules = self.rules.get(node, (0.0, ""))
-            if time.monotonic() - stamp < POLL_SECONDS:
+            if time.monotonic() - stamp < max_age:
                 return rules
             result = self.run(
                 ["docker", "exec", node, "iptables-save", "-t", "filter"],
@@ -106,9 +110,21 @@ class Cluster:
 
 
 def fenced(rules: str, namespace: str, pod: str, address: str) -> bool:
-    """kube-router writes one chain per pod with a reject rule naming it and a match on its IP."""
+    """kube-router writes a per-pod chain with a reject rule and an egress jump from the pod IP."""
     reject = f'"{namespace}/{pod} reject"'
-    return reject in rules and f"-d {address}/32" in rules
+    egress = f'"{namespace}/{pod} out"'
+    jumps = (line for line in rules.splitlines() if egress in line)
+    return reject in rules and any(f"-s {address}/32 " in line for line in jumps)
+
+
+def other_pods_with_ip(cluster: Cluster, namespace: str, pod: str, address: str) -> list[str]:
+    pods = cluster.json("get", "pods", "-A", "--field-selector", f"status.podIP={address}")
+    return [
+        f"{item['metadata']['namespace']}/{item['metadata']['name']}"
+        for item in pods.get("items") or []
+        if (item["metadata"]["namespace"], item["metadata"]["name"]) != (namespace, pod)
+        and (item.get("status") or {}).get("phase") not in FINISHED_PHASES
+    ]
 
 
 def classify(code: int, output: str) -> tuple[str, str]:
@@ -215,6 +231,8 @@ class Probe:
         self.cluster = cluster
         self.row = row
         self.name = f"{prefix}-{row.number}"
+        self.node = ""
+        self.address = ""
 
     def start(self) -> tuple[str, str]:
         namespace = self.row.namespace
@@ -236,7 +254,12 @@ class Probe:
         node = pod["spec"]["nodeName"]
         address = pod["status"]["podIP"]
         wait_until(
-            lambda: fenced(self.cluster.node_rules(node), namespace, self.name, address),
+            lambda: not other_pods_with_ip(self.cluster, namespace, self.name, address),
+            FENCE_TIMEOUT_SECONDS,
+            f"another unfinished pod still holds the probe pod's IP {address}",
+        )
+        wait_until(
+            lambda: self.fenced(node, address),
             FENCE_TIMEOUT_SECONDS,
             f"kube-router wrote no firewall chain for the probe pod on {node}",
         )
@@ -245,7 +268,16 @@ class Probe:
             SENTINEL_TIMEOUT_SECONDS,
             f"the known-allow DNS lookup of {SENTINEL_NAME} never worked from the probe pod",
         )
+        self.node, self.address = node, address
         return node, self.node_ip(node)
+
+    def fenced(self, node: str, address: str, max_age: float = POLL_SECONDS) -> bool:
+        rules = self.cluster.node_rules(node, max_age)
+        return fenced(rules, self.row.namespace, self.name, address)
+
+    def check_still_fenced(self) -> None:
+        if not self.fenced(self.node, self.address, max_age=0):
+            raise ProbeError("kube-router dropped the probe pod's firewall chain during the probe")
 
     def node_ip(self, node: str) -> str:
         addresses = self.cluster.json("get", "node", node)["status"]["addresses"]
@@ -295,6 +327,7 @@ def run_row(cluster: Cluster, row: Row, prefix: str = POD_PREFIX) -> Outcome:
         address = destination_address(cluster, row, node_ip)
         probe.resolve(address)
         verdict, reason, attempts = probe.connect(address)
+        probe.check_still_fenced()
     except ProbeError as error:
         return Outcome(row, "ERROR", str(error))
     finally:

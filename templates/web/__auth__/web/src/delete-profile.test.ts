@@ -131,4 +131,29 @@ describe('delete profile service', () => {
     expect(fetch.request(1).headers.get('Authorization')).toBe('Bearer token-before-deletion');
     expect(authClient.accessToken).toHaveBeenCalledOnce();
   });
+
+  it('keeps the erasure marker when the local wipe fails and clears it once it succeeds', async () => {
+    const fetch = new MockFetch()
+      .enqueueJson({ status: 'pending', operationId }, { status: 202 })
+      .enqueueJson({ status: 'pending', operationId }, { status: 202 });
+    vi.stubGlobal('fetch', fetch.fetch);
+    const markerKeys = (): string[] =>
+      Object.keys(localStorage).filter((key) => key.includes('profile-erasure-marker'));
+    const failed = await deleteProfile({
+      profileId: 'profile-a',
+      client: await createDeleteProfileClient('private-subject'),
+      eraseLocalPartition: () => Promise.reject(new Error('disk')),
+      onSignedOut: () => undefined,
+    });
+    expect(failed.status).toBe('local-failure');
+    expect(markerKeys()).toHaveLength(1);
+
+    await deleteProfile({
+      profileId: 'profile-a',
+      client: await createDeleteProfileClient('private-subject'),
+      eraseLocalPartition: () => Promise.resolve(),
+      onSignedOut: () => undefined,
+    });
+    expect(markerKeys()).toHaveLength(0);
+  });
 });

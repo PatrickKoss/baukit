@@ -34,9 +34,9 @@ impl StoreBrowserSessionRateLimiter {
         let prefix = self.options.key_prefix();
         match subject {
             RateLimitSubject::ClientIp { headers, peer } => {
-                let address = resolve_client_ip(headers, peer, self.options.trusted_proxy_hops)
-                    .map_or_else(|| "unknown".to_owned(), |address| address.to_string());
-                Some(format!("{prefix}{group}:ip:{address}"))
+                let address = resolve_client_ip(headers, peer, self.options.trusted_proxy_hops)?;
+                let bucket = self.options.ip_bucket_label(address);
+                Some(format!("{prefix}{group}:ip:{bucket}"))
             }
             RateLimitSubject::SessionId(id) => Some(format!("{prefix}{group}:session:{id}")),
             _ => None,
@@ -69,6 +69,15 @@ impl BrowserSessionRateLimiter for StoreBrowserSessionRateLimiter {
         subject: RateLimitSubject<'a>,
     ) -> RateLimitFuture<'a> {
         Box::pin(async move {
+            if let RateLimitSubject::ClientIp { peer: None, .. } = subject {
+                tracing::error!(
+                    group = limit.group,
+                    "browser session IP limit has no socket peer; serve with ConnectInfo"
+                );
+                return RateLimitOutcome::Limited {
+                    retry_after: BUCKET_PERIOD,
+                };
+            }
             let Some(key) = self.key(limit.group, subject) else {
                 tracing::warn!(
                     group = limit.group,
@@ -118,10 +127,50 @@ mod tests {
     const PEER: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 4000);
 
     fn limiter() -> Result<StoreBrowserSessionRateLimiter, Box<dyn Error>> {
+        let mut options = RateLimitOptions::default();
+        options.trusted_proxy_hops = 1;
         Ok(StoreBrowserSessionRateLimiter::new(
             InMemoryRateLimitStore::new(STORE_CAPACITY)?,
-            RateLimitOptions::default(),
+            options,
         ))
+    }
+
+    #[tokio::test]
+    async fn missing_peer_is_limited_instead_of_sharing_an_unknown_bucket() -> TestResult {
+        let limiter = limiter()?;
+        let headers = HeaderMap::new();
+        let client = RateLimitSubject::ClientIp {
+            headers: &headers,
+            peer: None,
+        };
+        assert!(matches!(
+            limiter.check(AUTH_SESSION_IP_LIMIT, client).await,
+            RateLimitOutcome::Limited { .. }
+        ));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn ipv6_clients_in_one_64_share_a_bucket() -> TestResult {
+        let limiter = limiter()?;
+        let headers = HeaderMap::new();
+        let first: SocketAddr = "[2001:db8:0:1::1]:4000".parse()?;
+        let second: SocketAddr = "[2001:db8:0:1::2]:4000".parse()?;
+        let subject = |peer| RateLimitSubject::ClientIp {
+            headers: &headers,
+            peer: Some(peer),
+        };
+        for _ in 0..admitted(AUTH_SESSION_IP_LIMIT) {
+            assert_eq!(
+                limiter.check(AUTH_SESSION_IP_LIMIT, subject(first)).await,
+                RateLimitOutcome::Allowed
+            );
+        }
+        assert!(matches!(
+            limiter.check(AUTH_SESSION_IP_LIMIT, subject(second)).await,
+            RateLimitOutcome::Limited { .. }
+        ));
+        Ok(())
     }
 
     fn admitted(limit: BrowserSessionRateLimit) -> u64 {

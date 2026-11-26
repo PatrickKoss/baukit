@@ -3,21 +3,29 @@ use std::fmt;
 use serde_json::Value;
 
 use crate::security_probe::{
-    Operation, OperationFixtures, RouteExclusion, SecurityTarget, operations, substitute,
+    Operation, OperationFixtures, RouteExclusion, SecurityTarget, bearer, operations, substitute,
     validate_exclusions,
 };
 
 const DEFAULT_DENIED_STATUSES: [u16; 2] = [403, 404];
+const SUCCESS_MIN: u16 = 200;
+const SUCCESS_END: u16 = 300;
 
 /// Principal B's view of principal A's resources.
 ///
 /// The [`OperationFixtures`] path values are A's ids. `token` is B's bearer
 /// token. Every operation whose path has a parameter is called as B with A's
 /// ids and must answer with one of the denied statuses (403 or 404 by
-/// default) and without any leak marker in the body.
+/// default) and without any leak marker in the body. Operations without path
+/// parameters, such as lists, are called as B too and must not leak.
+///
+/// With [`CrossTenantCase::owner`], A's token proves each parameterized `GET`
+/// reaches the resource, and A re-reads the resource after each denied
+/// mutation to prove nothing changed.
 #[derive(Clone)]
 pub struct CrossTenantCase {
     token: String,
+    owner_token: Option<String>,
     denied_statuses: Vec<u16>,
     exclusions: Vec<RouteExclusion>,
     leak_markers: Vec<String>,
@@ -28,6 +36,10 @@ impl fmt::Debug for CrossTenantCase {
         formatter
             .debug_struct("CrossTenantCase")
             .field("token", &"<redacted>")
+            .field(
+                "owner_token",
+                &self.owner_token.as_ref().map(|_| "<redacted>"),
+            )
             .field("denied_statuses", &self.denied_statuses)
             .field("exclusions", &self.exclusions)
             .field("leak_markers", &self.leak_markers)
@@ -41,10 +53,18 @@ impl CrossTenantCase {
     pub fn new(token: impl Into<String>) -> Self {
         Self {
             token: token.into(),
+            owner_token: None,
             denied_statuses: DEFAULT_DENIED_STATUSES.to_vec(),
             exclusions: Vec::new(),
             leak_markers: Vec::new(),
         }
+    }
+
+    /// Adds principal A's token for the owner positive control and re-reads.
+    #[must_use]
+    pub fn owner(mut self, token: impl Into<String>) -> Self {
+        self.owner_token = Some(token.into());
+        self
     }
 
     /// Replaces the statuses that count as a denial.
@@ -129,8 +149,9 @@ impl fmt::Display for CrossTenantError {
 
 impl std::error::Error for CrossTenantError {}
 
-/// Calls every parameterized operation in `document` as principal B with
-/// principal A's ids and collects each one that was not denied.
+/// Calls every operation in `document` as principal B with principal A's ids
+/// and collects each parameterized one that was not denied and each one that
+/// leaked a marker.
 ///
 /// `document` is the product's OpenAPI JSON, for example
 /// `serde_json::to_value(ApiDoc::openapi())`. An operation with a path
@@ -184,10 +205,7 @@ pub async fn check_cross_tenant_denied(
     let mut violations = Vec::new();
     validate_exclusions(&case.exclusions, &all, &mut violations);
     let mut probed = Vec::new();
-    for operation in all
-        .iter()
-        .filter(|operation| !operation.path_parameters().is_empty())
-    {
+    for operation in &all {
         if case
             .exclusions
             .iter()
@@ -196,8 +214,25 @@ pub async fn check_cross_tenant_denied(
             continue;
         }
         probed.push(operation.label());
+        let reread = reread_operation(operation, &all);
+        let before = match (&case.owner_token, reread) {
+            (Some(owner), Some(read)) => {
+                owner_read(read, target, fixtures, owner, &mut violations).await
+            }
+            _ => None,
+        };
         if let Some(violation) = probe(operation, target, fixtures, case).await {
             violations.push(violation);
+        }
+        if let (Some(owner), Some(read), Some(before)) = (&case.owner_token, reread, before) {
+            let after = owner_read(read, target, fixtures, owner, &mut Vec::new()).await;
+            if after.as_ref() != Some(&before) {
+                violations.push(format!(
+                    "{}: owner's {} changed after the denied request",
+                    operation.label(),
+                    read.label()
+                ));
+            }
         }
     }
     if !violations.is_empty() {
@@ -242,7 +277,8 @@ async fn probe(
         Ok(uri) => uri,
         Err(message) => return Some(format!("{label}: {message}")),
     };
-    let request = fixtures.request(operation, &uri, Some(&case.token));
+    let authorization = bearer(&case.token);
+    let request = fixtures.request(operation, &uri, &authorization);
     let response = match target.send(request).await {
         Ok(response) => response,
         Err(message) => return Some(format!("{label}: request failed: {message}")),
@@ -257,11 +293,52 @@ async fn probe(
             response.status
         ));
     }
-    if case.denied_statuses.contains(&response.status) {
+    if operation.path_parameters().is_empty() || case.denied_statuses.contains(&response.status) {
         return None;
     }
     Some(format!(
         "{label}: status {}, expected one of {:?}",
         response.status, case.denied_statuses
     ))
+}
+
+/// The owner `GET` that observes `operation`'s resource: itself when it is a
+/// parameterized `GET`, or the `GET` on the same path for a mutation.
+fn reread_operation<'a>(operation: &'a Operation, all: &'a [Operation]) -> Option<&'a Operation> {
+    if operation.path_parameters().is_empty() {
+        return None;
+    }
+    all.iter()
+        .find(|candidate| candidate.method == "get" && candidate.path == operation.path)
+}
+
+async fn owner_read(
+    read: &Operation,
+    target: &SecurityTarget,
+    fixtures: &OperationFixtures,
+    owner: &str,
+    violations: &mut Vec<String>,
+) -> Option<String> {
+    let label = read.label();
+    let uri = substitute(&read.path, fixtures.path_values()).ok()?;
+    let authorization = bearer(owner);
+    match target
+        .send(fixtures.request(read, &uri, &authorization))
+        .await
+    {
+        Ok(response) if (SUCCESS_MIN..SUCCESS_END).contains(&response.status) => {
+            Some(response.body)
+        }
+        Ok(response) => {
+            violations.push(format!(
+                "{label}: owner got status {}, expected 2xx (positive control)",
+                response.status
+            ));
+            None
+        }
+        Err(message) => {
+            violations.push(format!("{label}: owner request failed: {message}"));
+            None
+        }
+    }
 }

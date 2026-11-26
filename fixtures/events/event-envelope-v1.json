@@ -11,15 +11,18 @@
       "event_id_invalid",
       "event_type_invalid",
       "event_user_mismatch",
-      "event_too_old"
-    ]
+      "event_too_old",
+      "event_in_future"
+    ],
+    "future_boundary": "event_in_future_when_occurred_at_is_more_than_300_seconds_after_now"
   },
   "constants": {
     "schema_version": 1,
     "maximum_event_id_characters": 64,
     "maximum_event_type_segment_characters": 32,
     "maximum_event_age_seconds": 604800,
-    "maximum_payload_keys": 32
+    "maximum_payload_keys": 32,
+    "maximum_clock_skew_seconds": 300
   },
   "cases": [
     {
@@ -211,6 +214,40 @@
         "now": "2026-08-24T12:00:00Z"
       },
       "expected_code": "event_schema_unsupported"
+    },
+    {
+      "name": "event exactly 300 seconds ahead is valid",
+      "input": {
+        "envelope": {
+          "eventId": "event-in-future",
+          "type": "heldengang.dailies.completed",
+          "userId": "oidc-subject-1",
+          "occurredAt": "2026-08-24T12:05:00Z",
+          "sourceApp": "heldengang",
+          "schemaVersion": 1,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": null
+    },
+    {
+      "name": "event 301 seconds ahead is in the future",
+      "input": {
+        "envelope": {
+          "eventId": "event-in-future",
+          "type": "heldengang.dailies.completed",
+          "userId": "oidc-subject-1",
+          "occurredAt": "2026-08-24T12:05:01Z",
+          "sourceApp": "heldengang",
+          "schemaVersion": 1,
+          "payload": {}
+        },
+        "expected_user_id": "oidc-subject-1",
+        "now": "2026-08-24T12:00:00Z"
+      },
+      "expected_code": "event_in_future"
     }
   ]
 }

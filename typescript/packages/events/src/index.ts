@@ -5,12 +5,22 @@ export const MAX_EVENT_ID_CHARACTERS = 64;
 export const MAX_EVENT_TYPE_SEGMENT_CHARACTERS = 32;
 export const MAX_EVENT_AGE_SECONDS = 7 * 24 * 60 * 60;
 export const MAX_EVENT_PAYLOAD_KEYS = 32;
+export const MAX_USER_ID_CHARACTERS = 255;
+export const MAX_EVENT_CLOCK_SKEW_SECONDS = 5 * 60;
+
+const PAYLOAD_KEY_PATTERN = /^[a-z][a-zA-Z0-9]{0,63}$/u;
+const SOURCE_APP_PATTERN = /^[a-z][a-z0-9_-]{0,31}$/u;
+const EVENT_TYPE_SEGMENT_PATTERN = /^[a-z][a-z0-9_]*$/u;
+const UTC_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:[0-5]\d(?:\.\d{1,3})?Z$/u;
+const NEXT_LINE = '\u0085';
+const MILLISECONDS_PER_SECOND = 1_000;
 
 export const EVENT_VALIDATION_CODES = [
   'event_id_invalid',
   'event_type_invalid',
   'event_user_mismatch',
   'event_too_old',
+  'event_in_future',
   'event_schema_unsupported',
 ] as const;
 
@@ -34,7 +44,7 @@ export const EventPayloadValueSchema: z.ZodType<EventPayloadValue> = z.lazy(() =
 );
 
 export const EventPayloadSchema = z
-  .record(z.string().regex(/^[a-z][a-zA-Z0-9]{0,63}$/u), EventPayloadValueSchema)
+  .record(z.string().refine(matchesWhole(PAYLOAD_KEY_PATTERN)), EventPayloadValueSchema)
   .refine((payload) => Object.keys(payload).length <= MAX_EVENT_PAYLOAD_KEYS, {
     message: `payload must contain at most ${String(MAX_EVENT_PAYLOAD_KEYS)} keys`,
   });
@@ -42,9 +52,9 @@ export const EventPayloadSchema = z
 export const EventEnvelopeSchema = z.strictObject({
   eventId: eventIdSchema,
   type: eventTypeSchema,
-  userId: z.string().trim().min(1).max(255),
-  occurredAt: z.iso.datetime(),
-  sourceApp: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/u),
+  userId: z.string().refine(validUserId),
+  occurredAt: z.string().refine((value) => parseUtcInstant(value) !== null),
+  sourceApp: z.string().refine(matchesWhole(SOURCE_APP_PATTERN)),
   schemaVersion: z
     .number()
     .int()
@@ -81,18 +91,43 @@ export function validateEventEnvelope(
 
   const nowMilliseconds = parseInstant(now);
   const occurredAtMilliseconds = parseInstant(envelope.occurredAt);
-  if (nowMilliseconds - occurredAtMilliseconds > MAX_EVENT_AGE_SECONDS * 1_000) {
-    return 'event_too_old';
+  const aheadMilliseconds = occurredAtMilliseconds - nowMilliseconds;
+  if (-aheadMilliseconds > MAX_EVENT_AGE_SECONDS * MILLISECONDS_PER_SECOND) return 'event_too_old';
+  if (aheadMilliseconds > MAX_EVENT_CLOCK_SKEW_SECONDS * MILLISECONDS_PER_SECOND) {
+    return 'event_in_future';
   }
   return null;
 }
 
-function validEventId(value: string): boolean {
+function matchesWhole(pattern: RegExp): (value: string) => boolean {
+  return (value) => pattern.test(value);
+}
+
+// Rust's `trim` also strips NEL (U+0085); JavaScript's does not.
+function unpadded(value: string): boolean {
   return (
     value.length > 0 &&
     value.trim() === value &&
-    Array.from(value).length <= MAX_EVENT_ID_CHARACTERS
+    !value.startsWith(NEXT_LINE) &&
+    !value.endsWith(NEXT_LINE)
   );
+}
+
+function validUserId(value: string): boolean {
+  return unpadded(value) && Array.from(value).length <= MAX_USER_ID_CHARACTERS;
+}
+
+function validEventId(value: string): boolean {
+  return unpadded(value) && Array.from(value).length <= MAX_EVENT_ID_CHARACTERS;
+}
+
+// Date.parse rolls 2026-02-30 over to March, so the calendar date must round-trip.
+function parseUtcInstant(value: string): number | null {
+  if (!UTC_INSTANT_PATTERN.test(value)) return null;
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds)) return null;
+  const roundTripped = new Date(milliseconds).toISOString().slice(0, 19);
+  return roundTripped === value.slice(0, 19) ? milliseconds : null;
 }
 
 function validEventType(value: string): boolean {
@@ -102,13 +137,13 @@ function validEventType(value: string): boolean {
     segments.every(
       (segment) =>
         Array.from(segment).length <= MAX_EVENT_TYPE_SEGMENT_CHARACTERS &&
-        /^[a-z][a-z0-9_]*$/u.test(segment),
+        matchesWhole(EVENT_TYPE_SEGMENT_PATTERN)(segment),
     )
   );
 }
 
 function parseInstant(value: string): number {
-  const milliseconds = Date.parse(value);
-  if (!Number.isFinite(milliseconds)) throw new RangeError(`Invalid RFC 3339 instant: ${value}`);
+  const milliseconds = parseUtcInstant(value);
+  if (milliseconds === null) throw new RangeError(`Invalid UTC instant: ${value}`);
   return milliseconds;
 }

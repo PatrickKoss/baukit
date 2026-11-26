@@ -236,6 +236,7 @@ impl PostgresDataSubjectStore {
     }
 
     /// Deletes at most `batch_size` expired parts and `batch_size` expired operations.
+    /// A pending operation is never purged, so an unfinished erasure keeps its job.
     /// The returned count is operations removed; part expiry is independent.
     /// Schedule repeated calls using a product job and `baukit_jobs::FixedUtcInterval`.
     /// Zero or a size above [`MAX_PURGE_BATCH_SIZE`] is a configuration error.
@@ -254,7 +255,7 @@ impl PostgresDataSubjectStore {
         }
         let mut transaction = self.pool.begin().await?;
         // Execution takes the job lock before the operation lock too.
-        let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM data_subject_operations WHERE purge_after < $1 ORDER BY purge_after, id LIMIT $2")
+        let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM data_subject_operations WHERE purge_after < $1 AND status <> 'pending' ORDER BY purge_after, id LIMIT $2")
             .bind(now.to_sqlx()).bind(i64::from(batch_size)).fetch_all(&mut *transaction).await?;
         let locked_jobs: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM job_outbox WHERE job_type = ANY($1) AND idempotency_key = ANY($2) ORDER BY id FOR UPDATE")
             .bind(vec![ERASURE_JOB_TYPE, EXPORT_JOB_TYPE, FINALIZATION_JOB_TYPE]).bind(ids.iter().map(ToString::to_string).collect::<Vec<_>>())
@@ -264,7 +265,7 @@ impl PostgresDataSubjectStore {
             .execute(&mut *transaction)
             .await?;
         let count = sqlx::query(
-            "DELETE FROM data_subject_operations WHERE id = ANY($1) AND purge_after < $2",
+            "DELETE FROM data_subject_operations WHERE id = ANY($1) AND purge_after < $2 AND status <> 'pending'",
         )
         .bind(ids)
         .bind(now.to_sqlx())

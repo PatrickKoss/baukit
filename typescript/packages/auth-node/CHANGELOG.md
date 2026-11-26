@@ -5,6 +5,14 @@
 - A stale `tokens.json.lock` left by a dead process, or older than the new `staleLockMs` option (default 60 s), is removed instead of failing with `cache_lock_timeout`.
 - A refresh finishes and stores the rotated refresh token even when the caller aborts mid-request.
 
+## 0.30.5
+
+### Patch Changes
+
+- Release the coordinated baukit 0.30.5 train.
+- Updated dependencies
+  - @baukit/type-guards@0.30.5
+
 ## 0.30.4
 
 ### Patch Changes

@@ -1,0 +1,482 @@
+===== src/bin/api.rs =====
+use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
+
+use axum::Router;
+use baukit_config::{BaukitConfig, Environment};
+use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
+use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
+use baukit_telemetry::{Telemetry, TelemetryBuilder, tracing};
+
+use sqlx::{PgPool, postgres::PgPoolOptions};
+use tokio::net::TcpListener;
+
+use snapshot_app_bin::ApiDependencies;
+use snapshot_app_bin::InMemoryItemRepository;
+use snapshot_app_bin::ProductConfig;
+use snapshot_app_bin::compose_api;
+use snapshot_app_bin::config_loader;
+use snapshot_app_bin::operations_router;
+use snapshot_app_ports::ItemRepository;
+use snapshot_app_postgres::PostgresItemRepository;
+use snapshot_app_services::ItemService;
+
+const PRODUCT: &str = "snapshot-app";
+const ENV_PREFIX: &str = "SNAPSHOT_APP";
+const POOL_METRICS_INTERVAL: Duration = Duration::from_secs(15);
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let environment = env::var(format!("{ENV_PREFIX}_ENVIRONMENT"))
+        .ok()
+        .map(|value| value.parse())
+        .transpose()?
+        .unwrap_or(Environment::Local);
+    let config = config_loader(environment)?.load()?;
+    run(config).await
+}
+
+async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> {
+    let service_info =
+        ServiceInfo::new(PRODUCT, ProcessKind::Api, build_info!(), config.environment);
+    let telemetry = init_telemetry(&config, &service_info)?;
+    let backend = Backend::connect(&config).await?;
+    let api = compose_api(&config, &backend.api)?.router;
+    serve(&config, &service_info, telemetry, backend, api).await
+}
+
+fn init_telemetry(
+    config: &BaukitConfig<ProductConfig>,
+    service_info: &ServiceInfo,
+) -> Result<Arc<Telemetry>, Box<dyn Error>> {
+    let mut builder = TelemetryBuilder::new(service_info.telemetry_identity().clone())
+        .sampling_ratio(config.telemetry.trace_sampling_ratio)
+        .log_format(config.telemetry.log_format);
+    if let Some(endpoint) = &config.telemetry.otlp_endpoint {
+        builder = builder.otlp_endpoint(endpoint);
+    }
+    Ok(Arc::new(builder.init()?))
+}
+
+async fn connect_pool(
+    config: &BaukitConfig<ProductConfig>,
+) -> Result<Option<(PgPool, PoolMetricsSampler)>, Box<dyn Error>> {
+    let Some(database) = &config.database else {
+        return Ok(None);
+    };
+    let pool = PgPoolOptions::new()
+        .max_connections(database.max_connections)
+        .min_connections(database.min_connections)
+        .acquire_timeout(database.acquire_timeout)
+        .connect(database.url.expose())
+        .await?;
+    let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), POOL_METRICS_INTERVAL)?;
+    Ok(Some((pool, pool_metrics)))
+}
+
+struct Backend {
+    api: ApiDependencies,
+    pool_metrics: Option<PoolMetricsSampler>,
+}
+
+impl Backend {
+    async fn connect(config: &BaukitConfig<ProductConfig>) -> Result<Self, Box<dyn Error>> {
+        let (repository, pool_metrics): (Arc<dyn ItemRepository>, Option<PoolMetricsSampler>) =
+            match connect_pool(config).await? {
+                Some((pool, pool_metrics)) => (
+                    Arc::new(PostgresItemRepository::new(pool)),
+                    Some(pool_metrics),
+                ),
+                None => {
+                    tracing::warn!(
+                        message = "database is not configured; using the in-memory item adapter"
+                    );
+                    (Arc::new(InMemoryItemRepository::new()), None)
+                }
+            };
+        Ok(Self {
+            api: ApiDependencies {
+                item_service: ItemService::new(repository),
+                rate_limit_store: None,
+            },
+            pool_metrics,
+        })
+    }
+}
+
+async fn serve(
+    config: &BaukitConfig<ProductConfig>,
+    service_info: &ServiceInfo,
+    telemetry: Arc<Telemetry>,
+    backend: Backend,
+    api: Router,
+) -> Result<(), Box<dyn Error>> {
+    let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
+    let traffic_gate = TrafficGate::new();
+    shutdown.on_drain({
+        let traffic_gate = traffic_gate.clone();
+        move || traffic_gate.stop_accepting()
+    });
+    let (operations, readiness) = operations_router(
+        backend.api.item_service,
+        service_info.telemetry_identity().clone(),
+        telemetry.prometheus_handle().clone(),
+        traffic_gate,
+    )?;
+    drop(readiness);
+    let api_listener =
+        TcpListener::bind(SocketAddr::new(config.http.bind_address, config.http.port)).await?;
+    let operations_listener =
+        TcpListener::bind(SocketAddr::new(config.ops.bind_address, config.ops.port)).await?;
+    tracing::info!(
+        message = "service started",
+        api_address = %api_listener.local_addr()?,
+        operations_address = %operations_listener.local_addr()?,
+    );
+    let signal_task = shutdown.spawn_signal_listener();
+    let result = serve_listener_pair(
+        api_listener,
+        api,
+        operations_listener,
+        operations,
+        shutdown.clone(),
+    )
+    .await;
+    shutdown.trigger();
+    if !signal_task.is_finished() {
+        signal_task.abort();
+    }
+    let _signal_result = signal_task.await;
+    if let Some(pool_metrics) = backend.pool_metrics {
+        pool_metrics.shutdown().await;
+    }
+    shutdown
+        .run_during_drain(
+            async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await },
+        )
+        .await???;
+    result?;
+    Ok(())
+}
+===== src/compose.rs =====
+use std::error::Error;
+
+use axum::{Router, http::Method};
+use baukit_config::BaukitConfig;
+use baukit_ratelimit::{InMemoryRateLimitStore, RateLimitOptions, SharedRateLimitStore};
+
+use snapshot_app_api::ApiState;
+use snapshot_app_api::finalize_api;
+use snapshot_app_api::routes;
+
+use snapshot_app_services::ItemService;
+
+use crate::{ProductConfig, RateLimits, rate_limited};
+
+/// Everything [`compose_api`] needs besides configuration.
+#[derive(Clone)]
+pub struct ApiDependencies {
+    pub item_service: ItemService,
+    /// Replaces the configured rate-limit store. Tests pass an in-memory store here.
+    pub rate_limit_store: Option<SharedRateLimitStore>,
+}
+
+/// The public API router plus the routes merged outside the OpenAPI document.
+pub struct ComposedApi {
+    pub router: Router,
+    /// Every route a late router serves, as `(method, path)`.
+    pub late_routes: Vec<(Method, &'static str)>,
+}
+
+/// Builds the public API with every layer the binary serves.
+///
+/// # Errors
+///
+/// Returns an error when rate-limit, HTTP or platform configuration is invalid.
+pub fn compose_api(
+    config: &BaukitConfig<ProductConfig>,
+    deps: &ApiDependencies,
+) -> Result<ComposedApi, Box<dyn Error>> {
+    let options = RateLimitOptions::from_config(&config.rate_limit)?;
+    // Without auth there is no Redis in the stack, so each replica keeps its own IP buckets.
+    let store = deps
+        .rate_limit_store
+        .clone()
+        .unwrap_or_else(|| SharedRateLimitStore::new(InMemoryRateLimitStore::default()));
+    let limits = options.is_enabled().then(|| RateLimits { store, options });
+    let api = routes(ApiState {
+        items: deps.item_service.clone(),
+    });
+    let api = rate_limited(api, limits.as_ref());
+    let late_routes = Vec::new();
+    Ok(ComposedApi {
+        router: finalize_api(api, &config.http, config.environment)?,
+        late_routes,
+    })
+}
+===== src/rate_limits.rs =====
+use axum::Router;
+use baukit_ratelimit::{RateLimitOptions, SharedRateLimitStore};
+
+/// The store and quotas every public route is limited with.
+#[derive(Clone)]
+pub struct RateLimits {
+    pub store: SharedRateLimitStore,
+    pub options: RateLimitOptions,
+}
+
+/// Wraps `router` in the IP and identity limiter. `None` means rate limiting is disabled.
+pub fn rate_limited(router: Router, limits: Option<&RateLimits>) -> Router {
+    match limits {
+        Some(limits) => {
+            baukit_ratelimit::layers(router, limits.store.clone(), limits.options.clone())
+        }
+        None => router,
+    }
+}
+===== src/lib.rs =====
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, RwLock},
+};
+
+use axum::Router;
+use baukit_config::{Validate, ValidationError, ValidationErrors};
+use baukit_jobs::WorkerRunner;
+use baukit_ops::{
+    OpsRouter, PrometheusHandle, ReadinessError, ReadinessRegistry, RegistrationError,
+    ServiceIdentity, TrafficGate,
+};
+
+use snapshot_app_domain::Item;
+use snapshot_app_ports::ItemRepository;
+use snapshot_app_ports::PortFuture;
+use snapshot_app_ports::RepositoryError;
+
+use snapshot_app_services::ItemService;
+
+use serde::Deserialize;
+use uuid::Uuid;
+
+mod compose;
+mod config;
+mod rate_limits;
+pub use compose::{ApiDependencies, ComposedApi, compose_api};
+pub use config::config_loader;
+pub use rate_limits::{RateLimits, rate_limited};
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct ProductConfig {
+    pub worker: WorkerProductConfig,
+}
+
+impl Validate for ProductConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = Vec::new();
+        if let Err(worker) = self.worker.validate() {
+            errors.extend(worker.into_errors());
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationErrors::new(errors))
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default)]
+pub struct WorkerProductConfig {
+    pub concurrency: usize,
+    pub lease_duration_seconds: u64,
+    pub job_timeout_seconds: u64,
+    pub poll_interval_milliseconds: u64,
+}
+
+impl Default for WorkerProductConfig {
+    fn default() -> Self {
+        Self {
+            concurrency: 5,
+            lease_duration_seconds: 15 * 60,
+            job_timeout_seconds: 10 * 60,
+            poll_interval_milliseconds: 250,
+        }
+    }
+}
+
+impl Validate for WorkerProductConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = Vec::new();
+        if !(1..=64).contains(&self.concurrency) {
+            errors.push(ValidationError::new(
+                "worker.concurrency",
+                "must be between 1 and 64",
+            ));
+        }
+        for (field, value) in [
+            ("worker.lease_duration_seconds", self.lease_duration_seconds),
+            ("worker.job_timeout_seconds", self.job_timeout_seconds),
+            (
+                "worker.poll_interval_milliseconds",
+                self.poll_interval_milliseconds,
+            ),
+        ] {
+            if value == 0 {
+                errors.push(ValidationError::new(field, "must be greater than zero"));
+            }
+        }
+        if self.job_timeout_seconds >= self.lease_duration_seconds {
+            errors.push(ValidationError::new(
+                "worker.job_timeout_seconds",
+                "must be less than worker.lease_duration_seconds",
+            ));
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationErrors::new(errors))
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct InMemoryItemRepository {
+    items: Arc<RwLock<BTreeMap<Uuid, Item>>>,
+}
+
+impl InMemoryItemRepository {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl InMemoryItemRepository {
+    fn read(&self) -> std::sync::RwLockReadGuard<'_, BTreeMap<Uuid, Item>> {
+        self.items
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn write(&self) -> std::sync::RwLockWriteGuard<'_, BTreeMap<Uuid, Item>> {
+        self.items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+impl ItemRepository for InMemoryItemRepository {
+    fn list<'a>(&'a self, owner_id: &'a str) -> PortFuture<'a, Result<Vec<Item>, RepositoryError>> {
+        Box::pin(async move {
+            Ok(self
+                .read()
+                .values()
+                .filter(|item| item.owner_id == owner_id)
+                .cloned()
+                .collect())
+        })
+    }
+
+    fn get<'a>(
+        &'a self,
+        owner_id: &'a str,
+        id: Uuid,
+    ) -> PortFuture<'a, Result<Option<Item>, RepositoryError>> {
+        Box::pin(async move {
+            Ok(self
+                .read()
+                .get(&id)
+                .filter(|item| item.owner_id == owner_id)
+                .cloned())
+        })
+    }
+
+    fn create(&self, item: Item) -> PortFuture<'_, Result<Item, RepositoryError>> {
+        Box::pin(async move {
+            let mut items = self.write();
+            if items.contains_key(&item.id) {
+                return Err(RepositoryError::Conflict);
+            }
+            items.insert(item.id, item.clone());
+            Ok(item)
+        })
+    }
+
+    fn update(&self, item: Item) -> PortFuture<'_, Result<Option<Item>, RepositoryError>> {
+        Box::pin(async move {
+            let mut items = self.write();
+            match items.get_mut(&item.id) {
+                Some(stored) if stored.owner_id == item.owner_id => {
+                    stored.clone_from(&item);
+                    Ok(Some(item))
+                }
+                _ => Ok(None),
+            }
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        owner_id: &'a str,
+        id: Uuid,
+    ) -> PortFuture<'a, Result<bool, RepositoryError>> {
+        Box::pin(async move {
+            let mut items = self.write();
+            if items.get(&id).is_some_and(|item| item.owner_id == owner_id) {
+                items.remove(&id);
+                return Ok(true);
+            }
+            Ok(false)
+        })
+    }
+
+    fn ready(&self) -> PortFuture<'_, Result<(), RepositoryError>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+pub fn operations_router(
+    service: ItemService,
+    identity: ServiceIdentity,
+    metrics: PrometheusHandle,
+    traffic_gate: TrafficGate,
+) -> Result<(Router, ReadinessRegistry), RegistrationError> {
+    let readiness = ReadinessRegistry::new();
+    readiness.register_fn_default("item_repository", move || {
+        let service = service.clone();
+        async move {
+            service
+                .ready()
+                .await
+                .map_err(|_| ReadinessError::new("item repository is unavailable"))
+        }
+    })?;
+    let router = OpsRouter::new(identity, metrics)
+        .with_readiness(readiness.clone())
+        .with_traffic_gate(traffic_gate)
+        .into_router();
+    Ok((router, readiness))
+}
+
+pub fn worker_operations_router(
+    runner: WorkerRunner,
+    identity: ServiceIdentity,
+    metrics: PrometheusHandle,
+    traffic_gate: TrafficGate,
+) -> Result<(Router, ReadinessRegistry), RegistrationError> {
+    let readiness = ReadinessRegistry::new();
+    readiness.register_fn_default("job_store", move || {
+        let runner = runner.clone();
+        async move {
+            runner
+                .ready()
+                .await
+                .map_err(|_| ReadinessError::new("job store cannot probe the durable outbox"))
+        }
+    })?;
+    let router = OpsRouter::new(identity, metrics)
+        .with_readiness(readiness.clone())
+        .with_traffic_gate(traffic_gate)
+        .into_router();
+    Ok((router, readiness))
+}

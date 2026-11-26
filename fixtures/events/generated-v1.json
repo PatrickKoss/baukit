@@ -1,0 +1,915 @@
+{
+  "cases": [
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": true
+      },
+      "name": "canonical"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "a"
+      },
+      "expected": {
+        "code": "event_user_mismatch",
+        "parses": true
+      },
+      "name": "userId 1 char"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+      },
+      "expected": {
+        "code": "event_user_mismatch",
+        "parses": true
+      },
+      "name": "userId 255 chars"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "uuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuuu"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "userId 256 chars"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": ""
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "userId empty"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": " u"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "userId leading space"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "u\n"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "userId trailing newline"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "u﻿"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "userId trailing BOM"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+      },
+      "expected": {
+        "code": "event_user_mismatch",
+        "parses": true
+      },
+      "name": "userId 255 astral chars"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "someone-else"
+      },
+      "expected": {
+        "code": "event_user_mismatch",
+        "parses": true
+      },
+      "name": "userId other user"
+    },
+    {
+      "envelope": {
+        "eventId": "﻿id",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": "event_id_invalid",
+        "parses": true
+      },
+      "name": "eventId BOM edge"
+    },
+    {
+      "envelope": {
+        "eventId": "id",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": "event_id_invalid",
+        "parses": true
+      },
+      "name": "eventId NEL edge"
+    },
+    {
+      "envelope": {
+        "eventId": " id",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": "event_id_invalid",
+        "parses": true
+      },
+      "name": "eventId NBSP edge"
+    },
+    {
+      "envelope": {
+        "eventId": "a b",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": true
+      },
+      "name": "eventId inner space"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": true
+      },
+      "name": "sourceApp 32 chars"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "abbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "sourceApp 33 chars"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "a-b_c9",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": true
+      },
+      "name": "sourceApp hyphen and underscore"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "Hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "sourceApp uppercase"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "9app",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "sourceApp leading digit"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit\n",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "sourceApp trailing newline"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "sourceApp empty"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00.123Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": true
+      },
+      "name": "occurredAt millis"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00.1Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": true
+      },
+      "name": "occurredAt one fraction digit"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00.123456Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "occurredAt micros"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T12:00:00+02:00",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "occurredAt offset"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "occurredAt lowercase z"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24 10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "occurredAt space separator"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "occurredAt no seconds"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-02-30T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "occurredAt february 30"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-06-30T23:59:60Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "occurredAt leap second"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T24:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "occurredAt hour 24"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z\n",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "occurredAt trailing newline"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T12:05:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": true
+      },
+      "name": "occurredAt 300 s ahead"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T12:05:01Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": "event_in_future",
+        "parses": true
+      },
+      "name": "occurredAt 301 s ahead"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T12:05:00.001Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": "event_in_future",
+        "parses": true
+      },
+      "name": "occurredAt 300.001 s ahead"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-17T12:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": true
+      },
+      "name": "occurredAt exactly 7 days old"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-17T11:59:59.999Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": "event_too_old",
+        "parses": true
+      },
+      "name": "occurredAt 7 days and 1 ms old"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "k0": 0,
+          "k1": 1,
+          "k10": 10,
+          "k11": 11,
+          "k12": 12,
+          "k13": 13,
+          "k14": 14,
+          "k15": 15,
+          "k16": 16,
+          "k17": 17,
+          "k18": 18,
+          "k19": 19,
+          "k2": 2,
+          "k20": 20,
+          "k21": 21,
+          "k22": 22,
+          "k23": 23,
+          "k24": 24,
+          "k25": 25,
+          "k26": 26,
+          "k27": 27,
+          "k28": 28,
+          "k29": 29,
+          "k3": 3,
+          "k30": 30,
+          "k31": 31,
+          "k4": 4,
+          "k5": 5,
+          "k6": 6,
+          "k7": 7,
+          "k8": 8,
+          "k9": 9
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": true
+      },
+      "name": "payload 32 keys"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "k0": 0,
+          "k1": 1,
+          "k10": 10,
+          "k11": 11,
+          "k12": 12,
+          "k13": 13,
+          "k14": 14,
+          "k15": 15,
+          "k16": 16,
+          "k17": 17,
+          "k18": 18,
+          "k19": 19,
+          "k2": 2,
+          "k20": 20,
+          "k21": 21,
+          "k22": 22,
+          "k23": 23,
+          "k24": 24,
+          "k25": 25,
+          "k26": 26,
+          "k27": 27,
+          "k28": 28,
+          "k29": 29,
+          "k3": 3,
+          "k30": 30,
+          "k31": 31,
+          "k32": 32,
+          "k4": 4,
+          "k5": 5,
+          "k6": 6,
+          "k7": 7,
+          "k8": 8,
+          "k9": 9
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "payload 33 keys"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "kAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": true
+      },
+      "name": "payload 64 char key"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "kAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "payload 65 char key"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "duration_minutes": 1
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "payload snake key"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "Duration": 1
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "payload upper first"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "duration\n": 1
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "payload trailing newline key"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "": 1
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "payload empty key"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {},
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": true
+      },
+      "name": "payload empty"
+    },
+    {
+      "envelope": {
+        "eventId": "0198f3a2-7c1e-7d42-9a31-2b9f0c9a1d77",
+        "extra": true,
+        "occurredAt": "2026-08-24T10:00:00Z",
+        "payload": {
+          "durationMinutes": 42
+        },
+        "schemaVersion": 1,
+        "sourceApp": "hebkit",
+        "type": "hebkit.workout.completed",
+        "userId": "oidc-subject-1"
+      },
+      "expected": {
+        "code": null,
+        "parses": false
+      },
+      "name": "unknown field"
+    }
+  ],
+  "description": "Generated by rust/crates/baukit-events/tests/generated.rs; do not edit.",
+  "expectedUserId": "oidc-subject-1",
+  "now": "2026-08-24T12:00:00Z"
+}

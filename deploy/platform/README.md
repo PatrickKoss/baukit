@@ -219,6 +219,8 @@ never persists that token.
 
 When every pull-through mirror from `registry-mirrors.sh up` is running, `platform-up.sh up` and the lifecycle's cluster creation attach them to the new cluster. If any mirror is missing or stopped, they create the cluster without mirrors. `down` and `nuke` detach the mirrors from the cluster network before they delete the cluster, so Docker can remove the network.
 
+`registry-mirrors.sh start` also checks each existing mirror for repository layer links whose blob data the proxy's 7-day expiry deleted, removes them and restarts that mirror, so it fetches the layer from upstream again instead of answering 200 with an empty body.
+
 ### Configuration contract
 
 Pass settings as environment variables or as a trusted shell assignment file

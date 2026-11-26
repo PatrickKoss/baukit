@@ -148,9 +148,12 @@ async fn supervise(
         },
     );
     let operations_shutdown = shutdown.child_token();
-    let server_result = axum::serve(listener, operations)
-        .with_graceful_shutdown(async move { operations_shutdown.cancelled().await })
-        .await;
+    let server_result = axum::serve(
+        listener,
+        operations.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move { operations_shutdown.cancelled().await })
+    .await;
     shutdown.trigger();
     tasks.join().await?;
     Ok(server_result)

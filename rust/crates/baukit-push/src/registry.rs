@@ -6,7 +6,7 @@ use jiff::Timestamp;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::PushOutcome;
+use crate::{DeviceInstallSecret, PushOutcome};
 
 /// Longest device token the registry accepts, in bytes.
 pub const MAX_DEVICE_TOKEN_LENGTH: usize = 512;
@@ -35,6 +35,9 @@ pub enum PushValidationError {
     /// The provider ticket ID is empty, too long, or not printable ASCII.
     #[error("push ticket id is invalid")]
     TicketId,
+    /// The install secret is too short, too long, or not printable ASCII.
+    #[error("device install secret is invalid")]
+    InstallSecret,
 }
 
 /// A provider-issued device token.
@@ -159,6 +162,8 @@ pub struct DeviceRegistration {
     pub time_zone: Option<DeviceTimeZone>,
     /// The service instant of this registration.
     pub registered_at: Timestamp,
+    /// The installation's secret, required to move a token another owner holds.
+    pub install_secret: Option<DeviceInstallSecret>,
 }
 
 impl DeviceRegistration {
@@ -176,7 +181,22 @@ impl DeviceRegistration {
             platform,
             time_zone: None,
             registered_at,
+            install_secret: None,
         }
+    }
+
+    /// Attaches the installation's secret. Send it with every registration.
+    #[must_use]
+    pub fn with_install_secret(mut self, secret: DeviceInstallSecret) -> Self {
+        self.install_secret = Some(secret);
+        self
+    }
+
+    #[cfg(any(feature = "sqlx-postgres", feature = "test-support"))]
+    pub(crate) fn secret_digest(&self) -> Option<Vec<u8>> {
+        self.install_secret
+            .as_ref()
+            .map(DeviceInstallSecret::digest)
     }
 
     /// Records the time zone the device reported.
@@ -221,6 +241,9 @@ pub enum PushStoreError {
     /// The adapter could not complete the operation.
     #[error("push store failed")]
     Internal(String),
+    /// Another owner holds the token and the registration lacks its install secret.
+    #[error("device token belongs to another owner")]
+    TokenHeldByAnotherOwner,
 }
 
 impl PushStoreError {
@@ -236,8 +259,11 @@ pub type PushStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// Storage port for the push tokens each owner's devices registered.
 ///
 /// A token belongs to at most one owner. Registering a token another owner
-/// holds moves it, so a shared device stops receiving the previous account's
-/// notifications. Each owner keeps at most a configured number of devices;
+/// holds moves it only with the install secret stored for it, so a shared device
+/// stops receiving the previous account's notifications while a leaked token
+/// cannot be taken over. Without that secret the registration fails with
+/// [`PushStoreError::TokenHeldByAnotherOwner`]. Rows stored before install
+/// secrets existed still move without one, and the adapter logs the move. Each owner keeps at most a configured number of devices;
 /// a registration over the cap evicts that owner's least recently registered
 /// devices, never the one being registered. Ties break on `created_at`, then
 /// on the token, so eviction is deterministic.
