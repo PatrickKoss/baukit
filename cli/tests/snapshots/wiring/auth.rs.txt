@@ -222,7 +222,7 @@ use snapshot_app_api::{finalize_with_options, http_options};
 use snapshot_app_services::ItemService;
 
 use crate::{BrowserSessionDependencies, browser_session_router, protect_routes};
-use crate::{ProductConfig, RateLimits, rate_limited};
+use crate::{ProductConfig, RateLimits};
 
 const HSTS_MAX_AGE: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 const BROWSER_SESSION_ROUTES: [&str; 3] = [

@@ -8,8 +8,9 @@ use axum::{
     http::{HeaderMap, Method, Request, StatusCode, header},
 };
 {% if context.auth_enabled %}use baukit_auth::{AuthState, IdentityVerifier, OidcConfig, OidcVerifier};
-{% endif %}use baukit_config::{BaukitConfig, RateLimitScopeConfig};
-use baukit_ratelimit::{InMemoryRateLimitStore, SharedRateLimitStore};
+{% endif %}{% if context.platform %}use baukit_config::{BaukitConfig, RateLimitScopeConfig, Secret};
+{% else %}use baukit_config::{BaukitConfig, RateLimitScopeConfig};
+{% endif %}use baukit_ratelimit::{InMemoryRateLimitStore, SharedRateLimitStore};
 use serde_json::Value;
 use tower::ServiceExt as _;
 
@@ -31,6 +32,8 @@ pub const AUDIENCE: &str = "{{ context.app_name }}-backend";
 const RESPONSE_LIMIT: usize = 1024 * 1024;
 const PERIOD: Duration = Duration::from_secs(60);
 {% if context.auth_enabled or context.platform %}const UNREACHABLE_DATABASE: &str = "postgres://unused:unused@127.0.0.1:1/unused";
+{% endif %}{% if context.platform %}/// Hub mode, so the composed router serves the documented `/platform/inbound` route.
+const HUB: &str = "https://hub.invalid";
 {% endif %}
 /// Routes merged outside the OpenAPI document. A late router missing here fails G-03.
 pub const LATE_ROUTES: [(&str, &str); 7] = [
@@ -76,6 +79,15 @@ pub fn config(quota: &Quota) -> BaukitConfig<ProductConfig> {
     config.rate_limit.ip = scope;
     config.http.body_size_limit = BODY_LIMIT;
 {% if context.auth_enabled %}    config.http.cors_allowed_origins = vec![WEB_ORIGIN.to_owned()];
+{% endif %}{% if context.platform %}    config.product.platform.hub_issuer = Some(HUB.to_owned());
+    config.product.platform.jwks_url = Some(format!("{HUB}/keys"));
+    config.product.platform.product_id = "composed_fixture".to_owned();
+    config.product.platform.source_app = "identity_hub".to_owned();
+    config.product.platform.receiver_secret =
+        Some(Secret::new("composed-receiver-secret".to_owned()));
+    config.product.platform_hub.ticket_url = Some(format!("{HUB}/tickets"));
+    config.product.platform_hub.service_token =
+        Some(Secret::new("composed-service-token".to_owned()));
 {% endif %}    config
 }
 {% if context.auth_enabled %}

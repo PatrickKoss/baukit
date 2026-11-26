@@ -18,8 +18,9 @@ use {{ context.app_crate }}_api::ApiState;
 use {{ context.app_crate }}_services::ItemService;
 
 {% if context.auth_enabled %}use crate::{BrowserSessionDependencies, browser_session_router, protect_routes};
-{% endif %}use crate::{ProductConfig, RateLimits, rate_limited};
-{% if context.mcp %}use crate::{mcp_policy, mcp_verifier};
+{% endif %}{% if not context.auth_enabled or context.mcp or context.platform %}use crate::{ProductConfig, RateLimits, rate_limited};
+{% else %}use crate::{ProductConfig, RateLimits};
+{% endif %}{% if context.mcp %}use crate::{mcp_policy, mcp_verifier};
 {% endif %}{% if context.auth_enabled %}
 const HSTS_MAX_AGE: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 {% endif %}{% if context.auth_enabled %}const BROWSER_SESSION_ROUTES: [&str; 3] = [

@@ -247,7 +247,11 @@ async fn item_routes_deny_other_tenants_and_invalid_tokens() -> Result<(), Box<d
         &document,
         &target,
         &fixtures,
-        &baukit_test::AuthNegativeCase::new(&issuer, AUDIENCE),
+        &baukit_test::AuthNegativeCase::new(&issuer, AUDIENCE){% if context.platform %}.public(
+            "post",
+            "/platform/inbound",
+            "hub deliveries authenticate with the receiver HMAC signature, not a bearer token",
+        ){% endif %},
     )
     .await;
     assert!(!negative.probed.is_empty(), "{negative}");

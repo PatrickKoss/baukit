@@ -1,8 +1,14 @@
-use std::{error::Error, path::PathBuf, sync::Arc};
+use std::{
+    error::Error,
+    net::{Ipv4Addr, SocketAddr},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use axum::{
     Json, Router,
     body::Body,
+    extract::ConnectInfo,
     http::{HeaderMap, Request, StatusCode},
     routing::{get, post},
 };
@@ -112,6 +118,7 @@ fn request(body: &str, secret: &str) -> Result<Request<Body>, axum::http::Error>
             "x-suite-signature",
             sign_webhook_hmac_sha256(secret.as_bytes(), now, "fixture-attempt", body.as_bytes()),
         )
+        .extension(ConnectInfo(SocketAddr::from((Ipv4Addr::LOCALHOST, 40_000))))
         .body(Body::from(body.to_owned()))
 }
 
@@ -133,7 +140,8 @@ async fn signed_fixture_event_reads_entitlements_and_retains_receipts() -> Resul
     config.validate()?;
     let services = compose(pool.clone(), &config)?;
     let mut event: Value = serde_json::from_str(include_str!("fixtures/platform-event.json"))?;
-    event["occurredAt"] = json!(jiff::Timestamp::now().to_string());
+    let occurred_at = jiff::Timestamp::now().round(jiff::Unit::Second)?;
+    event["occurredAt"] = json!(occurred_at.to_string());
     let body = serde_json::to_string(&event)?;
     let response = services
         .router

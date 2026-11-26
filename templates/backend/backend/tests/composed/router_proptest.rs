@@ -50,7 +50,10 @@ fn probes(paths: Vec<String>, tokens: Vec<String>) -> impl Strategy<Value = Prob
 fn random_requests_fail_closed_without_server_errors() -> Result<(), Box<dyn Error>> {
     let runtime = tokio::runtime::Runtime::new()?;
 {% if context.auth_enabled %}    let composed = runtime.block_on(support::compose(&Quota::GENEROUS, None))?;
-{% else %}    let composed = support::compose(&Quota::GENEROUS)?;
+{% else %}    let composed = {
+        let _context = runtime.enter();
+        support::compose(&Quota::GENEROUS)?
+    };
 {% endif %}
     let routes = support::inventory(&composed.api)?;
     let paths: Vec<String> = routes.iter().map(|(_, path)| path.clone()).collect();
