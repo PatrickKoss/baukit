@@ -263,7 +263,7 @@ them.
   `CircuitOpen`/`Saturated` to `deferred` and everything else to the existing classes.
   Acceptance: store conformance tests (memory and Postgres, `--include-ignored`) for deferral without
   attempt use, the cap, and `worker_job_deferrals_total`.
-- [ ] **CB4 Suite delivery on the breaker** (RL-10): the peer client sets `destination("suite-peer")`
+- [x] **CB4 Suite delivery on the breaker** (RL-10): the peer client sets `destination("suite-peer")`
   and `deliver_claimed` maps an open circuit to `deferred`. The per-link counter stays as the per-user
   signal but moves out of SQL into the domain constant only (one definition, the CHECK constraint
   references nothing), is evaluated when the delivery finishes instead of on the next enqueue, and
@@ -271,7 +271,7 @@ them.
   Acceptance: suite tests where a dead peer receives at most the breaker threshold of calls across
   three links, links to a healthy peer keep delivering, and a disabled link re-enables itself after the
   peer recovers.
-- [ ] **CB5 Hub and ticket keys on the breaker**: `HubClient` (`destination("hub")`), `TicketVerifier`
+- [x] **CB5 Hub and ticket keys on the breaker**: `HubClient` (`destination("hub")`), `TicketVerifier`
   key source and entitlement fetches go through the breaker. Covered together with ID3 and ID4.
 - [x] **CB6 Push** (RL-09): Expo sender uses `destination("expo")`; `send` returns per-chunk outcomes
   (`accepted` tickets plus the failing chunk's error) instead of discarding accepted tickets.
@@ -286,7 +286,7 @@ them.
 
 ## Phase ID: identity and read-mostly caches
 
-- [~] **ID1 JWKS on `StaleCache`** (RL-03, RL-07): the OIDC verifier and `TicketVerifier` move to
+- [x] **ID1 JWKS on `StaleCache`** (RL-03, RL-07): the OIDC verifier and `TicketVerifier` move to
   `StaleCache` with a 300 s fresh TTL, a 1 h stale window for known kids (never for unknown kids), a
   10 s failure cooldown, and no lock held across the fetch for cached reads.
   `auth_key_cache_requests_total` exported.
@@ -300,11 +300,11 @@ them.
   documents it as the production default.
   Acceptance: a test with an IdP that comes up after 3 s; startup succeeds. One where it never comes
   up; startup fails with a clear error after the budget.
-- [ ] **ID3 Hub client** (RL-05): token fetch moves to `StaleCache` (single flight, cooldown, no lock
+- [x] **ID3 Hub client** (RL-05): token fetch moves to `StaleCache` (single flight, cooldown, no lock
   across the POST). The `401` replay is allowed only for requests built through an idempotent
   constructor (`HubRequest::idempotent`) or carrying an `Idempotency-Key`; the type makes the other
   case impossible to replay.
-- [ ] **ID4 Entitlement grace** (RL-06): while the hub fails, serve the last snapshot until
+- [x] **ID4 Entitlement grace** (RL-06): while the hub fails, serve the last snapshot until
   `grace_until`, mark the response `stale` for callers that care, and only then return `503` with a
   `Retry-After` taken from the breaker.
 
@@ -556,7 +556,7 @@ Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/chec
 | rel-jobs2 | WK3, WK5, WK6, WK8 (crate part), WK9 | merged, unit checks verified; Docker run pending on integration |
 | rel-ops | IN5 (crate part) | merged, verified (two rounds; Docker tests pending) |
 | rel-faults | FX1 | merged, unit checks verified; Docker run pending on integration |
-| rel-suite | CB4, CB5, ID1 (TicketVerifier), ID3, ID4 | running |
+| rel-suite | CB4, CB5, ID1 (TicketVerifier), ID3, ID4 | merged, unit checks verified; Docker run pending on integration |
 | rel-adopters | CB6, CB7, WK7 | merged, unit checks verified; Docker run pending on integration |
 | rel-ts2 | CL1 fixture replay | merged, verified (ts-check, package-dependencies) |
 | rel-auth | ID1 (OIDC part), ID2, IN2 (browser session) | merged, verified (two rounds plus an orchestrator fix) |
@@ -686,3 +686,15 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
     early only repeats an idempotent IdP delete.
   - Not covered: data-subject failures decided in Rust (identity deadline, `export_too_large`) need a
     sampled gauge, and erasure has no `error_code` column. Both are template wave.
+- rel-suite merged.
+  - Ticket keys and hub tokens now use the shared stale caches.
+  - Hub calls only replay after a 401 when they are GETs, idempotent requests, or requests with an
+    Idempotency-Key.
+  - During a hub outage, entitlements are served stale until the grace window ends, then return 503
+    with Retry-After.
+  - Delivery failures are counted per attempt in Rust. Migration 005 drops the SQL trigger, and
+    disabled links get a probe after 1 h, doubling up to 24 h.
+  - The baukit-mcp test support needed the two new `SuiteLink` fields. I added them in the merge.
+  - `postgres/mod.rs` is down to 1000 lines, so its file-size allowlist entry is removed.
+- rel-tpl-backend started. It covers the CB3 helper, the WK5 suite key, and all backend, worker and
+  platform template wiring.
