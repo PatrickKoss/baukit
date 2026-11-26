@@ -532,6 +532,12 @@ pub fn validate(
         &lanes_and_steps,
         failures,
     );
+    validate_resources(
+        "creator_resources",
+        &quality.creator_resources,
+        &lanes_and_steps,
+        failures,
+    );
     for glob in &quality.shared {
         if invalid_glob(glob) {
             failures.push(format!(
@@ -840,7 +846,7 @@ mod tests {
         let gate = parse_gate_steps("doctor fast - always -\nplaywright web - selected web-e2e\n")
             .expect("listing parses");
         let quality: QualityManifest = toml::from_str(
-            "[resources]\nandroid = [\"web\", \"nope\"]\ndocker-network = [\"playwright\"]\n\"Bad_Name\" = []\n[shared_resources]\ngpu = [\"gone\"]\n",
+            "[resources]\nandroid = [\"web\", \"nope\"]\ndocker-network = [\"playwright\"]\n\"Bad_Name\" = []\n[shared_resources]\ngpu = [\"gone\"]\n[creator_resources]\ndocker-network = [\"doctor\", \"missing\"]\n\"Net_Work\" = [\"web\"]\n",
         )
         .expect("quality parses");
         let mut failures = Vec::new();
@@ -856,8 +862,31 @@ mod tests {
                 "quality.resources `Bad_Name` must start with a lowercase letter and hold only lowercase letters, digits and `-`",
                 "quality.resources `android` names unknown lane or step `nope`",
                 "quality.shared_resources `gpu` names unknown lane or step `gone`",
+                "quality.creator_resources `Net_Work` must start with a lowercase letter and hold only lowercase letters, digits and `-`",
+                "quality.creator_resources `docker-network` names unknown lane or step `missing`",
             ]
         );
+    }
+
+    #[test]
+    fn creator_resources_parse_validate_and_round_trip() {
+        let gate = parse_gate_steps("android-e2e mobile - selected -\n").expect("listing parses");
+        let quality: QualityManifest =
+            toml::from_str("[creator_resources]\ndocker-network = [\"android-e2e\"]\n")
+                .expect("quality parses");
+        assert_eq!(quality.creator_resources["docker-network"], ["android-e2e"]);
+        let mut failures = Vec::new();
+        validate(
+            &quality,
+            &capabilities(false, true, false),
+            Some(&gate),
+            &mut failures,
+        );
+        assert_eq!(failures, Vec::<String>::new());
+        let text = toml::to_string(&quality).expect("quality serializes");
+        assert!(text.contains("[creator_resources]"), "{text}");
+        let empty = toml::to_string(&QualityManifest::default()).expect("default serializes");
+        assert!(!empty.contains("creator_resources"), "{empty}");
     }
 
     #[test]

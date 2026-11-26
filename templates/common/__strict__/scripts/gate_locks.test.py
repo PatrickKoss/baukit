@@ -53,12 +53,43 @@ POOL_WORKER = textwrap.dedent("""
 """)
 
 
+MODE_WORKER = textwrap.dedent("""
+    import sys, time
+    sys.path.insert(0, sys.argv[1])
+    import gate_locks
+    from pathlib import Path
+    holder = gate_locks.ResourceLocks(Path(sys.argv[2]))
+    mode = gate_locks.Mode[sys.argv[3]]
+    events = sys.argv[4]
+    def log(sign):
+        with open(events, "a") as out:
+            out.write(f"{sign}{mode.name}\\n")
+    for _ in range(8):
+        with holder.hold([gate_locks.Need("docker-network", mode)]):
+            log("+")
+            time.sleep(0.03)
+            log("-")
+""")
+
+HOLD_AND_WAIT = (
+    "import sys, time; sys.path.insert(0, sys.argv[1]); import gate_locks;"
+    "from pathlib import Path;"
+    "hold = gate_locks.ResourceLocks(Path(sys.argv[2])).hold("
+    "[gate_locks.Need('docker-network', gate_locks.Mode.CREATOR)]);"
+    "hold.__enter__(); print('held', flush=True); time.sleep(60)"
+)
+
+
 def excl(*names):
     return [locks.Need(name) for name in names]
 
 
 def shared(name):
-    return locks.Need(name, shared=True)
+    return locks.Need(name, locks.Mode.SHARED)
+
+
+def creator(name):
+    return locks.Need(name, locks.Mode.CREATOR)
 
 
 def is_locked(path):
@@ -77,7 +108,7 @@ class ResourceTests(unittest.TestCase):
         resources = locks.resource_map({})
         self.assertEqual(
             locks.resources_for({"android-e2e", "mobile"}, resources),
-            excl("android", "docker-network"),
+            [locks.Need("android"), creator("docker-network")],
         )
         self.assertEqual(locks.resources_for({"playwright", "web"}, resources), [])
         self.assertEqual(locks.resources_for({"web-unit", "web"}, resources), [])
@@ -101,14 +132,61 @@ class ResourceTests(unittest.TestCase):
             [locks.Need("docker-network"), shared("gpu")],
         )
 
+    def test_a_step_in_more_than_one_mode_locks_exclusively(self):
+        settings = {
+            "quality": {
+                "resources": {"docker-network": ["compose"]},
+                "shared_resources": {"docker-network": ["host-browser"]},
+                "creator_resources": {"docker-network": ["networks"], "gpu": ["networks"]},
+            }
+        }
+        resources = locks.resource_map(settings)
+        self.assertEqual(
+            locks.resources_for({"networks"}, resources),
+            [creator("docker-network"), creator("gpu")],
+        )
+        for names in ({"networks", "host-browser"}, {"networks", "compose"}):
+            with self.subTest(names=names):
+                self.assertEqual(
+                    locks.resources_for(names, resources),
+                    [locks.Need("docker-network"), creator("gpu")],
+                )
+        self.assertEqual(
+            locks.resources_for({"mobile", "android-e2e"}, locks.resource_map({})),
+            [locks.Need("android"), creator("docker-network")],
+        )
+        moved = locks.resource_map({"quality": {"resources": {"docker-network": ["android-e2e"]}}})
+        self.assertEqual(
+            locks.resources_for({"android-e2e"}, moved), excl("android", "docker-network")
+        )
+
+    def test_tokens_round_trip_and_old_tokens_parse(self):
+        for need in (locks.Need("docker-network"), shared("docker-network"), creator("gpu")):
+            self.assertEqual(locks.Need.parse(need.token), need)
+        self.assertEqual(locks.Need.parse("android"), locks.Need("android"))
+        self.assertEqual(locks.Need.parse("docker-network~shared"), shared("docker-network"))
+        self.assertEqual(creator("docker-network").token, "docker-network~creator")
+
+    def test_conflicts_follow_the_modes(self):
+        modes = [locks.Need("net"), shared("net"), creator("net")]
+        compatible = {(shared("net"), shared("net")), (creator("net"), creator("net"))}
+        for mine in modes:
+            for theirs in modes:
+                with self.subTest(mine=mine, theirs=theirs):
+                    self.assertEqual(mine.conflicts_with(theirs), (mine, theirs) not in compatible)
+                    self.assertFalse(mine.conflicts_with(locks.Need("other", theirs.mode)))
+
     def test_unknown_members_are_reported(self):
         settings = {
             "quality": {
                 "resources": {"android": ["nope", "web"]},
                 "shared_resources": {"gpu": ["gone"]},
+                "creator_resources": {"docker-network": ["missing"]},
             }
         }
-        self.assertEqual(locks.unknown_resource_members(settings, {"web"}), ["gone", "nope"])
+        self.assertEqual(
+            locks.unknown_resource_members(settings, {"web"}), ["gone", "missing", "nope"]
+        )
 
     def test_locks_are_held_only_while_the_step_runs_in_order(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -285,6 +363,170 @@ class ResourceTests(unittest.TestCase):
             finish(exclusive, 10)
             finish(later, 10)
             self.assertEqual(order, ["exclusive", "later"])
+
+    def test_creators_run_together(self):
+        with tempfile.TemporaryDirectory() as directory:
+            holder = locks.ResourceLocks(Path(directory))
+            with holder.hold([creator("docker-network")]):
+                started = time.monotonic()
+                with holder.hold([creator("docker-network")]):
+                    self.assertLess(time.monotonic() - started, 1)
+
+    def assert_excludes(self, first, second):
+        with tempfile.TemporaryDirectory() as directory:
+            holder = locks.ResourceLocks(Path(directory))
+            got = []
+
+            def wait():
+                with holder.hold([second]):
+                    got.append(1)
+
+            with holder.hold([first]):
+                waiter = threading.Thread(target=wait)
+                waiter.start()
+                finish(waiter, 0.3)
+                self.assertEqual(got, [])
+            finish(waiter, 10)
+            self.assertEqual(got, [1])
+
+    def test_creators_and_shared_holders_exclude_each_other(self):
+        for first, second in [
+            (creator("docker-network"), shared("docker-network")),
+            (shared("docker-network"), creator("docker-network")),
+        ]:
+            with self.subTest(first=first, second=second):
+                self.assert_excludes(first, second)
+
+    def test_creators_and_exclusive_holders_exclude_each_other(self):
+        for first, second in [
+            (creator("docker-network"), locks.Need("docker-network")),
+            (locks.Need("docker-network"), creator("docker-network")),
+        ]:
+            with self.subTest(first=first, second=second):
+                self.assert_excludes(first, second)
+
+    def test_an_old_pin_exclusive_holder_excludes_creators_and_shared_holders(self):
+        for need in (creator("docker-network"), shared("docker-network")):
+            with self.subTest(need=need), tempfile.TemporaryDirectory() as directory:
+                holder = locks.ResourceLocks(Path(directory))
+                old = locks.open_locked(Path(directory) / "docker-network.lock")
+                fcntl.flock(old, fcntl.LOCK_EX)
+                got = []
+
+                def wait(need=need, holder=holder, got=got):
+                    with holder.hold([need]):
+                        got.append(1)
+
+                waiter = threading.Thread(target=wait)
+                waiter.start()
+                finish(waiter, 0.3)
+                self.assertEqual(got, [])
+                os.close(old)
+                finish(waiter, 10)
+                self.assertEqual(got, [1])
+
+    def test_a_waiter_gets_through_continuous_arrivals_of_the_other_mode(self):
+        for stream_need, waiter_need in [
+            (creator("docker-network"), shared("docker-network")),
+            (shared("docker-network"), creator("docker-network")),
+        ]:
+            with self.subTest(waiter=waiter_need), tempfile.TemporaryDirectory() as directory:
+                holder = locks.ResourceLocks(Path(directory))
+                stop = threading.Event()
+                got = []
+
+                def stream(need=stream_need, holder=holder, stop=stop):
+                    while not stop.is_set():
+                        with holder.hold([need]):
+                            time.sleep(0.03)
+
+                def wait(need=waiter_need, holder=holder, got=got):
+                    with holder.hold([need]):
+                        got.append(1)
+
+                workers = [threading.Thread(target=stream) for _ in range(4)]
+                for worker in workers:
+                    worker.start()
+                time.sleep(0.2)
+                waiter = threading.Thread(target=wait)
+                waiter.start()
+                finish(waiter, 2)
+                within_deadline = list(got)
+                stop.set()
+                for thread in [*workers, waiter]:
+                    finish(thread, 10)
+                self.assertEqual(within_deadline, [1])
+
+    def test_each_mode_takes_its_own_file_before_it_probes_the_other(self):
+        directory = Path("/locks")
+        for need, own, other in [
+            (shared("net"), "net.shared.lock", "net.creator.lock"),
+            (creator("net"), "net.creator.lock", "net.shared.lock"),
+        ]:
+            with self.subTest(need=need):
+                self.assertEqual(
+                    locks.file_locks(directory, need),
+                    [
+                        locks.FileLock(directory / "net.lock", fcntl.LOCK_SH),
+                        locks.FileLock(directory / own, fcntl.LOCK_SH),
+                        locks.FileLock(directory / other, fcntl.LOCK_EX, probe=True),
+                    ],
+                )
+        self.assertEqual(
+            locks.file_locks(directory, locks.Need("net")),
+            [locks.FileLock(directory / "net.lock", fcntl.LOCK_EX)],
+        )
+
+    def test_a_dead_creator_frees_the_resource(self):
+        with tempfile.TemporaryDirectory() as directory:
+            child = subprocess.Popen(
+                [sys.executable, "-c", HOLD_AND_WAIT, str(SCRIPTS), directory],
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            self.addCleanup(child.stdout.close)
+            self.addCleanup(child.wait, 10)
+            self.addCleanup(child.kill)
+            self.assertEqual(child.stdout.readline().strip(), "held")
+            holder = locks.ResourceLocks(Path(directory))
+            got = []
+
+            def wait():
+                with holder.hold([shared("docker-network")]):
+                    got.append(1)
+
+            waiter = threading.Thread(target=wait)
+            waiter.start()
+            finish(waiter, 0.3)
+            self.assertEqual(got, [])
+            child.kill()
+            finish(waiter, 10)
+            self.assertEqual(got, [1])
+
+    def test_creators_and_shared_holders_never_overlap_across_processes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            events = Path(directory) / "events"
+            workers = [
+                subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-c",
+                        MODE_WORKER,
+                        str(SCRIPTS),
+                        str(Path(directory) / "locks"),
+                        mode,
+                        str(events),
+                    ]
+                )
+                for mode in ("CREATOR", "SHARED", "CREATOR", "SHARED")
+            ]
+            for worker in workers:
+                self.assertEqual(worker.wait(60), 0)
+            running = {"CREATOR": 0, "SHARED": 0}
+            for line in events.read_text().split():
+                running[line[1:]] += 1 if line[0] == "+" else -1
+                self.assertFalse(running["CREATOR"] and running["SHARED"], line)
+            self.assertEqual(running, {"CREATOR": 0, "SHARED": 0})
 
     def test_wait_text_names_each_lock(self):
         text = locks.describe_waits([locks.LockWait("android", 3), locks.LockWait("browser", 0)])
@@ -542,6 +784,15 @@ except BlockingIOError: print(1)' "{root}/locks/docker-network.lock")" >> "{trac
         self.assertEqual(held["playwright"], ["android=0", "network=1"])
         self.assertIn("playwright takes docker-network shared", result.stdout)
 
+    def test_a_product_creator_resource_takes_a_creator_lock(self):
+        text = '[quality.creator_resources]\ndocker-network = ["playwright"]\n'
+        result, trace = self.run_gate([], settings_text=text)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        held = {line.split()[0]: line.split()[2:] for line in trace}
+        self.assertEqual(held["playwright"][1], "network=1")
+        self.assertIn("playwright takes docker-network creator", result.stdout)
+        self.assertIn("android-e2e takes android, docker-network creator", result.stdout)
+
     def test_a_fast_step_after_a_locking_step_fails_before_running(self):
         steps = [
             "android-debug mobile - selected -",
@@ -559,7 +810,8 @@ except BlockingIOError: print(1)' "{root}/locks/docker-network.lock")" >> "{trac
         result, _ = self.run_gate([], settings_text='[quality.resources]\nandroid = ["nope"]\n')
         self.assertEqual(result.returncode, 2)
         self.assertIn(
-            "quality.resources and quality.shared_resources name unknown lanes or steps: nope",
+            "quality.resources, quality.shared_resources and quality.creator_resources "
+            "name unknown lanes or steps: nope",
             result.stderr,
         )
 
