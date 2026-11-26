@@ -404,7 +404,7 @@ them.
 
 ## Phase CL: TypeScript clients and generated frontends
 
-- [ ] **CL1 `api-runtime` timeouts, Retry-After and cooldown** (RL-60, RL-61, D9): `requestTimeoutMs`
+- [~] **CL1 `api-runtime` timeouts, Retry-After and cooldown** (RL-60, RL-61, D9): `requestTimeoutMs`
   (default 30 s) combined with the caller's signal; retry `429` and `503` when `Retry-After` is present,
   clamped to `maxRetryAfterMs`; the per-origin cooldown from D9 that fails fast with
   `ApiUnavailableError { retryAt }`. Backoff and cooldown replay `fixtures/resilience/*.json`.
@@ -412,12 +412,12 @@ them.
   `Retry-After: 5` produce one request, not 50.
 - [ ] **CL2 One retry layer in the web template** (RL-62): `QueryClient` with `retry: false`,
   `refetchOnWindowFocus` jittered or off, and a shared `isApiUnavailable` state from the cooldown.
-- [ ] **CL3 Sync scheduler defaults** (RL-63): default `delayMs` uses full jitter and
+- [x] **CL3 Sync scheduler defaults** (RL-63): default `delayMs` uses full jitter and
   `SyncRateLimitError.retryAt`; recovery triggers wait a random 0-5 s; the interval gets 10% jitter.
-- [ ] **CL4 Token refresh under outage** (RL-64, RL-65): the refresh POST gets a 10 s timeout; a
+- [~] **CL4 Token refresh under outage** (RL-64, RL-65): the refresh POST gets a 10 s timeout; a
   retryable failure keeps using the current token until `expiresAt`; mobile renewal reschedules with
   jittered backoff on retryable failure and stops only on `invalid_grant`.
-- [ ] **CL5 Degraded UI** (RL-66): `networkFirst` gains a network timeout (default 4 s) before falling
+- [~] **CL5 Degraded UI** (RL-66): `networkFirst` gains a network timeout (default 4 s) before falling
   back to cache; the web and mobile templates get a top-level error boundary and an "unavailable, retrying
   at HH:MM" banner driven by the cooldown, with a11y tests and localized strings.
 - [ ] **CL6 compose** (RL-67): `restart: unless-stopped` everywhere and a `/readyz` healthcheck for the
