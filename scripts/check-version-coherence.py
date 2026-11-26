@@ -346,6 +346,7 @@ def crate_snippet_problems(
     problems.extend(
         f"{path} {name} = {requirement!r} passes now, remove it from the expected-failure list"
         for path, name, requirement in sorted(expected_stale - stale)
+        if (root / path).is_file()
     )
     return problems
 
