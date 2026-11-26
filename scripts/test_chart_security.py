@@ -147,10 +147,12 @@ class LifecycleTest(unittest.TestCase):
                 [constraint] = pod_spec(found[process])["topologySpreadConstraints"]
                 self.assertEqual(constraint["topologyKey"], "kubernetes.io/hostname")
                 self.assertEqual(constraint["whenUnsatisfiable"], "ScheduleAnyway")
-                self.assertEqual(
-                    constraint["labelSelector"]["matchLabels"],
-                    found[process]["spec"]["selector"]["matchLabels"],
-                )
+                selector = dict(found[process]["spec"]["selector"]["matchLabels"])
+                if process != "web":
+                    self.assertEqual(
+                        selector.pop("baukit.dev/workload"), f"chart-options-{process}"
+                    )
+                self.assertEqual(constraint["labelSelector"]["matchLabels"], selector)
         for process in ["migrate", "seed"]:
             self.assertNotIn("topologySpreadConstraints", pod_spec(found[process]))
 

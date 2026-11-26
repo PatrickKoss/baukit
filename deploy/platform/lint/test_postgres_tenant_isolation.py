@@ -1,15 +1,27 @@
 from __future__ import annotations
 
+import re
 import unittest
 from pathlib import Path
 
 import yaml
 
-POSTGRES = Path(__file__).resolve().parent.parent / "postgres-cluster"
+PLATFORM = Path(__file__).resolve().parent.parent
+POSTGRES = PLATFORM / "postgres-cluster"
+DATABASE_CONFIG = PLATFORM.parent.parent / "rust/crates/baukit-config/src/database.rs"
+ROLE_TIMEOUTS = {
+    "statement_timeout": "DEFAULT_STATEMENT_TIMEOUT",
+    "lock_timeout": "DEFAULT_LOCK_TIMEOUT",
+    "idle_in_transaction_session_timeout": "DEFAULT_IDLE_IN_TRANSACTION_SESSION_TIMEOUT",
+}
+KEYCLOAK_POOL_MAX = 10
 TENANT_GROUP = "baukit_tenants"
 TENANT_CONNECTION_LIMIT = 25
 MAX_CONNECTIONS = 150
 TENANTS_IN_BUDGET = 5
+KEYCLOAK_CONNECTION_LIMIT = 12
+# One direct worker pod at the default pool, the migration Job and an operator psql.
+MIGRATION_AND_OPERATOR_CONNECTIONS = 3
 EXPECTED_PG_HBA = [
     f"host samerole +{TENANT_GROUP} all scram-sha-256",
     f"host all +{TENANT_GROUP} all reject",
@@ -63,6 +75,69 @@ class PostgresTenantIsolationTest(unittest.TestCase):
             int(parameters["default_pool_size"]) + int(parameters["reserve_pool_size"]),
             int(parameters["max_db_connections"]),
         )
+
+    def test_owner_limit_leaves_room_for_a_direct_worker(self) -> None:
+        (pooler,) = documents(POSTGRES / "pooler.yaml")
+        pooled = int(pooler["spec"]["pgbouncer"]["parameters"]["max_db_connections"])
+        direct = TENANT_CONNECTION_LIMIT - pooled
+        self.assertGreaterEqual(
+            direct, config_max_connections() + MIGRATION_AND_OPERATOR_CONNECTIONS
+        )
+
+    def test_bootstrap_owner_gets_the_tenant_limit_and_config_timeouts(self) -> None:
+        (cluster,) = documents(POSTGRES / "cluster.yaml")
+        initdb = cluster["spec"]["bootstrap"]["initdb"]
+        owner = initdb["owner"]
+        expected = [f"ALTER ROLE {owner} CONNECTION LIMIT {TENANT_CONNECTION_LIMIT}"] + [
+            f"ALTER ROLE {owner} SET {name} = '{seconds}s'"
+            for name, seconds in config_timeouts().items()
+        ]
+        self.assertEqual(initdb["postInitApplicationSQL"], expected)
+
+    def test_example_documents_the_same_owner_timeouts(self) -> None:
+        example = (POSTGRES / "product-database.example.yaml").read_text()
+        for name, seconds in config_timeouts().items():
+            self.assertIn(f"ALTER ROLE product_owner SET {name} = '{seconds}s'", example)
+
+    def test_pooler_timeouts_sit_above_the_role_timeouts(self) -> None:
+        (pooler,) = documents(POSTGRES / "pooler.yaml")
+        parameters = pooler["spec"]["pgbouncer"]["parameters"]
+        timeouts = config_timeouts()
+        self.assertGreater(int(parameters["query_timeout"]), timeouts["statement_timeout"])
+        self.assertEqual(
+            int(parameters["idle_transaction_timeout"]),
+            timeouts["idle_in_transaction_session_timeout"],
+        )
+        self.assertIn("options", parameters["ignore_startup_parameters"].split(","))
+
+    def test_keycloak_owner_is_capped_above_its_pool(self) -> None:
+        documents_by_kind = {
+            doc["kind"]: doc for doc in documents(PLATFORM / "keycloak/database.yaml")
+        }
+        limit = documents_by_kind["DatabaseRole"]["spec"]["connectionLimit"]
+        self.assertEqual(limit, KEYCLOAK_CONNECTION_LIMIT)
+        self.assertGreater(limit, KEYCLOAK_POOL_MAX)
+        self.assertLess(
+            TENANTS_IN_BUDGET * TENANT_CONNECTION_LIMIT + KEYCLOAK_CONNECTION_LIMIT, MAX_CONNECTIONS
+        )
+
+
+def config_timeouts() -> dict[str, int]:
+    source = DATABASE_CONFIG.read_text()
+    found = {}
+    for setting, constant in ROLE_TIMEOUTS.items():
+        match = re.search(rf"const {constant}: Duration = Duration::from_secs\((\d+)\);", source)
+        if match is None:
+            raise AssertionError(f"{constant} not found in {DATABASE_CONFIG}")
+        found[setting] = int(match.group(1))
+    return found
+
+
+def config_max_connections() -> int:
+    match = re.search(r"const DEFAULT_MAX_CONNECTIONS: u32 = (\d+);", DATABASE_CONFIG.read_text())
+    if match is None:
+        raise AssertionError(f"DEFAULT_MAX_CONNECTIONS not found in {DATABASE_CONFIG}")
+    return int(match.group(1))
 
 
 if __name__ == "__main__":

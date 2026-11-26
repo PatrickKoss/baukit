@@ -543,6 +543,63 @@ class IngressSuiteTests(unittest.TestCase):
         self.assertRegex(values, r"(?m)^ingress:\n  enabled: true$")
 
 
+class ChartValuesSuiteTests(unittest.TestCase):
+    def render(self, values):
+        result = process_runner.run_process(
+            [
+                "helm",
+                "template",
+                "echo",
+                str(REPO / "deploy/chart/baukit-app"),
+                "--values",
+                str(values),
+                "--api-versions",
+                "monitoring.coreos.com/v1/ServiceMonitor",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def test_every_suite_values_file_renders(self):
+        for values in sorted(E2E.glob("tests/*/values.yaml")):
+            with self.subTest(values=values.parent.name):
+                self.render(values)
+
+    def test_canary_suite_queries_the_platform_prometheus(self):
+        rendered = self.render(E2E / "tests/canary/values.yaml")
+        self.assertIn("kind: Canary", rendered)
+        self.assertEqual(
+            rendered.count(
+                'address: "http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090"'
+            ),
+            2,
+        )
+        self.assertIn("kind: IngressRoute", rendered)
+
+
+class EchoImageTests(unittest.TestCase):
+    def metrics(self, conf):
+        body = re.search(
+            r'location = /metrics \{[^}]*return 200 "(.*)";', (E2E / "echo" / conf).read_text()
+        )
+        self.assertIsNotNone(body)
+        return dict(line.rsplit(" ", 1) for line in body.group(1).split("\\n") if line)
+
+    def test_healthy_echo_counts_only_successes(self):
+        metrics = self.metrics("default.conf")
+        self.assertEqual(metrics['http_requests_total{status=\\"200\\"}'], "$msec")
+        self.assertEqual(metrics['http_requests_total{status=\\"500\\"}'], "0")
+
+    def test_faulty_echo_counts_only_failures(self):
+        metrics = self.metrics("faulty.conf")
+        self.assertEqual(metrics['http_requests_total{status=\\"200\\"}'], "0")
+        self.assertEqual(metrics['http_requests_total{status=\\"500\\"}'], "$msec")
+        self.assertIn('return 500 "baukit e2e echo fails', (E2E / "echo/faulty.conf").read_text())
+
+
 class SubnetTests(unittest.TestCase):
     """free_subnet and create_k3d_cluster with stubbed docker and k3d binaries."""
 

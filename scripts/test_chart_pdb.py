@@ -86,7 +86,13 @@ class PodDisruptionBudgetChartTest(unittest.TestCase):
                 name = f"name: {RELEASE}-baukit-app-{process}\n"
                 deployment = next(d for d in docs if "kind: Deployment" in d and name in d)
                 budget = next(d for d in docs if "kind: PodDisruptionBudget" in d and name in d)
-                self.assertEqual(self.match_labels(budget), self.match_labels(deployment))
+                # The budget leaves out baukit.dev/workload to cover the -primary pods.
+                workload = f"baukit.dev/workload: {RELEASE}-baukit-app-{process}"
+                self.assertIn(workload, self.match_labels(deployment))
+                self.assertEqual(
+                    self.match_labels(budget),
+                    [label for label in self.match_labels(deployment) if label != workload],
+                )
 
     @staticmethod
     def match_labels(doc: str) -> list[str]:

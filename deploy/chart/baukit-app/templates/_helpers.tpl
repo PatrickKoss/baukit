@@ -61,6 +61,12 @@ baukit.dev/process: {{ .process }}
 baukit.dev/process: {{ .process }}
 {{- end }}
 
+{{/* Deployment selector: process labels plus the baukit.dev/workload label Flagger rewrites to <name>-primary. */}}
+{{- define "baukit-app.workloadSelectorLabels" -}}
+{{ include "baukit-app.processSelectorLabels" . }}
+baukit.dev/workload: {{ printf "%s-%s" (include "baukit-app.fullname" .root) .process }}
+{{- end }}
+
 {{/* Normalize product/config prefix to ConfigLoader's environment convention. */}}
 {{- define "baukit-app.envPrefix" -}}
 {{- $prefix := default .Values.product .Values.config.envPrefix -}}

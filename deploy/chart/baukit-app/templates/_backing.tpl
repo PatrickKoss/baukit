@@ -26,6 +26,12 @@
 {{- if or (eq .process "api") (and (eq .process "worker") $worker.enabled $worker.redis.enabled) }}true{{ end -}}
 {{- end }}
 
+{{/* Whether a process bypasses the shared pooler: (dict "root" $ "process" <name>). */}}
+{{- define "baukit-app.postgresDirect" -}}
+{{- $root := .root -}}
+{{- if and (eq (include "baukit-app.postgresMode" $root) "shared") $root.Values.backing.postgres.shared.directUrlSecretRef.name (ne .process "api") }}true{{ end -}}
+{{- end }}
+
 {{- define "baukit-app.postgresClusterName" -}}
 {{- default (printf "%s-postgres" .Release.Name) .Values.backing.postgres.dedicated.clusterName | trunc 50 | trimSuffix "-" -}}
 {{- end }}
@@ -47,12 +53,19 @@
 {{- define "baukit-app.backingEnv" -}}
 {{- $root := .root -}}
 {{- $prefix := include "baukit-app.envPrefix" $root -}}
+{{- $direct := $root.Values.backing.postgres.shared.directUrlSecretRef }}
 {{- if eq (include "baukit-app.postgresMode" $root) "dedicated" }}
 - name: {{ printf "%s__DATABASE__URL" $prefix }}
   valueFrom:
     secretKeyRef:
       name: {{ printf "%s-app" (include "baukit-app.postgresClusterName" $root) }}
       key: uri
+{{- else if include "baukit-app.postgresDirect" . }}
+- name: {{ printf "%s__DATABASE__URL" $prefix }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ $direct.name }}
+      key: {{ $direct.key }}
 {{- end }}
 {{- if and (include "baukit-app.redisClient" .) (eq (include "baukit-app.redisMode" $root) "dedicated") }}
 - name: {{ printf "%s__RATE_LIMIT__REDIS_URL" $prefix }}
@@ -89,6 +102,17 @@
           cnpg.io/cluster: {{ $backing.postgres.shared.clusterName }}
   ports:
     - {protocol: TCP, port: 5432}
+{{- if not (include "baukit-app.postgresDirect" .) }}
+- to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: {{ $backing.postgres.shared.namespace }}
+      podSelector:
+        matchLabels:
+          cnpg.io/poolerName: {{ default (printf "%s-pooler-rw" $backing.postgres.shared.clusterName) $backing.postgres.shared.poolerName }}
+  ports:
+    - {protocol: TCP, port: 5432}
+{{- end }}
 {{- else if eq $postgres "dedicated" }}
 - to:
     - podSelector:
