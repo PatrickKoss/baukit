@@ -1,7 +1,8 @@
 #![cfg(test)]
-#[path = "support/postgres_fixture.rs"]
-#[expect(dead_code, reason = "this suite uses only the database fixture")]
-mod postgres_fixture;
+#[path = "support/postgres_database.rs"]
+mod postgres_database;
+#[path = "support/profiles_product.rs"]
+mod profiles_product;
 
 use baukit_config::Secret;
 use baukit_erasure::{ErasureError, ErasureService, IdentityRetention, PostgresErasureStore};
@@ -19,12 +20,12 @@ fn key(value: &str) -> Secret<String> {
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn a_rotated_key_keeps_every_fence_and_receipt() -> Result<(), Box<dyn Error>> {
-    let (_container, pool, old_store) = postgres_fixture::database().await?;
+    let (_container, pool, old_store) = postgres_database::database().await?;
     let login = Timestamp::now()
         .checked_sub(SignedDuration::from_mins(5))
         .ok();
     let erased = ErasureService::new(old_store, IdentityRetention::Retain)?
-        .erase("alice", login, ERASE_KEY, &postgres_fixture::Product)
+        .erase("alice", login, ERASE_KEY, &profiles_product::Product)
         .await?;
 
     let new_only = PostgresErasureStore::new(pool.clone(), key(NEW_KEY))?;
@@ -44,12 +45,12 @@ async fn a_rotated_key_keeps_every_fence_and_receipt() -> Result<(), Box<dyn Err
     );
     let service = ErasureService::new(rotating.clone(), IdentityRetention::Retain)?;
     let replayed = service
-        .erase("alice", login, ERASE_KEY, &postgres_fixture::Product)
+        .erase("alice", login, ERASE_KEY, &profiles_product::Product)
         .await?;
     assert_eq!(replayed.operation_id, erased.operation_id);
     assert!(matches!(
         service
-            .erase("bob", login, ERASE_KEY, &postgres_fixture::Product)
+            .erase("bob", login, ERASE_KEY, &profiles_product::Product)
             .await,
         Err(ErasureError::Conflict)
     ));

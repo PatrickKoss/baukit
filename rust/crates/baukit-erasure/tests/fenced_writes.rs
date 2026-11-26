@@ -1,7 +1,6 @@
 #![cfg(test)]
-#[path = "support/postgres_fixture.rs"]
-#[expect(dead_code, reason = "this suite uses only the database fixture")]
-mod postgres_fixture;
+#[path = "support/postgres_database.rs"]
+mod postgres_database;
 
 use baukit_erasure::{
     ErasureError, ErasureFuture, ErasureService, IdentityRetention, PostgresErasureStore,
@@ -72,7 +71,7 @@ fn earlier_login() -> Option<Timestamp> {
 #[ignore = "requires Docker PostgreSQL"]
 async fn write_admitted_before_an_erase_that_commits_first_is_rejected()
 -> Result<(), Box<dyn Error>> {
-    let (_container, pool, store) = postgres_fixture::database().await?;
+    let (_container, pool, store) = postgres_database::database().await?;
     sqlx::raw_sql(NOTES_TABLE).execute(&pool).await?;
     let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
     let login = earlier_login();
@@ -91,7 +90,7 @@ async fn write_admitted_before_an_erase_that_commits_first_is_rejected()
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn a_scoped_write_is_fenced_and_an_unscoped_one_is_not() -> Result<(), Box<dyn Error>> {
-    let (_container, pool, store) = postgres_fixture::database().await?;
+    let (_container, pool, store) = postgres_database::database().await?;
     sqlx::raw_sql(NOTES_TABLE).execute(&pool).await?;
     let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
     let login = earlier_login();
@@ -118,7 +117,7 @@ async fn a_scoped_write_is_fenced_and_an_unscoped_one_is_not() -> Result<(), Box
 #[ignore = "requires Docker PostgreSQL"]
 async fn sign_in_with_the_erased_session_does_not_recreate_the_identity()
 -> Result<(), Box<dyn Error>> {
-    let (_container, pool, store) = postgres_fixture::database().await?;
+    let (_container, pool, store) = postgres_database::database().await?;
     sqlx::raw_sql(NOTES_TABLE).execute(&pool).await?;
     sqlx::raw_sql("CREATE TABLE user_identities (subject TEXT PRIMARY KEY)")
         .execute(&pool)
@@ -162,7 +161,7 @@ async fn sign_in_with_the_erased_session_does_not_recreate_the_identity()
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn erase_waits_for_a_guarded_write_and_then_deletes_its_rows() -> Result<(), Box<dyn Error>> {
-    let (_container, pool, store) = postgres_fixture::database().await?;
+    let (_container, pool, store) = postgres_database::database().await?;
     sqlx::raw_sql(NOTES_TABLE).execute(&pool).await?;
     let service = ErasureService::new(store.clone(), IdentityRetention::Retain)?;
     let login = earlier_login();
@@ -244,7 +243,7 @@ fn mirror(case: &FenceCase) -> bool {
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn rejected_session_sql_agrees_with_the_mirror() -> Result<(), Box<dyn Error>> {
-    let (_container, pool, _store) = postgres_fixture::database().await?;
+    let (_container, pool, _store) = postgres_database::database().await?;
     let base = Timestamp::now();
     let mut runner = TestRunner::new(Config {
         failure_persistence: None,
@@ -551,7 +550,7 @@ fn classify(result: Result<(), ErasureError>) -> Result<Expected, ErasureError> 
 #[ignore = "requires Docker PostgreSQL"]
 fn erasure_service_matches_the_model() -> Result<(), Box<dyn Error>> {
     let runtime = tokio::runtime::Runtime::new()?;
-    let (container, pool, store) = runtime.block_on(postgres_fixture::database())?;
+    let (container, pool, store) = runtime.block_on(postgres_database::database())?;
     runtime.block_on(sqlx::raw_sql(NOTES_TABLE).execute(&pool))?;
     let harness = Harness {
         service: ErasureService::new(store.clone(), IdentityRetention::Retain)?,

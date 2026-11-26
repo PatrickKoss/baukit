@@ -1,5 +1,6 @@
 use baukit_sync::pull::{PullCursor, PullWindow, merge_pull_page};
 use baukit_verus::pull as twin;
+use std::num::NonZeroUsize;
 use uuid::Uuid;
 
 type Pos = (i64, u128);
@@ -19,7 +20,7 @@ fn same_rows(left: &[Pos], right: &[Pos]) -> bool {
 /// Merges the same tables with both kernels and compares cursor, `more`,
 /// and the rows as a multiset.
 #[must_use]
-pub fn merge_matches(hi: i64, after: Pos, tables: &[Vec<Pos>], limit: usize) -> bool {
+pub fn merge_matches(hi: i64, after: Pos, tables: &[Vec<Pos>], limit: NonZeroUsize) -> bool {
     let production = merge_pull_page(
         &PullWindow {
             hi,
@@ -29,7 +30,11 @@ pub fn merge_matches(hi: i64, after: Pos, tables: &[Vec<Pos>], limit: usize) -> 
         limit,
         |&position| cursor(position),
     );
-    let twin = twin::merge_pull_page(&twin::PullWindow { hi, after }, &tables.to_vec(), limit);
+    let twin = twin::merge_pull_page(
+        &twin::PullWindow { hi, after },
+        &tables.to_vec(),
+        limit.get(),
+    );
     production.more == twin.more
         && production.next == cursor(twin.next)
         && same_rows(&production.rows, &twin.rows)
@@ -63,8 +68,9 @@ mod tests {
             hi in 0_i64..6,
             after in position(),
             tables in vec(table(), 0..4),
-            limit in 0_usize..5,
+            limit in 1_usize..5,
         ) {
+            let limit = NonZeroUsize::new(limit).ok_or_else(|| TestCaseError::fail("zero limit"))?;
             prop_assert!(merge_matches(hi, after, &tables, limit));
         }
     }
