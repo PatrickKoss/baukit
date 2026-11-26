@@ -19,7 +19,7 @@ use axum::{Router, middleware, routing::get};
 use baukit_auth::{AuthState, IdentityVerifier, establish_principal};
 use baukit_ratelimit::{InMemoryRateLimitStore, RateLimitOptions, layers};
 
-# fn example(verifier: impl IdentityVerifier + 'static) {
+# fn example(verifier: impl IdentityVerifier + 'static) -> Router {
 let auth = AuthState::new(verifier);
 let app = layers(
     Router::new().route("/", get(|| async { "ok" })),
@@ -27,7 +27,7 @@ let app = layers(
     RateLimitOptions::default(),
 )
 .layer(middleware::from_fn_with_state(auth, establish_principal));
-# let _ = app;
+# app
 # }
 ```
 

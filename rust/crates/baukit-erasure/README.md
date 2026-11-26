@@ -7,7 +7,11 @@ Use `IdentityRetention::Retain` when several apps share one provider account,
 such as a Clerk instance with satellite domains:
 
 ```rust
+# use baukit_erasure::{ErasureError, ErasureService, IdentityRetention, PostgresErasureStore};
+# fn example(store: PostgresErasureStore) -> Result<ErasureService, ErasureError> {
 let service = ErasureService::new(store, IdentityRetention::Retain)?;
+# Ok(service)
+# }
 ```
 
 This mode commits product erasure, a completed receipt with `completedAt`, and
@@ -22,6 +26,14 @@ Use `IdentityRetention::Delete` when erasure should also delete the provider
 account:
 
 ```rust
+# use std::{sync::Arc, time::Duration};
+# use baukit_erasure::{
+#     ErasureError, ErasureService, IdentityAccountDeleter, IdentityRetention, PostgresErasureStore,
+# };
+# fn example(
+#     store: PostgresErasureStore,
+#     deleter: Arc<dyn IdentityAccountDeleter>,
+# ) -> Result<ErasureService, ErasureError> {
 let service = ErasureService::new(
     store,
     IdentityRetention::Delete {
@@ -31,6 +43,8 @@ let service = ErasureService::new(
         max_attempts: 12,
     },
 )?;
+# Ok(service)
+# }
 ```
 
 `ErasureService::erase` calls the product's `ProductErasure` implementation on

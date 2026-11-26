@@ -35,7 +35,7 @@ You get a hexagonal Rust backend (`orders-domain`, `-ports`, `-services`, `-api`
 
 Generated products pull baukit from crates.io and npm by pinned version, so nothing here needs repository access or an SSH key. Point the CLI at a local checkout with `--baukit-path rust` when you want path and `file:` dependencies instead.
 
-Or add one crate to a service you already have:
+Or add a crate to a service you already have:
 
 ```toml
 [dependencies]

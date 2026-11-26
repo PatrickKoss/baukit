@@ -123,6 +123,15 @@ jobs:
           persist-credentials: false
       - run: scripts/ci-gate.sh --step version-coherence
 
+  docs-links:
+    name: Docs links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/ci-gate.sh --step docs-links
+
   supply-chain:
     name: Supply chain and script lint
     runs-on: ubuntu-latest

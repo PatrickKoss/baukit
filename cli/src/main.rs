@@ -1,148 +1,17 @@
-use std::{env, path::PathBuf, process::ExitCode};
+use std::{env, process::ExitCode};
 
 use anyhow::Result;
 use baukit_cli::{
-    AuthProvider, Component, Components, NewOptions, QualityProfile,
+    NewOptions,
     check::{CheckOptions, CheckRequest, run_check},
+    cli::{CheckCommand, Cli, Commands, GenerateCommand, NewCommand},
     doctor, generate_dockerfile, generate_gitops, generate_new, generate_openapi_client,
     release_age_excludes,
 };
-use clap::{Args, Parser, Subcommand};
-
-#[derive(Debug, Parser)]
-#[command(
-    name = "baukit",
-    version = baukit_cli::TEMPLATE_VERSION,
-    about = "Generate and maintain Baukit products"
-)]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Debug, Subcommand)]
-enum Commands {
-    /// Generate a new product.
-    New(NewCommand),
-    /// Validate the generated product in the current directory.
-    Doctor,
-    /// Generate derived product artifacts.
-    Generate {
-        #[command(subcommand)]
-        command: GenerateCommand,
-    },
-    /// Enforce the shared baukit rules; exits 1 on findings, 2 on usage or config errors.
-    Check(CheckCommand),
-}
-
-#[derive(Debug, Args)]
-struct CheckCommand {
-    /// Rules to run: lints, file-size, suppressions, patterns, agent-docs. Default: all.
-    rules: Vec<String>,
-    /// Repository root to check.
-    #[arg(long, default_value = ".")]
-    root: PathBuf,
-    /// Also print hint-level pattern matches.
-    #[arg(long)]
-    verbose: bool,
-    /// agent-docs: write the managed CLAUDE.md block and the AGENTS.md symlink.
-    #[arg(long)]
-    fix: bool,
-    /// suppressions: lower the maxima in baukit-check.toml to the current counts. template-files: rewrite the hashes.
-    #[arg(long)]
-    update: bool,
-}
+use clap::Parser;
 
 const CHECK_FINDINGS_EXIT: u8 = 1;
 const CHECK_USAGE_EXIT: u8 = 2;
-
-#[derive(Debug, Args)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "clap maps each on/off CLI flag to one bool field; NewCommand::components folds them into the typed Components set"
-)]
-struct NewCommand {
-    /// Product name in lowercase kebab-case.
-    name: String,
-    /// Generate the Rust backend.
-    #[arg(long)]
-    backend: bool,
-    /// Generate a durable PostgreSQL worker in the backend workspace.
-    #[arg(long, requires = "backend")]
-    worker: bool,
-    /// Generate the Expo React Native application.
-    #[arg(long)]
-    mobile: bool,
-    /// Generate the Vite React web application.
-    #[arg(long)]
-    web: bool,
-    /// Build a PWA worker for the web app or Expo web export.
-    #[arg(long)]
-    pwa: bool,
-    /// Generate an MCP server for the backend.
-    #[arg(long, requires = "backend")]
-    mcp: bool,
-    /// Wire the platform receiver and entitlement cache into the backend.
-    #[arg(long, requires = "backend")]
-    platform: bool,
-    /// Add an authentication capability.
-    #[arg(long, value_enum)]
-    auth: Option<AuthProvider>,
-    /// Parent directory in which the product directory is created.
-    #[arg(long, default_value = ".")]
-    dir: PathBuf,
-    /// Add missing files in a non-empty destination; modified files become conflicts.
-    #[arg(long)]
-    force: bool,
-    /// Render directly into --dir, including an existing repository root.
-    #[arg(long)]
-    into_existing: bool,
-    /// Skip network-backed Cargo/pnpm lockfile resolution.
-    #[arg(long)]
-    skip_lockfiles: bool,
-    /// Use Baukit crates and packages from a local checkout's rust/ workspace.
-    #[arg(long)]
-    baukit_path: Option<PathBuf>,
-    /// Add N to generated local service ports.
-    #[arg(long, default_value_t = 0)]
-    port_offset: u32,
-    /// Select the generated CI and local quality-gate profile.
-    #[arg(long, value_enum, default_value_t = QualityProfile::Standard)]
-    quality: QualityProfile,
-}
-
-impl NewCommand {
-    fn components(&self) -> Components {
-        [
-            (Component::Backend, self.backend),
-            (Component::Worker, self.worker),
-            (Component::Mobile, self.mobile),
-            (Component::Web, self.web),
-            (Component::Pwa, self.pwa),
-            (Component::Mcp, self.mcp),
-            (Component::Platform, self.platform),
-        ]
-        .into_iter()
-        .filter_map(|(component, enabled)| enabled.then_some(component))
-        .collect()
-    }
-}
-
-#[derive(Debug, Subcommand)]
-enum GenerateCommand {
-    /// Render the backend Dockerfile from baukit.toml.
-    Dockerfile {
-        /// Fail if the committed file differs from the render.
-        #[arg(long)]
-        check: bool,
-    },
-    /// Generate TypeScript declarations from the committed OpenAPI schema.
-    OpenapiClient,
-    /// Add the deploy/gitops overlays and the release and promote workflows that are missing.
-    Gitops,
-    /// Print the minimumReleaseAgeExclude entries a fresh @baukit/* re-pin needs, transitive packages included.
-    ReleaseAgeExcludes,
-}
 
 fn main() -> ExitCode {
     match Cli::parse().command {

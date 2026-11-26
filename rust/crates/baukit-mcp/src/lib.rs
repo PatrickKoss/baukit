@@ -31,3 +31,8 @@ pub use server::{ScopedTool, ToolError, ToolFuture, ToolService, tool_schema};
 
 /// MCP request headers to add to a product's CORS policy.
 pub const ALLOWED_HEADERS: [&str; 3] = ["mcp-protocol-version", "mcp-method", "mcp-name"];
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

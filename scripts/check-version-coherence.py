@@ -5,14 +5,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import tomllib
 from pathlib import Path
 
+from cli_install import PREFIX, SUFFIX
 from release_packages import typescript_manifests
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_TRAIN_GROUP = "baukit-release-train"
+INSTALL_DOCS = ("README.md", "cli/README.md")
+INSTALL_TAG = re.compile(re.escape(PREFIX) + r"(\d+\.\d+\.\d+)" + re.escape(SUFFIX))
+CRATE_SNIPPET = re.compile(
+    r'^(baukit-[a-z-]+)\s*=\s*\{[^}\n]*\bversion\s*=\s*"([^"]+)"', re.MULTILINE
+)
+COMPATIBILITY_MATRIX = "docs/platform/compatibility-matrix.md"
+MATRIX_RELEASE = re.compile(r"^\| Baukit \| ([^ |]+) \|", re.MULTILINE)
 
 
 def fail(message: str) -> None:
@@ -295,6 +304,56 @@ def check_lockfiles(rust_version: str) -> None:
         fail("; ".join(problems))
 
 
+def install_tag_problems(root: Path, version: str) -> list[str]:
+    problems = []
+    for relative in INSTALL_DOCS:
+        tags = INSTALL_TAG.findall((root / relative).read_text(encoding="utf-8"))
+        if not tags:
+            problems.append(f"{relative} has no `--tag v{version}` install line")
+        problems.extend(
+            f"{relative} installs --tag v{tag}, expected v{version}"
+            for tag in tags
+            if tag != version
+        )
+    return problems
+
+
+def crate_snippets(root: Path) -> set[tuple[str, str, str]]:
+    return {
+        (path.relative_to(root).as_posix(), name, requirement)
+        for path in sorted(root.glob("rust/crates/*/README.md"))
+        for name, requirement in CRATE_SNIPPET.findall(path.read_text(encoding="utf-8"))
+    }
+
+
+def crate_snippet_problems(root: Path, version: str) -> list[str]:
+    train = ".".join(version.split(".")[:2])
+    return [
+        f'{path} pins {name} = "{requirement}", expected "{train}"'
+        for path, name, requirement in sorted(crate_snippets(root))
+        if requirement != train
+    ]
+
+
+def matrix_problems(root: Path, version: str) -> list[str]:
+    match = MATRIX_RELEASE.search((root / COMPATIBILITY_MATRIX).read_text(encoding="utf-8"))
+    if match is None:
+        return [f"{COMPATIBILITY_MATRIX} has no Baukit row in its baseline table"]
+    if match.group(1) != version:
+        return [f"{COMPATIBILITY_MATRIX} Baukit row reads {match.group(1)}, expected {version}"]
+    return []
+
+
+def check_docs(rust_version: str) -> None:
+    problems = [
+        *install_tag_problems(ROOT, rust_version),
+        *crate_snippet_problems(ROOT, rust_version),
+        *matrix_problems(ROOT, rust_version),
+    ]
+    if problems:
+        fail("; ".join(problems))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -309,6 +368,7 @@ def main() -> None:
     check_templates(rust_version)
     chart_count = check_charts(rust_version)
     check_lockfiles(rust_version)
+    check_docs(rust_version)
 
     if args.tag:
         expected_tag = f"v{rust_version}"

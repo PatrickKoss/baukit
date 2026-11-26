@@ -383,6 +383,47 @@ class AlertRulesTest(unittest.TestCase):
         ctx = context(alerts=[alert("Same", pack="app")], runbook_slugs={"app/same"})
         self.assertEqual(violations("alert-runbook", ctx), [])
 
+    def test_runbook_without_an_alert_fails(self) -> None:
+        ctx = context(alerts=[alert("Ok")], runbook_slugs={"platform/ok", "platform/orphan"})
+        self.assertEqual(
+            violations("runbook-alert", ctx),
+            ["docs/runbooks/platform/orphan.md has no alert whose runbook_url names it"],
+        )
+
+    def test_runbook_named_outside_the_rule_packs_passes(self) -> None:
+        ctx = context(runbook_slugs={"platform/watchdog"}, runbook_references={"platform/watchdog"})
+        self.assertEqual(violations("runbook-alert", ctx), [])
+
+    def test_runbook_references_read_loki_rules_and_chart_values(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            loki = root / "deploy/observability-platform/loki-rules"
+            loki.mkdir(parents=True)
+            (loki / "a.rules.yml").write_text(
+                "groups:\n  - name: g\n    rules:\n      - alert: A\n        expr: x\n"
+                "        annotations:\n          runbook_url: RUNBOOK_BASE_URL/loki-alert\n"
+            )
+            values = root / "deploy/platform/stack"
+            values.mkdir(parents=True)
+            (values / "values.yaml").write_text(
+                "Watchdog:\n  runbook_url: https://example.test/docs/runbooks/platform/watchdog\n"
+            )
+            self.assertEqual(
+                cc.runbook_references(root), {"platform/loki-alert", "platform/watchdog"}
+            )
+
+    def test_runbook_named_by_an_alert_of_the_other_pack_still_fails(self) -> None:
+        ctx = context(alerts=[alert("Same", pack="app")], runbook_slugs={"platform/same"})
+        self.assertEqual(len(violations("runbook-alert", ctx)), 1)
+
+    def test_runbook_readme_is_not_a_runbook(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "app").mkdir()
+            (root / "README.md").write_text("# Runbooks\n")
+            (root / "app/down.md").write_text("# Down\n")
+            self.assertEqual(cc.runbook_slugs(root), {"app/down"})
+
     def test_pack_follows_the_chart_directory(self) -> None:
         self.assertEqual(cc.pack_of(Path("deploy/observability/alerts/a.yml")), "app")
         self.assertEqual(cc.pack_of(Path("deploy/observability-platform/alerts/a.yml")), "platform")
@@ -1008,7 +1049,7 @@ CONFIG = """\
 active = ["policy-exception-budget", "dashboards-selected", "metrics-enabled", "alert-metadata",
   "alert-runbook", "alert-tested", "rules-selected", "prune-disabled", "exporters-scraped",
   "image-digest", "priority-class", "pdb-multi-replica", "kured-alert-filter", "flux-job-force",
-  "drift-job-ttl"]
+  "drift-job-ttl", "runbook-alert"]
 [rules.pending]
 psa-labels = "N1"
 default-deny-network-policy = "N2"
@@ -1085,7 +1126,7 @@ class MainTest(unittest.TestCase):
         code, stdout, stderr = self.run_main(budget=1)
         self.assertEqual(code, 0, stderr)
         self.assertIn(
-            "Conventions: 15 active, 3 pending [default-deny-network-policy (N2): 1; "
+            "Conventions: 16 active, 3 pending [default-deny-network-policy (N2): 1; "
             "default-service-account (S5): 1; psa-labels (N1): 1]",
             stdout,
         )
