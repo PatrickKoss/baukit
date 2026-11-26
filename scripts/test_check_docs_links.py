@@ -62,9 +62,20 @@ class CheckDocsLinksTests(unittest.TestCase):
             (2, ["docs/platform/x.md:1 -> ../other.md"]),
         )
 
-    def test_repository_docs_roots_match_files(self):
-        checked, _ = links.check(links.ROOT, list(links.DOCS_ROOTS))
+    def test_expected_broken_links_may_only_shrink(self):
+        self.commit({"README.md": "[x](gone.md)\n"})
+        self.assertEqual(links.check(self.root, ["README.md"], {"README.md -> gone.md"}), (1, []))
+        _, missing = links.check(self.root, ["README.md"], {"README.md -> gone.md", "a.md -> b.md"})
+        self.assertEqual(
+            missing, ["a.md -> b.md resolves now, remove it from the expected-failure list"]
+        )
+
+    def test_repository_docs_pass_with_the_expected_list(self):
+        checked, missing = links.check(
+            links.ROOT, list(links.DOCS_ROOTS), links.EXPECTED_BROKEN_LINKS
+        )
         self.assertGreater(checked, 0)
+        self.assertEqual(missing, [])
 
 
 if __name__ == "__main__":

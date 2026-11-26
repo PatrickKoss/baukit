@@ -21,7 +21,7 @@ CRATE_SNIPPET = re.compile(
     r'^(baukit-[a-z-]+)\s*=\s*\{[^}\n]*\bversion\s*=\s*"([^"]+)"', re.MULTILINE
 )
 COMPATIBILITY_MATRIX = "docs/platform/compatibility-matrix.md"
-MATRIX_RELEASE = re.compile(r"^## v(\S+)\n+Last verified release train: `v([^`]+)`", re.MULTILINE)
+MATRIX_RELEASE = re.compile(r"^\| Baukit \| ([^ |]+) \|", re.MULTILINE)
 # Temporary: the docs overhaul rewrites these READMEs and empties this list.
 EXPECTED_STALE_SNIPPETS = {
     ("rust/crates/baukit-core/README.md", "baukit-core", "0.4"),
@@ -353,12 +353,10 @@ def crate_snippet_problems(
 def matrix_problems(root: Path, version: str) -> list[str]:
     match = MATRIX_RELEASE.search((root / COMPATIBILITY_MATRIX).read_text(encoding="utf-8"))
     if match is None:
-        return [f"{COMPATIBILITY_MATRIX} has no release section with a verified train"]
-    return [
-        f"{COMPATIBILITY_MATRIX} latest release reads v{found}, expected v{version}"
-        for found in dict.fromkeys(match.groups())
-        if found != version
-    ]
+        return [f"{COMPATIBILITY_MATRIX} has no Baukit row in its baseline table"]
+    if match.group(1) != version:
+        return [f"{COMPATIBILITY_MATRIX} Baukit row reads {match.group(1)}, expected {version}"]
+    return []
 
 
 def check_docs(rust_version: str) -> None:

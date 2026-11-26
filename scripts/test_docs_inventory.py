@@ -52,11 +52,9 @@ EXPECTED_ADR_FAILURES = {
         for section in ADR_SECTIONS
     ),
 }
-EXPECTED_GUIDE_FAILURES: set[str] = set()
+EXPECTED_GUIDE_FAILURES = {"docs/README.md: missing", "docs/guide/README.md: missing"}
 EXPECTED_HOME_PATH_FAILURES = {
     "deploy/platform/flagger/README.md: /home/ path",
-    "docs/platform-hardening-plan.md: /home/ path",
-    "docs/quality-security/E2-baukit-ts.md: /home/ path",
     "docs/quality-security/E3-products.md: /home/ path",
     "docs/quality-security/I-tenancy-ratelimit.md: /home/ path",
 }
@@ -217,7 +215,11 @@ def guide_failures(root: Path) -> set[str]:
     failures: set[str] = set()
     pages = sorted(p.name for p in (root / "docs/guide").glob("*.md") if p.name != "README.md")
     for index_path, prefix in ((GUIDE_INDEX, ""), (DOCS_INDEX, "guide/")):
-        index = read(root, index_path) or ""
+        index = read(root, index_path)
+        if index is None:
+            if pages:
+                failures.add(f"{index_path}: missing")
+            continue
         for page in pages:
             if f"({prefix}{page}" not in index and f"(./{prefix}{page}" not in index:
                 failures.add(f"{index_path}: misses guide/{page}")
@@ -336,6 +338,8 @@ class DocsInventoryCheckTests(unittest.TestCase):
     def test_guide_pages_need_both_indexes(self):
         self.write("docs/guide/cli.md", "# CLI\n")
         self.write(GUIDE_INDEX, "- [CLI](cli.md)\n")
+        self.assertEqual(guide_failures(self.root), {"docs/README.md: missing"})
+        self.write(DOCS_INDEX, "- [Guide](guide/README.md)\n")
         self.assertEqual(guide_failures(self.root), {"docs/README.md: misses guide/cli.md"})
 
     def test_home_paths_fail_in_tracked_markdown(self):

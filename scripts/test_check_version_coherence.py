@@ -274,14 +274,16 @@ class DocVersionTests(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn("remove it from the expected-failure list", problems[0])
 
-    def test_matrix_latest_section_names_the_release(self) -> None:
-        matrix = "# M\n\n## v1.2.2\n\nLast verified release train: `v1.2.2` (patch).\n"
+    def test_matrix_baukit_row_names_the_release(self) -> None:
+        matrix = "| Tool | Tested baseline | Notes |\n|---|---|---|\n| Baukit | 1.2.2 | x |\n"
         root = self.repo({check.COMPATIBILITY_MATRIX: matrix})
         self.assertEqual(
             check.matrix_problems(root, "1.2.3"),
-            [f"{check.COMPATIBILITY_MATRIX} latest release reads v1.2.2, expected v1.2.3"],
+            [f"{check.COMPATIBILITY_MATRIX} Baukit row reads 1.2.2, expected 1.2.3"],
         )
         self.assertEqual(check.matrix_problems(root, "1.2.2"), [])
+        root = self.repo({check.COMPATIBILITY_MATRIX: "| Rust | 1.95 | |\n"})
+        self.assertEqual(len(check.matrix_problems(root, "1.2.2")), 1)
 
     def test_the_repository_docs_pass(self) -> None:
         version = check.check_rust_workspace()
