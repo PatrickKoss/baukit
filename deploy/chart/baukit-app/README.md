@@ -108,7 +108,7 @@ The pod and container security-context maps can be replaced when an image needs 
 
 | Value | Default | Description |
 |---|---:|---|
-| `api.replicas` | `1` | API replicas when HPA is disabled. |
+| `api.replicas` | `1` | API replicas when HPA is disabled. With `canary.enabled`, Flagger ignores it, so values above 1 need `autoscaling.enabled=true`. |
 | `api.image.repository` | `ghcr.io/example/minimal-api` | API-only image repository. |
 | `api.image.tag` / `api.image.digest` | `""` / `""` | API image tag or `sha256:` digest; one is required and `latest` is rejected. |
 | `api.image.pullPolicy` | `IfNotPresent` | API image pull policy. |

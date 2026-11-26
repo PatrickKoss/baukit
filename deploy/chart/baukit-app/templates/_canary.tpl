@@ -28,6 +28,9 @@ product="{{ include "baukit-app.labelValue" .Values.product }}", service="{{ inc
 {{- if $root.Values.ingress.retry.enabled -}}
 {{- $middlewares = append $middlewares (include "baukit-app.retryMiddlewareName" $root) -}}
 {{- end -}}
+{{- if and (gt (int $root.Values.api.replicas) 1) (not $root.Values.autoscaling.enabled) -}}
+{{- fail "canary.enabled ignores api.replicas: Flagger runs one primary pod unless the HPA sets the count, so set autoscaling.enabled=true or api.replicas=1" -}}
+{{- end -}}
 {{- if $root.Values.ingress.certManager.clusterIssuer -}}
 {{- fail "canary.enabled routes through an IngressRoute, which cert-manager annotations do not cover: clear ingress.certManager.clusterIssuer and issue a Certificate for ingress.tls[0].secretName" -}}
 {{- end -}}

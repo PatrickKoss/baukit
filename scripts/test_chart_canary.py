@@ -152,6 +152,12 @@ class CanaryTest(unittest.TestCase):
                 [deployment] = find(render(*settings), "Deployment", API)
                 self.assertNotIn("replicas", deployment["spec"])
 
+    def test_canary_refuses_replicas_it_would_ignore(self) -> None:
+        result = render_raw(*CANARY, "api.replicas=2")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("canary.enabled ignores api.replicas", result.stderr)
+        render(*CANARY, "api.replicas=2", "autoscaling.enabled=true")
+
     def test_plain_api_keeps_its_replicas(self) -> None:
         [deployment] = find(render("api.replicas=3"), "Deployment", API)
         self.assertEqual(deployment["spec"]["replicas"], 3)
