@@ -5,7 +5,7 @@ identity provider account goes too, answers machine-to-machine data subject requ
 signed receipts and keeps analytics behind consent. The page is for product developers who
 ship a product with sign-in.
 
-Two crates do the server work. `baukit-erasure` handles self-service profile erasure and
+`baukit-erasure` handles self-service profile erasure and
 the fence that keeps old sessions out. `baukit-data-subject` adds the data subject API and
 DSSE receipts on top of it. The contracts define the wire behaviour. This page shows how
 to put the pieces together.
