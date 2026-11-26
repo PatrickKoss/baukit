@@ -123,7 +123,11 @@ to send its request (`readTimeout`) or to read the response (`writeTimeout`),
 and drop idle keep-alive connections after 180 s (`idleTimeout`). The default
 ServersTransport gives a backend 5 s to accept the connection (`dialTimeout`)
 and 35 s to send response headers (`responseHeaderTimeout`), 5 s above the app
-request timeout so the app answers its own timeout first. Chart `42.4.1` maps
+request timeout so the app answers its own timeout first. Idle upstream
+connections close after 5 s (`idleConnTimeout`). The API's 10 s header read
+timeout also runs while a keep-alive connection sits idle, so the API closes it
+after 10 s. With Traefik's 90 s default, Traefik would reuse a connection the API
+had just closed and answer 502, even for a `POST` it must not retry. Chart `42.4.1` maps
 its `serversTransport` value only to the v3.8 read and write timeouts, so these
 two go in through `additionalArguments`.
 

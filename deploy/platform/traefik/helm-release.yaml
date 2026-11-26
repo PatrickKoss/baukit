@@ -48,6 +48,8 @@ spec:
     additionalArguments:
       - --serversTransport.forwardingTimeouts.dialTimeout=5s
       - --serversTransport.forwardingTimeouts.responseHeaderTimeout=35s
+      # Below the API's 10 s header read timeout, which also closes idle keep-alive connections.
+      - --serversTransport.forwardingTimeouts.idleConnTimeout=5s
     service:
       enabled: true
       spec:
@@ -109,12 +111,15 @@ spec:
           enabled: true
           interval: 30s
           scrapeTimeout: 10s
+    # allowEmptyServices answers 503 instead of 404 when a Service has no ready pod, which the edge SLI counts.
     providers:
       kubernetesCRD:
         allowCrossNamespace: false
         allowExternalNameServices: false
+        allowEmptyServices: true
       kubernetesIngress:
         allowExternalNameServices: false
+        allowEmptyServices: true
     tlsOptions:
       default:
         minVersion: VersionTLS12
