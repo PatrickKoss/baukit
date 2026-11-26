@@ -95,23 +95,6 @@ pub fn requeue_failed_jobs_router(
         })
 }
 
-/// Merges the requeue route into `operations` only when `admin_token` is configured.
-pub fn mount_requeue_route(
-    operations: Router,
-    requeue: Arc<dyn FailedJobRequeue>,
-    job_types: &'static [&'static str],
-    admin_token: Option<&Secret<String>>,
-) -> Router {
-    match admin_token {
-        Some(token) => operations.merge(requeue_failed_jobs_router(
-            requeue,
-            job_types,
-            token.clone(),
-        )),
-        None => operations,
-    }
-}
-
 fn bearer_matches(headers: &HeaderMap, expected: &Secret<String>) -> bool {
     let Some(presented) = headers
         .get(AUTHORIZATION)
@@ -229,31 +212,6 @@ mod tests {
             assert!(!response.to_string().contains(TOKEN));
         }
         assert!(fake.calls.lock().expect("calls").is_empty());
-    }
-
-    #[tokio::test]
-    async fn mount_requeue_route_adds_the_route_only_with_an_admin_token() {
-        let token = Secret::new(TOKEN.to_owned());
-        for (admin_token, expected) in [
-            (None, StatusCode::NOT_FOUND),
-            (Some(&token), StatusCode::UNAUTHORIZED),
-        ] {
-            let router = mount_requeue_route(
-                Router::new(),
-                Arc::new(FakeRequeue::default()),
-                TYPES,
-                admin_token,
-            );
-            let response = router
-                .oneshot(
-                    Request::post(REQUEUE_PATH)
-                        .body(Body::empty())
-                        .expect("request"),
-                )
-                .await
-                .expect("response");
-            assert_eq!(response.status(), expected);
-        }
     }
 
     #[tokio::test]

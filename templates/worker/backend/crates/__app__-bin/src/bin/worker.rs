@@ -73,7 +73,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         Arc::new(job_store(&pool)),
         job_types,
         config.product.worker.admin_token.as_ref(),
-    );
+    )?;
     let listener =
         TcpListener::bind(SocketAddr::new(config.ops.bind_address, config.ops.port)).await?;
     tracing::info!(

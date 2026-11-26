@@ -410,14 +410,51 @@ pub fn worker_operations_router(
     Ok((router, readiness))
 }
 
+/// Requeue calls one client IP may make per [`REQUEUE_PERIOD`] before the route answers 429.
+pub const REQUEUE_REQUESTS_PER_PERIOD: u64 = 10;
+/// Refill period of the requeue route's IP quota.
+pub const REQUEUE_PERIOD: std::time::Duration = std::time::Duration::from_secs(60);
+const REQUEUE_BURST: u64 = 0;
+
 /// Merges the failed-job requeue route into `operations` only when an admin token is configured.
+///
+/// The route sits behind its own in-memory IP limiter, because the worker has no Redis store.
+///
+/// # Errors
+///
+/// Returns an error when the requeue quota is invalid.
 pub fn mount_requeue_route(
     operations: Router,
     requeue: std::sync::Arc<dyn baukit_ops::jobs_admin::FailedJobRequeue>,
     job_types: &'static [&'static str],
     admin_token: Option<&baukit_config::Secret<String>>,
-) -> Router {
-    baukit_ops::jobs_admin::mount_requeue_route(operations, requeue, job_types, admin_token)
+) -> Result<Router, baukit_ratelimit::QuotaError> {
+    let Some(token) = admin_token else {
+        return Ok(operations);
+    };
+    let limits = requeue_limits()?;
+    let requeue =
+        baukit_ops::jobs_admin::requeue_failed_jobs_router(requeue, job_types, token.clone());
+    Ok(operations.merge(rate_limited(requeue, Some(&limits))))
+}
+
+fn requeue_limits() -> Result<RateLimits, baukit_ratelimit::QuotaError> {
+    let mut options = baukit_ratelimit::RateLimitOptions::default();
+    options.identity.enabled = false;
+    options.ip = baukit_ratelimit::RateLimitScopeOptions {
+        enabled: true,
+        quota: baukit_ratelimit::Quota::new(
+            REQUEUE_REQUESTS_PER_PERIOD,
+            REQUEUE_PERIOD,
+            REQUEUE_BURST,
+        )?,
+    };
+    Ok(RateLimits {
+        store: baukit_ratelimit::SharedRateLimitStore::new(
+            baukit_ratelimit::InMemoryRateLimitStore::default(),
+        ),
+        options,
+    })
 }{% endif %}{% if context.auth_enabled %}
 
 /// Fails readiness while the identity provider rejects the deleter's base URL or credentials.
