@@ -240,7 +240,7 @@ them.
 
 ## Phase CB: circuit breaker and outbound metrics
 
-- [ ] **CB1 Breaker in `GuardedClient`** (D2-D5, RL-01): `EgressOptions::with_destination(name)`
+- [x] **CB1 Breaker in `GuardedClient`** (D2-D5, RL-01): `EgressOptions::with_destination(name)`
   becomes required (constructor argument), `with_circuit_breaker(policy)` and
   `without_circuit_breaker()`, `with_max_in_flight(n)` per key (default 32). The breaker check runs
   before DNS resolution, so an open circuit costs no lookup. An open circuit returns
@@ -250,7 +250,7 @@ them.
   and the call count stops at the threshold; recovery through one probe; a 429 with `Retry-After: 2`
   holds the circuit for 2 s without counting a failure; a 400 never opens it; two destinations on one
   client stay independent; clones share state.
-- [ ] **CB2 Egress metrics** (RL-02, RL-90): the four `egress_*` metrics from the table, spec and lint
+- [x] **CB2 Egress metrics** (RL-02, RL-90): the four `egress_*` metrics from the table, spec and lint
   updated, plus recording rules and alerts: `BaukitEgressErrorRatioHigh` (per destination, traffic
   floor), `BaukitEgressCircuitOpen` (open for more than 5 min), `BaukitEgressLatencyHigh`. Each alert
   gets a promtool test that fires and one that stays quiet, a runbook under `docs/runbooks/app/`, and a
@@ -352,7 +352,7 @@ them.
 - [x] **IN7 Saturation metrics** (RL-29): a `30` bucket on the HTTP histogram, process metrics
   (`process_*` from the exporter), and Tokio runtime metrics behind a feature where the pinned tokio
   allows it without `tokio_unstable`. Spec and lint updated.
-- [ ] **IN8 Deadline propagation** (RL-08): the lifecycle middleware stores a `Deadline` in a task
+- [x] **IN8 Deadline propagation** (RL-08): the lifecycle middleware stores a `Deadline` in a task
   local; `GuardedClient` uses `min(own timeout, remaining)` and fails fast with `Timeout` when less than
   50 ms remain. Outbound requests do not send the deadline to third parties.
   Acceptance: a handler with 2 s left calling a destination that sleeps 5 s returns within about 2 s.
@@ -425,15 +425,15 @@ them.
 
 ## Phase PL: platform
 
-- [ ] **PL1 Two pods in production** (RL-80): the production overlay sets `api.replicas: 2` and
+- [x] **PL1 Two pods in production** (RL-80): the production overlay sets `api.replicas: 2` and
   `worker.replicas: 2` (WK2 makes two workers safe), so the PDB renders. The HPA template gains a
   `behavior` block (scale-down stabilization 300 s, scale-up at most 100% per 60 s) and
   `minReplicas: 2`. Local and testing stay at 1 to fit one node.
-- [ ] **PL2 Probe and drain budgets** (RL-24, RL-81, RL-82): readiness `timeoutSeconds: 4` against a
+- [x] **PL2 Probe and drain budgets** (RL-24, RL-81, RL-82): readiness `timeoutSeconds: 4` against a
   2 s check; drain computed as in IN4; worker grace defaults to drain budget plus 15 s; web gets a PDB,
   a preStop sleep and a startupProbe. `values.schema.json` rejects `drain >= grace`.
   Acceptance: chart unit tests in `scripts/test_chart_*`; the IN4 e2e case below.
-- [ ] **PL3 Traefik timeouts and retries** (RL-87, D8): entrypoint `respondingTimeouts`
+- [x] **PL3 Traefik timeouts and retries** (RL-87, D8): entrypoint `respondingTimeouts`
   (`readTimeout` 60 s, `writeTimeout` 60 s, `idleTimeout` 180 s), a default `ServersTransport` with
   `forwardingTimeouts` (`dialTimeout` 5 s, `responseHeaderTimeout` just above the app request
   timeout), and a chart-level retry middleware (`attempts: 2`, short initial interval) for connection
@@ -445,7 +445,7 @@ them.
   that keeps writes going when the replica is down (verify the field at the pinned CNPG version).
   The app's pool size and the pooler's `default_pool_size` are documented together in
   `local-footprint.md`.
-- [ ] **PL5 Redis platform alerts** (RL-86): master down, Sentinel quorum lost, replication link down,
+- [x] **PL5 Redis platform alerts** (RL-86): master down, Sentinel quorum lost, replication link down,
   evictions, memory near maxmemory, each with promtool tests and a runbook.
 - [ ] **PL6 Flagger that can gate** (RL-83): add `baukit.dev/workload` to the chart selector (breaking,
   fine per principle 8), relabel `rollout` in the ServiceMonitor from the pod's canary/primary label,
@@ -542,7 +542,7 @@ run in the orchestrator under the heavy-slot protocol (owner `baukit-rel`, one s
 | rel-jobs | WK1, WK2, WK4 (crate part), CB3 | `baukit-jobs` | merged, verified (two review rounds; Docker: jobs 51, suite 178, erasure 34, data-subject 53) |
 | rel-ts | CL1 (without fixture replay), CL3, CL4 (`auth-web` part), CL5 (`pwa-web` part) | `typescript/packages/{api-runtime,sync-client,auth-web,pwa-web}` | merged, verified (4 packages build, format, lint, test) |
 | rel-db | IN6 (crate part), IN2 (`baukit-ratelimit` part) | `baukit-config`, `baukit-ops`, `baukit-ratelimit` | merged, verified (unit tests plus Docker: 2 Postgres, 12 Redis) |
-| rel-deploy | PL1, PL2, PL3, PL5 | `deploy/chart`, `deploy/platform/traefik`, `deploy/observability-platform` (redis alerts), `templates/backend/deploy` | running |
+| rel-deploy | PL1, PL2, PL3, PL5 | `deploy/chart`, `deploy/platform/traefik`, `deploy/observability-platform` (redis alerts), `templates/backend/deploy` | merged, verified (two rounds) |
 | rel-obs | PL4, PL7, the RL-43 alert text fix | `deploy/platform/postgres-cluster`, `deploy/observability` | merged, verified (platform-validate, observability-rules, observability-tests, metric-names, python-lint) |
 
 Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/check-metric-names.py`,
@@ -552,9 +552,13 @@ Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/chec
 
 | Agent | Tasks | Status |
 |---|---|---|
-| rel-egress | CB1, CB2, IN8 | review round 2 (deadline-capped timeouts must still count) |
+| rel-egress | CB1, CB2, IN8 | merged, verified (two rounds) |
 | rel-jobs2 | WK3, WK5, WK6, WK8 (crate part), WK9 | running |
 | rel-ops | IN5 (crate part) | running |
+| rel-faults | FX1 | running |
+| rel-suite | CB4, CB5, ID1 (TicketVerifier), ID3, ID4 | running |
+| rel-adopters | CB6, CB7, WK7 | running |
+| rel-ts2 | CL1 fixture replay | running |
 | rel-auth | ID1 (OIDC part), ID2, IN2 (browser session) | merged, verified (two rounds plus an orchestrator fix) |
 
 
@@ -637,3 +641,19 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
 - rel-deploy round 2: Traefik `idleConnTimeout` 5 s (below hyper's 10 s idle cut), `allowEmptyServices`,
   the stale lease variable in the kyverno fixture and backend README, and a merge of task/reliability with
   re-blessed snapshots.
+- rel-egress merged after two rounds:
+  - Every `GuardedClient` now takes a destination name and gets a breaker and a 32-call cap per
+    `(scheme, host, port)`. The task-local request deadline caps egress timeouts.
+  - Round 2 fixed a hole. Timeouts capped by the caller's deadline were ignored, so a hanging destination
+    behind a 5 s route timeout never opened the breaker. A capped timeout now counts when the caller left
+    at least half the client timeout. A test also covers a cancelled probe freeing the half-open lease.
+- rel-deploy merged after two rounds:
+  - Two replicas in production, PDBs, drain budgets with chart `fail`s, Traefik responding and
+    forwarding timeouts, the retry middleware, and Redis alerts.
+  - Round 2 added `idleConnTimeout` 5 s and `allowEmptyServices`, and removed the stale lease variable.
+- My fixes on integration:
+  - `baukit check` keeps a copy of the metric catalog in `cli/src/check/observability/promql.rs`, and no
+    agent had updated it (7 findings, plus a failing parity test). It is synced now, and the common
+    brief names it.
+  - Re-blessed the two platform snapshots for the `hub` destination name.
+  - The integration check now also covers the `cli/` workspace.
