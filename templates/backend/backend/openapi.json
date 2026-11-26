@@ -128,6 +128,24 @@
               }
             }
           },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A dependency is unavailable; retry after Retry-After.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "504": {
             "content": {
               "application/json": {
@@ -290,6 +308,24 @@
               }
             }
           },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A dependency is unavailable; retry after Retry-After.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "504": {
             "content": {
               "application/json": {
@@ -386,6 +422,24 @@
               }
             },
             "description": "An internal error occurred.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A dependency is unavailable; retry after Retry-After.",
             "headers": {
               "X-Request-Id": {
                 "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
@@ -496,6 +550,24 @@
               }
             },
             "description": "An internal error occurred.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A dependency is unavailable; retry after Retry-After.",
             "headers": {
               "X-Request-Id": {
                 "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
@@ -670,6 +742,24 @@
               }
             },
             "description": "An internal error occurred.",
+            "headers": {
+              "X-Request-Id": {
+                "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A dependency is unavailable; retry after Retry-After.",
             "headers": {
               "X-Request-Id": {
                 "description": "Request identifier. Error bodies repeat it as `requestId`; quote it when reporting a problem.",

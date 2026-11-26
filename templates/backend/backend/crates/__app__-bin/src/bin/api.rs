@@ -1,4 +1,10 @@
-use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    env,
+    error::Error,
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 
 use axum::Router;
 {% if context.auth_enabled %}use baukit_auth::AuthState;
@@ -8,10 +14,13 @@ use axum::Router;
 {% endif %}use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
 {% if context.auth_enabled %}use baukit_ratelimit::{RateLimitOptions, RedisRateLimitStore, SharedRateLimitStore};
 {% else %}use baukit_ratelimit::{InMemoryRateLimitStore, RateLimitOptions, SharedRateLimitStore};
-{% endif %}use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
+{% endif %}use baukit_runtime::{
+    DrainBudget, ProcessKind, ServiceInfo, ShutdownOrder, ShutdownToken, build_info,
+    serve_listener_pair_with_shutdown_order,
+};
 use baukit_telemetry::{Telemetry, TelemetryBuilder, tracing};
 
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use tokio::net::TcpListener;
 
 use {{ context.app_crate }}_api::ApiState;
@@ -33,7 +42,8 @@ use {{ context.app_crate }}_bin::mcp_verifier;
 {% endif %}use {{ context.app_crate }}_bin::operations_router;
 {% if context.auth_enabled %}use {{ context.app_crate }}_bin::protect_routes;
 {% endif %}{% if not context.auth_enabled or context.platform or context.mcp %}use {{ context.app_crate }}_bin::rate_limited;
-{% endif %}{% if not context.auth_enabled and not context.platform %}use {{ context.app_crate }}_ports::ItemRepository;
+{% endif %}use {{ context.app_crate }}_bin::{PROBE_READINESS_FLAG, probe_readiness};
+{% if not context.auth_enabled and not context.platform %}use {{ context.app_crate }}_ports::ItemRepository;
 {% endif %}use {{ context.app_crate }}_postgres::PostgresItemRepository;
 {% if context.auth_enabled %}use {{ context.app_crate }}_postgres::PostgresProfileErasure;
 use {{ context.app_crate }}_postgres::PostgresUserRepository;
@@ -52,7 +62,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(Environment::Local);
-    let config = config_loader(environment)?.load()?;
+    let config: BaukitConfig<ProductConfig> = config_loader(environment)?.load()?;
+    if env::args().any(|argument| argument == PROBE_READINESS_FLAG) {
+        let ops = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), config.ops.port);
+        return if probe_readiness(ops).await? {
+            Ok(())
+        } else {
+            Err("not ready".into())
+        };
+    }
     run(config).await
 }
 
@@ -84,12 +102,7 @@ async fn connect_pool(
     let Some(database) = &config.database else {
         return Ok(None);
     };
-    let pool = PgPoolOptions::new()
-        .max_connections(database.max_connections)
-        .min_connections(database.min_connections)
-        .acquire_timeout(database.acquire_timeout)
-        .connect(database.url.expose())
-        .await?;
+    let pool = baukit_ops::connect_with_backoff(database, config.startup.budget).await?;
     let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), POOL_METRICS_INTERVAL)?;
     Ok(Some((pool, pool_metrics)))
 }
@@ -128,7 +141,7 @@ impl Backend {
             pool.clone(),
             erasure_service.store().clone(),
         )));
-        let verifier = auth_verifier(&config.product.auth).await?;
+        let verifier = auth_verifier(&config.product.auth, config.startup.budget).await?;
         let auth = AuthState::from_shared(verifier{% if context.mcp %}.clone(){% endif %});
         let api_state = ApiState {
             items: item_service.clone(),
@@ -185,7 +198,8 @@ async fn compose_api(
     backend: &Backend,
 ) -> Result<Router, Box<dyn Error>> {
     let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
-    let redis = RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?;
+    let redis =
+        RedisRateLimitStore::connect_if_enabled(&rate_limit_options, config.startup.budget).await?;
     let limits = redis.clone().map(|store| RateLimits {
         store: SharedRateLimitStore::new(store),
         options: rate_limit_options.clone(),
@@ -204,6 +218,7 @@ async fn compose_api(
             rate_limit: &rate_limit_options,
             rate_limit_store: redis,
             environment: config.environment,
+            startup_budget: config.startup.budget,
         };
         late.extend(
             browser_session_router(&config.product.auth.browser_session, dependencies).await?,
@@ -258,7 +273,12 @@ async fn mcp_caller_verifier(
     backend: &Backend,
 ) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
     if config.product.mcp.enabled {
-        return mcp_verifier(&config.product.auth, &config.product.mcp).await;
+        return mcp_verifier(
+            &config.product.auth,
+            &config.product.mcp,
+            config.startup.budget,
+        )
+        .await;
     }
     Ok(backend.verifier.clone())
 }
@@ -291,7 +311,10 @@ async fn serve(
     backend: Backend,
     api: Router,
 ) -> Result<(), Box<dyn Error>> {
-    let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
+    let shutdown = ShutdownToken::with_budget(DrainBudget::new(
+        config.shutdown.drain_timeout,
+        config.http.request_timeout,
+    )?);
     let traffic_gate = TrafficGate::new();
     shutdown.on_drain({
         let traffic_gate = traffic_gate.clone();
@@ -322,12 +345,13 @@ async fn serve(
         result
     });
 {% endif %}    let signal_task = shutdown.spawn_signal_listener();
-    let result = serve_listener_pair(
+    let result = serve_listener_pair_with_shutdown_order(
         api_listener,
         api,
         operations_listener,
         operations,
         shutdown.clone(),
+        ShutdownOrder::OpsOutlivesApi,
     )
     .await;
     shutdown.trigger();
@@ -340,9 +364,7 @@ async fn serve(
         pool_metrics.shutdown().await;
     }
     shutdown
-        .run_during_drain(
-            async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await },
-        )
+        .run_flush(async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await })
         .await???;
     result?;
     Ok(())

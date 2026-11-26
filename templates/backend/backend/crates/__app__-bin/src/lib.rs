@@ -26,8 +26,10 @@ use uuid::Uuid;
 
 mod config;
 {% if context.platform %}pub mod platform;
-{% endif %}mod rate_limits;
+{% endif %}mod probe;
+mod rate_limits;
 pub use config::config_loader;
+pub use probe::{PROBE_READINESS_FLAG, probe_readiness};
 pub use rate_limits::{RateLimits, {% if context.auth_enabled %}protect_routes, {% endif %}rate_limited};
 
 {% if context.auth_enabled %}mod browser_session;
@@ -184,7 +186,9 @@ impl Validate for AuthConfig {
 #[serde(default)]
 pub struct WorkerProductConfig {
     pub concurrency: usize,
-    pub lease_duration_seconds: u64,
+    /// Bearer token for `POST /admin/jobs/requeue` on the operations listener.
+    /// The route stays off while this is unset.
+    pub admin_token: Option<baukit_config::Secret<String>>,
     pub job_timeout_seconds: u64,
     pub poll_interval_milliseconds: u64,
 }
@@ -193,7 +197,7 @@ impl Default for WorkerProductConfig {
     fn default() -> Self {
         Self {
             concurrency: 5,
-            lease_duration_seconds: 15 * 60,
+            admin_token: None,
             job_timeout_seconds: 10 * 60,
             poll_interval_milliseconds: 250,
         }
@@ -210,7 +214,6 @@ impl Validate for WorkerProductConfig {
             ));
         }
         for (field, value) in [
-            ("worker.lease_duration_seconds", self.lease_duration_seconds),
             ("worker.job_timeout_seconds", self.job_timeout_seconds),
             (
                 "worker.poll_interval_milliseconds",
@@ -220,12 +223,6 @@ impl Validate for WorkerProductConfig {
             if value == 0 {
                 errors.push(ValidationError::new(field, "must be greater than zero"));
             }
-        }
-        if self.job_timeout_seconds >= self.lease_duration_seconds {
-            errors.push(ValidationError::new(
-                "worker.job_timeout_seconds",
-                "must be less than worker.lease_duration_seconds",
-            ));
         }
         if errors.is_empty() {
             Ok(())
@@ -390,9 +387,14 @@ pub fn worker_operations_router(
     traffic_gate: TrafficGate,
 ) -> Result<(Router, ReadinessRegistry), RegistrationError> {
     let readiness = ReadinessRegistry::new();
+    let store_health = runner.store_health();
     readiness.register_fn_default("job_store", move || {
         let runner = runner.clone();
+        let store_health = store_health.clone();
         async move {
+            if !store_health.is_healthy() {
+                return Err(ReadinessError::new("job store calls are failing"));
+            }
             runner
                 .ready()
                 .await

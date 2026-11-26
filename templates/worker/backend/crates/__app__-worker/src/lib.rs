@@ -19,12 +19,11 @@ pub mod retention {
     use std::{num::NonZeroU32, time::Duration};
 
     use baukit_jobs::{
-        ClaimedJob, EnqueueOutcome, FixedUtcInterval, FixedUtcSlot, JobCancellation, JobError,
-        JobFuture, JobHandler, JobStore, NewJob, PostgresJobStore,
+        ClaimedJob, EnqueueOutcome, FixedUtcInterval, JobCancellation, JobError, JobFuture,
+        JobHandler, PostgresJobStore, RecurringJob,
     };
 {% if context.platform %}    use baukit_suite::platform::PostgresPlatformInbox;
 {% endif %}    use jiff::Timestamp;
-    use serde_json::json;
     use sqlx::PgPool;
 
     use super::DemoJobHandler;
@@ -41,7 +40,7 @@ pub mod retention {
     pub struct RetentionJobHandler {
         pool: PgPool,
         store: PostgresJobStore,
-        interval: FixedUtcInterval,
+        recurring: RecurringJob,
     }
 
     impl RetentionJobHandler {
@@ -49,19 +48,26 @@ pub mod retention {
             Ok(Self {
                 store: PostgresJobStore::new(pool.clone()),
                 pool,
-                interval: FixedUtcInterval::new(DAILY)
-                    .map_err(|_| JobError::permanent("invalid retention purge interval"))?,
+                recurring: RecurringJob::new(
+                    PURGE_JOB_TYPE,
+                    FixedUtcInterval::new(DAILY)
+                        .map_err(|_| JobError::permanent("invalid retention purge interval"))?,
+                    MAX_ATTEMPTS,
+                ),
             })
+        }
+
+        /// Register with `WorkerRunner::with_recurring`, so a slot that fails
+        /// for good still schedules the next one.
+        #[must_use]
+        pub const fn recurring(&self) -> RecurringJob {
+            self.recurring
         }
 
         /// Safe to call from every worker replica at startup.
         pub async fn enqueue_initial(&self, now: Timestamp) -> Result<EnqueueOutcome, JobError> {
-            let slot = self
-                .interval
-                .slot_at(now)
-                .map_err(|_| JobError::permanent("invalid retention purge slot"))?;
-            self.store
-                .enqueue(purge_job(slot))
+            self.recurring
+                .enqueue_initial(&self.store, now)
                 .await
                 .map_err(|_| JobError::retryable("could not enqueue retention purge"))
         }
@@ -117,30 +123,19 @@ pub mod retention {
             job: &ClaimedJob,
             cancellation: JobCancellation,
         ) -> Result<(), JobError> {
-            let slot = job
-                .payload
-                .get("slot")
-                .ok_or_else(|| JobError::permanent("retention purge payload has no slot"))?;
-            let starts_at: Timestamp = serde_json::from_value(slot.clone())
+            self.recurring
+                .slot_of(job)
                 .map_err(|_| JobError::permanent("invalid retention purge payload"))?;
-            let slot = self
-                .interval
-                .slot_at(starts_at)
-                .map_err(|_| JobError::permanent("invalid retention purge slot"))?;
-            if slot.starts_at() != starts_at {
-                return Err(JobError::permanent("retention purge slot is not aligned"));
-            }
             self.purge_expired(&cancellation).await?;
             let next = self
-                .interval
-                .next_slot(slot, Timestamp::now())
+                .recurring
+                .next_job(job, Timestamp::now())
                 .map_err(|_| JobError::permanent("invalid next retention purge slot"))?;
-            let mut transaction =
-                self.pool.begin().await.map_err(|_| {
-                    JobError::retryable("could not begin retention purge completion")
-                })?;
+            let mut transaction = baukit_ops::begin(&self.pool)
+                .await
+                .map_err(|_| JobError::retryable("could not begin retention purge completion"))?;
             self.store
-                .enqueue_in_transaction(&mut transaction, purge_job(next))
+                .enqueue_in_transaction(&mut transaction, next)
                 .await
                 .map_err(|_| JobError::retryable("could not enqueue next retention purge"))?;
             let completed = self
@@ -163,16 +158,6 @@ pub mod retention {
             cancellation.mark_completed_in_transaction();
             Ok(())
         }
-    }
-
-    fn purge_job(slot: FixedUtcSlot) -> NewJob {
-        NewJob::new(
-            PURGE_JOB_TYPE,
-            json!({"slot": slot.starts_at()}),
-            MAX_ATTEMPTS,
-        )
-        .run_after(slot.starts_at())
-        .idempotency_key(slot.identifier())
     }
 
     impl JobHandler for RetentionJobHandler {

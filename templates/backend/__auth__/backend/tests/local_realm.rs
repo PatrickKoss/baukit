@@ -8,6 +8,8 @@ use serde_json::Value;
 
 use {{ context.app_crate }}_bin::{AuthProvider, ProductConfig, auth_verifier};
 
+const STARTUP_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
+
 const PRODUCT: &str = "{{ context.app_name }}";
 
 fn product_root() -> PathBuf {
@@ -76,7 +78,7 @@ async fn local_realm_issues_{{ context.auth_provider }}_shaped_tokens_for_the_pr
         serde_json::json!(["items:read", "items:write"])
     );
 {% endif %}
-    let principal = auth_verifier(&auth).await?.verify(&token).await?;
+    let principal = auth_verifier(&auth, STARTUP_BUDGET).await?.verify(&token).await?;
     assert_eq!(Some(principal.subject()), claims["sub"].as_str());
     assert_eq!(principal.organization(), Some("org_local"));
     assert_eq!(principal.issuer(), Some(keycloak.issuer().as_str()));

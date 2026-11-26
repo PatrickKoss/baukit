@@ -2,7 +2,6 @@ use std::{env, error::Error, io::Write as _};
 
 use baukit_config::Environment;
 use {{ context.app_crate }}_bin::{ProductConfig, config_loader, platform::purge_receipts};
-use sqlx::postgres::PgPoolOptions;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -16,10 +15,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .database
         .as_ref()
         .ok_or("receipt purge requires database configuration")?;
-    let pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(database.url.expose())
-        .await?;
+    let mut purge_database = database.clone();
+    purge_database.max_connections = 1;
+    purge_database.min_connections = 0;
+    let pool = baukit_ops::connect_with_backoff(&purge_database, config.startup.budget).await?;
     let removed = purge_receipts(pool.clone()).await?;
     pool.close().await;
     writeln!(

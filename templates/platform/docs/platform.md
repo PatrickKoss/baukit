@@ -41,6 +41,14 @@ modes. `Extension<Entitlements>` is available to product HTTP handlers. Read wit
 `has_entitlement(subject, feature, now)` or `has_tier(subject, tier, now)`.
 Product code defines feature and tier meanings.
 
+When the hub cannot answer and no fresh row is cached, `current` returns
+`EntitlementError::Unavailable { retry_after }`. Let `?` convert it into
+`ApiError`, which answers 503 with `Retry-After`, so clients back off instead of
+reading a 500 as a broken product. `HubTicketSource` maps an open egress circuit
+(`EgressError::CircuitOpen`) and a full bulkhead (`EgressError::Saturated`) to
+`EntitlementSourceError::CoolingDown { retry_after }`, so the cache waits for the
+breaker instead of counting the refusal as a hub failure.
+
 The API adapter `HubTicketSource` POSTs `{suiteSubject, productId}` to the configured
 ticket URL with the service token, then verifies the returned `{ticket}` using
 hub JWKS. It binds issuer, audience and subject before caching. It allows public

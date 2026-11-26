@@ -1,13 +1,13 @@
 use std::{env, error::Error, io, net::SocketAddr, sync::Arc, time::Duration};
 
 use baukit_config::{BaukitConfig, Environment};
-use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
-use baukit_ops::{TrafficGate, spawn_pool_metrics_sampler};
+use baukit_jobs::{JobHandler, PostgresJobStore, WorkerConfig, WorkerRunner};
+use baukit_ops::{TrafficGate, jobs_admin::requeue_failed_jobs_router, spawn_pool_metrics_sampler};
 use baukit_runtime::{
-    ProcessKind, RestartPolicy, ServiceInfo, ShutdownToken, TaskSupervisor, build_info,
+    DrainBudget, ProcessKind, RestartPolicy, ServiceInfo, ShutdownToken, TaskSupervisor, build_info,
 };
 use baukit_telemetry::{Telemetry, TelemetryBuilder, tracing};
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use tokio::net::TcpListener;
 
 use {{ context.app_crate }}_bin::ProductConfig;
@@ -45,16 +45,17 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     );
     let telemetry = init_telemetry(&config, &service_info)?;
 
-    let pool = PgPoolOptions::new()
-        .max_connections(database.max_connections)
-        .min_connections(database.min_connections)
-        .acquire_timeout(database.acquire_timeout)
-        .connect(database.url.expose())
-        .await?;
+    let job_timeout = Duration::from_secs(config.product.worker.job_timeout_seconds);
+    let mut worker_database = database.clone();
+    worker_database.statement_timeout = job_timeout;
+    let pool = baukit_ops::connect_with_backoff(&worker_database, config.startup.budget).await?;
     let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), POOL_METRICS_INTERVAL)?;
-    let runner = build_runner(&config, &pool){% if context.platform or context.auth_enabled %}.await{% endif %}?;
+    let (runner, job_types) = build_runner(&config, &pool){% if context.platform or context.auth_enabled %}.await{% endif %}?;
 
-    let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
+    let shutdown = ShutdownToken::with_budget(DrainBudget::new(
+        config.shutdown.drain_timeout,
+        job_timeout,
+    )?);
     let traffic_gate = TrafficGate::new();
     shutdown.on_drain({
         let traffic_gate = traffic_gate.clone();
@@ -66,6 +67,14 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         telemetry.prometheus_handle().clone(),
         traffic_gate,
     )?;
+    let operations = match &config.product.worker.admin_token {
+        Some(token) => operations.merge(requeue_failed_jobs_router(
+            Arc::new(job_store(&pool)),
+            job_types,
+            token.clone(),
+        )),
+        None => operations,
+    };
     let listener =
         TcpListener::bind(SocketAddr::new(config.ops.bind_address, config.ops.port)).await?;
     tracing::info!(
@@ -82,9 +91,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     pool.close().await;
     pool_metrics.shutdown().await;
     shutdown
-        .run_during_drain(
-            async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await },
-        )
+        .run_flush(async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await })
         .await???;
     server_result?;
     Ok(())
@@ -106,25 +113,31 @@ fn init_telemetry(
 {% if context.platform or context.auth_enabled %}async {% endif %}fn build_runner(
     config: &BaukitConfig<ProductConfig>,
     pool: &PgPool,
-) -> Result<WorkerRunner, Box<dyn Error>> {
+) -> Result<(WorkerRunner, &'static [&'static str]), Box<dyn Error>> {
 {% if context.platform or context.auth_enabled %}    let handler = Arc::new(RetentionJobHandler::new(pool.clone())?);
     handler.enqueue_initial(jiff::Timestamp::now()).await?;
-{% endif %}    let runner = WorkerRunner::new(
-        {% if context.auth_enabled %}Arc::new(
-            PostgresJobStore::new(pool.clone())
-                .retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE]),
-        ),{% else %}Arc::new(PostgresJobStore::new(pool.clone())),{% endif %}
-        {% if context.platform or context.auth_enabled %}handler,{% else %}Arc::new(DemoJobHandler::new()),{% endif %}
+    let recurring = handler.recurring();
+{% else %}    let handler = Arc::new(DemoJobHandler::new());
+{% endif %}    let job_types = handler.job_types();
+    let runner = WorkerRunner::new(
+        Arc::new(job_store(pool)),
+        handler,
         WorkerConfig {
             concurrency: config.product.worker.concurrency,
             poll_interval: Duration::from_millis(config.product.worker.poll_interval_milliseconds),
-            lease_duration: Duration::from_secs(config.product.worker.lease_duration_seconds),
             job_timeout: Duration::from_secs(config.product.worker.job_timeout_seconds),
             ..WorkerConfig::default()
         },
-    )?;
-    Ok(runner)
+    )?{% if context.platform or context.auth_enabled %}
+    .with_recurring(recurring)?{% endif %};
+    Ok((runner, job_types))
 }
+
+fn job_store(pool: &PgPool) -> PostgresJobStore {
+{% if context.auth_enabled %}    PostgresJobStore::new(pool.clone())
+        .retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE])
+{% else %}    PostgresJobStore::new(pool.clone())
+{% endif %}}
 
 async fn supervise(
     shutdown: &ShutdownToken,

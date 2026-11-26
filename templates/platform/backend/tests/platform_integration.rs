@@ -290,6 +290,22 @@ async fn run_receipt_purge(pool: sqlx::PgPool) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 {% endif %}
+#[test]
+fn unavailable_entitlements_answer_503_with_retry_after() {
+    let retry_after = std::time::Duration::from_secs(7);
+    let response = axum::response::IntoResponse::into_response(baukit_http::ApiError::from(
+        baukit_suite::platform::EntitlementError::Unavailable { retry_after },
+    ));
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response
+            .headers()
+            .get(axum::http::header::RETRY_AFTER)
+            .and_then(|value| value.to_str().ok()),
+        Some("7")
+    );
+}
+
 #[tokio::test]
 async fn standalone_is_free_and_partial_hub_settings_fail() -> Result<(), Box<dyn Error>> {
     let config = ProductConfig::default();

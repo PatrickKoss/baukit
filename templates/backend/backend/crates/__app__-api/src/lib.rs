@@ -431,10 +431,14 @@ fn map_service_error(error: ServiceError) -> ApiError {
             ApiError::conflict("Item already exists")
         }
         error @ ServiceError::Repository(RepositoryError::Unavailable(_)) => {
-            ApiError::internal(error)
+            baukit_telemetry::tracing::warn!(%error, "repository unavailable");
+            ApiError::unavailable(REPOSITORY_RETRY_AFTER)
         }
     }
 }
+
+/// Retry hint for a 503 while the database or its pool cannot serve the request.
+const REPOSITORY_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub fn map_limit_error(error: LimitError) -> ApiError {
     if matches!(
@@ -500,6 +504,11 @@ fn error_response_rules() -> ErrorResponseRules {
             "The rate limit was exceeded; wait for Retry-After.",
         )
 {% endif %}        .status(When::Always, 500, "An internal error occurred.")
+        .status(
+            When::Always,
+            503,
+            "A dependency is unavailable; retry after Retry-After.",
+        )
         .status(
             When::Always,
             504,

@@ -9,6 +9,8 @@ use serde::Deserialize;
 use url::Url;
 
 const RESPONSE_LIMIT: usize = 64 * 1024;
+/// Retry hint when the hub client sheds load without naming a delay.
+const SATURATED_RETRY_AFTER: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
@@ -127,17 +129,7 @@ impl EntitlementSource for HubTicketSource {
                     .with_body(body),
             )
             .await
-            .map_err(|error| match &error {
-                EgressError::Status {
-                    status,
-                    body: Some(body),
-                    ..
-                } => EntitlementSourceError::from_hub_response(
-                    status.as_u16(),
-                    body.problem_code().unwrap_or(""),
-                ),
-                _ => EntitlementSourceError::Unavailable,
-            })?;
+            .map_err(|error| source_error(&error))?;
         let response: TicketResponse =
             serde_json::from_slice(response.body()).map_err(|_| EntitlementSourceError::Invalid)?;
         let claims = self
@@ -149,5 +141,57 @@ impl EntitlementSource for HubTicketSource {
             return Err(EntitlementSourceError::Invalid);
         }
         Ok(claims.into())
+    }
+}
+
+/// Maps a failed hub call. An open breaker or a full bulkhead cools the
+/// entitlement path down instead of reporting the hub as broken.
+fn source_error(error: &EgressError) -> EntitlementSourceError {
+    match error {
+        EgressError::CircuitOpen { retry_after } => EntitlementSourceError::CoolingDown {
+            retry_after: *retry_after,
+        },
+        EgressError::Saturated => EntitlementSourceError::CoolingDown {
+            retry_after: error
+                .retry_class()
+                .retry_after()
+                .unwrap_or(SATURATED_RETRY_AFTER),
+        },
+        EgressError::Status {
+            status,
+            body: Some(body),
+            ..
+        } => EntitlementSourceError::from_hub_response(
+            status.as_u16(),
+            body.problem_code().unwrap_or(""),
+        ),
+        _ => EntitlementSourceError::Unavailable,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use baukit_egress::EgressError;
+    use baukit_suite::platform::EntitlementSourceError;
+
+    use super::source_error;
+
+    #[test]
+    fn an_open_circuit_cools_the_source_down() {
+        let retry_after = Duration::from_secs(9);
+        assert!(matches!(
+            source_error(&EgressError::CircuitOpen { retry_after }),
+            EntitlementSourceError::CoolingDown { retry_after: delay } if delay == retry_after
+        ));
+    }
+
+    #[test]
+    fn a_saturated_client_cools_the_source_down() {
+        assert!(matches!(
+            source_error(&EgressError::Saturated),
+            EntitlementSourceError::CoolingDown { retry_after } if !retry_after.is_zero()
+        ));
     }
 }
