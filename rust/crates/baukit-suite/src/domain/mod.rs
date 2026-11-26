@@ -33,6 +33,16 @@ pub const SUITE_QUEUE: &str = "suite-events";
 /// Failed delivery attempts in a row that disable a link.
 pub const SUITE_CIRCUIT_FAILURES: u32 = 20;
 pub const SUITE_MAX_ATTEMPTS: u32 = 10;
+/// Deliveries to one peer app that may run at once; see [`suite_delivery_concurrency_key`].
+pub const SUITE_DELIVERY_MAX_PER_KEY: u32 = 1;
+
+/// The `concurrency_key` of every delivery job to `peer_app`.
+///
+/// A worker with `WorkerConfig::max_per_key` set to [`SUITE_DELIVERY_MAX_PER_KEY`]
+/// gives a hanging peer at most that many slots.
+pub fn suite_delivery_concurrency_key(peer_app: &str) -> String {
+    format!("suite-peer:{peer_app}")
+}
 const SECONDS_PER_DAY: i64 = 86_400;
 const SIGNATURE_WINDOW_SECONDS: i64 = 300;
 pub const SUITE_SIGNATURE_WINDOW_SECONDS: u64 = SIGNATURE_WINDOW_SECONDS.unsigned_abs();

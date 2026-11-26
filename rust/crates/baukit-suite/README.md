@@ -95,6 +95,14 @@ let worker = suite.worker(Arc::new(job_store))?; // feature `jobs`
 let notifier = suite.notifier(); // Some when erasure_lookup was set
 ```
 
+Delivery jobs carry `suite_delivery_concurrency_key(peer_app)` as their
+`concurrency_key`. `suite.worker(store)` and `compose::default_worker_config()`
+set `WorkerConfig::max_per_key` to `SUITE_DELIVERY_MAX_PER_KEY` (1), so a
+hanging peer holds one worker slot while deliveries to other peers keep
+running. A product that builds its own config for `suite.worker_with` should
+start from `default_worker_config()` or set `max_per_key` the same way. The key
+needs `baukit-jobs` migration 0006.
+
 `build` validates `SuiteConfig` and fails without a cipher when peers are configured.
 `app_id` is also the metric prefix. `share_xp(false)` overrides the configuration for
 products that never emit XP. An applier that needs the outbox goes to
