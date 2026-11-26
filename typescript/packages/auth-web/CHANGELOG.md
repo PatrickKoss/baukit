@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The browser-session refresh POST aborts after `REFRESH_TIMEOUT_MS` (10,000 ms), so a hanging backend cannot hold the cross-tab refresh lock.
+- A retryable refresh failure (network, timeout, 429, 5xx) returns the current token while it has not expired, instead of rejecting.
+
 ## 0.30.6
 
 ### Patch Changes

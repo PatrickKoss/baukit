@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+- Breaking: `IdentityDeletionError` gains `Unavailable { retry_after }`. An open `keycloak-admin` circuit or a saturated client maps to it, and the worker defers the job with `JobError::deferred` instead of consuming an attempt.
+- The inline erasure path no longer holds `SELECT ... FOR UPDATE` across the identity provider call. It reserves the job through `run_after` (the inline timeout plus 5 s), calls the provider, then re-checks the job under a lock.
+- The Keycloak admin client uses the destination name `keycloak-admin`.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

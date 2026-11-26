@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `networkFirst` serves the cached copy when the network is still pending after `networkTimeoutMs` (default 4,000 ms, `false` disables it). The late response still updates the cache.
+
 ## 0.30.6
 
 ### Patch Changes

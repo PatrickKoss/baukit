@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- A `503 authentication_policy_unavailable` answer carries `Retry-After: 5`. An open `mcp-introspection` circuit fails fast as that answer without calling Keycloak.
+- The Keycloak introspection client uses the destination name `mcp-introspection`.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

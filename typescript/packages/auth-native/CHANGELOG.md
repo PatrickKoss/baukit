@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- New `scheduleTokenRenewal({ expiresAt, renew })` renews 30 s before expiry, retries with full-jitter backoff from 1 s up to 60 s, and stops on a terminal refresh rejection. It returns a cancel function.
+- `accessToken()` returns the current token through a retryable refresh failure while the token has not expired. `{ forceRefresh: true }` still rejects.
+
 ## 0.30.6
 
 ### Patch Changes
