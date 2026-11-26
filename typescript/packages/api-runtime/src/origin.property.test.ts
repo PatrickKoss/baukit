@@ -21,7 +21,9 @@ const input = fc.oneof(
 );
 const requestInput = fc.oneof(
   input,
-  input.map((value) => new Request(new URL(value, `${baseUrl}/`))),
+  input
+    .filter((value) => URL.canParse(value, `${baseUrl}/`))
+    .map((value) => new Request(new URL(value, `${baseUrl}/`))),
 );
 
 function underBase(url: string): boolean {
