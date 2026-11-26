@@ -20,7 +20,8 @@ These changes tighten input checks at Baukit's trust boundaries. Most products n
 `baukit-auth` browser sessions and `baukit-suite` link secrets and PKCE verifiers now call
 `seal_record` for every write. The record id goes into a new nullable column next to the
 ciphertext. A row whose record id column is NULL was written before this release and still opens
-through the v1 `decrypt` path. Nothing re-seals old rows.
+through the v1 `decrypt` path. Old browser sessions are not re-sealed; they expire. Old suite
+secrets are re-sealed by the hourly suite cleanup, see below.
 
 Add these as new product migrations and apply them before deploying the new binary. The new
 binary selects the columns, so it fails against a schema without them. The previous binary keeps
@@ -43,11 +44,24 @@ With v2, an edit to the database fails to open instead of decrypting:
 - a record id copied from another row, or set to NULL to force the v1 path,
 - a suite secret's ciphertext emptied or copied from another link.
 
+### Re-sealing suite secrets
+
+`SuiteDeliveryService::reseal_legacy_secrets(batch)` opens every suite link secret and every
+secret and verifier of an open link request that has no record id, seals it again with
+`seal_record` and writes the new ciphertext, nonce, key version and record id. Each transaction
+locks at most `batch` rows with `FOR UPDATE SKIP LOCKED`, and the update only applies while the
+record id is still NULL, so it does not overwrite a concurrent write. A secret that fails to open
+stays as it is and counts in `unreadable_secrets`. The hourly cleanup
+(`run_hourly_cleanup`, `SuiteDeliveryRunner::cleanup`) runs it with `SUITE_RESEAL_BATCH` and
+reports both counts in `SuiteCleanupOutcome`. It needs a configured credential cipher and does
+nothing without one.
+
 ### When the v1 read path goes away
 
-Baukit keeps the v1 fallback until a release whose notes ship a re-seal job. It will not drop the
-fallback earlier than the second minor release after this one. Before upgrading to that release,
-each of these queries must return 0:
+This release ships the re-seal job. Baukit will not drop the v1 fallback earlier than the second
+minor release after this one. Before upgrading to that release, run
+`reseal_legacy_secrets` (or let the hourly cleanup run) until it returns `resealed_secrets == 0`,
+then check that each of these queries returns 0:
 
 ```sql
 SELECT count(*) FROM baukit_auth_browser_sessions WHERE record_id IS NULL;
@@ -58,5 +72,6 @@ WHERE verifier_record_id IS NULL OR (secret_ciphertext IS NOT NULL AND secret_re
 
 Browser sessions reach 0 on their own once every v1 row is past `absolute_expires_at` and
 `purge_browser_sessions` has run. Link requests live 10 minutes and the hourly cleanup removes them.
-Suite links do not expire, so a v1 link secret stays until the link is replaced or a product
-re-seals it.
+Suite links do not expire, so their v1 secrets convert only through the re-seal. A row that
+stays in `unreadable_secrets` was written under a key the keyring no longer holds or was altered;
+revoke that link and let the user link again.
