@@ -206,8 +206,8 @@ a product prefix or labels.
    jobs migrations. Constants are
    `baukit_suite::{SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL, SUITE_LOCK_ORDER_MIGRATION_SQL}`.
    Keep applied suite migrations in products that already have these tables.
-   For SLS, `0056_suite.sql` corresponds to `001_suite.sql` and
-   `0059_suite_runtime.sql` corresponds to `002_suite_runtime.sql`.
+   A product that copied the suite SQL under its own numbers keeps the files
+   that correspond to `001_suite.sql` and `002_suite_runtime.sql`.
    Keep those product files and their SQLx migration history unchanged. Do not
    copy or run `001` and `002` again, and do not replace or renumber applied files.
    Add `003_suite_lock_order.sql` as a new product migration when upgrading
@@ -215,7 +215,7 @@ a product prefix or labels.
    `005_suite_record_ids.sql` (`SUITE_RECORD_IDS_MIGRATION_SQL`) the same way when
    upgrading past 0.30.6. It replaces the
    failure trigger with job-only accounting records and preserves the counters
-   already recorded. SLS keeps `0056`, `0059` and `0061` and adds this migration
+   already recorded. A product with its own numbered copies adds this migration
    after them. The crate exposes SQL constants; it does not run migrations.
    Compare their schema with the shipped SQL, keeping product owner foreign
    keys. Add a migration only for other differences.
@@ -253,7 +253,7 @@ a product prefix or labels.
    ```
 
    Override the default `SuiteEventApplier::lock_owner(connection, owner)`
-   hook when product writers lock the owner row. SLS uses
+   hook when product writers lock the owner row, for example with
    `SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE`. Lock deleted and
    deactivated owners too and check that state in `apply`. A filter in
    `lock_owner` turns connection tests and duplicate redeliveries for those
@@ -340,7 +340,7 @@ a product prefix or labels.
    Share this store with `SuiteLinkedMachine` so the native auth session and
    redirect handler announce the connection once. A later `load()` clears
    `completed`. This additive state field keeps the list state and completion
-   id together, so SLS can remove its B9 completion workaround.
+   id together.
    Register `suiteMessages`; validate intents with
    `createSuiteNativeIntentValidator(scheme)` and use `openSuitePeer` for
    native-to-web fallback. Product UI supplies event labels and mapping controls.
@@ -414,19 +414,8 @@ Configuration keys use the product prefix without renaming:
 | `IDENTITY_DOMAIN` | unset |
 | `IDENTITY_CLAIM` | `suite_sub` |
 
-Apply the ten steps above in every product. The following checklist records the
-product work identified in the reference snapshot. Confirm the current migration
-head and emit points in each product before adoption.
-
-| Product app id | Config prefix and API base | Product work |
-| --- | --- | --- |
-| `heldengang` | `HELDENGANG`, `/api/v1` | Replace the copied suite module. Keep applied migrations `0056`, `0059` and `0061`, including their owner foreign keys. Keep typed payloads, LifeGraph mappings, rewards and the mapping route. Implement replay from existing domain history. |
-| `eigenruhe` | `EIGENRUHE`, `/api/v1` | Replace hub publishing and its connection UI. Emit practice completion and check-ins from REST and sync transactions. Replay those rows. Keep the fitness-tracker connection. |
-| `hebkit` | `HEBKIT`, `/api/v1` | Replace the Tiefgang-specific sender and connection route. Emit first-party workouts and sleep, including imported sleep, at existing write points. Update closed job-type dispatch and replay both histories. |
-| `leitbild` | `LEITBILD`, `/api/v1` | Add a vault keyring. Run suite delivery independently of the AI worker. Emit new journal entries and completed program runs, excluding backfills. Supply replay and preserve the authorize query across login. |
-| `tiefgang` | `TIEFGANG`, `/api/v1` | Replace connection tokens and suite ingest. Keep custom webhooks. Emit terminal sessions and wrap the existing credit-rule engine as the applier. Replay session history. |
-| `redemut` | `REDEMUT`, `/v1` | Run the suite worker beside erasure in the API process. Emit newly appended events only. Group review replay by the user's local date. Keep issuer-aware account lookup and same-tab authorize login. |
-| `schlauzug` | `SCHLAUZUG`, `/v1` | Run suite jobs in the API process with PostgreSQL. Emit owned solo and room runs in their history transaction; guests do not emit. Replay run history and add same-tab login that preserves the query. |
+Apply the ten steps above in every product. Confirm the current migration head
+and emit points in each product before adoption.
 
 Every product must add owner foreign keys, erasure inventory coverage, deployment
 config, both suite pages, native intent routing where applicable, and its own

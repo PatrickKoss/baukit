@@ -11,11 +11,11 @@ Every process sets, via `baukit-telemetry`:
 
 | Attribute | Example | Rule |
 |---|---|---|
-| `service.name` | `fitness-tracker-api` | `<product>-<process>`; process is one of `api`, `worker`, `migrate`, `seed`, `agent` |
+| `service.name` | `example-api` | `<product>-<process>`; process is one of `api`, `worker`, `migrate`, `seed`, `agent` |
 | `service.version` | `1.4.2` | Cargo package version |
 | `service.commit` (custom) | `a1b2c3d` | short git SHA, injected at build time |
 | `deployment.environment.name` | `production` | one of `local`, `testing`, `staging`, `production` |
-| `product` (custom) | `fitness-tracker` | product identity, stable across all its processes |
+| `product` (custom) | `example` | product identity, stable across all its processes |
 
 Kubernetes attributes (`k8s.namespace.name`, workload, pod, cluster) are added by the collector (Alloy) at collection time, never by the application.
 
@@ -33,12 +33,12 @@ Prometheus exposition on the operations listener at `/metrics`. The naming diver
 
 Rules:
 
-- The duration metric name is **singular** (`http_request_duration_seconds`). Fitness Tracker migrates from the plural name.
-- `status` is the raw numeric status code as a string (`"200"`, `"404"`). Status classes are derived in queries and recording rules, never stored as labels. Heldengang migrates from status classes.
+- The duration metric name is **singular** (`http_request_duration_seconds`).
+- `status` is the raw numeric status code as a string (`"200"`, `"404"`). Status classes are derived in queries and recording rules, never stored as labels.
 - `route` is always the matched route template (`/users/{id}`), never the raw path. Requests that match no route use `route="unmatched"`.
 - `method` is uppercase and bounded to known HTTP methods; anything else becomes `OTHER`.
 - Histogram buckets (seconds): `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10`.
-- Application-prefixed HTTP metric names (for example `sl_http_*`) are forbidden. Heldengang migrates.
+- Application-prefixed HTTP metric names (for example `sl_http_*`) are forbidden.
 
 ### 2.2 Build info
 
@@ -89,7 +89,7 @@ outcomes `allowed` or `limited`.
 
 - JSON to stdout in deployed environments; human-readable format in local development. The switch follows `deployment.environment.name`.
 - Required fields: `timestamp` (RFC 3339), `level`, `message`, `target`, plus `trace_id`/`span_id` when inside a span and `request_id` when inside a request.
-- Loki labels are bounded to: `service`, `environment`, `namespace`, `level`. The label is **`service`**, not `service_name`; Fitness Tracker migrates. Everything else, including `trace_id` and `request_id`, stays in the log body as fields.
+- Loki labels are bounded to: `service`, `environment`, `namespace`, `level`. The label is **`service`**, not `service_name`. Everything else, including `trace_id` and `request_id`, stays in the log body as fields.
 - Scrubbed by default: `Authorization` headers, cookies, tokens, passwords, email addresses, request/response bodies, and provider payloads.
 
 ## 4. Traces
