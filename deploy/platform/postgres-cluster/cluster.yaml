@@ -16,8 +16,11 @@ spec:
     name: postgresql
     major: 18
   enableSuperuserAccess: false
-  # A member of baukit_tenants may connect only to the database named like a role it belongs to.
   postgresql:
+    # Sized in README.md "Connection budget".
+    parameters:
+      max_connections: "150"
+    # A member of baukit_tenants may connect only to the database named like a role it belongs to.
     pg_hba:
       - host samerole +baukit_tenants all scram-sha-256
       - host all +baukit_tenants all reject

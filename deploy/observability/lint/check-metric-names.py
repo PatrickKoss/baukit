@@ -23,6 +23,8 @@ SPEC_METRICS = (
     "mcp_request_duration_seconds",
     "http_request_duration_seconds",
     "http_requests_in_flight",
+    "http_requests_shed_total",
+    "auth_key_cache_requests_total",
     "http_rate_limit_decisions_total",
     "fixed_window_amount_budget_decisions_total",
     "build_info",
@@ -34,6 +36,18 @@ SPEC_METRICS = (
     "worker_job_runs_total",
     "worker_job_duration_seconds",
     "worker_queue_oldest_age_seconds",
+    "process_cpu_seconds_total",
+    "process_resident_memory_bytes",
+    "process_open_fds",
+    "process_max_fds",
+    "process_start_time_seconds",
+    "tokio_runtime_workers",
+    "tokio_runtime_alive_tasks",
+    "tokio_runtime_global_queue_depth",
+    "tokio_runtime_busy_seconds_total",
+    "worker_queue_depth",
+    "worker_lease_expired_total",
+    "worker_job_deferrals_total",
 )
 
 PROMETHEUS_BUILTINS = {"up"}

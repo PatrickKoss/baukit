@@ -12,8 +12,9 @@ defines the compatibility and migration requirements for that later change.
 
 Copy `migrations/0001_baukit_jobs.sql`,
 `migrations/0002_baukit_jobs_failure_reason.sql`,
-`migrations/0003_baukit_jobs_claim_by_type.sql`, and
-`migrations/0004_baukit_jobs_active_deduplication.sql` into the product's own
+`migrations/0003_baukit_jobs_claim_by_type.sql`,
+`migrations/0004_baukit_jobs_active_deduplication.sql`, and
+`migrations/0005_baukit_jobs_deferrals.sql` into the product's own
 migrations in that order. Do not point a production service at this crate
 directory and do not run schema changes during application startup. A product
 may add foreign keys or indexes in a later migration, but the lifecycle columns
@@ -111,6 +112,13 @@ New worker and authenticated backend templates include the same SQL in
 `backend/migrations/0007_baukit_jobs_active_deduplication.sql`. Existing products
 must add their own migration, without editing one they already applied.
 
+Products with migrations 0001 through 0004 applied add
+`migrations/0005_baukit_jobs_deferrals.sql` (also available as
+`POSTGRES_MIGRATION_0005_SQL`) as their next migration before upgrading. It
+adds `deferrals integer not null default 0`. Every claim and enqueue returns the
+column, so the store fails without it. Code that constructs `Job` sets
+`deferrals`, usually to `0`.
+
 The terminal cleanup and fixed UTC slot APIs added after 0.2.1 need no schema
 migration. Cleanup is a `PostgresJobStore` method, so custom `JobStore`
 implementations also need no code change.
@@ -126,9 +134,15 @@ transition. External side effects still need an idempotency key at the
 destination because a crashed worker's expired lease is reclaimed.
 
 Handlers classify failures with `JobError::permanent`, `JobError::retryable`,
-or `JobError::retryable_after`. The last form preserves a provider's
-`Retry-After` signal instead of using the runner's exponential delay; the
-job's `max_attempts` remains authoritative. Terminal jobs keep status `failed`
+`JobError::retryable_after`, or `JobError::deferred`. `retryable_after`
+preserves a provider's `Retry-After` signal instead of using the runner's
+exponential delay; the job's `max_attempts` remains authoritative.
+`deferred(message, delay)` is for a dependency that refuses work for a known
+time, such as an open circuit breaker. The runner releases the job to pending
+at `now + delay`, gives the attempt back and increments `deferrals`. After
+`WorkerConfig::max_deferrals` (default 100) such releases, a deferral consumes
+an attempt, and on the final attempt the job fails with `attempts_exhausted`.
+Each deferral increments `worker_job_deferrals_total{job_kind}`. Terminal jobs keep status `failed`
 and expose `failure_reason` as `permanent` or `attempts_exhausted` alongside
 the bounded diagnostic `last_error`.
 
@@ -317,8 +331,8 @@ one outbox without taking each other's work. An empty set is rejected with
 `StoreError::InvalidInput`, as are blank or overlong entries.
 
 A job type that no running handler declares stays `pending` with zero attempts.
-`worker_queue_oldest_age_seconds` counts pending rows of every type, so such a
-row keeps every runner's queue-age gauge rising and trips the queue-age alert.
+Runner gauges only count the runner's own job types, so no runner reports such
+a row. Check the table directly when a type has no worker.
 
 Claim recovery still runs for every type. Before selecting a row, a claim
 cancels expired leases that carry a cancellation request and fails expired
@@ -333,11 +347,40 @@ rows and to expired leases they reclaim.
 
 Create one `WorkerRunner` with a product `JobHandler` and run it in a
 `baukit_runtime::TaskSupervisor`. Pass the same process `ShutdownToken` to the
-runner. On shutdown it stops claiming and drains in-flight attempts; the
-supervisor's shared deadline bounds the drain. Wire `WorkerRunner::ready` (or
-`JobStore::ready`) into the worker readiness checks. The probe executes the
-`FOR UPDATE SKIP LOCKED` claim-query shape with `LIMIT 0`, so it detects a
-missing or incompatible outbox table without consuming work.
+runner. Wire `WorkerRunner::ready` (or `JobStore::ready`) into the worker
+readiness checks. The probe executes the `FOR UPDATE SKIP LOCKED` claim-query
+shape with `LIMIT 0`, so it detects a missing or incompatible outbox table
+without consuming work. Also wire `WorkerRunner::store_health()`, taken before
+`run`, into readiness: it turns false at the first failing store call in the
+runner loop and back to true at the next success.
+
+Store errors in the loop do not end `run`. The runner logs them and retries
+with jittered exponential backoff that starts at `poll_interval` and stops
+growing at 30 s. Each claim and queue sample is bounded by
+`WorkerConfig::store_call_timeout` (default 5 s), so a database that hangs
+instead of failing also turns health red, as `StoreError::Timeout`. Running
+attempts keep going. An attempt that cannot record its
+outcome because its lease is gone logs a warning and increments
+`worker_lease_expired_total{queue}`. Only invalid configuration and a panicking
+claim or attempt task end `run` with an error.
+
+Leases default to 60 s. While a handler runs, the runner renews the lease every
+`lease_duration / 3` with `JobStore::heartbeat`. If renewal finds the lease
+gone, the runner drops the handler and counts a lease expiry. `job_timeout`
+no longer has to be shorter than the lease.
+
+On shutdown the runner stops claiming and cancels every attempt's
+`JobCancellation`. It waits for attempts until `release_reserve` (default 5 s)
+before the `ShutdownToken` deadline. Then it drops the handlers still running
+and calls `JobStore::release(.., ReleaseReason::Shutdown, ..)` for each, so another
+worker claims them at once with the same attempt count. An attempt that ends in
+a retryable error after shutdown began is released the same way, so a job on
+its final attempt is not failed by a rollout. A `job_timeout` that fires during
+drain is still recorded as a failure. A claim still in flight when
+shutdown begins is awaited until the same point and released. If it is still
+running then, the runner stops waiting and lease expiry recovers the job.
+Shutdown releases leave `deferrals` unchanged, so rollouts never push a job
+toward `max_deferrals`.
 
 The runner emits the telemetry-spec §2.4 families. Job and queue labels come
 only from the handler and runner's static identifiers. Configure process
@@ -345,9 +388,16 @@ telemetry with `baukit-telemetry`; it owns the real Prometheus histogram buckets
 for `worker_job_duration_seconds`.
 
 Store-owned claim, enqueue, and readiness transactions finish in owned tasks even if their
-caller is cancelled. Shutdown stops new claims and drains running attempts.
-An abandoned claim stays leased until lease expiry, then a matching worker can
-recover it. Each such claim consumes an attempt.
+caller is cancelled. A claim abandoned by a crashed worker stays leased until
+lease expiry, then a matching worker can recover it. Each such claim consumes an
+attempt.
+
+The runner samples `worker_queue_oldest_age_seconds{queue}` and
+`worker_queue_depth{queue,status}` every `queue_sample_interval` (default 15 s)
+for its handler's job types. Age is measured from `run_after` of the oldest
+pending row that is due, so rows scheduled for later, such as the next recurring
+slot, report zero. Depth covers `pending`, `running` and `failed` rows.
+Cancelled attempts count as `worker_job_runs_total{outcome="cancelled"}`.
 
 Call `retain_failed_kinds(&["identity.account.delete"])` on every store used for
 terminal cleanup when identity deletion failures need repair. The exclusion

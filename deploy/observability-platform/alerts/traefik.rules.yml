@@ -1,4 +1,20 @@
 groups:
+  # Edge availability SLI per Traefik service. It counts the 502 and 503 answers Traefik sends when no
+  # app pod answers, which the app's own http_requests_total cannot see.
+  - name: baukit-traefik-edge-recording
+    interval: 30s
+    rules:
+      - record: baukit:traefik_service_requests_5xx:ratio5m
+        expr: |
+          sum by (service) (rate(traefik_service_requests_total{code=~"5.."}[5m]))
+          / sum by (service) (rate(traefik_service_requests_total[5m]))
+      - record: baukit:traefik_service_requests_5xx:ratio1h
+        expr: |
+          sum by (service) (rate(traefik_service_requests_total{code=~"5.."}[1h]))
+          / sum by (service) (rate(traefik_service_requests_total[1h]))
+      - record: baukit:traefik_service_requests:increase1h
+        expr: |
+          sum by (service) (increase(traefik_service_requests_total[1h]))
   - name: baukit-traefik
     rules:
       - alert: BaukitTraefikServiceHighErrorRatio
@@ -18,6 +34,25 @@ groups:
             {{ $value | humanizePercentage }} of the requests Traefik routed to {{ $labels.service }}
             returned 5xx for 10 minutes.
           runbook_url: RUNBOOK_BASE_URL/traefik-service-high-error-ratio
+      # 99.9% edge availability, the same budget as the app pack's fast burn pair.
+      - alert: BaukitTraefikServiceErrorBudgetBurnFast
+        expr: |
+          baukit:traefik_service_requests_5xx:ratio5m / 0.001 > 14.4
+          and on (service)
+          baukit:traefik_service_requests_5xx:ratio1h / 0.001 > 14.4
+          and on (service)
+          baukit:traefik_service_requests:increase1h >= 100
+        for: 2m
+        labels:
+          severity: critical
+          component: traefik
+        annotations:
+          summary: Traefik service {{ $labels.service }} burns its edge error budget fast
+          description: >-
+            More than 1.44% of the requests Traefik routed to {{ $labels.service }} returned 5xx
+            in both the 5m and the 1h window. This includes the 502 and 503 answers Traefik sends
+            when no pod behind the service answers.
+          runbook_url: RUNBOOK_BASE_URL/traefik-service-error-budget-burn-fast
       - alert: BaukitTraefikTlsCertExpiring
         expr: |
           (max by (cn) (traefik_tls_certs_not_after) - time()) < 7 * 86400

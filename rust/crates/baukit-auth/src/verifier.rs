@@ -3,18 +3,8 @@ use std::{
     future::Future,
     pin::Pin,
     sync::Arc,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
-
-use aws_lc_rs::{digest, signature};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use baukit_egress::{EgressClientError, EgressError, EgressOptionsError, GuardedClient};
-use jiff::Timestamp;
-use reqwest::{StatusCode, Url};
-use serde::Deserialize;
-use serde_json::Value;
-use thiserror::Error;
-use tokio::sync::Mutex;
 
 use crate::authorized_party::{validate_clerk_authorized_party, validate_client_id};
 use crate::config::ClaimPath;
@@ -22,9 +12,20 @@ use crate::oidc_http::{self, Document};
 use crate::{
     ApiToken, ClerkVerifier, OidcConfig, SigningAlgorithm, WorkOsVerifier, config::TokenProfile,
 };
+use aws_lc_rs::signature;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use baukit_egress::{EgressClientError, EgressError, EgressOptionsError, GuardedClient};
+use jiff::Timestamp;
+use reqwest::{StatusCode, Url};
+use serde::Deserialize;
+use serde_json::Value;
+use thiserror::Error;
 
-const UNKNOWN_KEY_TTL: std::time::Duration = std::time::Duration::from_secs(30);
-const MAX_UNKNOWN_KEYS: usize = 128;
+use crate::startup::{RetryFailure, retry_within};
+
+mod keys;
+
+use keys::KeyCache;
 
 /// A verified, provider-neutral application identity.
 ///
@@ -482,16 +483,7 @@ pub enum MultiIssuerError {
 
 struct VerifierInner {
     config: OidcConfig,
-    client: GuardedClient,
-    jwks_uri: Url,
-    cache: Mutex<JwksCache>,
-}
-
-#[derive(Default)]
-struct JwksCache {
-    fetched_at: Option<Instant>,
-    set: JwkSet,
-    unknown_keys: BTreeMap<[u8; 32], Instant>,
+    keys: KeyCache,
 }
 
 impl OidcVerifier {
@@ -513,46 +505,83 @@ impl OidcVerifier {
         let jwks_uri =
             Url::parse(jwks_uri.as_ref()).map_err(|_| VerificationError::InvalidJwksUri)?;
         let client = oidc_http::configured_client(&config, &jwks_uri)?;
+        Ok(Self::with_keys(config, client, jwks_uri))
+    }
+
+    #[cfg(test)]
+    fn from_jwks_uri_with_clock(
+        config: OidcConfig,
+        jwks_uri: &str,
+        clock: Arc<dyn baukit_resilience::Clock>,
+    ) -> Result<Self, VerificationError> {
+        let jwks_uri = Url::parse(jwks_uri).map_err(|_| VerificationError::InvalidJwksUri)?;
+        let client = oidc_http::configured_client(&config, &jwks_uri)?;
+        let keys = keys::key_cache_with_clock(
+            client,
+            jwks_uri,
+            config.cache_ttl,
+            config.jwks_stale_for,
+            clock,
+        );
         Ok(Self {
-            inner: Arc::new(VerifierInner {
-                config,
-                client,
-                jwks_uri,
-                cache: Mutex::new(JwksCache::default()),
-            }),
+            inner: Arc::new(VerifierInner { config, keys }),
         })
+    }
+
+    fn with_keys(config: OidcConfig, client: GuardedClient, jwks_uri: Url) -> Self {
+        let keys = keys::key_cache(client, jwks_uri, config.cache_ttl, config.jwks_stale_for);
+        Self {
+            inner: Arc::new(VerifierInner { config, keys }),
+        }
     }
 
     /// Discovers the configured issuer and constructs a verifier.
     ///
     /// The discovery response must report the exact configured issuer. JWKS are
     /// fetched lazily on first verification and then cached according to the
-    /// configured TTL.
+    /// configured TTL. With [`OidcConfig::with_jwks_uri`] no discovery request is
+    /// sent. Transient discovery failures are retried with jittered backoff until
+    /// [`OidcConfig::with_startup_budget`] runs out.
     ///
     /// # Errors
     ///
-    /// Returns the egress client errors of [`Self::from_jwks_uri`], a discovery
-    /// transport error (`DiscoveryTimeout`, `DiscoveryRequest`, `DiscoveryStatus`,
+    /// Returns the egress client errors of [`Self::from_jwks_uri`], a permanent
+    /// discovery error (`DiscoveryStatus` for a non-transient status,
     /// `InvalidDiscoveryDocument`), [`VerificationError::DiscoveryIssuerMismatch`]
-    /// when metadata names another issuer, and `InvalidJwksUri` for a bad `jwks_uri`.
+    /// when metadata names another issuer, `InvalidJwksUri` for a bad `jwks_uri`,
+    /// and [`VerificationError::DiscoveryBudgetExhausted`] holding the last
+    /// transient error when the budget runs out.
     pub async fn discover(config: OidcConfig) -> Result<Self, VerificationError> {
+        if let Some(jwks_uri) = config.jwks_uri.clone() {
+            let client = oidc_http::configured_client(&config, &jwks_uri)?;
+            return Ok(Self::with_keys(config, client, jwks_uri));
+        }
         let discovery = oidc_http::configured_client(&config, &config.issuer_url)?;
-        let metadata: DiscoveryDocument =
-            oidc_http::get_json(&discovery, config.discovery_url(), Document::Discovery).await?;
+        let metadata = retry_within(
+            config.startup_budget,
+            VerificationError::is_unavailable,
+            || {
+                oidc_http::get_json::<DiscoveryDocument>(
+                    &discovery,
+                    config.discovery_url(),
+                    Document::Discovery,
+                )
+            },
+        )
+        .await
+        .map_err(|failure| match failure {
+            RetryFailure::Permanent(error) => error,
+            RetryFailure::Exhausted(error) => {
+                VerificationError::DiscoveryBudgetExhausted(Box::new(error))
+            }
+        })?;
         if metadata.issuer != config.issuer.as_str() {
             return Err(VerificationError::DiscoveryIssuerMismatch);
         }
         let jwks_uri =
             Url::parse(&metadata.jwks_uri).map_err(|_| VerificationError::InvalidJwksUri)?;
         let client = oidc_http::discovered_jwks_client(&config, discovery, &jwks_uri)?;
-        Ok(Self {
-            inner: Arc::new(VerifierInner {
-                config,
-                client,
-                jwks_uri,
-                cache: Mutex::new(JwksCache::default()),
-            }),
-        })
+        Ok(Self::with_keys(config, client, jwks_uri))
     }
 
     /// Returns the exact issuer this verifier accepts.
@@ -566,13 +595,9 @@ impl OidcVerifier {
     }
 
     pub(crate) fn with_config(&self, config: OidcConfig) -> Self {
+        let keys = keys::emptied(&self.inner.keys, config.cache_ttl, config.jwks_stale_for);
         Self {
-            inner: Arc::new(VerifierInner {
-                config,
-                client: self.inner.client.clone(),
-                jwks_uri: self.inner.jwks_uri.clone(),
-                cache: Mutex::new(JwksCache::default()),
-            }),
+            inner: Arc::new(VerifierInner { config, keys }),
         }
     }
 
@@ -663,7 +688,7 @@ impl OidcVerifier {
             return Err(VerificationError::UnsupportedCriticalHeader);
         }
         let key_id = header.kid.ok_or(VerificationError::MissingKeyId)?;
-        let key = self.key_for(&key_id).await?;
+        let key = keys::key_for(&self.inner.keys, &key_id).await?;
         key.verify(algorithm, &signing_input, &signature)?;
         if let TokenVerification::Id {
             expected_nonce: Some(expected_nonce),
@@ -679,74 +704,10 @@ impl OidcVerifier {
         claims.validate(&self.inner.config, verification)
     }
 
-    async fn key_for(&self, key_id: &str) -> Result<Jwk, VerificationError> {
-        let mut cache = self.inner.cache.lock().await;
-        let fresh = cache
-            .fetched_at
-            .is_some_and(|fetched_at| fetched_at.elapsed() < self.inner.config.cache_ttl);
-        if fresh && let Some(key) = cache.set.find(key_id).cloned() {
-            cache.unknown_keys.remove(&unknown_key_hash(key_id));
-            return Ok(key);
-        }
-
-        if fresh
-            && cache
-                .unknown_keys
-                .get(&unknown_key_hash(key_id))
-                .is_some_and(|cached_at| cached_at.elapsed() < UNKNOWN_KEY_TTL)
-        {
-            return Err(VerificationError::UnknownKeyId);
-        }
-
-        // A missing kid refreshes even a fresh cache, which handles provider key
-        // rotation without waiting for the normal TTL. Holding the mutex avoids
-        // a request stampede during refresh.
-        let set = self.fetch_jwks().await?;
-        let key = set.find(key_id).cloned();
-        cache.set = set;
-        cache.fetched_at = Some(Instant::now());
-        if let Some(key) = key {
-            cache.unknown_keys.remove(&unknown_key_hash(key_id));
-            Ok(key)
-        } else {
-            cache.remember_unknown_key(key_id);
-            Err(VerificationError::UnknownKeyId)
-        }
-    }
-
+    #[cfg(test)]
     async fn fetch_jwks(&self) -> Result<JwkSet, VerificationError> {
-        oidc_http::get_json(
-            &self.inner.client,
-            self.inner.jwks_uri.clone(),
-            Document::Jwks,
-        )
-        .await
+        keys::fetch(&self.inner.keys).await
     }
-}
-
-impl JwksCache {
-    fn remember_unknown_key(&mut self, key_id: &str) {
-        self.unknown_keys
-            .retain(|_, cached_at| cached_at.elapsed() < UNKNOWN_KEY_TTL);
-        if self.unknown_keys.len() >= MAX_UNKNOWN_KEYS
-            && let Some(oldest) = self
-                .unknown_keys
-                .iter()
-                .min_by_key(|(_, cached_at)| *cached_at)
-                .map(|(key_id, _)| *key_id)
-        {
-            self.unknown_keys.remove(&oldest);
-        }
-        self.unknown_keys
-            .insert(unknown_key_hash(key_id), Instant::now());
-    }
-}
-
-fn unknown_key_hash(key_id: &str) -> [u8; 32] {
-    let hash = digest::digest(&digest::SHA256, key_id.as_bytes());
-    let mut bytes = [0; 32];
-    bytes.copy_from_slice(hash.as_ref());
-    bytes
 }
 
 impl IdentityVerifier for OidcVerifier {
@@ -763,7 +724,7 @@ impl std::fmt::Debug for OidcVerifier {
         formatter
             .debug_struct("OidcVerifier")
             .field("issuer", &self.inner.config.issuer.as_str())
-            .field("jwks_uri", &self.inner.jwks_uri)
+            .field("jwks_uri", keys::jwks_uri(&self.inner.keys))
             .finish_non_exhaustive()
     }
 }
@@ -1276,6 +1237,14 @@ pub enum VerificationError {
     /// JWKS returned a non-success status.
     #[error("JWKS returned HTTP {0}")]
     JwksStatus(StatusCode),
+    /// No usable JWKS is cached and a recent fetch failure blocks fetching.
+    ///
+    /// Returned until the failure cooldown ends; [`Self::is_unavailable`] is true.
+    #[error("JWKS are unavailable")]
+    JwksUnavailable,
+    /// Discovery kept failing with transient errors until the startup budget ran out.
+    #[error("OIDC discovery did not succeed within the startup budget")]
+    DiscoveryBudgetExhausted(#[source] Box<VerificationError>),
     /// JWKS returned invalid JSON.
     #[error("JWKS document was invalid")]
     InvalidJwksDocument(#[source] serde_json::Error),
@@ -1358,7 +1327,11 @@ impl VerificationError {
     #[must_use]
     pub fn is_unavailable(&self) -> bool {
         match self {
-            Self::Unavailable | Self::DiscoveryTimeout | Self::JwksTimeout => true,
+            Self::Unavailable
+            | Self::DiscoveryTimeout
+            | Self::JwksTimeout
+            | Self::JwksUnavailable
+            | Self::DiscoveryBudgetExhausted(_) => true,
             Self::DiscoveryRequest(error) | Self::JwksRequest(error) => error.is_retryable(),
             Self::DiscoveryStatus(status) | Self::JwksStatus(status) => {
                 is_transient_status(*status)

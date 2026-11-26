@@ -31,6 +31,17 @@ fn process_global_init_build_info_idempotence_and_shutdown() {
     assert!(rendered.contains("version=\"1.4.2\""), "{rendered}");
     assert!(rendered.contains("} 1"), "{rendered}");
 
+    assert!(
+        rendered.contains("# TYPE process_start_time_seconds gauge"),
+        "{rendered}"
+    );
+    if cfg!(target_os = "linux") {
+        assert!(
+            rendered.contains("# TYPE process_resident_memory_bytes gauge"),
+            "{rendered}"
+        );
+    }
+
     metrics::histogram!("http_request_duration_seconds").record(0.003);
     let rendered = telemetry.prometheus_handle().render();
     for bucket in HTTP_DURATION_BUCKETS {

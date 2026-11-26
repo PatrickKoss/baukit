@@ -4,6 +4,8 @@
 # `password`; its username must match `spec.name` on the owner DatabaseRole.
 # The owner joins baukit_tenants and the role named like the database, so the
 # cluster's pg_hba admits it to that database and rejects it on every other one.
+# connectionLimit caps the owner at 25 connections: 20 through the pooler
+# (max_db_connections) and 5 direct ones for migrations and LISTEN.
 #
 # apiVersion: postgresql.cnpg.io/v1
 # kind: DatabaseRole
@@ -31,6 +33,7 @@
 #   superuser: false
 #   createdb: false
 #   createrole: false
+#   connectionLimit: 25
 #   inRoles:
 #     - baukit_tenants
 #     - product

@@ -7,16 +7,16 @@ use std::{
     },
 };
 
-use axum::routing::get;
+use axum::{Router, routing::get};
 use tokio::{
     io::{AsyncReadExt as _, AsyncWriteExt as _},
-    net::TcpStream,
+    net::{TcpListener, TcpStream},
     sync::Notify,
 };
 
 use super::*;
 
-async fn http_get(address: SocketAddr, path: &str) -> String {
+pub(crate) async fn http_get(address: SocketAddr, path: &str) -> String {
     let mut stream = TcpStream::connect(address)
         .await
         .expect("connect to test listener");

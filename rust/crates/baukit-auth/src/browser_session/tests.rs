@@ -269,6 +269,7 @@ impl Clock for FakeClock {
 struct RecordingLimiter {
     calls: StdMutex<Vec<BrowserSessionRateLimit>>,
     limited_group: Option<&'static str>,
+    unavailable: bool,
 }
 
 impl RecordingLimiter {
@@ -293,7 +294,11 @@ impl BrowserSessionRateLimiter for RecordingLimiter {
         if let Ok(mut calls) = self.calls.lock() {
             calls.push(limit);
         }
-        let outcome = if self.limited_group == Some(limit.group) {
+        let outcome = if self.unavailable {
+            RateLimitOutcome::Unavailable {
+                retry_after: Duration::from_secs(1),
+            }
+        } else if self.limited_group == Some(limit.group) {
             RateLimitOutcome::Limited {
                 retry_after: Duration::from_secs(7),
             }
@@ -970,6 +975,34 @@ async fn rate_limits_use_the_ip_and_session_buckets() -> TestResult {
         Some(b"7".as_slice())
     );
     assert_eq!(json(response).await?["error"]["code"], "rate_limited");
+    Ok(())
+}
+
+#[tokio::test]
+async fn unavailable_limiter_returns_503_with_a_short_retry_after() -> TestResult {
+    let harness = harness_with(
+        local_config()?.with_insecure_local_cookie(true),
+        &[WEB_ORIGIN],
+        FakeIdp::default(),
+        RecordingLimiter {
+            unavailable: true,
+            ..RecordingLimiter::default()
+        },
+    )?;
+    let response = send(
+        &harness.app,
+        request("exchange", None, Some(&exchange_body()))?,
+    )
+    .await?;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        response
+            .headers()
+            .get(RETRY_AFTER)
+            .map(|value| value.as_bytes()),
+        Some(b"1".as_slice())
+    );
+    assert_eq!(json(response).await?["error"]["code"], "unavailable");
     Ok(())
 }
 

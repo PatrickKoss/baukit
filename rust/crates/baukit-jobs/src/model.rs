@@ -62,7 +62,9 @@ pub struct Job {
     pub failure_reason: Option<JobFailureReason>,
     /// Time cancellation was requested for a running job.
     pub cancel_requested_at: Option<Timestamp>,
-    /// Creation timestamp used for queue-age telemetry.
+    /// Releases that returned an attempt instead of consuming it.
+    pub deferrals: u32,
+    /// Creation timestamp.
     pub created_at: Timestamp,
     /// Timestamp of the latest lifecycle transition.
     pub updated_at: Timestamp,
@@ -147,6 +149,39 @@ pub enum FailureDisposition {
     Retry,
     /// The job moved to terminal failure.
     Failed,
+}
+
+/// Why a running job goes back to pending through [`crate::JobStore::release`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReleaseReason {
+    /// The worker is shutting down. The attempt is given back and `deferrals` is unchanged.
+    Shutdown,
+    /// The handler deferred the job. The attempt is given back and `deferrals` grows by one.
+    Deferred,
+    /// The handler deferred the job past the deferral cap. The attempt stays
+    /// used, so a final attempt fails with `attempts_exhausted`.
+    DeferredPastCap,
+}
+
+impl ReleaseReason {
+    pub(crate) const fn consumes_attempt(self) -> bool {
+        matches!(self, Self::DeferredPastCap)
+    }
+
+    pub(crate) const fn counts_deferral(self) -> bool {
+        matches!(self, Self::Deferred)
+    }
+}
+
+/// Outbox row counts for a runner's job types, sampled for telemetry.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct QueueDepth {
+    /// Pending rows, including rows scheduled for later.
+    pub pending: u64,
+    /// Running rows, including rows whose lease has expired.
+    pub running: u64,
+    /// Rows in terminal failure that cleanup has not removed yet.
+    pub failed: u64,
 }
 
 /// Per-status timestamps used to select terminal jobs for cleanup.

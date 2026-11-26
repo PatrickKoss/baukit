@@ -17,10 +17,11 @@ workspace = true
 
 [features]
 default = []
-sqlx-postgres = ["dep:sqlx"]
+sqlx-postgres = ["dep:sqlx", "dep:baukit-config"]
 
 [dependencies]
 axum.workspace = true
+baukit-config = { workspace = true, optional = true }
 baukit-core.workspace = true
 baukit-telemetry.workspace = true
 serde.workspace = true
@@ -28,6 +29,7 @@ sqlx = { workspace = true, optional = true }
 tokio.workspace = true
 
 [dev-dependencies]
+baukit-test = { path = "../baukit-test" }
 metrics-exporter-prometheus.workspace = true
 serde_json.workspace = true
 tower.workspace = true

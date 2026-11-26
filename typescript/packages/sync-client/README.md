@@ -74,16 +74,23 @@ The environment reports foreground state and connectivity. The scheduler runs on
 app returns to the foreground, when connectivity returns, and on the interval. It installs no
 interval while backgrounded and ignores connectivity events there.
 
-A failing run reaches `onError` and does not stop scheduling. Without `retry`, the next attempt
-waits for the next trigger.
+Clients that lose the backend together must not come back together. Foreground and online
+triggers therefore wait a random 0 to 5 s (several signals in that window collapse into one run),
+and each interval tick lands within 10% of `intervalMs`. `random` (default `Math.random`) is the
+jitter source; a sample of 0 triggers recovery at once.
+
+A failing run reaches `onError` and does not stop scheduling.
 
 ### Retry and backoff
 
-Pass `retry` to retry a failed run after a delay. The product decides which failures are worth a
-retry and how long to wait, because only it knows its error types; the scheduler owns the attempt
-count, the wait, and waking it early. `fullJitterBackoffMs` from `@baukit/api-runtime/backoff` is
-the Baukit delay policy. The root entry of this package still imports nothing, so the product
-passes the policy in:
+Retries are on by default: up to 5 retries, with `SyncRateLimitError.retryAt` honoured, no retry
+for a `SyncTransportError` whose `retryable` is false, and full jitter (1 s doubling to 60 s)
+otherwise. `now` (default `Date.now`) is the clock for `retryAt`. The same policy is exported as
+`defaultSyncRetryDelayMs(error, retryIndex, random, now)`. Pass `retry: false` to wait for the next
+trigger instead.
+
+Override `maxRetries` or `delayMs` when the product knows its error types better.
+`fullJitterBackoffMs` from `@baukit/api-runtime/backoff` is the Baukit delay policy:
 
 ```ts
 import { fullJitterBackoffMs } from '@baukit/api-runtime/backoff';
@@ -93,7 +100,8 @@ const scheduler = new SyncScheduler(() => engine.syncOnce(), environment, {
   retry: {
     maxRetries: 4,
     delayMs: (error, retryIndex) => {
-      if (error instanceof SyncRateLimitError) return Math.max(0, Date.parse(error.retryAt) - Date.now());
+      if (error instanceof SyncRateLimitError)
+        return Math.max(0, Date.parse(error.retryAt) - Date.now());
       if (error instanceof SyncTransportError && !error.retryable) return null;
       return fullJitterBackoffMs(retryIndex, { baseDelayMs: 500, maxDelayMs: 30_000 });
     },

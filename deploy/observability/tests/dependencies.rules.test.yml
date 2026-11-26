@@ -116,7 +116,7 @@ tests:
   - name: a job queued for more than 300s fires BaukitWorkerQueueOldestAgeHigh after 10m
     interval: 1m
     input_series:
-      - series: 'worker_queue_oldest_age_seconds{product="fixture",service="fixture-worker",environment="test",namespace="fixture",instance="10.0.0.3:9000",job="fixture-worker",job_kind="email"}'
+      - series: 'worker_queue_oldest_age_seconds{product="fixture",service="fixture-worker",environment="test",namespace="fixture",instance="10.0.0.3:9000",job="fixture-worker",queue="email"}'
         values: '301x20'
     alert_rule_test:
       - eval_time: 9m
@@ -132,19 +132,108 @@ tests:
               namespace: fixture
               instance: 10.0.0.3:9000
               job: fixture-worker
-              job_kind: email
+              queue: email
               severity: warning
             exp_annotations:
               summary: Worker queue age is high
-              description: 'The oldest queued job is more than five minutes old for job kind email in fixture-worker.'
+              description: 'The oldest queued job is more than five minutes old in queue email of fixture-worker.'
               runbook_url: RUNBOOK_BASE_URL/worker-queue-oldest-age-high
 
   - name: a queue age of exactly 300s stays quiet
     interval: 1m
     input_series:
-      - series: 'worker_queue_oldest_age_seconds{product="fixture",service="fixture-worker",environment="test",namespace="fixture",instance="10.0.0.3:9000",job="fixture-worker",job_kind="email"}'
+      - series: 'worker_queue_oldest_age_seconds{product="fixture",service="fixture-worker",environment="test",namespace="fixture",instance="10.0.0.3:9000",job="fixture-worker",queue="email"}'
         values: '300x20'
     alert_rule_test:
       - eval_time: 15m
         alertname: BaukitWorkerQueueOldestAgeHigh
+        exp_alerts: []
+
+  - name: a p95 acquire wait near 250ms fires BaukitDatabaseAcquireLatencyHigh after 10m
+    interval: 1m
+    input_series:
+      - series: 'db_pool_acquire_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",le="0.1"}'
+        values: '0x20'
+      - series: 'db_pool_acquire_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",le="0.25"}'
+        values: '0+60x20'
+      - series: 'db_pool_acquire_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",le="+Inf"}'
+        values: '0+60x20'
+      - series: 'db_pool_acquire_duration_seconds_count{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api"}'
+        values: '0+60x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitDatabaseAcquireLatencyHigh
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: BaukitDatabaseAcquireLatencyHigh
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              namespace: fixture
+              instance: 10.0.0.1:9000
+              severity: warning
+            exp_annotations:
+              summary: Database connection acquisition is slow
+              description: 'The p95 wait for a pooled database connection has exceeded 100ms for ten minutes on 10.0.0.1:9000 of fixture-api in fixture.'
+              runbook_url: RUNBOOK_BASE_URL/database-acquire-latency-high
+
+  - name: fast acquires and slow acquires under the 0.1/s floor stay quiet
+    interval: 1m
+    input_series:
+      - series: 'db_pool_acquire_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",le="0.1"}'
+        values: '0+60x20'
+      - series: 'db_pool_acquire_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",le="+Inf"}'
+        values: '0+60x20'
+      - series: 'db_pool_acquire_duration_seconds_count{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api"}'
+        values: '0+60x20'
+      - series: 'db_pool_acquire_duration_seconds_bucket{product="fixture",service="fixture-worker",environment="test",namespace="fixture",instance="10.0.0.3:9000",job="fixture-worker",le="0.1"}'
+        values: '0x20'
+      - series: 'db_pool_acquire_duration_seconds_bucket{product="fixture",service="fixture-worker",environment="test",namespace="fixture",instance="10.0.0.3:9000",job="fixture-worker",le="+Inf"}'
+        values: '0+3x20'
+      - series: 'db_pool_acquire_duration_seconds_count{product="fixture",service="fixture-worker",environment="test",namespace="fixture",instance="10.0.0.3:9000",job="fixture-worker"}'
+        values: '0+3x20'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: BaukitDatabaseAcquireLatencyHigh
+        exp_alerts: []
+
+  - name: 10% MCP 5xx fires BaukitMcpErrorRatioHigh after 10m
+    interval: 1m
+    input_series:
+      - series: 'mcp_requests_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",status="200"}'
+        values: '0+54x20'
+      - series: 'mcp_requests_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",status="503"}'
+        values: '0+6x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: BaukitMcpErrorRatioHigh
+        exp_alerts: []
+      - eval_time: 18m
+        alertname: BaukitMcpErrorRatioHigh
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              namespace: fixture
+              severity: warning
+            exp_annotations:
+              summary: MCP requests fail with 5xx
+              description: 'More than 5% of MCP requests to fixture-api in fixture returned 5xx for ten minutes.'
+              runbook_url: RUNBOOK_BASE_URL/mcp-error-ratio-high
+
+  - name: 1% MCP 5xx and one failing MCP request a minute stay quiet
+    interval: 1m
+    input_series:
+      - series: 'mcp_requests_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",status="200"}'
+        values: '0+99x20'
+      - series: 'mcp_requests_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",status="500"}'
+        values: '0+1x20'
+      - series: 'mcp_requests_total{product="other",service="other-api",environment="test",namespace="other",instance="10.0.0.2:9000",job="other-api",status="500"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 18m
+        alertname: BaukitMcpErrorRatioHigh
         exp_alerts: []

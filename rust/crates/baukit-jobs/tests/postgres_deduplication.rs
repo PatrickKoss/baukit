@@ -4,8 +4,8 @@ use std::{error::Error, path::PathBuf, sync::Arc, time::Duration};
 
 use baukit_jobs::{
     FailureDisposition, JobStatus, JobStore as _, NewJob, POSTGRES_MIGRATION_0002_SQL,
-    POSTGRES_MIGRATION_0003_SQL, POSTGRES_MIGRATION_0004_SQL, POSTGRES_MIGRATION_SQL,
-    PostgresJobStore,
+    POSTGRES_MIGRATION_0003_SQL, POSTGRES_MIGRATION_0004_SQL, POSTGRES_MIGRATION_0005_SQL,
+    POSTGRES_MIGRATION_SQL, PostgresJobStore,
 };
 use jiff::SignedDuration;
 use serde_json::json;
@@ -376,6 +376,9 @@ async fn forward_migration_preserves_legacy_keys_and_keeps_modes_independent()
         Some(serde_json::Value::Null)
     );
     assert_eq!(before, after);
+    sqlx::raw_sql(POSTGRES_MIGRATION_0005_SQL)
+        .execute(&pool)
+        .await?;
     assert!(
         store
             .request_cancellation(legacy_id, Timestamp::now())

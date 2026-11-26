@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+- Worker conformance accepts `worker_job_runs_total{outcome="cancelled"}`.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

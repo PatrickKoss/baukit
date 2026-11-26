@@ -221,7 +221,7 @@ them.
 
 ## Phase RC: resilience core
 
-- [ ] **RC1 `baukit-resilience` crate** (D1, RL-01, RL-42): `Backoff` with full jitter (default) and
+- [x] **RC1 `baukit-resilience` crate** (D1, RL-01, RL-42): `Backoff` with full jitter (default) and
   decorrelated jitter, `CircuitBreaker` with the D3 policy, `BreakerSet<K>` capped at 256 keys with
   idle eviction, `Deadline`, the `Clock` port and a `ManualClock` behind a `test-support` feature.
   Every state transition is a pure function of (state, outcome, now).
@@ -229,7 +229,7 @@ them.
   replayed by a Rust test; a proptest that the breaker never admits more than one half-open probe and
   that open duration never exceeds the cap. `cargo deny`, MSRV 1.95, version coherence (the crate joins
   the release train).
-- [ ] **RC2 `StaleCache<T>`** (principle 4): fresh TTL, stale-on-error window, failure cooldown, single
+- [x] **RC2 `StaleCache<T>`** (principle 4): fresh TTL, stale-on-error window, failure cooldown, single
   flight that does not block readers of the cached value, and a forced refresh for unknown keys that
   respects the cooldown. Acceptance: tests with `ManualClock` for fresh hit, stale serve while the
   source fails, cooldown stops a fetch per request, expiry of the stale window, and N concurrent
@@ -256,7 +256,7 @@ them.
   gets a promtool test that fires and one that stays quiet, a runbook under `docs/runbooks/app/`, and a
   panel in `baukit-service-overview.json`.
   Acceptance: `--step metric-names`, `--step observability-rules`, `--step observability-tests`.
-- [ ] **CB3 Deferred job outcome** (D7): `JobError::deferred(delay)`; store method
+- [~] **CB3 Deferred job outcome** (D7): `JobError::deferred(delay)`; store method
   `release(job_id, worker_id, run_after, consume_attempt: bool)` that resets to `pending`, decrements
   `attempts` when not consuming, and increments `deferrals`. Migration adds `deferrals integer not null
   default 0`. `WorkerConfig.max_deferrals` (default 100). A helper maps `EgressError` with
@@ -286,7 +286,7 @@ them.
 
 ## Phase ID: identity and read-mostly caches
 
-- [ ] **ID1 JWKS on `StaleCache`** (RL-03, RL-07): the OIDC verifier and `TicketVerifier` move to
+- [~] **ID1 JWKS on `StaleCache`** (RL-03, RL-07): the OIDC verifier and `TicketVerifier` move to
   `StaleCache` with a 300 s fresh TTL, a 1 h stale window for known kids (never for unknown kids), a
   10 s failure cooldown, and no lock held across the fetch for cached reads.
   `auth_key_cache_requests_total` exported.
@@ -294,7 +294,7 @@ them.
   concurrent verifications of a known kid succeed with one fetch attempt and no request waiting on the
   fetch; an unknown kid during the outage fails fast with `UnknownKeyId`; after the stale window
   verifications fail with a stable error code.
-- [ ] **ID2 Discovery without crash loops** (RL-04): `OidcVerifier::discover` and the browser-session
+- [x] **ID2 Discovery without crash loops** (RL-04): `OidcVerifier::discover` and the browser-session
   router retry with `Backoff` inside a configurable startup budget (default 60 s, below the chart's
   150 s startup probe). A static `jwks_uri` in config skips discovery entirely, and the template
   documents it as the production default.
@@ -310,24 +310,24 @@ them.
 
 ## Phase IN: inbound serving and startup
 
-- [ ] **IN1 Load shedding** (RL-20): a bounded wait in front of the concurrency limit
+- [x] **IN1 Load shedding** (RL-20): a bounded wait in front of the concurrency limit
   (`HttpOptions::with_queue_timeout`, default 1 s). A request that cannot get a permit in time gets
   `503` with `Retry-After: 1` and the standard problem envelope, counted in `http_requests_shed_total`.
   The in-flight gauge stops counting queued requests.
   Acceptance: a test with `max_concurrency(2)` and five slow requests; three return 503 within the
   queue timeout, two succeed.
-- [ ] **IN2 Honest 5xx** (RL-21, RL-22): `ApiError::unavailable(retry_after)` returning `503` with
+- [~] **IN2 Honest 5xx** (RL-21, RL-22): `ApiError::unavailable(retry_after)` returning `503` with
   `Retry-After`. The template maps `RepositoryError::Unavailable`, `LimitError::PolicyUnavailable` and
   pool acquire timeouts to it. Closed-mode rate limiting returns `503` with a short `Retry-After`
   instead of `429` with the quota period.
   Acceptance: template test with Postgres stopped (FX1) gets `503` plus `Retry-After`; ratelimit test
   for closed mode.
-- [ ] **IN3 Connection-level timeouts** (RL-23): `baukit-runtime` serves through hyper-util with
+- [x] **IN3 Connection-level timeouts** (RL-23): `baukit-runtime` serves through hyper-util with
   `TokioTimer`, `header_read_timeout` (10 s), an idle keep-alive timeout and a connection cap.
   `baukit_http::route_timeout(duration)` adds a per-route override inside the global one.
   Acceptance: a slowloris test (open a connection, send half a header) closes after the header
   timeout; a route with a 1 s override times out at 1 s.
-- [ ] **IN4 Drain that finishes** (RL-24, RL-25): the template switches to
+- [~] **IN4 Drain that finishes** (RL-24, RL-25): the template switches to
   `serve_listener_pair_with_shutdown_order(.., ShutdownOrder::OpsOutlivesApi)` so `/readyz` reports
   draining. `baukit-runtime` validates at startup that `request_timeout + flush_reserve <
   drain_timeout` and refuses to start otherwise. Telemetry flush gets its own 3 s reserve that the
@@ -342,14 +342,14 @@ them.
   instead of exiting. The migrate binary gets the same connect retry.
   Acceptance: template tests where Postgres starts 5 s after the API; readiness turns green without a
   restart.
-- [ ] **IN6 Database guardrails** (RL-27, RL-28): `DatabaseConfig` gains `statement_timeout` (default
+- [~] **IN6 Database guardrails** (RL-27, RL-28): `DatabaseConfig` gains `statement_timeout` (default
   just under the request timeout), `lock_timeout` (5 s), `idle_in_transaction_session_timeout` (60 s),
   `max_lifetime` (30 min) and `idle_timeout` (10 min), applied in `after_connect`. The template
   repository uses `baukit_ops::acquire`/`begin` everywhere so the pool metrics fire. The worker pool
   gets its own `statement_timeout` from the job timeout.
   Acceptance: a Postgres test where `pg_sleep(60)` fails at the statement timeout and the connection
   returns to the pool; a template test that `db_pool_acquire_duration_seconds_count` increases.
-- [ ] **IN7 Saturation metrics** (RL-29): a `30` bucket on the HTTP histogram, process metrics
+- [x] **IN7 Saturation metrics** (RL-29): a `30` bucket on the HTTP histogram, process metrics
   (`process_*` from the exporter), and Tokio runtime metrics behind a feature where the pinned tokio
   allows it without `tokio_unstable`. Spec and lint updated.
 - [ ] **IN8 Deadline propagation** (RL-08): the lifecycle middleware stores a `Deadline` in a task
@@ -359,13 +359,13 @@ them.
 
 ## Phase WK: workers and delivery
 
-- [ ] **WK1 Runner survives transient errors** (RL-40): store errors in the loop are retried with
+- [x] **WK1 Runner survives transient errors** (RL-40): store errors in the loop are retried with
   `Backoff` (capped at 30 s) and logged, readiness turns red while the store fails, and the loop keeps
   running. `LeaseLost` becomes a per-job warning plus `worker_lease_expired_total`. Only
   configuration errors and panics in the runner itself end `run`.
   Acceptance: a Postgres test that pauses the container for 10 s mid-run; the runner resumes, no
   in-flight attempt is aborted by the runner, readiness flips red and back.
-- [ ] **WK2 Heartbeat and release** (RL-41): `heartbeat(job_id, worker_id, lease)` extends
+- [x] **WK2 Heartbeat and release** (RL-41): `heartbeat(job_id, worker_id, lease)` extends
   `locked_until` every lease/3 while the handler runs. On drain the runner stops claiming, signals
   `JobCancellation`, waits up to the drain budget, and calls `release(.., consume_attempt: false)` for
   every attempt still running. The default lease drops to 60 s now that it is renewed; the generated
@@ -375,7 +375,7 @@ them.
 - [ ] **WK3 Jitter** (RL-42): `retry_delay` uses `baukit_resilience::Backoff` with full jitter.
   Acceptance: the shared backoff vectors; a statistical test that 1000 jobs failed at once spread
   over the window.
-- [ ] **WK4 Honest queue metrics** (RL-43, RL-44): the age query uses `MIN(run_after)` over
+- [~] **WK4 Honest queue metrics** (RL-43, RL-44): the age query uses `MIN(run_after)` over
   `status = 'pending' AND run_after <= now AND job_type = ANY($types)`. `worker_queue_depth` and
   `cancelled` outcome added. The alert text uses `queue`. Sample age and depth every 15 s, not every
   loop.
@@ -404,7 +404,7 @@ them.
 
 ## Phase CL: TypeScript clients and generated frontends
 
-- [ ] **CL1 `api-runtime` timeouts, Retry-After and cooldown** (RL-60, RL-61, D9): `requestTimeoutMs`
+- [~] **CL1 `api-runtime` timeouts, Retry-After and cooldown** (RL-60, RL-61, D9): `requestTimeoutMs`
   (default 30 s) combined with the caller's signal; retry `429` and `503` when `Retry-After` is present,
   clamped to `maxRetryAfterMs`; the per-origin cooldown from D9 that fails fast with
   `ApiUnavailableError { retryAt }`. Backoff and cooldown replay `fixtures/resilience/*.json`.
@@ -412,12 +412,12 @@ them.
   `Retry-After: 5` produce one request, not 50.
 - [ ] **CL2 One retry layer in the web template** (RL-62): `QueryClient` with `retry: false`,
   `refetchOnWindowFocus` jittered or off, and a shared `isApiUnavailable` state from the cooldown.
-- [ ] **CL3 Sync scheduler defaults** (RL-63): default `delayMs` uses full jitter and
+- [x] **CL3 Sync scheduler defaults** (RL-63): default `delayMs` uses full jitter and
   `SyncRateLimitError.retryAt`; recovery triggers wait a random 0-5 s; the interval gets 10% jitter.
-- [ ] **CL4 Token refresh under outage** (RL-64, RL-65): the refresh POST gets a 10 s timeout; a
+- [~] **CL4 Token refresh under outage** (RL-64, RL-65): the refresh POST gets a 10 s timeout; a
   retryable failure keeps using the current token until `expiresAt`; mobile renewal reschedules with
   jittered backoff on retryable failure and stops only on `invalid_grant`.
-- [ ] **CL5 Degraded UI** (RL-66): `networkFirst` gains a network timeout (default 4 s) before falling
+- [~] **CL5 Degraded UI** (RL-66): `networkFirst` gains a network timeout (default 4 s) before falling
   back to cache; the web and mobile templates get a top-level error boundary and an "unavailable, retrying
   at HH:MM" banner driven by the cooldown, with a11y tests and localized strings.
 - [ ] **CL6 compose** (RL-67): `restart: unless-stopped` everywhere and a `/readyz` healthcheck for the
@@ -439,7 +439,7 @@ them.
   timeout), and a chart-level retry middleware (`attempts: 2`, short initial interval) for connection
   errors. Baremetal runs two replicas as the README says. Check every field name against the pinned
   Traefik version before writing it.
-- [ ] **PL4 Postgres pooling and durability** (RL-85): a CNPG `Pooler` (PgBouncer, transaction mode)
+- [~] **PL4 Postgres pooling and durability** (RL-85): a CNPG `Pooler` (PgBouncer, transaction mode)
   in the shared base, `max_connections` set explicitly, per-tenant `CONNECTION LIMIT` from the tenant
   component, and quorum synchronous replication on multi-instance overlays with the durability mode
   that keeps writes going when the replica is down (verify the field at the pinned CNPG version).
@@ -453,7 +453,7 @@ them.
   existing metric templates.
   Acceptance: an e2e case that rolls out a canary image returning 500s and asserts rollback, and one
   that promotes a healthy canary.
-- [ ] **PL7 SLOs beyond availability** (RL-84, RL-90): latency SLI recording rules (share of requests
+- [~] **PL7 SLOs beyond availability** (RL-84, RL-90): latency SLI recording rules (share of requests
   under the route's target, from the histogram), a 1d/3d ticket tier for both SLIs, an edge SLI from
   `traefik_service_requests_total` that sees "all pods down", an error-budget panel, and alerts for MCP
   errors, outbox/push delivery failures and DB acquire p95. Every alert gets promtool tests and a
@@ -522,6 +522,50 @@ FX tests come first in each phase where they apply: write the failing test, then
 Directory ownership stays disjoint inside each step. The breaker and the deferred outcome (CB1, CB3) are
 the critical path; everything in step 3 that adopts the breaker waits for them.
 
+## Orchestration tracker
+
+Integration branch `task/reliability` in `~/projects/baukit-worktrees/rel-int`. Each agent works in
+`baukit-worktrees/rel-<agent>` on branch `rel/<agent>` from the integration head, and the orchestrator
+merges after re-running the acceptance commands and reading the diff. Briefs and reports live in
+`~/.cache/baukit-orchestrator/reliability/`. Implementers are Opus 5.5 at low effort, at most 8 at once.
+Agents run fmt, clippy and non-Docker tests at `nice -n 19` with `CARGO_BUILD_JOBS=2`; only `rel-jobs`
+and `rel-faults` may run targeted Docker tests. Full gates, fixture gates, browser tests and platform e2e
+run in the orchestrator under the heavy-slot protocol (owner `baukit-rel`, one slot at most).
+
+### Wave 1
+
+| Agent | Tasks | Owns | Status |
+|---|---|---|---|
+| rel-core | RC1, RC2 | `rust/crates/baukit-resilience`, `fixtures/resilience`, workspace `Cargo.toml` entry | merged, verified (28 tests; review round fixed late outcomes deciding half-open) |
+| rel-faults | FX1 | `rust/crates/baukit-test` | queued (host load) |
+| rel-http | IN1, IN2 (`baukit-http` part), IN3, IN4 (`baukit-runtime` part), IN7 | `baukit-http`, `baukit-runtime`, `baukit-telemetry` | merged, verified (fmt, clippy, tests; shed log lowered to debug) |
+| rel-jobs | WK1, WK2, WK4 (crate part), CB3 | `baukit-jobs` | merged, verified (two review rounds; Docker: jobs 51, suite 178, erasure 34, data-subject 53) |
+| rel-ts | CL1 (without fixture replay), CL3, CL4 (`auth-web` part), CL5 (`pwa-web` part) | `typescript/packages/{api-runtime,sync-client,auth-web,pwa-web}` | merged, verified (4 packages build, format, lint, test) |
+| rel-db | IN6 (crate part), IN2 (`baukit-ratelimit` part) | `baukit-config`, `baukit-ops`, `baukit-ratelimit` | merged, verified (unit tests plus Docker: 2 Postgres, 12 Redis) |
+| rel-deploy | PL1, PL2, PL3, PL5 | `deploy/chart`, `deploy/platform/traefik`, `deploy/observability-platform` (redis alerts), `templates/backend/deploy` | running |
+| rel-obs | PL4, PL7, the RL-43 alert text fix | `deploy/platform/postgres-cluster`, `deploy/observability` | merged, verified (platform-validate, observability-rules, observability-tests, metric-names, python-lint) |
+
+Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/check-metric-names.py`,
+`rust/Cargo.toml`) get additive edits only; the orchestrator resolves merge conflicts.
+
+### Wave 2 (after RC1 and RC2 merge)
+
+| Agent | Tasks | Status |
+|---|---|---|
+| rel-egress | CB1, CB2, IN8 | review round 2 (deadline-capped timeouts must still count) |
+| rel-jobs2 | WK3, WK5, WK6, WK8 (crate part), WK9 | running |
+| rel-ops | IN5 (crate part) | running |
+| rel-auth | ID1 (OIDC part), ID2, IN2 (browser session) | merged, verified (two rounds plus an orchestrator fix) |
+
+
+CB1, CB2 (`baukit-egress`); WK3, WK5, WK6, WK8, WK9 (`baukit-jobs`); ID1, ID2 (`baukit-auth`); IN5, IN8;
+CL1 fixture replay; CB4, CB5, ID3, ID4 (`baukit-suite`); CB6, CB7 (push, erasure, mcp); WK7; RC3.
+
+### Wave 3
+
+Templates in one agent (CB8, IN2/IN4-IN6 wiring, CL2, CL4 mobile part, CL5 template part, CL6, FX2);
+PL6; FX3, FX4; REL1-REL3.
+
 ## Open questions
 
 - D3 numbers are guesses until FX4 runs against a real product. Revisit after the first load smoke.
@@ -540,3 +584,56 @@ RL-03 (`verifier.rs:682-704`), RL-21 (`__app__-api/src/lib.rs:433-435`), RL-25 (
 (`store.rs:649` plus the future `run_after` in the retention job), RL-62 (`main.tsx:13`), RL-80
 (`helmrelease.yaml:48,72,107`), RL-83 (`metric-templates.yaml:19,28,53`) and RL-88 (no rollout or drain
 case under `deploy/platform/e2e/tests`). Nothing implemented yet.
+- rel-ts merged: CL1 (timeout, Retry-After, per-origin cooldown, `ApiUnavailableError`), CL3, CL4 web,
+  CL5 web. Orchestrator re-ran all four packages green. Follow-ups for wave 3: the cooldown is per runtime
+  instance, so CL2 must share one runtime in the template; a `Retry-After` cooldown is clamped to
+  `maxRetryAfterMs` (30 s); the request timeout ends when headers arrive, not after the body.
+- rel-http merged: IN1 (semaphore gate with 1 s queue timeout, 503 plus `Retry-After: 1`,
+  `http_requests_shed_total{reason="concurrency"}` only), IN2 http, IN3 (`baukit_runtime::serve` on
+  hyper-util, `ServerOptions`, `route_timeout`), IN4 runtime (`DrainBudget`, `ShutdownToken::with_budget`,
+  `run_flush`), IN7 (30 s bucket, `/proc` process gauges, stable Tokio gauges). Wave 3 wiring: api.rs
+  lines 294, 325, 343-347 and `examples/minimal-api` need `with_budget`, `OpsOutlivesApi` and
+  `run_flush`. baukit-config has no fields for the queue timeout or `ServerOptions` yet. hyper arms the
+  header timeout on idle keep-alive connections, so PL3 sets Traefik `idleConnTimeout` below 10 s.
+- rel-core merged after one review round. The breaker now ties every outcome to a `Permit` with a
+  generation ticket, so a late result from a call admitted before the circuit opened cannot close or
+  re-open it. `CacheRead.refresh_failed` reports a failed refresh that served a stale value.
+- rel-obs merged: CNPG `Pooler` (transaction mode, `max_prepared_statements` 200), `max_connections`
+  150, quorum sync with `dataDurability: preferred` on baremetal, latency SLI and ticket-tier burn
+  alerts, edge SLI on Traefik service metrics, MCP and DB acquire alerts, RL-43 alert text. Left open:
+  tenant roles in chainsaw/keycloak/bootstrap have no connection limit; outbox and push alerts wait for
+  metrics; products still connect to `-rw` (wave 3); the edge SLI needs Traefik `allowEmptyServices`
+  (sent to rel-deploy); trivy may flag the pgbouncer image.
+- rel-db merged: `DatabaseConfig` session timeouts and lifetimes, `baukit_ops::connect_pool`, and the
+  ratelimit 503 in closed mode. Browser-session closed mode still answers 429 (needs a `baukit-auth`
+  outcome, wave 2 auth agent). Decision for wave 3: `connect_options` sends the timeouts as startup
+  parameters, which PgBouncer in transaction mode does not pass through. When a product moves to the
+  pooler, the pooler enforces `query_timeout` and `idle_transaction_timeout`, and the tenant role gets
+  `ALTER ROLE ... SET lock_timeout, statement_timeout`. `DatabaseConfig` then needs a switch that stops
+  sending startup parameters.
+- rel-jobs merged after two review rounds:
+  - The first round made shutdown releases stop counting as deferrals (`ReleaseReason`), bounded the
+    in-flight claim at shutdown, and updated the `job_outbox` 0005 test fixtures in suite, erasure and
+    data-subject. `baukit-test` now accepts `cancelled`.
+  - The Docker run found two real bugs, which the second round fixed. A paused Postgres hung loop
+    queries: `WorkerConfig::store_call_timeout` (5 s) now bounds them. A job timeout during drain gave
+    the attempt back instead of failing it.
+  - Queue age now counts only the runner's own job types, as WK4 intends. A job type no runner handles
+    therefore never ages any gauge. Worth an alert on `worker_queue_depth` for unknown types later.
+  - Wave 3 template work: copy migration 0005 into the worker and auth templates, drop the 900 s lease,
+    make readiness check `store_health()`, and review `RestartPolicy::FailProcess`.
+  - Still open: the CB3 `EgressError` to `deferred` helper, which needs CB1.
+- rel-auth merged:
+  - The OIDC verifier serves stale JWKS for up to 1 h while the endpoint is down, with one background
+    refresh. Unknown key ids force one refresh per cooldown. Discovery retries within a startup budget,
+    and `with_jwks_uri` skips it. A closed browser-session rate limit answers 503.
+  - Round 2 made the key cache public and generic (`KeySetCache` behind a `KeySource` port), so suite's
+    `TicketVerifier` can adopt it in wave 2b with `metric_source = "ticket"`. It also fixed the
+    baukit-test TTL test that the background refresh broke.
+  - My fix: a drop guard clears the refresh flag when the refresh task unwinds. Before it, a panicking
+    fetch left the flag set and disabled every later refresh. The regression test fails on the old code.
+  - Wave 3 template work: set `with_jwks_uri` in the auth template identity config, and add config fields
+    for it and for the startup budget.
+- rel-deploy round 2: Traefik `idleConnTimeout` 5 s (below hyper's 10 s idle cut), `allowEmptyServices`,
+  the stale lease variable in the kyverno fixture and backend README, and a merge of task/reliability with
+  re-blessed snapshots.

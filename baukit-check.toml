@@ -8,8 +8,7 @@ ts-max-lines = 500
 [file_size.allowlist]
 "examples/expo-sqlite-conformance/src/conformance.ts" = 1174
 "rust/crates/baukit-auth/src/api_token.rs" = 1822
-"rust/crates/baukit-auth/src/verifier.rs" = 1404
-"rust/crates/baukit-jobs/src/runner.rs" = 1057
+"rust/crates/baukit-auth/src/verifier.rs" = 1377
 "rust/crates/baukit-suite/src/adapters/http.rs" = 1033
 "rust/crates/baukit-suite/src/adapters/postgres/mod.rs" = 1052
 "rust/crates/baukit-test/src/data_subject_conformance.rs" = 1026
