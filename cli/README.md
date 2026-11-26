@@ -27,12 +27,12 @@ Run `corepack pnpm run build:sw` before exporting the Expo web app, then
 `corepack pnpm run build:sw:check` to check the worker artifact.
 
 Use `--auth oidc`, `--auth clerk` or `--auth workos` with any backend, web or
-mobile flavor. Each also supports `--backend --mcp`. Only OIDC includes the
-development Keycloak realm. Managed providers use their official web SDKs;
+mobile flavor. Each also supports `--backend --mcp`. Every `--auth` flavor includes the
+development Keycloak realm in `keycloak/realm.json`. Managed providers use their official web SDKs;
 mobile uses Clerk Expo or WorkOS AuthKit public-client PKCE. Generated READMEs
 describe client IDs, publishable keys and backend secret bindings.
 The generated backend's `docs/auth-providers.md` explains external OIDC issuers.
-See [remote MCP](../docs/remote-mcp.md) for each provider's OAuth client setup
+See the [MCP guide](../docs/guide/mcp.md) for each provider's OAuth client setup
 and token binding.
 
 Use `--port-offset N` when several generated products run on one development

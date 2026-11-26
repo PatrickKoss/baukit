@@ -317,7 +317,7 @@ time. A custom verifier must also check the current token state before calling
 `Principal::from_api_token`; that constructor does not verify or revalidate a token.
 Keycloak introspection rejects PATs, so a policy accepting both kinds must branch
 before introspection and apply account checks to both. See the
-[MCP authentication guide](../../../docs/remote-mcp.md#personal-access-tokens)
+[MCP authentication guide](../../../docs/guide/mcp.md#personal-access-tokens)
 for wiring and subject mapping.
 
 ```rust

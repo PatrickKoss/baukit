@@ -241,7 +241,7 @@ counts toward the circuit.
 
 Override `SuiteEventApplier::lock_owner(&mut PgConnection, owner)` when product
 writers lock an owner row. Ingest calls this hook after its suite advisory lock
-and before locking the link. For example, SLS uses `FOR NO KEY UPDATE` on `users`.
+and before locking the link. For example, a product can take `FOR NO KEY UPDATE` on its `users` row.
 Lock deleted and deactivated owners too and check that state in `apply`.
 A filter in `lock_owner` turns connection tests and duplicate redeliveries
 for those owners into a permanent 404 `suite_rejected`.
