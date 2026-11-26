@@ -336,7 +336,7 @@ them.
   Acceptance: runtime test with a request that takes 20 s in flight at SIGTERM: it completes, readiness
   flips to 503 first, and the flush runs. A config with a 30 s request timeout and a 25 s drain fails
   validation.
-- [ ] **IN5 Startup waits for dependencies** (RL-26, principle 5): a `baukit_ops::connect_with_backoff`
+- [~] **IN5 Startup waits for dependencies** (RL-26, principle 5): a `baukit_ops::connect_with_backoff`
   for the Postgres pool and the Redis store, bounded by the same startup budget as ID2. The API starts
   with the rate-limit store degraded (fail-open path) when Redis is still down after the budget,
   instead of exiting. The migrate binary gets the same connect retry.
@@ -404,7 +404,7 @@ them.
 
 ## Phase CL: TypeScript clients and generated frontends
 
-- [~] **CL1 `api-runtime` timeouts, Retry-After and cooldown** (RL-60, RL-61, D9): `requestTimeoutMs`
+- [x] **CL1 `api-runtime` timeouts, Retry-After and cooldown** (RL-60, RL-61, D9): `requestTimeoutMs`
   (default 30 s) combined with the caller's signal; retry `429` and `503` when `Retry-After` is present,
   clamped to `maxRetryAfterMs`; the per-origin cooldown from D9 that fails fast with
   `ApiUnavailableError { retryAt }`. Backoff and cooldown replay `fixtures/resilience/*.json`.
@@ -537,7 +537,7 @@ run in the orchestrator under the heavy-slot protocol (owner `baukit-rel`, one s
 | Agent | Tasks | Owns | Status |
 |---|---|---|---|
 | rel-core | RC1, RC2 | `rust/crates/baukit-resilience`, `fixtures/resilience`, workspace `Cargo.toml` entry | merged, verified (28 tests; review round fixed late outcomes deciding half-open) |
-| rel-faults | FX1 | `rust/crates/baukit-test` | queued (host load) |
+| rel-faults | FX1 | `rust/crates/baukit-test` | done, waiting for Docker run |
 | rel-http | IN1, IN2 (`baukit-http` part), IN3, IN4 (`baukit-runtime` part), IN7 | `baukit-http`, `baukit-runtime`, `baukit-telemetry` | merged, verified (fmt, clippy, tests; shed log lowered to debug) |
 | rel-jobs | WK1, WK2, WK4 (crate part), CB3 | `baukit-jobs` | merged, verified (two review rounds; Docker: jobs 51, suite 178, erasure 34, data-subject 53) |
 | rel-ts | CL1 (without fixture replay), CL3, CL4 (`auth-web` part), CL5 (`pwa-web` part) | `typescript/packages/{api-runtime,sync-client,auth-web,pwa-web}` | merged, verified (4 packages build, format, lint, test) |
@@ -553,12 +553,12 @@ Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/chec
 | Agent | Tasks | Status |
 |---|---|---|
 | rel-egress | CB1, CB2, IN8 | merged, verified (two rounds) |
-| rel-jobs2 | WK3, WK5, WK6, WK8 (crate part), WK9 | running |
-| rel-ops | IN5 (crate part) | running |
-| rel-faults | FX1 | running |
+| rel-jobs2 | WK3, WK5, WK6, WK8 (crate part), WK9 | review round 2 (admin token, threat model, 0006 fixtures) |
+| rel-ops | IN5 (crate part) | merged, verified (two rounds; Docker tests pending) |
+| rel-faults | FX1 | done, waiting for Docker run |
 | rel-suite | CB4, CB5, ID1 (TicketVerifier), ID3, ID4 | running |
 | rel-adopters | CB6, CB7, WK7 | running |
-| rel-ts2 | CL1 fixture replay | running |
+| rel-ts2 | CL1 fixture replay | merged, verified (ts-check, package-dependencies) |
 | rel-auth | ID1 (OIDC part), ID2, IN2 (browser session) | merged, verified (two rounds plus an orchestrator fix) |
 
 
@@ -657,3 +657,17 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
     brief names it.
   - Re-blessed the two platform snapshots for the `hub` destination name.
   - The integration check now also covers the `cli/` workspace.
+- rel-ts2 merged. The TS full jitter now floors and saturates like the Rust vectors. Before the fix
+  3 of 10 `full_jitter` cases failed in each package. `OriginCooldown` gets jitter, doubling and a
+  300 s cap, and replays the two `breaker-v1.json` scenarios that apply to it. The others (failure
+  windows, half-open probes) do not model the D9 cooldown, and the report says why.
+- rel-ops merged after two rounds:
+  - `connect_with_backoff` and `connect_for_migrations` (no `statement_timeout`) are in baukit-ops. The
+    Redis store gains `connect_or_degraded`, with self-healing reconnect.
+  - baukit-config has a `startup.budget` section (60 s).
+  - Round 2 moved the one retry loop into `baukit_resilience::startup` (callback, no I/O), used by ops,
+    ratelimit and auth. Ratelimit no longer depends on ops.
+  - Docker tests are pending, 5 of them.
+- rel-jobs2 round 1 review: the requeue admin route needs a bearer token and a threat-model entry, and
+  the 0006 job-schema fixture copies are missing in erasure, data-subject and suite. Templates lack 0005
+  and 0006, which is wave 3.
