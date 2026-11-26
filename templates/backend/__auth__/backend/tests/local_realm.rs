@@ -78,7 +78,10 @@ async fn local_realm_issues_{{ context.auth_provider }}_shaped_tokens_for_the_pr
         serde_json::json!(["items:read", "items:write"])
     );
 {% endif %}
-    let principal = auth_verifier(&auth, STARTUP_BUDGET).await?.verify(&token).await?;
+    let principal = auth_verifier(&auth, STARTUP_BUDGET)
+        .await?
+        .verify(&token)
+        .await?;
     assert_eq!(Some(principal.subject()), claims["sub"].as_str());
     assert_eq!(principal.organization(), Some("org_local"));
     assert_eq!(principal.issuer(), Some(keycloak.issuer().as_str()));
