@@ -93,7 +93,8 @@ const scheduler = new SyncScheduler(() => engine.syncOnce(), environment, {
   retry: {
     maxRetries: 4,
     delayMs: (error, retryIndex) => {
-      if (error instanceof SyncRateLimitError) return Math.max(0, Date.parse(error.retryAt) - Date.now());
+      if (error instanceof SyncRateLimitError)
+        return Math.max(0, Date.parse(error.retryAt) - Date.now());
       if (error instanceof SyncTransportError && !error.retryable) return null;
       return fullJitterBackoffMs(retryIndex, { baseDelayMs: 500, maxDelayMs: 30_000 });
     },
