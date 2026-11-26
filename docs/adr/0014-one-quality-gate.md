@@ -25,7 +25,7 @@ tests, so the integration tests ran nowhere.
   heavy-run slot.
 - Products choose `--quality standard` (the default) or `--quality strict`. Strict adds
   `scripts/quality-gate.sh` and a blocking CI job. See the
-  [strict quality profile](../platform/strict-quality-profile.md).
+  [quality gates guide](../guide/quality-gates.md).
 
 ## Enforced by
 
