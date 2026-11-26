@@ -363,7 +363,7 @@ Move OAuth provider-linking callbacks to `baukit_integrations::oauth_state` (fea
 
 #### Browser sessions (web products with auth)
 
-Mount `baukit_auth::browser_session::router` (feature `browser-session`) with `StoreBrowserSessionRateLimiter` from `baukit-ratelimit`, and run its `0002_baukit_auth_browser_sessions.sql` migration. Copy the web template's sign-in files, which use `BrowserSessionClient`. Delete any code that reads `<prefix>:tokens`.
+Mount `baukit_auth::browser_session::router` (feature `browser-session`) with `StoreBrowserSessionRateLimiter` from `baukit-ratelimit`, and run its `0002_baukit_auth_browser_sessions.sql` and `0003_baukit_auth_browser_session_record_ids.sql` migrations. Copy the web template's sign-in files, which use `BrowserSessionClient`. Delete any code that reads `<prefix>:tokens`.
 
 #### Clerk on mobile (Clerk products with an Expo app)
 

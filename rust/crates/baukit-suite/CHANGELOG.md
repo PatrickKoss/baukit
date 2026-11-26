@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- Breaking: link secrets and PKCE verifiers are sealed as credential-vault v2 records. Apply `migrations/005_suite_record_ids.sql` (`SUITE_RECORD_IDS_MIGRATION_SQL`) before deploying. `EncryptedPayload` gains `record_id: Option<Uuid>`; `None` opens through v1. See docs/migrations/boundary-hardening.md.
 - Suite envelope validation reports `event_in_future` for an event more than the allowed clock skew ahead, the new `baukit-events` code. `SUITE_ERROR_CODES` and the shared fixture list it.
 - Breaking: `StandaloneAccountPlan::new` takes an `OrganizationMembership` port; nobody is an organization member by default. See docs/migrations/suite-correctness-hardening.md.
 - Breaking: the `<scheme>-dev` return URL needs `suite.allow_dev_scheme = true`.
