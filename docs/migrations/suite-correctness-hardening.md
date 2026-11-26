@@ -9,6 +9,11 @@ Breaking changes in `baukit-suite` and `@baukit/suite-client`.
 2. `validate_return_url` takes `allow_dev_scheme: bool`. The `<scheme>-dev`
    return is now off by default. Set `suite.allow_dev_scheme = true` (env
    `<PREFIX>__SUITE__ALLOW_DEV_SCHEME=true`) in local and dev configs only.
+   baukit 0.30.5 accepted `<scheme>-dev://suite/linked` unconditionally. A
+   0.30.5 product whose dev build variant links through the suite must set the
+   flag in that build's backend config, or `start` returns
+   `suite_return_url_invalid` again. The template has no suite link config, so
+   the product owns this setting.
 3. Peers send `x-suite-signature-v2` next to the v1 signature. It covers the
    replay flag. A receiver now refuses `x-suite-replay` without v2 with 401, so
    an attacker cannot strip v2 and turn a replay into a live event. Deploy this
