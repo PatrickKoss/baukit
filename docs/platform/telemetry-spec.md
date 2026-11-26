@@ -30,6 +30,7 @@ Prometheus exposition on the operations listener at `/metrics`. The naming diver
 | `http_requests_total` | counter | `method`, `route`, `status` |
 | `http_request_duration_seconds` | histogram | `method`, `route`, `status` |
 | `http_requests_in_flight` | gauge | `method`, `route` |
+| `http_requests_shed_total` | counter | `reason` (`concurrency`) |
 
 Rules:
 
@@ -37,7 +38,9 @@ Rules:
 - `status` is the raw numeric status code as a string (`"200"`, `"404"`). Status classes are derived in queries and recording rules, never stored as labels. Heldengang migrates from status classes.
 - `route` is always the matched route template (`/users/{id}`), never the raw path. Requests that match no route use `route="unmatched"`.
 - `method` is uppercase and bounded to known HTTP methods; anything else becomes `OTHER`.
-- Histogram buckets (seconds): `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10`.
+- Histogram buckets (seconds): `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30`. The `30` bucket matches the default request timeout, so timed-out requests land below `+Inf`.
+- `http_requests_in_flight` counts requests that hold a concurrency permit. Requests waiting for one are not counted.
+- `http_requests_shed_total` counts requests that got no concurrency permit within the queue timeout and were answered with `503` and `Retry-After: 1`. Shed requests also appear in `http_requests_total` with `status="503"`.
 - Application-prefixed HTTP metric names (for example `sl_http_*`) are forbidden. Heldengang migrates.
 
 ### 2.2 Build info
@@ -84,6 +87,22 @@ These metrics cover authorization and execution on `/mcp`. Status uses exact
 numeric HTTP codes. Token values, subjects, and tool arguments are never labels.
 MCP quota decisions use `http_rate_limit_decisions_total` with scope `mcp` and
 outcomes `allowed` or `limited`.
+
+### 2.7 Process and runtime (owned by `baukit-telemetry`)
+
+| Metric | Type | Labels |
+|---|---|---|
+| `process_cpu_seconds_total` | gauge | none |
+| `process_resident_memory_bytes` | gauge | none |
+| `process_open_fds` | gauge | none |
+| `process_max_fds` | gauge | none |
+| `process_start_time_seconds` | gauge | none |
+| `tokio_runtime_workers` | gauge | none |
+| `tokio_runtime_alive_tasks` | gauge | none |
+| `tokio_runtime_global_queue_depth` | gauge | none |
+| `tokio_runtime_busy_seconds_total` | gauge | none |
+
+`baukit-telemetry` reads the `process_*` values from `/proc/self` every 5 seconds, so they are missing on systems without `/proc`. CPU seconds and busy seconds are monotonic but exported as gauges because the `metrics` facade only has integer counters; `rate()` works on them as usual. `process_start_time_seconds` is the time telemetry was initialized. The `tokio_runtime_*` gauges use only metrics that stable Tokio exposes without `tokio_unstable`, and appear when `TelemetryBuilder::init` runs inside a Tokio runtime.
 
 ## 3. Logs
 

@@ -27,7 +27,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 time = { workspace = true, features = ["parsing"] }
 tokio.workspace = true
-tower = { workspace = true, features = ["limit"] }
+tower.workspace = true
 tower-http = { workspace = true, features = ["catch-panic", "cors", "limit"] }
 tracing.workspace = true
 tracing-opentelemetry.workspace = true
@@ -36,6 +36,7 @@ uuid.workspace = true
 [dev-dependencies]
 metrics-util.workspace = true
 opentelemetry_sdk.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 tower = { workspace = true, features = ["util"] }
 tracing-subscriber.workspace = true
 utoipa.workspace = true
