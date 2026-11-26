@@ -328,6 +328,9 @@ impl BrowserSessionState {
                     .insert(RETRY_AFTER, HeaderValue::from(seconds));
                 Some(response)
             }
+            RateLimitOutcome::Unavailable { retry_after } => {
+                Some(ApiError::unavailable(retry_after).into_response())
+            }
         }
     }
 

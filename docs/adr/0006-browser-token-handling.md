@@ -161,7 +161,8 @@ suites that sign in hundreds of times from one loopback address.
 Logout is limited per IP only. Fail mode follows `RateLimitOptions.fail_mode`
 (fail closed in the template). A refused request gets `429` with
 `Retry-After`; the client treats it like a network error and keeps the account
-hint.
+hint. When the store is down in closed mode the request gets `503` with
+`Retry-After: 1`, because no bucket was checked.
 
 ### 4. Refresh token at rest: server-side session table
 

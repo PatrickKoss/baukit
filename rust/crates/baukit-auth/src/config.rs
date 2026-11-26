@@ -207,6 +207,10 @@ impl PrincipalClaimMapping {
     }
 }
 
+const DEFAULT_JWKS_FRESH_FOR: Duration = Duration::from_secs(300);
+const DEFAULT_JWKS_STALE_FOR: Duration = Duration::from_secs(3600);
+pub(crate) const DEFAULT_STARTUP_BUDGET: Duration = Duration::from_secs(60);
+
 /// Provider-neutral OIDC verification configuration.
 #[derive(Clone, Debug)]
 pub struct OidcConfig {
@@ -217,6 +221,9 @@ pub struct OidcConfig {
     pub(crate) allowed_clients: Option<BTreeSet<String>>,
     pub(crate) algorithms: BTreeSet<SigningAlgorithm>,
     pub(crate) cache_ttl: Duration,
+    pub(crate) jwks_stale_for: Duration,
+    pub(crate) jwks_uri: Option<Url>,
+    pub(crate) startup_budget: Duration,
     pub(crate) request_timeout: Duration,
     pub(crate) clock_skew: Duration,
     pub(crate) claim_mapping: PrincipalClaimMapping,
@@ -249,7 +256,10 @@ impl OidcConfig {
             allowed_clients: None,
             audiences: BTreeSet::from([audience]),
             algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
-            cache_ttl: Duration::from_secs(300),
+            cache_ttl: DEFAULT_JWKS_FRESH_FOR,
+            jwks_stale_for: DEFAULT_JWKS_STALE_FOR,
+            jwks_uri: None,
+            startup_budget: DEFAULT_STARTUP_BUDGET,
             request_timeout: Duration::from_secs(5),
             clock_skew: Duration::from_secs(60),
             claim_mapping: PrincipalClaimMapping::new(),
@@ -274,7 +284,10 @@ impl OidcConfig {
             client_id: None,
             allowed_clients: None,
             algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
-            cache_ttl: Duration::from_secs(300),
+            cache_ttl: DEFAULT_JWKS_FRESH_FOR,
+            jwks_stale_for: DEFAULT_JWKS_STALE_FOR,
+            jwks_uri: None,
+            startup_budget: DEFAULT_STARTUP_BUDGET,
             request_timeout: Duration::from_secs(5),
             clock_skew: Duration::from_secs(5),
             claim_mapping: PrincipalClaimMapping::clerk(),
@@ -309,7 +322,10 @@ impl OidcConfig {
             client_id: Some(client_id.clone()),
             allowed_clients: None,
             algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
-            cache_ttl: Duration::from_secs(300),
+            cache_ttl: DEFAULT_JWKS_FRESH_FOR,
+            jwks_stale_for: DEFAULT_JWKS_STALE_FOR,
+            jwks_uri: None,
+            startup_budget: DEFAULT_STARTUP_BUDGET,
             request_timeout: Duration::from_secs(5),
             clock_skew: Duration::from_secs(60),
             claim_mapping: PrincipalClaimMapping::client_bound(),
@@ -334,7 +350,10 @@ impl OidcConfig {
             client_id: None,
             allowed_clients: None,
             algorithms: BTreeSet::from([SigningAlgorithm::Rs256]),
-            cache_ttl: Duration::from_secs(300),
+            cache_ttl: DEFAULT_JWKS_FRESH_FOR,
+            jwks_stale_for: DEFAULT_JWKS_STALE_FOR,
+            jwks_uri: None,
+            startup_budget: DEFAULT_STARTUP_BUDGET,
             request_timeout: Duration::from_secs(5),
             clock_skew: Duration::ZERO,
             claim_mapping: PrincipalClaimMapping::client_bound(),
@@ -449,6 +468,50 @@ impl OidcConfig {
     pub fn with_jwks_cache_ttl(mut self, cache_ttl: Duration) -> Result<Self, OidcConfigError> {
         validate_duration("JWKS cache TTL", cache_ttl)?;
         self.cache_ttl = cache_ttl;
+        Ok(self)
+    }
+
+    /// Sets how long after the fresh TTL a cached JWKS still verifies known key
+    /// ids while refreshing fails. Defaults to one hour. Unknown key ids never
+    /// use a stale set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::ZeroDuration`] when `stale_for` is zero.
+    pub fn with_jwks_stale_window(mut self, stale_for: Duration) -> Result<Self, OidcConfigError> {
+        validate_duration("JWKS stale window", stale_for)?;
+        self.jwks_stale_for = stale_for;
+        Ok(self)
+    }
+
+    /// Sets a static JWKS URL, so [`OidcVerifier::discover`](crate::OidcVerifier::discover)
+    /// skips discovery and startup does not depend on the issuer being up.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::InvalidJwksUri`] when `jwks_uri` is not an
+    /// absolute `http` or `https` URL.
+    pub fn with_jwks_uri(mut self, jwks_uri: impl AsRef<str>) -> Result<Self, OidcConfigError> {
+        let url = Url::parse(jwks_uri.as_ref())
+            .map_err(|error| OidcConfigError::InvalidJwksUri(error.to_string()))?;
+        if !matches!(url.scheme(), "http" | "https") || url.host().is_none() {
+            return Err(OidcConfigError::InvalidJwksUri(
+                "scheme must be http or https with a host".to_owned(),
+            ));
+        }
+        self.jwks_uri = Some(url);
+        Ok(self)
+    }
+
+    /// Sets how long [`OidcVerifier::discover`](crate::OidcVerifier::discover)
+    /// retries an unreachable issuer before startup fails. Defaults to 60 seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`OidcConfigError::ZeroDuration`] when `budget` is zero.
+    pub fn with_startup_budget(mut self, budget: Duration) -> Result<Self, OidcConfigError> {
+        validate_duration("startup budget", budget)?;
+        self.startup_budget = budget;
         Ok(self)
     }
 
@@ -572,6 +635,9 @@ pub enum OidcConfigError {
     /// No signing algorithms were allowed.
     #[error("signing-algorithm allowlist must not be empty")]
     EmptyAlgorithmAllowlist,
+    /// The static JWKS URL is not an absolute `http` or `https` URL.
+    #[error("JWKS URI is invalid: {0}")]
+    InvalidJwksUri(String),
     /// A network or cache duration is zero.
     #[error("{0} must be greater than zero")]
     ZeroDuration(&'static str),
@@ -606,6 +672,39 @@ mod tests {
             config.with_request_timeout(Duration::ZERO),
             Err(OidcConfigError::ZeroDuration("request timeout"))
         ));
+        Ok(())
+    }
+
+    #[test]
+    fn static_jwks_uri_and_resilience_durations_are_validated() -> Result<(), OidcConfigError> {
+        let config = OidcConfig::new("https://identity.example.com/realms/test", "api")?;
+        for invalid in [
+            "not a url",
+            "ftp://identity.example.com/certs",
+            "data:text/plain,x",
+        ] {
+            assert!(matches!(
+                config.clone().with_jwks_uri(invalid),
+                Err(OidcConfigError::InvalidJwksUri(_))
+            ));
+        }
+        let configured = config
+            .clone()
+            .with_jwks_uri("http://keycloak.internal:8080/realms/test/certs")?;
+        assert_eq!(
+            configured.jwks_uri.as_ref().map(Url::as_str),
+            Some("http://keycloak.internal:8080/realms/test/certs")
+        );
+        assert!(matches!(
+            config.clone().with_startup_budget(Duration::ZERO),
+            Err(OidcConfigError::ZeroDuration("startup budget"))
+        ));
+        assert!(matches!(
+            config.clone().with_jwks_stale_window(Duration::ZERO),
+            Err(OidcConfigError::ZeroDuration("JWKS stale window"))
+        ));
+        assert_eq!(config.startup_budget, Duration::from_secs(60));
+        assert_eq!(config.jwks_stale_for, Duration::from_secs(3600));
         Ok(())
     }
 }

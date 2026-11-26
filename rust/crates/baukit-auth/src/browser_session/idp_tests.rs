@@ -1,4 +1,6 @@
-use axum::{Json, Router, extract::State, routing::get};
+use std::time::{Duration, Instant};
+
+use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use baukit_credential_vault::CredentialCipher;
 use serde_json::{Value, json};
@@ -8,6 +10,7 @@ use super::{BrowserSessionConfig, IdpDiscoveryError, idp::OidcTokenClient};
 
 type TestError = Box<dyn std::error::Error + Send + Sync>;
 
+const IDP_COMES_UP_AFTER: Duration = Duration::from_secs(3);
 const PUBLIC_ISSUER: &str = "http://localhost:18081/realms/test";
 
 fn config(internal_origin: Option<&str>) -> Result<BrowserSessionConfig, TestError> {
@@ -71,8 +74,43 @@ async fn discovery_rejects_a_document_that_names_the_internal_issuer() -> Result
 #[tokio::test]
 async fn public_issuer_that_is_unreachable_fails_without_an_internal_issuer()
 -> Result<(), TestError> {
-    let outcome = OidcTokenClient::discover(&config(None)?).await;
-    assert!(matches!(outcome, Err(IdpDiscoveryError::Request(_))));
+    let budget = Duration::from_secs(1);
+    let started = Instant::now();
+    let outcome = OidcTokenClient::discover(&config(None)?.with_startup_budget(budget)?).await;
+    assert!(started.elapsed() >= budget);
+    assert!(matches!(
+        outcome,
+        Err(IdpDiscoveryError::BudgetExhausted(source)) if matches!(*source, IdpDiscoveryError::Request(_))
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn discovery_waits_for_an_idp_that_comes_up_late() -> Result<(), TestError> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let origin = format!("http://{}", listener.local_addr()?);
+    let document = json!({
+        "issuer": format!("{origin}/realms/test"),
+        "jwks_uri": format!("{origin}/realms/test/protocol/openid-connect/certs"),
+        "token_endpoint": format!("{origin}/realms/test/protocol/openid-connect/token"),
+    });
+    let started = Instant::now();
+    let router = Router::new()
+        .route(
+            "/realms/test/.well-known/openid-configuration",
+            get(move |State(document): State<Value>| async move {
+                if started.elapsed() < IDP_COMES_UP_AFTER {
+                    return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                }
+                Json(document).into_response()
+            }),
+        )
+        .with_state(document);
+    tokio::spawn(async move { axum::serve(listener, router).await });
+    let issuer = format!("{origin}/realms/test");
+    let client = OidcTokenClient::discover(&config_for_issuer(&issuer, None)?).await;
+    assert!(client.is_ok());
+    assert!(started.elapsed() >= IDP_COMES_UP_AFTER);
     Ok(())
 }
 

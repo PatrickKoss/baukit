@@ -74,6 +74,12 @@ pub enum RateLimitOutcome {
         /// Time until the bucket admits another request.
         retry_after: Duration,
     },
+    /// The limiter's store failed and the fail mode is closed; the response is
+    /// `503` with `Retry-After`.
+    Unavailable {
+        /// Time the client should wait before retrying.
+        retry_after: Duration,
+    },
 }
 
 /// Boxed future returned by [`BrowserSessionRateLimiter::check`].
@@ -84,7 +90,7 @@ pub type RateLimitFuture<'a> = Pin<Box<dyn Future<Output = RateLimitOutcome> + S
 /// `baukit-ratelimit` depends on `baukit-auth`, so the adapter over its shared
 /// store is `StoreBrowserSessionRateLimiter` in `baukit-ratelimit` behind its
 /// `browser-session` feature. The adapter applies the store's fail
-/// mode and returns [`RateLimitOutcome::Limited`] when it fails closed.
+/// mode and returns [`RateLimitOutcome::Unavailable`] when it fails closed.
 pub trait BrowserSessionRateLimiter: Send + Sync {
     /// Consumes one token from `limit`'s bucket for `subject`.
     fn check<'a>(
