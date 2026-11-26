@@ -44,7 +44,7 @@ offset.
 
 `openapi.consumers` lists generated TypeScript declarations. Raw schema copies
 remain product-owned until a second product needs them. The
-[raw OpenAPI mirror design](../docs/platform/openapi-mirrors.md) records the
+[raw OpenAPI mirror decision](../docs/adr/0031-openapi-mirrors.md) records the
 proposed manifest and strict-check behavior.
 
 Each frontend can have its own `pnpm-workspace.yaml`. A product can instead
