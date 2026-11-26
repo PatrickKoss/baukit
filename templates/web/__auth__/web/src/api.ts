@@ -3,6 +3,7 @@ import type { FetchImplementation } from '@baukit/api-runtime';
 import { createAuthenticatedApiRuntime } from './authenticated-api';
 import { apiBaseUrl } from './api-base-url';
 import { authClient } from './auth';
+import { apiAvailability, trackApiAvailability } from './api-availability';
 
 export interface Item {
   readonly id: string;
@@ -19,13 +20,14 @@ const api = createAuthenticatedApiRuntime({
   baseUrl: apiBaseUrl,
   environment: import.meta.env.MODE,
 });
+const apiFetch = trackApiAvailability(api.fetch, apiAvailability);
 
-export async function listItems(fetch: FetchImplementation = api.fetch): Promise<readonly Item[]> {
+export async function listItems(fetch: FetchImplementation = apiFetch): Promise<readonly Item[]> {
   const response = await fetch('/items');
   return parseItems(await response.json());
 }
 
-export async function currentUser(fetch: FetchImplementation = api.fetch): Promise<CurrentUser> {
+export async function currentUser(fetch: FetchImplementation = apiFetch): Promise<CurrentUser> {
   const response = await fetch('/me');
   const value: unknown = await response.json();
   if (!isCurrentUser(value)) {

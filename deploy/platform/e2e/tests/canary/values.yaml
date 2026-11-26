@@ -1,0 +1,43 @@
+# The echo app with a Flagger Canary that queries the platform Prometheus directly. The test
+# namespace is not a tenant, so it needs no tenant-metrics-proxy. Short intervals keep each
+# analysis near a minute; the echo metrics carry a 1/s rate without traffic.
+fullnameOverride: echo
+product: e2e-canary
+deploymentEnvironment: local
+api:
+  image:
+    repository: localhost/baukit-e2e/echo
+    tag: local
+    pullPolicy: Never
+  command:
+    - nginx
+    - -g
+    - daemon off;
+  terminationGracePeriodSeconds: 11
+migration:
+  enabled: false
+networkPolicy:
+  dns:
+    k3sCompatible: true
+serviceMonitor:
+  enabled: true
+  interval: 5s
+  scrapeTimeout: 4s
+ingress:
+  enabled: true
+  hosts:
+    - host: echo-canary.localhost
+      paths:
+        - path: /
+          pathType: Prefix
+canary:
+  enabled: true
+  prometheusAddress: http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090
+  progressDeadlineSeconds: 180
+  analysis:
+    interval: 15s
+    threshold: 2
+    stepWeight: 50
+    maxWeight: 50
+  metrics:
+    interval: 30s

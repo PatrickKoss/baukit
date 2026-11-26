@@ -17,6 +17,7 @@ import * as Crypto from 'expo-crypto';
 import {
   appearanceStateDecoration,
   safeAuthErrorMessage,
+  scheduleTokenRenewal,
   type OidcSession,
   type SessionExpiredReason,
   type SignInResult,
@@ -214,15 +215,13 @@ function useTokenRenewal(
     if (session === undefined) {
       return;
     }
-    const delay = Math.max(session.expiresAt - Date.now() - 30_000, 0);
-    const timeout = setTimeout(() => {
-      void authClient.accessToken().catch((cause: unknown) => {
+    return scheduleTokenRenewal({
+      expiresAt: session.expiresAt,
+      renew: () => authClient.accessToken({ forceRefresh: true }),
+      onError: (cause) => {
         setError(safeAuthErrorMessage(cause));
-      });
-    }, delay);
-    return () => {
-      clearTimeout(timeout);
-    };
+      },
+    });
   }, [session, setError]);
 }
 

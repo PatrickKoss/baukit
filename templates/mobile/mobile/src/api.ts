@@ -2,6 +2,8 @@ import Constants from 'expo-constants';
 import { createApiRuntime } from '@baukit/api-runtime';
 import type { FetchImplementation } from '@baukit/api-runtime';
 
+import { apiAvailability, trackApiAvailability } from './api-availability';
+
 export interface Item {
   readonly id: string;
   readonly name: string;
@@ -19,8 +21,9 @@ const api = createApiRuntime({
   baseUrl,
   environment: __DEV__ ? 'development' : 'production',
 });
+const apiFetch = trackApiAvailability(api.fetch, apiAvailability);
 
-export async function listItems(fetch: FetchImplementation = api.fetch): Promise<readonly Item[]> {
+export async function listItems(fetch: FetchImplementation = apiFetch): Promise<readonly Item[]> {
   const response = await fetch('/items');
   return parseItems(await response.json());
 }

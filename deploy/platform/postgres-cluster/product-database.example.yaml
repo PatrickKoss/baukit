@@ -6,6 +6,14 @@
 # cluster's pg_hba admits it to that database and rejects it on every other one.
 # connectionLimit caps the owner at 25 connections: 20 through the pooler
 # (max_db_connections) and 5 direct ones for migrations and LISTEN.
+# PgBouncer drops the client's startup options, and DatabaseRole has no field for
+# role settings, so set baukit-config's default timeouts on the owner once, as the
+# superuser on the primary (cluster.yaml does the same for the bootstrap owner):
+#   primary=$(kubectl -n postgres get cluster postgres-cluster -o jsonpath='{.status.currentPrimary}')
+#   kubectl -n postgres exec "$primary" -c postgres -- psql -d postgres \
+#     -c "ALTER ROLE product_owner SET statement_timeout = '29s'" \
+#     -c "ALTER ROLE product_owner SET lock_timeout = '5s'" \
+#     -c "ALTER ROLE product_owner SET idle_in_transaction_session_timeout = '60s'"
 #
 # apiVersion: postgresql.cnpg.io/v1
 # kind: DatabaseRole

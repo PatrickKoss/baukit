@@ -263,7 +263,7 @@ them.
   `CircuitOpen`/`Saturated` to `deferred` and everything else to the existing classes.
   Acceptance: store conformance tests (memory and Postgres, `--include-ignored`) for deferral without
   attempt use, the cap, and `worker_job_deferrals_total`.
-- [ ] **CB4 Suite delivery on the breaker** (RL-10): the peer client sets `destination("suite-peer")`
+- [x] **CB4 Suite delivery on the breaker** (RL-10): the peer client sets `destination("suite-peer")`
   and `deliver_claimed` maps an open circuit to `deferred`. The per-link counter stays as the per-user
   signal but moves out of SQL into the domain constant only (one definition, the CHECK constraint
   references nothing), is evaluated when the delivery finishes instead of on the next enqueue, and
@@ -271,7 +271,7 @@ them.
   Acceptance: suite tests where a dead peer receives at most the breaker threshold of calls across
   three links, links to a healthy peer keep delivering, and a disabled link re-enables itself after the
   peer recovers.
-- [ ] **CB5 Hub and ticket keys on the breaker**: `HubClient` (`destination("hub")`), `TicketVerifier`
+- [x] **CB5 Hub and ticket keys on the breaker**: `HubClient` (`destination("hub")`), `TicketVerifier`
   key source and entitlement fetches go through the breaker. Covered together with ID3 and ID4.
 - [x] **CB6 Push** (RL-09): Expo sender uses `destination("expo")`; `send` returns per-chunk outcomes
   (`accepted` tickets plus the failing chunk's error) instead of discarding accepted tickets.
@@ -286,7 +286,7 @@ them.
 
 ## Phase ID: identity and read-mostly caches
 
-- [~] **ID1 JWKS on `StaleCache`** (RL-03, RL-07): the OIDC verifier and `TicketVerifier` move to
+- [x] **ID1 JWKS on `StaleCache`** (RL-03, RL-07): the OIDC verifier and `TicketVerifier` move to
   `StaleCache` with a 300 s fresh TTL, a 1 h stale window for known kids (never for unknown kids), a
   10 s failure cooldown, and no lock held across the fetch for cached reads.
   `auth_key_cache_requests_total` exported.
@@ -300,11 +300,11 @@ them.
   documents it as the production default.
   Acceptance: a test with an IdP that comes up after 3 s; startup succeeds. One where it never comes
   up; startup fails with a clear error after the budget.
-- [ ] **ID3 Hub client** (RL-05): token fetch moves to `StaleCache` (single flight, cooldown, no lock
+- [x] **ID3 Hub client** (RL-05): token fetch moves to `StaleCache` (single flight, cooldown, no lock
   across the POST). The `401` replay is allowed only for requests built through an idempotent
   constructor (`HubRequest::idempotent`) or carrying an `Idempotency-Key`; the type makes the other
   case impossible to replay.
-- [ ] **ID4 Entitlement grace** (RL-06): while the hub fails, serve the last snapshot until
+- [x] **ID4 Entitlement grace** (RL-06): while the hub fails, serve the last snapshot until
   `grace_until`, mark the response `stale` for callers that care, and only then return `503` with a
   `Retry-After` taken from the breaker.
 
@@ -410,14 +410,14 @@ them.
   `ApiUnavailableError { retryAt }`. Backoff and cooldown replay `fixtures/resilience/*.json`.
   Acceptance: vitest for each path; a fake-timer test that 50 concurrent calls after a 503 with
   `Retry-After: 5` produce one request, not 50.
-- [ ] **CL2 One retry layer in the web template** (RL-62): `QueryClient` with `retry: false`,
+- [x] **CL2 One retry layer in the web template** (RL-62): `QueryClient` with `retry: false`,
   `refetchOnWindowFocus` jittered or off, and a shared `isApiUnavailable` state from the cooldown.
 - [x] **CL3 Sync scheduler defaults** (RL-63): default `delayMs` uses full jitter and
   `SyncRateLimitError.retryAt`; recovery triggers wait a random 0-5 s; the interval gets 10% jitter.
-- [~] **CL4 Token refresh under outage** (RL-64, RL-65): the refresh POST gets a 10 s timeout; a
+- [x] **CL4 Token refresh under outage** (RL-64, RL-65): the refresh POST gets a 10 s timeout; a
   retryable failure keeps using the current token until `expiresAt`; mobile renewal reschedules with
   jittered backoff on retryable failure and stops only on `invalid_grant`.
-- [~] **CL5 Degraded UI** (RL-66): `networkFirst` gains a network timeout (default 4 s) before falling
+- [x] **CL5 Degraded UI** (RL-66): `networkFirst` gains a network timeout (default 4 s) before falling
   back to cache; the web and mobile templates get a top-level error boundary and an "unavailable, retrying
   at HH:MM" banner driven by the cooldown, with a11y tests and localized strings.
 - [ ] **CL6 compose** (RL-67): `restart: unless-stopped` everywhere and a `/readyz` healthcheck for the
@@ -447,7 +447,7 @@ them.
   `local-footprint.md`.
 - [x] **PL5 Redis platform alerts** (RL-86): master down, Sentinel quorum lost, replication link down,
   evictions, memory near maxmemory, each with promtool tests and a runbook.
-- [ ] **PL6 Flagger that can gate** (RL-83): add `baukit.dev/workload` to the chart selector (breaking,
+- [~] **PL6 Flagger that can gate** (RL-83): add `baukit.dev/workload` to the chart selector (breaking,
   fine per principle 8), relabel `rollout` in the ServiceMonitor from the pod's canary/primary label,
   and add an opt-in Canary plus TraefikService to the template with error-ratio and p95 gates from the
   existing metric templates.
@@ -556,7 +556,7 @@ Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/chec
 | rel-jobs2 | WK3, WK5, WK6, WK8 (crate part), WK9 | merged, unit checks verified; Docker run pending on integration |
 | rel-ops | IN5 (crate part) | merged, verified (two rounds; Docker tests pending) |
 | rel-faults | FX1 | merged, unit checks verified; Docker run pending on integration |
-| rel-suite | CB4, CB5, ID1 (TicketVerifier), ID3, ID4 | running |
+| rel-suite | CB4, CB5, ID1 (TicketVerifier), ID3, ID4 | merged, unit checks verified; Docker run pending on integration |
 | rel-adopters | CB6, CB7, WK7 | merged, unit checks verified; Docker run pending on integration |
 | rel-ts2 | CL1 fixture replay | merged, verified (ts-check, package-dependencies) |
 | rel-auth | ID1 (OIDC part), ID2, IN2 (browser session) | merged, verified (two rounds plus an orchestrator fix) |
@@ -686,3 +686,50 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
     early only repeats an idempotent IdP delete.
   - Not covered: data-subject failures decided in Rust (identity deadline, `export_too_large`) need a
     sampled gauge, and erasure has no `error_code` column. Both are template wave.
+- rel-suite merged.
+  - Ticket keys and hub tokens now use the shared stale caches.
+  - Hub calls only replay after a 401 when they are GETs, idempotent requests, or requests with an
+    Idempotency-Key.
+  - During a hub outage, entitlements are served stale until the grace window ends, then return 503
+    with Retry-After.
+  - Delivery failures are counted per attempt in Rust. Migration 005 drops the SQL trigger, and
+    disabled links get a probe after 1 h, doubling up to 24 h.
+  - The baukit-mcp test support needed the two new `SuiteLink` fields. I added them in the merge.
+  - `postgres/mod.rs` is down to 1000 lines, so its file-size allowlist entry is removed.
+- rel-tpl-backend started. It covers the CB3 helper, the WK5 suite key, and all backend, worker and
+  platform template wiring.
+- rel-tpl-clients merged.
+  - The web `QueryClient` no longer retries and does not refetch on window focus. I prefer that to
+    jitter: one tab's refetch cannot be jittered, and many tabs focusing together after an outage
+    would hit the API at once.
+  - Web and mobile share one availability store fed by `ApiUnavailableError`, which drives an
+    "unavailable, retrying at HH:MM" banner and a top-level error boundary. The strings are in English
+    and German, with a11y tests.
+  - auth-native gains `scheduleTokenRenewal`, which retries with jittered backoff and stops on a
+    terminal refresh error. `accessToken()` keeps the current token on a retryable failure before
+    expiry.
+  - Left open: `delete-profile.ts` builds its own runtime, so its cooldown does not reach the banner.
+    The mobile hook calls `setError` on every transient renewal failure, which is noisy during an
+    outage.
+- Release to-do, all waves: no TypeScript package has CHANGELOG `Unreleased` entries yet (api-runtime,
+  auth-web, auth-native, sync-client, pwa-web). They get written in REL1.
+- rel-platform merged after two rounds.
+  - PL6: the chart selects on `baukit.dev/workload`. An opt-in Flagger Canary with a TraefikService
+    and 5xx and p95 gates is added, and the ServiceMonitor relabels `rollout`. There is a new
+    `tests/canary` e2e suite, not run yet.
+  - Round 2 fix: the target Deployment drops `replicas` under canary. I added a render guard because
+    Flagger runs one primary pod unless the HPA sets the count.
+  - PL4: only the API goes through PgBouncer. Worker, migrate and seed get a direct URL Secret
+    (`directUrlSecretRef`), because the pooler drops startup `options`.
+    - The owner role carries the timeouts, a limit of 25 connections (12 pooled, 13 direct), and
+      `query_timeout` 35 s.
+    - The backing NetworkPolicy now admits the pooler pods. Before this, a pooler URL would have
+      been blocked.
+  - PL7: the worker failure alert gets a traffic floor, and the new `BaukitWorkerJobsFailed` alert
+    fires on growth of `worker_queue_depth{status="failed"}`.
+  - Missing metrics: baukit-push emits none, and the suite delivery metric has a per-product prefix
+    that is not in telemetry-spec. Both need fixed names before PL7 can alert on them.
+  - Still to run: `platform-images` (trivy) and the platform e2e, including the canary, tenant-postgres
+    and ingress suites.
+- `scripts/publish-crates.sh` now publishes `baukit-resilience` before `baukit-http`, which depends on
+  it. scripts-tests caught the wrong order.

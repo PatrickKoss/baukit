@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+- The shared Postgres bootstrap owner `product_owner` gets `CONNECTION LIMIT 25` and baukit-config's default `statement_timeout` (29 s), `lock_timeout` (5 s) and `idle_in_transaction_session_timeout` (60 s) as role settings in `postInitApplicationSQL`, because PgBouncer in transaction mode cannot forward the client's startup options. `product-database.example.yaml` shows the same `ALTER ROLE` statements for every other tenant owner. CNPG runs `postInitApplicationSQL` only when it creates the cluster; recreate it or run the statements once on the primary.
+- The pooler's `max_db_connections` drops from 20 to 12, so each owner keeps 13 direct connections for one worker pod, migrations and an operator. Only the API goes through the pooler.
+- The pooler ignores the `options` and `extra_float_digits` startup parameters and sets `query_timeout` 35 s and `idle_transaction_timeout` 60 s. The Keycloak owner gets `connectionLimit: 12`.
+- e2e `tenant-postgres` checks the owner's connection limit and that a session through the pooler gets the role's timeouts even when the client sends another `statement_timeout`.
+- e2e `canary`: the baukit-app chart with `canary.enabled` promotes a healthy pod template and rolls back the `echo-faulty` image, which answers 500. `run.sh` builds and imports `localhost/baukit-e2e/echo-faulty:local` next to the echo image.
+- e2e `ingress` sets `terminationGracePeriodSeconds: 11`. The chart refuses 10 since the drain budget change, so the suite could not install.
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

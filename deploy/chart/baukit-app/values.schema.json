@@ -449,6 +449,24 @@
                 "clusterName": {
                   "type": "string",
                   "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$"
+                },
+                "poolerName": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$"
+                },
+                "directUrlSecretRef": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$"
+                    },
+                    "key": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
                 }
               }
             },
@@ -1035,6 +1053,64 @@
         }
       },
       "additionalProperties": false
+    },
+    "canary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "prometheusAddress": {
+          "type": "string"
+        },
+        "progressDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "analysis": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "interval": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$"
+            },
+            "threshold": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "stepWeight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "maxWeight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "interval": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$"
+            },
+            "maxErrorPercent": {
+              "type": "number",
+              "minimum": 0
+            },
+            "maxP95Seconds": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        }
+      }
     },
     "networkPolicy": {
       "type": "object",

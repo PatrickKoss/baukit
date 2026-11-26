@@ -10,4 +10,10 @@ export const englishCatalog = {
     items: "Items",
     privacy: "Privacy",
   },
+  status: {
+    unavailable: "The service is unavailable. Retrying at {time}.",
+    crashed: "Something went wrong",
+    crashedDetail: "The page hit an unexpected error. Reload to try again.",
+    reload: "Reload",
+  },
 } as const;

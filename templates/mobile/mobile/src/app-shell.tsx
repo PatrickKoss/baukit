@@ -15,6 +15,7 @@ import { InMemoryRecordStore, type RecordStore } from '@baukit/data-contracts';
 import { PurchasesProvider } from '@baukit/purchases-core/react';
 
 import { loadAnalytics } from './analytics';
+import { ApiUnavailableBanner, AppErrorBoundary } from './app-status';
 import type { ProductEvent } from './analytics-client';
 import {
   AppPreferenceRuntime,
@@ -254,7 +255,10 @@ export function AppShell({ children, preferenceSubjectId }: AppShellProps): Reac
     <AppPreferencesContext.Provider value={contextValue}>
       <AppThemeProvider mode={preferences.theme} persistMode={persistThemeMode}>
         <PurchasesProvider flow={purchases} productId={PRODUCT_NAME}>
-          {children}
+          <AppErrorBoundary>
+            <ApiUnavailableBanner />
+            {children}
+          </AppErrorBoundary>
         </PurchasesProvider>
       </AppThemeProvider>
     </AppPreferencesContext.Provider>

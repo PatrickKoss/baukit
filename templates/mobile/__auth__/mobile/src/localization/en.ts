@@ -20,4 +20,10 @@ export const englishCatalog = {
     emptyItems: 'No items yet.',
     itemsTitle: 'Items',
   },
+  status: {
+    unavailable: 'The service is unavailable. Retrying at {time}.',
+    crashed: 'Something went wrong',
+    crashedDetail: 'The app hit an unexpected error. Try again to reload this screen.',
+    retry: 'Try again',
+  },
 } as const;

@@ -108,7 +108,7 @@ The pod and container security-context maps can be replaced when an image needs 
 
 | Value | Default | Description |
 |---|---:|---|
-| `api.replicas` | `1` | API replicas when HPA is disabled. |
+| `api.replicas` | `1` | API replicas when HPA is disabled. With `canary.enabled`, Flagger ignores it, so values above 1 need `autoscaling.enabled=true`. |
 | `api.image.repository` | `ghcr.io/example/minimal-api` | API-only image repository. |
 | `api.image.tag` / `api.image.digest` | `""` / `""` | API image tag or `sha256:` digest; one is required and `latest` is rejected. |
 | `api.image.pullPolicy` | `IfNotPresent` | API image pull policy. |
@@ -224,6 +224,13 @@ Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops a
 | `serviceMonitor.enabled` | `false` | Request capability-gated API/worker ServiceMonitors. |
 | `serviceMonitor.interval` / `scrapeTimeout` | `30s` / `10s` | ServiceMonitor endpoint timing. |
 | `serviceMonitor.labels` | `{}` | Extra labels used by the Prometheus Operator's monitor selector. |
+| `backing.postgres.shared.poolerName` | `""` | PgBouncer Pooler the API may reach in shared mode. Empty means `<clusterName>-pooler-rw`. |
+| `backing.postgres.shared.directUrlSecretRef.name` / `key` | `""` / `uri` | Secret holding a URL to `<clusterName>-rw`. When set, the worker, migrate and seed processes read `<PREFIX>__DATABASE__URL` from it and get no egress to the pooler; only the API keeps the pooled URL from `config.existingSecretRefs`. Transaction pooling drops the worker's `statement_timeout` and the pooler's 35 s `query_timeout` cuts longer jobs. |
+| `canary.enabled` | `false` | Render a Flagger `Canary` for the API Deployment, its two `MetricTemplate`s and an `IngressRoute` to Flagger's `TraefikService` instead of the Ingress. See "Progressive delivery". |
+| `canary.prometheusAddress` | `""` | Prometheus API the `MetricTemplate`s query. Empty means `http://tenant-metrics-proxy.<namespace>.svc.cluster.local:8080`, which tenant namespaces require. |
+| `canary.progressDeadlineSeconds` | `600` | Flagger's progress deadline for the canary Deployment. |
+| `canary.analysis.interval` / `threshold` / `stepWeight` / `maxWeight` | `1m` / `5` / `10` / `50` | Flagger analysis schedule; `threshold` failed checks roll back. |
+| `canary.metrics.interval` / `maxErrorPercent` / `maxP95Seconds` | `1m` / `1` / `0.5` | `rate()` window and the gates on the canary's 5xx percentage and p95 latency. |
 
 ### NetworkPolicy
 
@@ -239,6 +246,28 @@ Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops a
 | `networkPolicy.dns.k3sCompatible` | `false` | Add a destination-independent TCP/UDP port-53 rule for k3s Service-IP policy enforcement. |
 | `networkPolicy.additionalIngress` | `[]` | Raw NetworkPolicy ingress-rule list admitted to every process. |
 | `networkPolicy.additionalEgress` | `[]` | Raw NetworkPolicy egress-rule list appended after TCP/UDP DNS. |
+
+## Progressive delivery
+
+The API and worker Deployments select on `baukit.dev/workload: <fullname>-<process>`, the label the
+platform's Flagger base selects on. With `canary.enabled=true`, Flagger copies the API Deployment to
+`<fullname>-api-primary`, rewrites that label to `<fullname>-api-primary` there, scales the chart's
+Deployment to zero, and runs each new pod template as the canary. Traffic goes through the
+`TraefikService` named `<fullname>-api` that Flagger writes, which is why the chart renders an
+`IngressRoute` on `websecure` instead of the Ingress. Its TLS secret is `ingress.tls[0].secretName`, or
+Traefik's default certificate without one.
+
+The API ServiceMonitor sets `rollout="primary"` on series from pods whose workload label ends in
+`-primary` and `rollout="canary"` on the others. The two `MetricTemplate`s filter on
+`rollout="canary"`, so the gates see only the canary: the 5xx share of `http_requests_total` and the p95
+of `http_request_duration_seconds`. A gate with no data counts as a failed check, so the canary needs
+traffic during the analysis. Set `serviceMonitor.enabled=true` with the canary. The worker is not
+promoted. With a canary or an HPA the API Deployment has no `replicas` field, so a Helm upgrade never
+scales the idle canary Deployment back up. Flagger 1.45 creates the primary with the target's
+replica count, 1 when the field is absent, and runs the canary at the primary's count
+(`pkg/canary/deployment_controller.go`). Without `autoscaling.enabled` the primary therefore runs
+one pod and `api.replicas` has no effect; enable autoscaling to run more, and Flagger copies the
+HPA to `<fullname>-api-primary`.
 
 ## Web app and CSP
 
