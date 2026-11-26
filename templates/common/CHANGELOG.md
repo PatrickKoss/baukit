@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 {% if context.auth_oidc and context.backend %}- `config/local.toml` sets `auth.authorized_parties` to this product's web, mobile and local client IDs. Access tokens from other clients now fail locally even with the backend audience. Set the same list in staging and production.
+{% endif %}{% if context.auth_enabled and context.backend %}- `backend/migrations/0010_baukit_auth_browser_session_record_ids.sql` adds `baukit_auth_browser_sessions.record_id` for vault v2 session records. Apply it before deploying the backend built against this baukit release.
 {% endif %}
 ## [0.30.5] - 2026-11-26
 

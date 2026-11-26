@@ -32,6 +32,11 @@ working against the new schema: it never names the columns, and the rows it writ
 | `baukit-auth` | `migrations/0003_baukit_auth_browser_session_record_ids.sql` | `browser_session::POSTGRES_BROWSER_SESSION_RECORD_IDS_MIGRATION_SQL` | `baukit_auth_browser_sessions.record_id` |
 | `baukit-suite` | `migrations/005_suite_record_ids.sql` | `SUITE_RECORD_IDS_MIGRATION_SQL` | `suite_links.secret_record_id`, `suite_link_requests.verifier_record_id`, `suite_link_requests.secret_record_id` |
 
+A product generated with the auth backend template carries the auth file as
+`backend/migrations/0010_baukit_auth_browser_session_record_ids.sql`. An existing generated
+product copies it under its next free migration number, after its copy of
+`0002_baukit_auth_browser_sessions.sql`.
+
 Both files only add nullable columns without defaults. They set `lock_timeout` and do not rewrite
 the tables.
 
