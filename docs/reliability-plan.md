@@ -537,11 +537,11 @@ run in the orchestrator under the heavy-slot protocol (owner `baukit-rel`, one s
 | Agent | Tasks | Owns | Status |
 |---|---|---|---|
 | rel-core | RC1, RC2 | `rust/crates/baukit-resilience`, `fixtures/resilience`, workspace `Cargo.toml` entry | running |
-| rel-faults | FX1 | `rust/crates/baukit-test` | running |
+| rel-faults | FX1 | `rust/crates/baukit-test` | queued (host load) |
 | rel-http | IN1, IN2 (`baukit-http` part), IN3, IN4 (`baukit-runtime` part), IN7 | `baukit-http`, `baukit-runtime`, `baukit-telemetry` | running |
 | rel-jobs | WK1, WK2, WK4 (crate part), CB3 | `baukit-jobs` | running |
 | rel-ts | CL1 (without fixture replay), CL3, CL4 (`auth-web` part), CL5 (`pwa-web` part) | `typescript/packages/{api-runtime,sync-client,auth-web,pwa-web}` | running |
-| rel-db | IN6 (crate part), IN2 (`baukit-ratelimit` part) | `baukit-config`, `baukit-ops`, `baukit-ratelimit` | running |
+| rel-db | IN6 (crate part), IN2 (`baukit-ratelimit` part) | `baukit-config`, `baukit-ops`, `baukit-ratelimit` | queued (host load) |
 | rel-deploy | PL1, PL2, PL3, PL5 | `deploy/chart`, `deploy/platform/traefik`, `deploy/observability-platform` (redis alerts), `templates/backend/deploy` | running |
 | rel-obs | PL4, PL7, the RL-43 alert text fix | `deploy/platform/postgres-cluster`, `deploy/observability` | running |
 
