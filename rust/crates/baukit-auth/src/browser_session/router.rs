@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
@@ -13,14 +13,14 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
-use baukit_http::ApiError;
+use baukit_http::{ApiError, RetryClass};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
 use super::{
     config::{BrowserSessionConfig, BrowserSessionConfigError},
     cookie::CookieSettings,
-    idp::{IdentityProvider, IdpDiscoveryError, OidcTokenClient},
+    idp::{IdentityProvider, IdpDiscoveryError, IdpError, OidcTokenClient},
     rate_limit::{
         BrowserSessionRateLimit, BrowserSessionRateLimiter, BrowserSessionRateLimits,
         RateLimitOutcome, RateLimitSubject,
@@ -31,6 +31,10 @@ use super::{
 
 /// Reserved path prefix of the browser session routes.
 pub const BROWSER_SESSION_PATH_PREFIX: &str = "/auth/session";
+
+/// `Retry-After` for an IdP outage that carries no hint of its own, matching the API's
+/// identity-unavailable answer.
+const IDP_UNAVAILABLE_RETRY_AFTER: Duration = Duration::from_secs(5);
 
 /// Header every browser session request must carry with the value `1`.
 pub const BROWSER_SESSION_HEADER: HeaderName = HeaderName::from_static("x-baukit-session");
@@ -382,13 +386,15 @@ impl BrowserSessionState {
                 "invalid_grant",
                 "The authorization grant was rejected.",
             ),
-            SessionError::IdpUnavailable(_) => {
+            SessionError::IdpUnavailable(ref source) => {
                 tracing::warn!(error = %error, "browser session IdP call failed");
-                problem(
+                ApiError::new(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "idp_unavailable",
                     "The identity provider is unavailable. Retry later.",
                 )
+                .with_retry_after(retry_after_seconds(idp_retry_after(source)))
+                .into_response()
             }
             SessionError::InvalidIdpResponse(_) => {
                 tracing::warn!(error = %error, "browser session IdP response failed verification");
@@ -405,6 +411,46 @@ impl BrowserSessionState {
     }
 }
 
+fn idp_retry_after(error: &IdpError) -> Duration {
+    match error {
+        IdpError::Unavailable(egress) => match egress.retry_class() {
+            RetryClass::RetryAfter(delay) => delay,
+            _ => IDP_UNAVAILABLE_RETRY_AFTER,
+        },
+        _ => IDP_UNAVAILABLE_RETRY_AFTER,
+    }
+}
+
+fn retry_after_seconds(delay: Duration) -> u64 {
+    let whole = delay.as_secs();
+    let rounded = if delay.subsec_nanos() > 0 {
+        whole.saturating_add(1)
+    } else {
+        whole
+    };
+    rounded.max(1)
+}
+
 fn problem(status: StatusCode, code: &'static str, message: &'static str) -> Response {
     ApiError::new(status, code, message).into_response()
+}
+
+#[cfg(test)]
+mod retry_after_tests {
+    use std::time::Duration;
+
+    use baukit_egress::EgressError;
+
+    use super::{IDP_UNAVAILABLE_RETRY_AFTER, IdpError, idp_retry_after, retry_after_seconds};
+
+    #[test]
+    fn an_open_circuit_sends_its_own_delay_and_other_outages_the_default() {
+        let open = IdpError::Unavailable(EgressError::CircuitOpen {
+            retry_after: Duration::from_millis(41_200),
+        });
+        assert_eq!(retry_after_seconds(idp_retry_after(&open)), 42);
+        let down = IdpError::Unavailable(EgressError::Timeout);
+        assert_eq!(idp_retry_after(&down), IDP_UNAVAILABLE_RETRY_AFTER);
+        assert_eq!(retry_after_seconds(Duration::ZERO), 1);
+    }
 }

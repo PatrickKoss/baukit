@@ -4,6 +4,7 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- Browser-session `idp_unavailable` (503) now sends `Retry-After`: the open circuit's or full bulkhead's delay, otherwise 5 s.
 - `OidcVerifier::discover` and `BrowserSessionState::discover` retry transient discovery failures with jittered backoff within a startup budget (60 s, `OidcConfig::with_startup_budget`, `BrowserSessionConfig::with_startup_budget`) through `baukit_resilience::startup::retry_within`. After the budget they fail with the new `VerificationError::DiscoveryBudgetExhausted` or `IdpDiscoveryError::BudgetExhausted`. Issuer mismatches and invalid documents still fail at once.
 - `OidcConfig::with_jwks_uri` sets the JWKS URL and skips discovery, so the verifier starts without the issuer. Invalid URLs fail with the new `OidcConfigError::InvalidJwksUri`.
 - The OIDC verifier no longer holds a lock across the JWKS fetch. A set is fresh for the cache TTL (300 s) and then serves known key ids for a stale window (one hour, `with_jwks_stale_window`) while one background task refreshes it. An unknown key id forces at most one refresh per 10 s. Past the stale window verification fails with the new `VerificationError::JwksUnavailable`, which `is_unavailable()` reports and the extractor answers with `503`.

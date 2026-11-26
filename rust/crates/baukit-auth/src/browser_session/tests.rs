@@ -455,6 +455,7 @@ async fn signed_in(harness: &Harness) -> Result<String, TestError> {
 struct Refreshed {
     status: StatusCode,
     set_cookie: Option<String>,
+    retry_after: Option<String>,
     body: Value,
 }
 
@@ -462,9 +463,15 @@ async fn refreshed(harness: &Harness, cookie: &str) -> Result<Refreshed, TestErr
     let response = send(&harness.app, request("refresh", Some(cookie), None)?).await?;
     let status = response.status();
     let set_cookie = set_cookie(&response);
+    let retry_after = response
+        .headers()
+        .get(axum::http::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     Ok(Refreshed {
         status,
         set_cookie,
+        retry_after,
         body: json(response).await?,
     })
 }
@@ -917,6 +924,7 @@ async fn idp_outage_is_retryable_and_keeps_the_session() -> TestResult {
     let refreshed = refreshed(&harness, &first).await?;
     assert_eq!(refreshed.status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(refreshed.body["error"]["code"], "idp_unavailable");
+    assert_eq!(refreshed.retry_after.as_deref(), Some("5"));
     assert!(refreshed.set_cookie.is_none());
     let rows = harness.store.snapshot().await;
     assert!(

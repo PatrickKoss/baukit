@@ -30,7 +30,7 @@ holds it. When the code changes, the code wins and this page is wrong; fix the p
 | Rate-limit store down, fail mode `closed` | `503`, `Retry-After: 1` | `baukit-ratelimit/src/axum_layer.rs` and `src/browser_session.rs` `STORE_UNAVAILABLE_RETRY_AFTER` |
 | Identity verification unavailable (JWKS gone past the stale window, issuer down) | `503`, `Retry-After: 5` | `baukit-auth/src/axum_integration.rs` `UNAVAILABLE_RETRY_AFTER_SECONDS` |
 | MCP token introspection unavailable or its circuit open | `503`, `Retry-After: 5` | `baukit-mcp/src/security.rs` `IDENTITY_UNAVAILABLE_RETRY_AFTER_SECONDS` |
-| Browser-session IdP unavailable or its circuit open | `503 idp_unavailable` without `Retry-After`, session kept | `baukit-auth/src/browser_session/router.rs` |
+| Browser-session IdP unavailable or its circuit open | `503 idp_unavailable`, `Retry-After` from the open circuit or full bulkhead, else 5; session kept | `baukit-auth/src/browser_session/router.rs` `IDP_UNAVAILABLE_RETRY_AFTER` |
 | Entitlements past `grace_until` while the hub fails | `503`, `Retry-After` from the open breaker or the remaining cooldown (10 s) | `baukit-suite/src/platform/cache.rs` `ENTITLEMENT_FAILURE_COOLDOWN` |
 | Plan entitlements or credits unavailable | `503`, `Retry-After: 5` | `baukit-suite/src/platform/plan.rs` `PLAN_RETRY_AFTER_SECONDS` |
 | Suite service unavailable | `503`, `Retry-After: 300` | `baukit-suite/src/domain/mod.rs` `SUITE_UNAVAILABLE_RETRY_SECONDS` |
