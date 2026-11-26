@@ -86,6 +86,7 @@ mod oidc_http;
 mod postgres;
 mod providers;
 mod secret;
+mod startup;
 mod verifier;
 
 pub use api_token::{

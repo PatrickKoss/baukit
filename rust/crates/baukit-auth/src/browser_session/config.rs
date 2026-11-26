@@ -38,6 +38,7 @@ pub struct BrowserSessionConfig {
     pub(crate) insecure_local_cookie: bool,
     pub(crate) post_logout_redirect_uri: Option<String>,
     pub(crate) request_timeout: Duration,
+    pub(crate) startup_budget: Duration,
     pub(crate) egress_policy: Option<AddressPolicy>,
     pub(crate) rate_limits: BrowserSessionRateLimits,
 }
@@ -92,6 +93,7 @@ impl BrowserSessionConfig {
             insecure_local_cookie: false,
             post_logout_redirect_uri: None,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
+            startup_budget: crate::config::DEFAULT_STARTUP_BUDGET,
             egress_policy: None,
             rate_limits: BrowserSessionRateLimits::default(),
         })
@@ -207,6 +209,23 @@ impl BrowserSessionConfig {
             return Err(BrowserSessionConfigError::ZeroTimeout("request"));
         }
         self.request_timeout = timeout;
+        Ok(self)
+    }
+
+    /// Sets how long discovery retries an unreachable IdP before startup fails.
+    /// Defaults to 60 seconds.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BrowserSessionConfigError::ZeroTimeout`] when `budget` is zero.
+    pub fn with_startup_budget(
+        mut self,
+        budget: Duration,
+    ) -> Result<Self, BrowserSessionConfigError> {
+        if budget.is_zero() {
+            return Err(BrowserSessionConfigError::ZeroTimeout("startup budget"));
+        }
+        self.startup_budget = budget;
         Ok(self)
     }
 

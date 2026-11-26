@@ -104,6 +104,14 @@ outcomes `allowed` or `limited`.
 
 `baukit-telemetry` reads the `process_*` values from `/proc/self` every 5 seconds, so they are missing on systems without `/proc`. CPU seconds and busy seconds are monotonic but exported as gauges because the `metrics` facade only has integer counters; `rate()` works on them as usual. `process_start_time_seconds` is the time telemetry was initialized. The `tokio_runtime_*` gauges use only metrics that stable Tokio exposes without `tokio_unstable`, and appear when `TelemetryBuilder::init` runs inside a Tokio runtime.
 
+### 2.8 Identity key caches (owned by `baukit-auth` and `baukit-suite`)
+
+| Metric | Type | Labels |
+|---|---|---|
+| `auth_key_cache_requests_total` | counter | `source` (`oidc`, `ticket`), `result` (`fresh`, `stale`, `fetched`, `failed`) |
+
+Each key lookup counts once: `fresh` and `stale` were served from the cache, `fetched` came from a fetch made by that lookup, and `failed` means the lookup got no key set or its own fetch failed while a stale set was served. A background refresh of a stale set also counts once, as `fetched` or `failed`. A rising `stale` or `failed` rate means the issuer's JWKS endpoint is unreachable while verification still runs on cached keys.
+
 ## 3. Logs
 
 - JSON to stdout in deployed environments; human-readable format in local development. The switch follows `deployment.environment.name`.

@@ -24,6 +24,7 @@ SPEC_METRICS = (
     "http_request_duration_seconds",
     "http_requests_in_flight",
     "http_requests_shed_total",
+    "auth_key_cache_requests_total",
     "http_rate_limit_decisions_total",
     "fixed_window_amount_budget_decisions_total",
     "build_info",

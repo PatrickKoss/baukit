@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::*;
 
 #[test]
@@ -67,11 +69,14 @@ async fn interrupted_document_bodies_are_retryable_but_invalid_json_is_not() {
                 stream.shutdown().await.expect("shutdown");
             }
         });
-        let config = OidcConfig::new(&issuer, "api").expect("config");
-        let discovery_error = OidcVerifier::discover(config.clone())
-            .await
-            .map(|_| ())
-            .expect_err("invalid discovery response");
+        let config = OidcConfig::new(&issuer, "api")
+            .and_then(|config| config.with_startup_budget(Duration::from_nanos(1)))
+            .expect("config");
+        let discovery_error = match OidcVerifier::discover(config.clone()).await {
+            Ok(_) => panic!("invalid discovery response"),
+            Err(VerificationError::DiscoveryBudgetExhausted(source)) if truncated => *source,
+            Err(error) => error,
+        };
         let verifier =
             OidcVerifier::from_jwks_uri(config, format!("{issuer}/jwks")).expect("verifier");
         let jwks_error = verifier
@@ -300,14 +305,260 @@ fn profile_claims_copy_only_selected_strings_and_booleans() {
 
 #[test]
 fn unknown_key_cache_has_a_hard_entry_bound() {
-    let mut cache = JwksCache::default();
-    for index in 0..=MAX_UNKNOWN_KEYS {
-        cache.remember_unknown_key(&format!("unknown-{index}"));
+    let mut cache = keys::UnknownKeys::default();
+    let now = std::time::Instant::now();
+    for index in 0..=keys::MAX_UNKNOWN_KEYS {
+        cache.remember(&format!("unknown-{index}"), now);
     }
-    assert_eq!(cache.unknown_keys.len(), MAX_UNKNOWN_KEYS);
-    assert!(
-        cache
-            .unknown_keys
-            .contains_key(&unknown_key_hash("unknown-128"))
-    );
+    assert_eq!(cache.len(), keys::MAX_UNKNOWN_KEYS);
+    assert!(cache.has("unknown-128"));
+}
+
+mod stale_keys {
+    use std::{sync::Arc, time::Duration};
+
+    use baukit_resilience::ManualClock;
+    use baukit_test::MockOidcServer;
+
+    use super::*;
+
+    const CONCURRENT_VERIFICATIONS: usize = 100;
+    const FRESH_FOR: Duration = Duration::from_secs(300);
+    const STALE_FOR: Duration = Duration::from_secs(3600);
+    const HUNG_JWKS: Duration = Duration::from_secs(30);
+    const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
+    const NO_WAIT: Duration = Duration::from_millis(500);
+
+    async fn wait_until(condition: impl Fn() -> bool) {
+        for _ in 0..200 {
+            if condition() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+        panic!("condition not reached");
+    }
+
+    #[tokio::test]
+    async fn stale_keys_serve_known_kids_while_the_jwks_endpoint_is_down() {
+        let server = MockOidcServer::start().await.expect("mock issuer");
+        let clock = Arc::new(ManualClock::new());
+        let config = OidcConfig::new(server.issuer(), "api")
+            .and_then(|config| config.with_request_timeout(REQUEST_TIMEOUT))
+            .expect("config");
+        let verifier = Arc::new(
+            OidcVerifier::from_jwks_uri_with_clock(
+                config,
+                server.jwks_url(),
+                Arc::clone(&clock) as Arc<dyn baukit_resilience::Clock>,
+            )
+            .expect("verifier"),
+        );
+        let claims = server
+            .claims("user-123", "api", Duration::from_secs(7200))
+            .expect("claims");
+        let token = server.mint(&claims).expect("token");
+        let unknown = server
+            .mint_with_key_id(&claims, "rotated-away")
+            .expect("unknown kid token");
+        verifier.verify(&token).await.expect("first verification");
+        assert_eq!(server.jwks_request_count(), 1);
+
+        server.set_jwks_delay(HUNG_JWKS);
+        clock.advance(FRESH_FOR + Duration::from_secs(1));
+        let tasks: Vec<_> = (0..CONCURRENT_VERIFICATIONS)
+            .map(|_| {
+                let verifier = Arc::clone(&verifier);
+                let token = token.clone();
+                tokio::spawn(async move { verifier.verify(&token).await })
+            })
+            .collect();
+        let all = async {
+            for task in tasks {
+                task.await.expect("task").expect("stale key verifies");
+            }
+        };
+        tokio::time::timeout(NO_WAIT, all)
+            .await
+            .expect("no verification waits on the hung JWKS fetch");
+        wait_until(|| server.jwks_request_count() == 2).await;
+        assert_eq!(server.jwks_request_count(), 2, "one refresh attempt");
+
+        let started = std::time::Instant::now();
+        assert!(matches!(
+            verifier.verify(&unknown).await,
+            Err(VerificationError::UnknownKeyId)
+        ));
+        assert!(started.elapsed() < NO_WAIT, "unknown kid fails fast");
+
+        wait_until(|| !verifier.inner.keys.is_refreshing()).await;
+        assert!(matches!(
+            verifier.verify(&unknown).await,
+            Err(VerificationError::UnknownKeyId)
+        ));
+        verifier
+            .verify(&token)
+            .await
+            .expect("still stale and usable");
+        assert_eq!(server.jwks_request_count(), 2, "cooldown blocks refetching");
+
+        drop(server);
+        clock.advance(STALE_FOR);
+        for _ in 0..3 {
+            let error = verifier
+                .verify(&token)
+                .await
+                .map(|_| ())
+                .expect_err("keys expired");
+            assert!(error.is_unavailable(), "{error:?}");
+            assert!(!error.is_misconfigured(), "{error:?}");
+        }
+        assert!(matches!(
+            verifier.verify(&token).await,
+            Err(VerificationError::JwksUnavailable)
+        ));
+    }
+
+    #[test]
+    fn cache_results_are_counted_with_static_labels() {
+        use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        metrics::with_local_recorder(&recorder, || {
+            keys::record(keys::KeyCacheResult::Stale);
+            keys::record(keys::KeyCacheResult::Failed);
+            keys::record(keys::KeyCacheResult::Failed);
+        });
+        let mut counts = snapshotter
+            .snapshot()
+            .into_vec()
+            .into_iter()
+            .map(|(key, _, _, value)| {
+                let labels = key
+                    .key()
+                    .labels()
+                    .map(|label| format!("{}={}", label.key(), label.value()))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let count = match value {
+                    DebugValue::Counter(count) => count,
+                    _ => 0,
+                };
+                (format!("{}{{{labels}}}", key.key().name()), count)
+            })
+            .collect::<Vec<_>>();
+        counts.sort();
+        assert_eq!(
+            counts,
+            [
+                (
+                    "auth_key_cache_requests_total{source=oidc,result=failed}".to_owned(),
+                    2
+                ),
+                (
+                    "auth_key_cache_requests_total{source=oidc,result=stale}".to_owned(),
+                    1
+                ),
+            ]
+        );
+    }
+}
+
+mod discovery_retry {
+    use std::time::{Duration, Instant};
+
+    use axum::{
+        Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get,
+    };
+    use serde_json::json;
+
+    use super::*;
+
+    const IDP_COMES_UP_AFTER: Duration = Duration::from_secs(3);
+
+    async fn late_issuer(comes_up_after: Duration) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let issuer = format!("http://{}", listener.local_addr().expect("address"));
+        let state = (Instant::now(), issuer.clone());
+        let router = Router::new()
+            .route(
+                "/.well-known/openid-configuration",
+                get(
+                    move |State((started, issuer)): State<(Instant, String)>| async move {
+                        if started.elapsed() < comes_up_after {
+                            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                        }
+                        Json(json!({"issuer": issuer, "jwks_uri": format!("{issuer}/certs")}))
+                            .into_response()
+                    },
+                ),
+            )
+            .with_state(state);
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        issuer
+    }
+
+    #[tokio::test]
+    async fn discovery_waits_for_an_issuer_that_comes_up_late() {
+        let issuer = late_issuer(IDP_COMES_UP_AFTER).await;
+        let started = Instant::now();
+        let verifier = OidcVerifier::discover(OidcConfig::new(&issuer, "api").expect("config"))
+            .await
+            .expect("discovery succeeds once the issuer is up");
+        assert!(started.elapsed() >= IDP_COMES_UP_AFTER);
+        assert_eq!(verifier.issuer(), issuer);
+    }
+
+    #[tokio::test]
+    async fn discovery_fails_clearly_after_the_startup_budget() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
+        let issuer = format!("http://{}", listener.local_addr().expect("address"));
+        drop(listener);
+        let budget = Duration::from_secs(1);
+        let config = OidcConfig::new(&issuer, "api")
+            .and_then(|config| config.with_startup_budget(budget))
+            .expect("config");
+        let started = Instant::now();
+        let error = OidcVerifier::discover(config)
+            .await
+            .map(|_| ())
+            .expect_err("issuer never comes up");
+        assert!(started.elapsed() >= budget);
+        assert!(
+            matches!(&error, VerificationError::DiscoveryBudgetExhausted(source) if matches!(**source, VerificationError::DiscoveryRequest(_))),
+            "{error:?}"
+        );
+        assert_eq!(
+            error.to_string(),
+            "OIDC discovery did not succeed within the startup budget"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_static_jwks_uri_skips_discovery() {
+        let config = OidcConfig::new("http://127.0.0.1:9/realms/test", "api")
+            .and_then(|config| config.with_jwks_uri("http://127.0.0.1:9/realms/test/certs"))
+            .expect("config");
+        let verifier = tokio::time::timeout(Duration::from_secs(1), OidcVerifier::discover(config))
+            .await
+            .expect("no discovery request")
+            .expect("verifier");
+        assert_eq!(verifier.issuer(), "http://127.0.0.1:9/realms/test");
+    }
+
+    #[tokio::test]
+    async fn issuer_mismatch_is_not_retried() {
+        let issuer = late_issuer(Duration::ZERO).await;
+        let config = OidcConfig::new(format!("{issuer}/"), "api").expect("config");
+        let started = Instant::now();
+        let error = OidcVerifier::discover(config)
+            .await
+            .map(|_| ())
+            .expect_err("mismatch");
+        assert!(matches!(error, VerificationError::DiscoveryIssuerMismatch));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
 }

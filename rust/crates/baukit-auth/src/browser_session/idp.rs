@@ -10,6 +10,7 @@ use serde::Deserialize;
 use url::{Url, form_urlencoded};
 use zeroize::Zeroizing;
 
+use crate::startup::{RetryFailure, retry_within};
 use crate::{OidcConfig, OidcVerifier, VerificationError};
 
 use super::config::{BrowserSessionConfig, BrowserSessionConfigError};
@@ -145,6 +146,26 @@ pub enum IdpDiscoveryError {
     /// The discovery document names another issuer.
     #[error("OIDC discovery document names another issuer")]
     IssuerMismatch,
+    /// Discovery kept failing with transient errors until the startup budget ran out.
+    #[error("OIDC discovery did not succeed within the startup budget")]
+    BudgetExhausted(#[source] Box<IdpDiscoveryError>),
+}
+
+impl IdpDiscoveryError {
+    fn is_transient(&self) -> bool {
+        matches!(self, Self::Request(error) if error.is_retryable())
+    }
+}
+
+async fn fetch_discovery(
+    client: &GuardedClient,
+    discovery_url: &Url,
+) -> Result<DiscoveryDocument, IdpDiscoveryError> {
+    let response = client
+        .execute(EgressRequest::get(discovery_url.clone()).with_headers(json_accept()))
+        .await
+        .map_err(IdpDiscoveryError::Request)?;
+    serde_json::from_slice(response.body()).map_err(|_| IdpDiscoveryError::InvalidDocument)
 }
 
 impl OidcTokenClient {
@@ -159,12 +180,16 @@ impl OidcTokenClient {
             "{}/.well-known/openid-configuration",
             idp_base.path().trim_end_matches('/')
         ));
-        let response = client
-            .execute(EgressRequest::get(discovery_url).with_headers(json_accept()))
-            .await
-            .map_err(IdpDiscoveryError::Request)?;
-        let document: DiscoveryDocument = serde_json::from_slice(response.body())
-            .map_err(|_| IdpDiscoveryError::InvalidDocument)?;
+        let document = retry_within(
+            config.startup_budget,
+            IdpDiscoveryError::is_transient,
+            || fetch_discovery(&client, &discovery_url),
+        )
+        .await
+        .map_err(|failure| match failure {
+            RetryFailure::Permanent(error) => error,
+            RetryFailure::Exhausted(error) => IdpDiscoveryError::BudgetExhausted(Box::new(error)),
+        })?;
         if document.issuer != config.issuer_text {
             return Err(IdpDiscoveryError::IssuerMismatch);
         }
