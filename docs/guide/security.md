@@ -187,10 +187,12 @@ mean none exists.
 | SuiteLink, SuiteInbox | no `_current` config, only the fixed design |
 
 Each model checks small constants, such as three tabs or two replicas. A model is an abstraction,
-and it can drift from the code it describes. Two known residuals are reproduced but not run in
-CI: `BffSessionFamily/residual/LostResponse.cfg`, where a response lost after commit still logs
-the browser out, and `MembershipCache/residual/NaiveEviction.cfg`. See
-[`models/README.md`](../../models/README.md).
+and it can drift from the code it describes. The `residual/` configs, which CI does not run, are
+an example. `BffSessionFamily/residual/LostResponse.cfg` reproduces a refresh response lost after
+commit. The model predates the fix in `baukit-auth`, which re-issues the unused session head when
+the browser returns within 5 minutes (`LOST_RESPONSE_CAP` in `browser_session/service.rs`), so
+only a browser that stays away longer is logged out. `MembershipCache/residual/NaiveEviction.cfg`
+is the other one. See [`models/README.md`](../../models/README.md).
 
 ### Kani harnesses
 
