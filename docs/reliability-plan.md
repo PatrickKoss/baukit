@@ -553,7 +553,7 @@ Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/chec
 | Agent | Tasks | Status |
 |---|---|---|
 | rel-egress | CB1, CB2, IN8 | merged, verified (two rounds) |
-| rel-jobs2 | WK3, WK5, WK6, WK8 (crate part), WK9 | review round 2 (admin token, threat model, 0006 fixtures) |
+| rel-jobs2 | WK3, WK5, WK6, WK8 (crate part), WK9 | done after two rounds, waiting for Docker run |
 | rel-ops | IN5 (crate part) | merged, verified (two rounds; Docker tests pending) |
 | rel-faults | FX1 | done, waiting for Docker run |
 | rel-suite | CB4, CB5, ID1 (TicketVerifier), ID3, ID4 | running |
@@ -671,3 +671,5 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
 - rel-jobs2 round 1 review: the requeue admin route needs a bearer token and a threat-model entry, and
   the 0006 job-schema fixture copies are missing in erasure, data-subject and suite. Templates lack 0005
   and 0006, which is wave 3.
+- rel-jobs2 round 2: the requeue route requires a bearer token (`Secret<String>`, constant-time compare, 401 envelope), the threat model gains the operator-to-ops-port boundary (J-01 to J-05), and the 0006 fixture lines are in erasure, data-subject and suite. It stays unmerged until its Postgres tests run, because the claim query changed.
+- Wave 3 started with the client templates and the platform agent. The backend template agent waits for the suite and adopter APIs.
