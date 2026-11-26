@@ -97,7 +97,7 @@ fn workspace_manifests(
     workspace: &Path,
     directories: &[PathBuf],
 ) -> Result<Vec<PathBuf>> {
-    let members = member_globs(&root.join(workspace).join(PNPM_MARKERS[0]))?;
+    let members = Members::read(&root.join(workspace).join(PNPM_MARKERS[0]))?;
     let mut manifests = vec![workspace.join("package.json")];
     for directory in directories {
         let Ok(relative) = directory.strip_prefix(workspace) else {
@@ -115,20 +115,39 @@ fn workspace_manifests(
     Ok(manifests)
 }
 
-fn member_globs(workspace_file: &Path) -> Result<GlobSet> {
-    let mut globs = GlobSetBuilder::new();
-    if !workspace_file.is_file() {
-        return Ok(globs.build()?);
+/// The `packages:` globs of a `pnpm-workspace.yaml`; a `!` glob removes members.
+struct Members {
+    included: GlobSet,
+    excluded: GlobSet,
+}
+
+impl Members {
+    fn read(workspace_file: &Path) -> Result<Self> {
+        let mut included = GlobSetBuilder::new();
+        let mut excluded = GlobSetBuilder::new();
+        if workspace_file.is_file() {
+            let source = fs::read_to_string(workspace_file)
+                .with_context(|| format!("could not read {}", workspace_file.display()))?;
+            let workspace: WorkspaceFile = serde_yaml_ng::from_str(&source)
+                .with_context(|| format!("could not parse {}", workspace_file.display()))?;
+            for pattern in &workspace.packages {
+                let (set, pattern) = match pattern.strip_prefix('!') {
+                    Some(negated) => (&mut excluded, negated),
+                    None => (&mut included, pattern.as_str()),
+                };
+                let pattern = pattern.trim_start_matches("./").trim_end_matches('/');
+                set.add(GlobBuilder::new(pattern).literal_separator(true).build()?);
+            }
+        }
+        Ok(Self {
+            included: included.build()?,
+            excluded: excluded.build()?,
+        })
     }
-    let source = fs::read_to_string(workspace_file)
-        .with_context(|| format!("could not read {}", workspace_file.display()))?;
-    let workspace: WorkspaceFile = serde_yaml_ng::from_str(&source)
-        .with_context(|| format!("could not parse {}", workspace_file.display()))?;
-    for pattern in workspace.packages.iter().filter(|p| !p.starts_with('!')) {
-        let pattern = pattern.trim_start_matches("./").trim_end_matches('/');
-        globs.add(GlobBuilder::new(pattern).literal_separator(true).build()?);
+
+    fn is_match(&self, relative: &Path) -> bool {
+        self.included.is_match(relative) && !self.excluded.is_match(relative)
     }
-    Ok(globs.build()?)
 }
 
 fn package_graph(manifests: &[&str]) -> Result<PackageGraph> {
@@ -397,6 +416,36 @@ mod tests {
                 "minimumReleaseAgeExclude:",
                 "  - '@baukit/csp@0.30.3'",
                 "  - '@baukit/eslint-config@0.30.3'",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn negated_globs_drop_members() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        write(
+            root.path(),
+            "pnpm-workspace.yaml",
+            "packages:\n  - packages/*\n  - '!packages/legacy'\n",
+        )?;
+        write(root.path(), "package.json", "{}")?;
+        write(
+            root.path(),
+            "packages/theme/package.json",
+            r#"{"dependencies":{"@baukit/csp":"0.30.3"}}"#,
+        )?;
+        write(
+            root.path(),
+            "packages/legacy/package.json",
+            r#"{"dependencies":{"@baukit/csp":"0.30.2"}}"#,
+        )?;
+        assert_eq!(
+            release_age_excludes(root.path())?,
+            [
+                "# pnpm-workspace.yaml, until @baukit/*@0.30.3 is a day old",
+                "minimumReleaseAgeExclude:",
+                "  - '@baukit/csp@0.30.3'",
             ]
         );
         Ok(())
