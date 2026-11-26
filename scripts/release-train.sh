@@ -106,9 +106,11 @@ TRAIN_VERSION="$next" perl -0pi -e \
   's{^(baukit-[a-z-]+ = \{ version = ")=[^"]+(".*)$}{$1."=".$ENV{TRAIN_VERSION}.$2}egm' \
   rust/Cargo.toml
 cargo update --manifest-path rust/Cargo.toml --workspace
-if [[ -f rust/fuzz/Cargo.toml ]]; then
-  cargo update --manifest-path rust/fuzz/Cargo.toml --workspace
-fi
+for manifest in rust/fuzz/Cargo.toml rust/verus/equivalence/Cargo.toml; do
+  if [[ -f "$manifest" ]]; then
+    cargo update --manifest-path "$manifest" --workspace
+  fi
+done
 
 TRAIN_VERSION="$next" perl -0pi -e \
   's{(\[package\]\nname = "baukit-cli"\nversion = ")[^"]+(")}{$1$ENV{TRAIN_VERSION}$2}' \

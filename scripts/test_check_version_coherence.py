@@ -171,5 +171,54 @@ class ChartTest(unittest.TestCase):
         self.assertEqual(problems, [])
 
 
+class LockfileTest(unittest.TestCase):
+    def repo(self, lockfiles: dict[str, str]) -> Path:
+        root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        crate = root / "rust/crates/baukit-core/Cargo.toml"
+        crate.parent.mkdir(parents=True)
+        crate.write_text('[package]\nname = "baukit-core"\n')
+        for relative, body in lockfiles.items():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body)
+        return root
+
+    @staticmethod
+    def lock(version: str, source: str = "") -> str:
+        source_line = f'source = "{source}"\n' if source else ""
+        return f'[[package]]\nname = "baukit-core"\nversion = "{version}"\n{source_line}'
+
+    def test_local_crates_on_the_train_pass(self) -> None:
+        root = self.repo({"rust/Cargo.lock": self.lock("1.2.3")})
+        self.assertEqual(check.lockfile_problems(root, "1.2.3"), (1, []))
+
+    def test_a_stale_local_crate_is_reported(self) -> None:
+        root = self.repo(
+            {"rust/Cargo.lock": self.lock("1.2.3"), "rust/verus/Cargo.lock": self.lock("1.2.2")}
+        )
+        _, problems = check.lockfile_problems(root, "1.2.3")
+        self.assertEqual(
+            problems, ["Rust is 1.2.3, but rust/verus/Cargo.lock pins baukit-core 1.2.2"]
+        )
+
+    def test_registry_crates_harness_crates_and_skipped_directories_are_ignored(self) -> None:
+        root = self.repo(
+            {
+                "rust/fuzz/Cargo.lock": '[[package]]\nname = "baukit-fuzz"\nversion = "0.0.0"\n',
+                "examples/app/Cargo.lock": self.lock(
+                    "1.0.0", "registry+https://github.com/rust-lang/crates.io-index"
+                ),
+                "rust/target/debug/Cargo.lock": self.lock("1.0.0"),
+                "templates/backend/Cargo.lock": self.lock("1.0.0"),
+            }
+        )
+        self.assertEqual(check.lockfile_problems(root, "1.2.3"), (2, []))
+
+    def test_the_repository_lockfiles_pass(self) -> None:
+        version = check.check_rust_workspace()
+        _, problems = check.lockfile_problems(check.ROOT, version)
+        self.assertEqual(problems, [])
+
+
 if __name__ == "__main__":
     unittest.main()
