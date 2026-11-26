@@ -41,6 +41,7 @@ fn test_link() -> SuiteLink {
             ciphertext: vec![1],
             nonce: vec![2],
             key_version: 1,
+            record_id: None,
         },
         sends: Vec::new(),
         receives: vec!["beta.activity.completed".into()],

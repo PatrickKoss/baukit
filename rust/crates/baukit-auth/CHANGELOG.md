@@ -4,6 +4,7 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- Breaking (schema): browser sessions seal their tokens as one credential-vault v2 record and store `record_id`. Apply `migrations/0003_baukit_auth_browser_session_record_ids.sql` (`POSTGRES_BROWSER_SESSION_RECORD_IDS_MIGRATION_SQL`) before deploying. Rows without a record id still open through v1. See docs/migrations/boundary-hardening.md.
 - Access tokens keep audience as the trust boundary (RFC 9068). Without `with_allowed_clients`, any string `azp` passes, as before; multi-audience tokens still need one. Generated products set that list to their own client IDs in `config/local.toml`.
 - Breaking: an access token that carries `nonce` fails with the new `VerificationError::WrongTokenType`. ID tokens still verify through `verify_id_token`.
 - `OidcConfig::requiring_access_token_type()` makes the verifier accept only `typ: at+jwt` on the access path.

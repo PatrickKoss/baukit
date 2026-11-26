@@ -17,6 +17,8 @@ pub(crate) struct SessionRow {
     pub(crate) family_id: Uuid,
     pub(crate) subject: String,
     pub(crate) key_version: i32,
+    /// Vault v2 record id; `None` for rows sealed field by field before it existed.
+    pub(crate) record_id: Option<Uuid>,
     pub(crate) refresh_token: Vec<u8>,
     pub(crate) id_token: Option<Vec<u8>>,
     pub(crate) created_at: Timestamp,
@@ -39,6 +41,7 @@ impl fmt::Debug for SessionRow {
             .field("family_id", &self.family_id)
             .field("subject", &self.subject)
             .field("key_version", &self.key_version)
+            .field("record_id", &self.record_id)
             .field("refresh_token", &"[REDACTED]")
             .field("id_token", &self.id_token.as_ref().map(|_| "[REDACTED]"))
             .field("created_at", &self.created_at)
@@ -106,74 +109,61 @@ struct PostgresSessionTransaction {
 
 macro_rules! columns {
     () => {
-        "id, secret_hash, family_id, subject, key_version, refresh_token, id_token,
+        "id, secret_hash, family_id, subject, key_version, record_id, refresh_token, id_token,
     created_at, last_used_at, idle_expires_at, absolute_expires_at, revoked_at, rotated_to,
     grace_access_token, grace_expires_at, grace_until"
     };
 }
 
-type RowTuple = (
-    Uuid,
-    Vec<u8>,
-    Uuid,
-    String,
-    i32,
-    Vec<u8>,
-    Option<Vec<u8>>,
-    SqlTimestamp,
-    SqlTimestamp,
-    SqlTimestamp,
-    SqlTimestamp,
-    Option<SqlTimestamp>,
-    Option<Uuid>,
-    Option<Vec<u8>>,
-    Option<SqlTimestamp>,
-    Option<SqlTimestamp>,
-);
+#[derive(sqlx::FromRow)]
+struct StoredRow {
+    id: Uuid,
+    secret_hash: Vec<u8>,
+    family_id: Uuid,
+    subject: String,
+    key_version: i32,
+    record_id: Option<Uuid>,
+    refresh_token: Vec<u8>,
+    id_token: Option<Vec<u8>>,
+    created_at: SqlTimestamp,
+    last_used_at: SqlTimestamp,
+    idle_expires_at: SqlTimestamp,
+    absolute_expires_at: SqlTimestamp,
+    revoked_at: Option<SqlTimestamp>,
+    rotated_to: Option<Uuid>,
+    grace_access_token: Option<Vec<u8>>,
+    grace_expires_at: Option<SqlTimestamp>,
+    grace_until: Option<SqlTimestamp>,
+}
 
-fn from_tuple(row: RowTuple) -> SessionRow {
-    let (
-        id,
-        secret_hash,
-        family_id,
-        subject,
-        key_version,
-        refresh_token,
-        id_token,
-        created_at,
-        last_used_at,
-        idle_expires_at,
-        absolute_expires_at,
-        revoked_at,
-        rotated_to,
-        grace_access_token,
-        grace_expires_at,
-        grace_until,
-    ) = row;
-    SessionRow {
-        id,
-        secret_hash,
-        family_id,
-        subject,
-        key_version,
-        refresh_token,
-        id_token,
-        created_at: created_at.to_jiff(),
-        last_used_at: last_used_at.to_jiff(),
-        idle_expires_at: idle_expires_at.to_jiff(),
-        absolute_expires_at: absolute_expires_at.to_jiff(),
-        revoked_at: revoked_at.map(SqlTimestamp::to_jiff),
-        rotated_to,
-        grace_access_token,
-        grace_expires_at: grace_expires_at.map(SqlTimestamp::to_jiff),
-        grace_until: grace_until.map(SqlTimestamp::to_jiff),
+impl From<StoredRow> for SessionRow {
+    fn from(row: StoredRow) -> Self {
+        Self {
+            id: row.id,
+            secret_hash: row.secret_hash,
+            family_id: row.family_id,
+            subject: row.subject,
+            key_version: row.key_version,
+            record_id: row.record_id,
+            refresh_token: row.refresh_token,
+            id_token: row.id_token,
+            created_at: row.created_at.to_jiff(),
+            last_used_at: row.last_used_at.to_jiff(),
+            idle_expires_at: row.idle_expires_at.to_jiff(),
+            absolute_expires_at: row.absolute_expires_at.to_jiff(),
+            revoked_at: row.revoked_at.map(SqlTimestamp::to_jiff),
+            rotated_to: row.rotated_to,
+            grace_access_token: row.grace_access_token,
+            grace_expires_at: row.grace_expires_at.map(SqlTimestamp::to_jiff),
+            grace_until: row.grace_until.map(SqlTimestamp::to_jiff),
+        }
     }
 }
 
 impl SessionTransaction for PostgresSessionTransaction {
     fn lock<'a>(&'a mut self, id: Uuid) -> StoreFuture<'a, Option<SessionRow>> {
         Box::pin(async move {
-            let row: Option<RowTuple> = sqlx::query_as(concat!(
+            let row: Option<StoredRow> = sqlx::query_as(concat!(
                 "SELECT ",
                 columns!(),
                 " FROM baukit_auth_browser_sessions WHERE id = $1 FOR UPDATE"
@@ -181,7 +171,7 @@ impl SessionTransaction for PostgresSessionTransaction {
             .bind(id)
             .fetch_optional(&mut *self.transaction)
             .await?;
-            Ok(row.map(from_tuple))
+            Ok(row.map(SessionRow::from))
         })
     }
 
@@ -190,13 +180,14 @@ impl SessionTransaction for PostgresSessionTransaction {
             sqlx::query(concat!(
                 "INSERT INTO baukit_auth_browser_sessions (",
                 columns!(),
-                ") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)"
+                ") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)"
             ))
             .bind(row.id)
             .bind(&row.secret_hash)
             .bind(row.family_id)
             .bind(&row.subject)
             .bind(row.key_version)
+            .bind(row.record_id)
             .bind(&row.refresh_token)
             .bind(row.id_token.as_ref())
             .bind(row.created_at.to_sqlx())
@@ -264,7 +255,7 @@ impl SessionTransaction for PostgresSessionTransaction {
 
     fn family_head<'a>(&'a mut self, family_id: Uuid) -> StoreFuture<'a, Option<SessionRow>> {
         Box::pin(async move {
-            let row: Option<RowTuple> = sqlx::query_as(concat!(
+            let row: Option<StoredRow> = sqlx::query_as(concat!(
                 "SELECT ",
                 columns!(),
                 " FROM baukit_auth_browser_sessions
@@ -274,7 +265,7 @@ impl SessionTransaction for PostgresSessionTransaction {
             .bind(family_id)
             .fetch_optional(&mut *self.transaction)
             .await?;
-            Ok(row.map(from_tuple))
+            Ok(row.map(SessionRow::from))
         })
     }
 
@@ -358,6 +349,7 @@ mod tests {
             family_id: Uuid::nil(),
             subject: "user-1".to_owned(),
             key_version: 1,
+            record_id: None,
             refresh_token: b"refresh-bytes-xyz".to_vec(),
             id_token: Some(b"id-bytes-xyz".to_vec()),
             created_at: now,

@@ -211,7 +211,9 @@ a product prefix or labels.
    Keep those product files and their SQLx migration history unchanged. Do not
    copy or run `001` and `002` again, and do not replace or renumber applied files.
    Add `003_suite_lock_order.sql` as a new product migration when upgrading
-   from 0.10.2. Apply it before deploying the new store code. It replaces the
+   from 0.10.2. Apply it before deploying the new store code. Add
+   `005_suite_record_ids.sql` (`SUITE_RECORD_IDS_MIGRATION_SQL`) the same way when
+   upgrading past 0.30.5. It replaces the
    failure trigger with job-only accounting records and preserves the counters
    already recorded. SLS keeps `0056`, `0059` and `0061` and adds this migration
    after them. The crate exposes SQL constants; it does not run migrations.

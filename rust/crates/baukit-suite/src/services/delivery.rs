@@ -204,7 +204,36 @@ impl SuiteDeliveryService {
     ///
     /// `Store` when the cleanup query fails or times out.
     pub async fn cleanup(&self, now: Timestamp) -> Result<SuiteCleanupOutcome, SuiteServiceError> {
-        Ok(self.context.store.cleanup(now).await?)
+        let mut outcome = self.context.store.cleanup(now).await?;
+        let resealed = self
+            .reseal_legacy_secrets(super::SUITE_RESEAL_BATCH)
+            .await?;
+        outcome.resealed_secrets = resealed.resealed_secrets;
+        outcome.unreadable_secrets = resealed.unreadable_secrets;
+        if outcome.unreadable_secrets > 0 {
+            tracing::warn!(
+                unreadable = outcome.unreadable_secrets,
+                "Suite secrets without a record id failed to open and stay v1"
+            );
+        }
+        Ok(outcome)
+    }
+    /// Seals every v1 link secret and open request secret again as a vault v2 record.
+    /// The hourly cleanup runs this; run it by hand until `resealed_secrets` is 0 before
+    /// upgrading to a release without the v1 read path.
+    ///
+    /// # Errors
+    ///
+    /// `Store` when a query fails. A secret that fails to open is counted in
+    /// `unreadable_secrets` and left as it is.
+    pub async fn reseal_legacy_secrets(
+        &self,
+        batch: u32,
+    ) -> Result<SuiteCleanupOutcome, SuiteServiceError> {
+        Ok(
+            reseal::reseal_legacy_secrets(self.context.store.as_ref(), &self.context.cipher, batch)
+                .await?,
+        )
     }
 }
 fn peer_action(response: &Result<SuitePeerResponse, SuitePeerError>) -> DeliveryAction {

@@ -1,6 +1,9 @@
 use crate::domain::*;
 use crate::ports::*;
-pub use crate::{SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL};
+pub use crate::{
+    SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_MIGRATION_SQL, SUITE_RECORD_IDS_MIGRATION_SQL,
+    SUITE_RUNTIME_MIGRATION_SQL,
+};
 use async_trait::async_trait;
 use jiff::{SignedDuration, Timestamp};
 use jiff_sqlx::{Timestamp as SqlTimestamp, ToSqlx};
@@ -9,10 +12,9 @@ use uuid::Uuid;
 
 mod cleanup;
 mod erasure;
-use cleanup::{
-    delete_expired_links, delete_expired_requests, delete_terminal_jobs, lock_cleanup_owners,
-};
+use cleanup::cleanup_in_transaction;
 mod outbox;
+mod reseal;
 pub use erasure::{PostgresSuiteErasure, SuiteErasureOwnerLookup};
 mod rows;
 pub use outbox::PostgresSuiteEventOutbox;
@@ -161,7 +163,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         lock_owner(tx, r.user_id).await?;
         sqlx::query(
             r#"UPDATE suite_link_requests SET consumed_at=$3, initiator_link_id=NULL,
-            secret_ciphertext=NULL, secret_nonce=NULL, secret_key_version=NULL WHERE user_id=$1
+            secret_ciphertext=NULL, secret_nonce=NULL, secret_key_version=NULL, secret_record_id=NULL WHERE user_id=$1
             AND peer_app=$2
             AND consumed_at IS NULL"#,
         )
@@ -179,11 +181,12 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
             verifier_ciphertext,
             verifier_nonce,
             verifier_key_version,
+            verifier_record_id,
             client_state_nonce,
             return_url,
             expires_at,
             created_at)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)"#,
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)"#,
         )
         .bind(r.id)
         .bind(r.user_id)
@@ -192,6 +195,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .bind(&r.verifier.ciphertext)
         .bind(&r.verifier.nonce)
         .bind(r.verifier.key_version)
+        .bind(r.verifier.record_id)
         .bind(&r.client_state_nonce)
         .bind(&r.return_url)
         .bind(r.expires_at.to_sqlx())
@@ -206,8 +210,8 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         hash: [u8; 32],
     ) -> Result<Option<LinkRequest>, SuiteStoreError> {
         sqlx::query_as::<_, RequestRow>(r#"SELECT id, user_id, peer_app, state_hash, verifier_ciphertext, verifier_nonce,
-            verifier_key_version, client_state_nonce, return_url, link_id, initiator_link_id,
-            secret_ciphertext, secret_nonce, secret_key_version, expires_at, consumed_at, created_at FROM suite_link_requests WHERE state_hash=$1"#)
+            verifier_key_version, verifier_record_id, client_state_nonce, return_url, link_id, initiator_link_id,
+            secret_ciphertext, secret_nonce, secret_key_version, secret_record_id, expires_at, consumed_at, created_at FROM suite_link_requests WHERE state_hash=$1"#)
 .bind(hash.as_slice())
             .fetch_optional(&self.pool)
             .await
@@ -223,8 +227,8 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
     ) -> Result<Option<LinkRequest>, SuiteStoreError> {
         lock_owner(tx, owner).await?;
         sqlx::query_as::<_, RequestRow>(r#"SELECT id, user_id, peer_app, state_hash, verifier_ciphertext, verifier_nonce,
-            verifier_key_version, client_state_nonce, return_url, link_id, initiator_link_id,
-            secret_ciphertext, secret_nonce, secret_key_version, expires_at, consumed_at, created_at FROM suite_link_requests WHERE id=$1 AND user_id=$2 FOR UPDATE"#)
+            verifier_key_version, verifier_record_id, client_state_nonce, return_url, link_id, initiator_link_id,
+            secret_ciphertext, secret_nonce, secret_key_version, secret_record_id, expires_at, consumed_at, created_at FROM suite_link_requests WHERE id=$1 AND user_id=$2 FOR UPDATE"#)
 .bind(id)
 .bind(owner)
         .fetch_optional(&mut *tx)
@@ -240,13 +244,14 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         owner: Uuid,
         exchange: &PreparedExchange,
     ) -> Result<(), SuiteStoreError> {
-        let count = sqlx::query(r#"UPDATE suite_link_requests SET initiator_link_id=$3, secret_ciphertext=$4, secret_nonce=$5, secret_key_version=$6 WHERE id=$1 AND user_id=$2 AND consumed_at IS NULL AND initiator_link_id IS NULL"#)
+        let count = sqlx::query(r#"UPDATE suite_link_requests SET initiator_link_id=$3, secret_ciphertext=$4, secret_nonce=$5, secret_key_version=$6, secret_record_id=$7 WHERE id=$1 AND user_id=$2 AND consumed_at IS NULL AND initiator_link_id IS NULL"#)
 .bind(id)
 .bind(owner)
 .bind(exchange.link_id)
 .bind(&exchange.secret.ciphertext)
 .bind(&exchange.secret.nonce)
 .bind(exchange.secret.key_version)
+.bind(exchange.secret.record_id)
             .execute(&mut *tx).await.map_err(storage)?.rows_affected();
         if count != 1 {
             return Err(SuiteStoreError::CodeInvalid);
@@ -280,7 +285,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         let n = sqlx::query(
             r#"UPDATE suite_link_requests
             SET consumed_at=$3, initiator_link_id=NULL, secret_ciphertext=NULL,
-                secret_nonce=NULL, secret_key_version=NULL
+                secret_nonce=NULL, secret_key_version=NULL, secret_record_id=NULL
             WHERE id=$1
             AND user_id=$2
             AND consumed_at IS NULL
@@ -382,7 +387,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         tx: &mut sqlx::PgConnection,
         hash: [u8; 32],
     ) -> Result<Option<SuiteLink>, SuiteStoreError> {
-        sqlx::query_as::<_, LinkRow>(r#"SELECT l.id, l.user_id, l.peer_app, l.role, l.remote_link_id, l.remote_subject, l.remote_display_name, l.suite_subject, l.status, l.secret_ciphertext, l.secret_nonce, l.secret_key_version, l.sends, l.receives, l.share_xp, l.reward_mode, l.delivery_health, l.consecutive_failures, l.last_delivery_at, l.last_failure_at, l.last_failure_code, l.last_received_at, l.created_at, l.updated_at, l.revoked_at FROM suite_links l JOIN suite_link_codes c ON c.link_id=l.id WHERE c.code_hash=$1"#)
+        sqlx::query_as::<_, LinkRow>(r#"SELECT l.id, l.user_id, l.peer_app, l.role, l.remote_link_id, l.remote_subject, l.remote_display_name, l.suite_subject, l.status, l.secret_ciphertext, l.secret_nonce, l.secret_key_version, l.secret_record_id, l.sends, l.receives, l.share_xp, l.reward_mode, l.delivery_health, l.consecutive_failures, l.last_delivery_at, l.last_failure_at, l.last_failure_code, l.last_received_at, l.created_at, l.updated_at, l.revoked_at FROM suite_links l JOIN suite_link_codes c ON c.link_id=l.id WHERE c.code_hash=$1"#)
 .bind(hash.as_slice())
         .fetch_optional(&mut *tx)
         .await
@@ -444,7 +449,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         account_owner_failures(tx, owner).await?;
         sqlx::query_as::<_, LinkRow>(r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
-            secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
+            secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
             consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE user_id=$1 AND peer_app=$2 AND status<>'revoked' ORDER BY id FOR UPDATE"#)
 .bind(owner)
@@ -472,6 +477,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
             secret_ciphertext,
             secret_nonce,
             secret_key_version,
+            secret_record_id,
             sends,
             receives,
             share_xp,
@@ -479,7 +485,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
             delivery_health,
             created_at,
             updated_at)
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)"#,
+            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)"#,
         )
         .bind(l.id)
         .bind(l.user_id)
@@ -493,6 +499,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         .bind(&l.secret.ciphertext)
         .bind(&l.secret.nonce)
         .bind(l.secret.key_version)
+        .bind(l.secret.record_id)
         .bind(&l.sends)
         .bind(&l.receives)
         .bind(l.share_xp)
@@ -526,7 +533,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
-            secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
+            secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
             consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE id=$1"#,
         )
@@ -557,7 +564,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
-            secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
+            secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
             consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE id=$1 AND user_id=$2"#,
         )
@@ -581,7 +588,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
         }
         sqlx::query_as::<_, LinkRow>(r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
-            secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
+            secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
             consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE user_id=$1 AND status<>'revoked' ORDER BY created_at,id"#)
 .bind(owner)
@@ -609,7 +616,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
             AND status<>'revoked'
             RETURNING id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
-            secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
+            secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
             consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at"#,
         )
@@ -641,7 +648,7 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
             AND status='active'
             RETURNING id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
-            secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
+            secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
             consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at"#)
 .bind(id)
@@ -853,37 +860,27 @@ impl SuiteLinkStore for PostgresSuiteLinkStore {
     }
     async fn cleanup(&self, now: Timestamp) -> Result<SuiteCleanupOutcome, SuiteStoreError> {
         let mut tx = self.begin_transaction().await?;
-        let acquired: bool = sqlx::query_scalar(
-            "SELECT pg_try_advisory_xact_lock(hashtextextended('baukit_suite.cleanup',0))",
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(storage)?;
-        if !acquired {
-            return Ok(SuiteCleanupOutcome::default());
-        }
-        let owners = lock_cleanup_owners(&mut tx, now).await?;
-        let links: Vec<Uuid> = sqlx::query_scalar(
-            "SELECT id FROM suite_links WHERE user_id=ANY($1) ORDER BY id FOR UPDATE",
-        )
-        .bind(&owners)
-        .fetch_all(&mut *tx)
-        .await
-        .map_err(storage)?;
-        for id in &links {
-            account_failures(&mut tx, *id).await?;
-        }
-        let (requests, codes) = delete_expired_requests(&mut tx, now, &owners).await?;
-        let (revoked_links, unused_links) = delete_expired_links(&mut tx, now, &owners).await?;
-        let terminal_jobs = delete_terminal_jobs(&mut tx, now, &links).await?;
+        let outcome = cleanup_in_transaction(&mut tx, now).await?;
         self.commit_transaction(tx).await?;
-        Ok(SuiteCleanupOutcome {
-            requests,
-            codes,
-            revoked_links,
-            unused_links,
-            terminal_jobs,
-        })
+        Ok(outcome)
+    }
+    async fn legacy_secrets_in_transaction(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        kind: LegacySecretKind,
+        after: Uuid,
+        limit: u32,
+    ) -> Result<Vec<LegacySecret>, SuiteStoreError> {
+        reseal::lock_legacy_secrets(tx, kind, after, limit).await
+    }
+    async fn reseal_secret_in_transaction(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        kind: LegacySecretKind,
+        row_id: Uuid,
+        sealed: &EncryptedPayload,
+    ) -> Result<bool, SuiteStoreError> {
+        reseal::store_resealed_secret(tx, kind, row_id, sealed).await
     }
 }
 
@@ -894,7 +891,7 @@ pub(crate) async fn links_for_erasure(
     let rows = sqlx::query_as::<_, LinkRow>(
         r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
-            secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
+            secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
             consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links
             WHERE user_id=$1 AND (status IN ('active','needs_attention') OR (status='revoked'

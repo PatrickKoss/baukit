@@ -62,6 +62,8 @@ pub struct EncryptedPayload {
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
     pub key_version: i32,
+    /// Vault v2 record id. `None` marks a v1 payload written before record ids existed.
+    pub record_id: Option<Uuid>,
 }
 
 macro_rules! string_enum {

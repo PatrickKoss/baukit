@@ -105,6 +105,40 @@ pub struct SuiteCleanupOutcome {
     pub revoked_links: u64,
     pub unused_links: u64,
     pub terminal_jobs: u64,
+    /// v1 secrets sealed again as vault v2 records.
+    pub resealed_secrets: u64,
+    /// v1 secrets that failed to open and were left as they are.
+    pub unreadable_secrets: u64,
+}
+
+/// Where a sealed secret lives. The row id is also its vault scope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LegacySecretKind {
+    /// `suite_links.secret_*`, field `link_secret`.
+    LinkSecret,
+    /// `suite_link_requests.verifier_*` of an open request, field `pkce_verifier`.
+    RequestVerifier,
+    /// `suite_link_requests.secret_*` of an open request, field `link_secret`.
+    RequestSecret,
+}
+
+impl LegacySecretKind {
+    pub const ALL: [Self; 3] = [Self::LinkSecret, Self::RequestVerifier, Self::RequestSecret];
+
+    #[must_use]
+    pub const fn field(self) -> &'static str {
+        match self {
+            Self::LinkSecret | Self::RequestSecret => "link_secret",
+            Self::RequestVerifier => "pkce_verifier",
+        }
+    }
+}
+
+/// A secret stored without a vault record id.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LegacySecret {
+    pub row_id: Uuid,
+    pub payload: crate::domain::EncryptedPayload,
 }
 
 // One transaction crosses link replacement, inbox, applier and outbox operations.
@@ -288,6 +322,27 @@ pub trait SuiteLinkStore: Send + Sync {
         limit: u32,
     ) -> Result<Vec<SuiteDeliveryRecord>, SuiteStoreError>;
     async fn cleanup(&self, now: Timestamp) -> Result<SuiteCleanupOutcome, SuiteStoreError>;
+    /// Locks up to `limit` secrets of `kind` without a record id and with a row id above `after`,
+    /// in row id order, skipping rows another transaction holds.
+    async fn legacy_secrets_in_transaction(
+        &self,
+        _tx: &mut sqlx::PgConnection,
+        _kind: LegacySecretKind,
+        _after: Uuid,
+        _limit: u32,
+    ) -> Result<Vec<LegacySecret>, SuiteStoreError> {
+        Ok(Vec::new())
+    }
+    /// Replaces a secret that still has no record id. Returns false when the row changed.
+    async fn reseal_secret_in_transaction(
+        &self,
+        _tx: &mut sqlx::PgConnection,
+        _kind: LegacySecretKind,
+        _row_id: Uuid,
+        _sealed: &crate::domain::EncryptedPayload,
+    ) -> Result<bool, SuiteStoreError> {
+        Ok(false)
+    }
 }
 
 #[async_trait]
