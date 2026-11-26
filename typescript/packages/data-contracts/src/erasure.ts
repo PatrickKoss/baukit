@@ -4,8 +4,18 @@ export type ErasureReceipt =
   | { readonly operationId: string | null; readonly status: 'pending' };
 
 /** Dependencies for the product-profile erasure sequence. */
+/** Durable per-subject marker that outlives a crash between server and local erase. */
+export interface ProfileErasureMarkerStore {
+  mark(subject: string): Promise<void>;
+  isMarked(subject: string): Promise<boolean>;
+  clear(subject: string): Promise<void>;
+}
+
 export interface ProductProfileErasureDependencies {
+  /** A failing hook, such as stopping sync or flushing the outbox, aborts the erase. */
   readonly beforeServerErase?: readonly (() => Promise<void>)[];
+  /** Written before the server call and cleared after the local delete. */
+  readonly erasureMarker?: { readonly subject: string; readonly store: ProfileErasureMarkerStore };
   readonly eraseServerProfile: () => Promise<ErasureReceipt>;
   readonly eraseLocalPartition: () => Promise<void>;
   readonly signOut: () => Promise<void>;
@@ -112,12 +122,12 @@ export async function eraseProductProfile(
   dependencies: ProductProfileErasureDependencies,
 ): Promise<ProductProfileErasureResult> {
   const warnings: ProductProfileErasureIssue[] = [];
-  for (const hook of dependencies.beforeServerErase ?? []) {
-    try {
-      await hook();
-    } catch (cause) {
-      warnings.push(issue('before-server', cause));
-    }
+  const marker = dependencies.erasureMarker;
+  try {
+    for (const hook of dependencies.beforeServerErase ?? []) await hook();
+    await marker?.store.mark(marker.subject);
+  } catch (cause) {
+    return { status: 'server-failure', error: issue('before-server', cause), warnings };
   }
 
   let receipt: ErasureReceipt;
@@ -126,6 +136,7 @@ export async function eraseProductProfile(
     validateErasureReceipt(candidate);
     receipt = candidate;
   } catch (cause) {
+    await clearMarker(marker, warnings);
     if (isAmbiguous(cause)) {
       return { status: 'ambiguous', error: issue('server', ambiguousCause(cause)), warnings };
     }
@@ -136,6 +147,7 @@ export async function eraseProductProfile(
   let signOutError: ProductProfileErasureIssue | undefined;
   try {
     await dependencies.eraseLocalPartition();
+    await clearMarker(marker, warnings);
   } catch (cause) {
     localError = issue('local', cause);
   } finally {
@@ -159,4 +171,15 @@ export async function eraseProductProfile(
     return { status: 'signout-failure', receipt, error: signOutError, warnings };
   }
   return { status: receipt.status === 'pending' ? 'pending' : 'erased', receipt, warnings };
+}
+
+async function clearMarker(
+  marker: ProductProfileErasureDependencies['erasureMarker'],
+  warnings: ProductProfileErasureIssue[],
+): Promise<void> {
+  try {
+    await marker?.store.clear(marker.subject);
+  } catch (cause) {
+    warnings.push(issue('local', cause));
+  }
 }

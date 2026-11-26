@@ -83,7 +83,7 @@ values:
 | --- | --- |
 | `erased` | The server returned a completed receipt, and local erasure and sign-out succeeded. The result includes `receipt` and `warnings`. |
 | `pending` | Product erasure is confirmed, and local erasure and sign-out succeeded. Identity deletion is still pending or its completion is unknown after a fence confirmation. The result includes `receipt` and `warnings`. |
-| `server-failure` | `eraseServerProfile` rejected with a failure that was not marked ambiguous. Local erasure and sign-out did not run. |
+| `server-failure` | A `beforeServerErase` hook (stop sync, flush) or the durable erasure marker write failed, so the server call never ran (`error.stage` is `before-server`), or `eraseServerProfile` rejected with a failure that was not marked ambiguous. Local erasure and sign-out did not run. |
 | `ambiguous` | `eraseServerProfile` rejected with `AmbiguousProductProfileErasureError` or an object whose `code` is `product_profile_erasure_ambiguous`. Local erasure and sign-out did not run. |
 | `local-failure` | Server acceptance succeeded but local erasure failed. Sign-out was still attempted. The result includes `signOutError`, which is either a sign-out issue or `null`. |
 | `signout-failure` | Server acceptance and local erasure succeeded, but sign-out failed. |
@@ -507,7 +507,7 @@ with an `ApiError` whose code is `profile_erased`. The response body remains
 available to the handler. Handler failures do not replace the API error.
 
 Authenticated templates call `clearSession({ reason: 'profile_erased' })`.
-The session-expired listener calls `ScopedPersistenceLifecycle.handleProfileErased()`
+The session-expired listener calls `ScopedPersistenceLifecycle.handleProfileErased(subject)`
 to block local access, erase the last selected partition, and remove its registry
 entry. The lifecycle keeps that context after token clearing closes the store.
 Web shows its signed-out page; mobile's auth guard

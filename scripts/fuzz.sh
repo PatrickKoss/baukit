@@ -1,6 +1,8 @@
 #!/bin/sh
 # Usage: sh scripts/fuzz.sh [target|all] [seconds]
 # Runs each cargo-fuzz target in rust/fuzz for a fixed time and fails on any crash.
+# BAUKIT_FUZZ_CORPUS_DIR keeps the inputs a run discovers there (one subdirectory per target)
+# instead of a throwaway directory, so a scheduled run can cache and grow its corpus.
 set -eu
 
 DEFAULT_SECONDS=60
@@ -30,8 +32,12 @@ fi
 
 cargo +nightly fuzz build --target "$host"
 
-scratch=$(mktemp -d)
-trap 'rm -rf "$scratch"' EXIT
+if [ -n "${BAUKIT_FUZZ_CORPUS_DIR:-}" ]; then
+  scratch=$BAUKIT_FUZZ_CORPUS_DIR
+else
+  scratch=$(mktemp -d)
+  trap 'rm -rf "$scratch"' EXIT
+fi
 
 failed=''
 for name in $targets; do

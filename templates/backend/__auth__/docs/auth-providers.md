@@ -33,9 +33,10 @@ redirect. The native adapter needs UserInfo and supports refresh-token rotation.
 The backend discovers JWKS at startup. `auth.jwks_uri` explicitly overrides
 that endpoint for a proxy or test; issuer and audience checks still apply.
 
-Set `auth.authorized_parties` to the OIDC client IDs allowed to create REST
+`config/local.toml` sets `auth.authorized_parties` to the generated OIDC client
+IDs. Set it in every environment to the clients allowed to create REST
 sessions, for example `["{{ context.app_name }}-web", "{{ context.mobile_client_id }}"]`.
-The default is empty for OIDC. A nonempty list calls `OidcConfig::with_allowed_clients`
+Without it, any client whose token carries the backend audience passes. A nonempty list calls `OidcConfig::with_allowed_clients`
 and requires a matching access-token `azp`. This rejects foreign clients even
 when their tokens contain the backend audience. The environment key is
 `{{ context.app_env }}__AUTH__AUTHORIZED_PARTIES`, a JSON array. MCP keeps its

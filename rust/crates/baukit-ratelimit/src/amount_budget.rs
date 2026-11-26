@@ -6,7 +6,8 @@ use std::{
 
 use crate::{AmountBudgetStore, RateLimitFailMode};
 
-const UTC_DAY: Duration = Duration::from_secs(24 * 60 * 60);
+const UTC_DAY_MS: i64 = 24 * 60 * 60 * 1_000;
+const NANOS_PER_MILLI: u128 = 1_000_000;
 const MAX_NAMESPACE_LENGTH: usize = 64;
 
 /// Counter for amount-budget decisions, labeled exactly `namespace` and `outcome`.
@@ -22,6 +23,32 @@ pub struct AmountBudgetDecision {
     pub remaining: u64,
     /// UTC instant when the current window ends.
     pub reset_at: SystemTime,
+    /// Window the decision applied to; `None` when the clock is out of range.
+    ///
+    /// Pass a consume's window to [`AmountBudget::release`] so the units return
+    /// to the window they were taken from.
+    pub window: Option<BudgetWindow>,
+}
+
+/// One fixed window, identified by its epoch-aligned index.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BudgetWindow {
+    index: i64,
+    reset_at: SystemTime,
+}
+
+impl BudgetWindow {
+    /// Returns the number of whole windows between the Unix epoch and this window.
+    #[must_use]
+    pub const fn index(self) -> i64 {
+        self.index
+    }
+
+    /// Returns the UTC instant when this window ends.
+    #[must_use]
+    pub const fn reset_at(self) -> SystemTime {
+        self.reset_at
+    }
 }
 
 /// Port used by callers that consume amount-based budgets.
@@ -33,11 +60,15 @@ pub trait AmountBudget: Send + Sync {
         amount: u64,
     ) -> Pin<Box<dyn Future<Output = AmountBudgetDecision> + Send + 'a>>;
 
-    /// Releases `amount` previously consumed for an opaque subject.
+    /// Releases `amount` previously consumed for an opaque subject in `window`.
+    ///
+    /// `window` is the one returned by the matching [`AmountBudget::consume`].
+    /// Releasing into a window that has already ended changes nothing.
     fn release<'a>(
         &'a self,
         subject: &'a str,
         amount: u64,
+        window: BudgetWindow,
     ) -> Pin<Box<dyn Future<Output = AmountBudgetDecision> + Send + 'a>>;
 }
 
@@ -60,42 +91,48 @@ impl BudgetClock for SystemBudgetClock {
 /// An epoch-aligned fixed-window definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct FixedWindow {
-    duration: Duration,
+    duration_ms: i64,
 }
 
 impl FixedWindow {
     /// Returns a UTC calendar-day window that resets at `00:00:00Z`.
     #[must_use]
     pub const fn utc_day() -> Self {
-        Self { duration: UTC_DAY }
+        Self {
+            duration_ms: UTC_DAY_MS,
+        }
     }
 
     /// Creates a duration window aligned to the Unix epoch.
     ///
     /// # Errors
     ///
-    /// [`FixedWindowError::ZeroDuration`] when `duration` is zero.
+    /// The window works in whole milliseconds; a sub-millisecond remainder is dropped.
+    ///
+    /// # Errors
+    ///
+    /// [`FixedWindowError::TooShort`] below one millisecond and
+    /// [`FixedWindowError::TooLong`] above `i64::MAX` milliseconds.
     pub fn duration(duration: Duration) -> Result<Self, FixedWindowError> {
-        if duration.is_zero() {
-            return Err(FixedWindowError::ZeroDuration);
+        let duration_ms =
+            i64::try_from(duration.as_millis()).map_err(|_| FixedWindowError::TooLong)?;
+        if duration_ms < 1 {
+            return Err(FixedWindowError::TooShort);
         }
-        Ok(Self { duration })
+        Ok(Self { duration_ms })
     }
 
     /// Returns the window length.
     #[must_use]
-    pub const fn length(self) -> Duration {
-        self.duration
+    pub fn length(self) -> Duration {
+        Duration::from_millis(self.duration_ms.unsigned_abs())
     }
 
-    fn at(self, now: SystemTime) -> Option<Window> {
-        let now_nanos = epoch_nanos(now)?;
-        let duration_nanos = i128::try_from(self.duration.as_nanos()).ok()?;
-        let index = now_nanos.div_euclid(duration_nanos);
-        let reset_nanos = index.checked_add(1)?.checked_mul(duration_nanos)?;
-        Some(Window {
+    fn at(self, now: SystemTime) -> Option<BudgetWindow> {
+        let (index, reset_ms) = window_bounds(epoch_millis(now)?, self.duration_ms)?;
+        Some(BudgetWindow {
             index,
-            reset_at: system_time_from_epoch_nanos(reset_nanos)?,
+            reset_at: system_time_from_epoch_millis(reset_ms)?,
         })
     }
 }
@@ -103,9 +140,12 @@ impl FixedWindow {
 /// Invalid fixed-window definition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum FixedWindowError {
-    /// Duration windows must have a positive length.
-    #[error("fixed-window duration must be non-zero")]
-    ZeroDuration,
+    /// Duration windows must last at least one millisecond.
+    #[error("fixed-window duration must be at least one millisecond")]
+    TooShort,
+    /// Duration windows must fit in `i64` milliseconds.
+    #[error("fixed-window duration must be at most i64::MAX milliseconds")]
+    TooLong,
 }
 
 /// Validated options for a fixed-window amount budget.
@@ -253,15 +293,17 @@ where
                     namespace = self.options.namespace(),
                     "amount-budget clock is outside the supported range"
                 );
-                return self.after_error(now);
+                return self.after_error(now, None);
             };
-            let key = format!(
-                "amount-budget:{}:{}:{subject}",
-                self.options.namespace, window.index
-            );
             match self
                 .store
-                .check_and_consume_amount(&key, amount, self.options.limit, now, window.reset_at)
+                .check_and_consume_amount(
+                    &self.key(subject, window),
+                    amount,
+                    self.options.limit,
+                    now,
+                    window.reset_at,
+                )
                 .await
             {
                 Ok(decision) => {
@@ -277,6 +319,7 @@ where
                         allowed: decision.allowed,
                         remaining: decision.remaining,
                         reset_at: window.reset_at,
+                        window: Some(window),
                     }
                 }
                 Err(error) => {
@@ -286,7 +329,7 @@ where
                         error = %error,
                         "amount-budget store decision failed"
                     );
-                    self.after_error(window.reset_at)
+                    self.after_error(window.reset_at, Some(window))
                 }
             }
         })
@@ -296,23 +339,28 @@ where
         &'a self,
         subject: &'a str,
         amount: u64,
+        window: BudgetWindow,
     ) -> Pin<Box<dyn Future<Output = AmountBudgetDecision> + Send + 'a>> {
         Box::pin(async move {
             let now = self.clock.now();
-            let Some(window) = self.options.window.at(now) else {
-                tracing::warn!(
-                    namespace = self.options.namespace(),
-                    "amount-budget clock is outside the supported range"
-                );
-                return self.after_error(now);
-            };
-            let key = format!(
-                "amount-budget:{}:{}:{subject}",
-                self.options.namespace, window.index
-            );
+            if window.reset_at <= now {
+                record(self.options.namespace(), "released");
+                return AmountBudgetDecision {
+                    allowed: true,
+                    remaining: self.options.limit,
+                    reset_at: window.reset_at,
+                    window: Some(window),
+                };
+            }
             match self
                 .store
-                .release_amount(&key, amount, self.options.limit, now, window.reset_at)
+                .release_amount(
+                    &self.key(subject, window),
+                    amount,
+                    self.options.limit,
+                    now,
+                    window.reset_at,
+                )
                 .await
             {
                 Ok(decision) => {
@@ -321,6 +369,7 @@ where
                         allowed: decision.allowed,
                         remaining: decision.remaining,
                         reset_at: window.reset_at,
+                        window: Some(window),
                     }
                 }
                 Err(error) => {
@@ -330,7 +379,7 @@ where
                         error = %error,
                         "amount-budget store release failed"
                     );
-                    self.after_error(window.reset_at)
+                    self.after_error(window.reset_at, Some(window))
                 }
             }
         })
@@ -338,46 +387,55 @@ where
 }
 
 impl<S, C> FixedWindowAmountBudget<S, C> {
-    fn after_error(&self, reset_at: SystemTime) -> AmountBudgetDecision {
-        match self.options.fail_mode {
-            RateLimitFailMode::Open => AmountBudgetDecision {
-                allowed: true,
-                remaining: self.options.limit,
-                reset_at,
-            },
-            RateLimitFailMode::Closed => AmountBudgetDecision {
-                allowed: false,
-                remaining: 0,
-                reset_at,
-            },
+    fn key(&self, subject: &str, window: BudgetWindow) -> String {
+        format!(
+            "amount-budget:{}:{}:{subject}",
+            self.options.namespace, window.index
+        )
+    }
+
+    fn after_error(
+        &self,
+        reset_at: SystemTime,
+        window: Option<BudgetWindow>,
+    ) -> AmountBudgetDecision {
+        let allowed = self.options.fail_mode == RateLimitFailMode::Open;
+        AmountBudgetDecision {
+            allowed,
+            remaining: if allowed { self.options.limit } else { 0 },
+            reset_at,
+            window,
         }
     }
 }
 
-#[derive(Clone, Copy)]
-struct Window {
-    index: i128,
-    reset_at: SystemTime,
+/// Returns the index of the window holding `now_ms` and the epoch millisecond it resets at.
+fn window_bounds(now_ms: i64, duration_ms: i64) -> Option<(i64, i64)> {
+    if duration_ms <= 0 {
+        return None;
+    }
+    let index = now_ms.div_euclid(duration_ms);
+    let start_ms = index.checked_mul(duration_ms)?;
+    let reset_ms = start_ms.checked_add(duration_ms)?;
+    Some((index, reset_ms))
 }
 
-fn epoch_nanos(time: SystemTime) -> Option<i128> {
+/// Milliseconds since the epoch, rounded toward negative infinity.
+fn epoch_millis(time: SystemTime) -> Option<i64> {
     match time.duration_since(UNIX_EPOCH) {
-        Ok(duration) => i128::try_from(duration.as_nanos()).ok(),
-        Err(error) => i128::try_from(error.duration().as_nanos())
+        Ok(after) => i64::try_from(after.as_millis()).ok(),
+        Err(error) => i64::try_from(error.duration().as_nanos().div_ceil(NANOS_PER_MILLI))
             .ok()
-            .and_then(i128::checked_neg),
+            .and_then(i64::checked_neg),
     }
 }
 
-fn system_time_from_epoch_nanos(nanos: i128) -> Option<SystemTime> {
-    let magnitude = nanos.unsigned_abs();
-    let seconds = u64::try_from(magnitude / 1_000_000_000).ok()?;
-    let subsecond_nanos = u32::try_from(magnitude % 1_000_000_000).ok()?;
-    let duration = Duration::new(seconds, subsecond_nanos);
-    if nanos >= 0 {
-        UNIX_EPOCH.checked_add(duration)
+fn system_time_from_epoch_millis(millis: i64) -> Option<SystemTime> {
+    let offset = Duration::from_millis(millis.unsigned_abs());
+    if millis >= 0 {
+        UNIX_EPOCH.checked_add(offset)
     } else {
-        UNIX_EPOCH.checked_sub(duration)
+        UNIX_EPOCH.checked_sub(offset)
     }
 }
 
@@ -442,10 +500,9 @@ mod tests {
         assert_eq!(next.reset_at, UNIX_EPOCH + Duration::from_secs(1_020));
     }
 
-    #[tokio::test]
-    async fn release_uses_only_the_current_window() {
-        let store = InMemoryRateLimitStore::new(2).expect("store");
-        let clock = TestClock::new(UNIX_EPOCH + Duration::from_secs(1_005));
+    fn uploads_budget(
+        clock: TestClock,
+    ) -> FixedWindowAmountBudget<InMemoryRateLimitStore, TestClock> {
         let options = FixedWindowBudgetOptions::new(
             "uploads",
             FixedWindow::duration(Duration::from_secs(10)).expect("window"),
@@ -453,16 +510,92 @@ mod tests {
             RateLimitFailMode::Closed,
         )
         .expect("options");
-        let budget = FixedWindowAmountBudget::with_clock(store, options, clock.clone());
+        FixedWindowAmountBudget::with_clock(
+            InMemoryRateLimitStore::new(8).expect("store"),
+            options,
+            clock,
+        )
+    }
 
-        assert!(budget.consume("subject", 10).await.allowed);
+    #[tokio::test]
+    async fn release_after_the_boundary_does_not_credit_the_new_window() {
+        let clock = TestClock::new(UNIX_EPOCH + Duration::from_secs(1_009));
+        let budget = uploads_budget(clock.clone());
+        let consumed = budget.consume("subject", 4).await;
+        assert!(consumed.allowed);
+        let window = consumed.window.expect("window");
+
         clock.set(UNIX_EPOCH + Duration::from_secs(1_010));
-
-        let released = budget.release("subject", 6).await;
-        assert!(released.allowed);
-        assert_eq!(released.remaining, 10);
-        assert_eq!(released.reset_at, UNIX_EPOCH + Duration::from_secs(1_020));
         assert!(budget.consume("subject", 10).await.allowed);
+        let released = budget.release("subject", 4, window).await;
+        assert!(released.allowed);
+        assert_eq!(released.reset_at, UNIX_EPOCH + Duration::from_secs(1_010));
+
+        assert!(!budget.consume("subject", 1).await.allowed);
+    }
+
+    #[tokio::test]
+    async fn release_within_the_window_returns_units() {
+        let clock = TestClock::new(UNIX_EPOCH + Duration::from_secs(1_005));
+        let budget = uploads_budget(clock);
+        let consumed = budget.consume("subject", 10).await;
+        let released = budget
+            .release("subject", 6, consumed.window.expect("window"))
+            .await;
+        assert!(released.allowed);
+        assert_eq!(released.remaining, 6);
+        assert!(budget.consume("subject", 6).await.allowed);
+    }
+
+    mod properties {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        const WINDOW_SECS: u64 = 10;
+        const LIMIT: u64 = 10;
+
+        proptest! {
+            /// P-02: consumes and releases across window boundaries never admit more
+            /// than the limit within one window. Each release returns a consume of the
+            /// same subject, possibly after the window ended.
+            #[test]
+            fn windows_never_over_admit(
+                ops in prop::collection::vec((0_u64..4, 1_u64..6, any::<bool>()), 1..80),
+            ) {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .expect("runtime");
+                let start = 1_000_u64;
+                let clock = TestClock::new(UNIX_EPOCH + Duration::from_secs(start));
+                let budget = uploads_budget(clock.clone());
+                let mut now = start;
+                let mut held: Vec<(u64, BudgetWindow)> = Vec::new();
+                let mut net: std::collections::BTreeMap<i64, i128> = Default::default();
+                for (step, amount, release) in ops {
+                    now += step;
+                    clock.set(UNIX_EPOCH + Duration::from_secs(now));
+                    if release {
+                        if let Some((amount, window)) = held.pop() {
+                            runtime.block_on(budget.release("subject", amount, window));
+                            if window.reset_at() > UNIX_EPOCH + Duration::from_secs(now) {
+                                *net.entry(window.index()).or_default() -= i128::from(amount);
+                            }
+                        }
+                        continue;
+                    }
+                    let decision = runtime.block_on(budget.consume("subject", amount));
+                    if decision.allowed {
+                        let window = decision.window.expect("window");
+                        held.push((amount, window));
+                        let used = net.entry(window.index()).or_default();
+                        *used += i128::from(amount);
+                        prop_assert!(*used <= i128::from(LIMIT));
+                        prop_assert_eq!(u64::try_from(window.index()).expect("index"), now / WINDOW_SECS);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -473,7 +606,10 @@ mod tests {
         assert_eq!(window.reset_at, midnight);
 
         let next = FixedWindow::utc_day().at(midnight).expect("window");
-        assert_eq!(next.reset_at, midnight + UTC_DAY);
+        assert_eq!(
+            next.reset_at,
+            midnight + Duration::from_millis(UTC_DAY_MS.unsigned_abs())
+        );
     }
 
     #[tokio::test]
@@ -481,6 +617,7 @@ mod tests {
         let now = UNIX_EPOCH + Duration::from_secs(1_005);
         let clock = TestClock::new(now);
         let window = FixedWindow::duration(Duration::from_secs(10)).expect("window");
+        let window_at_1005 = window.at(now).expect("window");
         let open = FixedWindowAmountBudget::with_clock(
             FailingStore,
             FixedWindowBudgetOptions::new("open", window, 10, RateLimitFailMode::Open)
@@ -500,6 +637,7 @@ mod tests {
                 allowed: true,
                 remaining: 10,
                 reset_at: UNIX_EPOCH + Duration::from_secs(1_010),
+                window: Some(window_at_1005),
             }
         );
         assert_eq!(
@@ -508,31 +646,83 @@ mod tests {
                 allowed: false,
                 remaining: 0,
                 reset_at: UNIX_EPOCH + Duration::from_secs(1_010),
+                window: Some(window_at_1005),
             }
         );
         assert_eq!(
-            open.release("subject", 4).await,
+            open.release("subject", 4, window_at_1005).await,
             AmountBudgetDecision {
                 allowed: true,
                 remaining: 10,
                 reset_at: UNIX_EPOCH + Duration::from_secs(1_010),
+                window: Some(window_at_1005),
             }
         );
         assert_eq!(
-            closed.release("subject", 4).await,
+            closed.release("subject", 4, window_at_1005).await,
             AmountBudgetDecision {
                 allowed: false,
                 remaining: 0,
                 reset_at: UNIX_EPOCH + Duration::from_secs(1_010),
+                window: Some(window_at_1005),
             }
         );
+    }
+
+    #[test]
+    fn rejects_sub_millisecond_and_unrepresentable_durations() {
+        assert_eq!(
+            FixedWindow::duration(Duration::from_micros(999)),
+            Err(FixedWindowError::TooShort)
+        );
+        assert_eq!(
+            FixedWindow::duration(Duration::MAX),
+            Err(FixedWindowError::TooLong)
+        );
+        assert!(FixedWindow::duration(Duration::from_millis(1)).is_ok());
+    }
+
+    #[test]
+    fn pre_epoch_instants_fall_in_the_window_before_zero() {
+        let window = FixedWindow::duration(Duration::from_secs(10)).expect("window");
+        let before = UNIX_EPOCH - Duration::from_micros(500);
+        let selected = window.at(before).expect("window");
+        assert_eq!(selected.index(), -1);
+        assert_eq!(selected.reset_at(), UNIX_EPOCH);
+    }
+
+    #[test]
+    fn unrepresentable_window_start_is_rejected() {
+        assert_eq!(window_bounds(i64::MIN, i64::MAX), None);
+        assert_eq!(window_bounds(i64::MIN, 1), Some((i64::MIN, i64::MIN + 1)));
+    }
+
+    mod window_properties {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        proptest! {
+            /// K-12's assertions, sampled over the full `i64` range.
+            #[test]
+            fn window_bounds_contain_now(now in any::<i64>(), duration in 1..=i64::MAX) {
+                if let Some((index, reset)) = window_bounds(now, duration) {
+                    prop_assert!(reset - duration <= now);
+                    prop_assert!(now < reset);
+                    prop_assert_eq!(index.checked_mul(duration), Some(reset - duration));
+                } else {
+                    let start = now.div_euclid(duration).checked_mul(duration);
+                    prop_assert!(start.and_then(|start| start.checked_add(duration)).is_none());
+                }
+            }
+        }
     }
 
     #[test]
     fn rejects_zero_duration_and_unbounded_namespace_values() {
         assert_eq!(
             FixedWindow::duration(Duration::ZERO),
-            Err(FixedWindowError::ZeroDuration)
+            Err(FixedWindowError::TooShort)
         );
         assert_eq!(
             FixedWindowBudgetOptions::new(
@@ -582,5 +772,28 @@ mod tests {
         > {
             Box::pin(async { Err(RateLimitStoreError::unavailable("fixture unavailable")) })
         }
+    }
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    /// K-12: the selected window contains `now`: `reset - duration <= now < reset`,
+    /// and no arithmetic overflows. Proved on the millisecond kernel behind
+    /// `FixedWindow::at`; the `SystemTime` conversion around it is not modelled.
+    /// Bounds: `now` is an `i16` and `duration` is `u8 + 1`, both widened to `i64`.
+    /// Full `i64` and `i32`/`u16 + 1` each exceeded 10 minutes in CBMC. The proptest
+    /// `window_properties::window_bounds_contain_now` samples all of `i64`. No loops.
+    #[kani::proof]
+    fn window_bounds_contain_now() {
+        let now = i64::from(kani::any::<i16>());
+        let duration = i64::from(kani::any::<u8>()) + 1;
+        let Some((index, reset)) = window_bounds(now, duration) else {
+            return;
+        };
+        assert!(reset - duration <= now);
+        assert!(now < reset);
+        assert!(index * duration == reset - duration);
     }
 }

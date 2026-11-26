@@ -69,6 +69,17 @@ can construct `EventContext::detached()` or
 `EventContext::with_postgres(&mut connection)`.
 `PlatformOpenApi` describes the endpoint for inclusion in product OpenAPI docs.
 
+### Organization membership
+
+`HubAccountPlan` caches a member's organization role for
+`ORGANIZATION_CACHE_TTL_SECONDS`. Wrap the product's event handler in
+`MembershipEvictionHandler::new(plan, next)` so `organization.membership_changed`,
+`seat.changed` and `organization.updated` evict the cached role and grant on this
+replica. A hub read that was in flight when the event arrived is discarded, not
+cached. Check roles with `require_role(plan, org, subject, role)`; `Billing` does
+not satisfy `Member`. `StandaloneAccountPlan::new` takes an
+`OrganizationMembership` port. `NoOrganizationMembers` admits nobody.
+
 The PostgreSQL inbox inserts its event receipt and runs the selected handler in
 one transaction. Concurrent copies of an event wait for that transaction, then
 return success without calling the handler again. Handler failure or cancellation rolls

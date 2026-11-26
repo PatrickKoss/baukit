@@ -4,6 +4,17 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
+- Breaking (schema): browser sessions seal their tokens as one credential-vault v2 record and store `record_id`. Apply `migrations/0003_baukit_auth_browser_session_record_ids.sql` (`POSTGRES_BROWSER_SESSION_RECORD_IDS_MIGRATION_SQL`) before deploying. Rows without a record id still open through v1. See docs/migrations/boundary-hardening.md.
+- Access tokens keep audience as the trust boundary (RFC 9068). Without `with_allowed_clients`, any string `azp` passes, as before; multi-audience tokens still need one. Generated products set that list to their own client IDs in `config/local.toml`.
+- Breaking: an access token that carries `nonce` fails with the new `VerificationError::WrongTokenType`. ID tokens still verify through `verify_id_token`.
+- `OidcConfig::requiring_access_token_type()` makes the verifier accept only `typ: at+jwt` on the access path.
+- JWKS refetches share one cooldown across all unknown key IDs (`with_jwks_refresh_cooldown`, default 30 s). A failed refetch serves the previous set for `with_jwks_stale_grace` (default 10 min). Keys that fail to parse are skipped instead of failing the whole set.
+- The BFF session response adds `expiresIn` in seconds. Clients should compute expiry from their own receipt time.
+- BFF refresh finishes and stores the rotated token even when the client drops the request. A lost refresh response no longer revokes the family. The previous cookie re-rotates until the new head is first used, for up to 5 minutes.
+- Signing in again revokes the previous cookie's family. Logging out with an older rotated cookie no longer ends the live family.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

@@ -18,6 +18,9 @@ pub struct SuiteConfig {
     pub peers: BTreeMap<String, PeerUrls>,
     #[serde(deserialize_with = "flexible_bool")]
     pub allow_loopback: bool,
+    /// Accept `<scheme>-dev` native return URLs. Set it only in local and dev environments.
+    #[serde(deserialize_with = "flexible_bool")]
+    pub allow_dev_scheme: bool,
     pub initial_replay_days: u32,
     #[serde(deserialize_with = "flexible_bool")]
     pub share_xp: bool,
@@ -32,6 +35,7 @@ impl Default for SuiteConfig {
             public_web_url: None,
             peers: BTreeMap::new(),
             allow_loopback: false,
+            allow_dev_scheme: false,
             initial_replay_days: SUITE_INITIAL_REPLAY_DAYS,
             share_xp: true,
             identity_domain: None,
@@ -58,6 +62,7 @@ impl SuiteConfig {
                 public_web_url: self.public_web_url.clone(),
                 peers: self.peers.clone(),
                 allow_loopback: self.allow_loopback,
+                allow_dev_scheme: self.allow_dev_scheme,
             },
         )
     }

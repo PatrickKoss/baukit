@@ -16,15 +16,19 @@ mod amount_budget;
 mod axum_layer;
 #[cfg(feature = "browser-session")]
 mod browser_session;
+pub mod kernels;
 mod memory;
 mod options;
+#[cfg(test)]
+mod redis_parity_tests;
+mod redis_scripts;
 mod redis_store;
 mod store;
 
 pub use amount_budget::{
-    AmountBudget, AmountBudgetDecision, BudgetClock, FIXED_WINDOW_AMOUNT_BUDGET_DECISIONS_TOTAL,
-    FixedWindow, FixedWindowAmountBudget, FixedWindowBudgetOptions, FixedWindowBudgetOptionsError,
-    FixedWindowError, SystemBudgetClock,
+    AmountBudget, AmountBudgetDecision, BudgetClock, BudgetWindow,
+    FIXED_WINDOW_AMOUNT_BUDGET_DECISIONS_TOTAL, FixedWindow, FixedWindowAmountBudget,
+    FixedWindowBudgetOptions, FixedWindowBudgetOptionsError, FixedWindowError, SystemBudgetClock,
 };
 pub use axum_layer::{
     HTTP_RATE_LIMIT_DECISIONS_TOTAL, RATE_LIMIT_LIMIT, RATE_LIMIT_REMAINING, RATE_LIMIT_RESET,
@@ -33,6 +37,7 @@ pub use axum_layer::{
 pub use baukit_config::RateLimitFailMode;
 #[cfg(feature = "browser-session")]
 pub use browser_session::StoreBrowserSessionRateLimiter;
+pub use kernels::client_ip::{ip_bucket, select_forwarded_ip};
 pub use memory::{InMemoryRateLimitStore, InMemoryStoreError};
 pub use options::{
     AuthenticatedRouteGroupOptions, AuthenticatedRouteGroupOptionsError, RateLimitOptions,

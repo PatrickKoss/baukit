@@ -4,6 +4,11 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
+- Breaking: `check_auth_negative_suite` fails on operations documented without security unless the case lists them with `.public(method, path, reason)`, sends 11 invalid credentials instead of 5, requires `WWW-Authenticate` on the missing-token 401, and fails a route that also rejects a valid token. See `docs/migrations/security-suites-and-composed-api.md`.
+- Breaking: `check_cross_tenant_denied` probes operations without path parameters for leaks. `.owner(token)` re-reads each resource as its owner before and after the other tenant's request and fails when the body changed. `OperationFixtures::request` takes raw `Authorization` header values.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

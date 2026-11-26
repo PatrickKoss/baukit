@@ -46,6 +46,16 @@ impl ReqwestSuitePeerClient {
             ("x-suite-timestamp", call.timestamp.to_string()),
             ("x-suite-delivery-id", call.delivery_id.to_owned()),
             ("x-suite-source", call.source_app.to_owned()),
+            (
+                crate::domain::SUITE_SIGNATURE_V2_HEADER,
+                crate::domain::sign_suite_v2(
+                    call.secret,
+                    call.timestamp,
+                    call.delivery_id,
+                    call.replay,
+                    call.body,
+                ),
+            ),
         ] {
             headers.insert(
                 HeaderName::from_static(key),

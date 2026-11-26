@@ -8,6 +8,7 @@ import type { IdempotencyKeyStorage, StoredIdempotencyKey } from '@baukit/api-ru
 import { eraseProductProfile } from '@baukit/data-contracts';
 
 import { authClient } from './auth';
+import { profileErasureMarker } from './erasure-marker';
 
 import { PRODUCT_NAME } from './product';
 
@@ -66,12 +67,17 @@ export async function createDeleteProfileClient(subject: string): Promise<Profil
 }
 
 export function deleteProfile(options: {
+  /** Local partition key; set it so a crash after the server erase still wipes local data. */
+  readonly profileId?: string;
   readonly client: ProfileErasureClient;
   readonly eraseLocalPartition: () => Promise<void>;
   readonly onSignedOut: () => void;
 }): ReturnType<typeof eraseProductProfile> {
   let keyCleanupError: ProfileErasureKeyCleanupError | undefined;
   return eraseProductProfile({
+    ...(options.profileId === undefined
+      ? {}
+      : { erasureMarker: { subject: options.profileId, store: profileErasureMarker } }),
     eraseServerProfile: async () => {
       try {
         return await options.client.erase();

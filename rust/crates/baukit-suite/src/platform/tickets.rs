@@ -85,17 +85,51 @@ impl BillingClaim {
             .sold_by
             .as_deref()
             .is_none_or(|product| self.channel.is_store() && !product.is_empty());
-        let manage_url_valid = self.manage_url.as_deref().is_none_or(|value| {
-            self.channel == BillingChannel::Web
-                && Url::parse(value).is_ok_and(|url| {
-                    matches!(url.scheme(), "http" | "https")
-                        && url.host_str().is_some()
-                        && url.username().is_empty()
-                        && url.password().is_none()
-                })
-        });
+        let manage_url_valid = self
+            .manage_url
+            .as_deref()
+            .is_none_or(|value| self.channel == BillingChannel::Web && manage_url_valid(value));
         sold_by_valid && manage_url_valid
     }
+}
+/// The rule `@baukit/suite-client` applies without a URL parser: a lowercase
+/// `http`/`https` scheme, an ASCII host or bracketed IP, an optional port and no
+/// whitespace or backslash.
+fn manage_url_valid(value: &str) -> bool {
+    let Some(rest) = value
+        .strip_prefix("https://")
+        .or_else(|| value.strip_prefix("http://"))
+    else {
+        return false;
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((host, port)) if !host.starts_with('[') || host.ends_with(']') => (host, Some(port)),
+        _ => (authority, None),
+    };
+    let host_valid = match host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        Some(ip) => {
+            !ip.is_empty()
+                && ip
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() || b".:".contains(&b))
+        }
+        None => {
+            !host.is_empty()
+                && host
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b))
+        }
+    };
+    let port_valid = port.is_none_or(|port| {
+        (1..=5).contains(&port.len())
+            && port.bytes().all(|b| b.is_ascii_digit())
+            && port.parse::<u16>().is_ok()
+    });
+    host_valid
+        && port_valid
+        && !value.chars().any(|c| c.is_whitespace() || c == '\\')
+        && Url::parse(value).is_ok_and(|url| url.host_str().is_some())
 }
 fn billing<'de, D: Deserializer<'de>>(d: D) -> Result<Option<BillingClaim>, D::Error> {
     BillingClaim::deserialize(d).map(Some)

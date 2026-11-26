@@ -39,7 +39,39 @@ fn source(
         code.push_str(&symbols);
         code.push('\n');
     }
-    Ok(code.split_whitespace().collect())
+    Ok(unwrap_rate_limited(
+        &code.split_whitespace().collect::<String>(),
+    ))
+}
+
+const RATE_LIMITED_MERGE: &str = ".merge(rate_limited(";
+
+/// Rewrites `.merge(rate_limited(x,limits))` to `.merge(x)` so the merge checks see the router.
+fn unwrap_rate_limited(code: &str) -> String {
+    let mut output = String::with_capacity(code.len());
+    let mut rest = code;
+    while let Some(start) = rest.find(RATE_LIMITED_MERGE) {
+        let (before, call) = rest.split_at(start);
+        output.push_str(before);
+        let arguments = &call[RATE_LIMITED_MERGE.len()..];
+        let binding_end = arguments
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.'))
+            .unwrap_or(arguments.len());
+        match block(arguments, '(', ')').map(str::len) {
+            Some(inner) if binding_end > 0 && arguments[inner + 1..].starts_with(')') => {
+                output.push_str(".merge(");
+                output.push_str(&arguments[..binding_end]);
+                output.push(')');
+                rest = &arguments[inner + 2..];
+            }
+            _ => {
+                output.push_str(RATE_LIMITED_MERGE);
+                rest = arguments;
+            }
+        }
+    }
+    output.push_str(rest);
+    output
 }
 
 fn production_symbols(text: &str) -> String {
@@ -560,5 +592,17 @@ fn validate(config: &McpConfig) { config.validate(); }
         assert!(!wrapper_validates_config(
             &called.replace("config.validate()", "other_config.validate()")
         ));
+    }
+
+    #[test]
+    fn rate_limited_merges_count_as_merges_of_the_wrapped_router() {
+        assert_eq!(
+            unwrap_rate_limited("letapi=api.merge(rate_limited(mcp,limits.as_ref()));x"),
+            "letapi=api.merge(mcp);x"
+        );
+        assert_eq!(
+            unwrap_rate_limited("api.merge(rate_limited("),
+            "api.merge(rate_limited("
+        );
     }
 }

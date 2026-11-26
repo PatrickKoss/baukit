@@ -58,6 +58,12 @@ mod redirect_tests;
 mod router;
 mod service;
 mod store;
+
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzzing;
+#[cfg(test)]
+mod record_tests;
 #[cfg(test)]
 mod tests;
 
@@ -79,3 +85,8 @@ pub use store::{erase_subject_browser_sessions, purge_browser_sessions};
 /// Copy this SQL into a product migration; baukit-auth does not migrate on startup.
 pub const POSTGRES_BROWSER_SESSIONS_MIGRATION_SQL: &str =
     include_str!("../../migrations/0002_baukit_auth_browser_sessions.sql");
+
+/// Adds the vault v2 `record_id` column. Copy it after
+/// [`POSTGRES_BROWSER_SESSIONS_MIGRATION_SQL`].
+pub const POSTGRES_BROWSER_SESSION_RECORD_IDS_MIGRATION_SQL: &str =
+    include_str!("../../migrations/0003_baukit_auth_browser_session_record_ids.sql");

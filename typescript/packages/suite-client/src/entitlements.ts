@@ -95,7 +95,60 @@ function json(value: string): Record<string, unknown> {
     decode(value),
     (byte) => `%${byte.toString(16).padStart(2, '0')}`,
   ).join('');
-  return record(JSON.parse(decodeURIComponent(escaped)) as unknown);
+  const text = decodeURIComponent(escaped);
+  const parsed = record(JSON.parse(text) as unknown);
+  if (!isCanonicalJson(text)) invalid();
+  return parsed;
+}
+interface JsonScope {
+  readonly keys: Set<string> | undefined;
+  expectKey: boolean;
+}
+function stringEnd(text: string, start: number): number {
+  let index = start + 1;
+  while (index < text.length && text[index] !== '"') index += text[index] === '\\' ? 2 : 1;
+  return index;
+}
+function numberEnd(text: string, start: number): number {
+  let index = start;
+  while (index < text.length && /[-+0-9.eE]/u.test(text[index] ?? '')) index += 1;
+  return index;
+}
+function addKey(scope: JsonScope | undefined, key: string): boolean {
+  if (scope?.keys === undefined || !scope.expectKey) return true;
+  scope.expectKey = false;
+  if (scope.keys.has(key)) return false;
+  scope.keys.add(key);
+  return true;
+}
+/** Matches Rust's serde rules on text `JSON.parse` already accepted: object keys are
+ * unique after unescaping and every number is a plain integer, never `1.0` or `1e9`. */
+function isCanonicalJson(text: string): boolean {
+  const scopes: JsonScope[] = [];
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index] ?? '';
+    const scope = scopes.at(-1);
+    if (char === '"') {
+      const end = stringEnd(text, index);
+      if (!addKey(scope, JSON.parse(text.slice(index, end + 1)) as string)) return false;
+      index = end + 1;
+    } else if (/[-0-9]/u.test(char)) {
+      const end = numberEnd(text, index);
+      if (/[.eE]/u.test(text.slice(index, end))) return false;
+      index = end;
+    } else {
+      if (char === '{') scopes.push({ keys: new Set(), expectKey: true });
+      if (char === '[') scopes.push({ keys: undefined, expectKey: false });
+      if (char === '}' || char === ']') scopes.pop();
+      if (char === ',' && scope?.keys !== undefined) scope.expectKey = true;
+      index += 1;
+    }
+  }
+  return true;
+}
+function utf8Length(value: string): number {
+  return encodeURIComponent(value).replace(/%[0-9A-F]{2}/gu, 'x').length;
 }
 const billingChannels: readonly BillingChannel[] = [
   'web',
@@ -108,10 +161,15 @@ const billingChannels: readonly BillingChannel[] = [
 function isBillingChannel(value: unknown): value is BillingChannel {
   return billingChannels.some((channel) => channel === value);
 }
-// Hermes has no complete URL class, so the check stays a pattern.
-const httpUrlPattern = /^https?:\/\/[^\s/?#@]+(?:[/?#]\S*)?$/u;
+// Hermes has no complete URL class, so the check stays a pattern. Rust's
+// `manage_url_valid` applies the same host and port rule.
+const httpUrlPattern =
+  /^https?:\/\/(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::(\d{1,5}))?(?:[/?#][^\s\\]*)?$/u;
+const maxPort = 65_535;
 function httpUrl(value: string): boolean {
-  return httpUrlPattern.test(value);
+  const match = httpUrlPattern.exec(value);
+  const port = match?.[1];
+  return match !== null && (port === undefined || Number(port) <= maxPort);
 }
 function billingClaim(value: unknown): BillingClaim | undefined {
   if (!isRecord(value)) return undefined;
@@ -216,7 +274,7 @@ function headerKid(header: Record<string, unknown>): string {
   if (
     header['alg'] !== 'EdDSA' ||
     !isNonEmptyString(kid) ||
-    kid.length > maxKidLength ||
+    utf8Length(kid) > maxKidLength ||
     ('typ' in header && header['typ'] !== 'JWT') ||
     Object.keys(header).some((key) => !['alg', 'kid', 'typ'].includes(key))
   )

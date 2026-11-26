@@ -1,4 +1,7 @@
-use crate::egress::{bearer, endpoint_client, status, success};
+use crate::egress::{
+    MissingUserDialect, bearer, deletion_outcome, endpoint_client, is_loopback, status, success,
+    user_url,
+};
 use crate::{ErasureFuture, IdentityAccountDeleter, IdentityDeletionError};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
 use baukit_config::Secret;
@@ -51,11 +54,12 @@ impl KeycloakAccountDeleter {
     /// # Errors
     ///
     /// [`IdentityDeletionError::Permanent`] for an unparsable or non-HTTPS base URL (HTTP only
-    /// with `allow_local_http`), a URL with credentials, query or fragment, empty realm or
+    /// with `allow_local_http` on a loopback host), a URL with credentials, query or fragment, empty realm or
     /// client credentials, or when the egress client cannot be built.
     pub fn new(config: KeycloakDeletionConfig) -> Result<Self, IdentityDeletionError> {
         let base = Url::parse(&config.base_url).map_err(|_| IdentityDeletionError::Permanent)?;
-        if !(base.scheme() == "https" || (base.scheme() == "http" && config.allow_local_http))
+        let local_http = base.scheme() == "http" && is_loopback(&base) && config.allow_local_http;
+        if !(base.scheme() == "https" || local_http)
             || base.host_str().is_none()
             || !base.username().is_empty()
             || base.password().is_some()
@@ -129,25 +133,32 @@ impl IdentityAccountDeleter for KeycloakAccountDeleter {
         subject: &'a str,
     ) -> ErasureFuture<'a, Result<(), IdentityDeletionError>> {
         Box::pin(async move {
-            if subject.is_empty() {
-                return Err(IdentityDeletionError::Permanent);
-            }
-            let url = self.url(&["admin", "realms", &self.config.realm, "users", subject])?;
+            let url = user_url(
+                &self.base,
+                &["admin", "realms", &self.config.realm, "users"],
+                subject,
+            )?;
             let request =
                 EgressRequest::new(Method::DELETE, url).with_headers(bearer(&self.token().await?)?);
-            let status = status(&self.client, request).await?;
-            if status.is_success() || status == StatusCode::NOT_FOUND {
-                return Ok(());
-            }
-            if status == StatusCode::UNAUTHORIZED {
+            let response = status(&self.client, request).await?;
+            if response.0 == StatusCode::UNAUTHORIZED {
                 *self.token.lock().await = None;
                 return Err(IdentityDeletionError::Retryable);
             }
-            if status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS {
-                Err(IdentityDeletionError::Retryable)
-            } else {
-                Err(IdentityDeletionError::Permanent)
-            }
+            deletion_outcome(MissingUserDialect::Keycloak, &response)
+        })
+    }
+
+    fn probe(&self) -> ErasureFuture<'_, Result<(), IdentityDeletionError>> {
+        Box::pin(async move {
+            let discovery = self.url(&[
+                "realms",
+                &self.config.realm,
+                ".well-known",
+                "openid-configuration",
+            ])?;
+            success(&self.client, EgressRequest::new(Method::GET, discovery)).await?;
+            self.token().await.map(|_| ())
         })
     }
 }
@@ -167,6 +178,8 @@ mod tests {
         assert!(KeycloakAccountDeleter::new(config.clone()).is_err());
         config.allow_local_http = true;
         assert!(KeycloakAccountDeleter::new(config.clone()).is_ok());
+        config.base_url = "http://keycloak.internal".into();
+        assert!(KeycloakAccountDeleter::new(config.clone()).is_err());
         assert!(!format!("{config:?}").contains("\"secret\""));
         config.base_url = "https://user:pass@example.com".into();
         assert!(KeycloakAccountDeleter::new(config).is_err());

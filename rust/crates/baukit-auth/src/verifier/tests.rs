@@ -1,3 +1,4 @@
+use super::claims::{authentication_time, scope_claim, selected_profile_claims};
 use super::*;
 
 #[test]
@@ -298,16 +299,97 @@ fn profile_claims_copy_only_selected_strings_and_booleans() {
     assert_eq!(profile["email_verified"].as_bool(), Some(true));
 }
 
-#[test]
-fn unknown_key_cache_has_a_hard_entry_bound() {
-    let mut cache = JwksCache::default();
-    for index in 0..=MAX_UNKNOWN_KEYS {
-        cache.remember_unknown_key(&format!("unknown-{index}"));
+mod signed {
+    use aws_lc_rs::{rand::SystemRandom, signature::Ed25519KeyPair, signature::KeyPair as _};
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use serde_json::{Value, json};
+
+    use crate::{OidcConfig, OidcVerifier, SigningAlgorithm, VerificationError};
+
+    const ISSUER: &str = "https://issuer.example";
+    const KID: &str = "ed";
+
+    struct Signer(Ed25519KeyPair);
+
+    impl Signer {
+        fn new() -> Self {
+            let pkcs8 = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).expect("key");
+            Self(Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).expect("pair"))
+        }
+
+        fn verifier(&self, config: OidcConfig) -> OidcVerifier {
+            let x = URL_SAFE_NO_PAD.encode(self.0.public_key().as_ref());
+            let jwks = json!({"keys": [{"kty": "OKP", "crv": "Ed25519", "kid": KID, "x": x}]});
+            let config = config
+                .with_allowed_algorithms([SigningAlgorithm::EdDsa])
+                .expect("algorithms");
+            OidcVerifier::from_jwks_document(config, &jwks.to_string()).expect("verifier")
+        }
+
+        fn token(&self, typ: Option<&str>, claims: &Value) -> String {
+            let mut header = json!({"alg": "EdDSA", "kid": KID});
+            if let Some(typ) = typ {
+                header["typ"] = json!(typ);
+            }
+            let input = format!(
+                "{}.{}",
+                URL_SAFE_NO_PAD.encode(header.to_string()),
+                URL_SAFE_NO_PAD.encode(claims.to_string())
+            );
+            let signature = URL_SAFE_NO_PAD.encode(self.0.sign(input.as_bytes()).as_ref());
+            format!("{input}.{signature}")
+        }
     }
-    assert_eq!(cache.unknown_keys.len(), MAX_UNKNOWN_KEYS);
-    assert!(
-        cache
-            .unknown_keys
-            .contains_key(&unknown_key_hash("unknown-128"))
-    );
+
+    fn claims(audience: &str) -> Value {
+        json!({"sub": "user", "iss": ISSUER, "aud": audience, "exp": 4_102_444_800_u64})
+    }
+
+    #[tokio::test]
+    async fn required_access_token_type_accepts_only_at_jwt() {
+        let signer = Signer::new();
+        let config = OidcConfig::new(ISSUER, "api").expect("config");
+        let strict = signer.verifier(config.clone().requiring_access_token_type());
+        for typ in ["at+jwt", "application/at+jwt", "AT+JWT"] {
+            let token = signer.token(Some(typ), &claims("api"));
+            assert!(strict.verify(&token).await.is_ok(), "{typ}");
+        }
+        for typ in [Some("JWT"), None, Some("application/jwt")] {
+            let token = signer.token(typ, &claims("api"));
+            assert!(matches!(
+                strict.verify(&token).await,
+                Err(VerificationError::WrongTokenType)
+            ));
+        }
+        let lenient = signer.verifier(config);
+        assert!(
+            lenient
+                .verify(&signer.token(Some("JWT"), &claims("api")))
+                .await
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn id_tokens_with_a_nonce_are_rejected_as_access_tokens() {
+        let signer = Signer::new();
+        let config = OidcConfig::new(ISSUER, "web")
+            .expect("config")
+            .with_client_id("web")
+            .expect("client");
+        let verifier = signer.verifier(config);
+        let mut id_token = claims("web");
+        id_token["nonce"] = json!("login-nonce");
+        let token = signer.token(Some("JWT"), &id_token);
+        assert!(matches!(
+            verifier.verify(&token).await,
+            Err(VerificationError::WrongTokenType)
+        ));
+        assert!(
+            verifier
+                .verify_id_token(&token, "login-nonce")
+                .await
+                .is_ok()
+        );
+    }
 }

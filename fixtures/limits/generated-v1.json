@@ -1,0 +1,2141 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        55296
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        56320
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        97,
+        55357
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        56832,
+        55357
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 41,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        34,
+        43,
+        43,
+        160
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 43,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        160,
+        10,
+        65309
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        97,
+        61,
+        8232
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        97,
+        9,
+        160,
+        160,
+        34
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        65312,
+        64,
+        9,
+        13,
+        64
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        12288
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 49,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        34,
+        65291,
+        65312,
+        10
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        32,
+        97,
+        8232
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        32,
+        43,
+        45,
+        10,
+        55357
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        61,
+        13
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        45,
+        44,
+        44,
+        32
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 53,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        10,
+        61,
+        8232,
+        10,
+        65312,
+        32
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        32,
+        65309,
+        65291,
+        56832,
+        65293
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        65312
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        43,
+        10,
+        32,
+        32,
+        43,
+        13
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 49,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        65291,
+        65293,
+        64,
+        44,
+        10
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        56832,
+        10,
+        160
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 33,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        61,
+        32
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        65293
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 41,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        8232,
+        34,
+        32
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        65291,
+        61,
+        9,
+        9
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        44,
+        65291,
+        56832,
+        65309,
+        12288,
+        97
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 51,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        12288,
+        43,
+        65293,
+        44,
+        12288
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        65309
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 49,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        12288,
+        43,
+        65293,
+        12288
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        61,
+        45,
+        32,
+        65309,
+        13
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        97,
+        61,
+        65312,
+        10,
+        32
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 41,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        65312,
+        34,
+        43
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        61,
+        65309,
+        9,
+        32,
+        44
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        61
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        43,
+        65309,
+        61
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        32,
+        65291,
+        65312,
+        8232,
+        55357
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        9,
+        65312
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 43,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        160,
+        9,
+        13,
+        97
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        61
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        65291,
+        64
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 41,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        160,
+        9,
+        9
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        10,
+        8232,
+        32,
+        43,
+        43
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        160,
+        160,
+        45,
+        65312
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        43,
+        65309,
+        64,
+        64,
+        65309
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        9,
+        65312,
+        10,
+        13
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 43,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        12288,
+        13,
+        13
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 41,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        9,
+        65293,
+        61
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 43,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        65291,
+        12288,
+        44
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 41,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        65312,
+        32,
+        10
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        10,
+        65312,
+        65309
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 53,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        8232,
+        64,
+        8232,
+        64,
+        160,
+        10
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        12288,
+        61
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 33,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        160
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        61
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 41,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        65309,
+        65312
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 33,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        9
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        8232,
+        56832,
+        43
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 49,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        9,
+        13,
+        32,
+        8232,
+        13
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        55357,
+        45,
+        43,
+        65293,
+        10,
+        34
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 41,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        61,
+        32,
+        8232,
+        44
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        55357,
+        44,
+        32,
+        12288
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        61,
+        32,
+        55357
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        43,
+        97,
+        64,
+        43,
+        61,
+        12288
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 33,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        61,
+        43
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        65309
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        8232
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 55,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        10,
+        65293,
+        65293,
+        97,
+        65291,
+        97
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        97,
+        65291
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        44,
+        12288,
+        97,
+        65309
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        55357,
+        12288,
+        13
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        61
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        61
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 43,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        10,
+        9,
+        8232
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        65291,
+        44,
+        56832,
+        13,
+        65293
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        55357,
+        45,
+        65309,
+        65309,
+        64
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 57,
+        "trimmedUnicodeScalarCount": 6
+      },
+      "utf16": [
+        65293,
+        34,
+        65291,
+        8232,
+        160,
+        45
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 33,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        34
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        56832
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        45,
+        56832
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 57,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        8232,
+        65309,
+        34,
+        61,
+        65309,
+        13
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        55357
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        34,
+        56832
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        61
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        10,
+        44
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 57,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        10,
+        65309,
+        8232,
+        12288,
+        32,
+        13
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        13,
+        64,
+        12288,
+        34
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        45
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        65291,
+        43,
+        32
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 49,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        32,
+        65293,
+        34,
+        65293,
+        97
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        9,
+        65293
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 55,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        45,
+        65291,
+        44,
+        65309,
+        65293,
+        9
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        65291,
+        160,
+        32,
+        65293
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        56832,
+        45,
+        45,
+        8232
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        65291
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        61,
+        43,
+        43,
+        32
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        12288,
+        10,
+        10,
+        10,
+        56832,
+        10
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        43,
+        8232,
+        45,
+        34,
+        160
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        65291,
+        65291,
+        65309
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        45,
+        97,
+        10
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 61,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        9,
+        65291,
+        13,
+        65312,
+        65293,
+        65309
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 41,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        64,
+        32,
+        160,
+        10
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        44,
+        45,
+        56832
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        44,
+        44,
+        65293,
+        97,
+        65309
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 41,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        160,
+        61,
+        34,
+        44
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 41,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        65293,
+        10,
+        45
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 49,
+        "trimmedUnicodeScalarCount": 6
+      },
+      "utf16": [
+        61,
+        65293,
+        44,
+        8232,
+        32,
+        97
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 33,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        10
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        64,
+        97,
+        34
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 43,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        13,
+        97,
+        10,
+        9
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 59,
+        "trimmedUnicodeScalarCount": 6
+      },
+      "utf16": [
+        65312,
+        65309,
+        9,
+        65293,
+        12288,
+        64
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        12288,
+        43
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 43,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        64,
+        12288,
+        34,
+        64
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        64,
+        8232
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        61
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        65312,
+        160
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        61,
+        65291,
+        55357,
+        44,
+        45
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        8232,
+        160
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 43,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        44,
+        13,
+        13,
+        9
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        9,
+        34
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        56832
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 53,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        10,
+        34,
+        10,
+        8232,
+        10,
+        43
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        10,
+        65291,
+        61,
+        65312,
+        56832
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 43,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        65293,
+        32,
+        61,
+        34
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        32,
+        13,
+        10
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        32,
+        65291,
+        13,
+        8232
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        55357,
+        43,
+        65291,
+        65291,
+        34
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        9,
+        61,
+        9,
+        56832,
+        160
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        13,
+        61,
+        160
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        10,
+        65291
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        55357,
+        45,
+        65291,
+        55357
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        56832,
+        160
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        65312,
+        64
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        65293,
+        61,
+        44
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        34,
+        44
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 33,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        43,
+        32
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        13,
+        56832,
+        43,
+        34,
+        45,
+        9
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 49,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        44,
+        65293,
+        64,
+        34,
+        64,
+        160
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        43,
+        61,
+        32
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 33,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        13
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        45,
+        97,
+        65309,
+        160,
+        56832
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        9,
+        55357,
+        65309,
+        12288
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        97,
+        9
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 33,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": [
+        160
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 43,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        61,
+        160,
+        13,
+        13
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        64
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        65312,
+        44
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        56832,
+        55357
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        44
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 51,
+        "trimmedUnicodeScalarCount": 5
+      },
+      "utf16": [
+        65312,
+        12288,
+        97,
+        32,
+        65312
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        64,
+        8232,
+        10,
+        12288
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 43,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        32,
+        9,
+        55357,
+        56832
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        9,
+        13,
+        10,
+        43,
+        34
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        65309
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        65309
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 49,
+        "trimmedUnicodeScalarCount": 4
+      },
+      "utf16": [
+        8232,
+        65293,
+        97,
+        160,
+        44
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        12288,
+        10,
+        44,
+        56832,
+        8232
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 29,
+        "trimmedUnicodeScalarCount": 0
+      },
+      "utf16": []
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        65293,
+        10,
+        65309,
+        56832
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 47,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        160,
+        32,
+        34,
+        61,
+        12288
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        45,
+        64,
+        10
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        34,
+        61,
+        61,
+        65312,
+        32,
+        55357
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        64
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 35,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        10,
+        64
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 49,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        9,
+        13,
+        9,
+        97,
+        65312
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        9,
+        56832,
+        65312,
+        56832,
+        65291,
+        65293
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 45,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        64,
+        12288,
+        64,
+        8232
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 39,
+        "trimmedUnicodeScalarCount": 3
+      },
+      "utf16": [
+        65312,
+        61,
+        61
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 37,
+        "trimmedUnicodeScalarCount": 2
+      },
+      "utf16": [
+        43,
+        65293
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 57,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        12288,
+        10,
+        65291,
+        9,
+        10,
+        13
+      ]
+    },
+    {
+      "expected": {
+        "compactJsonUtf8Bytes": 31,
+        "trimmedUnicodeScalarCount": 1
+      },
+      "utf16": [
+        64
+      ]
+    },
+    {
+      "expected": {
+        "error": "invalid_unicode"
+      },
+      "utf16": [
+        45,
+        8232,
+        65291,
+        55357,
+        61,
+        34
+      ]
+    }
+  ],
+  "seed": 407716785415
+}

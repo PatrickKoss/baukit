@@ -11,6 +11,7 @@ import {
   type SessionChannel,
   type SessionMessage,
   type SignedOutCause,
+  localExpiry,
 } from './browser-session-support.js';
 import { OidcClient, type OidcClientConfig } from './oidc-client.js';
 import { OidcError } from './oidc-errors.js';
@@ -272,7 +273,12 @@ export class BrowserSessionClient {
     return session.accessToken;
   }
 
-  private accept(session: IssuedSession, options: { readonly newSignIn: boolean }): void {
+  private accept(issued: IssuedSession, options: { readonly newSignIn: boolean }): void {
+    const session: IssuedSession = {
+      accessToken: issued.accessToken,
+      expiresAt: localExpiry(issued, this.environment.now()),
+      subject: issued.subject,
+    };
     this.remember(session);
     this.environment.localStorage.setItem(
       this.generationStorageKey,

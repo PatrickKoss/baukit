@@ -80,12 +80,7 @@ jobs
     .await
     .map_err(store_job_error)?;
 let completed = jobs
-    .complete_in_transaction(
-        &mut transaction,
-        job.id,
-        cancellation.worker_id(),
-        clock.now(),
-    )
+    .complete_lease_in_transaction(&mut transaction, cancellation.lease(), clock.now())
     .await
     .map_err(store_job_error)?;
 if !completed {

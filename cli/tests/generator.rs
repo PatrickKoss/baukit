@@ -4237,7 +4237,7 @@ fn doctor_requires_redis_only_for_redis_backed_features() -> anyhow::Result<()> 
             .to_string()
             .contains("generated file `Makefile` does not use port offset 100")
     );
-    let api = root.join("backend/crates/postgres-limits-bin/src/bin/api.rs");
+    let api = root.join("backend/crates/postgres-limits-bin/src/compose.rs");
     let source = fs::read_to_string(&api)?;
     assert!(source.contains("RedisRateLimitStore::connect_if_enabled"));
     fs::write(
@@ -5231,7 +5231,7 @@ fn remote_mcp_generation_matches_the_golden_tree() -> anyhow::Result<()> {
     let manifest = baukit_cli::read_manifest(&root)?;
     assert!(manifest.capabilities.components.mcp());
     assert!(!root.join("mcp").exists());
-    let api = fs::read_to_string(root.join("backend/crates/snapshot-app-bin/src/bin/api.rs"))?;
+    let api = fs::read_to_string(root.join("backend/crates/snapshot-app-bin/src/compose.rs"))?;
     assert!(api.contains("mcp_policy("));
     assert!(api.contains("let mcp_services = snapshot_app_mcp::services(item_reads);"));
     let tools = fs::read_to_string(root.join("backend/crates/snapshot-app-mcp/src/lib.rs"))?;
@@ -5367,13 +5367,13 @@ fn assert_realm_scopes_and_mcp_client(root: &Path) -> anyhow::Result<()> {
 fn doctor_reports_each_missing_remote_mcp_connection() -> anyhow::Result<()> {
     for (relative, symbol, finding) in [
         (
-            "backend/crates/remote-bin/src/bin/api.rs",
+            "backend/crates/remote-bin/src/compose.rs",
             "baukit_mcp::router(",
             "router mount and auth layer",
         ),
         (
-            "backend/crates/remote-bin/src/bin/api.rs",
-            "api.merge(mcp)",
+            "backend/crates/remote-bin/src/compose.rs",
+            "api.merge(rate_limited(mcp, limits.as_ref()))",
             "router mount and auth layer",
         ),
         (
@@ -5426,7 +5426,7 @@ fn doctor_accepts_product_named_remote_tool_adapters() -> anyhow::Result<()> {
             "pub fn product_services(",
         ),
         (
-            "backend/crates/product-tools-bin/src/bin/api.rs",
+            "backend/crates/product-tools-bin/src/compose.rs",
             "product_tools_mcp::services(",
             "product_tools_mcp::product_services(",
         ),
@@ -5708,9 +5708,11 @@ fn doctor_accepts_remote_mcp_modules_in_declared_crates() -> anyhow::Result<()> 
 
 fn move_config_and_application_into_modules(root: &Path) -> anyhow::Result<()> {
     let bin = root.join("backend/crates/redemut-shaped-bin/src");
-    fs::rename(bin.join("bin/api.rs"), bin.join("application.rs"))?;
+    fs::rename(bin.join("compose.rs"), bin.join("application.rs"))?;
     let library_path = bin.join("lib.rs");
-    let library = fs::read_to_string(&library_path)?;
+    let library = fs::read_to_string(&library_path)?
+        .replace("mod compose;", "mod application;")
+        .replace("pub use compose::", "pub use application::");
     let start = library
         .find("#[derive(Clone, Debug, Default, Deserialize)]")
         .expect("config start");
@@ -5728,7 +5730,7 @@ fn move_config_and_application_into_modules(root: &Path) -> anyhow::Result<()> {
     fs::write(
         library_path,
         format!(
-            "{}mod application;\npub use config::ProductConfig;\n{}",
+            "{}pub use config::ProductConfig;\n{}",
             &library[..start],
             &library[end..]
         ),
@@ -5799,7 +5801,7 @@ fn assert_each_missing_mcp_wiring_is_reported(root: &Path) -> anyhow::Result<()>
         ),
         (
             "backend/crates/redemut-shaped-bin/src/application.rs",
-            "api.merge(mcp)",
+            "api.merge(rate_limited(mcp, limits.as_ref()))",
             "router merge",
         ),
         (
@@ -5850,13 +5852,13 @@ fn doctor_accepts_mcp_composition_and_validation_across_backend_crates() -> anyh
     local.auth = Some(AuthProvider::Oidc);
     local.components.insert(Component::Mcp);
     let root = generate_new(&local)?;
-    let entry = root.join("backend/crates/graph-mcp-bin/src/bin/api.rs");
+    let entry = root.join("backend/crates/graph-mcp-bin/src/compose.rs");
     let source = fs::read_to_string(&entry)?;
-    assert!(source.contains("api.merge(mcp)"));
+    assert!(source.contains("api.merge(rate_limited(mcp, limits.as_ref()))"));
     fs::write(
         &entry,
         source.replace(
-            "api.merge(mcp)",
+            "api.merge(rate_limited(mcp, limits.as_ref()))",
             "graph_mcp_api::router_with_routes(api, mcp)",
         ),
     )?;
@@ -5927,15 +5929,15 @@ fn doctor_requires_conditional_mcp_router_results_to_be_merged() -> anyhow::Resu
     local.auth = Some(AuthProvider::Oidc);
     local.components.insert(Component::Mcp);
     let root = generate_new(&local)?;
-    let entry = root.join("backend/crates/conditional-mcp-bin/src/bin/api.rs");
+    let entry = root.join("backend/crates/conditional-mcp-bin/src/compose.rs");
     let api = fs::read_to_string(&entry)?;
     let start = api
         .find("let mcp = baukit_mcp::router(")
         .expect("MCP binding");
     let end = start
         + api[start..]
-            .find("let mcp = rate_limited(mcp,")
-            .expect("MCP rate limiter");
+            .find("if config.product.mcp.enabled {")
+            .expect("MCP late routes");
     let call = api[start + "let mcp = ".len()..end]
         .trim()
         .strip_suffix(';')
@@ -5960,8 +5962,11 @@ fn doctor_requires_conditional_mcp_router_results_to_be_merged() -> anyhow::Resu
         fs::write(&entry, &wired)?;
         doctor(&root)?;
         for missing in [
-            wired.replace("api.merge(mcp)", "api"),
-            wired.replace("api.merge(mcp)", "api.merge(other)"),
+            wired.replace("api.merge(rate_limited(mcp, limits.as_ref()))", "api"),
+            wired.replace(
+                "api.merge(rate_limited(mcp, limits.as_ref()))",
+                "api.merge(other)",
+            ),
             wired.replace(&expression, &discarded),
             wired.replace(&expression, &discarded.replace("let unused", "let mcp")),
         ] {
@@ -6032,24 +6037,24 @@ fn doctor_follows_a_returned_mcp_router_and_requires_its_result_to_be_merged() -
     local.components.insert(Component::Mcp);
     let root = generate_new(&local)?;
     let bin = root.join("backend/crates/returned-mcp-bin/src");
-    let entry = bin.join("bin/api.rs");
+    let entry = bin.join("compose.rs");
     let api = fs::read_to_string(&entry)?;
     let api = api
         .replace(
             "let mcp = baukit_mcp::router(",
-            "let mcp_app = returned_mcp_bin::compose::mcp::router(",
+            "let mcp_app = returned_mcp_bin::wiring::mcp::router(",
         )
-        .replace("api.merge(mcp)", "api.merge(mcp_app)");
-    assert!(api.contains("let mcp_app = returned_mcp_bin::compose::mcp::router("));
+        .replace("rate_limited(mcp,", "rate_limited(mcp_app,");
+    assert!(api.contains("let mcp_app = returned_mcp_bin::wiring::mcp::router("));
     fs::write(&entry, &api)?;
     let library = bin.join("lib.rs");
     fs::write(
         &library,
-        format!("{}\npub mod compose;\n", fs::read_to_string(&library)?),
+        format!("{}\npub mod wiring;\n", fs::read_to_string(&library)?),
     )?;
-    fs::create_dir(bin.join("compose"))?;
-    fs::write(bin.join("compose/mod.rs"), "pub mod mcp;\n")?;
-    let wrapper = bin.join("compose/mcp.rs");
+    fs::create_dir(bin.join("wiring"))?;
+    fs::write(bin.join("wiring/mod.rs"), "pub mod mcp;\n")?;
+    let wrapper = bin.join("wiring/mcp.rs");
     let compose = r#"
 use std::sync::Arc;
 
@@ -6070,9 +6075,9 @@ pub async fn router(
     fs::write(&wrapper, &compose)?;
     doctor(&root)?;
     for missing in [
-        api.replace("api.merge(mcp_app)", "api"),
+        api.replace("api.merge(rate_limited(mcp_app, limits.as_ref()))", "api"),
         api.replace(
-            "returned_mcp_bin::compose::mcp::router(",
+            "returned_mcp_bin::wiring::mcp::router(",
             "returned_mcp_api::router(",
         ),
     ] {
@@ -6406,8 +6411,8 @@ fn assert_platform_receiver_wiring(
     let docs = fs::read_to_string(root.join("docs/platform.md"))?;
     assert!(docs.contains("never lower it below 30 days"));
     assert_eq!(docs.contains("RetentionJobHandler"), worker);
-    let api = fs::read_to_string(root.join(format!("backend/crates/{name}-bin/src/bin/api.rs")))?;
-    assert!(api.contains(".merge(platform.router)"));
+    let api = fs::read_to_string(root.join(format!("backend/crates/{name}-bin/src/compose.rs")))?;
+    assert!(api.contains(".merge(rate_limited(platform.router, limits.as_ref()))"));
     if auth.is_some() {
         let erasure =
             fs::read_to_string(root.join(format!("backend/crates/{name}-postgres/src/lib.rs")))?;
@@ -6711,5 +6716,26 @@ fn both_quality_profiles_run_baukit_doctor() -> anyhow::Result<()> {
     assert!(gate.contains("\nbaukit-doctor fast - always -\n"));
     assert!(gate.contains("--bin baukit -- \"$@\""));
     assert!(gate.contains("\n  run_baukit_cli doctor\n"));
+    Ok(())
+}
+
+#[test]
+fn oidc_local_config_restricts_rest_clients_to_generated_ones() -> anyhow::Result<()> {
+    let parent = tempfile::tempdir()?;
+    let mut generated = options(parent.path(), "snapshot-app");
+    generated.components.set(Component::Backend, true);
+    generated.components.set(Component::Web, true);
+    generated.components.set(Component::Mobile, true);
+    generated.auth = Some(AuthProvider::Oidc);
+    let root = generate_new(&generated)?;
+    let local: toml::Value = toml::from_str(&fs::read_to_string(root.join("config/local.toml"))?)?;
+    assert_eq!(
+        local["auth"]["authorized_parties"],
+        toml::Value::try_from([
+            "snapshot-app-web",
+            "snapshot-app-mobile",
+            "snapshot-app-local"
+        ])?
+    );
     Ok(())
 }

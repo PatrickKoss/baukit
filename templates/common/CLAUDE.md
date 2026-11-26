@@ -48,7 +48,7 @@ The block at the end of this file holds the shared Baukit agent rules. `AGENTS.m
 cargo run --manifest-path <baukit>/cli/Cargo.toml --bin baukit -- check agent-docs --fix --root .
 ```
 
-`baukit check agent-docs file-size suppressions lints patterns observability template-files fuzz-lockfile` fails when the block drifts, `AGENTS.md` is not the symlink, a source file grows past its line limit, or a suppression lacks a reason or exceeds the counts in `baukit-check.toml`, the backend lints drift from the Baukit baseline, an ast-grep pattern matches, a dashboard names an unknown metric, a Baukit-owned file changed, or a strict product tracks `backend/fuzz/Cargo.lock`. Those counts only go down.
+`baukit check agent-docs file-size suppressions lints patterns observability template-files fuzz-lockfile security` fails when the block drifts, `AGENTS.md` is not the symlink, a source file grows past its line limit, or a suppression lacks a reason or exceeds the counts in `baukit-check.toml`, the backend lints drift from the Baukit baseline, an ast-grep pattern matches, a dashboard names an unknown metric, a Baukit-owned file changed, a strict product tracks `backend/fuzz/Cargo.lock`, or the API wiring skips connect info or a rate limiter. Those counts only go down.
 
 {% if context.quality_strict %}Run the complete strict profile with:
 

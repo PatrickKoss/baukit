@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.31.0
+
+- Breaking: `observe` rejects remote timestamps more than 24 hours ahead (`maxDriftMs`), and corrupt stored HLC state restarts at physical time.
+- Add `nowStep`, `observeStep` and `validateClientTimestamp`. Ticks are serialized across tabs with Web Locks.
+- `rankPushBatch` no longer merges entities whose type and id concatenate to the same key, and outcome validation rejects extra outcomes.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.31.0 train.
+
 ## 0.30.6
 
 ### Patch Changes

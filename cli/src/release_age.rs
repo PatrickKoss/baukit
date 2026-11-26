@@ -15,7 +15,7 @@ const SCOPE: &str = "@baukit/";
 const PNPM_MARKERS: [&str; 2] = ["pnpm-workspace.yaml", "pnpm-lock.yaml"];
 const DIRECT_SECTIONS: [&str; 2] = ["dependencies", "devDependencies"];
 const TRANSITIVE_SECTIONS: [&str; 3] = ["dependencies", "peerDependencies", "optionalDependencies"];
-const SKIPPED_DIRECTORIES: [&str; 2] = ["node_modules", "target"];
+const SKIPPED_DIRECTORIES: [&str; 4] = ["fixtures", "node_modules", "target", "vendor"];
 
 type PackageGraph = BTreeMap<String, BTreeSet<String>>;
 
@@ -300,6 +300,19 @@ mod tests {
                 "# web/pnpm-workspace.yaml, until @baukit/*@0.30.3 is a day old",
             ]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn fixture_and_vendor_workspaces_are_skipped() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        pnpm_app(
+            root.path(),
+            "backend/tests/fixtures/gaps",
+            "pnpm-workspace.yaml",
+        )?;
+        pnpm_app(root.path(), "vendor/widget", "pnpm-lock.yaml")?;
+        assert!(release_age_excludes(root.path())?.is_empty());
         Ok(())
     }
 

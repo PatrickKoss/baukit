@@ -359,7 +359,7 @@ export class DeviceFlowClient {
         },
         {
           fetchImplementation: this.#environment.fetch,
-          options: this.#requestOptions(signal),
+          options: this.#requestOptions(),
           invalidResponseCode: 'invalid_token_response',
           requestFailureCode: 'refresh_failed',
         },

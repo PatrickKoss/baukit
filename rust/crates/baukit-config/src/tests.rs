@@ -555,3 +555,60 @@ impl Drop for TestDirectory {
         let _ = fs::remove_dir_all(&self.0);
     }
 }
+
+#[test]
+fn rate_limit_defaults_ignore_forwarded_for_and_bucket_ipv6_by_64() {
+    let config = RateLimitConfig::default();
+    assert_eq!(config.trusted_proxy_hops, 0);
+    assert_eq!(config.ipv6_prefix_len, 64);
+    assert_eq!(config.fail_mode, RateLimitFailMode::Open);
+    assert!(config.validate_in(Environment::Production).is_ok());
+}
+
+#[test]
+fn trusted_proxy_hops_are_accepted_outside_local_up_to_the_bound() {
+    let config = RateLimitConfig {
+        trusted_proxy_hops: 2,
+        ..RateLimitConfig::default()
+    };
+    assert!(config.validate_in(Environment::Production).is_ok());
+    let config = RateLimitConfig {
+        trusted_proxy_hops: 33,
+        ..RateLimitConfig::default()
+    };
+    let error = config
+        .validate_in(Environment::Production)
+        .expect_err("too many hops");
+    assert!(error.to_string().contains("trusted_proxy_hops"));
+}
+
+#[test]
+fn ipv6_prefix_len_must_be_a_valid_nonzero_prefix() {
+    for prefix in [0, 129] {
+        let config = RateLimitConfig {
+            ipv6_prefix_len: prefix,
+            ..RateLimitConfig::default()
+        };
+        let error = config.validate().expect_err("invalid prefix");
+        assert!(error.to_string().contains("ipv6_prefix_len"), "{prefix}");
+    }
+}
+
+#[test]
+fn every_scope_disabled_is_rejected_outside_local_only() {
+    let mut config = RateLimitConfig::default();
+    config.identity.enabled = false;
+    config.ip.enabled = false;
+    assert!(config.validate_in(Environment::Local).is_ok());
+    let error = config
+        .validate_in(Environment::Production)
+        .expect_err("no limiting outside local");
+    assert!(error.to_string().contains("identity.enabled"));
+
+    let standard = BaukitConfig::<()> {
+        environment: Environment::Production,
+        rate_limit: config,
+        ..BaukitConfig::default()
+    };
+    assert!(standard.validate().is_err());
+}

@@ -4,6 +4,16 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
+### Added
+
+- `EndpointOrigin` and `AllowedEndpoint::tenant` / `tenant_from_url` for endpoints a tenant configures. A tenant endpoint only reaches public addresses, so a tenant webhook URL whose DNS answer is loopback or private fails. `AllowedEndpoint::new` and `from_url` keep the operator-internal behaviour.
+
+### Changed
+
+- Azure WireServer `168.63.129.16` is denied under every policy, including operator-internal endpoints. See [docs/migrations/boundary-hardening.md](../../../docs/migrations/boundary-hardening.md).
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

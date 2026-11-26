@@ -4,6 +4,12 @@ All notable changes to `baukit-runtime` are documented here.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
+### Changed
+
+- Listeners serve with `ConnectInfo<SocketAddr>`, so the IP rate-limit scope sees the socket peer. Custom servers must call `into_make_service_with_connect_info::<SocketAddr>()` themselves. See `docs/migrations/rate-limit-client-ip-and-buckets.md`.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

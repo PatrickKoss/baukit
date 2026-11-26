@@ -116,6 +116,43 @@ function authorizeEndpoint(value: string, allowLoopback = false): URL {
   return url;
 }
 
+export interface SuiteAuthorizeUrlPolicy {
+  /** Origins the server may send the user to, such as `https://beta.example`. Empty allows any https origin. */
+  readonly allowedOrigins?: readonly string[];
+  readonly allowLoopback?: boolean;
+}
+
+/** Check a server-supplied authorize URL before a popup or native session opens it. */
+export function checkedAuthorizeUrl(value: string, policy: SuiteAuthorizeUrlPolicy = {}): string {
+  const invalid = (): never => {
+    throw new TypeError('Invalid suite authorize URL.');
+  };
+  const url = hasInvalidUrlCharacters(value) ? undefined : parsedUrl(value);
+  if (url === undefined) return invalid();
+  const allowed = policy.allowedOrigins ?? [];
+  if (
+    url.username !== '' ||
+    url.password !== '' ||
+    url.hash !== '' ||
+    !hasAllowedScheme(url, policy.allowLoopback === true) ||
+    (allowed.length > 0 && !allowed.some((origin) => sameOrigin(origin, url)))
+  )
+    invalid();
+  return url.toString();
+}
+
+function parsedUrl(value: string): URL | undefined {
+  try {
+    return new URL(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function sameOrigin(origin: string, url: URL): boolean {
+  return parsedUrl(origin)?.origin === url.origin;
+}
+
 /** Keep protocol query names identical for local and hosted consent pages. */
 export function suiteAuthorizeUrl(
   peer: SuiteAuthorizePeer,

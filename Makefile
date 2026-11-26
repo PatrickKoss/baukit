@@ -23,7 +23,7 @@ test: ts-test
 check: ts-check
 	cargo check --manifest-path $(RUST_MANIFEST) --workspace --all-targets
 
-ci: example-lockfiles-check fmt lint test examples-test check suite-features-check package-dependencies-check ts-check ts-browser-test cli-ci scripts-test platform-validate media-grants-test media-grants-njs-test
+ci: example-lockfiles-check fmt lint test examples-test check suite-features-check package-dependencies-check ts-check ts-browser-test cli-ci scripts-test platform-validate media-grants-test media-grants-njs-test verify
 
 .PHONY: suite-features-check package-dependencies-check
 suite-features-check:
@@ -163,3 +163,42 @@ ts-browser-test: ts-install
 
 ts-check: ts-install
 	corepack pnpm --dir $(TS_DIR) run check
+
+# Verification lanes. Each target runs one ci-gate step, the same command CI runs.
+.PHONY: kani kani-full verus models fuzz fuzz-long migrations-check workflows-audit vectors vectors-check proofs-list verify
+FUZZ_SECONDS ?= 1800
+
+kani:
+	sh scripts/ci-gate.sh --step kani
+
+kani-full:
+	sh scripts/ci-gate.sh --step kani-full
+
+verus:
+	sh scripts/ci-gate.sh --step verus
+
+models:
+	sh scripts/ci-gate.sh --step models
+
+fuzz:
+	sh scripts/ci-gate.sh --step fuzz
+
+fuzz-long:
+	BAUKIT_FUZZ_SECONDS=$(FUZZ_SECONDS) sh scripts/ci-gate.sh --step fuzz-nightly
+
+migrations-check:
+	sh scripts/ci-gate.sh --step migrations
+
+workflows-audit:
+	sh scripts/ci-gate.sh --step workflows
+
+vectors:
+	sh scripts/ci-gate.sh --step vectors-regenerate
+
+vectors-check:
+	sh scripts/ci-gate.sh --step vectors
+
+proofs-list:
+	@python3 scripts/list-proofs.py
+
+verify: kani models vectors-check migrations-check workflows-audit

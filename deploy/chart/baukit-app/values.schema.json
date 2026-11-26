@@ -247,9 +247,7 @@
       "properties": {
         "type": {
           "enum": [
-            "ClusterIP",
-            "NodePort",
-            "LoadBalancer"
+            "ClusterIP"
           ]
         },
         "port": {

@@ -51,7 +51,7 @@ describe('authenticated cache composition', () => {
     });
     await lifecycle.selectSubject('account-e');
 
-    await lifecycle.handleSessionExpired();
+    await lifecycle.handleSessionExpired('account-e');
 
     expect(close).toHaveBeenCalledOnce();
     expect(lifecycle.current()).toBeUndefined();

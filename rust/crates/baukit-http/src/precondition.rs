@@ -92,7 +92,7 @@ impl From<RevisionOutOfRange> for ApiError {
 }
 
 /// An ETag prefix is longer than [`MAX_ETAG_PREFIX_BYTES`] or has a byte outside
-/// `[A-Za-z0-9._:-]`.
+/// `[A-Za-z0-9._:-]`, or ends in a digit (which would run into the revision).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InvalidEtagPrefix;
 
@@ -101,7 +101,7 @@ impl fmt::Display for InvalidEtagPrefix {
         write!(
             formatter,
             "ETag prefixes must be at most {MAX_ETAG_PREFIX_BYTES} bytes of ASCII letters, digits, \
-             `.`, `_`, `:`, or `-`"
+             `.`, `_`, `:`, or `-`, not ending in a digit"
         )
     }
 }
@@ -396,7 +396,7 @@ const fn is_valid_prefix(prefix: &str) -> bool {
         }
         rest = tail;
     }
-    true
+    !matches!(bytes.last(), Some(byte) if byte.is_ascii_digit())
 }
 
 fn visible_ascii(bytes: &[u8]) -> Result<&str, InvalidIfMatch> {

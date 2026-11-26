@@ -79,12 +79,26 @@ pub struct RequestId {
     header: HeaderValue,
 }
 
+/// Longest client `X-Request-ID` kept as-is, in bytes.
+pub const MAX_REQUEST_ID_BYTES: usize = 128;
+
+fn is_safe_request_id(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= MAX_REQUEST_ID_BYTES
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
 impl RequestId {
     fn from_headers(headers: &HeaderMap) -> Self {
         headers
             .get(&X_REQUEST_ID)
             .and_then(|value| {
-                let text = value.to_str().ok().filter(|text| !text.is_empty())?;
+                let text = value
+                    .to_str()
+                    .ok()
+                    .filter(|text| is_safe_request_id(text))?;
                 Some(Self {
                     text: text.to_owned(),
                     header: value.clone(),
@@ -401,3 +415,6 @@ impl Injector for HeaderInjector<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

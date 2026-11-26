@@ -11,19 +11,21 @@ use jiff::{Timestamp, civil::Date};
 use uuid::Uuid;
 
 use crate::{
-    DEFAULT_DEVICES_PER_OWNER, DeliveryClaim, DeliveryClaimStore, DeviceRegistration,
+    ClaimToken, DEFAULT_DEVICES_PER_OWNER, DeliveryClaim, DeliveryClaimStore, DeviceRegistration,
     DeviceRegistry, DeviceToken, PendingReceipt, PendingReceiptStore, PushStoreError,
-    PushStoreFuture, PushTicketId, RegisteredDevice, RegistrationOutcome,
+    PushStoreFuture, PushTicketId, RegisteredDevice, RegistrationOutcome, TakeoverDecision,
+    takeover_decision,
 };
 
-/// [`DeviceRegistry`] held in memory with the same cap, move, and eviction
-/// rules as the PostgreSQL adapter.
+/// [`DeviceRegistry`] held in memory with the same cap, move, install secret, and
+/// eviction rules as the PostgreSQL adapter.
 ///
 /// Clones share one set of devices, so a clone handed to a service under test
 /// still shows what that service registered.
 #[derive(Clone, Debug)]
 pub struct MemoryDeviceRegistry {
     devices: Arc<Mutex<HashMap<DeviceToken, RegisteredDevice>>>,
+    secrets: Arc<Mutex<HashMap<DeviceToken, Vec<u8>>>>,
     devices_per_owner: NonZeroU32,
 }
 
@@ -39,6 +41,7 @@ impl MemoryDeviceRegistry {
     pub fn new() -> Self {
         Self {
             devices: Arc::default(),
+            secrets: Arc::default(),
             devices_per_owner: DEFAULT_DEVICES_PER_OWNER,
         }
     }
@@ -58,8 +61,27 @@ impl MemoryDeviceRegistry {
         &self,
         previous: Option<DeviceToken>,
         registration: DeviceRegistration,
-    ) -> RegistrationOutcome {
+    ) -> Result<RegistrationOutcome, PushStoreError> {
         let mut devices = self.devices();
+        let mut secrets = self.secrets.lock().unwrap_or_else(PoisonError::into_inner);
+        let digest = registration.secret_digest();
+        let stored = devices.get(&registration.token).map(|device| {
+            (
+                device.owner_id,
+                secrets.get(&registration.token).map(Vec::as_slice),
+            )
+        });
+        let decision = takeover_decision(stored, registration.owner_id, digest.as_deref());
+        if decision == TakeoverDecision::Refuse {
+            return Err(PushStoreError::TokenHeldByAnotherOwner);
+        }
+        let kept_secret = match (digest, decision) {
+            (Some(digest), _) => Some(digest),
+            (None, TakeoverDecision::Keep) if stored.is_some() => {
+                secrets.get(&registration.token).cloned()
+            }
+            (None, _) => None,
+        };
         if let Some(previous) = previous.filter(|previous| *previous != registration.token)
             && devices
                 .get(&previous)
@@ -70,9 +92,13 @@ impl MemoryDeviceRegistry {
         let device = merge(devices.get(&registration.token), registration);
         let owner_id = device.owner_id;
         let kept = device.token.clone();
+        match kept_secret {
+            Some(secret) => secrets.insert(kept.clone(), secret),
+            None => secrets.remove(&kept),
+        };
         devices.insert(kept.clone(), device);
         let evicted = evict_over_cap(&mut devices, owner_id, &kept, self.devices_per_owner);
-        RegistrationOutcome { evicted }
+        Ok(RegistrationOutcome { evicted })
     }
 }
 
@@ -129,8 +155,7 @@ impl DeviceRegistry for MemoryDeviceRegistry {
         &self,
         registration: DeviceRegistration,
     ) -> PushStoreFuture<'_, Result<RegistrationOutcome, PushStoreError>> {
-        let outcome = self.register_device(None, registration);
-        Box::pin(std::future::ready(Ok(outcome)))
+        Box::pin(std::future::ready(self.register_device(None, registration)))
     }
 
     fn rotate(
@@ -138,8 +163,9 @@ impl DeviceRegistry for MemoryDeviceRegistry {
         previous: DeviceToken,
         registration: DeviceRegistration,
     ) -> PushStoreFuture<'_, Result<RegistrationOutcome, PushStoreError>> {
-        let outcome = self.register_device(Some(previous), registration);
-        Box::pin(std::future::ready(Ok(outcome)))
+        Box::pin(std::future::ready(
+            self.register_device(Some(previous), registration),
+        ))
     }
 
     fn unregister(
@@ -198,7 +224,7 @@ impl DeviceRegistry for MemoryDeviceRegistry {
 /// [`DeliveryClaimStore`] held in memory. Clones share one set of claims.
 #[derive(Clone, Debug, Default)]
 pub struct MemoryDeliveryClaimStore {
-    claims: Arc<Mutex<HashSet<DeliveryClaim>>>,
+    claims: Arc<Mutex<HashMap<DeliveryClaim, ClaimToken>>>,
 }
 
 impl MemoryDeliveryClaimStore {
@@ -211,10 +237,10 @@ impl MemoryDeliveryClaimStore {
     /// Returns whether the claim is currently held.
     #[must_use]
     pub fn is_claimed(&self, claim: &DeliveryClaim) -> bool {
-        self.claims().contains(claim)
+        self.claims().contains_key(claim)
     }
 
-    fn claims(&self) -> MutexGuard<'_, HashSet<DeliveryClaim>> {
+    fn claims(&self) -> MutexGuard<'_, HashMap<DeliveryClaim, ClaimToken>> {
         self.claims.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
@@ -224,14 +250,26 @@ impl DeliveryClaimStore for MemoryDeliveryClaimStore {
         &self,
         claim: DeliveryClaim,
         _claimed_at: Timestamp,
-    ) -> PushStoreFuture<'_, Result<bool, PushStoreError>> {
-        let inserted = self.claims().insert(claim);
-        Box::pin(std::future::ready(Ok(inserted)))
+    ) -> PushStoreFuture<'_, Result<Option<ClaimToken>, PushStoreError>> {
+        let mut claims = self.claims();
+        let token = (!claims.contains_key(&claim)).then(ClaimToken::new);
+        if let Some(token) = token {
+            claims.insert(claim, token);
+        }
+        Box::pin(std::future::ready(Ok(token)))
     }
 
-    fn release(&self, claim: DeliveryClaim) -> PushStoreFuture<'_, Result<bool, PushStoreError>> {
-        let removed = self.claims().remove(&claim);
-        Box::pin(std::future::ready(Ok(removed)))
+    fn release(
+        &self,
+        claim: DeliveryClaim,
+        token: ClaimToken,
+    ) -> PushStoreFuture<'_, Result<bool, PushStoreError>> {
+        let mut claims = self.claims();
+        let held = claims.get(&claim) == Some(&token);
+        if held {
+            claims.remove(&claim);
+        }
+        Box::pin(std::future::ready(Ok(held)))
     }
 
     fn purge(
@@ -241,7 +279,7 @@ impl DeliveryClaimStore for MemoryDeliveryClaimStore {
     ) -> PushStoreFuture<'_, Result<u64, PushStoreError>> {
         let mut claims = self.claims();
         let mut expired = claims
-            .iter()
+            .keys()
             .filter(|claim| claim.local_date < before)
             .map(|claim| (claim.local_date, claim.owner_id, claim.kind.clone()))
             .collect::<Vec<_>>();
@@ -250,7 +288,9 @@ impl DeliveryClaimStore for MemoryDeliveryClaimStore {
             .into_iter()
             .take(limit_len(limit))
             .filter(|(local_date, owner_id, kind)| {
-                claims.remove(&DeliveryClaim::new(*owner_id, *local_date, kind.clone()))
+                claims
+                    .remove(&DeliveryClaim::new(*owner_id, *local_date, kind.clone()))
+                    .is_some()
             })
             .count();
         Box::pin(std::future::ready(Ok(count(removed))))
@@ -478,11 +518,20 @@ mod tests {
             jiff::civil::Date::new(2026, 9, 27).expect("valid date"),
             DeliveryKind::new("daily_reminder")?,
         );
-        assert!(store.claim(claim.clone(), at(0)).await?);
-        assert!(!store.claim(claim.clone(), at(1)).await?);
-        assert!(store.release(claim.clone()).await?);
+        let first = store
+            .claim(claim.clone(), at(0))
+            .await?
+            .ok_or("free claim")?;
+        assert!(store.claim(claim.clone(), at(1)).await?.is_none());
+        assert!(store.release(claim.clone(), first).await?);
         assert!(!store.is_claimed(&claim));
-        assert!(store.claim(claim, at(2)).await?);
+        let second = store
+            .claim(claim.clone(), at(2))
+            .await?
+            .ok_or("free claim")?;
+        assert!(!store.release(claim.clone(), first).await?);
+        assert!(store.is_claimed(&claim));
+        assert!(store.release(claim, second).await?);
         Ok(())
     }
 

@@ -162,6 +162,12 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+catalogs:
+  default:
+    fast-check:
+      specifier: ^4.11.0
+      version: 4.11.0
+
 overrides:
   glob@13: 14.0.2
   minimatch@10: 11.0.1
@@ -261,12 +267,15 @@ importers:
   packages/api-runtime:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.30.6
+        specifier: ^0.31.0
         version: link:../type-guards
       openapi-fetch:
         specifier: ^0.17.0
         version: 0.17.0
     devDependencies:
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.11.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -274,7 +283,7 @@ importers:
   packages/auth-native:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.30.6
+        specifier: ^0.31.0
         version: link:../type-guards
     devDependencies:
       '@clerk/expo':
@@ -302,7 +311,7 @@ importers:
   packages/auth-node:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.30.6
+        specifier: ^0.31.0
         version: link:../type-guards
     devDependencies:
       '@playwright/test':
@@ -311,6 +320,9 @@ importers:
       '@types/node':
         specifier: 26.6.4
         version: 26.6.4
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.11.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -318,7 +330,7 @@ importers:
   packages/auth-web:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.30.6
+        specifier: ^0.31.0
         version: link:../type-guards
       jose:
         specifier: 6.2.12
@@ -333,6 +345,9 @@ importers:
       '@workos-inc/authkit-js':
         specifier: 0.20.4
         version: 0.20.4
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.11.0
       jsdom:
         specifier: 30.1.1
         version: 30.1.1(@noble/hashes@1.8.0)
@@ -355,8 +370,11 @@ importers:
   packages/data-contracts:
     devDependencies:
       '@baukit/type-guards':
-        specifier: ^0.30.6
+        specifier: ^0.31.0
         version: link:../type-guards
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.11.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -585,7 +603,7 @@ importers:
   packages/purchases-core:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.30.6
+        specifier: ^0.31.0
         version: link:../type-guards
     devDependencies:
       '@testing-library/react':
@@ -594,6 +612,9 @@ importers:
       '@types/react':
         specifier: 19.3.0
         version: 19.3.0
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.11.0
       jsdom:
         specifier: 30.1.1
         version: 30.1.1(@noble/hashes@1.8.0)
@@ -640,7 +661,7 @@ importers:
   packages/suite-client:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.30.6
+        specifier: ^0.31.0
         version: link:../type-guards
       '@noble/curves':
         specifier: 1.9.7
@@ -655,6 +676,9 @@ importers:
       '@types/node':
         specifier: 26.6.4
         version: 26.6.4
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.11.0
       typescript:
         specifier: 6.0.3
         version: 6.0.3
@@ -670,6 +694,9 @@ importers:
       expo-network:
         specifier: 57.0.2
         version: 57.0.2(expo@57.0.26(@babel/core@7.29.7(supports-color@8.1.1))(react-dom@19.3.0(react@19.3.0))(react-native-web@0.21.2(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-native@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/jest-preset@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1)(typescript@6.0.3))(react@19.3.0)
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.11.0
       react-native:
         specifier: 0.86.3
         version: 0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/jest-preset@0.86.3(@babel/core@7.29.7(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1)
@@ -695,7 +722,7 @@ importers:
   packages/ui-tokens:
     dependencies:
       '@baukit/type-guards':
-        specifier: ^0.30.6
+        specifier: ^0.31.0
         version: link:../type-guards
     devDependencies:
       '@types/estree':
@@ -3269,6 +3296,10 @@ packages:
     resolution: {integrity: sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w==}
     engines: {node: '>=18'}
 
+  fast-check@4.11.0:
+    resolution: {integrity: sha512-V4Uc238rhQOdQlc+Gz7JG6SGBtrWnWL8d/6RyiBeCMcNKMhF6DZ0KkAVHJSyNV5r4lA0PmIpZ6iRpTVoz4qjoA==}
+    engines: {node: '>=12.17.0'}
+
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
 
@@ -4694,6 +4725,9 @@ packages:
 
   pure-rand@6.1.0:
     resolution: {integrity: sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA==}
+
+  pure-rand@8.4.2:
+    resolution: {integrity: sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng==}
 
   qified@0.10.1:
     resolution: {integrity: sha512-+Owyggi9IxT1ePKGafcI87ubSmxol6smwJ+RAHDQlx9+9cPwFWDiKFFCPuWhr9ignlGpZ9vDQLw67N4dcTVFEA==}
@@ -8817,6 +8851,10 @@ snapshots:
 
   fake-indexeddb@6.2.5: {}
 
+  fast-check@4.11.0:
+    dependencies:
+      pure-rand: 8.4.2
+
   fast-deep-equal@3.1.3: {}
 
   fast-json-stable-stringify@2.1.0: {}
@@ -10554,6 +10592,8 @@ snapshots:
   punycode@2.3.1: {}
 
   pure-rand@6.1.0: {}
+
+  pure-rand@8.4.2: {}
 
   qified@0.10.1:
     dependencies:
