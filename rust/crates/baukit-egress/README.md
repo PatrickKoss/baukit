@@ -57,7 +57,7 @@ before the DNS lookup, so an open circuit costs nothing.
 | `Resolve`, `Transport`, `5xx` without `Retry-After` | failure |
 | `Timeout`, `504`, `408` | timeout |
 | `429` or `5xx` with `Retry-After` | stays open for exactly that delay, not a failure |
-| other `4xx`, `Revoked`, `Permanent`, a timeout caused by the caller's deadline | ignored |
+| other `4xx`, `Revoked`, `Permanent`, a timeout under a deadline that left less than half the client timeout | ignored |
 
 The outcome is recorded when the headers arrive. A body read that fails later
 does not count. `BreakerPolicy::default()` opens at 50% failures over the last
@@ -83,8 +83,11 @@ Inside a request served by `baukit_http::layers`, the handler has a deadline:
 its start plus the request timeout, or the route timeout when that is earlier.
 The client caps its own timeout with the time left. With less than 50 ms left
 it fails with `EgressError::Timeout` without sending anything. The deadline is
-never sent to the destination, and a timeout it causes does not count against
-the breaker. Tasks spawned by the handler do not inherit it; wrap them in
+never sent to the destination. A timeout under the deadline counts against the
+breaker when the time left was at least half the client's own request timeout.
+With less, the caller gave the destination too little time to judge it, and the
+breaker ignores the timeout. A 5 s route timeout against the default 10 s client
+timeout still counts. Tasks spawned by the handler do not inherit it; wrap them in
 `baukit_resilience::deadline::scope` to pass it on.
 
 ## Metrics

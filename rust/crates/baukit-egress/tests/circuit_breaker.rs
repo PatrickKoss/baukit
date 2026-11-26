@@ -396,20 +396,89 @@ async fn a_request_deadline_caps_the_client_timeout_without_counting_a_failure()
     assert!(!head.contains("deadline") && !head.contains("timeout"));
 }
 
-#[tokio::test]
-async fn capped_timeouts_do_not_open_the_circuit() {
-    let server =
-        ScriptedServer::start(Behaviour::status("200 OK").after(Duration::from_secs(5))).await;
-    let client = client(counting_resolver(&["slow.test"]), options());
+const SHORT_CLIENT_TIMEOUT: Duration = Duration::from_millis(400);
+
+fn short_timeout_options() -> EgressOptions {
+    options()
+        .with_request_timeout(SHORT_CLIENT_TIMEOUT)
+        .expect("timeout is valid")
+}
+
+async fn time_out_under_deadlines(
+    client: &GuardedClient,
+    server: &ScriptedServer,
+    budget: Duration,
+) {
     let consecutive =
         usize::try_from(BreakerPolicy::default().consecutive_timeouts).expect("small");
-    for _ in 0..=consecutive {
-        let deadline =
-            Deadline::after(Instant::now(), Duration::from_millis(100)).expect("deadline");
+    for _ in 0..consecutive {
+        let deadline = Deadline::after(Instant::now(), budget).expect("deadline");
         let result = deadline::scope(deadline, client.execute(server.request("slow.test"))).await;
         assert!(matches!(result, Err(EgressError::Timeout)));
     }
-    assert_eq!(server.calls(), consecutive + 1);
+}
+
+#[tokio::test]
+async fn timeouts_under_a_fair_deadline_open_the_circuit() {
+    let server =
+        ScriptedServer::start(Behaviour::status("200 OK").after(Duration::from_secs(5))).await;
+    let client = client(counting_resolver(&["slow.test"]), short_timeout_options());
+    time_out_under_deadlines(&client, &server, Duration::from_millis(300)).await;
+    let calls = server.calls();
+
+    let deadline = Deadline::after(Instant::now(), Duration::from_millis(300)).expect("deadline");
+    let error = deadline::scope(deadline, client.execute(server.request("slow.test")))
+        .await
+        .expect_err("circuit is open");
+
+    assert_circuit_open(&error);
+    assert_eq!(server.calls(), calls);
+}
+
+#[tokio::test]
+async fn timeouts_under_a_tiny_deadline_do_not_open_the_circuit() {
+    let server =
+        ScriptedServer::start(Behaviour::status("200 OK").after(Duration::from_secs(5))).await;
+    let client = client(counting_resolver(&["slow.test"]), short_timeout_options());
+    time_out_under_deadlines(&client, &server, Duration::from_millis(100)).await;
+    time_out_under_deadlines(&client, &server, Duration::from_millis(100)).await;
+    let consecutive =
+        usize::try_from(BreakerPolicy::default().consecutive_timeouts).expect("small");
+    assert_eq!(server.calls(), 2 * consecutive);
+}
+
+#[tokio::test]
+async fn a_cancelled_probe_frees_the_half_open_lease_after_the_probe_timeout() {
+    let server = ScriptedServer::start(Behaviour::status("500 Internal Server Error")).await;
+    let probe_timeout = Duration::from_millis(400);
+    let policy = BreakerPolicy {
+        probe_timeout,
+        ..fast_policy()
+    };
+    let options = options().with_circuit_breaker(policy);
+    let client = client(counting_resolver(&["flaky.test"]), options);
+    call_many(&client, &server, "flaky.test", CALLS).await;
+    tokio::time::sleep(OPEN_FOR + Duration::from_millis(50)).await;
+
+    server.set(Behaviour::status("204 No Content").after(Duration::from_secs(5)));
+    let probe = tokio::time::timeout(
+        Duration::from_millis(50),
+        client.execute(server.request("flaky.test")),
+    )
+    .await;
+    assert!(probe.is_err(), "probe is cancelled mid-flight");
+    let blocked = client
+        .execute(server.request("flaky.test"))
+        .await
+        .expect_err("lease still held");
+    assert_circuit_open(&blocked);
+
+    server.set(Behaviour::status("204 No Content"));
+    tokio::time::sleep(probe_timeout).await;
+    client
+        .execute(server.request("flaky.test"))
+        .await
+        .expect("a new probe runs after the lease expires");
 }
 
 #[tokio::test]

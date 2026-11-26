@@ -21,7 +21,7 @@ use url::{Host, Url};
 use crate::{
     AddressPolicy, DestinationRejection, EgressError, EgressOptions, ErrorBody,
     MAX_ERROR_HEADER_VALUE_BYTES, Resolver, SystemResolver,
-    breaker::{Guard, error_outcome, status_outcome},
+    breaker::{Guard, error_outcome, judges_destination, status_outcome},
     metrics::{record_duration, record_request},
     resolve_destination,
 };
@@ -403,7 +403,7 @@ impl GuardedClient {
     async fn send_headers(&self, request: EgressRequest) -> Result<Sent, EgressError> {
         validate_destination(&request.url, self.options.policy())?;
         let client = self.client_for(&request.url)?;
-        let (timeout, deadline_capped) = self.request_timeout()?;
+        let (timeout, judged) = self.request_timeout()?;
         let admitted = self.guard.admit(&request.url)?;
         let started = Instant::now();
         let sent = client
@@ -418,10 +418,7 @@ impl GuardedClient {
         let response = match sent {
             Ok(response) => response,
             Err(error) => {
-                drop(
-                    self.guard
-                        .finish(admitted, error_outcome(&error, deadline_capped)),
-                );
+                drop(self.guard.finish(admitted, error_outcome(&error, judged)));
                 return Err(error);
             }
         };
@@ -459,17 +456,17 @@ impl GuardedClient {
         })
     }
 
-    /// The timeout for one request and whether the caller's deadline shortened it.
+    /// The timeout for one request and whether a timeout under it judges the destination.
     fn request_timeout(&self) -> Result<(Duration, bool), EgressError> {
         let own = self.options.request_timeout();
         let Some(deadline) = deadline::current() else {
-            return Ok((own, false));
+            return Ok((own, true));
         };
         let remaining = deadline.remaining(Instant::now());
         if remaining < MIN_DEADLINE_REMAINING {
             return Err(EgressError::Timeout);
         }
-        Ok((own.min(remaining), remaining < own))
+        Ok((own.min(remaining), judges_destination(remaining, own)))
     }
 
     fn client_for(&self, url: &Url) -> Result<&reqwest::Client, EgressError> {

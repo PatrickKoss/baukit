@@ -149,14 +149,27 @@ pub(crate) const fn status_outcome(class: RetryClass) -> Outcome {
     }
 }
 
+/// Share of the client's own request timeout a caller's deadline must leave
+/// for a timeout to count against the destination: 1 / `FAIR_BUDGET_DIVISOR`.
+pub(crate) const FAIR_BUDGET_DIVISOR: u32 = 2;
+
+/// Whether a timeout under `budget` says something about the destination.
+///
+/// A budget of at least half the client's own `timeout` gave the destination a
+/// fair chance, so its timeout counts. A shorter one means the caller had too
+/// little time left, and the timeout is ignored.
+pub(crate) fn judges_destination(budget: Duration, timeout: Duration) -> bool {
+    budget >= timeout / FAIR_BUDGET_DIVISOR
+}
+
 /// How a call that ended without a status counts (D4).
 ///
-/// A timeout counts only when the client's own timeout fired. One cut short by
-/// the caller's deadline says nothing about the destination.
-pub(crate) const fn error_outcome(error: &EgressError, deadline_capped: bool) -> Outcome {
+/// `judged` is false when the caller's deadline cut the budget below
+/// [`judges_destination`]; such a timeout is ignored.
+pub(crate) const fn error_outcome(error: &EgressError, judged: bool) -> Outcome {
     match error {
-        EgressError::Timeout if deadline_capped => Outcome::Ignored,
-        EgressError::Timeout => Outcome::Timeout,
+        EgressError::Timeout if judged => Outcome::Timeout,
+        EgressError::Timeout => Outcome::Ignored,
         EgressError::Resolve | EgressError::Transport(_) => Outcome::Failure,
         _ => Outcome::Ignored,
     }
