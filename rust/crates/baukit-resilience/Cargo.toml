@@ -1,0 +1,29 @@
+[package]
+name = "baukit-resilience"
+description = "Framework-free circuit breaker, jittered backoff, deadlines and a stale-on-error cache."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "README.md"
+
+[lints]
+workspace = true
+
+[features]
+# ManualClock for deterministic tests in this crate and its consumers.
+test-support = []
+
+[dependencies]
+tokio = { version = "1.53.2", default-features = false, features = ["sync"] }
+
+[dev-dependencies]
+baukit-resilience = { path = ".", features = ["test-support"] }
+proptest = "1.12.0"
+serde = { workspace = true }
+serde_json.workspace = true
+tokio = { version = "1.53.2", features = ["macros", "rt", "rt-multi-thread", "time"] }

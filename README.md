@@ -7,7 +7,7 @@
 
 The boring 80% of a Rust backend and its TypeScript clients, already built and already tested.
 
-*Baukit* is German for a construction kit, and that is the whole idea. Twenty-one Rust crates and twenty-four npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
+*Baukit* is German for a construction kit, and that is the whole idea. Twenty-two Rust crates and twenty-four npm packages, each small enough to adopt on its own, plus a CLI that wires them into a working product when you want the whole thing.
 
 > [!WARNING]
 > **Under heavy development. Expect breaking changes.**
@@ -113,6 +113,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | [`baukit-mcp`](rust/crates/baukit-mcp) | OAuth-protected Streamable HTTP, scoped tool ports, resource metadata, body limits, and quotas |
 | [`baukit-jobs`](rust/crates/baukit-jobs) | Durable PostgreSQL outbox and supervised workers |
 | [`baukit-openapi`](rust/crates/baukit-openapi) | Utoipa metadata, deterministic schema output, drift checks |
+| [`baukit-resilience`](rust/crates/baukit-resilience) | Circuit breaker, jittered backoff, deadlines and a stale-on-error cache |
 | [`baukit-ratelimit`](rust/crates/baukit-ratelimit) | Redis token buckets keyed by identity or client IP |
 | [`baukit-sync`](rust/crates/baukit-sync) | Per-owner revision allocation for offline clients |
 | [`baukit-events`](rust/crates/baukit-events) | Versioned event envelope with stable validation codes |

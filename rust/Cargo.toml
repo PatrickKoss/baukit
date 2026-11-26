@@ -6,6 +6,7 @@ members = [
   "crates/baukit-credential-vault",
   "crates/baukit-data-subject",
   "crates/baukit-egress",
+  "crates/baukit-resilience",
   "crates/baukit-events",
   "crates/baukit-erasure",
   "crates/baukit-runtime",
@@ -50,6 +51,7 @@ baukit-http = { version = "=0.30.6", path = "crates/baukit-http" }
 baukit-integrations = { version = "=0.30.6", path = "crates/baukit-integrations" }
 baukit-jobs = { version = "=0.30.6", path = "crates/baukit-jobs" }
 baukit-openapi = { version = "=0.30.6", path = "crates/baukit-openapi" }
+baukit-resilience = { version = "=0.30.6", path = "crates/baukit-resilience" }
 baukit-ratelimit = { version = "=0.30.6", path = "crates/baukit-ratelimit" }
 baukit-ops = { version = "=0.30.6", path = "crates/baukit-ops" }
 baukit-runtime = { version = "=0.30.6", path = "crates/baukit-runtime" }

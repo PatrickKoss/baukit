@@ -632,6 +632,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "baukit-resilience"
+version = "0.30.6"
+dependencies = [
+ "baukit-resilience",
+ "proptest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "baukit-runtime"
 version = "0.30.6"
 dependencies = [
