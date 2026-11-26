@@ -1,0 +1,102 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: api-disruption
+spec:
+  description: >-
+    Two echo API replicas behind Traefik, with a loader pod requesting the ingress host about eight
+    times a second. An image tag change rolls both replicas with maxUnavailable 0 and the preStop
+    drain, and no request fails. A force-deleted replica gets no preStop, so Traefik keeps routing
+    to it until the EndpointSlice update reaches its provider; at most kill_shed_budget requests
+    fail in that window and the replacement pod comes up.
+  namespaceTemplate:
+    metadata:
+      labels:
+        baukit.dev/ingress-backend: "true"
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/enforce-version: v1.37
+        pod-security.kubernetes.io/audit: restricted
+        pod-security.kubernetes.io/warn: restricted
+  timeouts:
+    exec: 5m
+  steps:
+    - name: install-two-replicas
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              helm install echo ../../../../chart/baukit-app --namespace "$NAMESPACE" \
+                --values values.yaml --wait --timeout 4m
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: echo-api
+              status:
+                readyReplicas: 2
+        - assert:
+            resource:
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: echo-api
+              spec:
+                maxUnavailable: 1
+    - name: rollout-under-load
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              # Covers two 11 s pod terminations and two readiness waits with margin.
+              load_seconds=90
+              min_ok=100
+              bash ./edge-load.sh start rollout echo-disruption.localhost "$load_seconds"
+              helm upgrade echo ../../../../chart/baukit-app --namespace "$NAMESPACE" \
+                --values values.yaml --set api.image.tag=next --wait --timeout 3m
+              kubectl -n "$NAMESPACE" rollout status deployment/echo-api --timeout=2m
+              bash ./edge-load.sh finish rollout 0 "$min_ok"
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" get deployment echo-api \
+                -o jsonpath='{.spec.template.spec.containers[0].image}'
+            check:
+              ($stdout): localhost/baukit-e2e/echo:next
+      catch:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" get pods,endpointslices -o wide
+              kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -30
+    - name: pod-kill-under-load
+      try:
+        - script:
+            timeout: 4m
+            content: |
+              set -eu
+              load_seconds=45
+              min_ok=100
+              # About 2.5 s of the killed replica's half of the traffic at eight requests a second:
+              # the EndpointSlice update plus Traefik's provider throttle.
+              kill_shed_budget=20
+              selector=baukit.dev/workload=echo-api
+              bash ./edge-load.sh start kill echo-disruption.localhost "$load_seconds"
+              sleep 5
+              victim=$(kubectl -n "$NAMESPACE" get pods -l "$selector" -o jsonpath='{.items[0].metadata.name}')
+              kubectl -n "$NAMESPACE" delete pod "$victim" --grace-period=0 --force --wait=false
+              deadline=$(($(date +%s) + 120))
+              until ready=$(kubectl -n "$NAMESPACE" get pods -l "$selector" \
+                -o jsonpath='{range .items[*]}{.metadata.name}={.status.containerStatuses[0].ready}{"\n"}{end}' |
+                grep -v "^$victim=" | grep -c '=true$') && [ "$ready" -ge 2 ]; do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo "no replacement for $victim became ready" >&2; exit 1; }
+                sleep 2
+              done
+              echo "replacement for $victim is ready"
+              bash ./edge-load.sh finish kill "$kill_shed_budget" "$min_ok"
+      catch:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" get pods,endpointslices -o wide
+              kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -30

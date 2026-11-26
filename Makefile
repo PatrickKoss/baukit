@@ -1,4 +1,4 @@
-.PHONY: toolchain fmt lint test check ci platform-validate platform-e2e platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test example-lockfiles-check examples-test mcp-fixture-gate affected-fixture-gate ci-gate generated-fixture-gate platform-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test
+.PHONY: toolchain fmt lint test check ci platform-validate platform-e2e platform-up platform-down platform-nuke platform-recreate platform-status ts-install ts-build ts-fmt ts-lint ts-test ts-browser-deps ts-browser-test ts-check cli-fmt cli-lint cli-test cli-check cli-ci scripts-test example-lockfiles-check examples-test mcp-fixture-gate affected-fixture-gate ci-gate generated-fixture-gate platform-fixture-gate install-skills android-sdk-setup native-android-gate expo-sqlite-conformance expo-sqlite-conformance-prepare expo-notifications-conformance expo-notifications-conformance-prepare media-grants-test media-grants-njs-test load-smoke
 
 RUST_MANIFEST := rust/Cargo.toml
 TS_DIR := typescript
@@ -45,6 +45,10 @@ platform-validate:
 
 platform-e2e:
 	./deploy/platform/e2e/run.sh
+
+# Opt-in, not part of ci: needs a running generated API, see deploy/smoke/README.md.
+load-smoke:
+	./deploy/smoke/run-load-smoke.sh
 
 platform-up platform-down platform-nuke platform-recreate platform-status:
 	./deploy/platform/platform-lifecycle.sh $(if $(PLATFORM_CONFIG),--config "$(PLATFORM_CONFIG)") $(patsubst platform-%,%,$@)

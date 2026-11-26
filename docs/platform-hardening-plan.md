@@ -519,11 +519,15 @@ behave. Later phases add test directories here.
   `type: LoadBalancer` through k3s ServiceLB, rolling update `maxUnavailable: 0, maxSurge: 1`, PDB,
   `platform-critical`, `install/upgrade.crds: CreateReplace`. The e2e `ingress/` test bumps a pod
   annotation and asserts the rollout completes with no failed requests from a curl loop.
+  Note (reliability FX3): no `ingress/` case did this. `e2e/tests/api-disruption/` now rolls two API
+  replicas to a new image tag behind Traefik under an in-cluster request loop and expects zero failed
+  requests. A rollout of Traefik itself is not covered: locally it runs one replica.
 - [x] **R2 CNPG** (F-03, F-07): `enablePDB: false` when `instances: 1` (documented in the README, with
   `nodeMaintenanceWindow` for multi-instance overlays). Scope the restore-test Role's delete and patch
   to `resourceNames: [postgres-cluster-restore-test]`. Give the restore test a Delete-policy
   StorageClass on Hetzner. Add an e2e test that drains the node with `kubectl drain --dry-run=server`
   and asserts no PDB blocks it.
+  Note (reliability FX3): that test is `e2e/tests/node-drain/`, added by FX3.
 - [x] **R3 HelmRelease standards** (F-40): apply the V5 conventions to every base. `driftDetection` lands
   as `mode: warn` first, then `enabled` after one clean e2e run with no drift events. Set explicit
   `timeout`s from measured install times. Add `test.enable` where the chart ships tests.
