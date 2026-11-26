@@ -25,6 +25,9 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: postgres-restore-test
+        - podSelector:
+            matchLabels:
+              cnpg.io/poolerName: postgres-cluster-pooler-rw
       ports:
         - protocol: TCP
           port: 5432
@@ -106,6 +109,49 @@ spec:
       ports:
         - protocol: TCP
           port: 9091
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/podRole: instance
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-pooler
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/poolerName: postgres-cluster-pooler-rw
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              baukit.dev/postgres-client: "true"
+          podSelector:
+            matchLabels:
+              baukit.dev/postgres-client: "true"
+      ports:
+        - protocol: TCP
+          port: 5432
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 9127
+  egress:
     - to:
         - podSelector:
             matchLabels:

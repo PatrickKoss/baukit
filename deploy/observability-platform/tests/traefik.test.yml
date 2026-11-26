@@ -1,6 +1,9 @@
 rule_files:
   - ../alerts/traefik.rules.yml
 evaluation_interval: 1m
+group_eval_order:
+  - baukit-traefik-edge-recording
+  - baukit-traefik
 tests:
   - name: 10% 5xx on a service fires BaukitTraefikServiceHighErrorRatio
     interval: 1m
@@ -65,3 +68,44 @@ tests:
       - eval_time: 20m
         alertname: BaukitTraefikTlsCertExpiring
         exp_alerts: []
+
+  - name: every pod down turns all requests into 503 and fires BaukitTraefikServiceErrorBudgetBurnFast
+    interval: 1m
+    input_series:
+      - series: 'traefik_service_requests_total{service="shop-shop-api-80@kubernetes",code="200",method="GET",protocol="http"}'
+        values: '0+60x60 3600x30'
+      - series: 'traefik_service_requests_total{service="shop-shop-api-80@kubernetes",code="503",method="GET",protocol="http"}'
+        values: '0x60 0+60x30'
+    alert_rule_test:
+      - eval_time: 61m
+        alertname: BaukitTraefikServiceErrorBudgetBurnFast
+        exp_alerts: []
+      - eval_time: 75m
+        alertname: BaukitTraefikServiceErrorBudgetBurnFast
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: traefik
+              service: shop-shop-api-80@kubernetes
+            exp_annotations:
+              summary: Traefik service shop-shop-api-80@kubernetes burns its edge error budget fast
+              description: >-
+                More than 1.44% of the requests Traefik routed to shop-shop-api-80@kubernetes returned 5xx
+                in both the 5m and the 1h window. This includes the 502 and 503 answers Traefik sends
+                when no pod behind the service answers.
+              runbook_url: RUNBOOK_BASE_URL/traefik-service-error-budget-burn-fast
+
+  - name: 1% edge 5xx and a failing service under the 100-request floor stay quiet
+    interval: 1m
+    input_series:
+      - series: 'traefik_service_requests_total{service="shop-shop-api-80@kubernetes",code="200",method="GET",protocol="http"}'
+        values: '0+99x90'
+      - series: 'traefik_service_requests_total{service="shop-shop-api-80@kubernetes",code="502",method="GET",protocol="http"}'
+        values: '0+1x90'
+      - series: 'traefik_service_requests_total{service="idle-idle-80@kubernetes",code="503",method="GET",protocol="http"}'
+        values: '0+1x90'
+    alert_rule_test:
+      - eval_time: 80m
+        alertname: BaukitTraefikServiceErrorBudgetBurnFast
+        exp_alerts: []
+

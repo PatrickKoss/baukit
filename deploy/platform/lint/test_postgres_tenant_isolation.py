@@ -7,6 +7,9 @@ import yaml
 
 POSTGRES = Path(__file__).resolve().parent.parent / "postgres-cluster"
 TENANT_GROUP = "baukit_tenants"
+TENANT_CONNECTION_LIMIT = 25
+MAX_CONNECTIONS = 150
+TENANTS_IN_BUDGET = 5
 EXPECTED_PG_HBA = [
     f"host samerole +{TENANT_GROUP} all scram-sha-256",
     f"host all +{TENANT_GROUP} all reject",
@@ -45,6 +48,21 @@ class PostgresTenantIsolationTest(unittest.TestCase):
         owner = roles[database["spec"]["owner"]]
         self.assertTrue(owner["login"])
         self.assertEqual(sorted(owner["inRoles"]), sorted([TENANT_GROUP, name]))
+        self.assertEqual(owner["connectionLimit"], TENANT_CONNECTION_LIMIT)
+
+    def test_connection_budget_fits_max_connections(self) -> None:
+        (cluster,) = documents(POSTGRES / "cluster.yaml")
+        max_connections = int(cluster["spec"]["postgresql"]["parameters"]["max_connections"])
+        self.assertEqual(max_connections, MAX_CONNECTIONS)
+        self.assertLess(TENANTS_IN_BUDGET * TENANT_CONNECTION_LIMIT, max_connections)
+        (pooler,) = documents(POSTGRES / "pooler.yaml")
+        parameters = pooler["spec"]["pgbouncer"]["parameters"]
+        self.assertEqual(pooler["spec"]["pgbouncer"]["poolMode"], "transaction")
+        self.assertLess(int(parameters["max_db_connections"]), TENANT_CONNECTION_LIMIT)
+        self.assertLessEqual(
+            int(parameters["default_pool_size"]) + int(parameters["reserve_pool_size"]),
+            int(parameters["max_db_connections"]),
+        )
 
 
 if __name__ == "__main__":

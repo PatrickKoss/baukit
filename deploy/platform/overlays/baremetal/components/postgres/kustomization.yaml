@@ -1,10 +1,14 @@
-# Two instances on different nodes, so a drain or a node failure promotes the replica. The
-# consumer replaces the ObjectStore destinationPath and adds its endpoint, as overlays/local does.
+# Two instances on different nodes, so a drain or a node failure promotes the replica. Quorum
+# synchronous replication with dataDurability preferred acknowledges a commit only once the standby
+# has it, and keeps accepting writes when the standby is gone. Two pooler pods on different nodes
+# with a PDB keep the pooler up through a drain. The consumer replaces the ObjectStore
+# destinationPath and adds its endpoint, as overlays/local does.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../../../postgres-cluster
   - ../../cluster-network
+  - pooler-pdb.yaml
 components:
   - ../../../../components/network-policy/node-cidr
 patches:
@@ -26,3 +30,27 @@ patches:
           enablePodAntiAffinity: true
           podAntiAffinityType: required
           topologyKey: kubernetes.io/hostname
+      - op: add
+        path: /spec/postgresql/synchronous
+        value:
+          method: any
+          number: 1
+          dataDurability: preferred
+  - target:
+      group: postgresql.cnpg.io
+      version: v1
+      kind: Pooler
+      name: postgres-cluster-pooler-rw
+    patch: |-
+      - op: replace
+        path: /spec/instances
+        value: 2
+      - op: add
+        path: /spec/template/spec/affinity
+        value:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    cnpg.io/poolerName: postgres-cluster-pooler-rw
