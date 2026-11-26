@@ -390,6 +390,28 @@ class AlertRulesTest(unittest.TestCase):
             ["docs/runbooks/platform/orphan.md has no alert whose runbook_url names it"],
         )
 
+    def test_runbook_named_outside_the_rule_packs_passes(self) -> None:
+        ctx = context(runbook_slugs={"platform/watchdog"}, runbook_references={"platform/watchdog"})
+        self.assertEqual(violations("runbook-alert", ctx), [])
+
+    def test_runbook_references_read_loki_rules_and_chart_values(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            loki = root / "deploy/observability-platform/loki-rules"
+            loki.mkdir(parents=True)
+            (loki / "a.rules.yml").write_text(
+                "groups:\n  - name: g\n    rules:\n      - alert: A\n        expr: x\n"
+                "        annotations:\n          runbook_url: RUNBOOK_BASE_URL/loki-alert\n"
+            )
+            values = root / "deploy/platform/stack"
+            values.mkdir(parents=True)
+            (values / "values.yaml").write_text(
+                "Watchdog:\n  runbook_url: https://example.test/docs/runbooks/platform/watchdog\n"
+            )
+            self.assertEqual(
+                cc.runbook_references(root), {"platform/loki-alert", "platform/watchdog"}
+            )
+
     def test_runbook_named_by_an_alert_of_the_other_pack_still_fails(self) -> None:
         ctx = context(alerts=[alert("Same", pack="app")], runbook_slugs={"platform/same"})
         self.assertEqual(len(violations("runbook-alert", ctx)), 1)
