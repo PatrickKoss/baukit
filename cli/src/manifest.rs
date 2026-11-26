@@ -307,6 +307,8 @@ pub struct QualityManifest {
     pub resources: BTreeMap<String, Vec<String>>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub shared_resources: BTreeMap<String, Vec<String>>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub creator_resources: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub ci: gate_settings::CiSettings,
 }
@@ -329,6 +331,7 @@ impl Default for QualityManifest {
             light: Vec::new(),
             resources: BTreeMap::new(),
             shared_resources: BTreeMap::new(),
+            creator_resources: BTreeMap::new(),
             ci: gate_settings::CiSettings::default(),
         }
     }
