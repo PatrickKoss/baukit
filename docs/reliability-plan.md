@@ -286,7 +286,7 @@ them.
 
 ## Phase ID: identity and read-mostly caches
 
-- [ ] **ID1 JWKS on `StaleCache`** (RL-03, RL-07): the OIDC verifier and `TicketVerifier` move to
+- [~] **ID1 JWKS on `StaleCache`** (RL-03, RL-07): the OIDC verifier and `TicketVerifier` move to
   `StaleCache` with a 300 s fresh TTL, a 1 h stale window for known kids (never for unknown kids), a
   10 s failure cooldown, and no lock held across the fetch for cached reads.
   `auth_key_cache_requests_total` exported.
@@ -294,7 +294,7 @@ them.
   concurrent verifications of a known kid succeed with one fetch attempt and no request waiting on the
   fetch; an unknown kid during the outage fails fast with `UnknownKeyId`; after the stale window
   verifications fail with a stable error code.
-- [ ] **ID2 Discovery without crash loops** (RL-04): `OidcVerifier::discover` and the browser-session
+- [x] **ID2 Discovery without crash loops** (RL-04): `OidcVerifier::discover` and the browser-session
   router retry with `Backoff` inside a configurable startup budget (default 60 s, below the chart's
   150 s startup probe). A static `jwks_uri` in config skips discovery entirely, and the template
   documents it as the production default.
@@ -552,8 +552,10 @@ Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/chec
 
 | Agent | Tasks | Status |
 |---|---|---|
-| rel-egress | CB1, CB2, IN8 | running |
-| rel-auth | ID1 (OIDC part), ID2, IN2 (browser session) | review round 1 |
+| rel-egress | CB1, CB2, IN8 | review round 2 (deadline-capped timeouts must still count) |
+| rel-jobs2 | WK3, WK5, WK6, WK8 (crate part), WK9 | running |
+| rel-ops | IN5 (crate part) | running |
+| rel-auth | ID1 (OIDC part), ID2, IN2 (browser session) | merged, verified (two rounds plus an orchestrator fix) |
 
 
 CB1, CB2 (`baukit-egress`); WK3, WK5, WK6, WK8, WK9 (`baukit-jobs`); ID1, ID2 (`baukit-auth`); IN5, IN8;
@@ -621,3 +623,17 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   - Wave 3 template work: copy migration 0005 into the worker and auth templates, drop the 900 s lease,
     make readiness check `store_health()`, and review `RestartPolicy::FailProcess`.
   - Still open: the CB3 `EgressError` to `deferred` helper, which needs CB1.
+- rel-auth merged:
+  - The OIDC verifier serves stale JWKS for up to 1 h while the endpoint is down, with one background
+    refresh. Unknown key ids force one refresh per cooldown. Discovery retries within a startup budget,
+    and `with_jwks_uri` skips it. A closed browser-session rate limit answers 503.
+  - Round 2 made the key cache public and generic (`KeySetCache` behind a `KeySource` port), so suite's
+    `TicketVerifier` can adopt it in wave 2b with `metric_source = "ticket"`. It also fixed the
+    baukit-test TTL test that the background refresh broke.
+  - My fix: a drop guard clears the refresh flag when the refresh task unwinds. Before it, a panicking
+    fetch left the flag set and disabled every later refresh. The regression test fails on the old code.
+  - Wave 3 template work: set `with_jwks_uri` in the auth template identity config, and add config fields
+    for it and for the startup budget.
+- rel-deploy round 2: Traefik `idleConnTimeout` 5 s (below hyper's 10 s idle cut), `allowEmptyServices`,
+  the stale lease variable in the kyverno fixture and backend README, and a merge of task/reliability with
+  re-blessed snapshots.
