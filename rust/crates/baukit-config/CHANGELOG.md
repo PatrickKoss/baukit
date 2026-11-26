@@ -4,6 +4,8 @@ All notable changes to `baukit-config` are documented here.
 
 ## [Unreleased]
 
+- New `startup` section with `budget` (seconds, default 60, must be non-zero): how long a process waits for PostgreSQL, Redis and the identity provider at startup. `startup` is now a reserved top-level key.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

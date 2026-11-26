@@ -89,6 +89,22 @@ Queries handed a bare `&PgPool` bypass acquisition metrics. SQLx exposes no hook
 implicit executor acquisition, so this is a real limitation rather than an oversight. The periodic
 pool gauges from `spawn_pool_metrics_sampler` are unaffected.
 
+## Waiting for PostgreSQL at startup
+
+`baukit_ops::connect_with_backoff(&database, config.startup.budget)` connects like `connect_pool`
+but retries while the server is not there yet: connection refused, DNS and other I/O errors, pool
+timeouts, and SQLSTATE `57P03`, `57P01` and `53300`. Wrong credentials, a missing database, TLS and
+URL errors fail on the first attempt. Each retry logs a warning with the attempt and the delay.
+After the budget (60 s by default, `startup.budget` in config) it returns
+`StartupError::BudgetExhausted` with the last error. Keep the budget inside the startup probe window.
+
+Migration binaries call `baukit_ops::connect_for_migrations(&database, config.startup.budget)`. It
+retries the same way and opens a single-connection pool that keeps `lock_timeout` but drops
+`statement_timeout` and `idle_in_transaction_session_timeout`, so a long migration step is not
+cancelled at the request limit. Run the migrator on the returned pool.
+
+`baukit_ops::startup::retry_within` is the generic loop behind both, for other dependencies.
+
 ## Scope
 
 The crate assembles and serves the endpoints. It does not decide what "ready" means for your product,

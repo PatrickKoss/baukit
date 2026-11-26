@@ -128,7 +128,7 @@ impl RateLimitDecision {
 
 /// Failure to obtain a rate-limit decision from a store adapter.
 pub struct RateLimitStoreError {
-    source: Box<dyn Error + Send + Sync>,
+    pub(crate) source: Box<dyn Error + Send + Sync>,
 }
 
 impl RateLimitStoreError {

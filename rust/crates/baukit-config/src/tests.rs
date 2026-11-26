@@ -47,6 +47,7 @@ fn default_layer_supplies_standard_values() {
     assert_eq!(config.ops.port, 9090);
     assert!(config.database.is_none());
     assert_eq!(config.shutdown.drain_timeout, Duration::from_secs(30));
+    assert_eq!(config.startup.budget, Duration::from_secs(60));
     assert_eq!(config.product.feature_limit, 0);
 }
 
@@ -204,6 +205,29 @@ fn database_environment_helper() {
     );
     assert_eq!(database.max_lifetime, Duration::from_secs(900));
     assert_eq!(database.idle_timeout, Duration::from_secs(300));
+}
+
+#[test]
+fn startup_budget_loads_from_environment() {
+    run_env_helper(
+        "startup_environment_helper",
+        &[("STARTUP_APP__STARTUP__BUDGET", "15")],
+    );
+}
+
+#[test]
+fn startup_environment_helper() {
+    if std::env::var_os("BAUKIT_CONFIG_ENV_HELPER").is_none() {
+        return;
+    }
+
+    let config = ConfigLoader::new("startup-app", Environment::Staging)
+        .expect("valid loader")
+        .without_local_file()
+        .without_dotenv()
+        .load::<ProductConfig>()
+        .expect("valid startup env config");
+    assert_eq!(config.startup.budget, Duration::from_secs(15));
 }
 
 #[test]
@@ -551,6 +575,7 @@ fn validation_aggregates_qualified_errors() {
     });
     config.telemetry.trace_sampling_ratio = 1.5;
     config.shutdown.drain_timeout = Duration::ZERO;
+    config.startup.budget = Duration::ZERO;
     config.product.feature_limit = 13;
 
     let errors = config.validate().expect_err("multiple invalid fields");
@@ -563,11 +588,12 @@ fn validation_aggregates_qualified_errors() {
             "database.min_connections",
             "telemetry.trace_sampling_ratio",
             "shutdown.drain_timeout",
+            "startup.budget",
             "product.feature_limit",
         ]
     );
     let rendered = errors.to_string();
-    assert!(rendered.contains("configuration validation failed (6 error(s))"));
+    assert!(rendered.contains("configuration validation failed (7 error(s))"));
     assert!(rendered.contains("http.port: must be non-zero"));
     assert!(rendered.contains("product.feature_limit: must not be unlucky"));
 }

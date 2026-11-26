@@ -97,10 +97,14 @@ pub use baukit_telemetry::PrometheusHandle;
 use serde::Serialize;
 use tokio::task::JoinSet;
 
+pub mod startup;
+
 #[cfg(feature = "sqlx-postgres")]
 mod postgres;
 #[cfg(feature = "sqlx-postgres")]
 mod postgres_pool;
+#[cfg(feature = "sqlx-postgres")]
+mod postgres_startup;
 
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::{
@@ -108,6 +112,10 @@ pub use postgres::{
 };
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres_pool::{connect_options, connect_pool, connect_pool_lazy, pool_options};
+#[cfg(feature = "sqlx-postgres")]
+pub use postgres_startup::{
+    connect_for_migrations, connect_with_backoff, is_transient_connect_error,
+};
 
 /// Default timeout applied by [`ReadinessRegistry::register_default`].
 pub const DEFAULT_READINESS_TIMEOUT: Duration = Duration::from_secs(2);
