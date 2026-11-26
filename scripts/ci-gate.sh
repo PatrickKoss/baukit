@@ -248,6 +248,8 @@ step_verus() {
     return 0
   fi
   cargo verus verify --manifest-path rust/verus/Cargo.toml
+  cargo clippy --locked --manifest-path rust/verus/Cargo.toml --all-targets -- -D warnings
+  cargo clippy --locked --manifest-path rust/verus/equivalence/Cargo.toml --all-targets -- -D warnings
   cargo test --locked --manifest-path rust/verus/equivalence/Cargo.toml
   cargo kani setup
   (cd rust/verus/equivalence && timeout "${BAUKIT_KANI_TIMEOUT_SECONDS:-1800}" cargo kani)

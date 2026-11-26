@@ -19,7 +19,7 @@ ts-max-lines = 500
 # Suppression budget. Counts may only go down; `baukit check suppressions --update` lowers them.
 [suppressions.max]
 rust-allow = 0
-rust-expect = 30
+rust-expect = 29
 eslint-disable = 1
 ast-grep-ignore = 0
 ts-expect-error = 7
