@@ -522,6 +522,42 @@ FX tests come first in each phase where they apply: write the failing test, then
 Directory ownership stays disjoint inside each step. The breaker and the deferred outcome (CB1, CB3) are
 the critical path; everything in step 3 that adopts the breaker waits for them.
 
+## Orchestration tracker
+
+Integration branch `task/reliability` in `~/projects/baukit-worktrees/rel-int`. Each agent works in
+`baukit-worktrees/rel-<agent>` on branch `rel/<agent>` from the integration head, and the orchestrator
+merges after re-running the acceptance commands and reading the diff. Briefs and reports live in
+`~/.cache/baukit-orchestrator/reliability/`. Implementers are Opus 5.5 at low effort, at most 8 at once.
+Agents run fmt, clippy and non-Docker tests at `nice -n 19` with `CARGO_BUILD_JOBS=2`; only `rel-jobs`
+and `rel-faults` may run targeted Docker tests. Full gates, fixture gates, browser tests and platform e2e
+run in the orchestrator under the heavy-slot protocol (owner `baukit-rel`, one slot at most).
+
+### Wave 1
+
+| Agent | Tasks | Owns | Status |
+|---|---|---|---|
+| rel-core | RC1, RC2 | `rust/crates/baukit-resilience`, `fixtures/resilience`, workspace `Cargo.toml` entry | running |
+| rel-faults | FX1 | `rust/crates/baukit-test` | running |
+| rel-http | IN1, IN2 (`baukit-http` part), IN3, IN4 (`baukit-runtime` part), IN7 | `baukit-http`, `baukit-runtime`, `baukit-telemetry` | running |
+| rel-jobs | WK1, WK2, WK4 (crate part), CB3 | `baukit-jobs` | running |
+| rel-ts | CL1 (without fixture replay), CL3, CL4 (`auth-web` part), CL5 (`pwa-web` part) | `typescript/packages/{api-runtime,sync-client,auth-web,pwa-web}` | running |
+| rel-db | IN6 (crate part), IN2 (`baukit-ratelimit` part) | `baukit-config`, `baukit-ops`, `baukit-ratelimit` | running |
+| rel-deploy | PL1, PL2, PL3, PL5 | `deploy/chart`, `deploy/platform/traefik`, `deploy/observability-platform` (redis alerts), `templates/backend/deploy` | running |
+| rel-obs | PL4, PL7, the RL-43 alert text fix | `deploy/platform/postgres-cluster`, `deploy/observability` | running |
+
+Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/check-metric-names.py`,
+`rust/Cargo.toml`) get additive edits only; the orchestrator resolves merge conflicts.
+
+### Wave 2 (after RC1 and RC2 merge)
+
+CB1, CB2 (`baukit-egress`); WK3, WK5, WK6, WK8, WK9 (`baukit-jobs`); ID1, ID2 (`baukit-auth`); IN5, IN8;
+CL1 fixture replay; CB4, CB5, ID3, ID4 (`baukit-suite`); CB6, CB7 (push, erasure, mcp); WK7; RC3.
+
+### Wave 3
+
+Templates in one agent (CB8, IN2/IN4-IN6 wiring, CL2, CL4 mobile part, CL5 template part, CL6, FX2);
+PL6; FX3, FX4; REL1-REL3.
+
 ## Open questions
 
 - D3 numbers are guesses until FX4 runs against a real product. Revisit after the first load smoke.
