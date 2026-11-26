@@ -296,7 +296,7 @@ checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
 
 [[package]]
 name = "baukit-auth"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "axum",
@@ -328,7 +328,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-config"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "baukit-core",
  "config",
@@ -341,7 +341,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-core"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -356,7 +356,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-credential-vault"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "base64 0.23.1",
@@ -370,7 +370,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-data-subject"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
@@ -401,7 +401,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-egress"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "axum",
  "baukit-http",
@@ -421,7 +421,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-erasure"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "axum",
@@ -452,7 +452,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-events"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "jiff 1.0.0",
  "serde",
@@ -461,7 +461,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-http"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "axum",
  "baukit-config",
@@ -488,7 +488,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-integrations"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "axum",
@@ -511,7 +511,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-jobs"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "baukit-runtime",
  "baukit-telemetry",
@@ -531,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-mcp"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
@@ -565,7 +565,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-openapi"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "http",
  "serde",
@@ -577,7 +577,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-ops"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "axum",
  "baukit-core",
@@ -592,7 +592,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-push"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "aws-lc-rs",
  "axum",
@@ -617,7 +617,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-ratelimit"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "axum",
  "baukit-auth",
@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-runtime"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "axum",
  "baukit-core",
@@ -650,7 +650,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-suite"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "async-trait",
  "aws-lc-rs",
@@ -688,7 +688,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-sync"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "axum",
  "baukit-http",
@@ -708,7 +708,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-telemetry"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "baukit-core",
  "jiff 1.0.0",
@@ -727,7 +727,7 @@ dependencies = [
 
 [[package]]
 name = "baukit-test"
-version = "0.30.4"
+version = "0.30.5"
 dependencies = [
  "async-trait",
  "aws-lc-rs",

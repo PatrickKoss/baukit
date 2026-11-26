@@ -12,6 +12,8 @@ All notable changes to `baukit-egress` are documented here.
 
 - Azure WireServer `168.63.129.16` is denied under every policy, including operator-internal endpoints. See [docs/migrations/boundary-hardening.md](../../../docs/migrations/boundary-hardening.md).
 
+## [0.30.5] - 2026-11-26
+
 ## [0.30.4] - 2026-11-25
 
 ## [0.30.3] - 2026-11-24

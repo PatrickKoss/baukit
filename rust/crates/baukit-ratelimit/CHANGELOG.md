@@ -6,6 +6,8 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 - Breaking: `trusted_proxy_hops` defaults to 0, only the trusted `X-Forwarded-For` entry is parsed, IPv6 keys bucket per /64 (`ipv6_prefix_len`), the IP scope returns 500 without `ConnectInfo`, `AmountBudget::release` takes the consume's `BudgetWindow`, and the Redis token bucket uses new hash fields. See `docs/migrations/rate-limit-client-ip-and-buckets.md`.
 
+## [0.30.5] - 2026-11-26
+
 ## [0.30.4] - 2026-11-25
 
 ## [0.30.3] - 2026-11-24

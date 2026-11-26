@@ -9,6 +9,8 @@
 - Resource templates no longer match `.`, `..` or their percent-encoded forms as a segment.
 - Rate-limit keys are length-prefixed, so parts with `:` in them can no longer collide. Existing buckets reset once after the upgrade. See [docs/migrations/boundary-hardening.md](../../../docs/migrations/boundary-hardening.md).
 
+## [0.30.5] - 2026-11-26
+
 ## [0.30.4] - 2026-11-25
 
 ## [0.30.3] - 2026-11-24

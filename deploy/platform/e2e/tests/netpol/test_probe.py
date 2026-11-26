@@ -9,9 +9,11 @@ import probe
 
 POD = "netpol-probe-1"
 POD_IP = "10.42.0.9"
-RULES = f'-A KUBE-POD-FW-X -d {POD_IP}/32 -m comment --comment "default ingress"\n' + (
+RULES = (
+    f'-A KUBE-ROUTER-FORWARD -s {POD_IP}/32 -m comment --comment "ns/{POD} out" -j KUBE-POD-FW-X\n'
     f'-A KUBE-POD-FW-X -m comment --comment "ns/{POD} reject" -j REJECT\n'
 )
+TERMINATING = {"metadata": {"namespace": "other", "name": "old"}, "status": {"phase": "Running"}}
 
 
 def row(expect="deny", destination="  to: {service: svc.dest, port: 80}\n"):
@@ -23,6 +25,7 @@ class FakeRunner:
     """Answers kubectl and docker like a one-node cluster; nc and nslookup results are scripted."""
 
     def __init__(self, connects=(0,), sentinel=(0,), lookup=0, endpoints=True, rules=RULES):
+        self.sharers = []
         self.connects = list(connects)
         self.sentinel = list(sentinel)
         self.lookup = lookup
@@ -33,10 +36,14 @@ class FakeRunner:
     def __call__(self, command, **_):
         self.commands.append(command)
         if command[0] == "docker":
-            return self.done(self.rules)
+            rules = self.rules.pop(0) if isinstance(self.rules, list) else self.rules
+            return self.done(rules)
         args = command[1:]
         if args[0] == "exec":
             return self.done(self.exec(args[-1]))
+        if args[:3] == ["get", "pods", "-A"]:
+            sharers = self.sharers.pop(0) if self.sharers else []
+            return self.done(json.dumps({"items": sharers}))
         answer = self.objects().get(tuple(args[:2]), "")
         return self.done(json.dumps(answer) if answer else "")
 
@@ -128,6 +135,33 @@ class RunRowTests(unittest.TestCase):
         self.assertIn("no firewall chain", outcome.detail)
         self.assertEqual(runner.ran(" nc "), [])
 
+    def test_it_waits_while_a_terminating_pod_holds_the_probe_ip(self):
+        runner = FakeRunner(connects=[1])
+        runner.sharers = [[TERMINATING], [TERMINATING], []]
+        self.assertEqual(self.run_row(runner, row("deny")).status, "PASS")
+        self.assertEqual(len(runner.ran("status.podIP=")), 3)
+
+    def test_a_shared_ip_that_never_frees_is_an_error(self):
+        runner = FakeRunner(connects=[0])
+        runner.sharers = [[TERMINATING]] * 3
+        with mock.patch.object(probe, "FENCE_TIMEOUT_SECONDS", -1):
+            outcome = self.run_row(runner, row("deny"))
+        self.assertEqual(outcome.status, "ERROR")
+        self.assertIn("still holds the probe pod's IP", outcome.detail)
+        self.assertEqual(runner.ran(" nc "), [])
+
+    def test_a_finished_pod_on_the_same_ip_does_not_block(self):
+        finished = {**TERMINATING, "status": {"phase": "Succeeded"}}
+        runner = FakeRunner(connects=[1])
+        runner.sharers = [[finished]]
+        self.assertEqual(self.run_row(runner, row("deny")).status, "PASS")
+
+    def test_a_chain_lost_during_the_probe_is_an_error_not_a_verdict(self):
+        runner = FakeRunner(connects=[0], rules=[RULES, ""])
+        outcome = self.run_row(runner, row("deny"))
+        self.assertEqual(outcome.status, "ERROR")
+        self.assertIn("dropped the probe pod's firewall chain", outcome.detail)
+
     def test_node_host_resolves_to_the_probe_node(self):
         runner = FakeRunner(connects=[0])
         outcome = self.run_row(runner, row("allow", "  to: {host: node, port: 6443}\n"))
@@ -171,8 +205,11 @@ class SkipTests(unittest.TestCase):
 
 
 class HelperTests(unittest.TestCase):
-    def test_fenced_needs_the_reject_rule_and_the_pod_address(self):
+    def test_fenced_needs_the_reject_rule_and_the_egress_jump_from_the_pod_address(self):
         self.assertTrue(probe.fenced(RULES, "ns", POD, POD_IP))
+        reject_only = RULES.splitlines()[1]
+        self.assertFalse(probe.fenced(reject_only, "ns", POD, POD_IP))
+        self.assertFalse(probe.fenced(RULES.replace("-s ", "-d "), "ns", POD, POD_IP))
         self.assertFalse(probe.fenced(RULES, "ns", POD, "10.42.0.10"))
         self.assertFalse(probe.fenced(RULES, "other", POD, POD_IP))
         self.assertFalse(probe.fenced(RULES, "ns", f"{POD}0", POD_IP))

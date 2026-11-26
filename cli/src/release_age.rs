@@ -10,7 +10,7 @@ use serde_json::Value;
 const PACKAGE_MANIFESTS: &[&str] =
     include!(concat!(env!("OUT_DIR"), "/baukit_package_manifests.rs"));
 const SCOPE: &str = "@baukit/";
-const APP_DIRECTORIES: [&str; 2] = ["mobile", "web"];
+const PNPM_MARKERS: [&str; 2] = ["pnpm-workspace.yaml", "pnpm-lock.yaml"];
 const DIRECT_SECTIONS: [&str; 2] = ["dependencies", "devDependencies"];
 const TRANSITIVE_SECTIONS: [&str; 3] = ["dependencies", "peerDependencies", "optionalDependencies"];
 
@@ -27,11 +27,8 @@ type PackageGraph = BTreeMap<String, BTreeSet<String>>;
 pub fn release_age_excludes(root: &Path) -> Result<Vec<String>> {
     let graph = package_graph(PACKAGE_MANIFESTS)?;
     let mut lines = Vec::new();
-    for directory in APP_DIRECTORIES {
-        let manifest = root.join(directory).join("package.json");
-        if !manifest.is_file() {
-            continue;
-        }
+    for directory in pnpm_app_directories(root)? {
+        let manifest = root.join(&directory).join("package.json");
         let source = fs::read_to_string(&manifest)
             .with_context(|| format!("could not read {}", manifest.display()))?;
         let Some((version, entries)) =
@@ -46,6 +43,28 @@ pub fn release_age_excludes(root: &Path) -> Result<Vec<String>> {
         lines.extend(entries.iter().map(|name| format!("  - '{name}@{version}'")));
     }
     Ok(lines)
+}
+
+fn pnpm_app_directories(root: &Path) -> Result<Vec<String>> {
+    let mut directories = Vec::new();
+    for entry in fs::read_dir(root).with_context(|| format!("could not read {}", root.display()))? {
+        let path = entry?.path();
+        if !is_pnpm_app(&path) {
+            continue;
+        }
+        if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+            directories.push(name.to_owned());
+        }
+    }
+    directories.sort();
+    Ok(directories)
+}
+
+fn is_pnpm_app(directory: &Path) -> bool {
+    directory.join("package.json").is_file()
+        && PNPM_MARKERS
+            .iter()
+            .any(|marker| directory.join(marker).is_file())
 }
 
 fn package_graph(manifests: &[&str]) -> Result<PackageGraph> {
@@ -151,11 +170,7 @@ mod tests {
     #[test]
     fn products_print_one_block_per_pnpm_app() -> Result<()> {
         let root = tempfile::tempdir()?;
-        fs::create_dir_all(root.path().join("mobile"))?;
-        fs::write(
-            root.path().join("mobile/package.json"),
-            r#"{"dependencies":{"@baukit/suite-client":"0.30.3"}}"#,
-        )?;
+        pnpm_app(root.path(), "mobile", "pnpm-workspace.yaml")?;
         let lines = release_age_excludes(root.path())?;
         assert_eq!(
             lines[0],
@@ -166,6 +181,49 @@ mod tests {
             lines.contains(&"  - '@baukit/type-guards@0.30.3'".to_owned()),
             "{lines:?}"
         );
+        Ok(())
+    }
+
+    #[test]
+    fn every_top_level_pnpm_app_gets_a_block() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        pnpm_app(root.path(), "web", "pnpm-workspace.yaml")?;
+        pnpm_app(root.path(), "extension", "pnpm-lock.yaml")?;
+        let headers = release_age_excludes(root.path())?
+            .into_iter()
+            .filter(|line| line.starts_with('#'))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            headers,
+            [
+                "# extension/pnpm-workspace.yaml, until @baukit/*@0.30.3 is a day old",
+                "# web/pnpm-workspace.yaml, until @baukit/*@0.30.3 is a day old",
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn directories_without_pnpm_are_skipped() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        fs::create_dir_all(root.path().join("tools"))?;
+        fs::write(
+            root.path().join("tools/package.json"),
+            r#"{"dependencies":{"@baukit/suite-client":"0.30.3"}}"#,
+        )?;
+        fs::write(root.path().join("package.json"), "{}")?;
+        assert!(release_age_excludes(root.path())?.is_empty());
+        Ok(())
+    }
+
+    fn pnpm_app(root: &Path, directory: &str, marker: &str) -> Result<()> {
+        let app = root.join(directory);
+        fs::create_dir_all(&app)?;
+        fs::write(
+            app.join("package.json"),
+            r#"{"dependencies":{"@baukit/suite-client":"0.30.3"}}"#,
+        )?;
+        fs::write(app.join(marker), "")?;
         Ok(())
     }
 }

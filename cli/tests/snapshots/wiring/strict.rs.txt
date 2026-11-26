@@ -116,12 +116,13 @@ async fn serve(
         let traffic_gate = traffic_gate.clone();
         move || traffic_gate.stop_accepting()
     });
-    let (operations, _readiness) = operations_router(
+    let (operations, readiness) = operations_router(
         backend.api.item_service,
         service_info.telemetry_identity().clone(),
         telemetry.prometheus_handle().clone(),
         traffic_gate,
     )?;
+    drop(readiness);
     let api_listener =
         TcpListener::bind(SocketAddr::new(config.http.bind_address, config.http.port)).await?;
     let operations_listener =
@@ -208,7 +209,7 @@ pub fn compose_api(
     let api = rate_limited(api, limits.as_ref());
     let late_routes = Vec::new();
     Ok(ComposedApi {
-        router: finalize_api(api, &config.http)?,
+        router: finalize_api(api, &config.http, config.environment)?,
         late_routes,
     })
 }

@@ -21,6 +21,7 @@ use snapshot_app_bin::compose_api;
 use snapshot_app_bin::config_loader;
 use snapshot_app_bin::identity_erasure;
 use snapshot_app_bin::operations_router;
+use snapshot_app_bin::register_identity_provider_readiness;
 use snapshot_app_postgres::PostgresItemRepository;
 use snapshot_app_postgres::PostgresProfileErasure;
 use snapshot_app_postgres::PostgresUserRepository;
@@ -148,12 +149,18 @@ async fn serve(
         let traffic_gate = traffic_gate.clone();
         move || traffic_gate.stop_accepting()
     });
-    let (operations, _readiness) = operations_router(
+    let erasure = backend.api.api_state.erasure.service.clone();
+    let (operations, readiness) = operations_router(
         backend.api.item_service,
         service_info.telemetry_identity().clone(),
         telemetry.prometheus_handle().clone(),
         traffic_gate,
     )?;
+    if config.environment == Environment::Local {
+        drop((readiness, erasure));
+    } else {
+        register_identity_provider_readiness(&readiness, erasure)?;
+    }
     let api_listener =
         TcpListener::bind(SocketAddr::new(config.http.bind_address, config.http.port)).await?;
     let operations_listener =
@@ -268,7 +275,7 @@ pub async fn compose_api(
             store,
             options: rate_limit_options.clone(),
         });
-    let mut http = http_options(&config.http)?;
+    let mut http = http_options(&config.http, config.environment)?;
     if config.environment != Environment::Local {
         http = http.with_hsts(HSTS_MAX_AGE);
     }
@@ -1101,6 +1108,23 @@ pub fn worker_operations_router(
         .with_traffic_gate(traffic_gate)
         .into_router();
     Ok((router, readiness))
+}
+
+/// Fails readiness while the identity provider rejects the deleter's base URL or credentials.
+/// Local stacks skip it because they run with placeholder provider secrets.
+pub fn register_identity_provider_readiness(
+    readiness: &ReadinessRegistry,
+    service: baukit_erasure::ErasureService,
+) -> Result<(), RegistrationError> {
+    readiness.register_fn_default("identity_provider", move || {
+        let service = service.clone();
+        async move {
+            service
+                .probe_identity_provider()
+                .await
+                .map_err(|_| ReadinessError::new("identity provider deletion is unavailable"))
+        }
+    })
 }
 
 pub fn identity_erasure(

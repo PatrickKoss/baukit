@@ -48,6 +48,42 @@ remove_temporary_paths() {
 }
 trap remove_temporary_paths EXIT
 
+baukit_remote=https://github.com/PatrickKoss/baukit.git
+baukit_clone_retry_seconds=5
+
+clone_baukit_tag() {
+  git clone --quiet --branch "$1" --depth 1 "$baukit_remote" "$2" >&2 && return 0
+  rm -rf "$2"
+  sleep "$baukit_clone_retry_seconds"
+  git clone --quiet --branch "$1" --depth 1 "$baukit_remote" "$2" >&2
+}
+
+move_into_place() {
+  python3 -c 'import os, sys; os.rename(sys.argv[1], sys.argv[2])' "$1" "$2"
+}
+
+cached_baukit_checkout() {
+  checkout_dir=${XDG_CACHE_HOME:-$HOME/.cache}/baukit/checkouts/$1
+  if [ -d "$checkout_dir" ]; then
+    printf '%s\n' "$checkout_dir"
+    return 0
+  fi
+  mkdir -p "${checkout_dir%/*}"
+  staging_dir=$(mktemp -d "$checkout_dir.tmp.XXXXXX")
+  if ! clone_baukit_tag "$1" "$staging_dir/checkout"; then
+    rm -rf "$staging_dir"
+    echo "quality gate: the baukit remote $baukit_remote was unreachable; could not cache $1 at $checkout_dir. This is a network failure, not a gate failure; rerun the gate." >&2
+    return 1
+  fi
+  move_into_place "$staging_dir/checkout" "$checkout_dir" 2>/dev/null || true
+  rm -rf "$staging_dir"
+  if [ ! -d "$checkout_dir" ]; then
+    echo "quality gate: could not move the baukit $1 checkout to $checkout_dir" >&2
+    return 1
+  fi
+  printf '%s\n' "$checkout_dir"
+}
+
 baukit_root=
 use_baukit_root() {
   if [ -n "$baukit_root" ]; then
@@ -56,10 +92,7 @@ use_baukit_root() {
   if [ "$(manifest_value dependencies.baukit.source)" = "path" ]; then
     baukit_root=$(CDPATH='' cd -- "$(manifest_value dependencies.baukit.path)/.." && pwd)
   else
-    baukit_root=$(mktemp -d)
-    temporary_paths="$temporary_paths $baukit_root"
-    git clone --branch v{{ context.template_version }} --depth 1 \
-      https://github.com/PatrickKoss/baukit.git "$baukit_root"
+    baukit_root=$(cached_baukit_checkout v{{ context.template_version }}) || exit 2
   fi
   MISE_TRUSTED_CONFIG_PATHS="$baukit_root${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}"
   export MISE_TRUSTED_CONFIG_PATHS
@@ -176,14 +209,19 @@ step_preflight() {
   sh scripts/preflight.sh
 }
 
+run_baukit_cli() {
+  CARGO_TARGET_DIR="${BAUKIT_GATE_LOG_DIR:-$(pwd)/.quality-gate}/baukit-target" \
+    cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- "$@"
+}
+
 step_baukit_doctor() {
   use_baukit_root
-  cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- doctor
+  run_baukit_cli doctor
 }
 
 step_baukit_check() {
   use_baukit_root
-  cargo run --quiet --locked --manifest-path "$baukit_root/cli/Cargo.toml" --bin baukit -- \
+  run_baukit_cli \
     check agent-docs file-size suppressions lints patterns observability template-files fuzz-lockfile security --root .
 }
 
