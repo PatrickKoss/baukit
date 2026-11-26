@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## 0.30.5
+
+### Patch Changes
+
+- Release the coordinated baukit 0.30.5 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.30.5
+  - @baukit/localization-core@0.30.5
+  - @baukit/type-guards@0.30.5
+
 ## 0.30.4
 
 ### Patch Changes
