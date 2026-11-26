@@ -10,7 +10,7 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use baukit_core::webhook_signature::{sign_webhook_hmac_sha256, verify_webhook_hmac_sha256};
-use baukit_credential_vault::{CredentialCipher, EncryptedCredentials, EncryptedField};
+use baukit_credential_vault::{CredentialCipher, EncryptedField, SealedCredentials};
 use baukit_events::EventEnvelope;
 use baukit_jobs::{
     JobStore, NewJob, PostgresJobStore, TerminalJobCleanupOutcome, TerminalJobCutoffs,
@@ -166,8 +166,9 @@ fn query(url: &str, key: &str) -> String {
 
 fn secret(link: &SuiteLink) -> Vec<u8> {
     cipher()
-        .decrypt(&EncryptedCredentials {
+        .open_record(&SealedCredentials {
             scope_id: link.id,
+            record_id: link.secret.record_id.expect("new links carry a record id"),
             key_version: link.secret.key_version,
             fields: BTreeMap::from([(
                 "link_secret".to_owned(),
@@ -731,6 +732,7 @@ async fn assert_start_supersedes_prepared_exchange(
             ciphertext: field.ciphertext.clone(),
             nonce: field.nonce.clone(),
             key_version: sealed.key_version,
+            record_id: None,
         },
     };
     let mut tx = c.store.begin_transaction().await?;
@@ -1307,7 +1309,7 @@ async fn receiving_signature_fixture_matrix_uses_raw_bytes() -> TestResult {
             )?,
         )?;
         let field = &encrypted.fields["link_secret"];
-        sqlx::query("UPDATE suite_links SET secret_ciphertext=$2,secret_nonce=$3,secret_key_version=$4 WHERE id=$1").bind(link.id).bind(&field.ciphertext).bind(&field.nonce).bind(encrypted.key_version).execute(&db.pool).await?;
+        sqlx::query("UPDATE suite_links SET secret_ciphertext=$2,secret_nonce=$3,secret_key_version=$4,secret_record_id=NULL WHERE id=$1").bind(link.id).bind(&field.ciphertext).bind(&field.nonce).bind(encrypted.key_version).execute(&db.pool).await?;
         let stamp = case["timestamp"]
             .as_i64()
             .expect("valid test value")
@@ -1973,6 +1975,9 @@ mod common {
     pub async fn postgres_database() -> Result<TestDatabase, Box<dyn Error>> {
         let database = postgres_database_before_lock_order().await?;
         sqlx::raw_sql(SUITE_LOCK_ORDER_MIGRATION_SQL)
+            .execute(&database.pool)
+            .await?;
+        sqlx::raw_sql(SUITE_RECORD_IDS_MIGRATION_SQL)
             .execute(&database.pool)
             .await?;
         Ok(database)
@@ -4175,6 +4180,9 @@ async fn lock_order_migration_preserves_old_failures_and_accounts_new_jobs_once(
     sqlx::raw_sql(SUITE_LOCK_ORDER_MIGRATION_SQL)
         .execute(&db.pool)
         .await?;
+    sqlx::raw_sql(SUITE_RECORD_IDS_MIGRATION_SQL)
+        .execute(&db.pool)
+        .await?;
     let store = PostgresSuiteLinkStore::new(db.pool.clone());
     assert_eq!(
         store
@@ -4282,8 +4290,9 @@ async fn start_preserves_default_and_hosted_authorize_paths_and_protocol_paramet
             })
             .await?
             .ok_or("missing request")?;
-        let verifier = cipher().decrypt(&EncryptedCredentials {
+        let verifier = cipher().open_record(&SealedCredentials {
             scope_id: response.request_id,
+            record_id: request.verifier.record_id.ok_or("no record id")?,
             key_version: request.verifier.key_version,
             fields: BTreeMap::from([(
                 "pkce_verifier".into(),
