@@ -570,6 +570,14 @@ CL1 fixture replay; CB4, CB5, ID3, ID4 (`baukit-suite`); CB6, CB7 (push, erasure
 Templates in one agent (CB8, IN2/IN4-IN6 wiring, CL2, CL4 mobile part, CL5 template part, CL6, FX2);
 PL6; FX3, FX4; REL1-REL3.
 
+| Agent | Tasks | Status |
+|---|---|---|
+| rel-tpl-clients | CL2, CL4 (mobile), CL5 (templates) | merged, verified |
+| rel-platform | PL6, PL4 rest, PL7 rest | merged after two rounds plus an orchestrator guard; e2e and trivy pending |
+| rel-tpl-backend | CB3 helper, WK5 suite key, CB8, IN2/IN4/IN5/IN6 wiring, migrations, CL6, FX2 | round 2 running |
+| rel-fx | FX3 platform e2e cases, FX4 k6 load smoke | running |
+| orchestrator | RC3 contract doc, REL1-REL3, Docker and fixture gates | after the agents merge |
+
 ## Open questions
 
 - D3 numbers are guesses until FX4 runs against a real product. Revisit after the first load smoke.
@@ -733,3 +741,15 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
     and ingress suites.
 - `scripts/publish-crates.sh` now publishes `baukit-resilience` before `baukit-http`, which depends on
   it. scripts-tests caught the wrong order.
+- rel-tpl-backend round 1 reviewed. All 11 tasks are in. The IN2 deviation stands: the template's
+  `LimitsPolicyUnavailable` is a parse failure of the embedded limits, so it stays 500.
+  - The baukit-config default `drain_timeout` goes from 30 s to 35 s, because 30 s plus the 3 s flush
+    reserve does not fit inside 30 s.
+  - The platform migration is renumbered to 0011.
+  - Round 2 asks for five things:
+    - Merge the integration branch and re-bless.
+    - Generate the d.ts files instead of hand-editing them.
+    - Remove `WORKER__LEASE_DURATION_SECONDS`.
+    - Pause Postgres mid-job in the worker test.
+    - Add the threat-model row.
+- rel-fx started on FX3 and FX4. It writes them only; I run them.
