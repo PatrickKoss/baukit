@@ -1986,6 +1986,7 @@ mod common {
             baukit_jobs::POSTGRES_MIGRATION_0003_SQL,
             baukit_jobs::POSTGRES_MIGRATION_0004_SQL,
             baukit_jobs::POSTGRES_MIGRATION_0005_SQL,
+            baukit_jobs::POSTGRES_MIGRATION_0006_SQL,
             SUITE_MIGRATION_SQL,
             SUITE_RUNTIME_MIGRATION_SQL,
         ] {

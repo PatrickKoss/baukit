@@ -18,17 +18,22 @@ workspace = true
 [features]
 default = []
 sqlx-postgres = ["dep:sqlx", "dep:baukit-config", "dep:baukit-resilience", "dep:tracing"]
+jobs = ["dep:baukit-config", "dep:baukit-http", "dep:baukit-jobs", "dep:subtle", "dep:uuid"]
 
 [dependencies]
 axum.workspace = true
 baukit-config = { workspace = true, optional = true }
 baukit-core.workspace = true
+baukit-http = { workspace = true, optional = true }
+baukit-jobs = { workspace = true, optional = true }
 baukit-resilience = { workspace = true, optional = true, features = ["startup"] }
 baukit-telemetry.workspace = true
 serde.workspace = true
 sqlx = { workspace = true, optional = true }
+subtle = { workspace = true, optional = true }
 tokio.workspace = true
 tracing = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 baukit-test = { path = "../baukit-test" }

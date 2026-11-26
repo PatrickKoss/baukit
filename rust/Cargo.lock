@@ -519,6 +519,7 @@ dependencies = [
 name = "baukit-jobs"
 version = "0.30.6"
 dependencies = [
+ "baukit-resilience",
  "baukit-runtime",
  "baukit-telemetry",
  "baukit-test",
@@ -589,6 +590,8 @@ dependencies = [
  "axum",
  "baukit-config",
  "baukit-core",
+ "baukit-http",
+ "baukit-jobs",
  "baukit-resilience",
  "baukit-telemetry",
  "baukit-test",
@@ -596,9 +599,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "subtle",
  "tokio",
  "tower",
  "tracing",
+ "uuid",
 ]
 
 [[package]]

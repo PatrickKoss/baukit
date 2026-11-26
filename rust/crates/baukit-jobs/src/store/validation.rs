@@ -1,8 +1,8 @@
 use crate::{JobFailureReason, JobStatus, NewJob, StoreError};
 
 use super::{
-    MAX_DEDUPE_KEY_LENGTH, MAX_ERROR_LENGTH, MAX_IDEMPOTENCY_KEY_LENGTH, MAX_JOB_TYPE_LENGTH,
-    MAX_WORKER_ID_LENGTH,
+    MAX_CONCURRENCY_KEY_LENGTH, MAX_DEDUPE_KEY_LENGTH, MAX_ERROR_LENGTH,
+    MAX_IDEMPOTENCY_KEY_LENGTH, MAX_JOB_TYPE_LENGTH, MAX_WORKER_ID_LENGTH,
 };
 
 pub(super) fn validate_deduplicated_job(job: &NewJob, dedupe_key: &str) -> Result<(), StoreError> {
@@ -25,6 +25,9 @@ pub(super) fn validate_new_job(job: &NewJob) -> Result<(), StoreError> {
     }
     if let Some(key) = &job.idempotency_key {
         validate_text("idempotency_key", key, MAX_IDEMPOTENCY_KEY_LENGTH)?;
+    }
+    if let Some(key) = &job.concurrency_key {
+        validate_text("concurrency_key", key, MAX_CONCURRENCY_KEY_LENGTH)?;
     }
     Ok(())
 }

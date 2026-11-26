@@ -9,7 +9,8 @@
 //!
 //! Products must copy [`POSTGRES_MIGRATION_SQL`],
 //! [`POSTGRES_MIGRATION_0002_SQL`], [`POSTGRES_MIGRATION_0003_SQL`],
-//! [`POSTGRES_MIGRATION_0004_SQL`], and [`POSTGRES_MIGRATION_0005_SQL`] into their own ordered SQLx migrations.
+//! [`POSTGRES_MIGRATION_0004_SQL`], [`POSTGRES_MIGRATION_0005_SQL`], and
+//! [`POSTGRES_MIGRATION_0006_SQL`] into their own ordered SQLx migrations.
 //! The crate never runs migrations at process startup. Use
 //! [`PostgresJobStore::enqueue_in_transaction`] when a domain write and its
 //! job need to commit atomically. Likewise, a handler which writes PostgreSQL can
@@ -42,8 +43,10 @@ mod error;
 mod metrics;
 mod model;
 mod recurring;
+mod recurring_job;
 mod runner;
 mod store;
+mod wakeup;
 
 pub use error::{JobError, RunnerError, StoreError};
 pub use model::{
@@ -51,8 +54,15 @@ pub use model::{
     JobStatus, NewJob, QueueDepth, ReleaseReason, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
 pub use recurring::{FixedUtcInterval, FixedUtcIntervalError, FixedUtcJitter, FixedUtcSlot};
+pub use recurring_job::{RecurringJob, RecurringJobError};
 pub use runner::{JobCancellation, JobFuture, JobHandler, StoreHealth, WorkerConfig, WorkerRunner};
-pub use store::{JobStore, MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE, PostgresJobStore, StoreFuture};
+#[doc(hidden)]
+pub use store::CLAIM_CANDIDATE_SQL;
+pub use store::{
+    JOB_ENQUEUED_CHANNEL, JobStore, MAX_REQUEUE_BATCH_SIZE, MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE,
+    PostgresJobStore, StoreFuture, spawn_enqueue_listener,
+};
+pub use wakeup::JobWakeup;
 
 /// Reference PostgreSQL schema for product-owned migrations.
 ///
@@ -94,3 +104,11 @@ pub const POSTGRES_MIGRATION_0004_SQL: &str =
 /// and writes the column on every claim and release.
 pub const POSTGRES_MIGRATION_0005_SQL: &str =
     include_str!("../migrations/0005_baukit_jobs_deferrals.sql");
+
+/// Adds `concurrency_key` and the running-key index used by [`WorkerConfig::max_per_key`].
+///
+/// Apply this SQL as a new product-owned migration after
+/// [`POSTGRES_MIGRATION_0005_SQL`] before running this version. Every enqueue
+/// and claim reads or writes the column.
+pub const POSTGRES_MIGRATION_0006_SQL: &str =
+    include_str!("../migrations/0006_baukit_jobs_concurrency_key.sql");

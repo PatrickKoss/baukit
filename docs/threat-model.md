@@ -1,6 +1,6 @@
 # Threat model
 
-Baukit foundation, written with `agent-skills/skills/baukit-threat-model`. Last reviewed: 2026-11-16, on top of commit f22e039f (P-07 to P-17).
+Baukit foundation, written with `agent-skills/skills/baukit-threat-model`. Last reviewed: 2026-11-26, on top of commit 9e38df08 (J-01 to J-05 added for the jobs requeue route).
 
 Baukit is a library, so this model covers the controls the crates, packages, templates and edge config provide, and the threats they cover for a product that uses them as generated. Each product keeps its own `docs/threat-model.md` for routes, data and integrations it adds. Gaps S-01 to S-11 come from the security catalog in `docs/quality-security-plan.md`.
 
@@ -31,6 +31,7 @@ Baukit is a library, so this model covers the controls the crates, packages, tem
 | tenant GitOps repository to cluster | Flux Kustomizations and HelmReleases in a namespace labelled `baukit.dev/tenant=true` (`deploy/platform/components/tenant`) | the tenant's `flux-reconciler` ServiceAccount, impersonated by kustomize-controller and helm-controller |
 | tenant custom resources to platform controllers | Flagger `Canary` and `MetricTemplate`, Traefik `IngressRoute`, `Middleware` and `TraefikService`, Prometheus Operator `ServiceMonitor` in a tenant namespace, granted to `admin` by `baukit-tenant-*` ClusterRoles in the flagger, traefik and observability-stack bases | Flagger, Traefik and Prometheus, each acting with its own pod identity and network reach |
 | Flagger to tenant metrics proxy | `tenant-metrics-proxy` Service in each tenant namespace (prom-label-proxy, plain HTTP on 8080), forwarding to the platform Prometheus | none on the listener; NetworkPolicy admits only Flagger pods in `flagger-system`, and the proxy's label value is fixed by flag |
+| operator to worker ops port | `baukit-ops` `jobs_admin` `POST /admin/jobs/requeue`, merged into the private operations listener only | `Authorization: Bearer` admin token, a `baukit_config::Secret<String>` compared in constant time |
 | API server to Falco audit webhook | k8saudit plugin on `falco-k8saudit-webhook` (`10.43.0.60:9765/k8s-audit`, plain HTTP inside the cluster) | none on the listener; NetworkPolicy admits the node CIDR only |
 
 ## Threats
@@ -88,6 +89,11 @@ Baukit is a library, so this model covers the controls the crates, packages, tem
 | S-10 | all | all | New boundaries ship without a threat review | this file and the `baukit-threat-model` skill | product `docs/threat-model.md` checked in review | gap, P2.10, P2.11 |
 | S-11 | IdP to API | S | Products lack negative auth tests | `baukit_test::jwt` fixtures only | to write: `baukit-test` auth negative suite (expired, iss, aud, alg none, HS256 confusion, unknown kid, tampered payload) | gap, P2.8 |
 | S-12 | mobile web build to API | I | Expo web build keeps tokens in `localStorage` through the `expo-secure-store` fallback | `auth-storage.ts` refuses on web; OIDC uses the `/auth/session` BFF, Clerk and WorkOS their browser SDKs (ADR 0006 section 9) | `templates/mobile/__auth__/mobile/src/web-sign-in-storage.test.ts`, `src/auth-storage.test.ts` | covered |
+| J-01 | operator to worker ops port | S, E | Anyone who reaches the ops port (a pod in the cluster, a port-forward, a Prometheus scraper) requeues failed jobs | bearer admin token checked before the body is parsed; an empty token rejects every request (`rust/crates/baukit-ops/src/jobs_admin.rs`) | `rust/crates/baukit-ops/src/jobs_admin.rs::missing_or_wrong_tokens_get_401_without_calling_the_store`, `::an_empty_admin_token_rejects_every_request` | covered |
+| J-02 | operator to worker ops port | E | Product merges the requeue router into the public API router, exposing it to the internet | module docs and README say ops listener only; the token still guards the route | to write: product test that the API router answers 404 on `/admin/jobs/requeue` | untested |
+| J-03 | operator to worker ops port | I | Admin token leaks through Debug, logs or the 401 body | `Secret` redacts Debug and Display; the handler logs only store errors | `rust/crates/baukit-ops/src/jobs_admin.rs::missing_or_wrong_tokens_get_401_without_calling_the_store` asserts the body omits the token | covered |
+| J-04 | operator to worker ops port | D | One call requeues an unbounded set and floods workers or the database | 1 to `MAX_REQUEUE_BATCH_SIZE` (1000) ids per call, one job type from the product allowlist (`rust/crates/baukit-jobs/src/store/requeue.rs`) | `rust/crates/baukit-jobs/tests/postgres_reliability.rs` (Docker) and `jobs_admin.rs::store_input_errors_are_bad_requests` | covered |
+| J-05 | operator to worker ops port | T, R | A replayed or repeated request re-runs side effects of jobs that failed after a partial external write | requeue touches only rows still `failed` and skips rows whose dedupe key an active job holds, so a replay after success is a no-op; re-running a failed job is the intended effect and handlers must be idempotent. No audit row records who requeued | none for the audit trail | accepted, operator action, handlers own idempotency |
 
 ## Re-run when
 

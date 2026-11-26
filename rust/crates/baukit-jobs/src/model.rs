@@ -64,6 +64,8 @@ pub struct Job {
     pub cancel_requested_at: Option<Timestamp>,
     /// Releases that returned an attempt instead of consuming it.
     pub deferrals: u32,
+    /// Key shared by jobs that compete for [`crate::WorkerConfig::max_per_key`] slots.
+    pub concurrency_key: Option<String>,
     /// Creation timestamp.
     pub created_at: Timestamp,
     /// Timestamp of the latest lifecycle transition.
@@ -88,6 +90,8 @@ pub struct NewJob {
     pub run_after: Timestamp,
     /// Optional key unique within `job_type`.
     pub idempotency_key: Option<String>,
+    /// Optional key that limits how many jobs sharing it run at once.
+    pub concurrency_key: Option<String>,
     /// Creation timestamp.
     pub created_at: Timestamp,
 }
@@ -103,6 +107,7 @@ impl NewJob {
             max_attempts,
             run_after: now,
             idempotency_key: None,
+            concurrency_key: None,
             created_at: now,
         }
     }
@@ -118,6 +123,17 @@ impl NewJob {
     #[must_use]
     pub fn idempotency_key(mut self, key: impl Into<String>) -> Self {
         self.idempotency_key = Some(key.into());
+        self
+    }
+
+    /// Sets the key that [`crate::WorkerConfig::max_per_key`] limits.
+    ///
+    /// Keys are global across job types: jobs of any type with the same key
+    /// share the limit. Use one key per downstream dependency, such as a peer
+    /// application, so a hanging peer holds at most `max_per_key` worker slots.
+    #[must_use]
+    pub fn concurrency_key(mut self, key: impl Into<String>) -> Self {
+        self.concurrency_key = Some(key.into());
         self
     }
 }
