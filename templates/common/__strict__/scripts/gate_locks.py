@@ -1,7 +1,7 @@
 """Host-wide resource locks and a shared core pool for concurrent gates.
 
 `BAUKIT_GATE_LOCK_DIR` holds one `<resource>.lock` file per host resource. A step locks it
-exclusively, or shared with other shared holders.
+exclusively, shared with other shared holders, or as a creator with other creators.
 `BAUKIT_GATE_CORE_POOL` holds `slot-<n>.lock` files, one per core. Both rely on flock, so
 the kernel frees them when a gate dies. File descriptors stay non-inheritable, so no child
 of a step keeps a lock alive.
@@ -17,40 +17,61 @@ import uuid
 from collections.abc import Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 
 LOCK_DIR_ENV = "BAUKIT_GATE_LOCK_DIR"
 CORE_POOL_ENV = "BAUKIT_GATE_CORE_POOL"
 RESOURCE_ORDER = ("android", "docker-network")
-DEFAULT_RESOURCES = {
-    "android": ("android-boot", "android-e2e", "android-debug"),
-    "docker-network": ("android-e2e",),
-}
-SHARED_SUFFIX = "~shared"
 POOL_POLL_SECONDS = 0.2
 LOCK_POLL_SECONDS = 0.05
 TICKET_READ_BYTES = 4096
 LOCK_MODE = 0o600
 
 
+class Mode(Enum):
+    """How a step holds a resource. The value is its ticket token suffix."""
+
+    EXCLUSIVE = ""
+    SHARED = "~shared"
+    CREATOR = "~creator"
+
+
+MODE_KEYS = {
+    "resources": Mode.EXCLUSIVE,
+    "shared_resources": Mode.SHARED,
+    "creator_resources": Mode.CREATOR,
+}
+DEFAULT_RESOURCES = {
+    Mode.EXCLUSIVE: {"android": ("android-boot", "android-e2e", "android-debug")},
+    Mode.CREATOR: {"docker-network": ("android-e2e",)},
+}
+GROUP_FILE = {Mode.SHARED: "shared", Mode.CREATOR: "creator"}
+OTHER_GROUP = {Mode.SHARED: Mode.CREATOR, Mode.CREATOR: Mode.SHARED}
+
+
 @dataclass(frozen=True)
 class Need:
-    """A resource a step locks, exclusively or shared with other shared holders."""
+    """A resource a step locks. Holders in one shared or creator mode run together."""
 
     resource: str
-    shared: bool = False
+    mode: Mode = Mode.EXCLUSIVE
 
     @property
     def token(self) -> str:
-        return self.resource + (SHARED_SUFFIX if self.shared else "")
+        return self.resource + self.mode.value
 
     @classmethod
     def parse(cls, token: str) -> Need:
-        shared = token.endswith(SHARED_SUFFIX)
-        return cls(token.removesuffix(SHARED_SUFFIX), shared)
+        for mode in (Mode.SHARED, Mode.CREATOR):
+            if token.endswith(mode.value):
+                return cls(token.removesuffix(mode.value), mode)
+        return cls(token)
 
     def conflicts_with(self, other: Need) -> bool:
-        return self.resource == other.resource and not (self.shared and other.shared)
+        if self.resource != other.resource:
+            return False
+        return self.mode is Mode.EXCLUSIVE or self.mode is not other.mode
 
 
 @dataclass(frozen=True)
@@ -63,18 +84,21 @@ class LockWait:
 class ResourceRule:
     name: str
     members: frozenset[str]
-    shared: bool = False
+    mode: Mode = Mode.EXCLUSIVE
 
 
 def resource_map(settings: Mapping) -> list[ResourceRule]:
-    """Merge the template defaults with `[quality.resources]` and `[quality.shared_resources]`."""
+    """Merge the template defaults with `[quality.resources]`, `[quality.shared_resources]`
+    and `[quality.creator_resources]`."""
     quality = settings.get("quality", {})
-    exclusive = {name: set(members) for name, members in DEFAULT_RESOURCES.items()}
-    for name, members in quality.get("resources", {}).items():
-        exclusive.setdefault(name, set()).update(members)
-    rules = [ResourceRule(name, frozenset(members)) for name, members in exclusive.items()]
-    for name, members in quality.get("shared_resources", {}).items():
-        rules.append(ResourceRule(name, frozenset(members), shared=True))
+    rules = []
+    for key, mode in MODE_KEYS.items():
+        merged = {name: set(members) for name, members in DEFAULT_RESOURCES.get(mode, {}).items()}
+        for name, members in quality.get(key, {}).items():
+            merged.setdefault(name, set()).update(members)
+        rules.extend(
+            ResourceRule(name, frozenset(members), mode) for name, members in merged.items()
+        )
     return rules
 
 
@@ -90,23 +114,22 @@ def resource_rank(need: Need) -> tuple[int, str]:
 def resources_for(names: set[str], rules: list[ResourceRule]) -> list[Need]:
     """Return what a step with these names (step name and lane) locks, in lock order.
 
-    A step that matches a resource both ways locks it exclusively.
+    A step that matches a resource in more than one mode locks it exclusively.
     """
-    needed: dict[str, Need] = {}
+    modes: dict[str, set[Mode]] = {}
     for rule in rules:
-        if rule.members & names and rule.name not in needed:
-            needed[rule.name] = Need(rule.name, rule.shared)
-        elif rule.members & names and not rule.shared:
-            needed[rule.name] = Need(rule.name)
-    return sorted(needed.values(), key=resource_rank)
+        if rule.members & names:
+            modes.setdefault(rule.name, set()).add(rule.mode)
+    needed = [
+        Need(name, found.pop() if len(found) == 1 else Mode.EXCLUSIVE)
+        for name, found in modes.items()
+    ]
+    return sorted(needed, key=resource_rank)
 
 
 def unknown_resource_members(settings: Mapping, lanes_and_steps: set[str]) -> list[str]:
     quality = settings.get("quality", {})
-    configured = [
-        *quality.get("resources", {}).values(),
-        *quality.get("shared_resources", {}).values(),
-    ]
+    configured = [members for key in MODE_KEYS for members in quality.get(key, {}).values()]
     return sorted({member for members in configured for member in members} - lanes_and_steps)
 
 
@@ -115,15 +138,45 @@ def open_locked(path: Path) -> int:
     return os.open(path, os.O_RDWR | os.O_CREAT | os.O_CLOEXEC, LOCK_MODE)
 
 
+@dataclass(frozen=True)
+class FileLock:
+    path: Path
+    flag: int
+    probe: bool = False
+
+
+def file_locks(directory: Path, need: Need) -> list[FileLock]:
+    """Return the flock files a need takes, in order.
+
+    Every holder takes `<resource>.lock`, so an exclusive holder of any version excludes all
+    others. A shared or creator holder takes it shared, takes its own group file shared, and
+    then probes the other group's file exclusively and lets it go again. Each group raises its
+    flag before it looks at the other's, so of two arrivals from opposite groups at most one
+    passes, and a holder keeps its flag until it ends.
+    """
+    main = directory / f"{need.resource}.lock"
+    if need.mode is Mode.EXCLUSIVE:
+        return [FileLock(main, fcntl.LOCK_EX)]
+
+    def group(mode: Mode) -> Path:
+        return directory / f"{need.resource}.{GROUP_FILE[mode]}.lock"
+
+    return [
+        FileLock(main, fcntl.LOCK_SH),
+        FileLock(group(need.mode), fcntl.LOCK_SH),
+        FileLock(group(OTHER_GROUP[need.mode]), fcntl.LOCK_EX, probe=True),
+    ]
+
+
 class ResourceLocks:
     """Fair, all-or-nothing resource locks.
 
     A step queues a ticket naming every resource it needs and how. It tries the resource
     locks, all in one pass without blocking, only when no earlier live ticket conflicts with
-    it. Two tickets conflict when they name one resource and at least one wants it
-    exclusively. It never holds one lock while it waits for another, and a later step cannot
-    overtake an earlier conflicting step, so shared arrivals cannot starve an exclusive
-    waiter and the wait is bounded by the holders ahead.
+    it. Two tickets conflict when they name one resource and do not both want it shared or
+    both as creators. It never holds one lock while it waits for another, and a later step
+    cannot overtake an earlier conflicting step, so shared arrivals cannot starve an exclusive
+    waiter or a creator, and the wait is bounded by the holders ahead.
     """
 
     def __init__(self, directory: Path):
@@ -158,17 +211,19 @@ class ResourceLocks:
 
     def try_take(self, resources: list[Need], stack: ExitStack) -> bool:
         taken: list[int] = []
-        for need in resources:
-            descriptor = open_locked(self.directory / f"{need.resource}.lock")
-            mode = fcntl.LOCK_SH if need.shared else fcntl.LOCK_EX
+        for lock in (lock for need in resources for lock in file_locks(self.directory, need)):
+            descriptor = open_locked(lock.path)
             try:
-                fcntl.flock(descriptor, mode | fcntl.LOCK_NB)
+                fcntl.flock(descriptor, lock.flag | fcntl.LOCK_NB)
             except BlockingIOError:
                 os.close(descriptor)
                 for held in taken:
                     os.close(held)
                 return False
-            taken.append(descriptor)
+            if lock.probe:
+                os.close(descriptor)
+            else:
+                taken.append(descriptor)
         for descriptor in taken:
             stack.callback(os.close, descriptor)
         return True

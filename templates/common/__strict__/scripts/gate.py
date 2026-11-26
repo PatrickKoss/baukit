@@ -982,8 +982,8 @@ def unknown_names_error(settings: dict, light: frozenset[str], steps: list[Step]
     unknown = unknown_resource_members(settings, names)
     if unknown:
         return (
-            "gate: quality.resources and quality.shared_resources name unknown "
-            f"lanes or steps: {', '.join(unknown)}"
+            "gate: quality.resources, quality.shared_resources and quality.creator_resources "
+            f"name unknown lanes or steps: {', '.join(unknown)}"
         )
     return None
 
