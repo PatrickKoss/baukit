@@ -9,7 +9,11 @@ wired into `baukit_config::BaukitConfig`.
 
 ## The port
 
-```rust,ignore
+```rust
+# use std::collections::BTreeMap;
+# use baukit_integrations::{
+#     ClaimedConnectorJob, ConnectorFuture, VerifiedWebhook, WebhookVerificationError,
+# };
 pub trait IntegrationConnector: Send + Sync {
     type Record;
 
@@ -147,7 +151,7 @@ serializes as snake case, so it can go straight into a status response.
 Credential checks are not import jobs. Implement `CredentialProbe` on the
 product adapter that calls the provider account endpoint:
 
-```rust,ignore
+```rust
 use baukit_integrations::{CredentialProbe, CredentialProbeFuture};
 
 struct ProductCredentialProbe;
@@ -197,12 +201,25 @@ your migrations and run `purge_expired` from a daily job. The start route
 belongs to an authenticated user. The callback carries no bearer, so put it
 inside the rate limiter like every other route.
 
-```rust,ignore
+```rust,no_run
 use baukit_integrations::oauth_state::{
     OAuthState, OAuthStateService, Pkce, StartOAuthFlow,
     axum::{binding_clear_cookie, binding_from_headers, binding_set_cookie},
     postgres::PostgresOAuthStateStore,
 };
+# use std::sync::Arc;
+# use axum::http::HeaderMap;
+# use sqlx::PgPool;
+# struct CallbackQuery { state: String }
+# fn provider_authorize_url(_state: &str, _challenge: Option<&str>) -> String { String::new() }
+# async fn example(
+#     pool: PgPool,
+#     user_id: &str,
+#     provider: String,
+#     redirect: String,
+#     query: CallbackQuery,
+#     headers: HeaderMap,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 
 let states = OAuthStateService::new(Arc::new(PostgresOAuthStateStore::new(pool)));
 
@@ -221,6 +238,9 @@ let flow = states.complete(&state, &binding).await?;
 // check flow.provider matches the path, exchange `code` with
 // flow.pkce_verifier, link the account to flow.user,
 // respond with `Set-Cookie: binding_clear_cookie()`
+# let _ = (url, cookie, flow, binding_clear_cookie());
+# Ok(())
+# }
 ```
 
 Map the errors to one response. `Unknown`, `Expired`, `AlreadyUsed` and
@@ -228,8 +248,8 @@ Map the errors to one response. `Unknown`, `Expired`, `AlreadyUsed` and
 browser which one fired. A browser holds one binding cookie, so starting a
 second flow in another tab makes the first one fail with `BrowserMismatch`.
 
-Products move to this during P4.2: drop the signed user-carrying `state`, take
-the user from `complete`, and add a callback test where a second browser's
+To move a product to this, drop the signed user-carrying `state`, take the
+user from `complete`, and add a callback test where a second browser's
 cookie is denied.
 
 ## What stays in your product
@@ -249,12 +269,15 @@ rate limited, unavailable, timeout, revoked, and exhausted. The four transient
 ones fail once and then succeed, so a test can prove a handler actually retries;
 `Exhausted` fails forever, which is how you reach the attempt cap on purpose.
 
-```rust,ignore
+```rust
 use baukit_test::{FakeConnector, FakeConnectorScenario};
+# use baukit_integrations::{ClaimedConnectorJob, IntegrationConnector};
+# async fn example(job: ClaimedConnectorJob) {
 
 let connector = FakeConnector::new("strava", FakeConnectorScenario::RateLimited);
 assert!(connector.fetch_page(&job, None).await.is_err()); // first attempt
 assert!(connector.fetch_page(&job, None).await.is_ok());  // retry succeeds
+# }
 ```
 
 For credential adapters, use

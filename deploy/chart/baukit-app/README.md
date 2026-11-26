@@ -6,16 +6,40 @@ The migration hook only starts the migrate process. Advisory locking, lock timeo
 
 ## Use as a dependency
 
+No workflow publishes this chart to a Helm or OCI registry. A product's Flux
+`HelmRelease` loads it from the baukit Git repository at a release tag. The
+generated backend writes both objects, in
+`templates/backend/deploy/gitops/base/chart-source.yaml` and `helmrelease.yaml`:
+
 ```yaml
-# Chart.yaml in a product repository
-dependencies:
-  - name: baukit-app
-    version: 0.31.0
-    repository: oci://ghcr.io/patrickkoss/charts
-    alias: application
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: baukit
+spec:
+  interval: 1h
+  url: https://github.com/PatrickKoss/baukit.git
+  ref:
+    tag: v<baukit version>
+  ignore: |
+    /*
+    !/deploy/chart/baukit-app/
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: shop
+spec:
+  chart:
+    spec:
+      chart: ./deploy/chart/baukit-app
+      reconcileStrategy: Revision
+      sourceRef:
+        kind: GitRepository
+        name: baukit
 ```
 
-Place product settings under the alias in the wrapper's `values.yaml`. The repository example at [`../examples/minimal-api-values.yaml`](../examples/minimal-api-values.yaml) can also be rendered directly:
+Product settings go under `spec.values` in the `HelmRelease`. The repository example at [`../examples/minimal-api-values.yaml`](../examples/minimal-api-values.yaml) can also be rendered directly:
 
 ```sh
 helm template minimal-api . -f ../examples/minimal-api-values.yaml

@@ -72,7 +72,7 @@ export interface CreditPack {
   /** Unix seconds. */
   readonly expiresAt: number;
 }
-/** The bucketed balance of Schlüsselbund C21 and later. */
+/** The bucketed balance that current hubs return. */
 export interface CreditBalance {
   readonly suiteSubject: string;
   readonly wallet: string;
@@ -88,7 +88,7 @@ export interface CreditBalance {
 export type OrganizationStatus = 'active' | 'suspended';
 export interface OrganizationSummary {
   readonly organizationId: string;
-  /** Display name. Absent from a hub before Schlüsselbund C16. */
+  /** Display name. Absent from an older hub that omits it. */
   readonly name?: string;
   readonly status: OrganizationStatus;
   readonly productId: string;

@@ -16,7 +16,7 @@ pub enum OrganizationStatus {
 #[serde(rename_all = "camelCase")]
 pub struct OrganizationSummary {
     pub organization_id: Uuid,
-    /// The display name. `None` from a hub before Schlüsselbund C16.
+    /// The display name. `None` from an older hub that omits it.
     #[serde(default)]
     pub name: Option<String>,
     pub status: OrganizationStatus,
