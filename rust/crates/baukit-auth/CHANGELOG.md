@@ -4,6 +4,14 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+- Breaking: a token with several audiences now fails with `WrongAuthorizedParty` unless `azp` names an allowed client, or equals `client_id` when no allowlist is set. See `docs/migrations/auth-verifier-hardening.md`.
+- Breaking: an access token that carries `nonce` fails with the new `VerificationError::WrongTokenType`. ID tokens still verify through `verify_id_token`.
+- `OidcConfig::requiring_access_token_type()` makes the verifier accept only `typ: at+jwt` on the access path.
+- JWKS refetches share one cooldown across all unknown key IDs (`with_jwks_refresh_cooldown`, default 30 s). A failed refetch serves the previous set for `with_jwks_stale_grace` (default 10 min). Keys that fail to parse are skipped instead of failing the whole set.
+- The BFF session response adds `expiresIn` in seconds. Clients should compute expiry from their own receipt time.
+- BFF refresh finishes and stores the rotated token even when the client drops the request. A lost refresh response no longer revokes the family. The previous cookie re-rotates until the new head is first used, for up to 5 minutes.
+- Signing in again revokes the previous cookie's family. Logging out with an older rotated cookie no longer ends the live family.
+
 ## [0.30.5] - 2026-11-26
 
 ## [0.30.4] - 2026-11-25

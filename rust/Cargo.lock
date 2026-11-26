@@ -310,6 +310,7 @@ dependencies = [
  "baukit-test",
  "jiff 1.0.0",
  "jiff-sqlx",
+ "proptest",
  "psl",
  "reqwest",
  "serde",

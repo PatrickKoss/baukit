@@ -36,3 +36,26 @@ mod tests {
         assert!(!constant_time_eq(b"x", b""));
     }
 }
+
+#[cfg(kani)]
+mod proofs {
+    use super::constant_time_eq;
+
+    const MAX_LEN: usize = 8;
+
+    /// K-08: for byte strings up to 8 bytes each, `constant_time_eq` equals `==`.
+    /// Unwind 9.
+    #[kani::proof]
+    #[kani::unwind(9)]
+    fn constant_time_eq_matches_equality() {
+        let left: [u8; MAX_LEN] = kani::any();
+        let right: [u8; MAX_LEN] = kani::any();
+        let left_len: usize = kani::any();
+        let right_len: usize = kani::any();
+        kani::assume(left_len <= MAX_LEN && right_len <= MAX_LEN);
+        let (Some(left), Some(right)) = (left.get(..left_len), right.get(..right_len)) else {
+            return;
+        };
+        assert_eq!(constant_time_eq(left, right), left == right);
+    }
+}

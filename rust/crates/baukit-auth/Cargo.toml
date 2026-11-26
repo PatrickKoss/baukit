@@ -16,6 +16,8 @@ workspace = true
 
 [features]
 sqlx-postgres = ["dep:sqlx", "dep:jiff-sqlx"]
+# Hidden hooks for the fuzz targets. Not a public API.
+fuzzing = []
 browser-session = [
   "sqlx-postgres",
   "dep:baukit-credential-vault",
@@ -47,7 +49,10 @@ uuid.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
+proptest = "1.12.0"
 baukit-auth = { path = ".", features = ["browser-session"] }
+baukit-config.workspace = true
+baukit-core.workspace = true
 baukit-ratelimit = { path = "../baukit-ratelimit", features = ["browser-session"] }
 baukit-test = { path = "../baukit-test", features = ["sqlx-postgres"] }
 tower = { workspace = true, features = ["util"] }

@@ -415,7 +415,7 @@ export class NativeOidcClient {
       }
       throw transientRefreshError(cause);
     }
-    if (this.currentSession !== previous) {
+    if (this.currentSession?.refreshToken !== refreshToken) {
       return this.currentSession?.accessToken;
     }
     const session = makeSession(tokens, previous.subject, previous);
@@ -462,12 +462,12 @@ export class NativeOidcClient {
   }
 
   private async writeSession(session: OidcSession): Promise<void> {
+    this.setCurrentSession(session);
     try {
       await this.environment.storage.set(this.sessionStorageKey, JSON.stringify(session));
     } catch {
       throw new OidcError('storage_failed');
     }
-    this.setCurrentSession(session);
   }
 
   private async readForceLogin(): Promise<boolean> {

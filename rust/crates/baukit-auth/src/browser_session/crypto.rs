@@ -22,6 +22,7 @@ pub(crate) const ID_TOKEN_FIELD: &str = "id_token";
 pub(crate) const GRACE_ACCESS_TOKEN_FIELD: &str = "grace_access_token";
 
 /// The cookie value: a random 128-bit row id and a 256-bit secret.
+#[derive(Clone)]
 pub(crate) struct SessionCredential {
     pub(crate) id: Uuid,
     pub(crate) secret: Zeroizing<String>,

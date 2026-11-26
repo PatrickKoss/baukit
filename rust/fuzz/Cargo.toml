@@ -15,7 +15,7 @@ aws-lc-rs = "1.18.1"
 base64 = "0.23.1"
 pem = "4.0.0"
 axum = "0.8.9"
-baukit-auth = { path = "../crates/baukit-auth" }
+baukit-auth = { path = "../crates/baukit-auth", features = ["browser-session", "fuzzing"] }
 baukit-core = { path = "../crates/baukit-core", features = ["media-grants", "webhook-signature"] }
 baukit-data-subject = { path = "../crates/baukit-data-subject", default-features = false }
 baukit-egress = { path = "../crates/baukit-egress" }
@@ -89,8 +89,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "jwks_parse"
+path = "fuzz_targets/jwks_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "egress_destination"
 path = "fuzz_targets/egress_destination.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session_cookie"
+path = "fuzz_targets/session_cookie.rs"
 test = false
 doc = false
 bench = false

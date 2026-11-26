@@ -58,6 +58,10 @@ mod redirect_tests;
 mod router;
 mod service;
 mod store;
+
+#[cfg(feature = "fuzzing")]
+#[doc(hidden)]
+pub mod fuzzing;
 #[cfg(test)]
 mod tests;
 

@@ -81,7 +81,11 @@ fn creates_hs256_fixture_with_configured_claims() -> Result<(), Box<dyn std::err
 async fn mock_server_discovers_verifies_caches_and_rotates()
 -> Result<(), Box<dyn std::error::Error>> {
     let server = MockOidcServer::start().await?;
-    let verifier = OidcVerifier::discover(OidcConfig::new(server.issuer(), "api")?).await?;
+    let cooldown = Duration::from_millis(50);
+    let verifier = OidcVerifier::discover(
+        OidcConfig::new(server.issuer(), "api")?.with_jwks_refresh_cooldown(cooldown)?,
+    )
+    .await?;
     let claims = server.claims("user-123", "api", Duration::from_secs(60))?;
     assert_eq!(
         verifier.verify(&server.mint(&claims)?).await?.subject(),
@@ -94,6 +98,7 @@ async fn mock_server_discovers_verifies_caches_and_rotates()
     assert_eq!(server.jwks_request_count(), 1);
 
     server.rotate_signing_key();
+    sleep(cooldown * 2).await;
     assert_eq!(
         verifier.verify(&server.mint(&claims)?).await?.subject(),
         "user-123"
