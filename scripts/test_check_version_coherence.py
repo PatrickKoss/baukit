@@ -220,5 +220,77 @@ class LockfileTest(unittest.TestCase):
         self.assertEqual(problems, [])
 
 
+class DocVersionTests(unittest.TestCase):
+    def repo(self, files: dict[str, str]) -> Path:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        for relative, body in files.items():
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body)
+        return root
+
+    @staticmethod
+    def install(version: str) -> str:
+        return f"{check.PREFIX}{version}{check.SUFFIX}\n"
+
+    def test_install_lines_must_name_the_release_tag(self) -> None:
+        root = self.repo(
+            {"README.md": self.install("1.2.3"), "cli/README.md": self.install("1.2.2")}
+        )
+        self.assertEqual(
+            check.install_tag_problems(root, "1.2.3"),
+            ["cli/README.md installs --tag v1.2.2, expected v1.2.3"],
+        )
+
+    def test_a_readme_without_an_install_line_fails(self) -> None:
+        root = self.repo({"README.md": "", "cli/README.md": self.install("1.2.3")})
+        self.assertEqual(
+            check.install_tag_problems(root, "1.2.3"),
+            ["README.md has no `--tag v1.2.3` install line"],
+        )
+
+    def test_crate_snippets_use_the_train_major_minor(self) -> None:
+        root = self.repo(
+            {
+                "rust/crates/baukit-a/README.md": (
+                    'baukit-a = { version = "1.2", features = ["x"] }\n'
+                    'baukit-a = { version = "1.1" }\n'
+                    "baukit-a = { workspace = true }\n"
+                ),
+            }
+        )
+        self.assertEqual(
+            check.crate_snippet_problems(root, "1.2.3", set()),
+            ['rust/crates/baukit-a/README.md pins baukit-a = "1.1", expected "1.2"'],
+        )
+
+    def test_expected_stale_snippets_may_only_shrink(self) -> None:
+        root = self.repo({"rust/crates/baukit-a/README.md": 'baukit-a = { version = "1.2" }\n'})
+        problems = check.crate_snippet_problems(
+            root, "1.2.3", {("rust/crates/baukit-a/README.md", "baukit-a", "1.0")}
+        )
+        self.assertEqual(len(problems), 1)
+        self.assertIn("remove it from the expected-failure list", problems[0])
+
+    def test_matrix_latest_section_names_the_release(self) -> None:
+        matrix = "# M\n\n## v1.2.2\n\nLast verified release train: `v1.2.2` (patch).\n"
+        root = self.repo({check.COMPATIBILITY_MATRIX: matrix})
+        self.assertEqual(
+            check.matrix_problems(root, "1.2.3"),
+            [f"{check.COMPATIBILITY_MATRIX} latest release reads v1.2.2, expected v1.2.3"],
+        )
+        self.assertEqual(check.matrix_problems(root, "1.2.2"), [])
+
+    def test_the_repository_docs_pass(self) -> None:
+        version = check.check_rust_workspace()
+        self.assertEqual(check.install_tag_problems(check.ROOT, version), [])
+        self.assertEqual(
+            check.crate_snippet_problems(check.ROOT, version, check.EXPECTED_STALE_SNIPPETS), []
+        )
+        self.assertEqual(check.matrix_problems(check.ROOT, version), [])
+
+
 if __name__ == "__main__":
     unittest.main()

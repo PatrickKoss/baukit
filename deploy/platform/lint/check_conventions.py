@@ -474,6 +474,18 @@ def rule_alert_runbook(context: Context) -> Iterable[str]:
             )
 
 
+def alert_runbook_url(alert: Alert) -> str:
+    return str((alert.rule.get("annotations") or {}).get("runbook_url", "")).strip()
+
+
+def rule_runbook_alert(context: Context) -> Iterable[str]:
+    referenced = {
+        f"{alert.pack}/{runbook_slug(alert_runbook_url(alert))}" for alert in context.alerts
+    }
+    for slug in sorted(context.runbook_slugs - referenced):
+        yield f"docs/runbooks/{slug}.md has no alert whose runbook_url names it"
+
+
 def rule_alert_tested(context: Context) -> Iterable[str]:
     for alert in context.alerts:
         if alert.name not in context.fired_alerts:
@@ -794,6 +806,7 @@ RULES: dict[str, Rule] = {
     "exporters-scraped": rule_exporters_scraped,
     "alert-metadata": rule_alert_metadata,
     "alert-runbook": rule_alert_runbook,
+    "runbook-alert": rule_runbook_alert,
     "alert-tested": rule_alert_tested,
     "rules-selected": rule_rules_selected,
     "dashboards-selected": rule_dashboards_selected,
@@ -969,7 +982,9 @@ def pack_of(path: Path) -> str:
 
 def runbook_slugs(runbooks: Path) -> set[str]:
     return {
-        path.relative_to(runbooks).with_suffix("").as_posix() for path in runbooks.rglob("*.md")
+        path.relative_to(runbooks).with_suffix("").as_posix()
+        for path in runbooks.rglob("*.md")
+        if path.name != "README.md"
     }
 
 
