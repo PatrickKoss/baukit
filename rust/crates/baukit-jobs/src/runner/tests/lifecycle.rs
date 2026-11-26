@@ -190,7 +190,7 @@ async fn a_claim_that_commits_after_shutdown_is_released() {
 #[tokio::test(start_paused = true)]
 async fn a_hanging_store_call_turns_store_health_red() {
     let store = Arc::new(FakeStore::with_jobs(1));
-    store.block_claim.store(true, Ordering::SeqCst);
+    store.hang_claims.store(true, Ordering::SeqCst);
     let shutdown = ShutdownToken::new(Duration::from_secs(1));
     let runner = WorkerRunner::new(store.clone(), Arc::new(SucceedingHandler), test_config())
         .expect("valid runner");

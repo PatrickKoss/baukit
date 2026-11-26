@@ -36,6 +36,7 @@ pub struct PostgresTestContainer {
     #[cfg(feature = "sqlx-postgres")]
     databases: PostgresTestDatabases,
     container: ContainerAsync<GenericImage>,
+    host_port: u16,
 }
 
 impl PostgresTestContainer {
@@ -89,7 +90,7 @@ impl PostgresTestContainer {
     /// restarts it, so the connection URL stays valid.
     #[must_use]
     pub fn fault(&self) -> PostgresFault<'_> {
-        PostgresFault::new(&self.container, POSTGRES_PORT)
+        PostgresFault::new(&self.container, POSTGRES_PORT, Some(self.host_port))
     }
 
     /// Splits the fixture into an owned URL and its lifetime guard.
@@ -251,12 +252,14 @@ impl PostgresTestOptions {
                 owner_connection_url: urls.owner,
                 databases,
                 container,
+                host_port: port,
             })
         }
         #[cfg(not(feature = "sqlx-postgres"))]
         Ok(PostgresTestContainer {
             connection_url,
             container,
+            host_port: port,
         })
     }
 }

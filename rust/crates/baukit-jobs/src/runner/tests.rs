@@ -372,6 +372,7 @@ struct FakeStore {
     releases: Mutex<Vec<Release>>,
     sampled_job_types: Mutex<Vec<Vec<String>>>,
     block_claim: AtomicBool,
+    hang_claims: AtomicBool,
     claim_started: Notify,
     claim_release: Notify,
     enqueued: Mutex<Vec<NewJob>>,
@@ -407,6 +408,7 @@ impl FakeStore {
             releases: Mutex::new(Vec::new()),
             sampled_job_types: Mutex::new(Vec::new()),
             block_claim: AtomicBool::new(false),
+            hang_claims: AtomicBool::new(false),
             claim_started: Notify::new(),
             claim_release: Notify::new(),
             enqueued: Mutex::new(Vec::new()),
@@ -484,6 +486,9 @@ impl JobStore for FakeStore {
         Box::pin(async move {
             self.take_failure()?;
             lock(&self.max_per_key_seen).push(max_per_key);
+            if self.hang_claims.load(Ordering::SeqCst) {
+                std::future::pending::<()>().await;
+            }
             if self.block_claim.swap(false, Ordering::SeqCst) {
                 self.claim_started.notify_one();
                 self.claim_release.notified().await;

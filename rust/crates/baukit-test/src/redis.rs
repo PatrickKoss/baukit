@@ -43,6 +43,7 @@ fn redis_image() -> GenericImage {
 pub struct RedisTestContainer {
     connection_url: String,
     container: ContainerAsync<GenericImage>,
+    host_port: u16,
 }
 
 impl RedisTestContainer {
@@ -64,7 +65,7 @@ impl RedisTestContainer {
     /// the connection URL stays valid.
     #[must_use]
     pub fn fault(&self) -> RedisFault<'_> {
-        RedisFault::new(&self.container, REDIS_PORT)
+        RedisFault::new(&self.container, REDIS_PORT, Some(self.host_port))
     }
 
     /// Splits the fixture into an owned URL and its lifetime guard.
@@ -126,7 +127,7 @@ impl RedisSentinelTestContainer {
     /// answers, which is how a partitioned master looks to Sentinel and to clients.
     #[must_use]
     pub fn master_fault(&self) -> RedisFault<'_> {
-        RedisFault::new(&self.master, REDIS_PORT)
+        RedisFault::new(&self.master, REDIS_PORT, None)
     }
 
     /// Requests promotion without waiting for automatic failure detection.
@@ -441,6 +442,7 @@ async fn start_redis_on(host_port: Option<u16>) -> Result<RedisTestContainer, Re
     Ok(RedisTestContainer {
         connection_url,
         container,
+        host_port: port,
     })
 }
 

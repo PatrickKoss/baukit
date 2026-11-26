@@ -47,6 +47,7 @@ pub(crate) fn reserve_host_port() -> std::io::Result<u16> {
 struct ContainerFault<'a> {
     container: &'a ContainerAsync<GenericImage>,
     container_port: u16,
+    client_host_port: Option<u16>,
     probe: Vec<String>,
 }
 
@@ -59,17 +60,15 @@ impl ContainerFault<'_> {
     }
 
     async fn start(&self) -> Result<(), FaultError> {
-        let before = self
-            .container
-            .get_host_port_ipv4(self.container_port)
-            .await?;
         self.container.start().await?;
-        let after = self
-            .container
-            .get_host_port_ipv4(self.container_port)
-            .await?;
-        if before != after {
-            return Err(FaultError::PortChanged { before, after });
+        if let Some(before) = self.client_host_port {
+            let after = self
+                .container
+                .get_host_port_ipv4(self.container_port)
+                .await?;
+            if before != after {
+                return Err(FaultError::PortChanged { before, after });
+            }
         }
         self.wait_until_ready().await
     }
@@ -116,6 +115,7 @@ impl fmt::Debug for ContainerFault<'_> {
             .debug_struct("ContainerFault")
             .field("container", &self.container.id())
             .field("container_port", &self.container_port)
+            .field("client_host_port", &self.client_host_port)
             .finish_non_exhaustive()
     }
 }
@@ -190,7 +190,13 @@ dependency_fault!(
 );
 
 impl<'a> PostgresFault<'a> {
-    pub(crate) fn new(container: &'a ContainerAsync<GenericImage>, container_port: u16) -> Self {
+    /// `client_host_port` is the host port clients connect to, checked after a restart; `None`
+    /// skips the check for a container that clients do not reach directly.
+    pub(crate) fn new(
+        container: &'a ContainerAsync<GenericImage>,
+        container_port: u16,
+        client_host_port: Option<u16>,
+    ) -> Self {
         let probe = ["pg_isready", "-h", "127.0.0.1", "-U", "postgres"]
             .map(str::to_owned)
             .to_vec();
@@ -198,6 +204,7 @@ impl<'a> PostgresFault<'a> {
             inner: ContainerFault {
                 container,
                 container_port,
+                client_host_port,
                 probe,
             },
         }
@@ -205,7 +212,13 @@ impl<'a> PostgresFault<'a> {
 }
 
 impl<'a> RedisFault<'a> {
-    pub(crate) fn new(container: &'a ContainerAsync<GenericImage>, container_port: u16) -> Self {
+    /// `client_host_port` is the host port clients connect to, checked after a restart; `None`
+    /// skips the check for a container that clients do not reach directly.
+    pub(crate) fn new(
+        container: &'a ContainerAsync<GenericImage>,
+        container_port: u16,
+        client_host_port: Option<u16>,
+    ) -> Self {
         let probe = vec![
             "redis-cli".to_owned(),
             "-e".to_owned(),
@@ -217,6 +230,7 @@ impl<'a> RedisFault<'a> {
             inner: ContainerFault {
                 container,
                 container_port,
+                client_host_port,
                 probe,
             },
         }

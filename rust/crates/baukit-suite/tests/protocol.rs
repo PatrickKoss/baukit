@@ -4098,9 +4098,12 @@ async fn probes_migration_drops_sql_accounting_and_schedules_disabled_links() ->
     let db = common::postgres_database_before_probes().await?;
     let owner = user(&db.pool, "suite-upgrade").await?;
     let (disabled, degraded) = (Uuid::now_v7(), Uuid::now_v7());
-    for (link, health, failures) in [(disabled, "disabled", 20), (degraded, "degraded", 3)] {
-        sqlx::query("INSERT INTO suite_links(id,user_id,peer_app,role,remote_link_id,remote_subject,secret_ciphertext,secret_nonce,secret_key_version,sends,receives,delivery_health,consecutive_failures) VALUES($1,$2,'beta','authorizer',$3,'remote',$4,$5,1,'{}','{}',$6,$7)")
-            .bind(link).bind(owner).bind(Uuid::now_v7()).bind(vec![1u8]).bind(vec![2u8]).bind(health).bind(failures)
+    for (link, peer, health, failures) in [
+        (disabled, "beta", "disabled", 20),
+        (degraded, "gamma", "degraded", 3),
+    ] {
+        sqlx::query("INSERT INTO suite_links(id,user_id,peer_app,role,remote_link_id,remote_subject,secret_ciphertext,secret_nonce,secret_key_version,sends,receives,delivery_health,consecutive_failures) VALUES($1,$2,$3,'authorizer',$4,'remote',$5,$6,1,'{}','{}',$7,$8)")
+            .bind(link).bind(owner).bind(peer).bind(Uuid::now_v7()).bind(vec![1u8]).bind(vec![2u8]).bind(health).bind(failures)
             .execute(&db.pool).await?;
     }
     sqlx::raw_sql(SUITE_DELIVERY_PROBES_MIGRATION_SQL)

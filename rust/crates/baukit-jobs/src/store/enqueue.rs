@@ -13,7 +13,7 @@ pub(super) async fn enqueue_on(
         StoreError::InvalidInput("max_attempts exceeds PostgreSQL INTEGER".to_owned())
     })?;
     let inserted = sqlx::query(
-        "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, idempotency_key, concurrency_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7, $8) ON CONFLICT (job_type, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, deferrals, concurrency_key, created_at, updated_at",
+        "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, idempotency_key, concurrency_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $8, $7, $7) ON CONFLICT (job_type, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, deferrals, concurrency_key, created_at, updated_at",
     )
         .bind(job.id)
         .bind(&job.job_type)
@@ -62,10 +62,10 @@ pub(super) async fn enqueue_deduplicated_on(
     })?;
     let insert_sql = match deduplication {
         Deduplication::Active => {
-            "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, dedupe_key, concurrency_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7, $8) ON CONFLICT (job_type, dedupe_key) WHERE status IN ('pending', 'running') AND dedupe_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, deferrals, concurrency_key, created_at, updated_at"
+            "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, dedupe_key, concurrency_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $8, $7, $7) ON CONFLICT (job_type, dedupe_key) WHERE status IN ('pending', 'running') AND dedupe_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, deferrals, concurrency_key, created_at, updated_at"
         }
         Deduplication::Pending => {
-            "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, pending_dedupe_key, concurrency_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7, $8) ON CONFLICT (job_type, pending_dedupe_key) WHERE status = 'pending' AND pending_dedupe_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, deferrals, concurrency_key, created_at, updated_at"
+            "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, pending_dedupe_key, concurrency_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $8, $7, $7) ON CONFLICT (job_type, pending_dedupe_key) WHERE status = 'pending' AND pending_dedupe_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, deferrals, concurrency_key, created_at, updated_at"
         }
     };
     let select_sql = match deduplication {
