@@ -177,6 +177,7 @@ Release and migrations:
 - F-23 The MCP scope check skips non-JSON bodies and forwards them (`mcp/src/security.rs:293`). Reject with 400.
 - F-24 The MCP quota key `mcp:{resource}:{issuer}:{subject}` is ambiguous because issuers contain `:` (`security.rs:235`). Length-prefix or hash the parts.
 - F-25 With several audiences and no `allowed_clients`, any `azp` string passes (`verifier.rs:1114-1120`).
+  Resolution: by design for access tokens. Audience is the trust boundary (RFC 9068), and client restriction is opt-in through `with_allowed_clients`. Generated `config/local.toml` sets `auth.authorized_parties` to the realm clients.
 - F-26 Access-token verification never checks `typ`. If audience equals client_id, an ID token passes `verify()`. Add an opt-in `typ: at+jwt` requirement, and reject tokens that carry `nonce` on the access path.
 - F-27 BFF `exchange` leaves the previous session family alive, and `logout` with an older rotated cookie deletes the whole family.
 - F-28 auth-node never recovers a stale `tokens.json.lock` after SIGKILL.

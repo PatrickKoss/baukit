@@ -135,11 +135,9 @@ fn validate_oidc_authorized_party(
             _ => Err(VerificationError::WrongAuthorizedParty),
         };
     }
-    if !has_several_audiences(claims) {
-        return Ok(());
-    }
-    match (claims.extra.get("azp"), config.client_id.as_deref()) {
-        (Some(Value::String(client)), Some(expected)) if client == expected => Ok(()),
+    match claims.extra.get("azp") {
+        Some(Value::String(_)) => Ok(()),
+        _ if !has_several_audiences(claims) => Ok(()),
         _ => Err(VerificationError::WrongAuthorizedParty),
     }
 }

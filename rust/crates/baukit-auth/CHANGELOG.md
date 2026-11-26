@@ -4,7 +4,7 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
-- Breaking: a token with several audiences now fails with `WrongAuthorizedParty` unless `azp` names an allowed client, or equals `client_id` when no allowlist is set. See `docs/migrations/auth-verifier-hardening.md`.
+- Access tokens keep audience as the trust boundary (RFC 9068). Without `with_allowed_clients`, any string `azp` passes, as before; multi-audience tokens still need one. Generated products set that list to their own client IDs in `config/local.toml`.
 - Breaking: an access token that carries `nonce` fails with the new `VerificationError::WrongTokenType`. ID tokens still verify through `verify_id_token`.
 - `OidcConfig::requiring_access_token_type()` makes the verifier accept only `typ: at+jwt` on the access path.
 - JWKS refetches share one cooldown across all unknown key IDs (`with_jwks_refresh_cooldown`, default 30 s). A failed refetch serves the previous set for `with_jwks_stale_grace` (default 10 min). Keys that fail to parse are skipped instead of failing the whole set.

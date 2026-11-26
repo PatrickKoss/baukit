@@ -65,8 +65,8 @@ fn expected(
     match (profile, azp) {
         (Profile::OidcAllowList, Value::String(azp)) if azp == "web" => "Ok",
         (Profile::OidcAllowList, _) => "WrongAuthorizedParty",
+        (Profile::Oidc | Profile::OidcWithClient, Value::String(_)) => "Ok",
         (Profile::Oidc | Profile::OidcWithClient, _) if !several => "Ok",
-        (Profile::OidcWithClient, Value::String(azp)) if azp == "web" => "Ok",
         (Profile::Oidc | Profile::OidcWithClient, _) => "WrongAuthorizedParty",
         (
             Profile::Clerk {
@@ -155,15 +155,17 @@ proptest! {
 }
 
 #[test]
-fn several_audiences_without_allow_list_fail_closed() {
+fn access_tokens_with_several_audiences_check_azp_only_with_an_allow_list() {
     let claims: JwtClaims = serde_json::from_value(
-        json!({"sub": "u", "iss": ISSUER, "exp": 1, "aud": ["api", "other"], "azp": "attacker"}),
+        json!({"sub": "u", "iss": ISSUER, "exp": 1, "aud": ["api", "account"], "azp": "app-web"}),
     )
     .expect("claims");
-    for profile in [Profile::Oidc, Profile::OidcWithClient] {
-        assert!(matches!(
-            validate_token_profile(&claims, &config(profile), TokenVerification::Access),
-            Err(VerificationError::WrongAuthorizedParty)
-        ));
-    }
+    let verdict =
+        |profile| validate_token_profile(&claims, &config(profile), TokenVerification::Access);
+    assert!(verdict(Profile::Oidc).is_ok());
+    assert!(verdict(Profile::OidcWithClient).is_ok());
+    assert!(matches!(
+        verdict(Profile::OidcAllowList),
+        Err(VerificationError::WrongAuthorizedParty)
+    ));
 }
