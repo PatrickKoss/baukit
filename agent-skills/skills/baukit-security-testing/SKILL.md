@@ -1,6 +1,6 @@
 ---
 name: baukit-security-testing
-description: Add security tests to a Baukit product: cargo-fuzz targets for parsers of untrusted input, proptest properties, auth negative tests, cross-tenant tests, SSRF tests through baukit-egress, and body and upload limit tests. Use when a threat-model row needs a test, when adding a parser, decoder, signed value, route group, integration or upload, or when changing token verification.
+description: Add security tests to a Baukit product: cargo-fuzz targets for parsers of untrusted input, proptest properties, auth negative and cross-tenant suites from baukit-test, pull SQL conformance, SSRF tests through baukit-egress, and body and upload limit tests. Use when a threat-model row needs a test, when adding a parser, decoder, signed value, route group, integration or upload, or when changing token verification.
 ---
 
 # Add security tests to a Baukit product
@@ -123,67 +123,35 @@ proptest! {
 
 Anti-patterns: strategies so narrow they only produce the happy path, properties that re-implement the code under test, catching the failure and returning `Ok`.
 
-## Auth negative tests
+## Auth negative and cross-tenant tests
 
-Applies to every product route group and the MCP endpoint, and whenever the verifier profile, IdP or token storage changes. Use the real verifier against `baukit_test::jwt::MockOidcServer` (or the Keycloak container) and call the router.
+Applies to every route group, every route that takes a resource ID, and every change to the verifier profile, IdP or token storage. Do not hand-write one test per token case or per route. The generated backend already runs both `baukit_test` suites in `backend/tests/conformance.rs`, test `item_routes_deny_other_tenants_and_invalid_tokens`, against the router `compose_api` returns. Extend that test. The `baukit-test` README section "Security probe suites" documents the helpers.
 
-Cases, each one request, each expecting `401` with the standard error envelope and no handler side effect:
+Helpers, all re-exported from the `baukit_test` crate root:
 
-| Case | How to build it |
-|---|---|
-| expired | `exp` in the past by more than the skew |
-| wrong `iss` | `.issuer("https://other.example")` |
-| wrong `aud` | `.audience("other-api")` |
-| `alg: none` | `baukit_test::jwt::unsigned_token` |
-| HS256 with the public key as secret | `hs256_token(public_key_pem, &claims)` |
-| unknown `kid` | `rs256_token_with_key_id` with a kid absent from JWKS |
-| tampered payload | valid token, change one claim, keep the signature |
-| missing `azp` (Clerk) | omit `azp` from an otherwise valid token |
+| Helper | Source | What it checks |
+|---|---|---|
+| `assert_auth_negative_suite`, `check_auth_negative_suite`, `AuthNegativeCase`, `InvalidCredential` | `rust/crates/baukit-test/src/auth_negative.rs` | every `InvalidCredential::ALL` case gets 401 on every secured operation, a valid token does not, and every unsecured operation is declared with `.public(method, path, reason)` |
+| `assert_cross_tenant_denied`, `check_cross_tenant_denied`, `CrossTenantCase` | `rust/crates/baukit-test/src/cross_tenant.rs` | principal B gets 403 or 404 on A's ids, no body leaks a `.leak_marker`, and with `.owner(a_token)` A's resource is unchanged after each denied mutation |
+| `SecurityTarget`, `OperationFixtures`, `RouteExclusion` | `rust/crates/baukit-test/src/security_probe.rs` | the in-process router or a base URL to probe, and the path values, bodies and headers per operation |
+| `MockOidcServer` | `rust/crates/baukit-test/src/jwt.rs` | the issuer that mints valid and invalid tokens |
 
-```rust
-#[tokio::test]
-async fn tokens_signed_hs256_with_the_public_key_are_rejected() -> Result<(), Box<dyn Error>> {
-    let oidc = MockOidcServer::start().await?;
-    let app = test_app(&oidc).await?;
-    let token = hs256_token(PUBLIC_KEY_PEM, &oidc.claims("user-a"))?;
+When you add a route that takes an ID:
 
-    let response = app.get("/v1/notes").bearer(&token).send().await?;
+1. Seed a resource as the first principal and add its path parameter with `OperationFixtures::path_value(name, id)`.
+2. Add a JSON body for each write with `.body(method, path_template, json)` and any required header with `.header(name, value)`.
+3. Add a `.leak_marker` that only the first principal's resource contains.
+4. Exclude a route only when it acts on the caller alone, with a reason, as the template does for `DELETE /me`.
 
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    assert_eq!(response.error_code()?, "unauthenticated");
-    assert_eq!(app.notes_count().await?, 0);
-    Ok(())
-}
-```
+For organization routes, run `assert_cross_tenant_denied` a second time with tokens for two organizations. Routes merged outside the OpenAPI document, such as browser session, MCP or platform routes, are not in the document the suites walk. Test those by hand with the token builders in `rust/crates/baukit-test/src/jwt.rs`: `unsigned_token`, `hs256_token` and `rs256_token_with_key_id`, plus `MockOidcServer::claims` and `MockOidcServer::mint`.
 
-Anti-patterns: injecting a fake `Principal` instead of a token, one test that only checks a missing header, accepting `403` where `401` is the contract.
+Repositories take `(owner_id, id)` and put both in the WHERE clause. The `rust-sql-unscoped-by-id` ast-grep rule only prints a hint with `baukit check --verbose`, so the cross-tenant suite is the check that fails.
 
-## Cross-tenant tests
+Anti-patterns: injecting a fake `Principal` instead of a token, excluding a route to get green without a reason that names why it is safe, a `.public(...)` entry for a route that should be secured, accepting `403` where `401` is the contract.
 
-Applies to every route that takes a resource ID. Repositories take `(owner_id, id)`; a row owned by someone else is a missing row and maps to `ApiError::not_found` from `baukit-http`, so the response is `404`, never `403`, and the body does not reveal the row exists.
+## Pull SQL conformance
 
-```rust
-#[tokio::test]
-#[ignore = "needs Docker PostgreSQL"]
-async fn user_b_cannot_read_update_or_delete_user_a_notes() -> Result<(), Box<dyn Error>> {
-    let app = test_app().await?;
-    let note = app.as_user("user-a").create_note("private").await?;
-    let b = app.as_user("user-b");
-
-    assert_eq!(b.get(&format!("/v1/notes/{}", note.id)).await?.status(), 404);
-    assert_eq!(b.patch(&format!("/v1/notes/{}", note.id), json!({"title": "x"})).await?.status(), 404);
-    assert_eq!(b.delete(&format!("/v1/notes/{}", note.id)).await?.status(), 404);
-    assert_eq!(b.get(&format!("/v1/notes/{}", Uuid::now_v7())).await?.body(), b.get(&format!("/v1/notes/{}", note.id)).await?.body());
-
-    let unchanged = app.as_user("user-a").get_note(note.id).await?;
-    assert_eq!(unchanged.title, "private");
-    Ok(())
-}
-```
-
-Cover list endpoints and sync pulls too: B's list never contains A's rows. For organizations, repeat with org A and org B.
-
-Anti-patterns: testing only GET, checking status without checking A's row is unchanged, seeding both users with the same ID.
+Applies to product pull SQL for sync tables. Implement `baukit_test::PullConformanceAdapter` (`create_owner`, `write`, `pull`) over the real tables and call `baukit_test::assert_pull_conformance(&adapter)` from a Docker-gated test. Source: `rust/crates/baukit-test/src/pull_conformance.rs`.
 
 ## SSRF through baukit-egress
 
