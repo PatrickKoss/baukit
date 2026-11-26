@@ -4,6 +4,10 @@ All notable changes to `baukit-config` are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- Breaking: `rate_limit.trusted_proxy_hops` defaults to `0`, so `X-Forwarded-For` is ignored until you set the number of proxies in front of the service. New `rate_limit.ipv6_prefix_len` (default 64, 1 to 128). Validation fails outside `local` when both the identity and IP scopes are disabled. See `docs/migrations/rate-limit-client-ip-and-buckets.md`.
+
 ## [0.30.5] - 2026-11-26
 
 ## [0.30.4] - 2026-11-25

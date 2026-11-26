@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Breaking: `ScopedPersistenceLifecycle.handleProfileErased`, `handleSessionExpired` and `blockIdentityMismatch` take the subject and do nothing while another subject is selected, so a stale signal cannot erase another account's partition.
+- Breaking: `WebStorageKeyValueStore` delimits namespace and key with U+001F. Pass `{ migrateLegacyKeys: true }` to move old values on first use.
+- Breaking: a failing `beforeServerErase` hook aborts `eraseProductProfile` with `server-failure` at stage `before-server`. `erasureMarker` finishes an interrupted local delete on the next start.
+
+See `docs/migrations/client-identity-signals.md`.
+
 ## 0.30.5
 
 ### Patch Changes
