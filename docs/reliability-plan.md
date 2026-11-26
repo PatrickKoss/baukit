@@ -221,7 +221,7 @@ them.
 
 ## Phase RC: resilience core
 
-- [ ] **RC1 `baukit-resilience` crate** (D1, RL-01, RL-42): `Backoff` with full jitter (default) and
+- [x] **RC1 `baukit-resilience` crate** (D1, RL-01, RL-42): `Backoff` with full jitter (default) and
   decorrelated jitter, `CircuitBreaker` with the D3 policy, `BreakerSet<K>` capped at 256 keys with
   idle eviction, `Deadline`, the `Clock` port and a `ManualClock` behind a `test-support` feature.
   Every state transition is a pure function of (state, outcome, now).
@@ -229,7 +229,7 @@ them.
   replayed by a Rust test; a proptest that the breaker never admits more than one half-open probe and
   that open duration never exceeds the cap. `cargo deny`, MSRV 1.95, version coherence (the crate joins
   the release train).
-- [ ] **RC2 `StaleCache<T>`** (principle 4): fresh TTL, stale-on-error window, failure cooldown, single
+- [x] **RC2 `StaleCache<T>`** (principle 4): fresh TTL, stale-on-error window, failure cooldown, single
   flight that does not block readers of the cached value, and a forced refresh for unknown keys that
   respects the cooldown. Acceptance: tests with `ManualClock` for fresh hit, stale serve while the
   source fails, cooldown stops a fetch per request, expiry of the stale window, and N concurrent
@@ -342,7 +342,7 @@ them.
   instead of exiting. The migrate binary gets the same connect retry.
   Acceptance: template tests where Postgres starts 5 s after the API; readiness turns green without a
   restart.
-- [ ] **IN6 Database guardrails** (RL-27, RL-28): `DatabaseConfig` gains `statement_timeout` (default
+- [~] **IN6 Database guardrails** (RL-27, RL-28): `DatabaseConfig` gains `statement_timeout` (default
   just under the request timeout), `lock_timeout` (5 s), `idle_in_transaction_session_timeout` (60 s),
   `max_lifetime` (30 min) and `idle_timeout` (10 min), applied in `after_connect`. The template
   repository uses `baukit_ops::acquire`/`begin` everywhere so the pool metrics fire. The worker pool
@@ -439,7 +439,7 @@ them.
   timeout), and a chart-level retry middleware (`attempts: 2`, short initial interval) for connection
   errors. Baremetal runs two replicas as the README says. Check every field name against the pinned
   Traefik version before writing it.
-- [ ] **PL4 Postgres pooling and durability** (RL-85): a CNPG `Pooler` (PgBouncer, transaction mode)
+- [~] **PL4 Postgres pooling and durability** (RL-85): a CNPG `Pooler` (PgBouncer, transaction mode)
   in the shared base, `max_connections` set explicitly, per-tenant `CONNECTION LIMIT` from the tenant
   component, and quorum synchronous replication on multi-instance overlays with the durability mode
   that keeps writes going when the replica is down (verify the field at the pinned CNPG version).
@@ -453,7 +453,7 @@ them.
   existing metric templates.
   Acceptance: an e2e case that rolls out a canary image returning 500s and asserts rollback, and one
   that promotes a healthy canary.
-- [ ] **PL7 SLOs beyond availability** (RL-84, RL-90): latency SLI recording rules (share of requests
+- [~] **PL7 SLOs beyond availability** (RL-84, RL-90): latency SLI recording rules (share of requests
   under the route's target, from the histogram), a 1d/3d ticket tier for both SLIs, an edge SLI from
   `traefik_service_requests_total` that sees "all pods down", an error-budget panel, and alerts for MCP
   errors, outbox/push delivery failures and DB acquire p95. Every alert gets promtool tests and a
@@ -536,14 +536,14 @@ run in the orchestrator under the heavy-slot protocol (owner `baukit-rel`, one s
 
 | Agent | Tasks | Owns | Status |
 |---|---|---|---|
-| rel-core | RC1, RC2 | `rust/crates/baukit-resilience`, `fixtures/resilience`, workspace `Cargo.toml` entry | running |
+| rel-core | RC1, RC2 | `rust/crates/baukit-resilience`, `fixtures/resilience`, workspace `Cargo.toml` entry | merged, verified (28 tests; review round fixed late outcomes deciding half-open) |
 | rel-faults | FX1 | `rust/crates/baukit-test` | queued (host load) |
 | rel-http | IN1, IN2 (`baukit-http` part), IN3, IN4 (`baukit-runtime` part), IN7 | `baukit-http`, `baukit-runtime`, `baukit-telemetry` | merged, verified (fmt, clippy, tests; shed log lowered to debug) |
 | rel-jobs | WK1, WK2, WK4 (crate part), CB3 | `baukit-jobs` | running |
 | rel-ts | CL1 (without fixture replay), CL3, CL4 (`auth-web` part), CL5 (`pwa-web` part) | `typescript/packages/{api-runtime,sync-client,auth-web,pwa-web}` | merged, verified (4 packages build, format, lint, test) |
-| rel-db | IN6 (crate part), IN2 (`baukit-ratelimit` part) | `baukit-config`, `baukit-ops`, `baukit-ratelimit` | running |
+| rel-db | IN6 (crate part), IN2 (`baukit-ratelimit` part) | `baukit-config`, `baukit-ops`, `baukit-ratelimit` | merged, verified (unit tests plus Docker: 2 Postgres, 12 Redis) |
 | rel-deploy | PL1, PL2, PL3, PL5 | `deploy/chart`, `deploy/platform/traefik`, `deploy/observability-platform` (redis alerts), `templates/backend/deploy` | running |
-| rel-obs | PL4, PL7, the RL-43 alert text fix | `deploy/platform/postgres-cluster`, `deploy/observability` | running |
+| rel-obs | PL4, PL7, the RL-43 alert text fix | `deploy/platform/postgres-cluster`, `deploy/observability` | merged, verified (platform-validate, observability-rules, observability-tests, metric-names, python-lint) |
 
 Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/check-metric-names.py`,
 `rust/Cargo.toml`) get additive edits only; the orchestrator resolves merge conflicts.
@@ -587,3 +587,19 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   lines 294, 325, 343-347 and `examples/minimal-api` need `with_budget`, `OpsOutlivesApi` and
   `run_flush`. baukit-config has no fields for the queue timeout or `ServerOptions` yet. hyper arms the
   header timeout on idle keep-alive connections, so PL3 sets Traefik `idleConnTimeout` below 10 s.
+- rel-core merged after one review round. The breaker now ties every outcome to a `Permit` with a
+  generation ticket, so a late result from a call admitted before the circuit opened cannot close or
+  re-open it. `CacheRead.refresh_failed` reports a failed refresh that served a stale value.
+- rel-obs merged: CNPG `Pooler` (transaction mode, `max_prepared_statements` 200), `max_connections`
+  150, quorum sync with `dataDurability: preferred` on baremetal, latency SLI and ticket-tier burn
+  alerts, edge SLI on Traefik service metrics, MCP and DB acquire alerts, RL-43 alert text. Left open:
+  tenant roles in chainsaw/keycloak/bootstrap have no connection limit; outbox and push alerts wait for
+  metrics; products still connect to `-rw` (wave 3); the edge SLI needs Traefik `allowEmptyServices`
+  (sent to rel-deploy); trivy may flag the pgbouncer image.
+- rel-db merged: `DatabaseConfig` session timeouts and lifetimes, `baukit_ops::connect_pool`, and the
+  ratelimit 503 in closed mode. Browser-session closed mode still answers 429 (needs a `baukit-auth`
+  outcome, wave 2 auth agent). Decision for wave 3: `connect_options` sends the timeouts as startup
+  parameters, which PgBouncer in transaction mode does not pass through. When a product moves to the
+  pooler, the pooler enforces `query_timeout` and `idle_transaction_timeout`, and the tenant role gets
+  `ALTER ROLE ... SET lock_timeout, statement_timeout`. `DatabaseConfig` then needs a switch that stops
+  sending startup parameters.
