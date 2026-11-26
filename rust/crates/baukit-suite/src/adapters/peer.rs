@@ -27,7 +27,7 @@ impl ReqwestSuitePeerClient {
             EgressOptions::default()
         };
         Ok(Self {
-            client: GuardedClient::new(options)?,
+            client: GuardedClient::new("suite-peer", options)?,
         })
     }
     async fn signed(

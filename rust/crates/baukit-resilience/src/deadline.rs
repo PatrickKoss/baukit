@@ -46,6 +46,35 @@ impl Deadline {
     }
 }
 
+#[cfg(feature = "task-deadline")]
+pub use task::{current, scope};
+
+#[cfg(feature = "task-deadline")]
+mod task {
+    use std::future::Future;
+
+    use super::Deadline;
+
+    tokio::task_local! {
+        static CURRENT: Deadline;
+    }
+
+    /// Runs `future` with `deadline` as the [`current`] deadline.
+    ///
+    /// A nested scope keeps the earlier of the two deadlines. Tasks spawned
+    /// inside the scope do not inherit it.
+    pub async fn scope<F: Future>(deadline: Deadline, future: F) -> F::Output {
+        let effective = current().map_or(deadline, |outer| outer.min(deadline));
+        CURRENT.scope(effective, future).await
+    }
+
+    /// The deadline of the enclosing [`scope`], if any.
+    #[must_use]
+    pub fn current() -> Option<Deadline> {
+        CURRENT.try_with(|deadline| *deadline).ok()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,5 +99,26 @@ mod tests {
         let past = start + Duration::from_secs(9);
         assert_eq!(deadline.remaining(past), Duration::ZERO);
         assert!(deadline.is_expired(past));
+    }
+
+    #[tokio::test]
+    async fn scopes_carry_the_earliest_deadline() {
+        assert_eq!(current(), None);
+        let start = Instant::now();
+        let (Some(outer), Some(inner)) = (
+            Deadline::after(start, Duration::from_secs(5)),
+            Deadline::after(start, Duration::from_secs(2)),
+        ) else {
+            return;
+        };
+        let seen = scope(outer, async {
+            let tighter = scope(inner, async { current() }).await;
+            let looser = scope(outer, async { scope(outer, async { current() }).await }).await;
+            (current(), tighter, looser)
+        })
+        .await;
+        assert_eq!(seen, (Some(outer), Some(inner), Some(outer)));
+        let narrowed = scope(inner, scope(outer, async { current() })).await;
+        assert_eq!(narrowed, Some(inner));
     }
 }

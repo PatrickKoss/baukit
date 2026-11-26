@@ -19,6 +19,7 @@ axum.workspace = true
 baukit-config.workspace = true
 baukit-core = { workspace = true, features = ["pagination"] }
 baukit-openapi.workspace = true
+baukit-resilience = { workspace = true, features = ["task-deadline"] }
 metrics.workspace = true
 opentelemetry.workspace = true
 serde.workspace = true

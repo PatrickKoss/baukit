@@ -42,7 +42,7 @@ fn introspection_client(
         .with_request_timeout(timeout)
         .and_then(|options| options.with_max_response_bytes(MAX_RESPONSE_BYTES))
         .map_err(|_| McpConfigError::Invalid("invalid introspection egress options"))?;
-    GuardedClient::new(options)
+    GuardedClient::new("mcp-introspection", options)
         .map_err(|_| McpConfigError::Invalid("cannot build introspection client"))
 }
 

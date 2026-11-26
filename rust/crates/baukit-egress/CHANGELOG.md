@@ -4,6 +4,12 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+- Breaking: `GuardedClient::new` and `GuardedClient::with_resolver` take a destination name first. It labels the new `egress_*` metrics.
+- A circuit breaker per `(scheme, host, port)` is on by default (`with_circuit_breaker`, `without_circuit_breaker`), with `EgressError::CircuitOpen`. `429` and `5xx` with `Retry-After` hold the circuit for that delay.
+- `with_max_in_flight` caps requests in flight per `(scheme, host, port)` (default 32), with `EgressError::Saturated`.
+- The request timeout is capped by the `baukit_resilience::deadline` of the inbound request, and fails fast below 50 ms.
+- New metrics `egress_requests_total`, `egress_request_duration_seconds`, `egress_circuit_state` and `egress_circuit_transitions_total`.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

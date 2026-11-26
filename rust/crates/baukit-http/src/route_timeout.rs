@@ -2,13 +2,14 @@ use std::{
     future::Future,
     pin::Pin,
     task::{Context, Poll},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use axum::{
     extract::Request,
     response::{IntoResponse, Response},
 };
+use baukit_resilience::{Deadline, deadline};
 use tower::{Layer, Service};
 
 use crate::ApiError;
@@ -21,6 +22,8 @@ use crate::ApiError;
 /// request_timeout` envelope is returned. The global
 /// [`HttpOptions::request_timeout`](crate::HttpOptions::request_timeout) still
 /// applies, so an override longer than the global timeout has no effect.
+/// Inside the route, [`current_deadline`](crate::current_deadline) returns the
+/// earlier of the two deadlines.
 #[must_use]
 pub const fn route_timeout(timeout: Duration) -> RouteTimeoutLayer {
     RouteTimeoutLayer { timeout }
@@ -66,10 +69,16 @@ where
     }
 
     fn call(&mut self, request: Request) -> Self::Future {
-        let response = self.inner.call(request);
         let timeout = self.timeout;
+        let deadline = Deadline::after(Instant::now(), timeout);
+        let response = self.inner.call(request);
         Box::pin(async move {
-            if let Ok(result) = tokio::time::timeout(timeout, response).await {
+            let bounded = tokio::time::timeout(timeout, response);
+            let result = match deadline {
+                Some(deadline) => deadline::scope(deadline, bounded).await,
+                None => bounded.await,
+            };
+            if let Ok(result) = result {
                 result
             } else {
                 tracing::warn!("request timed out at its route timeout");

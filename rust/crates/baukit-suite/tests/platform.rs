@@ -600,8 +600,10 @@ async fn guarded_jwks_fetch_uses_network_adapter_and_rejects_redirects()
             get(|| async { axum::response::Redirect::temporary("/keys") }),
         );
     let server = tokio::spawn(async move { axum::serve(listener, app).await });
-    let client =
-        GuardedClient::new(EgressOptions::default().with_policy(AddressPolicy::AllowLoopback))?;
+    let client = GuardedClient::new(
+        "hub",
+        EgressOptions::default().with_policy(AddressPolicy::AllowLoopback),
+    )?;
     let verifier = TicketVerifier::new(fixture.issuer, "hebkit".into(), &url, client.clone())?;
     let vector = &fixture.vectors[0];
     verifier.verify_at(&vector.ticket, vector.now).await?;
@@ -1237,7 +1239,7 @@ fn platform_openapi_describes_signature_headers_and_delivery_responses() {
 #[test]
 fn ticket_verifier_keeps_config_validation_details() {
     use baukit_egress::{EgressOptions, GuardedClient};
-    let client = GuardedClient::new(EgressOptions::default()).expect("client");
+    let client = GuardedClient::new("hub", EgressOptions::default()).expect("client");
     let config = PlatformConfig {
         hub_issuer: Some("bad issuer".into()),
         ..Default::default()

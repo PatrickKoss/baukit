@@ -1,28 +1,36 @@
 use std::{
+    borrow::Cow,
     error::Error as StdError,
     fmt,
     net::{IpAddr, SocketAddr},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use axum::http::{HeaderMap, HeaderName, Method, StatusCode, header::CONTENT_TYPE};
 use baukit_http::{RetryHeaderOptions, classify_http_status_with_options};
+use baukit_resilience::{Outcome, deadline};
 use reqwest::{
     dns::{Addrs, Name, Resolve, Resolving},
     redirect::Policy,
 };
+use tokio::sync::OwnedSemaphorePermit;
 use tracing::{Instrument, Span, field::Empty};
 use url::{Host, Url};
 
 use crate::{
     AddressPolicy, DestinationRejection, EgressError, EgressOptions, ErrorBody,
-    MAX_ERROR_HEADER_VALUE_BYTES, Resolver, SystemResolver, resolve_destination,
+    MAX_ERROR_HEADER_VALUE_BYTES, Resolver, SystemResolver,
+    breaker::{Guard, error_outcome, status_outcome},
+    metrics::{record_duration, record_request},
+    resolve_destination,
 };
 
 const TARGET: &str = "baukit_egress";
 const HTTP_SCHEME: &str = "http";
 const HTTPS_SCHEME: &str = "https";
+/// Below this much time left before the caller's deadline, no request is sent.
+const MIN_DEADLINE_REMAINING: Duration = Duration::from_millis(50);
 
 /// What [`GuardedClient::execute`] does with the body of a `2xx` response.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -185,11 +193,24 @@ impl EgressResponse {
 /// the response body limit in [`EgressOptions`]. Plain `http` requires an
 /// explicit opt-in through [`AddressPolicy`].
 /// Cloning is cheap and shares the connection pools.
+///
+/// Each `(scheme, host, port)` gets its own circuit breaker and in-flight cap,
+/// shared by all clones. The breaker is checked before the lookup, so an open
+/// circuit costs no DNS query. Metrics carry the client's `destination` name,
+/// never the host. Inside a request served by `baukit-http`, the timeout is
+/// capped by the time left before the request deadline, which is never sent
+/// to the destination.
 #[derive(Clone)]
 pub struct GuardedClient {
     https: reqwest::Client,
     plain_http: Option<reqwest::Client>,
     options: EgressOptions,
+    guard: Guard,
+}
+
+struct Sent {
+    response: reqwest::Response,
+    slot: OwnedSemaphorePermit,
 }
 
 /// The underlying HTTP client could not be built.
@@ -200,11 +221,18 @@ pub struct EgressClientError(#[source] reqwest::Error);
 impl GuardedClient {
     /// Builds a client that resolves through the operating system.
     ///
+    /// `destination` names what the client calls (`"hub"`, `"expo"`, a
+    /// provider name). It is the `destination` metric label, so it must be a
+    /// fixed name from code or configuration, never a host or URL.
+    ///
     /// # Errors
     ///
     /// Fails like [`Self::with_resolver`].
-    pub fn new(options: EgressOptions) -> Result<Self, EgressClientError> {
-        Self::with_resolver(Arc::new(SystemResolver), options)
+    pub fn new(
+        destination: impl Into<Cow<'static, str>>,
+        options: EgressOptions,
+    ) -> Result<Self, EgressClientError> {
+        Self::with_resolver(destination, Arc::new(SystemResolver), options)
     }
 
     /// Builds a client that resolves through `resolver`.
@@ -214,6 +242,7 @@ impl GuardedClient {
     /// Returns [`EgressClientError`] when the underlying HTTP client cannot be built,
     /// for example when the TLS backend fails to initialize.
     pub fn with_resolver(
+        destination: impl Into<Cow<'static, str>>,
         resolver: Arc<dyn Resolver>,
         options: EgressOptions,
     ) -> Result<Self, EgressClientError> {
@@ -223,11 +252,23 @@ impl GuardedClient {
             .allows_plain_http()
             .then(|| build_client(resolver, &options, Transport::PlainHttp))
             .transpose()?;
+        let guard = Guard::new(
+            destination.into(),
+            options.circuit_breaker().copied(),
+            options.max_in_flight(),
+        );
         Ok(Self {
             https,
             plain_http,
             options,
+            guard,
         })
+    }
+
+    /// Returns the destination name used as the metric label.
+    #[must_use]
+    pub fn destination(&self) -> &str {
+        self.guard.destination()
     }
 
     /// Returns the options this client was built with.
@@ -246,6 +287,8 @@ impl GuardedClient {
     /// `403` is revoked by default. [`EgressOptions::with_forbidden_rate_limit`]
     /// recognizes rate-limit headers on `403`; `401` always stays revoked.
     ///
+    /// The in-flight slot is held until the body is buffered.
+    ///
     /// # Errors
     ///
     /// Fails like [`Self::execute_stream`] and also while buffering the body:
@@ -253,7 +296,7 @@ impl GuardedClient {
     /// [`EgressError::Timeout`] when it outlasts the request timeout, and
     /// [`EgressError::ResponseTooLarge`] when it exceeds the byte limit.
     pub async fn execute(&self, request: EgressRequest) -> Result<EgressResponse, EgressError> {
-        let mut response = self.execute_stream(request).await?;
+        let (mut response, _slot) = self.open(request).await?;
         let mut body = Vec::new();
         while let Some(chunk) = response.chunk().await? {
             body.extend_from_slice(&chunk);
@@ -279,11 +322,37 @@ impl GuardedClient {
     /// when DNS fails or finds nothing, [`EgressError::Timeout`] or
     /// [`EgressError::Transport`] when the request does not complete,
     /// [`EgressError::Status`] for a non-`2xx`, and [`EgressError::ResponseTooLarge`]
-    /// when `Content-Length` exceeds the byte limit.
+    /// when `Content-Length` exceeds the byte limit. Before sending, it returns
+    /// [`EgressError::CircuitOpen`] when the destination's breaker is open,
+    /// [`EgressError::Saturated`] when its in-flight cap is reached, and
+    /// [`EgressError::Timeout`] when less than 50 ms remain before the request deadline.
+    ///
+    /// The breaker records the outcome when the headers arrive, so body reads
+    /// do not count. The in-flight slot is released when this returns; the
+    /// body stream does not hold it.
     pub async fn execute_stream(
         &self,
         request: EgressRequest,
     ) -> Result<EgressStreamResponse, EgressError> {
+        self.open(request).await.map(|(response, _slot)| response)
+    }
+
+    async fn open(
+        &self,
+        request: EgressRequest,
+    ) -> Result<(EgressStreamResponse, Option<OwnedSemaphorePermit>), EgressError> {
+        let result = self.open_inner(request).await;
+        record_request(
+            self.guard.destination(),
+            result.as_ref().map(|(response, _)| response.status),
+        );
+        result
+    }
+
+    async fn open_inner(
+        &self,
+        request: EgressRequest,
+    ) -> Result<(EgressStreamResponse, Option<OwnedSemaphorePermit>), EgressError> {
         let span = tracing::info_span!(
             target: TARGET,
             "egress.request",
@@ -294,13 +363,14 @@ impl GuardedClient {
             error.type = Empty,
         );
         let discard = request.response_body == ResponseBody::Discard;
-        let response = match self.send_headers(request).instrument(span.clone()).await {
-            Ok(response) => response,
-            Err(error) => {
-                record_error(&span, &error);
-                return Err(error);
-            }
-        };
+        let Sent { response, slot } =
+            match self.send_headers(request).instrument(span.clone()).await {
+                Ok(sent) => sent,
+                Err(error) => {
+                    record_error(&span, &error);
+                    return Err(error);
+                }
+            };
         let status = response.status();
         let headers = response.headers().clone();
         span.record("http.response.status_code", status.as_u16());
@@ -319,29 +389,46 @@ impl GuardedClient {
             record_error(&span, &error);
             return Err(error);
         }
-        Ok(EgressStreamResponse {
+        let stream = EgressStreamResponse {
             response,
             status,
             headers,
             remaining: limit,
             limit,
             span,
-        })
+        };
+        Ok((stream, Some(slot)))
     }
 
-    async fn send_headers(&self, request: EgressRequest) -> Result<reqwest::Response, EgressError> {
+    async fn send_headers(&self, request: EgressRequest) -> Result<Sent, EgressError> {
         validate_destination(&request.url, self.options.policy())?;
         let client = self.client_for(&request.url)?;
-        let response = client
+        let (timeout, deadline_capped) = self.request_timeout()?;
+        let admitted = self.guard.admit(&request.url)?;
+        let started = Instant::now();
+        let sent = client
             .request(request.method, request.url)
             .headers(request.headers)
             .body(request.body)
+            .timeout(timeout)
             .send()
             .await
-            .map_err(send_error)?;
+            .map_err(send_error);
+        record_duration(self.guard.destination(), started.elapsed());
+        let response = match sent {
+            Ok(response) => response,
+            Err(error) => {
+                drop(
+                    self.guard
+                        .finish(admitted, error_outcome(&error, deadline_capped)),
+                );
+                return Err(error);
+            }
+        };
         let status = response.status();
         if status.is_success() || (status.is_redirection() && self.options.redirect_responses()) {
-            return Ok(response);
+            let slot = self.guard.finish(admitted, Outcome::Success);
+            return Ok(Sent { response, slot });
         }
         let names: Vec<&str> = self
             .options
@@ -358,6 +445,7 @@ impl GuardedClient {
             retry_headers = retry_headers.with_forbidden_rate_limit();
         }
         let class = classify_http_status_with_options(status, response.headers(), retry_headers);
+        let _slot = self.guard.finish(admitted, status_outcome(class));
         let headers = allowlisted_headers(response.headers(), self.options.error_headers());
         let body = match self.options.error_body_limit() {
             Some(limit) => read_error_body(response, limit).await,
@@ -369,6 +457,19 @@ impl GuardedClient {
             body,
             headers: Box::new(headers),
         })
+    }
+
+    /// The timeout for one request and whether the caller's deadline shortened it.
+    fn request_timeout(&self) -> Result<(Duration, bool), EgressError> {
+        let own = self.options.request_timeout();
+        let Some(deadline) = deadline::current() else {
+            return Ok((own, false));
+        };
+        let remaining = deadline.remaining(Instant::now());
+        if remaining < MIN_DEADLINE_REMAINING {
+            return Err(EgressError::Timeout);
+        }
+        Ok((own.min(remaining), remaining < own))
     }
 
     fn client_for(&self, url: &Url) -> Result<&reqwest::Client, EgressError> {

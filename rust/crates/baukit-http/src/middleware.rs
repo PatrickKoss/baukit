@@ -1,4 +1,8 @@
-use std::{any::Any, fmt, time::Instant};
+use std::{
+    any::Any,
+    fmt,
+    time::{Duration, Instant},
+};
 
 use axum::{
     Router,
@@ -14,6 +18,7 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
 };
+use baukit_resilience::{Deadline, deadline};
 use metrics::Gauge;
 use opentelemetry::{
     Context, global,
@@ -306,7 +311,11 @@ async fn lifecycle_inner(
             "method" => method,
             "route" => route.clone()
         );
-        let admitted = admit_and_run(&gate, in_flight, request, next);
+        let admitted = with_deadline(
+            started,
+            options.request_timeout,
+            admit_and_run(&gate, in_flight, request, next),
+        );
 
         let mut response = match time::timeout(options.request_timeout, admitted).await {
             Ok(Err(shed)) => shed.into_response(),
@@ -354,6 +363,24 @@ async fn lifecycle_inner(
     }
     .instrument(span)
     .await
+}
+
+async fn with_deadline<F: Future>(started: Instant, budget: Duration, future: F) -> F::Output {
+    match Deadline::after(started, budget) {
+        Some(deadline) => deadline::scope(deadline, future).await,
+        None => future.await,
+    }
+}
+
+/// The deadline of the request being served: its start plus
+/// [`HttpOptions::request_timeout`], tightened by a [`route_timeout`](crate::route_timeout).
+///
+/// `None` outside a request handled by [`layers`], and in tasks the handler
+/// spawns. Outbound clients cap their timeouts with it; it is never sent to a
+/// destination.
+#[must_use]
+pub fn current_deadline() -> Option<Deadline> {
+    deadline::current()
 }
 
 async fn admit_and_run(

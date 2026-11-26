@@ -104,6 +104,17 @@ outcomes `allowed` or `limited`.
 
 `baukit-telemetry` reads the `process_*` values from `/proc/self` every 5 seconds, so they are missing on systems without `/proc`. CPU seconds and busy seconds are monotonic but exported as gauges because the `metrics` facade only has integer counters; `rate()` works on them as usual. `process_start_time_seconds` is the time telemetry was initialized. The `tokio_runtime_*` gauges use only metrics that stable Tokio exposes without `tokio_unstable`, and appear when `TelemetryBuilder::init` runs inside a Tokio runtime.
 
+### 2.8 Outbound HTTP (owned by `baukit-egress`)
+
+| Metric | Type | Labels |
+|---|---|---|
+| `egress_requests_total` | counter | `destination`, `status`, `outcome` (`success`, `unavailable`, `timeout`, `rate_limited`, `revoked`, `permanent`, `circuit_open`, `saturated`) |
+| `egress_request_duration_seconds` | histogram | `destination` |
+| `egress_circuit_state` | gauge | `destination` (`0` closed, `1` half-open, `2` open) |
+| `egress_circuit_transitions_total` | counter | `destination`, `to` (`closed`, `half_open`, `open`) |
+
+`destination` is the name passed to `GuardedClient::new` (`oidc`, `idp`, `hub`, `suite-peer`, `expo`, `keycloak-admin`, `mcp-introspection`, or a product provider name), never a host. `status` is the numeric response status, or `none` when no response arrived. Each call to `execute` or `execute_stream` adds one `egress_requests_total` sample, including calls refused by an open circuit or a full in-flight cap. `egress_request_duration_seconds` measures the time to the response headers of requests that were sent and uses the HTTP buckets from 2.1. `egress_circuit_state` is the worst state across the `(scheme, host, port)` breakers of one destination. A breaker reports open until the next call moves it to half-open, so a destination nobody calls keeps reporting open.
+
 ## 3. Logs
 
 - JSON to stdout in deployed environments; human-readable format in local development. The switch follows `deployment.environment.name`.

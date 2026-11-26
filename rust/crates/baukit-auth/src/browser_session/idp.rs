@@ -151,8 +151,8 @@ impl OidcTokenClient {
     pub(crate) async fn discover(
         config: &BrowserSessionConfig,
     ) -> Result<Arc<Self>, IdpDiscoveryError> {
-        let client =
-            GuardedClient::new(config.egress_options()?).map_err(IdpDiscoveryError::Client)?;
+        let client = GuardedClient::new("idp", config.egress_options()?)
+            .map_err(IdpDiscoveryError::Client)?;
         let idp_base = config.idp_base();
         let mut discovery_url = idp_base.clone();
         discovery_url.set_path(&format!(

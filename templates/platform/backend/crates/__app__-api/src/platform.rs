@@ -72,6 +72,7 @@ impl HubTicketSource {
             AddressPolicy::PublicOnly
         };
         let client = GuardedClient::new(
+            "hub",
             EgressOptions::default()
                 .with_policy(policy)
                 .with_max_response_bytes(RESPONSE_LIMIT)?

@@ -1,0 +1,140 @@
+rule_files:
+  - ../recording-rules/baukit-red.rules.yml
+  - ../alerts/baukit.rules.yml
+evaluation_interval: 1m
+group_eval_order:
+  - baukit-egress
+  - baukit-egress-alerts
+tests:
+  - name: a failing destination fires BaukitEgressErrorRatioHigh after 10m
+    interval: 1m
+    input_series:
+      - series: 'egress_requests_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="hub",status="200",outcome="success"}'
+        values: '0+60x20'
+      - series: 'egress_requests_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="hub",status="503",outcome="unavailable"}'
+        values: '0+15x20'
+      - series: 'egress_requests_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="hub",status="none",outcome="circuit_open"}'
+        values: '0+15x20'
+    promql_expr_test:
+      - expr: baukit:egress_requests_failed:rate5m
+        eval_time: 20m
+        exp_samples:
+          - labels: 'baukit:egress_requests_failed:rate5m{product="fixture",service="fixture-api",environment="test",namespace="fixture",destination="hub"}'
+            value: 0.5
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BaukitEgressErrorRatioHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitEgressErrorRatioHigh
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              namespace: fixture
+              destination: hub
+              severity: warning
+            exp_annotations:
+              summary: Outbound calls to a destination fail
+              description: 'More than 10% of calls from fixture-api to hub in fixture failed, timed out or were refused by the circuit breaker for ten minutes.'
+              runbook_url: RUNBOOK_BASE_URL/egress-error-ratio-high
+
+  - name: few failures or too little traffic keep BaukitEgressErrorRatioHigh quiet
+    interval: 1m
+    input_series:
+      - series: 'egress_requests_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="hub",status="200",outcome="success"}'
+        values: '0+60x20'
+      - series: 'egress_requests_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="hub",status="503",outcome="unavailable"}'
+        values: '0+3x20'
+      - series: 'egress_requests_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="hub",status="400",outcome="permanent"}'
+        values: '0+30x20'
+      - series: 'egress_requests_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="expo",status="none",outcome="timeout"}'
+        values: '0+2x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitEgressErrorRatioHigh
+        exp_alerts: []
+
+  - name: a circuit open for 5m fires BaukitEgressCircuitOpen
+    interval: 1m
+    input_series:
+      - series: 'egress_circuit_state{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="suite-peer"}'
+        values: '2x20'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BaukitEgressCircuitOpen
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: BaukitEgressCircuitOpen
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              namespace: fixture
+              destination: suite-peer
+              severity: warning
+            exp_annotations:
+              summary: An outbound circuit breaker stays open
+              description: 'The circuit breaker of fixture-api for suite-peer in fixture has been open for five minutes.'
+              runbook_url: RUNBOOK_BASE_URL/egress-circuit-open
+
+  - name: a circuit that closes within 5m keeps BaukitEgressCircuitOpen quiet
+    interval: 1m
+    input_series:
+      - series: 'egress_circuit_state{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="suite-peer"}'
+        values: '2x3 1 0x15'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: BaukitEgressCircuitOpen
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitEgressCircuitOpen
+        exp_alerts: []
+
+  - name: slow responses fire BaukitEgressLatencyHigh after 10m
+    interval: 1m
+    input_series:
+      - series: 'egress_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="oidc",le="0.5"}'
+        values: '0+0x20'
+      - series: 'egress_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="oidc",le="2.5"}'
+        values: '0+6x20'
+      - series: 'egress_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="oidc",le="5"}'
+        values: '0+60x20'
+      - series: 'egress_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="oidc",le="+Inf"}'
+        values: '0+60x20'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BaukitEgressLatencyHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitEgressLatencyHigh
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              namespace: fixture
+              destination: oidc
+              severity: warning
+            exp_annotations:
+              summary: Outbound calls to a destination are slow
+              description: 'The p95 time to response headers from oidc has exceeded 2s for ten minutes in fixture-api in fixture.'
+              runbook_url: RUNBOOK_BASE_URL/egress-latency-high
+
+  - name: fast responses keep BaukitEgressLatencyHigh quiet
+    interval: 1m
+    input_series:
+      - series: 'egress_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="oidc",le="0.5"}'
+        values: '0+57x20'
+      - series: 'egress_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="oidc",le="2.5"}'
+        values: '0+60x20'
+      - series: 'egress_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="oidc",le="5"}'
+        values: '0+60x20'
+      - series: 'egress_request_duration_seconds_bucket{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",destination="oidc",le="+Inf"}'
+        values: '0+60x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitEgressLatencyHigh
+        exp_alerts: []

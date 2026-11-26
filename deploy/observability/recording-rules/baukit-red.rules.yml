@@ -192,3 +192,28 @@ groups:
           sum by (product, service, environment, namespace, job_kind, outcome) (
             rate(worker_job_runs_total[5m])
           )
+
+  - name: baukit-egress
+    interval: 30s
+    rules:
+      - record: baukit:egress_requests:rate5m
+        expr: |
+          sum by (product, service, environment, namespace, destination) (
+            rate(egress_requests_total[5m])
+          )
+
+      # Outcomes that say the destination is down or this process cannot reach it.
+      - record: baukit:egress_requests_failed:rate5m
+        expr: |
+          sum by (product, service, environment, namespace, destination) (
+            rate(egress_requests_total{outcome=~"unavailable|timeout|circuit_open|saturated"}[5m])
+          )
+
+      - record: baukit:egress_request_duration_seconds:p95_5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (product, service, environment, namespace, destination, le) (
+              rate(egress_request_duration_seconds_bucket[5m])
+            )
+          )
