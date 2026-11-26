@@ -135,6 +135,15 @@ h1 {
   color: #b42318;
 }
 
+.status-banner {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid #b54708;
+  border-radius: 8px;
+  color: #7a2e0e;
+  background: #fffaeb;
+}
+
 .dialog-backdrop {
   position: fixed;
   z-index: 10;
