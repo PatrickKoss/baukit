@@ -76,20 +76,25 @@ on different nodes with a PDB of `maxUnavailable: 1`.
 | App pool per pod (`database.max_connections`) | 10 | `baukit-config` default |
 | PgBouncer `default_pool_size` per database and user | 10 | `pooler.yaml` |
 | PgBouncer `reserve_pool_size` | 2 | `pooler.yaml` |
-| PgBouncer `max_db_connections` per database | 20 | `pooler.yaml` |
+| PgBouncer `max_db_connections` per database | 12 | `pooler.yaml` |
 | PgBouncer `max_client_conn` | 500 | `pooler.yaml` |
 | Tenant owner `connectionLimit` | 25 | `product-database.example.yaml` |
 | Keycloak pool (`KC_DB_POOL_MAX_SIZE`) | 10 | `keycloak/statefulset.yaml` |
 | Keycloak owner `connectionLimit` | 12 | `keycloak/database.yaml` |
 | PostgreSQL `max_connections` | 150 | `cluster.yaml` |
 
-An app pod opens up to 10 client connections to PgBouncer, and every pod of a
-product shares the same 10 server connections, plus 2 reserve ones when a
-client waits longer than `reserve_pool_timeout`. Each tenant owner can open 25
-connections: 20 through the pooler and 5 direct ones for migrations and
-listeners. Five tenants at their limit (125), Keycloak (10), CNPG's own
-connections and the 3 superuser slots fit under 150. Raise `max_connections`
-before the sixth tenant, and size memory with it.
+Only API pods go through the pooler. An API pod opens up to 10 client
+connections to PgBouncer, and every API pod of a product shares the same 10
+server connections, plus 2 reserve ones when a client waits longer than
+`reserve_pool_timeout`, capped at `max_db_connections` 12. The worker, the
+migration Job and the seed Job connect to `postgres-cluster-rw` directly, so
+their startup timeouts apply and no `query_timeout` cuts a long job. Each tenant
+owner can open 25 connections: 12 through the pooler and 13 direct, enough for
+one worker pod at the default pool of 10 plus the migration Job and an operator
+session. More worker replicas need a smaller worker pool. Five tenants at their
+limit (125), Keycloak (12), CNPG's own connections and the 3 superuser slots fit
+under 150. Raise `max_connections` before the sixth tenant, and size memory
+with it.
 
 ### Timeouts through the pooler
 
@@ -99,10 +104,11 @@ cannot forward those to a shared server connection, so the pooler lists
 `options` in `ignore_startup_parameters` and the owner role carries the same
 values through `ALTER ROLE ... SET`. `cluster.yaml` sets them for the bootstrap
 owner in `postInitApplicationSQL`; every other tenant owner gets them once by
-hand, as `product-database.example.yaml` shows. A product that overrides a
-timeout in its config gets the role's value through the pooler. Migrations run
-on a direct connection to `postgres-cluster-rw`, where startup options still
-apply and the migration connection drops `statement_timeout`.
+hand, as `product-database.example.yaml` shows. An API that overrides a
+timeout in its config gets the role's value through the pooler. The worker and
+migrations run on direct connections to `postgres-cluster-rw`, where startup
+options still apply: the worker's `statement_timeout` follows its job timeout
+and the migration connection drops `statement_timeout`.
 
 PgBouncer adds two limits of its own. `query_timeout` 35 s sits above the role's
 `statement_timeout`, so PostgreSQL cancels a slow statement first and the

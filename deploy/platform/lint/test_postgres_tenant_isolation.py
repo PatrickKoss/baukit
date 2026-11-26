@@ -20,6 +20,8 @@ TENANT_CONNECTION_LIMIT = 25
 MAX_CONNECTIONS = 150
 TENANTS_IN_BUDGET = 5
 KEYCLOAK_CONNECTION_LIMIT = 12
+# One direct worker pod at the default pool, the migration Job and an operator psql.
+MIGRATION_AND_OPERATOR_CONNECTIONS = 3
 EXPECTED_PG_HBA = [
     f"host samerole +{TENANT_GROUP} all scram-sha-256",
     f"host all +{TENANT_GROUP} all reject",
@@ -74,6 +76,14 @@ class PostgresTenantIsolationTest(unittest.TestCase):
             int(parameters["max_db_connections"]),
         )
 
+    def test_owner_limit_leaves_room_for_a_direct_worker(self) -> None:
+        (pooler,) = documents(POSTGRES / "pooler.yaml")
+        pooled = int(pooler["spec"]["pgbouncer"]["parameters"]["max_db_connections"])
+        direct = TENANT_CONNECTION_LIMIT - pooled
+        self.assertGreaterEqual(
+            direct, config_max_connections() + MIGRATION_AND_OPERATOR_CONNECTIONS
+        )
+
     def test_bootstrap_owner_gets_the_tenant_limit_and_config_timeouts(self) -> None:
         (cluster,) = documents(POSTGRES / "cluster.yaml")
         initdb = cluster["spec"]["bootstrap"]["initdb"]
@@ -121,6 +131,13 @@ def config_timeouts() -> dict[str, int]:
             raise AssertionError(f"{constant} not found in {DATABASE_CONFIG}")
         found[setting] = int(match.group(1))
     return found
+
+
+def config_max_connections() -> int:
+    match = re.search(r"const DEFAULT_MAX_CONNECTIONS: u32 = (\d+);", DATABASE_CONFIG.read_text())
+    if match is None:
+        raise AssertionError(f"DEFAULT_MAX_CONNECTIONS not found in {DATABASE_CONFIG}")
+    return int(match.group(1))
 
 
 if __name__ == "__main__":

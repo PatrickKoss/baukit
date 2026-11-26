@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "baukit-app.processLabels" (dict "root" . "process" "api") | nindent 4 }}
 spec:
-  {{- if not .Values.autoscaling.enabled }}
+  {{- if not (or .Values.canary.enabled .Values.autoscaling.enabled) }}
   replicas: {{ .Values.api.replicas }}
   {{- end }}
   strategy:

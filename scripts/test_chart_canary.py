@@ -142,6 +142,20 @@ class CanaryTest(unittest.TestCase):
         [canary] = find(render(*CANARY, "autoscaling.enabled=true"), "Canary")
         self.assertEqual(canary["spec"]["autoscalerRef"]["name"], API)
 
+    def test_flagger_owns_the_api_replicas(self) -> None:
+        for settings in [
+            CANARY,
+            ("autoscaling.enabled=true",),
+            (*CANARY, "autoscaling.enabled=true"),
+        ]:
+            with self.subTest(settings=settings):
+                [deployment] = find(render(*settings), "Deployment", API)
+                self.assertNotIn("replicas", deployment["spec"])
+
+    def test_plain_api_keeps_its_replicas(self) -> None:
+        [deployment] = find(render("api.replicas=3"), "Deployment", API)
+        self.assertEqual(deployment["spec"]["replicas"], 3)
+
     def test_service_monitor_labels_rollout_from_the_pod(self) -> None:
         rollout = [
             r for r in api_monitor_relabelings(render(*CANARY)) if r["targetLabel"] == "rollout"

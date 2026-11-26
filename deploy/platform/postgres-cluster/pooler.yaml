@@ -18,7 +18,7 @@ spec:
     parameters:
       default_pool_size: "10"
       reserve_pool_size: "2"
-      max_db_connections: "20"
+      max_db_connections: "12"
       max_client_conn: "500"
       max_prepared_statements: "200"
       # Clients send their timeouts as startup options, which PgBouncer cannot forward. The

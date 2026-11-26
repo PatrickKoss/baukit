@@ -81,29 +81,33 @@ reported 310m CPU and 6,005 MiB in the same minute.
 
 PL4 put a PgBouncer `Pooler` (transaction mode, one pod requesting 10m CPU and
 32 MiB, limited to 200m and 128 MiB) in front of the shared cluster and set
-`max_connections` to 150. Each app pod pools 10 connections to PgBouncer;
-PgBouncer opens at most `default_pool_size` 10 (plus 2 reserve, capped at
-`max_db_connections` 20) server connections per product database, however many
-pods connect. Each tenant owner has `connectionLimit: 25`, which leaves 5
-direct connections for migrations and listeners next to the pooler's 20; the
-Keycloak owner has 12 for its pool of 10.
+`max_connections` to 150. Only the API goes through it. The worker, the
+migration Job and the seed Job connect to `postgres-cluster-rw` directly,
+because transaction pooling drops their startup `statement_timeout` (the worker
+derives it from the job timeout) and the pooler's `query_timeout` of 35 s would
+cut a longer job. The baukit-app chart wires that split with
+`backing.postgres.shared.directUrlSecretRef`.
 
 | Pool | Size | Set in |
 |---|---:|---|
-| App pool per pod (`database.max_connections`) | 10 | `baukit-config` |
+| API pool per pod, to PgBouncer (`database.max_connections`) | 10 | `baukit-config` |
 | PgBouncer `default_pool_size` per database and user | 10 | `postgres-cluster/pooler.yaml` |
 | PgBouncer `reserve_pool_size` | 2 | `postgres-cluster/pooler.yaml` |
-| PgBouncer `max_db_connections` per database | 20 | `postgres-cluster/pooler.yaml` |
+| PgBouncer `max_db_connections` per database | 12 | `postgres-cluster/pooler.yaml` |
+| Worker pool per pod, direct (`database.max_connections`) | 10 | `baukit-config` |
+| Tenant owner `connectionLimit` | 25 | `postgres-cluster/cluster.yaml`, `DatabaseRole` |
 
-Two app pods of one product hold up to 20 client connections to PgBouncer but
-share at most 12 server connections, so raising the app pool does not raise the
-load on PostgreSQL; raising `default_pool_size` does. Keep `default_pool_size`
-plus `reserve_pool_size` at or below `max_db_connections`, and
-`max_db_connections` below the owner's `connectionLimit`. Through the pooler the
-owner role's `ALTER ROLE ... SET` timeouts replace the app's startup options
+The owner's 25 connections split into 12 through the pooler and 13 direct: one
+worker pod at its default pool of 10, plus 3 for the migration Job and an
+operator's `psql`. Any number of API pods shares the 12 pooled server
+connections, so adding API replicas does not raise the load on PostgreSQL. Each
+extra worker replica does: run a second worker only after lowering
+`<PREFIX>__DATABASE__MAX_CONNECTIONS` for the worker so that the worker pods
+together stay at 10. Five tenants at 25 (125), Keycloak's 12, CNPG's own
+connections and the 3 superuser slots fit under 150. Through the pooler the
+owner role's `ALTER ROLE ... SET` timeouts replace the API's startup options
 (see "Timeouts through the pooler" in `postgres-cluster/README.md`). The pooler
-pod is not in the August sample above. The full table lives in
-`postgres-cluster/README.md` under "Connection budget".
+pod is not in the August sample above.
 
 ## Testing-node sizing implication
 

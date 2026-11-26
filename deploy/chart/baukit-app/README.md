@@ -224,6 +224,8 @@ Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops a
 | `serviceMonitor.enabled` | `false` | Request capability-gated API/worker ServiceMonitors. |
 | `serviceMonitor.interval` / `scrapeTimeout` | `30s` / `10s` | ServiceMonitor endpoint timing. |
 | `serviceMonitor.labels` | `{}` | Extra labels used by the Prometheus Operator's monitor selector. |
+| `backing.postgres.shared.poolerName` | `""` | PgBouncer Pooler the API may reach in shared mode. Empty means `<clusterName>-pooler-rw`. |
+| `backing.postgres.shared.directUrlSecretRef.name` / `key` | `""` / `uri` | Secret holding a URL to `<clusterName>-rw`. When set, the worker, migrate and seed processes read `<PREFIX>__DATABASE__URL` from it and get no egress to the pooler; only the API keeps the pooled URL from `config.existingSecretRefs`. Transaction pooling drops the worker's `statement_timeout` and the pooler's 35 s `query_timeout` cuts longer jobs. |
 | `canary.enabled` | `false` | Render a Flagger `Canary` for the API Deployment, its two `MetricTemplate`s and an `IngressRoute` to Flagger's `TraefikService` instead of the Ingress. See "Progressive delivery". |
 | `canary.prometheusAddress` | `""` | Prometheus API the `MetricTemplate`s query. Empty means `http://tenant-metrics-proxy.<namespace>.svc.cluster.local:8080`, which tenant namespaces require. |
 | `canary.progressDeadlineSeconds` | `600` | Flagger's progress deadline for the canary Deployment. |
@@ -260,9 +262,12 @@ The API ServiceMonitor sets `rollout="primary"` on series from pods whose worklo
 `rollout="canary"`, so the gates see only the canary: the 5xx share of `http_requests_total` and the p95
 of `http_request_duration_seconds`. A gate with no data counts as a failed check, so the canary needs
 traffic during the analysis. Set `serviceMonitor.enabled=true` with the canary. The worker is not
-promoted. The chart keeps `replicas` on its Deployment, because Flagger sizes the primary from it. A
-Helm upgrade that changes no pod template therefore can leave the idle Deployment running at
-`api.replicas` next to the primary.
+promoted. With a canary or an HPA the API Deployment has no `replicas` field, so a Helm upgrade never
+scales the idle canary Deployment back up. Flagger 1.45 creates the primary with the target's
+replica count, 1 when the field is absent, and runs the canary at the primary's count
+(`pkg/canary/deployment_controller.go`). Without `autoscaling.enabled` the primary therefore runs
+one pod and `api.replicas` has no effect; enable autoscaling to run more, and Flagger copies the
+HPA to `<fullname>-api-primary`.
 
 ## Web app and CSP
 
