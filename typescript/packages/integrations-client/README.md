@@ -112,8 +112,8 @@ await providers.get('calendar')?.connector?.startOAuth();
 `list()` keeps registration order. `get()` returns the typed connector and returns `undefined` for an
 unknown ID. `withConnectionStates()` accepts a read-only map or partial record and returns a new
 registry; it does not change `providerDefinitions`. A provider omitted from the state collection has
-state `disconnected` and no available actions. Passing `connection` in a registration still works
-for callers using the 0.2.0 API.
+state `disconnected` and no available actions. A `connection` field on a registration sets that
+provider's initial state.
 
 The registry copies capability and action arrays and rejects duplicate IDs. It keeps connector
 objects by reference so hooks, functions, and component identities remain stable. Persistence,

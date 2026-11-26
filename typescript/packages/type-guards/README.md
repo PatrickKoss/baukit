@@ -1,16 +1,42 @@
 # `@baukit/type-guards`
 
 Runtime type guards for validating `unknown` JSON without double casts. The package has no
-dependencies and is shared by the Baukit packages that parse tokens, plans and API payloads.
+dependencies. The Baukit packages that parse tokens, plans and API payloads share it.
+
+## Exports
+
+| Guard                      | Accepts                                           |
+| -------------------------- | ------------------------------------------------- |
+| `isRecord`                 | any object that is not `null` and not an array    |
+| `isString`                 | any string                                        |
+| `isNonEmptyString`         | a string with at least one character              |
+| `isBoolean`                | `true` or `false`                                 |
+| `isSafeInteger`            | a number for which `Number.isSafeInteger` is true |
+| `isNonNegativeSafeInteger` | a safe integer of zero or more                    |
+| `isStringArray`            | an array whose every item is a string             |
+| `nullable(guard)`          | whatever `guard` accepts, and `null`              |
+
+Each guard is a TypeScript type predicate, so a passing check narrows the value.
+
+## Example
 
 ```ts
-import { isNonEmptyString, isRecord } from '@baukit/type-guards';
+import { isNonEmptyString, isRecord, isSafeInteger, nullable } from '@baukit/type-guards';
 
-function subject(claims: unknown): string | undefined {
-  if (!isRecord(claims)) return undefined;
-  return isNonEmptyString(claims['sub']) ? claims['sub'] : undefined;
+interface Claims {
+  readonly sub: string;
+  readonly exp: number | null;
+}
+
+const isOptionalInteger = nullable(isSafeInteger);
+
+export function parseClaims(value: unknown): Claims | undefined {
+  if (!isRecord(value)) return undefined;
+  const { sub, exp } = value;
+  if (!isNonEmptyString(sub) || !isOptionalInteger(exp)) return undefined;
+  return { sub, exp };
 }
 ```
 
-`isRecord` accepts plain objects only, not `null` and not arrays. `nullable(guard)` extends any
-guard with `null`.
+The baukit rules forbid `as unknown as T` on untrusted data. Use these guards instead. See the
+[frontend guide](../../../docs/guide/frontend.md).
