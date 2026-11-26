@@ -33,7 +33,7 @@ jobs:
         with:
           version: 2026.8.11
           cache: true
-          install_args: cargo:kani-verifier
+          install_args: rust cargo:kani-verifier
       - run: scripts/ci-gate.sh --step kani-full
 
   fuzz-targets:
