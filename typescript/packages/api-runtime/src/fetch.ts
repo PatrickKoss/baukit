@@ -1,4 +1,12 @@
-import { ApiError, HttpError, isApiError, NetworkError, normalizeResponseError } from './errors.js';
+import { OriginCooldown } from './cooldown.js';
+import {
+  ApiError,
+  ApiUnavailableError,
+  HttpError,
+  isApiError,
+  NetworkError,
+  normalizeResponseError,
+} from './errors.js';
 import { REQUEST_ID_HEADER } from './headers.js';
 import type {
   ApiRuntimeOptions,
@@ -10,15 +18,19 @@ import type {
 import {
   isAbortError,
   networkError,
+  nextRetryDelayMs,
   normalizeRetryOptions,
+  retryAfterDelayMs,
   retryDelay,
   shouldRetryMethod,
   shouldRetryResponse,
   throwIfAborted,
   type NormalizedRetryOptions,
 } from './retry.js';
+import { attemptSignal } from './timeout.js';
 
 const UNAUTHORIZED_STATUS = 401;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const RETRY = Symbol('retry');
 type AttemptOutcome = Response | typeof RETRY;
 
@@ -28,6 +40,9 @@ export interface FetchSettings {
   readonly transport: FetchImplementation;
   readonly requestIdFactory: () => string;
   readonly retry: NormalizedRetryOptions;
+  readonly requestTimeoutMs: number | null;
+  readonly cooldown: OriginCooldown | null;
+  readonly now: () => number;
   readonly options: ApiRuntimeOptions;
 }
 
@@ -41,15 +56,20 @@ interface AttemptState {
   useOriginalRequest: boolean;
   retries: number;
   unauthorizedReplayUsed: boolean;
+  timedOut: boolean;
 }
 
 export function fetchSettings(options: ApiRuntimeOptions, baseUrl: string): FetchSettings {
+  const now = options.now ?? Date.now;
   return {
     baseUrl,
     requestConstructor: options.requestConstructor ?? globalThis.Request,
     transport: options.fetch ?? globalThis.fetch.bind(globalThis),
     requestIdFactory: options.requestIdFactory ?? createUuid,
     retry: normalizeRetryOptions(options.retry),
+    requestTimeoutMs: normalizeRequestTimeout(options.requestTimeoutMs),
+    cooldown: options.cooldown === false ? null : new OriginCooldown(options.cooldown ?? {}, now),
+    now,
     options,
   };
 }
@@ -67,9 +87,11 @@ export async function runFetch(
     useOriginalRequest: true,
     retries: 0,
     unauthorizedReplayUsed: false,
+    timedOut: false,
   };
   for (;;) {
     throwIfAborted(state.request.signal, context.requestId);
+    throwIfCoolingDown(context, state);
     const outcome = await runAttempt(context, state);
     if (outcome !== RETRY) {
       return outcome;
@@ -102,15 +124,47 @@ async function runAttempt(context: FetchContext, state: AttemptState): Promise<A
   }
 }
 
+function normalizeRequestTimeout(timeoutMs: number | false | undefined): number | null {
+  if (timeoutMs === false) {
+    return null;
+  }
+  const value = timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error('requestTimeoutMs must be a finite positive number');
+  }
+  return value;
+}
+
+function originOf(state: AttemptState): string {
+  return new URL(state.request.url).origin;
+}
+
+function throwIfCoolingDown(context: FetchContext, state: AttemptState): void {
+  const retryAt = context.cooldown?.blockedUntil(originOf(state)) ?? null;
+  if (retryAt !== null) {
+    throw new ApiUnavailableError(context.requestId, retryAt);
+  }
+}
+
 async function sendAttempt(context: FetchContext, state: AttemptState): Promise<Response> {
   const attempt = state.useOriginalRequest ? state.request : state.replaySource?.clone();
   if (attempt === undefined) {
     throw new TypeError('API request body cannot be replayed');
   }
   state.useOriginalRequest = false;
-  const response = await context.transport(attempt);
-  throwIfAborted(state.request.signal, context.requestId);
-  return response;
+  state.timedOut = false;
+  const scope = attemptSignal(state.request.signal, context.requestTimeoutMs);
+  try {
+    const response = await context.transport(attempt, { signal: scope.signal });
+    throwIfAborted(state.request.signal, context.requestId);
+    context.cooldown?.recordResponse(originOf(state));
+    return response;
+  } catch (cause) {
+    state.timedOut = scope.timedOut();
+    throw cause;
+  } finally {
+    scope.dispose();
+  }
 }
 
 async function handleResponse(
@@ -118,11 +172,20 @@ async function handleResponse(
   state: AttemptState,
   response: Response,
 ): Promise<AttemptOutcome> {
+  const retryAfterMs = retryAfterDelayMs(response, context.retry, context.now());
+  if (retryAfterMs !== null) {
+    context.cooldown?.coolDown(originOf(state), retryAfterMs);
+  }
   if (
     state.replaySource !== undefined &&
-    shouldRetryResponse(state.request, response.status, state.retries, context.retry)
+    shouldRetryResponse(
+      state.request,
+      { status: response.status, retryAfterMs },
+      state.retries,
+      context.retry,
+    )
   ) {
-    await backOff(context, state);
+    await backOff(context, state, retryAfterMs);
     return RETRY;
   }
   if (response.ok) {
@@ -230,29 +293,52 @@ async function handleFailure(
   state: AttemptState,
   cause: unknown,
 ): Promise<AttemptOutcome> {
-  if (cause instanceof ApiError || cause instanceof HttpError) {
+  if (
+    cause instanceof ApiError ||
+    cause instanceof HttpError ||
+    cause instanceof ApiUnavailableError
+  ) {
     throw cause;
   }
-  const aborted = state.request.signal.aborted || isAbortError(cause);
+  const aborted = state.request.signal.aborted || (!state.timedOut && isAbortError(cause));
+  if (!aborted) {
+    context.cooldown?.recordNetworkFailure(originOf(state));
+  }
   if (
     !aborted &&
     state.replaySource !== undefined &&
     shouldRetryMethod(state.request, context.retry) &&
     state.retries < context.retry.maxRetries
   ) {
-    await backOff(context, state);
+    await backOff(context, state, null);
     return RETRY;
   }
   throw new NetworkError(
-    aborted ? 'API request was aborted' : 'API network request failed',
+    failureMessage(aborted, state.timedOut),
     context.requestId,
     cause,
     aborted,
   );
 }
 
-async function backOff(context: FetchContext, state: AttemptState): Promise<void> {
-  await retryDelay(state.retries, context.retry, state.request.signal, context.requestId);
+function failureMessage(aborted: boolean, timedOut: boolean): string {
+  if (aborted) {
+    return 'API request was aborted';
+  }
+  return timedOut ? 'API request timed out' : 'API network request failed';
+}
+
+async function backOff(
+  context: FetchContext,
+  state: AttemptState,
+  retryAfterMs: number | null,
+): Promise<void> {
+  const delayMs = nextRetryDelayMs(state.retries, context.retry, retryAfterMs);
+  const retryAt = context.cooldown?.blockedUntil(originOf(state)) ?? null;
+  if (retryAt !== null && retryAt > context.now() + delayMs) {
+    throw new ApiUnavailableError(context.requestId, retryAt);
+  }
+  await retryDelay(delayMs, context.retry, state.request.signal, context.requestId);
   state.retries += 1;
 }
 

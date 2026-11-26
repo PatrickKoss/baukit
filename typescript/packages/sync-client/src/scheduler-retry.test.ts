@@ -9,6 +9,7 @@ import {
 } from './scheduler.js';
 
 const INTERVAL_MS = 60_000;
+const INTERVAL_JITTER_MS = INTERVAL_MS / 10;
 
 interface Timer {
   readonly callback: () => void;
@@ -28,7 +29,8 @@ function retryEnvironment(): RetryEnvironment {
   const activeListeners = new Set<(next: boolean) => void>();
   const onlineListeners = new Set<() => void>();
   const timers = new Map<SyncSchedulerTimer, Timer>();
-  const retryTimers = () => [...timers.values()].filter((timer) => timer.ms !== INTERVAL_MS);
+  const retryTimers = () =>
+    [...timers.values()].filter((timer) => Math.abs(timer.ms - INTERVAL_MS) > INTERVAL_JITTER_MS);
 
   return {
     isActive: () => active,
@@ -188,13 +190,14 @@ describe('SyncScheduler retry', () => {
     expect(run).toHaveBeenCalledTimes(4);
   });
 
-  it('retries at once when the app returns to the foreground or connectivity returns', async () => {
+  it('retries at once on foreground or connectivity when the recovery jitter is 0', async () => {
     const environment = retryEnvironment();
     const { run } = failingRun(2);
     const signals: string[] = [];
     const { options } = retryOptions();
     const scheduler = new SyncScheduler(run, environment, {
       intervalMs: INTERVAL_MS,
+      random: () => 0,
       retry: options,
       onRecoverySignal: (signal) => signals.push(signal),
     });
