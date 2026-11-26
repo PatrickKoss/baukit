@@ -315,54 +315,6 @@ impl Validate for OpsConfig {
     }
 }
 
-/// Plain database connection and pool configuration.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(default)]
-pub struct DatabaseConfig {
-    /// Database connection URL. Formatting the wrapper always redacts it.
-    pub url: Secret<String>,
-    /// Maximum number of connections in the pool.
-    pub max_connections: u32,
-    /// Minimum number of connections retained by the pool.
-    pub min_connections: u32,
-    /// Maximum time to wait for a connection, in integer seconds on input.
-    #[serde(with = "duration_seconds")]
-    pub acquire_timeout: Duration,
-}
-
-impl Default for DatabaseConfig {
-    fn default() -> Self {
-        Self {
-            url: Secret::new("postgres://localhost/app".to_owned()),
-            max_connections: 10,
-            min_connections: 1,
-            acquire_timeout: Duration::from_secs(5),
-        }
-    }
-}
-
-impl Validate for DatabaseConfig {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        let mut errors = Vec::new();
-        if self.url.expose().trim().is_empty() {
-            errors.push(ValidationError::new("url", "must not be empty"));
-        }
-        require_non_zero(self.max_connections, "max_connections", &mut errors);
-        if self.min_connections > self.max_connections {
-            errors.push(ValidationError::new(
-                "min_connections",
-                "must not exceed max_connections",
-            ));
-        }
-        require_non_zero(
-            self.acquire_timeout.as_secs(),
-            "acquire_timeout",
-            &mut errors,
-        );
-        validation_result(errors)
-    }
-}
-
 /// Resource identity values consumed by telemetry initialization.
 ///
 /// Deployment environment is carried by [`BaukitConfig::environment`]. Fields
@@ -528,6 +480,11 @@ where
         extend_validation(&mut errors, self.ops.validate(), Some("ops"));
         if let Some(database) = &self.database {
             extend_validation(&mut errors, database.validate(), Some("database"));
+            extend_validation(
+                &mut errors,
+                database.validate_request_timeout(self.http.request_timeout),
+                Some("database"),
+            );
         }
         extend_validation(&mut errors, self.rate_limit.validate(), Some("rate_limit"));
         extend_validation(&mut errors, self.telemetry.validate(), Some("telemetry"));
@@ -961,8 +918,10 @@ fn extend_validation(
     }
 }
 
+mod database;
 mod http;
 
+pub use database::DatabaseConfig;
 pub use http::{DEFAULT_HSTS_MAX_AGE, HttpConfig};
 mod redis_namespace;
 pub use redis_namespace::validate_redis_key_namespace;

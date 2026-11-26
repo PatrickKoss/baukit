@@ -71,9 +71,17 @@ of rotation. Register it with `register_diagnostic_fn_default` and read it on th
 Checks run concurrently and each carries its own timeout, so `/readyz` costs about as long as its
 slowest check rather than the sum. `DEFAULT_READINESS_TIMEOUT` is two seconds.
 
-## PostgreSQL pool instrumentation
+## PostgreSQL pool
 
-With the `sqlx-postgres` feature, use `baukit_ops::acquire` in place of `PgPool::acquire` and
+With the `sqlx-postgres` feature, build the pool with `baukit_ops::connect_pool(&database)` (or
+`connect_pool_lazy`) from a `baukit_config::DatabaseConfig` instead of a hand-built `PgPoolOptions`.
+It applies the pool size, acquire timeout, `max_lifetime` and `idle_timeout`, and sends
+`statement_timeout`, `lock_timeout` and `idle_in_transaction_session_timeout` as startup parameters,
+so every connection runs with them. A query that hits the statement timeout fails with SQLSTATE
+`57014` and its connection goes back to the pool. `pool_options` and `connect_options` return the
+two halves if you need to adjust them.
+
+Then use `baukit_ops::acquire` in place of `PgPool::acquire` and
 `baukit_ops::begin` in place of `PgPool::begin`, then pass `&mut *connection` to queries you would
 have run against `&PgPool`. Those record pool wait duration and acquisition timeouts.
 
