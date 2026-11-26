@@ -1,0 +1,18 @@
+[package]
+name = "baukit-verus"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+description = "Verus twins of the HLC, token-bucket and pull-cursor kernels with unbounded proofs."
+
+[workspace]
+
+[dependencies]
+vstd = "=0.0.0-2026-11-22-0344"
+
+[package.metadata.verus]
+verify = true
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(verus_only)'] }

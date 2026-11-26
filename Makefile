@@ -165,7 +165,7 @@ ts-check: ts-install
 	corepack pnpm --dir $(TS_DIR) run check
 
 # Verification lanes. Each target runs one ci-gate step, the same command CI runs.
-.PHONY: kani kani-full models fuzz fuzz-long migrations-check workflows-audit vectors vectors-check proofs-list verify
+.PHONY: kani kani-full verus models fuzz fuzz-long migrations-check workflows-audit vectors vectors-check proofs-list verify
 FUZZ_SECONDS ?= 1800
 
 kani:
@@ -173,6 +173,9 @@ kani:
 
 kani-full:
 	sh scripts/ci-gate.sh --step kani-full
+
+verus:
+	sh scripts/ci-gate.sh --step verus
 
 models:
 	sh scripts/ci-gate.sh --step models
