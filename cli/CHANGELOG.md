@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `baukit generate release-age-excludes` prints a block for every directory that holds a `pnpm-workspace.yaml` (or a `pnpm-lock.yaml` next to a `package.json`): the product root, top-level directories and nested ones such as `web/e2e/`. It skips `node_modules`, `target` and hidden directories. The root block is labelled `# pnpm-workspace.yaml`. Each block collects the `@baukit/*` pins of the workspace's own `package.json` and of every member package its `packages:` globs name. Before, it read only top-level directories and only their own `package.json`, so heldengang and redemut (root workspaces) and hebkit's `web/e2e/` got no entries, and schlauzug's `packages/` block missed the pins in `packages/game-client` and `packages/theme-core`.
+
 ## [0.30.5] - 2026-11-26
 
 - `baukit generate release-age-excludes` prints a block for every top-level directory that holds a `package.json` next to a `pnpm-workspace.yaml` or `pnpm-lock.yaml`, sorted by name. It read only `mobile/` and `web/`, so the `@baukit/*` pins of a browser extension in `extension/` got no entries.
