@@ -14,7 +14,13 @@ readme = "README.md"
 [lints]
 workspace = true
 
+[features]
+default = []
+# Maps `baukit_egress::EgressError` to `JobError` with `egress_job_error`.
+egress = ["dep:baukit-egress"]
+
 [dependencies]
+baukit-egress = { workspace = true, optional = true }
 baukit-resilience.workspace = true
 baukit-runtime.workspace = true
 baukit-telemetry.workspace = true

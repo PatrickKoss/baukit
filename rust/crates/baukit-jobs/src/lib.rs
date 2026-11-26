@@ -36,9 +36,17 @@
 //!
 //! Store errors inside the loop are logged and retried with capped, jittered
 //! backoff. [`WorkerRunner::store_health`] exposes the result for readiness.
+//!
+//! # Outbound calls
+//!
+//! With the `egress` feature, `egress_job_error` turns a failed
+//! `baukit_egress::GuardedClient` call into a [`JobError`]: an open circuit or a
+//! full bulkhead defers the job without consuming an attempt.
 
 #![deny(missing_docs)]
 
+#[cfg(feature = "egress")]
+mod egress;
 mod error;
 mod metrics;
 mod model;
@@ -48,6 +56,8 @@ mod runner;
 mod store;
 mod wakeup;
 
+#[cfg(feature = "egress")]
+pub use egress::egress_job_error;
 pub use error::{JobError, RunnerError, StoreError};
 pub use model::{
     CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobFailureReason,

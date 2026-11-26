@@ -367,6 +367,19 @@ claim takes a transaction-scoped advisory lock per key before it recounts, so
 concurrent workers cannot both take a key's last slot. Apply migration 0006,
 whose partial index keeps that count to the running rows of one key.
 
+## Outbound calls and open circuits
+
+Enable the `egress` feature and map a failed `GuardedClient` call with
+`baukit_jobs::egress_job_error(&error)`. An open circuit or a full bulkhead
+becomes `JobError::deferred` for the time the breaker names, so a dead provider
+does not burn the job's attempts. Other errors keep their retry class: a
+provider delay becomes `retryable_after`, transport failures and timeouts
+`retryable`, and refused destinations or permanent statuses `permanent`.
+
+```rust,ignore
+let response = client.execute(request).await.map_err(|error| egress_job_error(&error))?;
+```
+
 ## Requeue failed jobs
 
 `PostgresJobStore::requeue_failed(job_type, ids)` returns failed rows of one
