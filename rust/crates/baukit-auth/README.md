@@ -169,6 +169,21 @@ fails with an error where `is_unavailable()` is true, which the extractor answer
 with `503 unavailable`. `auth_key_cache_requests_total{source="oidc",result}`
 counts lookups by `fresh`, `stale`, `fetched` and `failed`.
 
+### Reusing the key cache
+
+`KeySetCache<S>` is the same cache for any signing-key source. Implement
+`KeySource` (`fetch` returns a `KeySet`, and `BTreeMap<String, K>` already is
+one), pick a `StalePolicy` and a static metric label, and call `key_for(kid)`:
+
+```rust,ignore
+let cache = KeySetCache::new(source, StalePolicy::new(fresh, stale, cooldown), "ticket");
+let key = cache.key_for(&kid).await?;
+```
+
+`KeyLookupError::UnknownKeyId` means no current set has the id,
+`Fetch(error)` means the fetch failed with nothing usable cached, and
+`Unavailable` means a recent failure is still cooling down.
+
 `Principal::authenticated_at()` returns the verified numeric `auth_time` as a
 UTC timestamp for OIDC, Clerk, and WorkOS tokens. A missing claim returns `None`,
 as do internal principals. API-token principals return the token's `created_at`.

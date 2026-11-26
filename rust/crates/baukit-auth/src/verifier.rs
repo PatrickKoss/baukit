@@ -516,7 +516,7 @@ impl OidcVerifier {
     ) -> Result<Self, VerificationError> {
         let jwks_uri = Url::parse(jwks_uri).map_err(|_| VerificationError::InvalidJwksUri)?;
         let client = oidc_http::configured_client(&config, &jwks_uri)?;
-        let keys = KeyCache::with_clock(
+        let keys = keys::key_cache_with_clock(
             client,
             jwks_uri,
             config.cache_ttl,
@@ -529,7 +529,7 @@ impl OidcVerifier {
     }
 
     fn with_keys(config: OidcConfig, client: GuardedClient, jwks_uri: Url) -> Self {
-        let keys = KeyCache::new(client, jwks_uri, config.cache_ttl, config.jwks_stale_for);
+        let keys = keys::key_cache(client, jwks_uri, config.cache_ttl, config.jwks_stale_for);
         Self {
             inner: Arc::new(VerifierInner { config, keys }),
         }
@@ -595,10 +595,7 @@ impl OidcVerifier {
     }
 
     pub(crate) fn with_config(&self, config: OidcConfig) -> Self {
-        let keys = self
-            .inner
-            .keys
-            .emptied(config.cache_ttl, config.jwks_stale_for);
+        let keys = keys::emptied(&self.inner.keys, config.cache_ttl, config.jwks_stale_for);
         Self {
             inner: Arc::new(VerifierInner { config, keys }),
         }
@@ -691,7 +688,7 @@ impl OidcVerifier {
             return Err(VerificationError::UnsupportedCriticalHeader);
         }
         let key_id = header.kid.ok_or(VerificationError::MissingKeyId)?;
-        let key = self.inner.keys.key_for(&key_id).await?;
+        let key = keys::key_for(&self.inner.keys, &key_id).await?;
         key.verify(algorithm, &signing_input, &signature)?;
         if let TokenVerification::Id {
             expected_nonce: Some(expected_nonce),
@@ -709,7 +706,7 @@ impl OidcVerifier {
 
     #[cfg(test)]
     async fn fetch_jwks(&self) -> Result<JwkSet, VerificationError> {
-        self.inner.keys.fetch().await.map(|set| (*set).clone())
+        keys::fetch(&self.inner.keys).await
     }
 }
 
@@ -727,7 +724,7 @@ impl std::fmt::Debug for OidcVerifier {
         formatter
             .debug_struct("OidcVerifier")
             .field("issuer", &self.inner.config.issuer.as_str())
-            .field("jwks_uri", self.inner.keys.jwks_uri())
+            .field("jwks_uri", keys::jwks_uri(&self.inner.keys))
             .finish_non_exhaustive()
     }
 }

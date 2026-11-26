@@ -303,17 +303,6 @@ fn profile_claims_copy_only_selected_strings_and_booleans() {
     assert_eq!(profile["email_verified"].as_bool(), Some(true));
 }
 
-#[test]
-fn unknown_key_cache_has_a_hard_entry_bound() {
-    let mut cache = keys::UnknownKeys::default();
-    let now = std::time::Instant::now();
-    for index in 0..=keys::MAX_UNKNOWN_KEYS {
-        cache.remember(&format!("unknown-{index}"), now);
-    }
-    assert_eq!(cache.len(), keys::MAX_UNKNOWN_KEYS);
-    assert!(cache.has("unknown-128"));
-}
-
 mod stale_keys {
     use std::{sync::Arc, time::Duration};
 
@@ -417,51 +406,6 @@ mod stale_keys {
             verifier.verify(&token).await,
             Err(VerificationError::JwksUnavailable)
         ));
-    }
-
-    #[test]
-    fn cache_results_are_counted_with_static_labels() {
-        use metrics_util::debugging::{DebugValue, DebuggingRecorder};
-
-        let recorder = DebuggingRecorder::new();
-        let snapshotter = recorder.snapshotter();
-        metrics::with_local_recorder(&recorder, || {
-            keys::record(keys::KeyCacheResult::Stale);
-            keys::record(keys::KeyCacheResult::Failed);
-            keys::record(keys::KeyCacheResult::Failed);
-        });
-        let mut counts = snapshotter
-            .snapshot()
-            .into_vec()
-            .into_iter()
-            .map(|(key, _, _, value)| {
-                let labels = key
-                    .key()
-                    .labels()
-                    .map(|label| format!("{}={}", label.key(), label.value()))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                let count = match value {
-                    DebugValue::Counter(count) => count,
-                    _ => 0,
-                };
-                (format!("{}{{{labels}}}", key.key().name()), count)
-            })
-            .collect::<Vec<_>>();
-        counts.sort();
-        assert_eq!(
-            counts,
-            [
-                (
-                    "auth_key_cache_requests_total{source=oidc,result=failed}".to_owned(),
-                    2
-                ),
-                (
-                    "auth_key_cache_requests_total{source=oidc,result=stale}".to_owned(),
-                    1
-                ),
-            ]
-        );
     }
 }
 
