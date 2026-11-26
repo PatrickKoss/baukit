@@ -17,4 +17,10 @@ export const germanCatalog = {
     emptyItems: 'Noch keine Einträge.',
     itemsTitle: 'Einträge',
   },
+  status: {
+    unavailable: 'Der Dienst ist nicht erreichbar. Neuer Versuch um {time}.',
+    crashed: 'Etwas ist schiefgelaufen',
+    crashedDetail: 'Die App hatte einen unerwarteten Fehler. Versuche es erneut, um diese Ansicht neu zu laden.',
+    retry: 'Erneut versuchen',
+  },
 } as const;

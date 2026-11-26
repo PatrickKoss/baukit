@@ -24,6 +24,7 @@ export {
 } from './authorization-state.js';
 export { OidcError, safeAuthErrorMessage, type OidcErrorCode } from './oidc-errors.js';
 export { normalizeIssuer } from './oidc-support.js';
+export { scheduleTokenRenewal, type TokenRenewalOptions } from './token-renewal.js';
 
 export interface NativeOidcConfig {
   readonly issuer: string;
@@ -274,6 +275,17 @@ export class NativeOidcClient {
       await this.expireSession('refresh_unavailable');
       return undefined;
     }
+    try {
+      return await this.sharedRefresh(session);
+    } catch (cause) {
+      if (options.forceRefresh !== true && this.stillValid(session, cause)) {
+        return session.accessToken;
+      }
+      throw cause;
+    }
+  }
+
+  private async sharedRefresh(session: OidcSession): Promise<string | undefined> {
     if (this.refreshPromise !== undefined) {
       return this.refreshPromise;
     }
@@ -286,6 +298,15 @@ export class NativeOidcClient {
         this.refreshPromise = undefined;
       }
     }
+  }
+
+  private stillValid(session: OidcSession, cause: unknown): boolean {
+    return (
+      cause instanceof OidcError &&
+      cause.retryable &&
+      this.currentSession === session &&
+      session.expiresAt > this.environment.now()
+    );
   }
 
   /** Clears local state first, then makes a best-effort provider logout attempt. */

@@ -663,6 +663,32 @@ describe('NativeOidcClient', () => {
     expect(test.storage.values.has(sessionKey)).toBe(true);
   });
 
+  it('keeps the current token on a transient refresh failure before expiry', async () => {
+    const test = makeHarness({
+      fetchOverride: (url) => {
+        if (url.endsWith('/.well-known/openid-configuration')) {
+          return Promise.resolve(
+            jsonResponse({
+              issuer,
+              authorization_endpoint: 'https://login.example.test/oauth/authorize',
+              token_endpoint: 'https://login.example.test/oauth/token',
+              userinfo_endpoint: 'https://login.example.test/oauth/userinfo',
+            }),
+          );
+        }
+        return Promise.resolve(jsonResponse({ error: 'temporarily_unavailable' }, 503));
+      },
+    });
+    test.storage.values.set(sessionKey, storedSession({ expiresAt: 1_500 }));
+
+    await expect(test.client.accessToken()).resolves.toBe('stored-access');
+    await expect(test.client.accessToken({ forceRefresh: true })).rejects.toMatchObject({
+      code: 'refresh_failed',
+      retryable: true,
+    });
+    expect(test.client.session()?.accessToken).toBe('stored-access');
+  });
+
   it.each([
     [400, { error: 'provider_error' }],
     [403, { error: 'invalid_token' }],
