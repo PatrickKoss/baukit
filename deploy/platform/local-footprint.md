@@ -77,6 +77,17 @@ cluster. Falco requests 100m and 384 MiB and is limited to 1 CPU and 1 GiB; falc
 10m/32 MiB with a 100m/64 MiB limit, which leaves both well inside their limits. The whole e2e node
 reported 310m CPU and 6,005 MiB in the same minute.
 
+## PostgreSQL connection budget
+
+PL4 put a PgBouncer `Pooler` (transaction mode, one pod requesting 10m CPU and
+32 MiB, limited to 200m and 128 MiB) in front of the shared cluster and set
+`max_connections` to 150. Each app pod pools 10 connections to PgBouncer;
+PgBouncer opens at most `default_pool_size` 10 (plus 2 reserve, capped at
+`max_db_connections` 20) server connections per product database, however many
+pods connect. Each tenant owner has `connectionLimit: 25`. The pooler pod is not
+in the August sample above. The full table lives in
+`postgres-cluster/README.md` under "Connection budget".
+
 ## Testing-node sizing implication
 
 A testing node should not be sized at 8 GiB: this idle sample already consumed
