@@ -17,6 +17,10 @@ pub enum StoreError {
     /// Stored data does not satisfy Baukit's model.
     #[error("invalid job outbox data: {0}")]
     InvalidData(String),
+    /// A runner loop store call did not finish within
+    /// [`crate::WorkerConfig::store_call_timeout`].
+    #[error("job store call timed out after {0:?}")]
+    Timeout(Duration),
 }
 
 impl StoreError {
@@ -30,8 +34,14 @@ impl StoreError {
 #[error("{message}")]
 pub struct JobError {
     message: String,
-    retryable: bool,
-    retry_after: Option<Duration>,
+    kind: JobErrorKind,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum JobErrorKind {
+    Retryable { retry_after: Option<Duration> },
+    Permanent,
+    Deferred { delay: Duration },
 }
 
 impl JobError {
@@ -39,8 +49,7 @@ impl JobError {
     pub fn retryable(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
-            retryable: true,
-            retry_after: None,
+            kind: JobErrorKind::Retryable { retry_after: None },
         }
     }
 
@@ -48,8 +57,9 @@ impl JobError {
     pub fn retryable_after(message: impl Into<String>, retry_after: Duration) -> Self {
         Self {
             message: message.into(),
-            retryable: true,
-            retry_after: Some(retry_after),
+            kind: JobErrorKind::Retryable {
+                retry_after: Some(retry_after),
+            },
         }
     }
 
@@ -57,19 +67,45 @@ impl JobError {
     pub fn permanent(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
-            retryable: false,
-            retry_after: None,
+            kind: JobErrorKind::Permanent,
         }
     }
 
-    /// Returns whether the failure may be retried.
+    /// Returns the job to pending after `delay` without consuming an attempt.
+    ///
+    /// Use this when a dependency refuses work for a known period, such as an
+    /// open circuit breaker. Once a job has used `WorkerConfig::max_deferrals`
+    /// free deferrals, a further deferral consumes an attempt like
+    /// [`Self::retryable_after`].
+    pub fn deferred(message: impl Into<String>, delay: Duration) -> Self {
+        Self {
+            message: message.into(),
+            kind: JobErrorKind::Deferred { delay },
+        }
+    }
+
+    /// Returns whether the failure may be retried. Deferrals are retryable.
     pub const fn is_retryable(&self) -> bool {
-        self.retryable
+        !matches!(self.kind, JobErrorKind::Permanent)
     }
 
     /// Returns the provider-directed retry delay, when supplied.
+    ///
+    /// For a deferral this is the deferral delay.
     pub const fn retry_after(&self) -> Option<Duration> {
-        self.retry_after
+        match self.kind {
+            JobErrorKind::Retryable { retry_after } => retry_after,
+            JobErrorKind::Permanent => None,
+            JobErrorKind::Deferred { delay } => Some(delay),
+        }
+    }
+
+    /// Returns the deferral delay when this error came from [`Self::deferred`].
+    pub const fn deferral(&self) -> Option<Duration> {
+        match self.kind {
+            JobErrorKind::Deferred { delay } => Some(delay),
+            JobErrorKind::Retryable { .. } | JobErrorKind::Permanent => None,
+        }
     }
 }
 
@@ -85,10 +121,4 @@ pub enum RunnerError {
     /// The configured worker settings are invalid.
     #[error("invalid worker configuration: {0}")]
     InvalidConfig(String),
-    /// The worker lost ownership before it could persist an attempt outcome.
-    #[error("worker lost the lease for job {job_id}")]
-    LeaseLost {
-        /// The job whose lease no longer belongs to this worker.
-        job_id: uuid::Uuid,
-    },
 }

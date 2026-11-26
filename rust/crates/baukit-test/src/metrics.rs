@@ -17,7 +17,7 @@ const WORKER_JOB_DURATION_BUCKET: &str = "worker_job_duration_seconds_bucket";
 const WORKER_JOB_DURATION_SUM: &str = "worker_job_duration_seconds_sum";
 const WORKER_JOB_DURATION_COUNT: &str = "worker_job_duration_seconds_count";
 const WORKER_QUEUE_OLDEST_AGE: &str = "worker_queue_oldest_age_seconds";
-const WORKER_OUTCOMES: &[&str] = &["success", "failure", "retry"];
+const WORKER_OUTCOMES: &[&str] = &["success", "failure", "retry", "cancelled"];
 
 static APP_PREFIXED_HTTP: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^.+_http_requests?_.*$").expect("app-prefixed HTTP regex is valid")
@@ -475,7 +475,7 @@ fn check_worker_metrics(samples: &[Sample], violations: &mut Vec<String>) {
             && !WORKER_OUTCOMES.contains(&outcome.as_str())
         {
             violations.push(format!(
-                "line {}: metric `{WORKER_JOB_RUNS_TOTAL}` has unsupported outcome `{outcome}`; expected success, failure, or retry",
+                "line {}: metric `{WORKER_JOB_RUNS_TOTAL}` has unsupported outcome `{outcome}`; expected success, failure, retry, or cancelled",
                 sample.line
             ));
         }
@@ -624,6 +624,7 @@ build_info{version="1",commit="abc",rust_version="1.95"} 1
 worker_job_runs_total{job_kind="sync",outcome="success"} 1
 worker_job_runs_total{job_kind="sync",outcome="failure"} 1
 worker_job_runs_total{job_kind="sync",outcome="retry"} 1
+worker_job_runs_total{job_kind="sync",outcome="cancelled"} 0
 worker_job_duration_seconds_bucket{job_kind="sync",le="1"} 1
 worker_job_duration_seconds_sum{job_kind="sync"} 0.25
 worker_job_duration_seconds_count{job_kind="sync"} 1
@@ -637,7 +638,7 @@ worker_queue_oldest_age_seconds{queue="default"} 0
     fn worker_mode_rejects_unknown_outcomes_and_label_drift() {
         let exposition = r#"
 build_info{version="1",commit="abc",rust_version="1.95"} 1
-worker_job_runs_total{job_kind="sync",outcome="cancelled"} 1
+worker_job_runs_total{job_kind="sync",outcome="aborted"} 1
 worker_job_duration_seconds_bucket{job_kind="sync",queue="default",le="1"} 1
 worker_job_duration_seconds_sum{job_kind="sync"} 0.25
 worker_job_duration_seconds_count{job_kind="sync"} 1
@@ -650,7 +651,7 @@ worker_queue_oldest_age_seconds{job_kind="sync"} 0
         .expect_err("worker labels and outcomes are bounded");
         let rendered = error.to_string();
         assert!(
-            rendered.contains("unsupported outcome `cancelled`"),
+            rendered.contains("unsupported outcome `aborted`"),
             "{rendered}"
         );
         assert!(rendered.contains("labels are"), "{rendered}");

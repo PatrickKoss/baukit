@@ -44,6 +44,9 @@ SPEC_METRICS = (
     "tokio_runtime_alive_tasks",
     "tokio_runtime_global_queue_depth",
     "tokio_runtime_busy_seconds_total",
+    "worker_queue_depth",
+    "worker_lease_expired_total",
+    "worker_job_deferrals_total",
 )
 
 PROMETHEUS_BUILTINS = {"up"}
