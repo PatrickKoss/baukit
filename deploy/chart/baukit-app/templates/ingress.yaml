@@ -3,8 +3,29 @@
 {{- with .Values.ingress.certManager.clusterIssuer }}
 {{- $_ := set $annotations "cert-manager.io/cluster-issuer" . }}
 {{- end }}
+{{- $retry := .Values.ingress.retry }}
+{{- $middlewares := list }}
 {{- with .Values.ingress.rateLimitMiddleware }}
-{{- $_ := set $annotations "traefik.ingress.kubernetes.io/router.middlewares" . }}
+{{- $middlewares = append $middlewares . }}
+{{- end }}
+{{- if $retry.enabled }}
+{{- $middlewares = append $middlewares (printf "%s-%s@kubernetescrd" .Release.Namespace (include "baukit-app.retryMiddlewareName" .)) }}
+{{- end }}
+{{- with $middlewares }}
+{{- $_ := set $annotations "traefik.ingress.kubernetes.io/router.middlewares" (join "," .) }}
+{{- end }}
+{{- if $retry.enabled }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "baukit-app.retryMiddlewareName" . }}
+  labels:
+    {{- include "baukit-app.processLabels" (dict "root" . "process" "api") | nindent 4 }}
+spec:
+  retry:
+    attempts: {{ $retry.attempts }}
+    initialInterval: {{ $retry.initialInterval | quote }}
+---
 {{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress

@@ -42,6 +42,12 @@ spec:
     global:
       checkNewVersion: false
       sendAnonymousUsage: false
+    # The default ServersTransport. The chart's serversTransport value covers only the v3.8 read and
+    # write timeouts, so dial and response-header timeouts go in as static flags. The response-header
+    # timeout sits above the 30 s app request timeout.
+    additionalArguments:
+      - --serversTransport.forwardingTimeouts.dialTimeout=5s
+      - --serversTransport.forwardingTimeouts.responseHeaderTimeout=35s
     service:
       enabled: true
       spec:
@@ -62,6 +68,11 @@ spec:
       web:
         expose:
           default: true
+        transport:
+          respondingTimeouts:
+            readTimeout: 60s
+            writeTimeout: 60s
+            idleTimeout: 180s
         http:
           redirections:
             entryPoint:
@@ -74,6 +85,11 @@ spec:
       websecure:
         expose:
           default: true
+        transport:
+          respondingTimeouts:
+            readTimeout: 60s
+            writeTimeout: 60s
+            idleTimeout: 180s
         http:
           middlewares:
             - traefik-default-rate-limit@kubernetescrd

@@ -8,7 +8,7 @@ no hostPort and no `hostNetwork`, so the `traefik` namespace can run the
 `restricted` Pod Security level, and a rolling update can start the surge pod
 while the old pod still serves (`maxUnavailable: 0`, `maxSurge: 1`).
 
-The base runs one replica. A multi-node overlay sets `deployment.replicas: 2`
+The base runs one replica. The baremetal overlay sets `deployment.replicas: 2`
 so a drain or rollout never leaves the edge empty. The PodDisruptionBudget uses
 `maxUnavailable: 1`: with one replica it never blocks a node drain, and with two
 it keeps one pod serving. The pods run with `priorityClassName:
@@ -115,3 +115,21 @@ CIDRs if a proxy is later introduced, and the replica count.
 
 No dashboard route, ops route, Certificate, domain, credential, or Secret is
 created here.
+
+## Timeouts and retries
+
+The `web` and `websecure` entrypoints close a client that takes more than 60 s
+to send its request (`readTimeout`) or to read the response (`writeTimeout`),
+and drop idle keep-alive connections after 180 s (`idleTimeout`). The default
+ServersTransport gives a backend 5 s to accept the connection (`dialTimeout`)
+and 35 s to send response headers (`responseHeaderTimeout`), 5 s above the app
+request timeout so the app answers its own timeout first. Chart `42.4.1` maps
+its `serversTransport` value only to the v3.8 read and write timeouts, so these
+two go in through `additionalArguments`.
+
+Retries belong to the app, not the entrypoint. The `baukit-app` chart and the
+generated IngressRoute attach a `retry` Middleware (2 attempts, 100ms initial
+interval) to the API route only. Traefik `v3.7.19` retries only when it cannot
+reach a pod, stops once a pod answers whatever the status, and never retries
+`POST`, `PATCH` or `LOCK`. There is no circuit-breaker Middleware: with one or
+two API pods it would turn a partial failure into a full outage.

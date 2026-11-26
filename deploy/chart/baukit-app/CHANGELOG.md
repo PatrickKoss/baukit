@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+- The API grace period defaults to 45 s and the drain is the grace minus the preStop sleep minus 5 s (35 s), above the 30 s request timeout. Rendering fails when nothing is left for the drain.
+- The worker grace period defaults to 60 s and the worker drains for the grace minus 15 s, so it no longer runs into SIGKILL.
+- API and worker readiness probes time out after 4 s instead of 2 s, above the 2 s readiness check.
+- The web Deployment gets a preStop sleep, a startup probe, a configurable grace period and a PodDisruptionBudget above one replica.
+- The HPA defaults to `minReplicas: 2` and renders `autoscaling.behavior` (scale-down stabilization 300 s, scale-up at most 100% per 60 s).
+- The API Ingress gets a Traefik retry Middleware (`ingress.retry`, 2 attempts, 100ms initial interval) for connection errors. The web Ingress does not retry.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

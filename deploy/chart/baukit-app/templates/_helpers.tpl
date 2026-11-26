@@ -145,7 +145,7 @@ baukit.dev/process: {{ .process }}
 {{- $_ := set $overrides "SHUTDOWN__DRAIN_TIMEOUT" (include "baukit-app.apiDrainSeconds" $root) -}}
 {{- else if and (eq $process "worker") $root.Values.worker.ops.enabled }}
 {{- $_ := set $overrides "OPS__PORT" (toString $root.Values.worker.ops.port) -}}
-{{- $_ := set $overrides "SHUTDOWN__DRAIN_TIMEOUT" (toString $root.Values.worker.terminationGracePeriodSeconds) -}}
+{{- $_ := set $overrides "SHUTDOWN__DRAIN_TIMEOUT" (include "baukit-app.workerDrainSeconds" $root) -}}
 {{- end }}
 {{- range $key, $value := $overrides }}
 - name: {{ printf "%s__%s" $prefix (regexReplaceAll "[^A-Z0-9_]" ($key | upper) "_") }}
@@ -241,14 +241,42 @@ topologySpreadConstraints:
 {{- end }}
 {{- end }}
 
-{{/* Drain timeout left after the preStop sleep. */}}
+{{/* API drain timeout: grace minus the preStop sleep minus the flush and exit slack. */}}
 {{- define "baukit-app.apiDrainSeconds" -}}
 {{- $grace := int .Values.api.terminationGracePeriodSeconds -}}
 {{- $sleep := int .Values.api.preStopSleepSeconds -}}
-{{- if ge $sleep $grace -}}
-{{- fail "api.preStopSleepSeconds must be lower than api.terminationGracePeriodSeconds" -}}
+{{- $slack := 5 -}}
+{{- $drain := sub (sub $grace $sleep) $slack -}}
+{{- if le $drain 0 -}}
+{{- fail (printf "api.terminationGracePeriodSeconds (%d) must exceed api.preStopSleepSeconds (%d) plus %d s of shutdown slack" $grace $sleep $slack) -}}
 {{- end -}}
-{{- sub $grace $sleep -}}
+{{- $drain -}}
+{{- end }}
+
+{{/* Worker drain timeout: grace minus the time to release leases and flush telemetry. */}}
+{{- define "baukit-app.workerDrainSeconds" -}}
+{{- $grace := int .Values.worker.terminationGracePeriodSeconds -}}
+{{- $reserve := 15 -}}
+{{- $drain := sub $grace $reserve -}}
+{{- if le $drain 0 -}}
+{{- fail (printf "worker.terminationGracePeriodSeconds (%d) must exceed the %d s shutdown reserve" $grace $reserve) -}}
+{{- end -}}
+{{- $drain -}}
+{{- end }}
+
+{{/* Web preStop sleep, checked against the grace period. */}}
+{{- define "baukit-app.webPreStopSeconds" -}}
+{{- $grace := int .Values.web.terminationGracePeriodSeconds -}}
+{{- $sleep := int .Values.web.preStopSleepSeconds -}}
+{{- if ge $sleep $grace -}}
+{{- fail (printf "web.preStopSleepSeconds (%d) must be lower than web.terminationGracePeriodSeconds (%d)" $sleep $grace) -}}
+{{- end -}}
+{{- $sleep -}}
+{{- end }}
+
+{{/* Traefik reference to the API retry Middleware. */}}
+{{- define "baukit-app.retryMiddlewareName" -}}
+{{- printf "%s-retry" (include "baukit-app.fullname" .) -}}
 {{- end }}
 
 {{/* Render an IntOrString value, quoting percentages. */}}

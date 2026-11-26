@@ -88,9 +88,11 @@ api:
   ports:
     http: 8080
     ops: 9090
-  terminationGracePeriodSeconds: 30
-  # Keeps the pod serving while endpoints drop. The drain timeout is the
-  # grace period minus this sleep, so it must stay below the grace period.
+  # The drain timeout is this grace period minus the preStop sleep minus 5 s
+  # for the telemetry flush and process exit, so it must exceed both by more
+  # than 5 s. The default leaves 35 s, above the 30 s request timeout.
+  terminationGracePeriodSeconds: 45
+  # Keeps the pod serving while endpoints drop.
   preStopSleepSeconds: 5
   strategy:
     maxUnavailable: 0
@@ -117,7 +119,9 @@ api:
     enabled: true
     initialDelaySeconds: 2
     periodSeconds: 5
-    timeoutSeconds: 2
+    # Above the 2 s readiness check, so a slow database reads as not ready
+    # instead of a probe timeout.
+    timeoutSeconds: 4
     failureThreshold: 3
   nodeSelector: {}
   tolerations: []
@@ -149,7 +153,9 @@ worker:
   ops:
     enabled: true
     port: 9090
-  terminationGracePeriodSeconds: 30
+  # The worker drains for this grace period minus 15 s, which leaves time to
+  # release leases and flush telemetry before SIGKILL. Must exceed 15.
+  terminationGracePeriodSeconds: 60
   resources:
     requests:
       cpu: 50m
@@ -172,7 +178,9 @@ worker:
     enabled: true
     initialDelaySeconds: 2
     periodSeconds: 5
-    timeoutSeconds: 2
+    # Above the 2 s readiness check, so a slow database reads as not ready
+    # instead of a probe timeout.
+    timeoutSeconds: 4
     failureThreshold: 3
   nodeSelector: {}
   tolerations: []
@@ -309,6 +317,13 @@ ingress:
     clusterIssuer: ""
   # Example: namespace-traefik-ratelimit@kubernetescrd
   rateLimitMiddleware: ""
+  # A Traefik retry Middleware on the API Ingress only. Traefik retries when
+  # it cannot reach a pod and stops as soon as the pod answers, whatever the
+  # status. Needs the Traefik CRDs.
+  retry:
+    enabled: true
+    attempts: 2
+    initialInterval: 100ms
   hosts:
     - host: minimal-api.example.com
       paths:
@@ -318,10 +333,20 @@ ingress:
 
 autoscaling:
   enabled: false
-  minReplicas: 1
+  # Two keeps a pod serving through a node drain and lets the PDB render.
+  minReplicas: 2
   maxReplicas: 4
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: ""
+  # Rendered as the HPA's spec.behavior.
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
 
 serviceMonitor:
   enabled: false
@@ -400,6 +425,20 @@ web:
     digest: ""
     pullPolicy: IfNotPresent
   port: 8080
+  terminationGracePeriodSeconds: 30
+  # Keeps nginx serving while endpoints drop. Must stay below the grace period.
+  preStopSleepSeconds: 5
+  startupProbe:
+    enabled: true
+    periodSeconds: 2
+    timeoutSeconds: 2
+    failureThreshold: 15
+  # Renders only with more than one replica. Set at most one of minAvailable
+  # or maxUnavailable; neither means maxUnavailable: 1.
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: ""
+    maxUnavailable: ""
   # Required when enabled. Pass the build's policy unchanged:
   # --set-file web.contentSecurityPolicy=web/dist/csp.txt
   contentSecurityPolicy: ""

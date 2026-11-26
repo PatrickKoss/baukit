@@ -13,7 +13,7 @@ platform repository.
 | testing | `{{ context.app_name }}-testing` | `{{ context.app_name }}-testing.{{ context.gitops.domain }}` |
 | production | `{{ context.app_name }}-production` | `{{ context.app_name }}.{{ context.gitops.domain }}` |
 
-Both run one replica without an HPA and use their own database through `{{ context.app_name }}-runtime`.
+Testing runs one API{% if context.worker %} and one worker{% endif %} pod. Production runs two{% if context.worker %} of each{% endif %}, so the chart renders a PodDisruptionBudget and a node drain keeps one pod serving. Neither uses an HPA. Both use their own database through `{{ context.app_name }}-runtime`. The IngressRoute retries a request once through the `{{ context.app_name }}-retry` Middleware when Traefik cannot reach an API pod.
 {% if context.auth_enabled %}The API trusts `{{ context.gitops.identity_url }}/realms/{{ context.gitops.realm }}`{% if context.auth_oidc %}
 with the audience `{{ context.app_name }}-testing` or `{{ context.app_name }}-production`, one realm client
 per environment{% endif %}.

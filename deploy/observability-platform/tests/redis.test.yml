@@ -66,3 +66,198 @@ tests:
       - eval_time: 20m
         alertname: BaukitRedisAclLoadFailing
         exp_alerts: []
+  - name: no pod in the master role fires BaukitRedisMasterDown
+    interval: 1m
+    input_series:
+      - series: redis_up{namespace="platform-redis",pod="redis-0"}
+        values: 1x30
+      - series: redis_up{namespace="platform-redis",pod="redis-1"}
+        values: 1x30
+      - series: redis_up{namespace="platform-redis",pod="redis-2"}
+        values: 1x30
+      - series: redis_instance_info{namespace="platform-redis",pod="redis-1",role="slave",redis_mode="standalone"}
+        values: 1x30
+      - series: redis_instance_info{namespace="platform-redis",pod="redis-2",role="slave",redis_mode="standalone"}
+        values: 1x30
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: BaukitRedisMasterDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: BaukitRedisMasterDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: redis
+              namespace: platform-redis
+            exp_annotations:
+              summary: Redis in platform-redis has no master
+              description: No Redis pod in platform-redis has reported the master role for 2 minutes, although
+                the exporters still run. Sentinel failover finishes within about 30 seconds, so it is stuck.
+                Writes fail, and products fall back to their degraded rate-limit path.
+              runbook_url: RUNBOOK_BASE_URL/redis-master-down
+  - name: a failover that elects a master within a minute stays quiet for BaukitRedisMasterDown
+    interval: 1m
+    input_series:
+      - series: redis_up{namespace="platform-redis",pod="redis-0"}
+        values: 1x30
+      - series: redis_up{namespace="platform-redis",pod="redis-1"}
+        values: 1x30
+      - series: redis_up{namespace="platform-redis",pod="redis-2"}
+        values: 1x30
+      - series: redis_instance_info{namespace="platform-redis",pod="redis-0",role="master",redis_mode="standalone"}
+        values: 1x5 _x25
+      - series: redis_instance_info{namespace="platform-redis",pod="redis-1",role="master",redis_mode="standalone"}
+        values: _x6 1x24
+      - series: redis_instance_info{namespace="platform-redis",pod="redis-2",role="slave",redis_mode="standalone"}
+        values: 1x30
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitRedisMasterDown
+        exp_alerts: []
+  - name: one ready Sentinel fires BaukitRedisSentinelQuorumLost
+    interval: 1m
+    input_series:
+      - series: kube_pod_container_status_ready{namespace="platform-redis",pod="redis-0",container="sentinel"}
+        values: 1x30
+      - series: kube_pod_container_status_ready{namespace="platform-redis",pod="redis-1",container="sentinel"}
+        values: '0x30'
+      - series: kube_pod_container_status_ready{namespace="platform-redis",pod="redis-2",container="sentinel"}
+        values: '0x30'
+      - series: kube_pod_container_status_ready{namespace="platform-redis",pod="redis-1",container="redis"}
+        values: 1x30
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: BaukitRedisSentinelQuorumLost
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: BaukitRedisSentinelQuorumLost
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: redis
+              namespace: platform-redis
+            exp_annotations:
+              summary: Redis Sentinel in platform-redis has lost its quorum
+              description: Fewer than 2 Sentinel containers in platform-redis have been ready for 2 minutes.
+                Sentinel needs 2 to agree before it fails over, so the next master loss stays an outage,
+                and clients that resolve the master through Sentinel cannot connect.
+              runbook_url: RUNBOOK_BASE_URL/redis-sentinel-quorum-lost
+  - name: two ready Sentinels keep the quorum and BaukitRedisSentinelQuorumLost quiet
+    interval: 1m
+    input_series:
+      - series: kube_pod_container_status_ready{namespace="platform-redis",pod="redis-0",container="sentinel"}
+        values: 1x30
+      - series: kube_pod_container_status_ready{namespace="platform-redis",pod="redis-1",container="sentinel"}
+        values: 1x30
+      - series: kube_pod_container_status_ready{namespace="platform-redis",pod="redis-2",container="sentinel"}
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitRedisSentinelQuorumLost
+        exp_alerts: []
+  - name: a replica without its master for 5 minutes fires BaukitRedisReplicationLinkDown
+    interval: 1m
+    input_series:
+      - series: redis_master_link_up{namespace="platform-redis",pod="redis-1",master_host="10.42.0.10",master_port="6379"}
+        values: '0x30'
+      - series: redis_master_link_up{namespace="platform-redis",pod="redis-2",master_host="10.42.0.10",master_port="6379"}
+        values: 1x30
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BaukitRedisReplicationLinkDown
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: BaukitRedisReplicationLinkDown
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: redis
+              namespace: platform-redis
+              pod: redis-1
+            exp_annotations:
+              summary: Redis replica platform-redis/redis-1 lost its master
+              description: The replica platform-redis/redis-1 has not had a working link to its master for
+                5 minutes. It serves stale data and cannot take over with current data if the master fails.
+              runbook_url: RUNBOOK_BASE_URL/redis-replication-link-down
+  - name: a link that comes back after a failover stays quiet for BaukitRedisReplicationLinkDown
+    interval: 1m
+    input_series:
+      - series: redis_master_link_up{namespace="platform-redis",pod="redis-1",master_host="10.42.0.10",master_port="6379"}
+        values: 1x5 0x2 1x20
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: BaukitRedisReplicationLinkDown
+        exp_alerts: []
+  - name: steady evictions fire BaukitRedisEvictingKeys
+    interval: 1m
+    input_series:
+      - series: redis_evicted_keys_total{namespace="platform-redis",pod="redis-0"}
+        values: 0+10x40
+      - series: redis_evicted_keys_total{namespace="platform-redis",pod="redis-1"}
+        values: '0x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BaukitRedisEvictingKeys
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: BaukitRedisEvictingKeys
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: redis
+              namespace: platform-redis
+              pod: redis-0
+            exp_annotations:
+              summary: Redis platform-redis/redis-0 keeps evicting keys
+              description: Redis platform-redis/redis-0 has evicted keys at maxmemory for 15 minutes. Evicted
+                rate-limit counters start over, so tenants get more requests through than their quota.
+              runbook_url: RUNBOOK_BASE_URL/redis-evicting-keys
+  - name: a single burst of evictions stays quiet for BaukitRedisEvictingKeys
+    interval: 1m
+    input_series:
+      - series: redis_evicted_keys_total{namespace="platform-redis",pod="redis-0"}
+        values: 0x5 50x35
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: BaukitRedisEvictingKeys
+        exp_alerts: []
+  - name: memory above 90% of maxmemory fires BaukitRedisMemoryNearLimit
+    interval: 1m
+    input_series:
+      - series: redis_memory_used_bytes{namespace="platform-redis",pod="redis-0"}
+        values: 48234496x30
+      - series: redis_memory_max_bytes{namespace="platform-redis",pod="redis-0"}
+        values: 50331648x30
+      - series: redis_memory_used_bytes{namespace="platform-redis",pod="redis-1"}
+        values: 20971520x30
+      - series: redis_memory_max_bytes{namespace="platform-redis",pod="redis-1"}
+        values: 50331648x30
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BaukitRedisMemoryNearLimit
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: BaukitRedisMemoryNearLimit
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: redis
+              namespace: platform-redis
+              pod: redis-0
+            exp_annotations:
+              summary: Redis platform-redis/redis-0 uses over 90% of maxmemory
+              description: Redis platform-redis/redis-0 has used more than 90% of its maxmemory for 15 minutes.
+                Past the limit it evicts keys, and rate-limit counters start over.
+              runbook_url: RUNBOOK_BASE_URL/redis-memory-near-limit
+  - name: Redis without maxmemory stays quiet for BaukitRedisMemoryNearLimit
+    interval: 1m
+    input_series:
+      - series: redis_memory_used_bytes{namespace="platform-redis",pod="redis-0"}
+        values: 48234496x30
+      - series: redis_memory_max_bytes{namespace="platform-redis",pod="redis-0"}
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 25m
+        alertname: BaukitRedisMemoryNearLimit
+        exp_alerts: []
