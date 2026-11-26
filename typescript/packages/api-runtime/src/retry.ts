@@ -7,6 +7,7 @@ export interface NormalizedRetryOptions {
   readonly maxRetries: number;
   readonly baseDelayMs: number;
   readonly maxDelayMs: number;
+  readonly maxRetryAfterMs: number;
   readonly methods: ReadonlySet<RetryableMethod>;
   readonly random: () => number;
   readonly sleep: (delayMs: number, signal: AbortSignal | null) => Promise<void>;
@@ -23,10 +24,14 @@ const RETRYABLE_METHODS = new Set<string>([
   'PATCH',
 ]);
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+const RETRY_AFTER_STATUSES = new Set([429, 503]);
+const MS_PER_SECOND = 1_000;
+const DELAY_SECONDS = /^\d+$/u;
 
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_BASE_DELAY_MS = 100;
 const DEFAULT_MAX_DELAY_MS = 2_000;
+const DEFAULT_MAX_RETRY_AFTER_MS = 30_000;
 const DISABLED_RETRY: RetryOptions = { maxRetries: 0, methods: [] };
 
 export function normalizeRetryOptions(
@@ -39,6 +44,8 @@ export function normalizeRetryOptions(
   assertFiniteNonNegativeInteger(maxRetries, 'maxRetries');
   assertFiniteNonNegative(baseDelayMs, 'baseDelayMs');
   assertFiniteNonNegative(maxDelayMs, 'maxDelayMs');
+  const maxRetryAfterMs = configured.maxRetryAfterMs ?? DEFAULT_MAX_RETRY_AFTER_MS;
+  assertFiniteNonNegative(maxRetryAfterMs, 'maxRetryAfterMs');
   const requestedMethods = configured.methods ?? ['GET', 'HEAD'];
   const methods = new Set(
     requestedMethods.filter((method): method is RetryableMethod => RETRYABLE_METHODS.has(method)),
@@ -47,6 +54,7 @@ export function normalizeRetryOptions(
     maxRetries,
     baseDelayMs,
     maxDelayMs,
+    maxRetryAfterMs,
     methods,
     random: configured.random ?? Math.random,
     sleep: configured.sleep ?? abortableSleep,
@@ -74,27 +82,63 @@ export function shouldRetryMethod(request: Request, retry: NormalizedRetryOption
   return !KEYED_RETRY_ONLY.has(method) || request.headers.has(IDEMPOTENCY_KEY_HEADER);
 }
 
+/**
+ * Returns the clamped `Retry-After` delay of a `429` or `503`, or null when the response has none.
+ *
+ * Accepts delay-seconds and HTTP dates; a date in the past yields 0.
+ */
+export function retryAfterDelayMs(
+  response: Response,
+  retry: NormalizedRetryOptions,
+  now: number,
+): number | null {
+  if (!RETRY_AFTER_STATUSES.has(response.status)) {
+    return null;
+  }
+  const delayMs = parseRetryAfterMs(response.headers.get('retry-after'), now);
+  return delayMs === null ? null : Math.min(delayMs, retry.maxRetryAfterMs);
+}
+
+function parseRetryAfterMs(value: string | null, now: number): number | null {
+  const trimmed = value?.trim() ?? '';
+  if (DELAY_SECONDS.test(trimmed)) {
+    return Number(trimmed) * MS_PER_SECOND;
+  }
+  const date = Date.parse(trimmed);
+  return Number.isNaN(date) ? null : Math.max(0, date - now);
+}
+
+/** Retries a `Retry-After` response, or a 502/503/504 without one, for retryable requests. */
 export function shouldRetryResponse(
   request: Request,
-  status: number,
+  response: { readonly status: number; readonly retryAfterMs: number | null },
   retries: number,
   retry: NormalizedRetryOptions,
 ): boolean {
   return (
     retries < retry.maxRetries &&
     shouldRetryMethod(request, retry) &&
-    RETRYABLE_STATUSES.has(status)
+    (response.retryAfterMs !== null || RETRYABLE_STATUSES.has(response.status))
   );
 }
 
-export async function retryDelay(
+/** The next backoff delay: the server's `Retry-After` when present, else full jitter. */
+export function nextRetryDelayMs(
   retryIndex: number,
+  retry: NormalizedRetryOptions,
+  retryAfterMs: number | null,
+): number {
+  return retryAfterMs ?? fullJitterBackoffMs(retryIndex, retry);
+}
+
+export async function retryDelay(
+  delayMs: number,
   retry: NormalizedRetryOptions,
   signal: AbortSignal,
   requestId: string,
 ): Promise<void> {
   try {
-    await retry.sleep(fullJitterBackoffMs(retryIndex, retry), signal);
+    await retry.sleep(delayMs, signal);
   } catch (cause) {
     throw new NetworkError('API request was aborted', requestId, cause, true);
   }

@@ -114,19 +114,44 @@ The backend `message` is public, safe fallback text. Localized clients should re
 
 Retries use exponential backoff with full jitter, capped by `maxDelayMs`. The same request ID is retained across attempts.
 
-| Request/result                | Default          | Configurable                                 |
-| ----------------------------- | ---------------- | -------------------------------------------- |
-| `GET`, `HEAD` + network error | Retry            | `maxRetries`, delays, or disable             |
-| `GET`, `HEAD` + 502/503/504   | Retry            | `maxRetries`, delays, or disable             |
-| `OPTIONS`, `PUT`, `DELETE`    | No retry         | May be explicitly opted in through `methods` |
-| Keyed `POST`, `PATCH`         | No retry         | May be explicitly opted in through `methods` |
-| Unkeyed `POST`, `PATCH`       | Never            | No                                           |
-| Any 4xx                       | Never            | No                                           |
-| Abort                         | Stop immediately | No                                           |
+| Request/result                             | Default                     | Configurable                                 |
+| ------------------------------------------ | --------------------------- | -------------------------------------------- |
+| `GET`, `HEAD` + network error              | Retry                       | `maxRetries`, delays, or disable             |
+| `GET`, `HEAD` + 502/503/504                | Retry                       | `maxRetries`, delays, or disable             |
+| `GET`, `HEAD` + 429/503 with `Retry-After` | Retry after the given delay | `maxRetryAfterMs` (default 30 s)             |
+| `GET`, `HEAD` + timeout                    | Retry                       | `requestTimeoutMs`                           |
+| `OPTIONS`, `PUT`, `DELETE`                 | No retry                    | May be explicitly opted in through `methods` |
+| Keyed `POST`, `PATCH`                      | No retry                    | May be explicitly opted in through `methods` |
+| Unkeyed `POST`, `PATCH`                    | Never                       | No                                           |
+| 4xx other than 429 with `Retry-After`      | Never                       | No                                           |
+| Abort                                      | Stop immediately            | No                                           |
 
 Defaults are two retries, a 100 ms initial ceiling, and a 2,000 ms maximum ceiling. Use `retry: false` to disable retries. A `POST` or `PATCH` counts as keyed when the request carries the `Idempotency-Key` header (`IDEMPOTENCY_KEY_HEADER`). Every attempt resends the same headers and body, so the server sees one key.
 
 The delay formula is public as `fullJitterBackoffMs(retryIndex, { baseDelayMs, maxDelayMs, random })` in `@baukit/api-runtime/backoff`. It returns a delay between 0 and `min(maxDelayMs, baseDelayMs * 2 ** retryIndex)` and clamps the random sample to `[0, 1]`. That entry imports nothing, so a sync loop or job runner can share the policy without loading the fetch runtime. `@baukit/sync-client`'s scheduler takes it as its retry delay.
+
+## Timeouts and cooldown
+
+Each attempt gets `requestTimeoutMs` (default 30,000 ms, `false` disables it). The timer is linked to
+the caller's `AbortSignal`: a timeout rejects with a `NetworkError` whose `aborted` is `false` and whose
+message is `API request timed out`, so it is retried like any network error.
+
+The runtime keeps a cooldown per origin. A `429` or `503` with `Retry-After` blocks the origin for that
+delay (clamped to `maxRetryAfterMs`). Five consecutive network failures or timeouts block it for
+30,000 ms. Any HTTP response resets the failure count, and caller aborts do not count. While an
+origin is blocked, every call rejects with `ApiUnavailableError` and its `retryAt` (epoch milliseconds)
+without sending a request. A UI can show "unavailable, retrying at HH:MM" from it; use
+`isApiUnavailableError` to narrow.
+
+```ts
+createApiFetch({
+  ...environment,
+  cooldown: { networkFailureThreshold: 5, networkFailureCooldownMs: 30_000 },
+  now: Date.now,
+});
+```
+
+Pass `cooldown: false` to turn it off. `now` is the clock for cooldowns and `Retry-After` dates.
 
 ## Idempotent mutations
 

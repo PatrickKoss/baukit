@@ -1,3 +1,11 @@
+import {
+  DEFAULT_SYNC_MAX_RETRIES,
+  defaultSyncRetryDelayMs,
+  jitteredIntervalMs,
+  recoveryDelayMs,
+  type RandomSource,
+} from './scheduler-policy.js';
+
 /**
  * Host capabilities the scheduler needs. Products supply timers, foreground
  * state, and connectivity; baukit never reaches for a global.
@@ -24,15 +32,16 @@ export interface SyncSchedulerRetry {
   readonly delayMs: number;
 }
 
-/** Retries a failed run after a delay the product chooses. */
+/** Retries a failed run after a delay. */
 export interface SyncSchedulerRetryOptions {
-  /** Retries after a failed run before the scheduler waits for the next trigger. */
-  readonly maxRetries: number;
+  /** Retries after a failed run before the scheduler waits for the next trigger. Defaults to 5. */
+  readonly maxRetries?: number;
   /**
    * The delay before retry `retryIndex`, or `null` when the failure must not be retried.
-   * `fullJitterBackoffMs` from `@baukit/api-runtime/backoff` gives bounded, jittered delays.
+   * Defaults to `retryAt` for `SyncRateLimitError`, no retry for non-retryable transport errors,
+   * and full jitter (1 s doubling to 60 s) otherwise.
    */
-  readonly delayMs: (error: unknown, retryIndex: number) => number | null;
+  readonly delayMs?: (error: unknown, retryIndex: number) => number | null;
   /** Runs before each wait, for example to show when the next attempt starts. */
   readonly onRetryScheduled?: (retry: SyncSchedulerRetry) => void;
 }
@@ -41,7 +50,18 @@ export interface SyncSchedulerOptions {
   intervalMs?: number;
   onError?: (error: unknown) => void;
   onRecoverySignal?: (signal: SyncSchedulerRecoverySignal) => void;
-  retry?: SyncSchedulerRetryOptions;
+  /** Retry policy for failed runs. On by default; `false` disables retries. */
+  retry?: SyncSchedulerRetryOptions | false;
+  /** Random source in `[0, 1]` for retry, recovery and interval jitter. Defaults to `Math.random`. */
+  random?: RandomSource;
+  /** Epoch-millisecond clock used to honour `SyncRateLimitError.retryAt`. Defaults to `Date.now`. */
+  now?: () => number;
+}
+
+interface ResolvedRetry {
+  readonly maxRetries: number;
+  readonly delayMs: (error: unknown, retryIndex: number) => number | null;
+  readonly onRetryScheduled: ((retry: SyncSchedulerRetry) => void) | undefined;
 }
 
 export type SyncSchedulerRecoverySignal = 'active' | 'online';
@@ -54,13 +74,25 @@ function noop(): void {
   return;
 }
 
-function validateRetry(retry: SyncSchedulerRetryOptions | undefined): void {
-  if (retry === undefined) {
-    return;
+function resolveRetry(
+  retry: SyncSchedulerRetryOptions | false | undefined,
+  random: RandomSource,
+  now: () => number,
+): ResolvedRetry | undefined {
+  if (retry === false) {
+    return undefined;
   }
-  if (!Number.isInteger(retry.maxRetries) || retry.maxRetries < 0) {
+  const maxRetries = retry?.maxRetries ?? DEFAULT_SYNC_MAX_RETRIES;
+  if (!Number.isInteger(maxRetries) || maxRetries < 0) {
     throw new RangeError('retry.maxRetries must be a non-negative integer');
   }
+  return {
+    maxRetries,
+    delayMs:
+      retry?.delayMs ??
+      ((error, retryIndex) => defaultSyncRetryDelayMs(error, retryIndex, random, now)),
+    onRetryScheduled: retry?.onRetryScheduled,
+  };
 }
 
 /**
@@ -68,15 +100,19 @@ function validateRetry(retry: SyncSchedulerRetryOptions | undefined): void {
  *
  * A trigger that arrives while a run is active joins that run. A follow-up
  * requested during a run replays the callback once after it settles, so writes
- * made mid-run are never left unsent without starting a parallel run. With
- * `retry`, a failed run is retried after the chosen delay; a trigger during
- * that delay ends it and restarts the retry count.
+ * made mid-run are never left unsent without starting a parallel run. A
+ * failed run is retried after a jittered delay; a trigger during that delay
+ * ends it and restarts the retry count. Foreground and online triggers wait a
+ * random 0-5 s, and the periodic interval varies by 10%, so clients that
+ * recover together do not sync together.
  */
 export class SyncScheduler {
   private readonly intervalMs: number;
   private readonly onError: (error: unknown) => void;
   private readonly onRecoverySignal: (signal: SyncSchedulerRecoverySignal) => void;
-  private readonly retry: SyncSchedulerRetryOptions | undefined;
+  private readonly retry: ResolvedRetry | undefined;
+  private readonly random: RandomSource;
+  private recoveryTimer: SyncSchedulerTimer | null = null;
   private active = false;
   private started = false;
   private inFlight: Promise<void> | null = null;
@@ -91,11 +127,11 @@ export class SyncScheduler {
     private readonly environment: SyncSchedulerEnvironment,
     options: SyncSchedulerOptions = {},
   ) {
-    validateRetry(options.retry);
+    this.random = options.random ?? Math.random;
+    this.retry = resolveRetry(options.retry, this.random, options.now ?? Date.now);
     this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
     this.onError = options.onError ?? noop;
     this.onRecoverySignal = options.onRecoverySignal ?? noop;
-    this.retry = options.retry;
   }
 
   start(): void {
@@ -110,13 +146,13 @@ export class SyncScheduler {
         this.refreshInterval();
         if (active) {
           this.onRecoverySignal('active');
-          void this.trigger();
+          this.triggerAfterRecoveryJitter();
         }
       }),
       this.environment.subscribeOnline(() => {
         this.onRecoverySignal('online');
         if (this.active) {
-          void this.trigger();
+          this.triggerAfterRecoveryJitter();
         }
       }),
     ];
@@ -132,6 +168,7 @@ export class SyncScheduler {
     this.rerunRequested = false;
     this.wakeRetry?.('stopped');
     this.stopInterval();
+    this.cancelRecovery();
     this.subscriptions.forEach((unsubscribe) => {
       unsubscribe();
     });
@@ -153,6 +190,30 @@ export class SyncScheduler {
       });
     this.inFlight = task;
     return task;
+  }
+
+  /** Coalesces recovery signals into one trigger after a random delay. */
+  private triggerAfterRecoveryJitter(): void {
+    if (this.recoveryTimer !== null) {
+      return;
+    }
+    const delayMs = recoveryDelayMs(this.random);
+    if (delayMs === 0) {
+      void this.trigger();
+      return;
+    }
+    this.recoveryTimer = this.environment.setInterval(() => {
+      this.cancelRecovery();
+      void this.trigger();
+    }, delayMs);
+  }
+
+  private cancelRecovery(): void {
+    if (this.recoveryTimer === null) {
+      return;
+    }
+    this.environment.clearInterval(this.recoveryTimer);
+    this.recoveryTimer = null;
   }
 
   /** Queues exactly one more run when a run is already active. */
@@ -245,9 +306,13 @@ export class SyncScheduler {
     if (!this.started || !this.active) {
       return;
     }
-    this.interval = this.environment.setInterval(() => {
-      void this.trigger();
-    }, this.intervalMs);
+    this.interval = this.environment.setInterval(
+      () => {
+        this.refreshInterval();
+        void this.trigger();
+      },
+      jitteredIntervalMs(this.intervalMs, this.random),
+    );
   }
 
   private stopInterval(): void {

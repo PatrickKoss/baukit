@@ -48,6 +48,21 @@ export class NetworkError extends Error {
   }
 }
 
+/** The origin is cooling down after a `Retry-After` or repeated network failures; no request was sent. */
+export class ApiUnavailableError extends Error {
+  readonly kind = 'unavailable' as const;
+  readonly requestId: string;
+  /** Epoch milliseconds after which the origin may be called again. */
+  readonly retryAt: number;
+
+  constructor(requestId: string, retryAt: number) {
+    super('API is temporarily unavailable');
+    this.name = 'ApiUnavailableError';
+    this.requestId = requestId;
+    this.retryAt = retryAt;
+  }
+}
+
 /** A non-success HTTP response that did not contain a valid Baukit error envelope. */
 export class HttpError extends Error {
   readonly kind = 'http' as const;
@@ -78,6 +93,11 @@ export function isApiError(value: unknown, code?: string): value is ApiError {
 /** Narrows an unknown value to a NetworkError. */
 export function isNetworkError(value: unknown): value is NetworkError {
   return value instanceof NetworkError;
+}
+
+/** Narrows an unknown value to an ApiUnavailableError. */
+export function isApiUnavailableError(value: unknown): value is ApiUnavailableError {
+  return value instanceof ApiUnavailableError;
 }
 
 /** Narrows an unknown value to an HttpError. */

@@ -78,7 +78,7 @@ describe('SyncScheduler', () => {
   it('runs once on start and installs the periodic interval', async () => {
     const environment = fakeEnvironment();
     const run = vi.fn(async () => Promise.resolve());
-    const scheduler = new SyncScheduler(run, environment, { intervalMs: 1000 });
+    const scheduler = new SyncScheduler(run, environment, { intervalMs: 1000, random: () => 0.5 });
 
     scheduler.start();
     await Promise.resolve();
@@ -103,7 +103,7 @@ describe('SyncScheduler', () => {
   it('runs when the app returns to the foreground and when connectivity returns', async () => {
     const environment = fakeEnvironment(false);
     const run = vi.fn(async () => Promise.resolve());
-    const scheduler = new SyncScheduler(run, environment);
+    const scheduler = new SyncScheduler(run, environment, { random: () => 0 });
 
     scheduler.start();
     environment.setActive(true);
@@ -254,7 +254,7 @@ describe('SyncScheduler', () => {
       await Promise.resolve();
       throw failure;
     });
-    const scheduler = new SyncScheduler(run, fakeEnvironment(false), { onError });
+    const scheduler = new SyncScheduler(run, fakeEnvironment(false), { onError, retry: false });
 
     await scheduler.trigger();
     await scheduler.trigger();
