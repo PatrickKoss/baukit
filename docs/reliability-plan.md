@@ -540,7 +540,7 @@ run in the orchestrator under the heavy-slot protocol (owner `baukit-rel`, one s
 | rel-faults | FX1 | `rust/crates/baukit-test` | queued (host load) |
 | rel-http | IN1, IN2 (`baukit-http` part), IN3, IN4 (`baukit-runtime` part), IN7 | `baukit-http`, `baukit-runtime`, `baukit-telemetry` | running |
 | rel-jobs | WK1, WK2, WK4 (crate part), CB3 | `baukit-jobs` | running |
-| rel-ts | CL1 (without fixture replay), CL3, CL4 (`auth-web` part), CL5 (`pwa-web` part) | `typescript/packages/{api-runtime,sync-client,auth-web,pwa-web}` | running |
+| rel-ts | CL1 (without fixture replay), CL3, CL4 (`auth-web` part), CL5 (`pwa-web` part) | `typescript/packages/{api-runtime,sync-client,auth-web,pwa-web}` | merged, verified (4 packages build, format, lint, test) |
 | rel-db | IN6 (crate part), IN2 (`baukit-ratelimit` part) | `baukit-config`, `baukit-ops`, `baukit-ratelimit` | queued (host load) |
 | rel-deploy | PL1, PL2, PL3, PL5 | `deploy/chart`, `deploy/platform/traefik`, `deploy/observability-platform` (redis alerts), `templates/backend/deploy` | running |
 | rel-obs | PL4, PL7, the RL-43 alert text fix | `deploy/platform/postgres-cluster`, `deploy/observability` | running |
@@ -576,3 +576,7 @@ RL-03 (`verifier.rs:682-704`), RL-21 (`__app__-api/src/lib.rs:433-435`), RL-25 (
 (`store.rs:649` plus the future `run_after` in the retention job), RL-62 (`main.tsx:13`), RL-80
 (`helmrelease.yaml:48,72,107`), RL-83 (`metric-templates.yaml:19,28,53`) and RL-88 (no rollout or drain
 case under `deploy/platform/e2e/tests`). Nothing implemented yet.
+- rel-ts merged: CL1 (timeout, Retry-After, per-origin cooldown, `ApiUnavailableError`), CL3, CL4 web,
+  CL5 web. Orchestrator re-ran all four packages green. Follow-ups for wave 3: the cooldown is per runtime
+  instance, so CL2 must share one runtime in the template; a `Retry-After` cooldown is clamped to
+  `maxRetryAfterMs` (30 s); the request timeout ends when headers arrive, not after the body.
