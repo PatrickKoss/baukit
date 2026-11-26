@@ -273,11 +273,11 @@ them.
   peer recovers.
 - [ ] **CB5 Hub and ticket keys on the breaker**: `HubClient` (`destination("hub")`), `TicketVerifier`
   key source and entitlement fetches go through the breaker. Covered together with ID3 and ID4.
-- [ ] **CB6 Push** (RL-09): Expo sender uses `destination("expo")`; `send` returns per-chunk outcomes
+- [x] **CB6 Push** (RL-09): Expo sender uses `destination("expo")`; `send` returns per-chunk outcomes
   (`accepted` tickets plus the failing chunk's error) instead of discarding accepted tickets.
   Acceptance: a scripted Expo server failing the second of three chunks; tickets from chunk one are
   persisted and polled, a retry resends only chunks two and three.
-- [ ] **CB7 Remaining adopters**: browser-session IdP (`idp`), erasure Keycloak/API (`keycloak-admin`),
+- [x] **CB7 Remaining adopters**: browser-session IdP (`idp`), erasure Keycloak/API (`keycloak-admin`),
   MCP introspection (`mcp-introspection`), OIDC JWKS (`oidc`, with ID1). Each gets one test that an
   open circuit fails fast with the mapped error code.
 - [ ] **CB8 Template wiring**: every generated `GuardedClient` passes a destination name;
@@ -372,7 +372,7 @@ them.
   values drop the 900 s override.
   Acceptance: a test that SIGTERMs a worker during a 2 min job; another worker claims it within a few
   seconds, the attempt count is unchanged, a final-attempt job is not failed.
-- [ ] **WK3 Jitter** (RL-42): `retry_delay` uses `baukit_resilience::Backoff` with full jitter.
+- [x] **WK3 Jitter** (RL-42): `retry_delay` uses `baukit_resilience::Backoff` with full jitter.
   Acceptance: the shared backoff vectors; a statistical test that 1000 jobs failed at once spread
   over the window.
 - [~] **WK4 Honest queue metrics** (RL-43, RL-44): the age query uses `MIN(run_after)` over
@@ -381,23 +381,23 @@ them.
   loop.
   Acceptance: a test where a future recurring slot exists and the gauge reports 0; promtool test for
   the corrected alert.
-- [ ] **WK5 Per-key fairness** (RL-45): `NewJob::concurrency_key(key)` plus
+- [~] **WK5 Per-key fairness** (RL-45): `NewJob::concurrency_key(key)` plus
   `WorkerConfig.max_per_key` (default 1 for suite deliveries, unset otherwise). The claim query skips
   pending rows whose key already has `max_per_key` running. Suite deliveries use the peer app as key.
   Acceptance: a hanging peer occupies at most `max_per_key` slots while deliveries to another peer
   complete. EXPLAIN check on the claim query with the new index, recorded in the PR.
-- [ ] **WK6 Recurring chains do not break** (RL-46): on terminal failure of a recurring slot the runner
+- [x] **WK6 Recurring chains do not break** (RL-46): on terminal failure of a recurring slot the runner
   schedules the next slot. `enqueue_initial` skips past a failed current slot.
   Acceptance: retention test where one slot fails all attempts and the next slot still runs.
-- [ ] **WK7 Terminal reconciliation** (RL-47): data-subject and erasure operations move to `failed`
+- [x] **WK7 Terminal reconciliation** (RL-47): data-subject and erasure operations move to `failed`
   with a stable code when their job fails terminally, and an alert fires on any failed operation. The
   inline erasure path commits its lock before the IdP call and re-checks state after it.
   Acceptance: tests for both terminal paths; a test that no transaction is open during the IdP call
   (pool size 1 and a concurrent query succeeds).
-- [ ] **WK8 Requeue API** (RL-48): `PostgresJobStore::requeue_failed(job_type, ids)` and a
+- [~] **WK8 Requeue API** (RL-48): `PostgresJobStore::requeue_failed(job_type, ids)` and a
   `baukit-ops` admin hook the template exposes on the ops listener only. The runbook replaces its SQL
   with it.
-- [ ] **WK9 Polling cost** (RL-49): idle backoff on empty claims (250 ms doubling to 5 s, reset on a
+- [x] **WK9 Polling cost** (RL-49): idle backoff on empty claims (250 ms doubling to 5 s, reset on a
   claim), cancellation polled every 2 s, and an optional `LISTEN job_enqueued` wake-up.
   Acceptance: an idle runner issues fewer than 1 query/s after 30 s; enqueue latency with LISTEN stays
   under 500 ms.
@@ -463,7 +463,7 @@ them.
 
 FX tests come first in each phase where they apply: write the failing test, then the fix.
 
-- [ ] **FX1 `baukit-test` fault fixtures** (D10, RL-89): `PostgresFault::{stop, pause, resume}`,
+- [x] **FX1 `baukit-test` fault fixtures** (D10, RL-89): `PostgresFault::{stop, pause, resume}`,
   `RedisFault` (reusing `stop_master`), and a `Toxiproxy` fixture with latency, reset-peer and timeout
   toxics. The image is pinned by version and digest per the pin policy; testcontainers labels follow the
   existing cleanup convention.
@@ -537,7 +537,7 @@ run in the orchestrator under the heavy-slot protocol (owner `baukit-rel`, one s
 | Agent | Tasks | Owns | Status |
 |---|---|---|---|
 | rel-core | RC1, RC2 | `rust/crates/baukit-resilience`, `fixtures/resilience`, workspace `Cargo.toml` entry | merged, verified (28 tests; review round fixed late outcomes deciding half-open) |
-| rel-faults | FX1 | `rust/crates/baukit-test` | done, waiting for Docker run |
+| rel-faults | FX1 | `rust/crates/baukit-test` | merged, unit checks verified; Docker run pending on integration |
 | rel-http | IN1, IN2 (`baukit-http` part), IN3, IN4 (`baukit-runtime` part), IN7 | `baukit-http`, `baukit-runtime`, `baukit-telemetry` | merged, verified (fmt, clippy, tests; shed log lowered to debug) |
 | rel-jobs | WK1, WK2, WK4 (crate part), CB3 | `baukit-jobs` | merged, verified (two review rounds; Docker: jobs 51, suite 178, erasure 34, data-subject 53) |
 | rel-ts | CL1 (without fixture replay), CL3, CL4 (`auth-web` part), CL5 (`pwa-web` part) | `typescript/packages/{api-runtime,sync-client,auth-web,pwa-web}` | merged, verified (4 packages build, format, lint, test) |
@@ -553,11 +553,11 @@ Shared files (`docs/platform/telemetry-spec.md`, `deploy/observability/lint/chec
 | Agent | Tasks | Status |
 |---|---|---|
 | rel-egress | CB1, CB2, IN8 | merged, verified (two rounds) |
-| rel-jobs2 | WK3, WK5, WK6, WK8 (crate part), WK9 | done after two rounds, waiting for Docker run |
+| rel-jobs2 | WK3, WK5, WK6, WK8 (crate part), WK9 | merged, unit checks verified; Docker run pending on integration |
 | rel-ops | IN5 (crate part) | merged, verified (two rounds; Docker tests pending) |
-| rel-faults | FX1 | done, waiting for Docker run |
+| rel-faults | FX1 | merged, unit checks verified; Docker run pending on integration |
 | rel-suite | CB4, CB5, ID1 (TicketVerifier), ID3, ID4 | running |
-| rel-adopters | CB6, CB7, WK7 | running |
+| rel-adopters | CB6, CB7, WK7 | merged, unit checks verified; Docker run pending on integration |
 | rel-ts2 | CL1 fixture replay | merged, verified (ts-check, package-dependencies) |
 | rel-auth | ID1 (OIDC part), ID2, IN2 (browser session) | merged, verified (two rounds plus an orchestrator fix) |
 
@@ -673,3 +673,16 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   and 0006, which is wave 3.
 - rel-jobs2 round 2: the requeue route requires a bearer token (`Secret<String>`, constant-time compare, 401 envelope), the threat model gains the operator-to-ops-port boundary (J-01 to J-05), and the 0006 fixture lines are in erasure, data-subject and suite. It stays unmerged until its Postgres tests run, because the claim query changed.
 - Wave 3 started with the client templates and the platform agent. The backend template agent waits for the suite and adopter APIs.
+- rel-adopters, rel-jobs2 and rel-faults are merged into integration before their Docker tests. Holding
+  three branches was costing more than one combined Docker run on the integration head, and any failures
+  go back to the authors.
+  - rel-adopters: Expo `send` returns per-chunk outcomes, and an open circuit fails fast as 503 or
+    deferred for keycloak-admin, mcp-introspection, idp and oidc. `BaukitPrivacyOperationFailed`
+    covers WK7.
+  - WK7 note: SQL triggers already moved terminal operations to `failed`, so RL-47 overstated the gap.
+    The inline erasure call no longer holds a transaction. It reserves the job through `run_after` (the
+    inline timeout plus 5 s) and re-checks under a lock afterwards. `run_after` uses the app clock while
+    the claim compares against the database clock, so skew eats into the margin. A worker that claims
+    early only repeats an idempotent IdP delete.
+  - Not covered: data-subject failures decided in Rust (identity deadline, `export_too_large`) need a
+    sampled gauge, and erasure has no `error_code` column. Both are template wave.
