@@ -5,6 +5,14 @@
 - A refresh without an entitlement clears the held one.
 - `useOrganizationPlan` rejects an answer for another organization.
 
+## 0.30.6
+
+### Patch Changes
+
+- Release the coordinated baukit 0.30.6 train.
+- Updated dependencies
+  - @baukit/type-guards@0.30.6
+
 ## 0.30.5
 
 ### Patch Changes

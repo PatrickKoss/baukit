@@ -7,6 +7,8 @@
 
 - Generated OIDC products set `auth.authorized_parties` in `config/local.toml` to the realm's web, mobile and local client IDs, so access tokens from other clients fail even when they carry the backend audience.
 
+## [0.30.6] - 2026-11-26
+
 - Generated `scripts/repo-lint.sh` scans every `Cargo.lock` outside `fixtures/` and `vendor/` directories with osv-scanner, not only `backend/Cargo.lock`, and runs `cargo deny check` on each workspace beside one, with its own `deny.toml` or else `backend/deny.toml`. `deny` exits 1 when any workspace fails. New products get `scripts/repo-lint.test.py`, which `baukit doctor` now requires, run by the `generated-scripts` CI job and the strict `scripts-tests` step. Existing products copy both files, add the test to CI and run `baukit check template-files --update`; the product `CHANGELOG.md` has the full steps.
 - `baukit.toml` accepts `[quality.creator_resources]`, which maps a resource name to the lanes or steps that hold it as creators: together with other creators, never with `[quality.shared_resources]` holders or exclusive holders. `baukit doctor` checks it like `[quality.resources]` and `[quality.shared_resources]`: the resource name must start with a lowercase letter and hold only lowercase letters, digits and `-`, and every member must be a lane or step of `scripts/quality-gate.sh --list-steps`. Older CLIs ignore the key without a warning, and so do older `scripts/gate.py` copies, which then lock nothing for those steps. Add the key in the same change that re-pins the product and copies the template's `scripts/gate.py` and `scripts/gate_locks.py`.
 

@@ -8,6 +8,8 @@ All notable changes to `baukit-core` are documented here.
 
 - CSV export also neutralizes cells that start with the fullwidth `＝`, `＋`, `－` or `＠`, which spreadsheets treat as formula triggers.
 
+## [0.30.6] - 2026-11-26
+
 ## [0.30.5] - 2026-11-26
 
 ## [0.30.4] - 2026-11-25

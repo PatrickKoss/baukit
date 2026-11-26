@@ -6,6 +6,12 @@
 - Add `nowStep`, `observeStep` and `validateClientTimestamp`. Ticks are serialized across tabs with Web Locks.
 - `rankPushBatch` no longer merges entities whose type and id concatenate to the same key, and outcome validation rejects extra outcomes.
 
+## 0.30.6
+
+### Patch Changes
+
+- Release the coordinated baukit 0.30.6 train.
+
 ## 0.30.5
 
 ### Patch Changes

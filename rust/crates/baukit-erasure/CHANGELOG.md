@@ -14,6 +14,8 @@
 - `IdentityDeletion::probe` and `ErasureService::probe_identity_provider` for a startup readiness check.
 - `PostgresErasureStore::begin_guarded_write`, `WriteFence`, `with_write_fence` and `begin_fenced_write` for product writes that an erasure cannot race.
 
+## [0.30.6] - 2026-11-26
+
 ## [0.30.5] - 2026-11-26
 
 ## [0.30.4] - 2026-11-25

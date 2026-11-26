@@ -8,6 +8,12 @@
 
 See `docs/migrations/client-identity-signals.md`.
 
+## 0.30.6
+
+### Patch Changes
+
+- Release the coordinated baukit 0.30.6 train.
+
 ## 0.30.5
 
 ### Patch Changes

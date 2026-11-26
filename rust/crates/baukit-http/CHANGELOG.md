@@ -10,6 +10,8 @@ All notable changes to `baukit-http` are documented here.
 - A client `X-Request-ID` is kept only when it is 1 to `MAX_REQUEST_ID_BYTES` (128) bytes of `[A-Za-z0-9._-]`. Anything else gets a fresh UUID.
 - `RevisionEtag` prefixes may not end in a digit, because `"v1" + 2` and `"v" + 12` both format as `"v12"`. See [docs/migrations/boundary-hardening.md](../../../docs/migrations/boundary-hardening.md).
 
+## [0.30.6] - 2026-11-26
+
 ## [0.30.5] - 2026-11-26
 
 ## [0.30.4] - 2026-11-25

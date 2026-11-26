@@ -14,6 +14,8 @@
 - A free refresh replaces a cached paid plan. Organization grants use their own cache product key.
 - Ticket `manageUrl` follows the same host and port rule as the TS client.
 
+## [0.30.6] - 2026-11-26
+
 ## [0.30.5] - 2026-11-26
 
 - Accept `<scheme>-dev://suite/linked` as a suite `start` return URL next to `<scheme>://suite/linked`. The template's `dev` build variant registers `<scheme>-dev` and builds its return from `appScheme()`, so every dev build got `suite_return_url_invalid`. Lookalikes such as `<scheme>-devx`, `<scheme>dev` and other apps' schemes stay rejected.

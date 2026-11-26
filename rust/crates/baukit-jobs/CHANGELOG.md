@@ -13,6 +13,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 - `complete_lease_in_transaction`, `check_lease_held_in_transaction`, `JobCancellation::lease` and `lease_predicate_holds`.
 
+## [0.30.6] - 2026-11-26
+
 ## [0.30.5] - 2026-11-26
 
 ## [0.30.4] - 2026-11-25

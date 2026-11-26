@@ -5,6 +5,16 @@
 - Breaking: tickets with duplicate JSON keys or non-integer numbers are rejected, matching Rust. `kid` length counts UTF-8 bytes. `manageUrl` rejects backslashes and ports above 65535.
 - `SuiteSession` validates the server authorize URL; `authorizeUrlPolicy.allowedOrigins` pins its origin.
 
+## 0.30.6
+
+### Patch Changes
+
+- Release the coordinated baukit 0.30.6 train.
+- Updated dependencies
+  - @baukit/integrations-client@0.30.6
+  - @baukit/localization-core@0.30.6
+  - @baukit/type-guards@0.30.6
+
 ## 0.30.5
 
 ### Patch Changes

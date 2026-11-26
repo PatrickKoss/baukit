@@ -13,6 +13,8 @@ All notable changes to `baukit-auth` are documented here.
 - BFF refresh finishes and stores the rotated token even when the client drops the request. A lost refresh response no longer revokes the family. The previous cookie re-rotates until the new head is first used, for up to 5 minutes.
 - Signing in again revokes the previous cookie's family. Logging out with an older rotated cookie no longer ends the live family.
 
+## [0.30.6] - 2026-11-26
+
 ## [0.30.5] - 2026-11-26
 
 ## [0.30.4] - 2026-11-25

@@ -170,7 +170,7 @@ migration after their applied runtime migration. It removes the link foreign key
 from failed-job accounting records and replaces the job failure trigger. Existing
 failure records stay accounted; the new store accounts later records before it
 reads health or queues work. Deploy this migration before the new store code.
-Products upgrading past 0.30.5 add `005_suite_record_ids.sql` the same way, before
+Products upgrading past 0.30.6 add `005_suite_record_ids.sql` the same way, before
 the store code that seals secrets as vault v2 records.
 
 Use `PostgresSuiteErasure` and `erase_with_suite` to check erasure admission before
