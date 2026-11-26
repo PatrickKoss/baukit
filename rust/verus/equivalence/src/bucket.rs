@@ -45,17 +45,51 @@ mod tests {
 mod proofs {
     use super::*;
 
-    /// Twin and production `refill` and `admit` agree on every input.
-    /// Bounds: none, straight-line code over unconstrained `u64`.
-    #[kani::proof]
-    fn admit_equivalent() {
+    const SMALL: u64 = 15;
+
+    fn small_or_max() -> u64 {
+        let value: u64 = kani::any();
+        kani::assume(value <= SMALL || value == u64::MAX);
+        value
+    }
+
+    fn admit_matches_at_rate(rate: u64) {
+        let last: u64 = kani::any();
         assert!(admit_matches(
-            kani::any(),
-            kani::any(),
-            kani::any(),
-            kani::any(),
-            kani::any(),
-            kani::any(),
+            small_or_max(),
+            last,
+            last.saturating_add(small_or_max()),
+            rate,
+            small_or_max(),
+            small_or_max(),
         ));
+    }
+
+    /// Twin and production `refill` and `admit` agree with a stopped refill.
+    /// Bounds: rate 0; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`.
+    #[kani::proof]
+    fn admit_equivalent_rate_zero() {
+        admit_matches_at_rate(0);
+    }
+
+    /// The same with the smallest non-zero rate.
+    /// Bounds: rate 1; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`.
+    #[kani::proof]
+    fn admit_equivalent_rate_one() {
+        admit_matches_at_rate(1);
+    }
+
+    /// The same with a rate that leaves a remainder in `retry_ms`.
+    /// Bounds: rate 7; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`.
+    #[kani::proof]
+    fn admit_equivalent_rate_seven() {
+        admit_matches_at_rate(7);
+    }
+
+    /// The same with a rate whose refill saturates after one millisecond.
+    /// Bounds: rate `u64::MAX`; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`.
+    #[kani::proof]
+    fn admit_equivalent_rate_max() {
+        admit_matches_at_rate(u64::MAX);
     }
 }

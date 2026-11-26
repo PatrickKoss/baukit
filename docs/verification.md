@@ -8,7 +8,7 @@ with `TLA2TOOLS_JAR`.
 |---|---|---|
 | `make kani` | `kani` | Every `#[kani::proof]` in a crate with `cfg(kani)` code holds for all inputs within the bounds its doc comment states. Also fails when a harness has no `Bounds:` line. |
 | `make kani-full` | `kani-full` | The same for every crate at once. Runs nightly. |
-| `make verus` | `verus` | The Verus proofs in `rust/verus` (V-01 to V-03, below), the proptests that compare each twin with production, and the Kani harnesses that prove them equal. |
+| `make verus` | `verus` | The Verus proofs in `rust/verus` (V-01 to V-03, below), the proptests that compare each twin with production, and the Kani harnesses that prove the HLC and bucket twins equal to production. |
 | `make models` | `models` | `models/check.sh`: each `models/<Name>/<Name>.cfg` passes TLC (deadlock checking off), and each `<Name>*_current.cfg`, which reproduces a bug in today's code, reports a violation. |
 | `make fuzz` | `fuzz` | No fuzz target crashes within 60 s. |
 | `make fuzz-long` | `fuzz-nightly` | The same for `FUZZ_SECONDS` per target (default 1800), growing the corpus. |
@@ -34,9 +34,12 @@ traces of any length, where Kani stops at its unwind bound.
 
 The twins use the production integer types and the same checked and saturating arithmetic,
 written as explicit range checks Verus can reason about. Two links keep them honest:
-`rust/verus/equivalence` runs proptests over random and edge-case inputs and Kani harnesses that
-prove twin and production equal (unbounded integers for HLC and bucket; 2 tables of 2 rows for
-the pull merge).
+`rust/verus/equivalence` runs proptests over random and edge-case inputs for all three twins, and
+Kani harnesses that prove twin and production equal: HLC `now_step`, `observe_step`, `encode` and
+`decode` over unconstrained `i64`; bucket `refill` and `admit` at rates 0, 1, 7 and `u64::MAX`
+with the other inputs `<= 15` or `u64::MAX`. The pull merge has no Kani harness: CBMC needs more
+than 8 GB on the production `Uuid` byte comparison and sort even for two one-row tables, so its
+link is the proptest (4096 cases).
 
 ### Layout
 
