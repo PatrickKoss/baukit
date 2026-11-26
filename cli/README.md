@@ -111,8 +111,8 @@ Doctor checks identity where code consumes it. Analytics context names must matc
 named imports, including renamed bindings. Expo's slug can use a product's
 public name. Backend config consumers must agree on one namespace; authenticated
 backends use `app.name`. An unauthenticated backend can use a different config
-namespace, which its analytics context can also use. For example, SLS uses
-`sl` for packages and `heldengang` for config and analytics.
+namespace, which its analytics context can also use. For example, a product
+can use `sl` for packages and `quest` for config and analytics.
 
 A product needs a consumed identity source. Doctor accepts inline Expo config
 and backend `ConfigLoader::new` calls. It does not require
