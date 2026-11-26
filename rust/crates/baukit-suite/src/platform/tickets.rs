@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use baukit_egress::{EgressRequest, GuardedClient};
-use serde::{Deserialize, Deserializer, Serialize};
 use baukit_auth::{KeyLookupError, KeySetCache, KeySource, KeySourceFuture};
+use baukit_egress::{EgressRequest, GuardedClient};
 use baukit_resilience::{Clock, StalePolicy, SystemClock};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use url::Url;
 
@@ -382,7 +382,12 @@ impl TicketVerifier {
         Ok(Self {
             issuer,
             product_id,
-            keys: KeySetCache::with_clock(TicketKeySource(source), policy, TICKET_KEY_SOURCE, clock),
+            keys: KeySetCache::with_clock(
+                TicketKeySource(source),
+                policy,
+                TICKET_KEY_SOURCE,
+                clock,
+            ),
         })
     }
     /// # Errors

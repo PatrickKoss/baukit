@@ -285,6 +285,10 @@ pub enum EntitlementSourceError {
     NoEntitlements,
     #[error("entitlement_source_unavailable")]
     Unavailable,
+    /// The source refused to call the hub, for example while its breaker is
+    /// open. Retry after `retry_after`.
+    #[error("entitlement_source_unavailable")]
+    CoolingDown { retry_after: std::time::Duration },
     #[error("entitlement_source_invalid")]
     Invalid,
 }

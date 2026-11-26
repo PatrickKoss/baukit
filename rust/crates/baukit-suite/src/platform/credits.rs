@@ -1,4 +1,4 @@
-use super::{HubClient, HubError};
+use super::{HubClient, HubError, HubRequest};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -102,7 +102,7 @@ impl From<HubError> for CreditsError {
         } = &error
         else {
             return match error {
-                HubError::Unavailable => Self::Unavailable,
+                HubError::Unavailable | HubError::CoolingDown { .. } => Self::Unavailable,
                 other => Self::Hub(other),
             };
         };
@@ -227,7 +227,10 @@ impl HubCredits {
         let id = reservation_id.to_string();
         let reservation = self
             .hub
-            .post_json(&["credits", "reservations", &id, action], body)
+            .send_json(HubRequest::post(
+                &["credits", "reservations", &id, action],
+                body,
+            )?)
             .await?;
         let reservation = self.owned(reservation)?;
         if reservation.id != reservation_id {
@@ -257,7 +260,10 @@ impl Credits for HubCredits {
         };
         let reservation = self
             .hub
-            .post_json(&["credits", "reservations"], &request)
+            .send_json(
+                HubRequest::post(&["credits", "reservations"], &request)?
+                    .with_idempotency_key(idempotency_key)?,
+            )
             .await?;
         let reservation = self.owned(reservation)?;
         if reservation.amount != amount {
