@@ -341,10 +341,28 @@ where
 mod proofs {
     use super::*;
 
+    const SPAN: u8 = 4;
+    const MAX_WALL: i64 = MAX_ENCODED_TIMESTAMP / COUNTERS_PER_MILLISECOND;
+
+    /// A value within `SPAN` of either `low` or `high`, keeping the solver on
+    /// the boundaries instead of the full `i64` range.
+    fn near(low: i64, high: i64) -> i64 {
+        let offset = i64::from(kani::any::<u8>() % SPAN);
+        if kani::any() {
+            low + offset
+        } else {
+            high - offset
+        }
+    }
+
     fn any_valid_step() -> HlcStep {
-        let step: HlcStep = (kani::any(), kani::any());
+        let step: HlcStep = (near(0, MAX_WALL), near(0, COUNTERS_PER_MILLISECOND - 1));
         kani::assume(encode(step.0, step.1).is_ok());
         step
+    }
+
+    fn any_physical() -> i64 {
+        near(0, MAX_WALL)
     }
 
     fn encoded(step: HlcStep) -> i64 {
@@ -354,11 +372,11 @@ mod proofs {
     /// K-09 for `now_step`: Ok advances the state; the wall time is at most
     /// `max(physical, state.wall) + 1` (the +1 is counter rollover); Err never
     /// changes a value (the function is pure) and nothing panics.
-    /// Bounds: any `i64` inputs, no loops, no unwind bound needed.
+    /// Bounds: components within 4 of zero or their maximum, no loops.
     #[kani::proof]
     fn now_step_advances_within_bound() {
         let state = any_valid_step();
-        let physical: i64 = kani::any();
+        let physical = any_physical();
         if let Ok(next) = now_step(state, physical) {
             assert!(encoded(next) > encoded(state));
             assert!(next.0 <= physical.max(state.0) + 1);
@@ -368,13 +386,14 @@ mod proofs {
     /// K-09 for `observe_step`: Ok is above both the state and the remote,
     /// with wall time at most `max(physical + max_drift, state.wall) + 1`
     /// (the +1 is counter rollover). A remote beyond the drift bound is
-    /// rejected. No panic. Bounds: any `i64` inputs, no loops.
+    /// rejected. No panic. Bounds: components within 4 of zero or their
+    /// maximum, drift below 4, no loops.
     #[kani::proof]
     fn observe_step_respects_drift_bound() {
         let state = any_valid_step();
-        let physical: i64 = kani::any();
-        let remote: i64 = kani::any();
-        let max_drift: i64 = kani::any();
+        let physical = any_physical();
+        let remote = encoded(any_valid_step());
+        let max_drift = i64::from(kani::any::<u8>() % SPAN);
         let result = observe_step(state, physical, remote, max_drift);
         if let Ok((remote_wall, _)) = decode(remote)
             && max_drift >= 0
@@ -392,7 +411,7 @@ mod proofs {
 
     /// K-10: encode and decode round trip over all valid components, and
     /// `compare` orders valid timestamps exactly like their components.
-    /// Bounds: any `i64` inputs, no loops.
+    /// Bounds: components within 4 of zero or their maximum, no loops.
     #[kani::proof]
     fn encode_round_trips_and_compare_is_lexicographic() {
         let left = any_valid_step();

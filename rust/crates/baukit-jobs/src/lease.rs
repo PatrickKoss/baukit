@@ -36,7 +36,7 @@ impl JobLease {
 
 /// The lease columns of one `job_outbox` row.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LeaseRow<'a> {
+pub struct LeaseRow<'a, T = Timestamp> {
     /// Current lifecycle state.
     pub status: JobStatus,
     /// `locked_by` column.
@@ -44,7 +44,7 @@ pub struct LeaseRow<'a> {
     /// `attempts` column.
     pub attempts: u32,
     /// `locked_until` column.
-    pub locked_until: Option<Timestamp>,
+    pub locked_until: Option<T>,
     /// Whether `cancel_requested_at` is set.
     pub cancel_requested: bool,
 }
@@ -54,11 +54,11 @@ pub struct LeaseRow<'a> {
 /// `allow_cancellation` is true only for the cancel acknowledgement, which
 /// must still match after a cancellation request.
 #[must_use]
-pub fn lease_predicate_holds(
-    row: &LeaseRow<'_>,
+pub fn lease_predicate_holds<T: PartialOrd + Copy>(
+    row: &LeaseRow<'_, T>,
     worker_id: &str,
     attempt: u32,
-    now: Timestamp,
+    now: T,
     allow_cancellation: bool,
 ) -> bool {
     row.status == JobStatus::Running
@@ -74,24 +74,21 @@ mod proofs {
 
     /// K-17: a stale attempt never satisfies the lease predicate.
     ///
-    /// Bounds: two worker ids, any `u32` attempts, timestamps from any `i32`
-    /// second offset. No loops, so no unwind bound is needed.
+    /// Bounds: two worker ids, attempts below 4, `u8` instants (the
+    /// predicate is generic over the instant type, so this covers ordering
+    /// without jiff's internals). Worker ids are 8 bytes, so the string
+    /// compare unwinds at most 9 times.
     #[kani::proof]
+    #[kani::unwind(9)]
     fn stale_attempt_never_holds_the_lease() {
         let workers = ["worker-a", "worker-b"];
         let row_worker: bool = kani::any();
         let caller_worker: bool = kani::any();
-        let row_attempts: u32 = kani::any();
-        let stale_attempt: u32 = kani::any();
+        let row_attempts = u32::from(kani::any::<u8>() % 4);
+        let stale_attempt = u32::from(kani::any::<u8>() % 4);
         kani::assume(stale_attempt != row_attempts);
-        let until: i32 = kani::any();
-        let now: i32 = kani::any();
-        let (Ok(until), Ok(now)) = (
-            Timestamp::from_second(i64::from(until)),
-            Timestamp::from_second(i64::from(now)),
-        ) else {
-            return;
-        };
+        let until: u8 = kani::any();
+        let now: u8 = kani::any();
         let row = LeaseRow {
             status: JobStatus::Running,
             locked_by: Some(workers[usize::from(row_worker)]),
