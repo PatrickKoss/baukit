@@ -233,7 +233,7 @@ describe('per-origin cooldown', () => {
       fetch: mock.fetch,
       now: clock.now,
       retry: false,
-      cooldown: { networkFailureCooldownMs: 10_000 },
+      cooldown: { networkFailureCooldownMs: 10_000, random: () => 0 },
     });
 
     for (let index = 0; index < 5; index += 1) {
@@ -277,7 +277,7 @@ describe('per-origin cooldown', () => {
       fetch: hangingFetch(),
       now: clock.now,
       retry: false,
-      cooldown: { networkFailureThreshold: 1 },
+      cooldown: { networkFailureThreshold: 1, random: () => 0 },
     });
     const controller = new AbortController();
     const pending = apiFetch('/hang', { signal: controller.signal }).catch(
@@ -300,7 +300,7 @@ describe('per-origin cooldown', () => {
       fetch: mock.fetch,
       now: clock.now,
       retry: clockedRetry(clock, delays),
-      cooldown: { networkFailureThreshold: 1 },
+      cooldown: { networkFailureThreshold: 1, random: () => 0 },
     });
 
     await expect(apiFetch('/down')).rejects.toBeInstanceOf(ApiUnavailableError);

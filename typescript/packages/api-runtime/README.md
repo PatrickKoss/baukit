@@ -138,7 +138,10 @@ message is `API request timed out`, so it is retried like any network error.
 
 The runtime keeps a cooldown per origin. A `429` or `503` with `Retry-After` blocks the origin for that
 delay (clamped to `maxRetryAfterMs`). Five consecutive network failures or timeouts block it for
-30,000 ms. Any HTTP response resets the failure count, and caller aborts do not count. While an
+30,000 ms minus up to 20% random jitter. Each further run of failures without a response in between
+doubles that time, capped at `maxCooldownMs` (300,000 ms), which also caps `Retry-After` holds. Any
+HTTP response resets the failure count and the doubling, and caller aborts do not count. The open time
+and the backoff match the shared vectors in `fixtures/resilience`. While an
 origin is blocked, every call rejects with `ApiUnavailableError` and its `retryAt` (epoch milliseconds)
 without sending a request. A UI can show "unavailable, retrying at HH:MM" from it; use
 `isApiUnavailableError` to narrow.
@@ -146,7 +149,12 @@ without sending a request. A UI can show "unavailable, retrying at HH:MM" from i
 ```ts
 createApiFetch({
   ...environment,
-  cooldown: { networkFailureThreshold: 5, networkFailureCooldownMs: 30_000 },
+  cooldown: {
+    networkFailureThreshold: 5,
+    networkFailureCooldownMs: 30_000,
+    maxCooldownMs: 300_000,
+    jitterPercent: 20,
+  },
   now: Date.now,
 });
 ```
