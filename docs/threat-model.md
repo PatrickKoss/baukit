@@ -2,7 +2,7 @@
 
 Baukit foundation, written with `agent-skills/skills/baukit-threat-model`. Last reviewed: 2026-11-25, on top of commit f22e039f (P-07 to P-17), with the drift fixes, high findings and new boundaries from the correctness verification work. `docs/verification.md` lists what each proof covers.
 
-Baukit is a library, so this model covers the controls the crates, packages, templates and edge config provide, and the threats they cover for a product that uses them as generated. Each product keeps its own `docs/threat-model.md` for routes, data and integrations it adds. Gaps S-01 to S-11 come from the security catalog in `docs/quality-security-plan.md`.
+Baukit is a library, so this model covers the controls the crates, packages, templates and edge config provide, and the threats they cover for a product that uses them as generated. Each product keeps its own `docs/threat-model.md` for routes, data and integrations it adds. Gaps S-01 to S-11 come from the security catalog in the [quality and security plan at v0.31.0](https://github.com/PatrickKoss/baukit/blob/v0.31.0/docs/quality-security-plan.md).
 
 ## Data classes
 
