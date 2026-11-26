@@ -579,8 +579,10 @@ name = "baukit-ops"
 version = "0.30.6"
 dependencies = [
  "axum",
+ "baukit-config",
  "baukit-core",
  "baukit-telemetry",
+ "baukit-test",
  "metrics-exporter-prometheus",
  "serde",
  "serde_json",

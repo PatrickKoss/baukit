@@ -103,7 +103,9 @@ transient store error while Sentinel is converging; the existing fail-open or
 fail-closed middleware policy handles that error unchanged. Clones share the
 resolved connection and refresh state.
 
-Store failures are fail-open by default and can be configured fail-closed. All
+Store failures are fail-open by default and can be configured fail-closed. In closed mode the
+middleware answers a store failure with `503 unavailable`, `Retry-After: 1` and the standard error
+envelope, because the quota was never checked. All
 decisions record `http_rate_limit_decisions_total` with only `scope` and
 `outcome` labels.
 

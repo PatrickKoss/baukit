@@ -40,6 +40,11 @@ Product fields flatten into the top level of the document, next to the standard 
 `database`, `rate_limit`, `telemetry`, and `shutdown` sections. `database` is `Option`, so a
 service with no database omits the section instead of configuring one it never opens.
 
+The `database` section also carries PostgreSQL session timeouts and pool lifetimes, all in integer
+seconds: `statement_timeout` (29), `lock_timeout` (5), `idle_in_transaction_session_timeout` (60),
+`max_lifetime` (1800) and `idle_timeout` (600). Each must be non-zero, and validation rejects a
+`statement_timeout` that is not below `http.request_timeout`.
+
 ## Layering
 
 Three layers apply in order, each overriding the last:

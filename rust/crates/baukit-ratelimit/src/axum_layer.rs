@@ -23,6 +23,7 @@ pub const RATE_LIMIT_REMAINING: HeaderName = HeaderName::from_static("ratelimit-
 /// IETF rate-limit reset-delay header.
 pub const RATE_LIMIT_RESET: HeaderName = HeaderName::from_static("ratelimit-reset");
 
+const STORE_UNAVAILABLE_RETRY_AFTER: Duration = Duration::from_secs(1);
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 
 #[derive(Clone)]
@@ -125,14 +126,7 @@ async fn rate_limit_authenticated_route_group(
             );
             match state.options.fail_mode {
                 RateLimitFailMode::Open => next.run(request).await,
-                RateLimitFailMode::Closed => limited_response(
-                    state.options.quota,
-                    RateLimitDecision {
-                        allowed: false,
-                        remaining: 0,
-                        retry_after: state.options.quota.period(),
-                    },
-                ),
+                RateLimitFailMode::Closed => store_unavailable_response(),
             }
         }
     }
@@ -214,17 +208,14 @@ async fn evaluate(
             tracing::warn!(scope, error = %error, "rate-limit store decision failed");
             match state.options.fail_mode {
                 RateLimitFailMode::Open => Evaluation::PassAfterError,
-                RateLimitFailMode::Closed => Evaluation::Rejected(limited_response(
-                    options.quota,
-                    RateLimitDecision {
-                        allowed: false,
-                        remaining: 0,
-                        retry_after: options.quota.period(),
-                    },
-                )),
+                RateLimitFailMode::Closed => Evaluation::Rejected(store_unavailable_response()),
             }
         }
     }
+}
+
+fn store_unavailable_response() -> Response {
+    baukit_http::ApiError::unavailable(STORE_UNAVAILABLE_RETRY_AFTER).into_response()
 }
 
 fn limited_response(quota: Quota, decision: RateLimitDecision) -> Response {
@@ -632,7 +623,7 @@ mod tests {
     async fn route_group_store_errors_follow_the_configured_fail_mode() {
         for (fail_mode, expected) in [
             (RateLimitFailMode::Open, StatusCode::OK),
-            (RateLimitFailMode::Closed, StatusCode::TOO_MANY_REQUESTS),
+            (RateLimitFailMode::Closed, StatusCode::SERVICE_UNAVAILABLE),
         ] {
             let mut rate_limit = RateLimitOptions::default();
             rate_limit.fail_mode = fail_mode;
@@ -650,7 +641,8 @@ mod tests {
                 .expect("response");
             assert_eq!(response.status(), expected);
             if fail_mode == RateLimitFailMode::Closed {
-                assert_eq!(response.headers()[RETRY_AFTER], "60");
+                assert_eq!(response.headers()[RETRY_AFTER], "1");
+                assert_unavailable_envelope(response).await;
             }
         }
     }
@@ -850,9 +842,18 @@ mod tests {
             closed,
         );
         let response = app.oneshot(request_with_peer()).await.expect("response");
-        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-        assert!(response.headers().contains_key(RETRY_AFTER));
-        assert!(response.headers().contains_key(RATE_LIMIT_LIMIT));
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(response.headers()[RETRY_AFTER], "1");
+        assert!(!response.headers().contains_key(RATE_LIMIT_LIMIT));
+        assert_unavailable_envelope(response).await;
+    }
+
+    async fn assert_unavailable_envelope(response: Response) {
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let json: serde_json::Value = serde_json::from_slice(&body).expect("JSON");
+        assert_eq!(json["error"]["code"], "unavailable");
     }
 
     fn request_with_peer() -> Request<Body> {
