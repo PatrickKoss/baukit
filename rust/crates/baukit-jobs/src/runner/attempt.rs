@@ -1,16 +1,18 @@
 use std::{sync::Arc, time::Duration};
 
+use baukit_resilience::Backoff;
 use jiff::{SignedDuration, Timestamp};
 use tokio::time::{Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    ClaimedJob, FailureDisposition, JobError, JobStore, ReleaseReason, RunnerError, StoreError,
+    ClaimedJob, FailureDisposition, JobError, JobStore, RecurringJob, ReleaseReason, RunnerError,
+    StoreError,
     metrics::{self, CANCELLED, FAILURE, RETRY, SUCCESS},
 };
 
-use super::{JobCancellation, JobHandler, WorkerConfig};
+use super::{JobCancellation, JobHandler, SharedJitter, WorkerConfig};
 
 const HEARTBEATS_PER_LEASE: u32 = 3;
 
@@ -23,6 +25,9 @@ pub(super) struct AttemptContext {
     pub(super) drain: CancellationToken,
     /// Cancelled when the drain budget is spent; attempts still running release.
     pub(super) release_now: CancellationToken,
+    pub(super) jitter: SharedJitter,
+    /// Recurring job types whose next slot the runner enqueues after a terminal failure.
+    pub(super) recurring: Vec<RecurringJob>,
 }
 
 enum AttemptResult {
@@ -190,9 +195,11 @@ async fn record_failure(
     error: &JobError,
 ) -> Result<&'static str, Unsettled> {
     let now = Timestamp::now();
-    let delay = error
-        .retry_after()
-        .unwrap_or_else(|| retry_delay(&context.config, job.attempts));
+    let delay = error.retry_after().unwrap_or_else(|| {
+        context
+            .jitter
+            .delay(&retry_backoff(&context.config), retry_index(job.attempts))
+    });
     let retry_at = add_duration(now, delay).map_err(Unsettled::Fatal)?;
     let disposition = context
         .store
@@ -216,7 +223,10 @@ async fn disposition_outcome(
 ) -> Result<&'static str, Unsettled> {
     match disposition {
         Some(FailureDisposition::Retry) => Ok(RETRY),
-        Some(FailureDisposition::Failed) => Ok(FAILURE),
+        Some(FailureDisposition::Failed) => {
+            schedule_next_slot(context, job).await;
+            Ok(FAILURE)
+        }
         None => cancel_after_lost_transition(context, job, now).await,
     }
 }
@@ -274,12 +284,40 @@ async fn renew_lease_until_lost(
     }
 }
 
-pub(super) fn retry_delay(config: &WorkerConfig, attempts: u32) -> Duration {
-    let exponent = attempts.saturating_sub(1).min(31);
-    config
-        .retry_initial
-        .saturating_mul(2_u32.saturating_pow(exponent))
-        .min(config.retry_max)
+/// Keeps a recurring chain alive when one slot fails for good. The slot's
+/// idempotency key makes a concurrent enqueue of the same slot harmless.
+async fn schedule_next_slot(context: &AttemptContext, job: &ClaimedJob) {
+    let Some(recurring) = context
+        .recurring
+        .iter()
+        .find(|recurring| recurring.job_type() == job.job_type)
+    else {
+        return;
+    };
+    let next = match recurring.next_job(job, Timestamp::now()) {
+        Ok(next) => next,
+        Err(error) => {
+            tracing::error!(job_id = %job.id, job_kind = %job.job_type, %error, "failed recurring slot has no next slot");
+            return;
+        }
+    };
+    if let Err(error) = context.store.enqueue(next).await {
+        tracing::error!(job_id = %job.id, job_kind = %job.job_type, %error, "next recurring slot was not enqueued; enqueue_initial recovers it at the next start");
+    }
+}
+
+pub(super) const fn retry_backoff(config: &WorkerConfig) -> Backoff {
+    Backoff::new(config.retry_initial, config.retry_max)
+}
+
+/// Zero-based retry index for a job that has used `attempts` claims.
+pub(super) const fn retry_index(attempts: u32) -> u32 {
+    attempts.saturating_sub(1)
+}
+
+#[cfg(test)]
+pub(super) fn retry_delay(config: &WorkerConfig, attempts: u32, fraction: f64) -> Duration {
+    retry_backoff(config).delay(retry_index(attempts), fraction)
 }
 
 fn add_duration(timestamp: Timestamp, duration: Duration) -> Result<Timestamp, RunnerError> {

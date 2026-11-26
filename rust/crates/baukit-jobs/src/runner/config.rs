@@ -27,6 +27,7 @@ pub(super) fn validate_config(
     }
     for (name, duration) in [
         ("poll_interval", config.poll_interval),
+        ("idle_poll_max", config.idle_poll_max),
         ("lease_duration", config.lease_duration),
         ("job_timeout", config.job_timeout),
         (

@@ -13,8 +13,9 @@ defines the compatibility and migration requirements for that later change.
 Copy `migrations/0001_baukit_jobs.sql`,
 `migrations/0002_baukit_jobs_failure_reason.sql`,
 `migrations/0003_baukit_jobs_claim_by_type.sql`,
-`migrations/0004_baukit_jobs_active_deduplication.sql`, and
-`migrations/0005_baukit_jobs_deferrals.sql` into the product's own
+`migrations/0004_baukit_jobs_active_deduplication.sql`,
+`migrations/0005_baukit_jobs_deferrals.sql`, and
+`migrations/0006_baukit_jobs_concurrency_key.sql` into the product's own
 migrations in that order. Do not point a production service at this crate
 directory and do not run schema changes during application startup. A product
 may add foreign keys or indexes in a later migration, but the lifecycle columns
@@ -272,6 +273,18 @@ The application still owns the interval, initial seed, job type, payload,
 catch-up policy, and decision to stop recurring work. `FixedUtcInterval` does
 not parse cron expressions or run a scheduler.
 
+### Recurring chains that survive a failed slot
+
+`RecurringJob::new(job_type, interval, max_attempts)` fixes that row shape:
+payload `{"slot": <slot start>}`, `run_after` at the slot start and the slot
+identifier as idempotency key. `job_for(slot)` builds a slot's row and
+`next_job(job, now)` the row the handler enqueues on success. Register it with
+`WorkerRunner::with_recurring`: when a slot fails for good, the runner enqueues
+the next slot itself, so one bad day does not stop the chain. Call
+`RecurringJob::enqueue_initial(&store, now)` from every replica at startup. It
+enqueues the current slot, or the next one when the current slot already
+failed.
+
 ## Per-key recurring jitter
 
 Create `FixedUtcJitter::new(fraction)` with a finite fraction in `(0, 1]`, then
@@ -343,6 +356,27 @@ types.
 Custom `JobStore` implementations must apply the same type filter to pending
 rows and to expired leases they reclaim.
 
+## Per-key concurrency
+
+`NewJob::concurrency_key(key)` tags a job with a key, such as the peer
+application a delivery calls. With `WorkerConfig::max_per_key = Some(n)` the
+claim skips ready rows whose key already has `n` running jobs with a live lease,
+so a hanging peer holds at most `n` worker slots while other keys keep flowing.
+Keys are shared across job types. Jobs without a key are never limited. The
+claim takes a transaction-scoped advisory lock per key before it recounts, so
+concurrent workers cannot both take a key's last slot. Apply migration 0006,
+whose partial index keeps that count to the running rows of one key.
+
+## Requeue failed jobs
+
+`PostgresJobStore::requeue_failed(job_type, ids)` returns failed rows of one
+type to pending with zero attempts and deferrals and no failure reason, ready
+now. It takes 1 to `MAX_REQUEUE_BATCH_SIZE` (1000) ids, ignores ids of other
+types or statuses, and returns the ids it requeued. A failed row whose active
+dedupe key is held by a pending or running row stays failed. The `jobs`
+feature of `baukit-ops` serves it as `POST /admin/jobs/requeue` for the
+private operations listener.
+
 ## Runtime and operations
 
 Create one `WorkerRunner` with a product `JobHandler` and run it in a
@@ -354,8 +388,24 @@ without consuming work. Also wire `WorkerRunner::store_health()`, taken before
 `run`, into readiness: it turns false at the first failing store call in the
 runner loop and back to true at the next success.
 
+An empty claim doubles the delay before the next one from `poll_interval`
+(250 ms) up to `idle_poll_max` (5 s); a claim resets it. Running attempts check
+durable cancellation every `cancellation_poll_interval` (2 s). An idle replica
+therefore issues well under one query per second. For low latency anyway, pass
+a `JobWakeup` to `WorkerRunner::with_wakeup` and start
+`spawn_enqueue_listener(pool, wakeup, shutdown)`. Every enqueue and requeue
+sends `NOTIFY job_enqueued` inside its own transaction, so the listener hears
+it after commit. The listener holds one connection outside the pool; behind a
+transaction-mode pooler give it a pool that connects to PostgreSQL directly.
+It reconnects with jittered backoff and polling continues while it is down.
+
+Failed attempts retry after a full-jitter delay drawn from
+`baukit_resilience::Backoff`: uniform between zero and
+`min(retry_max, retry_initial * 2^(attempt - 1))`. `WorkerRunner::with_jitter`
+replaces the random source for tests.
+
 Store errors in the loop do not end `run`. The runner logs them and retries
-with jittered exponential backoff that starts at `poll_interval` and stops
+with full-jitter exponential backoff that starts at `poll_interval` and stops
 growing at 30 s. Each claim and queue sample is bounded by
 `WorkerConfig::store_call_timeout` (default 5 s), so a database that hangs
 instead of failing also turns health red, as `StoreError::Timeout`. Running

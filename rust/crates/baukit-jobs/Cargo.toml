@@ -15,6 +15,7 @@ readme = "README.md"
 workspace = true
 
 [dependencies]
+baukit-resilience.workspace = true
 baukit-runtime.workspace = true
 baukit-telemetry.workspace = true
 jiff.workspace = true

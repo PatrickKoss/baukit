@@ -519,6 +519,7 @@ dependencies = [
 name = "baukit-jobs"
 version = "0.30.6"
 dependencies = [
+ "baukit-resilience",
  "baukit-runtime",
  "baukit-telemetry",
  "baukit-test",
@@ -589,6 +590,7 @@ dependencies = [
  "axum",
  "baukit-config",
  "baukit-core",
+ "baukit-jobs",
  "baukit-telemetry",
  "baukit-test",
  "metrics-exporter-prometheus",
@@ -597,6 +599,7 @@ dependencies = [
  "sqlx",
  "tokio",
  "tower",
+ "uuid",
 ]
 
 [[package]]

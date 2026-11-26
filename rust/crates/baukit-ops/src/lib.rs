@@ -97,6 +97,8 @@ pub use baukit_telemetry::PrometheusHandle;
 use serde::Serialize;
 use tokio::task::JoinSet;
 
+#[cfg(feature = "jobs")]
+pub mod jobs_admin;
 #[cfg(feature = "sqlx-postgres")]
 mod postgres;
 #[cfg(feature = "sqlx-postgres")]

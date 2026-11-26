@@ -18,18 +18,20 @@ use crate::{
 };
 
 mod lifecycle;
+mod reliability;
 
 #[test]
-fn retry_delay_is_exponential_and_bounded() {
+fn retry_delay_is_full_jitter_under_an_exponential_bound() {
     let config = WorkerConfig {
         retry_initial: Duration::from_secs(5),
         retry_max: Duration::from_secs(60),
         ..WorkerConfig::default()
     };
-    assert_eq!(retry_delay(&config, 1), Duration::from_secs(5));
-    assert_eq!(retry_delay(&config, 2), Duration::from_secs(10));
-    assert_eq!(retry_delay(&config, 5), Duration::from_secs(60));
-    assert_eq!(retry_delay(&config, u32::MAX), Duration::from_secs(60));
+    assert_eq!(retry_delay(&config, 1, 0.5), Duration::from_millis(2500));
+    assert_eq!(retry_delay(&config, 2, 0.5), Duration::from_secs(5));
+    assert_eq!(retry_delay(&config, 5, 0.5), Duration::from_secs(30));
+    assert_eq!(retry_delay(&config, u32::MAX, 0.5), Duration::from_secs(30));
+    assert_eq!(retry_delay(&config, 3, 0.0), Duration::ZERO);
 }
 
 #[test]
@@ -321,11 +323,13 @@ fn test_config() -> WorkerConfig {
         queue: "test",
         concurrency: 1,
         poll_interval: Duration::from_millis(5),
+        idle_poll_max: Duration::from_millis(5),
         lease_duration: Duration::from_secs(120),
         job_timeout: Duration::from_secs(60),
         cancellation_poll_interval: Duration::from_millis(5),
         retry_initial: Duration::from_millis(5),
         retry_max: Duration::from_secs(1),
+        max_per_key: None,
         max_deferrals: 2,
         queue_sample_interval: Duration::from_millis(5),
         release_reserve: Duration::from_millis(100),
@@ -344,6 +348,8 @@ fn attempt_context(
         config,
         drain: CancellationToken::new(),
         release_now: CancellationToken::new(),
+        jitter: SharedJitter::from_entropy(),
+        recurring: Vec::new(),
     })
 }
 
@@ -368,6 +374,10 @@ struct FakeStore {
     block_claim: AtomicBool,
     claim_started: Notify,
     claim_release: Notify,
+    enqueued: Mutex<Vec<NewJob>>,
+    enqueue_status: Mutex<JobStatus>,
+    failure_disposition: Mutex<FailureDisposition>,
+    max_per_key_seen: Mutex<Vec<Option<std::num::NonZeroU32>>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -399,6 +409,10 @@ impl FakeStore {
             block_claim: AtomicBool::new(false),
             claim_started: Notify::new(),
             claim_release: Notify::new(),
+            enqueued: Mutex::new(Vec::new()),
+            enqueue_status: Mutex::new(JobStatus::Pending),
+            failure_disposition: Mutex::new(FailureDisposition::Retry),
+            max_per_key_seen: Mutex::new(Vec::new()),
         }
     }
 
@@ -438,23 +452,38 @@ impl FakeStore {
 }
 
 impl JobStore for FakeStore {
-    fn enqueue(&self, _job: NewJob) -> StoreFuture<'_, Result<EnqueueOutcome, StoreError>> {
-        Box::pin(async {
-            Err(StoreError::InvalidInput(
-                "enqueue is unused by this fake".to_owned(),
-            ))
+    fn enqueue(&self, job: NewJob) -> StoreFuture<'_, Result<EnqueueOutcome, StoreError>> {
+        Box::pin(async move {
+            let status = *lock(&self.enqueue_status);
+            let stored = Job {
+                id: job.id,
+                job_type: job.job_type.clone(),
+                payload: job.payload.clone(),
+                status,
+                run_after: job.run_after,
+                idempotency_key: job.idempotency_key.clone(),
+                ..fake_job(0)
+            };
+            lock(&self.enqueued).push(job);
+            self.transition.notify_one();
+            Ok(EnqueueOutcome {
+                job: stored,
+                created: status == JobStatus::Pending,
+            })
         })
     }
 
-    fn claim<'a>(
+    fn claim_with_key_limit<'a>(
         &'a self,
         _worker_id: &'a str,
         job_types: &'a [&'a str],
         now: jiff::Timestamp,
         _lease_for: Duration,
+        max_per_key: Option<std::num::NonZeroU32>,
     ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>> {
         Box::pin(async move {
             self.take_failure()?;
+            lock(&self.max_per_key_seen).push(max_per_key);
             if self.block_claim.swap(false, Ordering::SeqCst) {
                 self.claim_started.notify_one();
                 self.claim_release.notified().await;
@@ -518,7 +547,7 @@ impl JobStore for FakeStore {
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(retry_at - now);
             self.retried.fetch_add(1, Ordering::SeqCst);
             self.transition.notify_one();
-            Ok(Some(FailureDisposition::Retry))
+            Ok(Some(*lock(&self.failure_disposition)))
         })
     }
 
@@ -723,7 +752,14 @@ fn fake_job(sequence: usize) -> Job {
         failure_reason: None,
         cancel_requested_at: None,
         deferrals: 0,
+        concurrency_key: None,
         created_at: now,
         updated_at: now,
     }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }

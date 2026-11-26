@@ -1,5 +1,6 @@
 use std::{
     future::Future,
+    num::NonZeroU32,
     pin::Pin,
     sync::{
         Arc,
@@ -17,15 +18,20 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::{ClaimedJob, JobError, JobStore, ReleaseReason, RunnerError, StoreError, metrics};
+use baukit_resilience::JitterSource;
+
+use crate::{
+    ClaimedJob, JobError, JobStore, JobWakeup, RecurringJob, ReleaseReason, RunnerError,
+    StoreError, metrics,
+};
 
 mod attempt;
 mod backoff;
 mod config;
 
 use attempt::{AttemptContext, process_claimed_job};
-use backoff::StoreBackoff;
 pub use backoff::StoreHealth;
+use backoff::{IdleBackoff, SharedJitter, StoreBackoff};
 use config::validate_config;
 
 /// A boxed future returned by [`JobHandler`].
@@ -110,18 +116,24 @@ pub struct WorkerConfig {
     pub queue: &'static str,
     /// Maximum number of concurrently running attempts.
     pub concurrency: usize,
-    /// Delay between empty-queue polls, and the first delay after a store error.
+    /// First delay after an empty claim or a store error. Empty claims double
+    /// it up to [`Self::idle_poll_max`]; a claim or a wake-up resets it.
     pub poll_interval: Duration,
+    /// Longest delay between claims while the queue stays empty.
+    pub idle_poll_max: Duration,
     /// Duration of a claimed job lease. Running attempts renew it every third of this.
     pub lease_duration: Duration,
     /// Maximum execution time for one attempt.
     pub job_timeout: Duration,
     /// Frequency at which running attempts check durable cancellation.
     pub cancellation_poll_interval: Duration,
-    /// Initial retry delay before exponential growth.
+    /// Full-jitter retry bound for the first failed attempt; it doubles per attempt.
     pub retry_initial: Duration,
-    /// Upper bound for exponential retry delay.
+    /// Upper bound for the full-jitter retry delay.
     pub retry_max: Duration,
+    /// Running jobs allowed per [`crate::NewJob::concurrency_key`]. `None`
+    /// leaves keys unlimited; jobs without a key are never limited.
+    pub max_per_key: Option<NonZeroU32>,
     /// Deferrals per job that do not consume an attempt; later deferrals do.
     pub max_deferrals: u32,
     /// Interval between queue age and depth samples.
@@ -140,11 +152,13 @@ impl Default for WorkerConfig {
             queue: "default",
             concurrency: 5,
             poll_interval: Duration::from_millis(250),
+            idle_poll_max: Duration::from_secs(5),
             lease_duration: Duration::from_secs(60),
             job_timeout: Duration::from_secs(10 * 60),
-            cancellation_poll_interval: Duration::from_millis(250),
+            cancellation_poll_interval: Duration::from_secs(2),
             retry_initial: Duration::from_secs(1),
             retry_max: Duration::from_secs(5 * 60),
+            max_per_key: None,
             max_deferrals: 100,
             queue_sample_interval: Duration::from_secs(15),
             release_reserve: Duration::from_secs(5),
@@ -160,6 +174,9 @@ pub struct WorkerRunner {
     handler: Arc<dyn JobHandler>,
     config: WorkerConfig,
     health: StoreHealth,
+    jitter: SharedJitter,
+    recurring: Vec<RecurringJob>,
+    wakeup: Option<JobWakeup>,
 }
 
 enum ClaimError {
@@ -187,7 +204,53 @@ impl WorkerRunner {
             handler,
             config,
             health: StoreHealth::new(),
+            jitter: SharedJitter::from_entropy(),
+            recurring: Vec::new(),
+            wakeup: None,
         })
+    }
+
+    /// Replaces the random source for retry and store-error backoff.
+    #[must_use]
+    pub fn with_jitter(mut self, source: impl JitterSource + 'static) -> Self {
+        self.jitter = SharedJitter::new(source);
+        self
+    }
+
+    /// Claims as soon as `wakeup` fires instead of after the idle delay.
+    ///
+    /// Pair it with [`crate::spawn_enqueue_listener`] for `LISTEN job_enqueued`.
+    #[must_use]
+    pub fn with_wakeup(mut self, wakeup: JobWakeup) -> Self {
+        self.wakeup = Some(wakeup);
+        self
+    }
+
+    /// Enqueues the next slot of `job` whenever one of its slots fails for good.
+    ///
+    /// # Errors
+    ///
+    /// [`RunnerError::InvalidConfig`] when the handler does not declare the
+    /// job type or it is already registered.
+    pub fn with_recurring(mut self, job: RecurringJob) -> Result<Self, RunnerError> {
+        if !self.handler.job_types().contains(&job.job_type()) {
+            return Err(RunnerError::InvalidConfig(format!(
+                "recurring job type `{}` is not declared by the handler",
+                job.job_type()
+            )));
+        }
+        if self
+            .recurring
+            .iter()
+            .any(|known| known.job_type() == job.job_type())
+        {
+            return Err(RunnerError::InvalidConfig(format!(
+                "recurring job type `{}` is registered twice",
+                job.job_type()
+            )));
+        }
+        self.recurring.push(job);
+        Ok(self)
     }
 
     /// Probes the store's claim-query shape for operations readiness.
@@ -238,9 +301,12 @@ impl WorkerRunner {
             config: self.config.clone(),
             drain: CancellationToken::new(),
             release_now: CancellationToken::new(),
+            jitter: self.jitter.clone(),
+            recurring: self.recurring.clone(),
         });
         let mut running = JoinSet::new();
-        let mut backoff = StoreBackoff::new(self.config.poll_interval);
+        let mut backoff = StoreBackoff::new(self.config.poll_interval, self.jitter.clone());
+        let mut idle = IdleBackoff::new(self.config.poll_interval, self.config.idle_poll_max);
         let mut next_sample = Instant::now();
         while !shutdown.is_cancelled() {
             drain_finished(&mut running)?;
@@ -252,16 +318,22 @@ impl WorkerRunner {
                 Err(error) => Err(ClaimError::Store(error)),
             };
             match step {
-                Ok(()) => {
+                Ok(claimed) => {
                     self.health.set(true);
                     backoff.reset();
-                    wait_for_work(&mut running, &shutdown, self.config.poll_interval).await?;
+                    if claimed {
+                        idle.reset();
+                    }
+                    let delay = idle.next_delay();
+                    if self.wait_for_work(&mut running, &shutdown, delay).await? {
+                        idle.reset();
+                    }
                 }
                 Err(ClaimError::Store(error)) => {
                     self.health.set(false);
                     let delay = backoff.next_delay();
                     tracing::error!(queue = self.config.queue, %error, retry_in_ms = delay.as_millis(), "worker store call failed");
-                    wait_for_work(&mut running, &shutdown, delay).await?;
+                    self.wait_for_work(&mut running, &shutdown, delay).await?;
                 }
                 Err(ClaimError::Fatal(error)) => return Err(error),
             }
@@ -292,7 +364,8 @@ impl WorkerRunner {
         running: &mut JoinSet<Result<(), RunnerError>>,
         context: &Arc<AttemptContext>,
         shutdown: &ShutdownToken,
-    ) -> Result<(), ClaimError> {
+    ) -> Result<bool, ClaimError> {
+        let mut claimed_any = false;
         while running.len() < self.config.concurrency && !shutdown.is_cancelled() {
             let mut claim = self.spawn_claim();
             let claimed = tokio::select! {
@@ -305,20 +378,42 @@ impl WorkerRunner {
                 }
                 () = shutdown.cancelled() => {
                     release_late_claim(context, claim, release_deadline(shutdown, &self.config)).await;
-                    return Ok(());
+                    return Ok(claimed_any);
                 }
             };
             let Some(job) = claimed else {
-                return Ok(());
+                return Ok(claimed_any);
             };
             if shutdown.is_cancelled() {
                 release_claimed(context, &job).await;
-                return Ok(());
+                return Ok(claimed_any);
             }
+            claimed_any = true;
             let context = Arc::clone(context);
             running.spawn(process_claimed_job(context, job));
         }
-        Ok(())
+        Ok(claimed_any)
+    }
+
+    /// Waits for `delay`, a finished attempt, shutdown or a wake-up. Returns
+    /// whether a wake-up ended the wait.
+    async fn wait_for_work(
+        &self,
+        running: &mut JoinSet<Result<(), RunnerError>>,
+        shutdown: &ShutdownToken,
+        delay: Duration,
+    ) -> Result<bool, RunnerError> {
+        let woken = async {
+            match &self.wakeup {
+                Some(wakeup) => wakeup.woken().await,
+                None => std::future::pending().await,
+            }
+        };
+        tokio::select! {
+            () = woken => return Ok(true),
+            result = wait_for_attempt_or_delay(running, shutdown, delay) => result?,
+        }
+        Ok(false)
     }
 
     fn spawn_claim(&self) -> JoinHandle<Result<Option<ClaimedJob>, StoreError>> {
@@ -326,10 +421,17 @@ impl WorkerRunner {
         let worker_id = self.config.worker_id.clone();
         let job_types = self.handler.job_types();
         let lease_duration = self.config.lease_duration;
+        let max_per_key = self.config.max_per_key;
         // Jobs enqueued during this loop must not be claimed before their creation time.
         tokio::spawn(async move {
             store
-                .claim(&worker_id, job_types, Timestamp::now(), lease_duration)
+                .claim_with_key_limit(
+                    &worker_id,
+                    job_types,
+                    Timestamp::now(),
+                    lease_duration,
+                    max_per_key,
+                )
                 .await
         })
     }
@@ -393,7 +495,7 @@ async fn release_claimed(context: &AttemptContext, job: &ClaimedJob) {
     }
 }
 
-async fn wait_for_work(
+async fn wait_for_attempt_or_delay(
     running: &mut JoinSet<Result<(), RunnerError>>,
     shutdown: &ShutdownToken,
     delay: Duration,
