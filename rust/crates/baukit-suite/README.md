@@ -158,9 +158,12 @@ Use `SuiteConfig` as the product's `suite` configuration section. Call
 `validate_for` with the embedded peers and credential cipher at startup. Provide
 `Arc<dyn baukit_ratelimit::RateLimitStore>`; use Redis for multiple processes.
 
-Copy `SUITE_MIGRATION_SQL`, `SUITE_RUNTIME_MIGRATION_SQL` and
-`SUITE_LOCK_ORDER_MIGRATION_SQL` after the jobs
-migrations for products adding suite tables. Keep applied suite migrations when
+Copy `SUITE_MIGRATION_SQL`, `SUITE_RUNTIME_MIGRATION_SQL`,
+`SUITE_LOCK_ORDER_MIGRATION_SQL` and `SUITE_DELIVERY_PROBES_MIGRATION_SQL` after the jobs
+migrations for products adding suite tables. Products that already applied `003` add
+`005_suite_delivery_probes.sql` as a new migration. It drops the failed-job trigger and
+`suite_failed_delivery_jobs`, and schedules a probe one hour out for links that are
+already disabled. Keep applied suite migrations when
 their schema matches the shipped SQL, apart from product owner foreign keys.
 Keep the original filenames and SQLx migration history. Do not copy or run the
 crate's `001` and `002` again when their schema is already applied.

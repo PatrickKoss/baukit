@@ -29,11 +29,21 @@ impl SuiteDeliveryService {
         completion: Option<(Uuid, &str)>,
     ) -> Result<DeliveryAction, SuiteServiceError> {
         let link = self.context.store.find_link(job.link_id).await?;
-        if let Some(action) = delivery_preflight(link.as_ref()) {
+        if let Some(action) = delivery_preflight(link.as_ref(), now) {
             delivery_metric(&self.context.metric_prefix, action);
             return Ok(action);
         }
         let link = link.ok_or(SuiteStoreError::NotFound)?;
+        if link.probe_due(now)
+            && !self
+                .context
+                .store
+                .claim_probe(link.user_id, link.id, now)
+                .await?
+        {
+            delivery_metric(&self.context.metric_prefix, DeliveryAction::Disabled);
+            return Ok(DeliveryAction::Disabled);
+        }
         let peer = self.context.active_peer(&link.peer_app)?;
         let secret = self
             .context
@@ -59,6 +69,10 @@ impl SuiteDeliveryService {
             )
             .await;
         let action = peer_action(&response);
+        if let DeliveryAction::Deferred { .. } = action {
+            delivery_metric(&self.context.metric_prefix, action);
+            return Ok(action);
+        }
         if action == DeliveryAction::Delivered
             && let Some((job_id, worker_id)) = completion
         {
@@ -216,6 +230,9 @@ fn peer_action(response: &Result<SuitePeerResponse, SuitePeerError>) -> Delivery
         Err(SuitePeerError::Timeout) => DeliveryResult::Timeout,
         Err(SuitePeerError::Dns) => DeliveryResult::Dns,
         Err(SuitePeerError::Transport) => DeliveryResult::Transport,
+        Err(SuitePeerError::Deferred { retry_after }) => DeliveryResult::Deferred {
+            retry_after: *retry_after,
+        },
         Err(SuitePeerError::Rejected { status, .. }) => DeliveryResult::Http {
             status: *status,
             retry_after: None,

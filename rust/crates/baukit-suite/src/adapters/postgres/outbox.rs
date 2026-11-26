@@ -210,20 +210,16 @@ impl PostgresSuiteEventOutbox {
                 SuiteStoreError::Timeout,
             ));
         }
-        super::account_owner_failures(tx, owner)
-            .await
-            .map_err(|error| SuiteEmissionError::new(&first.event_type, error))?;
         let links = sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at
             FROM suite_links
             WHERE user_id=$1
             AND status='active'
-            AND delivery_health<>'disabled'
-            AND consecutive_failures<20
+            AND (delivery_health<>'disabled' OR next_probe_at<=now())
             ORDER BY id"#,
         )
         .bind(owner)
@@ -281,7 +277,6 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         tx: &mut PgConnection,
         id: Uuid,
     ) -> Result<(), SuiteStoreError> {
-        super::account_failures(tx, id).await?;
         self.jobs
             .enqueue_in_transaction(
                 tx,
@@ -308,12 +303,11 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         validate_replay_since(since, now.to_zoned_datetime(jiff::tz::TimeZone::UTC).date())
             .map_err(invalid)?;
         super::lock_owner(tx, owner).await?;
-        super::account_owner_failures(tx, owner).await?;
         let link: SuiteLink = sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at
             FROM suite_links
             WHERE id=$1
@@ -368,11 +362,10 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         event: &SuiteEvent,
     ) -> Result<(), SuiteStoreError> {
         super::lock_owner(tx, owner).await?;
-        super::account_owner_failures(tx, owner).await?;
         let link: SuiteLink = sqlx::query_as::<_, LinkRow>(r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE id=$1 AND user_id=$2 FOR UPDATE"#)
 .bind(id)
 .bind(owner)
