@@ -8,6 +8,7 @@ use super::*;
 
 /// Seconds a client waits before retrying a `503` plan or credit read.
 pub const PLAN_RETRY_AFTER_SECONDS: u64 = 5;
+const FREE_TIER: &str = "free";
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -81,13 +82,51 @@ pub trait AccountPlan: Send + Sync {
     ) -> Result<OrganizationEntitlement, PlanError> {
         Err(PlanError::OrganizationNotAccessible)
     }
-    /// Whether the hub confirms `suite_subject` can use the product in the organization.
-    async fn is_member(
+    /// The role `suite_subject` holds in the organization, `None` for a non-member.
+    async fn membership(
         &self,
         _organization_id: Uuid,
         _suite_subject: &str,
+    ) -> Result<Option<OrganizationRole>, PlanError> {
+        Ok(None)
+    }
+    /// Whether `suite_subject` can use the product in the organization.
+    async fn is_member(
+        &self,
+        organization_id: Uuid,
+        suite_subject: &str,
     ) -> Result<bool, PlanError> {
-        Ok(false)
+        Ok(self
+            .membership(organization_id, suite_subject)
+            .await?
+            .is_some())
+    }
+    /// Drops a cached membership, for `organization.membership_changed` and `seat.changed`.
+    async fn evict_member(&self, _organization_id: Uuid, _suite_subject: &str) {}
+    /// Drops every cached membership and the cached grant of an organization.
+    async fn evict_organization(&self, _organization_id: Uuid) -> Result<(), PlanError> {
+        Ok(())
+    }
+}
+
+/// Confirms `suite_subject` is a member whose role satisfies `required`, and
+/// returns that role.
+///
+/// # Errors
+///
+/// `SuiteIdentityMissing` without a subject, `OrganizationNotAccessible` for a
+/// non-member or a role that does not satisfy `required`, and any error from
+/// `plan.membership`.
+pub async fn require_role(
+    plan: &dyn AccountPlan,
+    organization_id: Uuid,
+    suite_subject: Option<String>,
+    required: OrganizationRole,
+) -> Result<OrganizationRole, PlanError> {
+    let subject = suite_identity(suite_subject)?;
+    match plan.membership(organization_id, &subject).await? {
+        Some(role) if role.satisfies(required) => Ok(role),
+        _ => Err(PlanError::OrganizationNotAccessible),
     }
 }
 
@@ -153,16 +192,24 @@ pub(crate) async fn require_member(
 }
 
 /// The static grant from product configuration. Credits read as an empty
-/// wallet because every standalone action is free.
+/// wallet because every standalone action is free. Membership comes from the
+/// product's `OrganizationMembership`; pass `NoOrganizationMembers` when the
+/// product has no organizations.
 pub struct StandaloneAccountPlan {
     entitlements: Entitlements,
     credits: ZeroCostCredits,
+    members: Arc<dyn OrganizationMembership>,
 }
 impl StandaloneAccountPlan {
-    pub fn new(product_id: String, grant: StandaloneEntitlements) -> Self {
+    pub fn new(
+        product_id: String,
+        grant: StandaloneEntitlements,
+        members: Arc<dyn OrganizationMembership>,
+    ) -> Self {
         Self {
             credits: ZeroCostCredits::new(product_id.clone()),
             entitlements: Entitlements::standalone(product_id, grant),
+            members,
         }
     }
 }
@@ -209,14 +256,12 @@ impl AccountPlan for StandaloneAccountPlan {
             .ok_or(PlanError::EntitlementsUnavailable)?;
         Ok(organization_entitlement(organization_id, None, snapshot))
     }
-    /// Standalone mode has no hub directory: the product's own authentication
-    /// decides who acts for an organization.
-    async fn is_member(
+    async fn membership(
         &self,
-        _organization_id: Uuid,
-        _suite_subject: &str,
-    ) -> Result<bool, PlanError> {
-        Ok(true)
+        organization_id: Uuid,
+        suite_subject: &str,
+    ) -> Result<Option<OrganizationRole>, PlanError> {
+        self.members.role(organization_id, suite_subject).await
     }
 }
 
@@ -341,6 +386,7 @@ pub struct HubAccountPlan {
     credits: Arc<dyn Credits>,
     plans_url: String,
     organizations: Option<HubOrganizationPlans>,
+    clock: Arc<dyn PlatformClock>,
 }
 impl HubAccountPlan {
     /// `plans_url` is the hub web `/plans` page, as an absolute HTTP(S) URL.
@@ -348,7 +394,7 @@ impl HubAccountPlan {
     /// # Errors
     ///
     /// `PlatformError::Invalid` when `plans_url` is not an absolute HTTP(S) URL with a host or
-    /// `product_id` is empty.
+    /// `product_id` is empty or holds `/`, which organization cache keys use.
     pub fn new(
         product_id: String,
         source: VerifiedTicketSource,
@@ -360,7 +406,7 @@ impl HubAccountPlan {
             .ok()
             .filter(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
             .ok_or(PlatformError::Invalid)?;
-        if product_id.is_empty() {
+        if product_id.is_empty() || product_id.contains('/') {
             return Err(PlatformError::Invalid);
         }
         Ok(Self {
@@ -375,6 +421,7 @@ impl HubAccountPlan {
             credits,
             plans_url: plans_url.into(),
             organizations: None,
+            clock: Arc::new(SystemPlatformClock),
         })
     }
     /// Enables organization subjects. `HubOrganizations` needs `organizations:read`.
@@ -384,7 +431,17 @@ impl HubAccountPlan {
             self.product_id.clone(),
             grants,
             self.cache.clone(),
+            self.clock.clone(),
         ));
+        self
+    }
+    /// Replaces the clock behind organization cache expiry and free snapshots.
+    #[must_use]
+    pub fn with_clock(mut self, clock: Arc<dyn PlatformClock>) -> Self {
+        if let Some(organizations) = self.organizations.as_mut() {
+            organizations.set_clock(clock.clone());
+        }
+        self.clock = clock;
         self
     }
     fn organizations(&self) -> Result<&HubOrganizationPlans, PlanError> {
@@ -394,23 +451,55 @@ impl HubAccountPlan {
     }
 }
 impl HubAccountPlan {
-    async fn free(&self, suite_subject: &str) -> Result<AccountEntitlement, PlanError> {
+    /// A free answer supersedes a cached paid snapshot, so it takes the next
+    /// revision. A cached free snapshot keeps its revision, so repeated free
+    /// answers do not outrun the hub's own revision.
+    async fn free_revision(&self, suite_subject: &str) -> Result<u64, PlanError> {
+        let unavailable = |_| PlanError::EntitlementsUnavailable;
         let revision = self
             .cache
             .revision(suite_subject, &self.product_id)
             .await
-            .map_err(|_| PlanError::EntitlementsUnavailable)?;
+            .map_err(unavailable)?;
+        let cached = self
+            .cache
+            .get(
+                suite_subject,
+                &self.product_id,
+                self.clock.now().as_second(),
+            )
+            .await
+            .map_err(unavailable)?;
+        let already_free = cached.is_some_and(|snapshot| {
+            snapshot.revision == revision
+                && snapshot.tier == FREE_TIER
+                && snapshot.features.is_empty()
+        });
+        Ok(if already_free {
+            revision
+        } else {
+            revision.saturating_add(1)
+        })
+    }
+    async fn free(&self, suite_subject: &str) -> Result<AccountEntitlement, PlanError> {
+        let revision = self.free_revision(suite_subject).await?;
         let snapshot = EntitlementSnapshot {
             subject: suite_subject.into(),
             product_id: self.product_id.clone(),
-            tier: "free".into(),
+            tier: FREE_TIER.into(),
             features: Vec::new(),
             revision,
-            valid_until: jiff::Timestamp::now()
+            valid_until: self
+                .clock
+                .now()
                 .as_second()
                 .saturating_add(FREE_CACHE_TTL_SECONDS),
             grace_until: None,
         };
+        self.cache
+            .store(&snapshot)
+            .await
+            .map_err(|_| PlanError::EntitlementsUnavailable)?;
         Ok(entitlement(
             PlanMode::Hub,
             snapshot,
@@ -446,7 +535,7 @@ impl AccountPlan for HubAccountPlan {
     async fn current(&self, suite_subject: &str) -> Result<AccountEntitlement, PlanError> {
         let snapshot = self
             .entitlements
-            .current(suite_subject, jiff::Timestamp::now().as_second())
+            .current(suite_subject, self.clock.now().as_second())
             .await
             .ok()
             .flatten()
@@ -476,18 +565,29 @@ impl AccountPlan for HubAccountPlan {
     ) -> Result<OrganizationEntitlement, PlanError> {
         self.organizations()?.current(organization_id).await
     }
-    async fn is_member(
+    async fn membership(
         &self,
         organization_id: Uuid,
         suite_subject: &str,
-    ) -> Result<bool, PlanError> {
+    ) -> Result<Option<OrganizationRole>, PlanError> {
         match &self.organizations {
             Some(organizations) => {
                 organizations
-                    .is_member(organization_id, suite_subject)
+                    .membership(organization_id, suite_subject)
                     .await
             }
-            None => Ok(false),
+            None => Ok(None),
+        }
+    }
+    async fn evict_member(&self, organization_id: Uuid, suite_subject: &str) {
+        if let Some(organizations) = &self.organizations {
+            organizations.evict(organization_id, suite_subject);
+        }
+    }
+    async fn evict_organization(&self, organization_id: Uuid) -> Result<(), PlanError> {
+        match &self.organizations {
+            Some(organizations) => organizations.evict_organization(organization_id).await,
+            None => Ok(()),
         }
     }
 }

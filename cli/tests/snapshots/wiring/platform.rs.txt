@@ -1,0 +1,1247 @@
+===== src/bin/api.rs =====
+use std::{
+    env,
+    error::Error,
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
+
+use axum::Router;
+use baukit_auth::AuthState;
+use baukit_config::{BaukitConfig, Environment};
+use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
+use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
+use baukit_runtime::{
+    DrainBudget, ProcessKind, ServiceInfo, ShutdownOrder, ShutdownToken, build_info,
+    serve_listener_pair_with_shutdown_order,
+};
+use baukit_telemetry::{Telemetry, TelemetryBuilder, tracing};
+
+use sqlx::PgPool;
+use tokio::net::TcpListener;
+
+use snapshot_app_api::ApiState;
+use snapshot_app_api::ErasureApi;
+use snapshot_app_bin::ApiDependencies;
+use snapshot_app_bin::ProductConfig;
+use snapshot_app_bin::auth_verifier;
+use snapshot_app_bin::compose_api;
+use snapshot_app_bin::config_loader;
+use snapshot_app_bin::identity_erasure;
+use snapshot_app_bin::operations_router;
+use snapshot_app_bin::register_identity_provider_readiness;
+use snapshot_app_bin::{PROBE_READINESS_FLAG, probe_readiness};
+use snapshot_app_postgres::PostgresItemRepository;
+use snapshot_app_postgres::PostgresProfileErasure;
+use snapshot_app_postgres::PostgresUserRepository;
+use snapshot_app_services::ItemService;
+use snapshot_app_services::UserService;
+
+const PRODUCT: &str = "snapshot-app";
+const ENV_PREFIX: &str = "SNAPSHOT_APP";
+const POOL_METRICS_INTERVAL: Duration = Duration::from_secs(15);
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let environment = env::var(format!("{ENV_PREFIX}_ENVIRONMENT"))
+        .ok()
+        .map(|value| value.parse())
+        .transpose()?
+        .unwrap_or(Environment::Local);
+    let config: BaukitConfig<ProductConfig> = config_loader(environment)?.load()?;
+    if env::args().any(|argument| argument == PROBE_READINESS_FLAG) {
+        let ops = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), config.ops.port);
+        return if probe_readiness(ops).await? {
+            Ok(())
+        } else {
+            Err("not ready".into())
+        };
+    }
+    run(config).await
+}
+
+async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> {
+    let service_info =
+        ServiceInfo::new(PRODUCT, ProcessKind::Api, build_info!(), config.environment);
+    let telemetry = init_telemetry(&config, &service_info)?;
+    let backend = Backend::connect(&config).await?;
+    let api = compose_api(&config, &backend.api).await?.router;
+    serve(&config, &service_info, telemetry, backend, api).await
+}
+
+fn init_telemetry(
+    config: &BaukitConfig<ProductConfig>,
+    service_info: &ServiceInfo,
+) -> Result<Arc<Telemetry>, Box<dyn Error>> {
+    let mut builder = TelemetryBuilder::new(service_info.telemetry_identity().clone())
+        .sampling_ratio(config.telemetry.trace_sampling_ratio)
+        .log_format(config.telemetry.log_format);
+    if let Some(endpoint) = &config.telemetry.otlp_endpoint {
+        builder = builder.otlp_endpoint(endpoint);
+    }
+    Ok(Arc::new(builder.init()?))
+}
+
+async fn connect_pool(
+    config: &BaukitConfig<ProductConfig>,
+) -> Result<Option<(PgPool, PoolMetricsSampler)>, Box<dyn Error>> {
+    let Some(database) = &config.database else {
+        return Ok(None);
+    };
+    let pool = baukit_ops::connect_with_backoff(database, config.startup.budget).await?;
+    let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), POOL_METRICS_INTERVAL)?;
+    Ok(Some((pool, pool_metrics)))
+}
+
+struct Backend {
+    api: ApiDependencies,
+    pool_metrics: Option<PoolMetricsSampler>,
+    erasure_runner: WorkerRunner,
+}
+
+impl Backend {
+    async fn connect(config: &BaukitConfig<ProductConfig>) -> Result<Self, Box<dyn Error>> {
+        let (pool, pool_metrics) = connect_pool(config)
+            .await?
+            .ok_or("authenticated backend requires database configuration")?;
+        let (erasure_service, erasure_handler) =
+            identity_erasure(pool.clone(), &config.product.auth, config.environment)?;
+        let erasure_runner = WorkerRunner::new(
+            Arc::new(
+                PostgresJobStore::new(pool.clone())
+                    .retain_failed_kinds(&[baukit_erasure::IDENTITY_DELETE_JOB_TYPE]),
+            ),
+            Arc::new(erasure_handler),
+            WorkerConfig {
+                queue: "identity-erasure",
+                concurrency: 1,
+                ..WorkerConfig::default()
+            },
+        )?;
+        let item_service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
+        let users = UserService::new(Arc::new(PostgresUserRepository::new(
+            pool.clone(),
+            erasure_service.store().clone(),
+        )));
+        let verifier = auth_verifier(&config.product.auth, config.startup.budget).await?;
+        let auth = AuthState::from_shared(verifier);
+        let api_state = ApiState {
+            items: item_service.clone(),
+            users,
+            auth: auth.clone(),
+            erasure: ErasureApi {
+                service: erasure_service,
+                product: Arc::new(PostgresProfileErasure),
+            },
+        };
+        Ok(Self {
+            api: ApiDependencies {
+                pool,
+                item_service,
+                api_state,
+                auth,
+                rate_limit_store: None,
+            },
+            pool_metrics: Some(pool_metrics),
+            erasure_runner,
+        })
+    }
+}
+
+async fn serve(
+    config: &BaukitConfig<ProductConfig>,
+    service_info: &ServiceInfo,
+    telemetry: Arc<Telemetry>,
+    backend: Backend,
+    api: Router,
+) -> Result<(), Box<dyn Error>> {
+    let shutdown = ShutdownToken::with_budget(DrainBudget::new(
+        config.shutdown.drain_timeout,
+        config.http.request_timeout,
+    )?);
+    let traffic_gate = TrafficGate::new();
+    shutdown.on_drain({
+        let traffic_gate = traffic_gate.clone();
+        move || traffic_gate.stop_accepting()
+    });
+    let erasure = backend.api.api_state.erasure.service.clone();
+    let (operations, readiness) = operations_router(
+        backend.api.item_service,
+        service_info.telemetry_identity().clone(),
+        telemetry.prometheus_handle().clone(),
+        traffic_gate,
+    )?;
+    if config.environment == Environment::Local {
+        drop((readiness, erasure));
+    } else {
+        register_identity_provider_readiness(&readiness, erasure)?;
+    }
+    let api_listener =
+        TcpListener::bind(SocketAddr::new(config.http.bind_address, config.http.port)).await?;
+    let operations_listener =
+        TcpListener::bind(SocketAddr::new(config.ops.bind_address, config.ops.port)).await?;
+    tracing::info!(
+        message = "service started",
+        api_address = %api_listener.local_addr()?,
+        operations_address = %operations_listener.local_addr()?,
+    );
+    let erasure_shutdown = shutdown.clone();
+    let erasure_runner = backend.erasure_runner;
+    let erasure_task = tokio::spawn(async move {
+        let result = erasure_runner.run(erasure_shutdown.clone()).await;
+        if result.is_err() {
+            erasure_shutdown.trigger();
+        }
+        result
+    });
+    let signal_task = shutdown.spawn_signal_listener();
+    let result = serve_listener_pair_with_shutdown_order(
+        api_listener,
+        api,
+        operations_listener,
+        operations,
+        shutdown.clone(),
+        ShutdownOrder::OpsOutlivesApi,
+    )
+    .await;
+    shutdown.trigger();
+    if !signal_task.is_finished() {
+        signal_task.abort();
+    }
+    let _signal_result = signal_task.await;
+    shutdown.run_during_drain(erasure_task).await???;
+    if let Some(pool_metrics) = backend.pool_metrics {
+        pool_metrics.shutdown().await;
+    }
+    shutdown
+        .run_flush(async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await })
+        .await???;
+    result?;
+    Ok(())
+}
+===== src/compose.rs =====
+use std::error::Error;
+use std::time::Duration;
+
+use axum::{Router, http::Method};
+use baukit_auth::AuthState;
+use baukit_config::{BaukitConfig, Environment};
+use baukit_ratelimit::{RateLimitOptions, RedisRateLimitStore, SharedRateLimitStore};
+use sqlx::PgPool;
+
+use snapshot_app_api::ApiState;
+use snapshot_app_api::routes;
+use snapshot_app_api::{finalize_with_options, http_options};
+
+use snapshot_app_services::ItemService;
+
+use crate::{BrowserSessionDependencies, browser_session_router, protect_routes};
+use crate::{ProductConfig, RateLimits, rate_limited};
+
+const HSTS_MAX_AGE: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+const BROWSER_SESSION_ROUTES: [&str; 3] = [
+    "/auth/session/exchange",
+    "/auth/session/refresh",
+    "/auth/session/logout",
+];
+const PLATFORM_INBOUND_ROUTE: &str = "/platform/inbound";
+
+/// Everything [`compose_api`] needs besides configuration.
+#[derive(Clone)]
+pub struct ApiDependencies {
+    pub pool: PgPool,
+    pub item_service: ItemService,
+    pub api_state: ApiState,
+    pub auth: AuthState,
+    /// Replaces the configured rate-limit store. Tests pass an in-memory store here.
+    pub rate_limit_store: Option<SharedRateLimitStore>,
+}
+
+/// The public API router plus the routes merged outside the OpenAPI document.
+pub struct ComposedApi {
+    pub router: Router,
+    /// Every route a late router serves, as `(method, path)`.
+    pub late_routes: Vec<(Method, &'static str)>,
+}
+
+/// Builds the public API with every layer the binary serves.
+///
+/// # Errors
+///
+/// Returns an error when rate-limit, HTTP, browser-session, MCP or platform configuration is invalid
+/// or a backing service cannot be reached.
+pub async fn compose_api(
+    config: &BaukitConfig<ProductConfig>,
+    deps: &ApiDependencies,
+) -> Result<ComposedApi, Box<dyn Error>> {
+    let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
+    let redis = match deps.rate_limit_store {
+        Some(_) => None,
+        None => {
+            RedisRateLimitStore::connect_if_enabled(&rate_limit_options, config.startup.budget)
+                .await?
+        }
+    };
+    let store = deps
+        .rate_limit_store
+        .clone()
+        .or_else(|| redis.clone().map(SharedRateLimitStore::new));
+    let limits = store
+        .filter(|_| rate_limit_options.is_enabled())
+        .map(|store| RateLimits {
+            store,
+            options: rate_limit_options.clone(),
+        });
+    let mut http = http_options(&config.http, config.environment)?;
+    if config.environment != Environment::Local {
+        http = http.with_hsts(HSTS_MAX_AGE);
+    }
+    let mut late = Vec::new();
+    let mut late_routes = Vec::new();
+    if config.product.auth.browser_session.enabled {
+        http.allow_credentials = true;
+        let dependencies = BrowserSessionDependencies {
+            issuer: &config.product.auth.issuer,
+            http: &http,
+            pool: deps.pool.clone(),
+            rate_limit: &rate_limit_options,
+            rate_limit_store: redis,
+            environment: config.environment,
+            startup_budget: config.startup.budget,
+        };
+        if let Some(router) =
+            browser_session_router(&config.product.auth.browser_session, dependencies).await?
+        {
+            late.push(router);
+            late_routes.extend(BROWSER_SESSION_ROUTES.map(|path| (Method::POST, path)));
+        }
+    }
+    let platform = crate::platform::compose(deps.pool.clone(), &config.product)?;
+    if !config.product.platform.standalone() {
+        late_routes.push((Method::POST, PLATFORM_INBOUND_ROUTE));
+    }
+    let api = protect_routes(
+        routes(deps.api_state.clone()),
+        late,
+        deps.auth.clone(),
+        limits.as_ref(),
+    )?;
+    let api = api
+        .merge(rate_limited(platform.router, limits.as_ref()))
+        .layer(axum::Extension(platform.entitlements));
+    Ok(ComposedApi {
+        router: finalize_with_options(api, http),
+        late_routes,
+    })
+}
+===== src/rate_limits.rs =====
+use std::{error::Error, time::Duration};
+
+use axum::{Router, extract::Request, http::Method, middleware};
+use baukit_auth::{AuthState, Principal};
+use baukit_ratelimit::{
+    AuthenticatedRouteGroupOptions, Quota, RateLimitOptions, SharedRateLimitStore,
+};
+
+const ITEM_WRITE_GROUP: &str = "item_writes";
+const ITEM_WRITE_REQUESTS_PER_MINUTE: u64 = 30;
+const ITEM_WRITE_PERIOD: Duration = Duration::from_secs(60);
+
+/// The store and quotas every public route is limited with.
+#[derive(Clone)]
+pub struct RateLimits {
+    pub store: SharedRateLimitStore,
+    pub options: RateLimitOptions,
+}
+
+/// Wraps `router` in the IP and identity limiter. `None` means rate limiting is disabled.
+pub fn rate_limited(router: Router, limits: Option<&RateLimits>) -> Router {
+    match limits {
+        Some(limits) => {
+            baukit_ratelimit::layers(router, limits.store.clone(), limits.options.clone())
+        }
+        None => router,
+    }
+}
+
+/// Authenticates and limits `items`, then merges each router in `late` behind its own limiter.
+///
+/// The IP limiter runs before `establish_principal`, so junk bearers are throttled per client
+/// before any token verification. The identity limiter runs after it.
+///
+/// Routers in `late` verify callers themselves (MCP, browser sessions, signed webhooks), so
+/// they skip `establish_principal` and fall into the IP bucket.
+///
+/// # Errors
+///
+/// Returns an error when the item-write quota is invalid for the configured options.
+pub fn protect_routes(
+    items: Router,
+    late: impl IntoIterator<Item = Router>,
+    auth: AuthState,
+    limits: Option<&RateLimits>,
+) -> Result<Router, Box<dyn Error>> {
+    let items = match limits {
+        Some(limits) => baukit_ratelimit::authenticated_route_group(
+            items,
+            limits.store.clone(),
+            item_write_options(&limits.options)?,
+            item_write_subject,
+            is_item_write,
+        ),
+        None => items,
+    };
+    // Axum runs the last added layer first: IP pre-limit, then auth, then the identity limiter.
+    let identity = limits.map(|limits| only_scope(limits, Scope::Identity));
+    let ip = limits.map(|limits| only_scope(limits, Scope::Ip));
+    let items = rate_limited(items, identity.as_ref()).layer(middleware::from_fn_with_state(
+        auth,
+        baukit_auth::establish_principal,
+    ));
+    let items = rate_limited(items, ip.as_ref());
+    Ok(late.into_iter().fold(items, |router, late| {
+        router.merge(rate_limited(late, limits))
+    }))
+}
+
+#[derive(Clone, Copy)]
+enum Scope {
+    Identity,
+    Ip,
+}
+
+fn only_scope(limits: &RateLimits, scope: Scope) -> RateLimits {
+    let mut options = limits.options.clone();
+    match scope {
+        Scope::Identity => options.ip.enabled = false,
+        Scope::Ip => options.identity.enabled = false,
+    }
+    RateLimits {
+        store: limits.store.clone(),
+        options,
+    }
+}
+
+fn item_write_options(
+    options: &RateLimitOptions,
+) -> Result<AuthenticatedRouteGroupOptions, Box<dyn Error>> {
+    let quota = Quota::new(ITEM_WRITE_REQUESTS_PER_MINUTE, ITEM_WRITE_PERIOD, 0)?;
+    Ok(AuthenticatedRouteGroupOptions::new(
+        ITEM_WRITE_GROUP,
+        quota,
+        options,
+    )?)
+}
+
+fn item_write_subject(principal: &Principal) -> String {
+    principal.subject().to_owned()
+}
+
+fn is_item_write(request: &Request) -> bool {
+    matches!(
+        *request.method(),
+        Method::POST | Method::PUT | Method::PATCH | Method::DELETE
+    )
+}
+===== src/identity.rs =====
+use crate::{AuthConfig, AuthProvider};
+use baukit_auth::{ClerkVerifier, IdentityVerifier, OidcConfig, OidcVerifier, WorkOsVerifier};
+use std::{error::Error, sync::Arc, time::Duration};
+
+pub async fn auth_verifier(
+    config: &AuthConfig,
+    startup_budget: Duration,
+) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
+    match config.provider {
+        AuthProvider::Oidc => {
+            let mut oidc = OidcConfig::new(&config.issuer, &config.audience)?
+                .with_clock_skew(Duration::ZERO)
+                .with_startup_budget(startup_budget)?;
+            if !config.authorized_parties.is_empty() {
+                oidc = oidc.with_allowed_clients(config.authorized_parties.clone())?;
+            }
+            if let Some(uri) = &config.jwks_uri {
+                oidc = oidc.with_jwks_uri(uri)?;
+            }
+            Ok(Arc::new(OidcVerifier::discover(oidc).await?))
+        }
+        AuthProvider::Clerk => {
+            let verifier = match &config.jwks_uri {
+                Some(uri) => ClerkVerifier::from_jwks_uri(
+                    &config.issuer,
+                    config.authorized_parties.clone(),
+                    uri,
+                )?,
+                None => ClerkVerifier::new(&config.issuer, config.authorized_parties.clone())?,
+            };
+            if config.allow_missing_azp {
+                return Ok(Arc::new(verifier.allow_missing_authorized_party()));
+            }
+            Ok(Arc::new(verifier))
+        }
+        AuthProvider::Workos => {
+            let verifier = match &config.jwks_uri {
+                Some(uri) => WorkOsVerifier::from_jwks_uri(&config.issuer, &config.client_id, uri)?,
+                None => WorkOsVerifier::with_issuer(&config.issuer, &config.client_id)?,
+            };
+            Ok(Arc::new(verifier))
+        }
+    }
+}
+===== src/browser_session.rs =====
+use std::{error::Error, sync::Arc, time::Duration};
+
+use axum::Router;
+use baukit_auth::browser_session::{
+    self, AUTH_SESSION_ID_LIMIT, AUTH_SESSION_IP_LIMIT, BrowserSessionConfig,
+    BrowserSessionRateLimit, BrowserSessionRateLimiter, BrowserSessionRateLimits,
+    BrowserSessionState,
+};
+use baukit_config::{Environment, Secret, Validate, ValidationError, ValidationErrors};
+use baukit_credential_vault::CredentialCipher;
+use baukit_http::HttpOptions;
+use baukit_ratelimit::{
+    InMemoryRateLimitStore, RateLimitOptions, RedisRateLimitStore, StoreBrowserSessionRateLimiter,
+};
+use serde::Deserialize;
+use sqlx::PgPool;
+
+const PRODUCT: &str = "snapshot-app";
+const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
+const DEFAULT_IDLE_TIMEOUT_DAYS: u64 = 30;
+const DEFAULT_ABSOLUTE_TIMEOUT_DAYS: u64 = 90;
+const LOCAL_WEB_PORTS: &[u16] = &[5173];
+const LOCAL_CREDENTIAL_KEYS: &str = "1:bG9jYWwtYnJvd3Nlci1zZXNzaW9uLWtleS1ub3Qtb2s=";
+
+/// Backend-for-frontend that keeps web refresh tokens server side (ADR 0006).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default)]
+pub struct BrowserSessionSettings {
+    pub enabled: bool,
+    pub client_id: String,
+    pub client_secret: Option<Secret<String>>,
+    /// Realm URL the backend calls when the public issuer is only reachable from browsers.
+    pub internal_issuer: Option<String>,
+    pub redirect_uris: Vec<String>,
+    pub post_logout_redirect_uri: Option<String>,
+    pub cookie_name: String,
+    pub public_api_origin: String,
+    pub idle_timeout_seconds: u64,
+    pub absolute_timeout_seconds: u64,
+    pub insecure_local_cookie: bool,
+    /// `version:base64key,...` keyring that encrypts stored refresh tokens.
+    pub credential_keys: Option<Secret<String>>,
+    /// Per client IP bucket. Defaults to the ADR 0006 limit; raise it only in test stacks.
+    pub ip_rate_per_minute: u64,
+    pub ip_rate_burst: u64,
+    /// Per session id bucket. Defaults to the ADR 0006 limit; raise it only in test stacks.
+    pub session_rate_per_minute: u64,
+    pub session_rate_burst: u64,
+}
+
+impl Default for BrowserSessionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            client_id: format!("{PRODUCT}-web"),
+            client_secret: None,
+            internal_issuer: None,
+            redirect_uris: LOCAL_WEB_PORTS
+                .iter()
+                .map(|port| format!("http://localhost:{port}/"))
+                .collect(),
+            post_logout_redirect_uri: Some("http://localhost:5173/".to_owned()),
+            cookie_name: format!("{PRODUCT}-session"),
+            public_api_origin: "http://localhost:8080".to_owned(),
+            idle_timeout_seconds: DEFAULT_IDLE_TIMEOUT_DAYS * SECONDS_PER_DAY,
+            absolute_timeout_seconds: DEFAULT_ABSOLUTE_TIMEOUT_DAYS * SECONDS_PER_DAY,
+            insecure_local_cookie: false,
+            credential_keys: None,
+            ip_rate_per_minute: AUTH_SESSION_IP_LIMIT.requests_per_minute,
+            ip_rate_burst: AUTH_SESSION_IP_LIMIT.burst,
+            session_rate_per_minute: AUTH_SESSION_ID_LIMIT.requests_per_minute,
+            session_rate_burst: AUTH_SESSION_ID_LIMIT.burst,
+        }
+    }
+}
+
+impl BrowserSessionSettings {
+    fn rate_limits(&self) -> BrowserSessionRateLimits {
+        let defaults = BrowserSessionRateLimits::default();
+        BrowserSessionRateLimits {
+            client_ip: BrowserSessionRateLimit {
+                requests_per_minute: self.ip_rate_per_minute,
+                burst: self.ip_rate_burst,
+                ..defaults.client_ip
+            },
+            session_id: BrowserSessionRateLimit {
+                requests_per_minute: self.session_rate_per_minute,
+                burst: self.session_rate_burst,
+                ..defaults.session_id
+            },
+        }
+    }
+}
+
+impl Validate for BrowserSessionSettings {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        if !self.enabled {
+            return Ok(());
+        }
+        let mut errors = Vec::new();
+        if self.redirect_uris.is_empty() {
+            errors.push(ValidationError::new(
+                "auth.browser_session.redirect_uris",
+                "must name the web callback URL",
+            ));
+        }
+        if self.idle_timeout_seconds == 0 {
+            errors.push(ValidationError::new(
+                "auth.browser_session.idle_timeout_seconds",
+                "must be greater than zero",
+            ));
+        }
+        if self.absolute_timeout_seconds < self.idle_timeout_seconds {
+            errors.push(ValidationError::new(
+                "auth.browser_session.absolute_timeout_seconds",
+                "must not be shorter than the idle timeout",
+            ));
+        }
+        for (field, value) in [
+            ("ip_rate_per_minute", self.ip_rate_per_minute),
+            ("session_rate_per_minute", self.session_rate_per_minute),
+        ] {
+            if value == 0 {
+                errors.push(ValidationError::new(
+                    format!("auth.browser_session.{field}"),
+                    "must be greater than zero",
+                ));
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationErrors::new(errors))
+        }
+    }
+}
+
+/// Inputs for [`browser_session_router`] that come from the rest of the API composition.
+pub struct BrowserSessionDependencies<'a> {
+    pub issuer: &'a str,
+    pub http: &'a HttpOptions,
+    pub pool: PgPool,
+    pub rate_limit: &'a RateLimitOptions,
+    pub rate_limit_store: Option<RedisRateLimitStore>,
+    pub environment: Environment,
+    pub startup_budget: Duration,
+}
+
+/// Builds `/auth/session/*`, or `None` when the product does not enable it.
+pub async fn browser_session_router(
+    settings: &BrowserSessionSettings,
+    dependencies: BrowserSessionDependencies<'_>,
+) -> Result<Option<Router>, Box<dyn Error>> {
+    if !settings.enabled {
+        return Ok(None);
+    }
+    let local = dependencies.environment == Environment::Local;
+    let keys = match &settings.credential_keys {
+        Some(keys) => keys.expose().clone(),
+        None if local => LOCAL_CREDENTIAL_KEYS.to_owned(),
+        None => {
+            return Err(
+                "auth.browser_session.credential_keys must be configured outside local development"
+                    .into(),
+            );
+        }
+    };
+    let mut config = BrowserSessionConfig::new(
+        dependencies.issuer,
+        settings.client_id.clone(),
+        settings.cookie_name.clone(),
+        &settings.public_api_origin,
+        CredentialCipher::parse(&keys)?,
+    )?
+    .with_redirect_uris(settings.redirect_uris.iter().cloned())
+    .with_idle_timeout(Duration::from_secs(settings.idle_timeout_seconds))?
+    .with_absolute_timeout(Duration::from_secs(settings.absolute_timeout_seconds))?
+    .with_insecure_local_cookie(settings.insecure_local_cookie)
+    .with_rate_limits(settings.rate_limits())?
+    .with_startup_budget(dependencies.startup_budget)?;
+    if let Some(internal_issuer) = &settings.internal_issuer {
+        config = config.with_internal_issuer(internal_issuer)?;
+    }
+    if let Some(secret) = &settings.client_secret {
+        config = config.with_client_secret(secret.expose().clone());
+    }
+    if let Some(uri) = &settings.post_logout_redirect_uri {
+        config = config.with_post_logout_redirect_uri(uri.clone());
+    }
+    let limiter = rate_limiter(
+        dependencies.rate_limit_store,
+        dependencies.rate_limit,
+        local,
+    )?;
+    let state =
+        BrowserSessionState::discover(config, dependencies.http, dependencies.pool, limiter)
+            .await?;
+    Ok(Some(browser_session::router(state)))
+}
+
+fn rate_limiter(
+    store: Option<RedisRateLimitStore>,
+    options: &RateLimitOptions,
+    local: bool,
+) -> Result<Arc<dyn BrowserSessionRateLimiter>, Box<dyn Error>> {
+    match store {
+        Some(store) => Ok(Arc::new(StoreBrowserSessionRateLimiter::new(
+            store,
+            options.clone(),
+        ))),
+        None if local => Ok(Arc::new(StoreBrowserSessionRateLimiter::new(
+            InMemoryRateLimitStore::default(),
+            options.clone(),
+        ))),
+        None => Err(
+            "browser sessions require the shared rate-limit store outside local development".into(),
+        ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn enabled() -> BrowserSessionSettings {
+        BrowserSessionSettings {
+            enabled: true,
+            ..BrowserSessionSettings::default()
+        }
+    }
+
+    #[test]
+    fn rate_limits_default_to_the_adr_values() {
+        assert_eq!(enabled().rate_limits(), BrowserSessionRateLimits::default());
+    }
+
+    #[test]
+    fn rate_limit_overrides_replace_both_buckets() {
+        let limits = BrowserSessionSettings {
+            ip_rate_per_minute: 6_000,
+            ip_rate_burst: 500,
+            session_rate_per_minute: 1_200,
+            session_rate_burst: 100,
+            ..enabled()
+        }
+        .rate_limits();
+        assert_eq!(limits.client_ip.requests_per_minute, 6_000);
+        assert_eq!(limits.client_ip.burst, 500);
+        assert_eq!(limits.session_id.requests_per_minute, 1_200);
+        assert_eq!(limits.session_id.burst, 100);
+    }
+
+    #[test]
+    fn zero_rate_per_minute_fails_validation() {
+        for settings in [
+            BrowserSessionSettings {
+                ip_rate_per_minute: 0,
+                ..enabled()
+            },
+            BrowserSessionSettings {
+                session_rate_per_minute: 0,
+                ..enabled()
+            },
+        ] {
+            assert!(settings.validate().is_err());
+        }
+    }
+}
+===== src/lib.rs =====
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, RwLock},
+};
+
+use axum::Router;
+use baukit_config::{Validate, ValidationError, ValidationErrors};
+use baukit_jobs::WorkerRunner;
+use baukit_ops::{
+    OpsRouter, PrometheusHandle, ReadinessError, ReadinessRegistry, RegistrationError,
+    ServiceIdentity, TrafficGate,
+};
+
+use snapshot_app_domain::InternalUser;
+use snapshot_app_domain::Item;
+use snapshot_app_ports::ItemRepository;
+use snapshot_app_ports::PortFuture;
+use snapshot_app_ports::RepositoryError;
+use snapshot_app_ports::UserRepository;
+
+use snapshot_app_services::ItemService;
+
+use serde::Deserialize;
+use uuid::Uuid;
+
+mod compose;
+mod config;
+pub mod platform;
+mod probe;
+mod rate_limits;
+pub use compose::{ApiDependencies, ComposedApi, compose_api};
+pub use config::config_loader;
+pub use probe::{PROBE_READINESS_FLAG, probe_readiness};
+pub use rate_limits::{RateLimits, protect_routes, rate_limited};
+
+mod browser_session;
+mod identity;
+pub use browser_session::{
+    BrowserSessionDependencies, BrowserSessionSettings, browser_session_router,
+};
+pub use identity::auth_verifier;
+
+const PRODUCT: &str = "snapshot-app";
+
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct ProductConfig {
+    pub auth: AuthConfig,
+    pub worker: WorkerProductConfig,
+    pub platform: baukit_suite::platform::PlatformConfig,
+    pub platform_hub: snapshot_app_api::PlatformHubConfig,
+}
+
+impl Validate for ProductConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = Vec::new();
+        if let Err(auth) = self.auth.validate() {
+            errors.extend(auth.into_errors());
+        }
+        if let Err(worker) = self.worker.validate() {
+            errors.extend(worker.into_errors());
+        }
+        if let Err(platform) = self.platform.validate() {
+            errors.extend(platform.into_errors());
+        }
+        if let Err(hub) = self.platform_hub.validate_for(&self.platform) {
+            errors.extend(hub.into_errors());
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationErrors::new(errors))
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthProvider {
+    Oidc,
+    Clerk,
+    Workos,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default)]
+pub struct AuthConfig {
+    pub provider: AuthProvider,
+    pub client_id: String,
+    pub publishable_key: String,
+    pub authorized_parties: Vec<String>,
+    /// Clerk only: accept tokens without `azp`, which native apps send. A present `azp` must still be allowed.
+    pub allow_missing_azp: bool,
+    pub jwks_uri: Option<String>,
+    pub issuer: String,
+    pub audience: String,
+    pub identity_admin_base_url: String,
+    pub identity_admin_realm: String,
+    pub identity_admin_client_secret: Option<baukit_config::Secret<String>>,
+    pub erasure_hash_key: Option<baukit_config::Secret<String>>,
+    pub browser_session: BrowserSessionSettings,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        Self {
+            provider: AuthProvider::Oidc,
+            client_id: String::new(),
+            publishable_key: String::new(),
+            authorized_parties: Vec::new(),
+            allow_missing_azp: false,
+            jwks_uri: None,
+            issuer: format!("http://localhost:8081/realms/{PRODUCT}"),
+            audience: format!("{PRODUCT}-backend"),
+            identity_admin_base_url: "http://localhost:8081".to_owned(),
+            identity_admin_realm: PRODUCT.to_owned(),
+            identity_admin_client_secret: None,
+            erasure_hash_key: None,
+            browser_session: BrowserSessionSettings::default(),
+        }
+    }
+}
+
+impl Validate for AuthConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = Vec::new();
+        if self.issuer.trim().is_empty() {
+            errors.push(ValidationError::new("auth.issuer", "must not be empty"));
+        }
+        if self.provider == AuthProvider::Oidc && self.audience.trim().is_empty() {
+            errors.push(ValidationError::new("auth.audience", "must not be empty"));
+        }
+        if self.provider == AuthProvider::Workos && self.client_id.trim().is_empty() {
+            errors.push(ValidationError::new(
+                "auth.client_id",
+                "WorkOS requires its application client ID",
+            ));
+        }
+        if let Err(browser_session) = self.browser_session.validate() {
+            errors.extend(browser_session.into_errors());
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationErrors::new(errors))
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(default)]
+pub struct WorkerProductConfig {
+    pub concurrency: usize,
+    /// Bearer token for `POST /admin/jobs/requeue` on the operations listener.
+    /// The route stays off while this is unset.
+    pub admin_token: Option<baukit_config::Secret<String>>,
+    pub job_timeout_seconds: u64,
+    pub poll_interval_milliseconds: u64,
+}
+
+impl Default for WorkerProductConfig {
+    fn default() -> Self {
+        Self {
+            concurrency: 5,
+            admin_token: None,
+            job_timeout_seconds: 10 * 60,
+            poll_interval_milliseconds: 250,
+        }
+    }
+}
+
+impl Validate for WorkerProductConfig {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = Vec::new();
+        if !(1..=64).contains(&self.concurrency) {
+            errors.push(ValidationError::new(
+                "worker.concurrency",
+                "must be between 1 and 64",
+            ));
+        }
+        for (field, value) in [
+            ("worker.job_timeout_seconds", self.job_timeout_seconds),
+            (
+                "worker.poll_interval_milliseconds",
+                self.poll_interval_milliseconds,
+            ),
+        ] {
+            if value == 0 {
+                errors.push(ValidationError::new(field, "must be greater than zero"));
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationErrors::new(errors))
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct InMemoryItemRepository {
+    items: Arc<RwLock<BTreeMap<Uuid, Item>>>,
+}
+
+impl InMemoryItemRepository {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl InMemoryItemRepository {
+    fn read(&self) -> std::sync::RwLockReadGuard<'_, BTreeMap<Uuid, Item>> {
+        self.items
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn write(&self) -> std::sync::RwLockWriteGuard<'_, BTreeMap<Uuid, Item>> {
+        self.items
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+}
+
+impl ItemRepository for InMemoryItemRepository {
+    fn list<'a>(&'a self, owner_id: &'a str) -> PortFuture<'a, Result<Vec<Item>, RepositoryError>> {
+        Box::pin(async move {
+            Ok(self
+                .read()
+                .values()
+                .filter(|item| item.owner_id == owner_id)
+                .cloned()
+                .collect())
+        })
+    }
+
+    fn get<'a>(
+        &'a self,
+        owner_id: &'a str,
+        id: Uuid,
+    ) -> PortFuture<'a, Result<Option<Item>, RepositoryError>> {
+        Box::pin(async move {
+            Ok(self
+                .read()
+                .get(&id)
+                .filter(|item| item.owner_id == owner_id)
+                .cloned())
+        })
+    }
+
+    fn create(&self, item: Item) -> PortFuture<'_, Result<Item, RepositoryError>> {
+        Box::pin(async move {
+            let mut items = self.write();
+            if items.contains_key(&item.id) {
+                return Err(RepositoryError::Conflict);
+            }
+            items.insert(item.id, item.clone());
+            Ok(item)
+        })
+    }
+
+    fn update(&self, item: Item) -> PortFuture<'_, Result<Option<Item>, RepositoryError>> {
+        Box::pin(async move {
+            let mut items = self.write();
+            match items.get_mut(&item.id) {
+                Some(stored) if stored.owner_id == item.owner_id => {
+                    stored.clone_from(&item);
+                    Ok(Some(item))
+                }
+                _ => Ok(None),
+            }
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        owner_id: &'a str,
+        id: Uuid,
+    ) -> PortFuture<'a, Result<bool, RepositoryError>> {
+        Box::pin(async move {
+            let mut items = self.write();
+            if items.get(&id).is_some_and(|item| item.owner_id == owner_id) {
+                items.remove(&id);
+                return Ok(true);
+            }
+            Ok(false)
+        })
+    }
+
+    fn ready(&self) -> PortFuture<'_, Result<(), RepositoryError>> {
+        Box::pin(async { Ok(()) })
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct InMemoryUserRepository {
+    users: Arc<RwLock<BTreeMap<String, Uuid>>>,
+}
+
+impl InMemoryUserRepository {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl UserRepository for InMemoryUserRepository {
+    fn resolve_subject(
+        &self,
+        subject: String,
+        _authenticated_at: Option<jiff::Timestamp>,
+    ) -> PortFuture<'_, Result<InternalUser, RepositoryError>> {
+        Box::pin(async move {
+            let mut users = self
+                .users
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let id = *users.entry(subject.clone()).or_insert_with(Uuid::now_v7);
+            Ok(InternalUser { id, subject })
+        })
+    }
+}
+
+pub fn operations_router(
+    service: ItemService,
+    identity: ServiceIdentity,
+    metrics: PrometheusHandle,
+    traffic_gate: TrafficGate,
+) -> Result<(Router, ReadinessRegistry), RegistrationError> {
+    let readiness = ReadinessRegistry::new();
+    readiness.register_fn_default("item_repository", move || {
+        let service = service.clone();
+        async move {
+            service
+                .ready()
+                .await
+                .map_err(|_| ReadinessError::new("item repository is unavailable"))
+        }
+    })?;
+    let router = OpsRouter::new(identity, metrics)
+        .with_readiness(readiness.clone())
+        .with_traffic_gate(traffic_gate)
+        .into_router();
+    Ok((router, readiness))
+}
+
+pub fn worker_operations_router(
+    runner: WorkerRunner,
+    identity: ServiceIdentity,
+    metrics: PrometheusHandle,
+    traffic_gate: TrafficGate,
+) -> Result<(Router, ReadinessRegistry), RegistrationError> {
+    let readiness = ReadinessRegistry::new();
+    let store_health = runner.store_health();
+    readiness.register_fn_default("job_store", move || {
+        let runner = runner.clone();
+        let store_health = store_health.clone();
+        async move {
+            if !store_health.is_healthy() {
+                return Err(ReadinessError::new("job store calls are failing"));
+            }
+            runner
+                .ready()
+                .await
+                .map_err(|_| ReadinessError::new("job store cannot probe the durable outbox"))
+        }
+    })?;
+    let router = OpsRouter::new(identity, metrics)
+        .with_readiness(readiness.clone())
+        .with_traffic_gate(traffic_gate)
+        .into_router();
+    Ok((router, readiness))
+}
+
+/// Merges the failed-job requeue route into `operations` only when an admin token is configured.
+pub fn mount_requeue_route(
+    operations: Router,
+    requeue: std::sync::Arc<dyn baukit_ops::jobs_admin::FailedJobRequeue>,
+    job_types: &'static [&'static str],
+    admin_token: Option<&baukit_config::Secret<String>>,
+) -> Router {
+    baukit_ops::jobs_admin::mount_requeue_route(operations, requeue, job_types, admin_token)
+}
+
+/// Fails readiness while the identity provider rejects the deleter's base URL or credentials.
+/// Local stacks skip it because they run with placeholder provider secrets.
+pub fn register_identity_provider_readiness(
+    readiness: &ReadinessRegistry,
+    service: baukit_erasure::ErasureService,
+) -> Result<(), RegistrationError> {
+    readiness.register_fn_default("identity_provider", move || {
+        let service = service.clone();
+        async move {
+            service
+                .probe_identity_provider()
+                .await
+                .map_err(|_| ReadinessError::new("identity provider deletion is unavailable"))
+        }
+    })
+}
+
+pub fn identity_erasure(
+    pool: sqlx::PgPool,
+    auth: &AuthConfig,
+    environment: baukit_config::Environment,
+) -> Result<
+    (
+        baukit_erasure::ErasureService,
+        baukit_erasure::IdentityDeletionHandler,
+    ),
+    Box<dyn std::error::Error>,
+> {
+    let local = environment == baukit_config::Environment::Local;
+    let secret = |value: &Option<baukit_config::Secret<String>>, default: &str| {
+        value
+            .clone()
+            .or_else(|| local.then(|| baukit_config::Secret::new(default.to_owned())))
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "identity erasure secrets must be configured outside local development",
+                )
+            })
+    };
+    let api_config = || -> Result<baukit_erasure::ApiDeletionConfig, std::io::Error> {
+        Ok(baukit_erasure::ApiDeletionConfig {
+            base_url: auth.identity_admin_base_url.clone(),
+            api_key: auth.identity_admin_client_secret.clone().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "provider API key is required for identity erasure",
+                )
+            })?,
+            allow_local_http: local,
+        })
+    };
+    let (provider, deleter): (&str, Arc<dyn baukit_erasure::IdentityAccountDeleter>) =
+        match auth.provider {
+            AuthProvider::Oidc => (
+                "keycloak",
+                Arc::new(baukit_erasure::KeycloakAccountDeleter::new(
+                    baukit_erasure::KeycloakDeletionConfig {
+                        base_url: auth.identity_admin_base_url.clone(),
+                        realm: auth.identity_admin_realm.clone(),
+                        client_id: auth.audience.clone(),
+                        client_secret: secret(
+                            &auth.identity_admin_client_secret,
+                            "local-backend-secret",
+                        )?,
+                        allow_local_http: local,
+                    },
+                )?),
+            ),
+            AuthProvider::Clerk => (
+                "clerk",
+                Arc::new(baukit_erasure::ClerkAccountDeleter::new(api_config()?)?),
+            ),
+            AuthProvider::Workos => (
+                "workos",
+                Arc::new(baukit_erasure::WorkOsAccountDeleter::new(api_config()?)?),
+            ),
+        };
+    let store = baukit_erasure::PostgresErasureStore::new(
+        pool,
+        secret(
+            &auth.erasure_hash_key,
+            "local-erasure-hash-key-not-for-production",
+        )?,
+    )?;
+    let handler = baukit_erasure::IdentityDeletionHandler::new(
+        store.clone(),
+        provider.into(),
+        deleter.clone(),
+    );
+    let service = baukit_erasure::ErasureService::new(
+        store,
+        baukit_erasure::IdentityRetention::Delete {
+            deleter,
+            provider_id: provider.into(),
+            inline_timeout: std::time::Duration::from_secs(3),
+            max_attempts: 12,
+        },
+    )?;
+    Ok((service, handler))
+}

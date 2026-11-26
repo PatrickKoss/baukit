@@ -220,13 +220,13 @@ still ends in `failed` (D7). Deferrals are counted in `worker_job_deferrals_tota
 
 | Data | Fresh | Served stale | Failure cooldown | Constants |
 |---|---|---|---|---|
-| OIDC JWKS | 300 s | 1 h for known key ids | 10 s; an unknown key id forces at most one refresh per cooldown | `baukit-auth/src/config.rs` `DEFAULT_JWKS_FRESH_FOR`, `DEFAULT_JWKS_STALE_FOR`; `baukit-auth/src/verifier/keys.rs` `FAILURE_COOLDOWN` |
+| OIDC JWKS | 300 s | 1 h for known key ids | 30 s across all key ids; an unknown key id forces at most one refresh per cooldown | `baukit-auth/src/config.rs` `DEFAULT_JWKS_FRESH_FOR`, `DEFAULT_JWKS_STALE_GRACE`, `DEFAULT_JWKS_REFRESH_COOLDOWN` |
 | Suite ticket keys | 300 s | 1 h | 5 s | `baukit-suite/src/platform/tickets.rs` `JWKS_TTL`, `JWKS_STALE_FOR`, `REFRESH_COOLDOWN` |
 | Hub tokens | until 30 s before expiry | no | 5 s | `baukit-suite/src/platform/hub.rs` `TOKEN_REFRESH_MARGIN`, `TOKEN_FAILURE_COOLDOWN` |
 | Entitlements | until `valid_until` | until `grace_until` from the snapshot, marked `stale: true` | 10 s | `baukit-suite/src/platform/cache.rs` `ENTITLEMENT_FAILURE_COOLDOWN` |
 
-A stale key set never verifies a key id it does not contain. One background refresh runs at a time, and
-no request waits on it. `auth_key_cache_requests_total{source,result}` shows `fresh`, `stale`, `fetched`
+A stale key set never verifies a key id it does not contain. One refresh runs at a time, and no request
+with a known key id waits on it. `auth_key_cache_requests_total{source,result}` shows `fresh`, `stale`, `fetched`
 and `failed` lookups for `oidc` and `ticket`.
 
 ## Startup

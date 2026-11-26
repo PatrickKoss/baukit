@@ -290,14 +290,14 @@ async fn a_postgres_pause_mid_job_neither_loses_nor_doubles_the_job() -> Result<
     let task = tokio::spawn(runner.run(shutdown.clone()));
 
     tokio::time::timeout(Duration::from_secs(10), handler.started.notified()).await?;
-    fixture.fault().pause().await?;
+    fixture.fault()?.pause().await?;
     let unready = tokio::time::timeout(Duration::from_secs(20), async {
         while health.is_healthy() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
     .await;
-    fixture.fault().resume().await?;
+    fixture.fault()?.resume().await?;
     assert!(
         unready.is_ok(),
         "a paused store must mark the worker unhealthy"
@@ -354,14 +354,14 @@ async fn a_paused_postgres_marks_the_worker_unready_and_the_job_still_finishes()
     let shutdown = ShutdownToken::new(Duration::from_secs(5));
     let task = tokio::spawn(runner.run(shutdown.clone()));
 
-    fixture.fault().pause().await?;
+    fixture.fault()?.pause().await?;
     let unready = tokio::time::timeout(Duration::from_secs(20), async {
         while health.is_healthy() {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
     .await;
-    fixture.fault().resume().await?;
+    fixture.fault()?.resume().await?;
     assert!(
         unready.is_ok(),
         "a paused store must mark the worker unhealthy"

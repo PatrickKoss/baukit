@@ -252,6 +252,49 @@ def check_charts(rust_version: str) -> int:
     return chart_count
 
 
+LOCKFILE_SKIPPED_PARTS = {"target", "node_modules", ".local-state", "templates"}
+
+
+def train_crate_names(root: Path) -> set[str]:
+    manifests = [*root.glob("rust/crates/*/Cargo.toml"), root / "cli/Cargo.toml"]
+    names = set()
+    for manifest in manifests:
+        if manifest.exists():
+            with manifest.open("rb") as handle:
+                names.add(tomllib.load(handle)["package"]["name"])
+    return names
+
+
+def lockfile_problems(root: Path, rust_version: str) -> tuple[int, list[str]]:
+    """Return the lockfile count and every train crate a Cargo.lock pins off the train."""
+    train_crates = train_crate_names(root)
+    problems = []
+    lockfiles = [
+        path
+        for path in sorted(root.glob("**/Cargo.lock"))
+        if not LOCKFILE_SKIPPED_PARTS.intersection(path.relative_to(root).parts)
+    ]
+    for path in lockfiles:
+        with path.open("rb") as handle:
+            packages = tomllib.load(handle).get("package", [])
+        for package in packages:
+            name = package.get("name", "")
+            if name not in train_crates or "source" in package:
+                continue
+            if package.get("version") != rust_version:
+                problems.append(
+                    f"Rust is {rust_version}, but {path.relative_to(root)} pins "
+                    f"{name} {package.get('version')}"
+                )
+    return len(lockfiles), problems
+
+
+def check_lockfiles(rust_version: str) -> None:
+    _, problems = lockfile_problems(ROOT, rust_version)
+    if problems:
+        fail("; ".join(problems))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -265,6 +308,7 @@ def main() -> None:
     package_count = check_typescript_packages(rust_version)
     check_templates(rust_version)
     chart_count = check_charts(rust_version)
+    check_lockfiles(rust_version)
 
     if args.tag:
         expected_tag = f"v{rust_version}"

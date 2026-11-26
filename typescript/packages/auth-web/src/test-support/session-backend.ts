@@ -25,7 +25,7 @@ export const CONFIG: BrowserSessionClientConfig = {
 };
 
 export interface Backend {
-  readonly fetch: typeof globalThis.fetch;
+  fetch: typeof globalThis.fetch;
   readonly calls: { readonly url: string; readonly init: RequestInit | undefined }[];
   refresh: () => Response | Promise<Response>;
   logout: () => Response;

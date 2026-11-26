@@ -30,7 +30,11 @@ async fn service_contract() -> TestResult {
     );
     let state = AppState::new(10);
     let traffic_gate = TrafficGate::new();
-    let api = api_router(state.clone(), &HttpConfig::default())?;
+    let api = api_router(
+        state.clone(),
+        &HttpConfig::default(),
+        baukit_config::Environment::Local,
+    )?;
     let operations = ops_router(
         state,
         service.telemetry_identity().clone(),

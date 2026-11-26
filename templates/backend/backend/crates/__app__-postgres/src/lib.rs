@@ -1,7 +1,9 @@
 {% if context.platform %}mod platform;
 pub use platform::*;
 
-{% endif %}{% if context.worker %}use baukit_jobs::{NewJob, PostgresJobStore};
+{% endif %}mod fenced;
+
+{% if context.worker %}use baukit_jobs::{NewJob, PostgresJobStore};
 
 {% endif %}use sqlx::{PgPool, Postgres, pool::PoolConnection};
 use uuid::Uuid;
@@ -100,9 +102,7 @@ impl ItemRepository for PostgresItemRepository {
 
     fn create(&self, item: Item) -> PortFuture<'_, Result<Item, RepositoryError>> {
         Box::pin(async move {
-{% if context.worker %}            let mut transaction = baukit_ops::begin(&self.pool)
-                .await
-                .map_err(RepositoryError::unavailable)?;
+{% if context.worker %}            let mut transaction = fenced::begin_write(&self.pool).await?;
             let created = sqlx::query_as::<_, ItemRow>(
                 "INSERT INTO items (id, owner_id, name) VALUES ($1, $2, $3) \
                  RETURNING id, owner_id, name",
@@ -137,15 +137,15 @@ impl ItemRepository for PostgresItemRepository {
                 .await
                 .map_err(RepositoryError::unavailable)?;
             Ok(created)
-{% else %}            let mut connection = self.connection().await?;
-            sqlx::query_as::<_, ItemRow>(
+{% else %}            let mut transaction = fenced::begin_write(&self.pool).await?;
+            let created = sqlx::query_as::<_, ItemRow>(
                 "INSERT INTO items (id, owner_id, name) VALUES ($1, $2, $3) \
                  RETURNING id, owner_id, name",
             )
             .bind(item.id)
             .bind(item.owner_id)
             .bind(item.name)
-            .fetch_one(&mut *connection)
+            .fetch_one(&mut *transaction)
             .await
             .map(item_from_row)
             .map_err(|error| {
@@ -154,7 +154,12 @@ impl ItemRepository for PostgresItemRepository {
                 } else {
                     RepositoryError::unavailable(error)
                 }
-            })
+            })?;
+            transaction
+                .commit()
+                .await
+                .map_err(RepositoryError::unavailable)?;
+            Ok(created)
 {% endif %}        })
     }
 

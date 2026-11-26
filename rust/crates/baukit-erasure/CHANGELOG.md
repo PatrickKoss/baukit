@@ -6,6 +6,20 @@
 - The inline erasure path no longer holds `SELECT ... FOR UPDATE` across the identity provider call. It reserves the job through `run_after` (the inline timeout plus 5 s), calls the provider, then re-checks the job under a lock.
 - The Keycloak admin client uses the destination name `keycloak-admin`.
 
+## [0.31.0] - 2026-11-26
+
+### Changed
+
+- A `404` counts as deleted only when the provider body names a missing user (Clerk `resource_not_found`, WorkOS `entity_not_found`, Keycloak `User not found`). A bare `404` is now a permanent error.
+- Keycloak accepts `http` only for loopback hosts with `allow_local_http`.
+- Subjects that are empty, `.`, `..`, longer than 256 bytes or hold control characters are rejected before any request.
+
+### Added
+
+- `PostgresErasureStore::with_retired_keys` and `rehash_subjects` rotate `erasure_hash_key` without losing fences, receipts or idempotency keys. No schema change.
+- `IdentityDeletion::probe` and `ErasureService::probe_identity_provider` for a startup readiness check.
+- `PostgresErasureStore::begin_guarded_write`, `WriteFence`, `with_write_fence` and `begin_fenced_write` for product writes that an erasure cannot race.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

@@ -10,7 +10,7 @@ use std::{
 };
 
 use baukit_jobs::{
-    ClaimedJob, JobCancellation, JobError, JobFuture, JobHandler, JobStore as _, NewJob,
+    ClaimedJob, JobCancellation, JobError, JobFuture, JobHandler, JobLease, JobStore as _, NewJob,
     PostgresJobStore, StoreError, WorkerConfig, WorkerRunner,
 };
 use baukit_runtime::ShutdownToken;
@@ -140,7 +140,7 @@ async fn recover_abandoned_claim(
     assert_eq!(recovered.attempts, 2);
     assert!(
         store
-            .complete(job_id, "recovery-worker", recovery_time)
+            .complete(&JobLease::of(&recovered, "recovery-worker"), recovery_time)
             .await?
     );
     Ok(())

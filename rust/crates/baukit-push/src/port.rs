@@ -106,7 +106,7 @@ impl PushRejection {
     /// token, an oversized payload, and a rejected credential all fail the same
     /// way again.
     #[must_use]
-    pub const fn is_retryable(&self) -> bool {
+    pub fn is_retryable(&self) -> bool {
         matches!(self, Self::MessageRateExceeded | Self::ProviderError)
     }
 }

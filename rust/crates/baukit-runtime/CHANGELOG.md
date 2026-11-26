@@ -7,6 +7,12 @@ All notable changes to `baukit-runtime` are documented here.
 - Listeners now serve through hyper-util with a timer. New `ServerOptions` bounds every connection: a 10 s header read timeout, a 60 s idle timeout and at most 4096 open connections. Use `serve` for a single listener or `serve_listener_pair_with_options` with `ServeOptions` for the API and ops pair. `serve_listener_pair` and `serve_listener_pair_with_shutdown_order` keep their signatures.
 - New `DrainBudget` and `DrainBudgetError`. `DrainBudget::new(drain_timeout, request_timeout)` refuses a drain timeout that cannot fit one full request plus the flush reserve (`DEFAULT_FLUSH_RESERVE`, 3 s). `ShutdownToken::with_budget` builds a token from it. The listener drain, supervised tasks and `run_during_drain` stop when only the reserve is left, and `ShutdownToken::run_flush` may use the reserve.
 
+## [0.31.0] - 2026-11-26
+
+### Changed
+
+- Listeners serve with `ConnectInfo<SocketAddr>`, so the IP rate-limit scope sees the socket peer. Custom servers must call `into_make_service_with_connect_info::<SocketAddr>()` themselves. See `docs/migrations/rate-limit-client-ip-and-buckets.md`.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

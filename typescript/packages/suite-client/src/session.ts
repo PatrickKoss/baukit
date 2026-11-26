@@ -5,7 +5,13 @@ import {
   type OAuthSessionOutcome,
 } from '@baukit/integrations-client';
 import { SuiteClient, SuiteFlowError, type SuiteLink } from './api.js';
-import { suiteReturnUrl, suiteReturnValidator, type SuiteReturnPolicy } from './urls.js';
+import {
+  checkedAuthorizeUrl,
+  suiteReturnUrl,
+  suiteReturnValidator,
+  type SuiteAuthorizeUrlPolicy,
+  type SuiteReturnPolicy,
+} from './urls.js';
 
 export type SuiteConnectionResult =
   | { readonly type: 'connected'; readonly requestId: string; readonly link: SuiteLink }
@@ -14,6 +20,8 @@ export type SuiteConnectionResult =
 export interface SuiteSessionOptions extends SuiteReturnPolicy {
   readonly client: SuiteClient;
   readonly coordinator: Omit<OAuthSessionCoordinatorOptions, 'validateReturnUrl' | 'timeoutMs'>;
+  /** The server's authorize URL must be https and, when listed, on one of these origins. */
+  readonly authorizeUrlPolicy?: SuiteAuthorizeUrlPolicy;
 }
 /** One instance per signed-in session. Share it between native and redirect handlers. */
 export class SuiteSession {
@@ -52,7 +60,10 @@ export class SuiteSession {
         platform: this.options.platform,
         returnUrl: suiteReturnUrl(this.options),
         createAuthorizationUrl: async ({ returnUrl, stateNonce }) =>
-          (await this.options.client.start({ peerApp, returnUrl, stateNonce })).authorizeUrl,
+          checkedAuthorizeUrl(
+            (await this.options.client.start({ peerApp, returnUrl, stateNonce })).authorizeUrl,
+            this.options.authorizeUrlPolicy,
+          ),
       })
       .then((outcome) => this.complete(outcome));
     if (this.options.platform === 'web') return operation;

@@ -110,6 +110,37 @@ class RepoLintTest(unittest.TestCase):
         self.assertIn("legacy/Cargo.lock", lockfiles)
         self.assertEqual(len(lockfiles), 4)
 
+    def test_osv_scans_every_js_lockfile_outside_fixtures_vendor_and_node_modules(self) -> None:
+        for name in (
+            "pnpm-lock.yaml",
+            "web/pnpm-lock.yaml",
+            "extension/pnpm-lock.yaml",
+            "e2e/package-lock.json",
+            "backend/tests/fixtures/app/pnpm-lock.yaml",
+            "vendor/widget/package-lock.json",
+            "web/node_modules/widget/package-lock.json",
+            "notes/old-pnpm-lock.yaml",
+        ):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("")
+
+        result = self.run_step("osv")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        [call] = self.calls()
+        arguments = call.split()
+        lockfiles = [arguments[i + 1] for i, flag in enumerate(arguments) if flag == "-L"]
+        self.assertEqual(
+            lockfiles,
+            [
+                "e2e/package-lock.json",
+                "extension/pnpm-lock.yaml",
+                "pnpm-lock.yaml",
+                "web/pnpm-lock.yaml",
+            ],
+        )
+
     def test_deny_checks_each_workspace_with_its_own_config_or_the_backend_one(self) -> None:
         self.add_workspaces()
 

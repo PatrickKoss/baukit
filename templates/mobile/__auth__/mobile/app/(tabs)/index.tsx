@@ -10,6 +10,7 @@ import { Link } from 'expo-router';
 import { ActionButton } from '../../src/action-button';
 import { loadAnalytics } from '../../src/analytics';
 import { useAnalyticsConsent, useAppPreferences } from '../../src/app-shell';
+import { apiSessionSubject } from '../../src/api-session';
 import { currentUser, listItems } from '../../src/api';
 import type { CurrentUser, Item } from '../../src/api';
 import { useAuth } from '../../src/auth';
@@ -71,6 +72,7 @@ function useAuthenticatedItems(
       .then(async ([nextItems, nextUser]) => {
         await recheckServerSubjectBeforeSyncAdoption({
           partitionSubject: partition.subject,
+          tokenSubject: apiSessionSubject,
           readServerSubject: () => Promise.resolve(nextUser.id),
           adopt: async () => {
             const client = await loadAnalytics();
@@ -85,7 +87,7 @@ function useAuthenticatedItems(
       .catch(async (cause: unknown) => {
         if (isPersistenceIdentityMismatchError(cause)) {
           try {
-            await blockIdentityMismatch(cause);
+            await blockIdentityMismatch(partition.subject, cause);
           } catch {
             if (active) setError('Could not safely close local account data.');
             return;

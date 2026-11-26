@@ -3,6 +3,8 @@ provider = "{{ context.auth_provider }}"
 {% if context.auth_oidc %}
 # Use a private key URL here when the public issuer is unreachable internally.
 # jwks_uri = "https://keys.internal.example/jwks"
+# Access tokens whose `azp` is not one of these clients fail, even with the backend audience.
+authorized_parties = [{% if context.web or context.pwa %}"{{ context.app_name }}-web", {% endif %}{% if context.mobile %}"{{ context.mobile_client_id }}", {% endif %}"{{ context.app_name }}-local"]
 {% else %}
 # The local Keycloak realm issues {{ context.auth_provider }}-shaped tokens for the production verifier.
 issuer = "http://localhost:{{ context.keycloak_host_port }}/realms/{{ context.app_name }}"

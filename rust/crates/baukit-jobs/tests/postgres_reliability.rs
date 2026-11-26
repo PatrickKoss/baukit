@@ -358,7 +358,13 @@ async fn fail_claimed(store: &PostgresJobStore, id: Uuid) -> Result<Uuid, Box<dy
         .ok_or("nothing to claim")?;
     assert_eq!(claimed.id, id);
     store
-        .record_failure(id, "failer", false, now, "boom", now)
+        .record_failure(
+            &baukit_jobs::JobLease::of(&claimed, "failer"),
+            false,
+            now,
+            "boom",
+            now,
+        )
         .await?;
     Ok(id)
 }

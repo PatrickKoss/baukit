@@ -24,6 +24,7 @@ macro_rules! error_codes {
 error_codes! {
    BadRequest => "bad_request",
    EventIdInvalid => "event_id_invalid",
+   EventInFuture => "event_in_future",
    EventSchemaUnsupported => "event_schema_unsupported",
    EventTooOld => "event_too_old",
    EventTypeInvalid => "event_type_invalid",
@@ -70,6 +71,7 @@ impl From<baukit_events::EventValidationCode> for SuiteErrorCode {
             E::EventTypeInvalid => Self::EventTypeInvalid,
             E::EventUserMismatch => Self::EventUserMismatch,
             E::EventTooOld => Self::EventTooOld,
+            E::EventInFuture => Self::EventInFuture,
             E::EventSchemaUnsupported => Self::EventSchemaUnsupported,
         }
     }

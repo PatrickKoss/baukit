@@ -38,19 +38,26 @@ function configurationError(code) {
   return error;
 }
 
+// njs's native engine uses PCRE, where `$` also matches before a final "\n".
+// None of the accepted alphabets contain "\n", so rejecting it restores an
+// end-of-input anchor in every engine.
+function matchesWhole(pattern, text) {
+  return text.indexOf("\n") === -1 && pattern.test(text);
+}
+
 function rejected(code) {
   return { ok: false, error: code };
 }
 
 function decodeCanonical(text) {
-  if (typeof text !== "string" || !BASE64URL_PATTERN.test(text)) return null;
+  if (typeof text !== "string" || !matchesWhole(BASE64URL_PATTERN, text)) return null;
   const bytes = Buffer.from(text, "base64url");
   return bytes.toString("base64url") === text ? bytes : null;
 }
 
 function validKeyId(keyId) {
   return typeof keyId === "string" && keyId.length <= MAX_KEY_ID_BYTES &&
-    KEY_ID_PATTERN.test(keyId);
+    matchesWhole(KEY_ID_PATTERN, keyId);
 }
 
 async function hmacSha256(secret, input) {
@@ -82,7 +89,7 @@ function validMediaPath(path) {
   if (typeof path !== "string" || path.charAt(0) !== "/") return false;
   if (Buffer.byteLength(path, "utf8") > MAX_PATH_BYTES) return false;
   return path.slice(1).split("/").every((segment) =>
-    PATH_SEGMENT_PATTERN.test(segment)
+    matchesWhole(PATH_SEGMENT_PATTERN, segment)
   );
 }
 
@@ -137,7 +144,7 @@ function parseQuery(query) {
   const keyId = values[1];
   const signature = values[3];
   if (values[2] !== MEDIA_GRANT_MODE || !validKeyId(keyId)) return null;
-  if (expires.length > MAX_EXPIRES_DIGITS || !EXPIRES_PATTERN.test(expires)) {
+  if (expires.length > MAX_EXPIRES_DIGITS || !matchesWhole(EXPIRES_PATTERN, expires)) {
     return null;
   }
   if (signature.length !== SIGNATURE_BASE64URL_LENGTH) return null;

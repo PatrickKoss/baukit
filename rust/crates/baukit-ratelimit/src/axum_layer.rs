@@ -11,7 +11,7 @@ use baukit_auth::Principal;
 
 use crate::{
     AuthenticatedRouteGroupOptions, Quota, RateLimitDecision, RateLimitFailMode, RateLimitOptions,
-    RateLimitScopeOptions, RateLimitStore,
+    RateLimitScopeOptions, RateLimitStore, kernels::client_ip::select_forwarded_ip,
 };
 
 /// Counter for rate-limit decisions, labeled exactly `scope` and `outcome`.
@@ -25,6 +25,10 @@ pub const RATE_LIMIT_RESET: HeaderName = HeaderName::from_static("ratelimit-rese
 
 const STORE_UNAVAILABLE_RETRY_AFTER: Duration = Duration::from_secs(1);
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
+
+#[derive(Debug, thiserror::Error)]
+#[error("request has no socket peer address for IP rate limiting")]
+struct MissingPeerAddress;
 
 #[derive(Clone)]
 struct LayerState {
@@ -153,11 +157,23 @@ async fn rate_limit_request(
     }
 
     if state.options.ip.enabled {
-        let peer = request
+        let Some(ConnectInfo(peer)) = request
             .extensions()
             .get::<ConnectInfo<SocketAddr>>()
-            .map(|connect_info| connect_info.0);
-        let address = resolve_client_ip(request.headers(), peer, state.options.trusted_proxy_hops);
+            .copied()
+        else {
+            record("ip", "error");
+            tracing::error!(
+                "IP rate limit is enabled but the request has no ConnectInfo<SocketAddr>; \
+                 serve the router with into_make_service_with_connect_info"
+            );
+            return baukit_http::ApiError::internal(MissingPeerAddress).into_response();
+        };
+        let address = resolve_client_ip(
+            request.headers(),
+            Some(peer),
+            state.options.trusted_proxy_hops,
+        );
         let key = state.options.ip_key(address);
         match evaluate(&state, "ip", &key, state.options.ip).await {
             Evaluation::Allowed(decision) => {
@@ -271,37 +287,27 @@ fn record(scope: &str, outcome: &'static str) {
 
 /// Resolves a client IP without trusting more of `X-Forwarded-For` than configured.
 ///
-/// `trusted_proxy_hops` counts the socket peer. With the default of one, the
-/// rightmost XFF address is selected. Zero ignores XFF. A missing socket peer,
-/// malformed chain, or chain shorter than the configured trust depth falls
-/// back to the socket peer when available.
+/// `trusted_proxy_hops` counts the socket peer. One selects the rightmost XFF entry
+/// and zero ignores XFF. Only the trusted entry is parsed (see
+/// [`select_forwarded_ip`](crate::select_forwarded_ip)); a missing peer, a chain
+/// shorter than the trust depth, or an unparseable trusted entry yields the peer.
 #[must_use]
 pub fn resolve_client_ip(
     headers: &HeaderMap,
     peer: Option<SocketAddr>,
     trusted_proxy_hops: usize,
 ) -> Option<IpAddr> {
-    let peer_ip = peer.map(|address| address.ip());
-    if trusted_proxy_hops == 0 || peer.is_none() {
-        return peer_ip;
-    }
-    let mut addresses = Vec::new();
-    for value in headers.get_all(&X_FORWARDED_FOR) {
-        let Ok(value) = value.to_str() else {
-            return peer_ip;
-        };
-        for address in value.split(',') {
-            let Ok(address) = address.trim().parse() else {
-                return peer_ip;
-            };
-            addresses.push(address);
-        }
-    }
-    addresses
-        .len()
-        .checked_sub(trusted_proxy_hops)
-        .and_then(|index| addresses.get(index).copied())
-        .or(peer_ip)
+    let entries: Vec<&str> = headers
+        .get_all(&X_FORWARDED_FOR)
+        .iter()
+        .flat_map(|value| value.as_bytes().split(|byte| *byte == b','))
+        .map(|entry| std::str::from_utf8(entry).unwrap_or_default())
+        .collect();
+    select_forwarded_ip(
+        &entries,
+        peer.map(|address| address.ip()),
+        trusted_proxy_hops,
+    )
 }
 
 #[cfg(test)]
@@ -380,29 +386,40 @@ mod tests {
     }
 
     #[test]
-    fn xff_resolution_honors_trusted_hop_count() {
+    fn xff_resolution_reads_only_the_entry_at_len_minus_hops() {
         let mut headers = HeaderMap::new();
         headers.insert(
             X_FORWARDED_FOR,
             HeaderValue::from_static("198.51.100.7, 10.0.0.4"),
         );
         let peer = Some("10.0.0.5:443".parse().expect("peer"));
-        assert_eq!(
-            resolve_client_ip(&headers, peer, 1),
-            Some("10.0.0.4".parse().expect("IP"))
-        );
-        assert_eq!(
-            resolve_client_ip(&headers, peer, 2),
-            Some("198.51.100.7".parse().expect("IP"))
-        );
-        assert_eq!(
-            resolve_client_ip(&headers, peer, 0),
-            Some("10.0.0.5".parse().expect("IP"))
-        );
+        let ip = |text: &str| Some(text.parse::<IpAddr>().expect("IP"));
+        assert_eq!(resolve_client_ip(&headers, peer, 1), ip("10.0.0.4"));
+        assert_eq!(resolve_client_ip(&headers, peer, 2), ip("198.51.100.7"));
+        assert_eq!(resolve_client_ip(&headers, peer, 0), ip("10.0.0.5"));
+        assert_eq!(resolve_client_ip(&headers, peer, 3), ip("10.0.0.5"));
         headers.insert(X_FORWARDED_FOR, HeaderValue::from_static("not-an-ip"));
+        assert_eq!(resolve_client_ip(&headers, peer, 1), ip("10.0.0.5"));
+    }
+
+    #[test]
+    fn client_written_xff_garbage_does_not_move_the_bucket_to_the_proxy() {
+        let peer = Some("10.0.0.5:443".parse().expect("peer"));
+        let mut headers = HeaderMap::new();
+        headers.append(X_FORWARDED_FOR, HeaderValue::from_static("x, ::not-ip"));
+        headers.append(X_FORWARDED_FOR, HeaderValue::from_static("203.0.113.9"));
         assert_eq!(
             resolve_client_ip(&headers, peer, 1),
-            Some("10.0.0.5".parse().expect("IP"))
+            Some("203.0.113.9".parse().expect("IP"))
+        );
+        let mut invalid_utf8 = HeaderMap::new();
+        invalid_utf8.append(
+            X_FORWARDED_FOR,
+            HeaderValue::from_bytes(b"\xfe\xff, 203.0.113.9").expect("header"),
+        );
+        assert_eq!(
+            resolve_client_ip(&invalid_utf8, peer, 1),
+            Some("203.0.113.9".parse().expect("IP"))
         );
     }
 
@@ -468,6 +485,25 @@ mod tests {
             store.counts(),
             BTreeMap::from([("rl:ip:192.0.2.10".to_owned(), 1)])
         );
+    }
+
+    #[tokio::test]
+    async fn missing_peer_fails_closed_instead_of_sharing_an_unknown_bucket() {
+        let store = RecordingStore::default();
+        let app = layers(
+            Router::new().route("/", get(|| async { "unreachable" })),
+            store.clone(),
+            RateLimitOptions::default(),
+        );
+        let request = Request::builder()
+            .uri("/")
+            .body(Body::empty())
+            .expect("request");
+
+        let response = app.oneshot(request).await.expect("response");
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(store.counts().is_empty());
     }
 
     #[tokio::test]

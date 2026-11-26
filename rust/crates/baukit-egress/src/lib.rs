@@ -37,8 +37,10 @@
 //! [`AddressPolicy::AllowLoopback`] is for local development and tests.
 //! [`AddressPolicy::PublicHttp`] opts into HTTP to public addresses.
 //! [`AddressPolicy::OnlyEndpoint`] accepts one exact scheme, host and effective
-//! port, including private and loopback answers. [`AllowedEndpoint::new`]
-//! validates that allowance; its HTTP flag selects HTTP only or HTTPS only.
+//! port. [`AllowedEndpoint::new`] builds an operator-configured internal
+//! endpoint that may resolve to private and loopback answers.
+//! [`AllowedEndpoint::tenant`] builds one from a tenant-supplied host, which
+//! accepts public answers only. The HTTP flag selects HTTP only or HTTPS only.
 //! Metadata stays blocked.
 //!
 //! [`GuardedClient::execute_stream`] returns an [`EgressStreamResponse`] with
@@ -106,7 +108,7 @@ pub use client::{
     EgressClientError, EgressRequest, EgressResponse, EgressStreamResponse, GuardedClient,
     ResponseBody, validate_destination,
 };
-pub use endpoint::{AllowedEndpoint, AllowedEndpointError};
+pub use endpoint::{AllowedEndpoint, AllowedEndpointError, EndpointOrigin};
 pub use error::{DestinationRejection, EgressError, ErrorBody};
 pub use metrics::{
     EGRESS_CIRCUIT_STATE, EGRESS_CIRCUIT_TRANSITIONS_TOTAL, EGRESS_REQUEST_DURATION_SECONDS,

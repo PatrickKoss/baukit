@@ -22,10 +22,13 @@ mod erasure;
 mod ingest;
 #[path = "link.rs"]
 mod link;
+#[path = "reseal.rs"]
+pub(crate) mod reseal;
 pub use delivery::SuiteDeliveryService;
 pub use erasure::{SuiteErasureNotificationService, erase_with_suite};
 pub use ingest::{IngestResult, SignedHeaders, SuiteIngestService};
 pub use link::SuiteLinkService;
+pub use reseal::SUITE_RESEAL_BATCH;
 
 #[derive(Debug, Error)]
 pub enum SuiteServiceError {
@@ -470,8 +473,7 @@ pub trait SuiteDeliveryRunner: Send + Sync {
         &self,
         job: SuiteDeliverJobV1,
         now: Timestamp,
-        job_id: Uuid,
-        worker_id: &str,
+        lease: &DeliveryLease,
     ) -> Result<DeliveryAction, SuiteServiceError>;
     async fn revoke(
         &self,
@@ -486,10 +488,9 @@ impl SuiteDeliveryRunner for SuiteDeliveryService {
         &self,
         j: SuiteDeliverJobV1,
         n: Timestamp,
-        job_id: Uuid,
-        worker_id: &str,
+        lease: &DeliveryLease,
     ) -> Result<DeliveryAction, SuiteServiceError> {
-        self.deliver_claimed(j, n, Some((job_id, worker_id))).await
+        self.deliver_claimed(j, n, Some(lease)).await
     }
     async fn revoke(
         &self,

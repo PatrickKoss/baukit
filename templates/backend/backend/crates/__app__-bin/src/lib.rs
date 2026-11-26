@@ -24,10 +24,12 @@ use {{ context.app_crate }}_services::ItemService;
 use serde::Deserialize;
 use uuid::Uuid;
 
+mod compose;
 mod config;
 {% if context.platform %}pub mod platform;
 {% endif %}mod probe;
 mod rate_limits;
+pub use compose::{ApiDependencies, ComposedApi, compose_api};
 pub use config::config_loader;
 pub use probe::{PROBE_READINESS_FLAG, probe_readiness};
 pub use rate_limits::{RateLimits, {% if context.auth_enabled %}protect_routes, {% endif %}rate_limited};
@@ -415,15 +417,25 @@ pub fn mount_requeue_route(
     job_types: &'static [&'static str],
     admin_token: Option<&baukit_config::Secret<String>>,
 ) -> Router {
-    match admin_token {
-        Some(token) => operations.merge(baukit_ops::jobs_admin::requeue_failed_jobs_router(
-            requeue,
-            job_types,
-            token.clone(),
-        )),
-        None => operations,
-    }
+    baukit_ops::jobs_admin::mount_requeue_route(operations, requeue, job_types, admin_token)
 }{% endif %}{% if context.auth_enabled %}
+
+/// Fails readiness while the identity provider rejects the deleter's base URL or credentials.
+/// Local stacks skip it because they run with placeholder provider secrets.
+pub fn register_identity_provider_readiness(
+    readiness: &ReadinessRegistry,
+    service: baukit_erasure::ErasureService,
+) -> Result<(), RegistrationError> {
+    readiness.register_fn_default("identity_provider", move || {
+        let service = service.clone();
+        async move {
+            service
+                .probe_identity_provider()
+                .await
+                .map_err(|_| ReadinessError::new("identity provider deletion is unavailable"))
+        }
+    })
+}
 
 pub fn identity_erasure(
     pool: sqlx::PgPool,

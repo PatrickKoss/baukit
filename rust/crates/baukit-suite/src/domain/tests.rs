@@ -41,6 +41,7 @@ fn test_link() -> SuiteLink {
             ciphertext: vec![1],
             nonce: vec![2],
             key_version: 1,
+            record_id: None,
         },
         sends: Vec::new(),
         receives: vec!["beta.activity.completed".into()],
@@ -173,6 +174,7 @@ fn protocol_authorizer_registry() -> PeerRegistry {
                 },
             )]),
             allow_loopback: false,
+            allow_dev_scheme: false,
         },
     )
     .expect("valid fixture")
@@ -300,7 +302,8 @@ fn return_url_vectors_match_web_and_native_endpoints() {
             validate_return_url(
                 vector["url"].as_str().expect("valid fixture"),
                 cases["webOrigin"].as_str().expect("valid fixture"),
-                cases["scheme"].as_str().expect("valid fixture")
+                cases["scheme"].as_str().expect("valid fixture"),
+                true
             )
             .is_ok(),
             vector["expected"].as_bool().expect("valid fixture"),
@@ -316,9 +319,36 @@ fn return_url_vectors_match_web_and_native_endpoints() {
         "alpha://user@suite/linked",
     ] {
         assert_eq!(
-            validate_return_url(url, "https://alpha.example", "alpha"),
+            validate_return_url(url, "https://alpha.example", "alpha", true),
             Err(SuiteDataError::ReturnUrlInvalid)
         );
+    }
+}
+
+#[test]
+fn the_dev_scheme_is_accepted_only_when_enabled() {
+    let dev = "alpha-dev://suite/linked";
+    assert_eq!(
+        validate_return_url(dev, "https://alpha.example", "alpha", false),
+        Err(SuiteDataError::ReturnUrlInvalid)
+    );
+    assert!(validate_return_url(dev, "https://alpha.example", "alpha", true).is_ok());
+    assert!(
+        validate_return_url(
+            "alpha://suite/linked",
+            "https://alpha.example",
+            "alpha",
+            false
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn web_schemes_never_count_as_native() {
+    for scheme in ["http", "https", "javascript"] {
+        assert!(!is_own_native_scheme(scheme, scheme, true));
+        assert!(!is_own_native_scheme(scheme, scheme, false));
     }
 }
 
@@ -1609,6 +1639,7 @@ fn configured_registry() -> PeerRegistry {
             .into_iter()
             .collect(),
             allow_loopback: false,
+            allow_dev_scheme: false,
         },
     )
     .expect("valid fixture")
@@ -1816,6 +1847,7 @@ fn registry_requires_both_public_urls_and_a_configured_peer_with_event_flow() {
             },
         )]),
         allow_loopback: false,
+        allow_dev_scheme: false,
     };
     for public_api in [false, true] {
         for public_web in [false, true] {
@@ -2162,8 +2194,16 @@ fn inbound_type_source_future_and_error_codes_are_explicit_for_live_and_replay()
         };
         let error = validate_inbound(&catalog, &future, &link, link.created_at, replay)
             .expect_err("future");
-        assert_eq!(error, InboundValidationError::FutureOccurrence);
-        assert_eq!(error.code(), "suite_payload_invalid");
+        if replay {
+            assert_eq!(error, InboundValidationError::FutureOccurrence);
+            assert_eq!(error.code(), "suite_payload_invalid");
+        } else {
+            assert_eq!(
+                error,
+                InboundValidationError::Envelope(baukit_events::EventValidationCode::EventInFuture)
+            );
+            assert_eq!(error.code(), "event_in_future");
+        }
         let invalid = EventEnvelope {
             schema_version: 2,
             ..envelope.clone()

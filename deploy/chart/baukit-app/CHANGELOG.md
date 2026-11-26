@@ -13,6 +13,11 @@
 - The HPA defaults to `minReplicas: 2` and renders `autoscaling.behavior` (scale-down stabilization 300 s, scale-up at most 100% per 60 s).
 - The API Ingress gets a Traefik retry Middleware (`ingress.retry`, 2 attempts, 100ms initial interval) for connection errors. The web Ingress does not retry.
 
+## [0.31.0] - 2026-11-26
+
+- `opsService.type` accepts only `ClusterIP`. The ops port serves metrics and admin endpoints and must not leave the cluster; values with `NodePort` or `LoadBalancer` now fail schema validation.
+- `config.overrides` sets `RATE_LIMIT__TRUSTED_PROXY_HOPS` to `1` because the library default is now `0`. The chart assumes one Traefik hop in front of the API; override it if your ingress path differs.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

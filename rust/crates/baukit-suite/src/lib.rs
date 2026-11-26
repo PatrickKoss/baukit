@@ -47,6 +47,8 @@ mod error_codes;
 #[cfg(feature = "platform")]
 pub mod platform;
 pub mod ports;
+#[cfg(all(test, feature = "runtime"))]
+mod record_tests;
 #[cfg(feature = "runtime")]
 mod secret_cipher;
 pub mod services;
@@ -65,8 +67,12 @@ pub const SUITE_RUNTIME_MIGRATION_SQL: &str = include_str!("../migrations/002_su
 #[cfg(feature = "postgres")]
 pub const SUITE_LOCK_ORDER_MIGRATION_SQL: &str =
     include_str!("../migrations/003_suite_lock_order.sql");
-/// Copy after `SUITE_LOCK_ORDER_MIGRATION_SQL`. It drops the SQL failure accounting
+/// Copy after `004_platform.sql` to store vault v2 record ids next to sealed secrets.
+#[cfg(feature = "postgres")]
+pub const SUITE_RECORD_IDS_MIGRATION_SQL: &str =
+    include_str!("../migrations/005_suite_record_ids.sql");
+/// Copy after `SUITE_RECORD_IDS_MIGRATION_SQL`. It drops the SQL failure accounting
 /// and adds the probe schedule for disabled links.
 #[cfg(feature = "postgres")]
 pub const SUITE_DELIVERY_PROBES_MIGRATION_SQL: &str =
-    include_str!("../migrations/005_suite_delivery_probes.sql");
+    include_str!("../migrations/006_suite_delivery_probes.sql");

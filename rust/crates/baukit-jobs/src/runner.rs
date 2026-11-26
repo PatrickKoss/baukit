@@ -21,7 +21,7 @@ use uuid::Uuid;
 use baukit_resilience::JitterSource;
 
 use crate::{
-    ClaimedJob, JobError, JobStore, JobWakeup, RecurringJob, ReleaseReason, RunnerError,
+    ClaimedJob, JobError, JobLease, JobStore, JobWakeup, RecurringJob, ReleaseReason, RunnerError,
     StoreError, metrics,
 };
 
@@ -61,27 +61,32 @@ pub trait JobHandler: Send + Sync + 'static {
 #[derive(Clone, Debug)]
 pub struct JobCancellation {
     token: CancellationToken,
-    worker_id: Arc<str>,
+    lease: Arc<JobLease>,
     completed_in_transaction: Arc<AtomicBool>,
 }
 
 impl JobCancellation {
-    fn new(worker_id: &str, drain: &CancellationToken) -> Self {
+    fn new(lease: JobLease, drain: &CancellationToken) -> Self {
         Self {
             token: drain.child_token(),
-            worker_id: Arc::from(worker_id),
+            lease: Arc::new(lease),
             completed_in_transaction: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    /// Returns the lease owner required by `PostgresJobStore::complete_in_transaction`.
+    /// Returns the lease owner required by `PostgresJobStore::complete_lease_in_transaction`.
     pub fn worker_id(&self) -> &str {
-        &self.worker_id
+        &self.lease.worker_id
+    }
+
+    /// Returns this attempt's lease for `PostgresJobStore::complete_lease_in_transaction`.
+    pub fn lease(&self) -> &JobLease {
+        &self.lease
     }
 
     /// Reports that the handler committed its result and successful job transition together.
     ///
-    /// Call this only after the transaction containing `complete_in_transaction`
+    /// Call this only after the transaction containing `complete_lease_in_transaction`
     /// commits successfully, and return success immediately afterward. The runner
     /// then records success without attempting a second completion transition.
     pub fn mark_completed_in_transaction(&self) {
@@ -479,8 +484,7 @@ async fn release_claimed(context: &AttemptContext, job: &ClaimedJob) {
     match context
         .store
         .release(
-            job.id,
-            &context.config.worker_id,
+            &JobLease::of(job, context.config.worker_id.as_str()),
             now,
             ReleaseReason::Shutdown,
             now,

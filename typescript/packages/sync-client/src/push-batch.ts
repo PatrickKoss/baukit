@@ -46,7 +46,8 @@ export interface PushOutcomeCoverageOptions<TSubmitted, TOutcome> {
 }
 
 /**
- * Rejects a response that omits an outcome for any submitted entity.
+ * Rejects a response that omits an outcome for any submitted entity, or that
+ * carries an outcome for an entity the request did not submit.
  *
  * Call this before acknowledging accepted or rejected changes. Products supply
  * key readers because their wire field names remain product-owned.
@@ -57,10 +58,17 @@ export function validatePushOutcomeCoverage<TSubmitted, TOutcome>(
   { submittedKey, outcomeKey }: PushOutcomeCoverageOptions<TSubmitted, TOutcome>,
 ): readonly TOutcome[] {
   const outcomeKeys = new Set(outcomes.map(outcomeKey));
-  const missing = new Set(submitted.map(submittedKey).filter((key) => !outcomeKeys.has(key)));
-  if (missing.size > 0) {
+  const submittedKeys = new Set(submitted.map(submittedKey));
+  const missing = [...submittedKeys].filter((key) => !outcomeKeys.has(key));
+  if (missing.length > 0) {
     throw new SyncPayloadCompatibilityError(
-      `The push response omitted outcomes for ${String(missing.size)} submitted entities.`,
+      `The push response omitted outcomes for ${String(missing.length)} submitted entities.`,
+    );
+  }
+  const extra = [...outcomeKeys].filter((key) => !submittedKeys.has(key));
+  if (extra.length > 0) {
+    throw new SyncPayloadCompatibilityError(
+      `The push response carried outcomes for ${String(extra.length)} unsubmitted entities.`,
     );
   }
   return outcomes;
@@ -69,7 +77,7 @@ export function validatePushOutcomeCoverage<TSubmitted, TOutcome>(
 /**
  * Orders a push batch parent-before-child and coalesces per entity.
  *
- * Queued changes are grouped by `entityType:entityId`. Each group keeps the
+ * Queued changes are grouped by the `(entityType, entityId)` pair. Each group keeps the
  * position of its first occurrence, so foreign-key order survives coalescing,
  * and carries the newest change so the request sends current data. Groups are
  * then sorted by dependency rank, ties broken by that first position, and the
@@ -86,7 +94,7 @@ export function rankPushBatch<T extends PushCandidate>(
   const grouped = new Map<string, { change: T; coveredChangeIds: string[]; order: number }>();
 
   pending.forEach((change, order) => {
-    const key = `${change.entityType}:${change.entityId}`;
+    const key = JSON.stringify([change.entityType, change.entityId]);
     const existing = grouped.get(key);
     grouped.set(key, {
       change,

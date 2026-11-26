@@ -223,7 +223,7 @@ step_baukit_doctor() {
 step_baukit_check() {
   use_baukit_root
   run_baukit_cli \
-    check agent-docs file-size suppressions lints patterns observability template-files fuzz-lockfile --root .
+    check agent-docs file-size suppressions lints patterns observability template-files fuzz-lockfile security --root .
 }
 
 step_workflow_lint() {

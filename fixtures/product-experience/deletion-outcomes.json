@@ -10,13 +10,13 @@
     }
   },
   {
-    "name": "warnings-only",
-    "serverRetry": "not-required",
-    "sessionRetained": false,
+    "name": "before-server-failure",
+    "serverRetry": "retry",
+    "sessionRetained": true,
     "result": {
-      "status": "erased",
-      "receipt": { "operationId": "erase-1", "status": "completed" },
-      "warnings": [{ "stage": "before-server", "cause": "Error" }]
+      "status": "server-failure",
+      "error": { "stage": "before-server", "cause": "Error" },
+      "warnings": []
     }
   },
   {

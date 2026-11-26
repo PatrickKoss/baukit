@@ -102,6 +102,8 @@ export interface UnauthorizedContext {
   readonly response: Response;
   /** False when the request body cannot be cloned safely for replay. */
   readonly canRetry: boolean;
+  /** `sessionSubject()` when the request was sent, if the option is configured. */
+  readonly subject?: string;
 }
 
 /** Explicit outcome of a 401 hook. `handled` preserves the original normalized rejection. */
@@ -130,6 +132,11 @@ export interface ApiRuntimeOptions extends ApiEnvironmentConfig {
   readonly onUnauthorized?: UnauthorizedHandler;
   readonly onUnauthorizedExhausted?: UnauthorizedExhaustedHandler;
   readonly onProfileErased?: ProfileErasedHandler;
+  /**
+   * Current session subject, read at send time and again on a 401. A 401 whose
+   * subject changed in between fires no signal, so it cannot affect a newer session.
+   */
+  readonly sessionSubject?: () => string | undefined;
   readonly retry?: RetryOptions | false;
   /** Per-attempt timeout in milliseconds, combined with the caller's signal. Defaults to 30,000. */
   readonly requestTimeoutMs?: number | false;

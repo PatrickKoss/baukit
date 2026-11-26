@@ -33,6 +33,7 @@ REQUIRED_TOOLS = {
     "flux",
     "yamllint",
     "kubectl",
+    "tla2tools",
 }
 REQUIRED_PLATFORMS = {"linux-amd64", "linux-arm64", "darwin-arm64"}
 SHA256 = re.compile(r"[0-9a-f]{64}")

@@ -105,7 +105,7 @@ async fn a_postgres_outage_fails_readiness_and_recovers_without_a_restart()
     let service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
     assert_eq!(status(&ops, "/readyz").await?, StatusCode::OK);
 
-    postgres.fault().stop().await?;
+    postgres.fault()?.stop().await?;
     assert_eq!(status(&ops, "/healthz").await?, StatusCode::OK);
     assert_eq!(
         status(&ops, "/readyz").await?,
@@ -132,7 +132,7 @@ async fn a_postgres_outage_fails_readiness_and_recovers_without_a_restart()
         "a 503 must name Retry-After"
     );
 {% endif %}
-    postgres.fault().start().await?;
+    postgres.fault()?.start().await?;
     wait_for_ready(&ops).await?;
     assert!(service.list(OWNER).await?.is_empty());
     Ok(())
@@ -143,7 +143,7 @@ async fn a_postgres_outage_fails_readiness_and_recovers_without_a_restart()
 async fn the_api_waits_for_a_late_postgres_and_turns_ready() -> Result<(), Box<dyn Error>> {
     let postgres = start_postgres().await?;
     let database = database_config(&postgres)?;
-    postgres.fault().stop().await?;
+    postgres.fault()?.stop().await?;
 
     let connect =
         tokio::spawn(
@@ -154,7 +154,7 @@ async fn the_api_waits_for_a_late_postgres_and_turns_ready() -> Result<(), Box<d
         !connect.is_finished(),
         "the API must keep waiting for PostgreSQL"
     );
-    postgres.fault().start().await?;
+    postgres.fault()?.start().await?;
 
     let pool = connect.await??;
     let telemetry = telemetry()?;

@@ -96,6 +96,7 @@ export function App(): ReactElement {
       {searchParams.get('page') === 'delete-profile' ? (
         <DeleteProfileRoute
           subject={user?.subject}
+          profileId={user?.id}
           ready={partition !== undefined}
           eraseLocalPartition={() => session.localData.erase(user?.id ?? '')}
           onSignedOut={session.markSignedOut}

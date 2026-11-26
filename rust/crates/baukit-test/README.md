@@ -333,9 +333,9 @@ let postgres = baukit_test::PostgresTestOptions::new()
     .with_stable_host_port()
     .start()
     .await?;
-postgres.fault().stop().await?;
+postgres.fault()?.stop().await?;
 // assert the service under test reports the outage
-postgres.fault().start().await?;
+postgres.fault()?.start().await?;
 # Ok(())
 # }
 ```

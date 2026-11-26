@@ -12,6 +12,7 @@ export {
 export type { SyncFailure } from './error.js';
 export {
   compareHybridLogicalTimestamps,
+  DEFAULT_HLC_MAX_DRIFT_MS,
   decodeHybridLogicalTimestamp,
   encodeHybridLogicalTimestamp,
   HybridLogicalClock,
@@ -19,10 +20,15 @@ export {
   HLC_COUNTERS_PER_MILLISECOND,
   HLC_STORAGE_KEY,
   MAX_HLC_TIMESTAMP,
+  nowStep,
+  observeStep,
+  validateClientTimestamp,
 } from './hlc.js';
 export type {
   HlcPhysicalClock,
+  HlcStep,
   HlcStorage,
+  HybridLogicalClockOptions,
   HybridLogicalClockErrorCode,
   HybridLogicalClockState,
 } from './hlc.js';

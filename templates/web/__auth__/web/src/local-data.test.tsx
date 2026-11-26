@@ -202,7 +202,7 @@ describe('useAuthenticatedLocalData', () => {
       expect(result.current.state.status).toBe('ready');
     });
 
-    await act(() => result.current.blockIdentityMismatch(new PersistenceIdentityMismatchError()));
+    await act(() => result.current.blockIdentityMismatch('account-a', new PersistenceIdentityMismatchError()));
 
     expect(result.current.state).toMatchObject({
       status: 'blocked',

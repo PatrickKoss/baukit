@@ -5,6 +5,14 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.31.0
+
+Last verified release train: `v0.31.0` (minor train on top of `v0.30.6`), the correctness and verification train. No runtime dependency versions change. The full local gate passed on 2026-11-26 with Rust 1.95 MSRV, Node 26.10.0 and pnpm 12.9.1: every step except `platform-e2e`, which ran in CI on the merge commit. That includes all generated fixture flavors, the remote MCP fixture, both Android conformance runs, 19 fuzz targets, 38 Kani harnesses, three Verus proofs and 8 TLA+ models.
+- BREAKING: `rate_limit.trusted_proxy_hops` defaults to 0. Set it to the number of proxies in front of the API; the `baukit-app` chart sets 1.
+- BREAKING: job leases bind to the attempt, pulls page with a `(revision, id)` cursor inside a revision window, `StandaloneAccountPlan::new` takes a membership port, and suite replays need `x-suite-signature-v2`. `docs/migrations/README.md` lists the steps.
+- Expand-only SQL: auth `0003`, suite `005`, push `0005` to `0007`.
+- Generated `scripts/repo-lint.sh osv` scans every JS lockfile outside `fixtures/`, `vendor/` and `node_modules/`.
+
 ## v0.30.0
 
 Last verified release train: `v0.30.0` (minor train on top of `v0.29.0`). No component or dependency versions change.
@@ -363,7 +371,7 @@ Move OAuth provider-linking callbacks to `baukit_integrations::oauth_state` (fea
 
 #### Browser sessions (web products with auth)
 
-Mount `baukit_auth::browser_session::router` (feature `browser-session`) with `StoreBrowserSessionRateLimiter` from `baukit-ratelimit`, and run its `0002_baukit_auth_browser_sessions.sql` migration. Copy the web template's sign-in files, which use `BrowserSessionClient`. Delete any code that reads `<prefix>:tokens`.
+Mount `baukit_auth::browser_session::router` (feature `browser-session`) with `StoreBrowserSessionRateLimiter` from `baukit-ratelimit`, and run its `0002_baukit_auth_browser_sessions.sql` and `0003_baukit_auth_browser_session_record_ids.sql` migrations. Copy the web template's sign-in files, which use `BrowserSessionClient`. Delete any code that reads `<prefix>:tokens`.
 
 #### Clerk on mobile (Clerk products with an Expo app)
 
@@ -585,11 +593,15 @@ Before that, `v0.14.1` (patch train on top of `v0.14.0`). `v0.14.0` was tagged b
 | Rust | 1.95.0 MSRV | CI-enforced with Rust 1.95; CI and the local gate pin 1.100.0 from `mise.toml` |
 | Node | 26.10.0 | pinned via `mise.toml` and `typescript/.nvmrc`; Node types use major 26. Package engines still accept Node 24 and later. |
 | Corepack | 0.36.0 | installed through mise locally and npm in CI; Node 26 does not bundle it |
-| Java | Temurin 25.0.4.1+1 | `mise.toml` and every Android CI job pin the same build as `25.0.4+101.0.LTS`, the Adoptium API version. Generated builds and Expo conformance builds grant native access to Android's Prefab tool. |
+| Java | Temurin 25.0.4.1+1 | `mise.toml`, every Android CI job and the TLA+ models job pin the same build as `25.0.4+101.0.LTS`, the Adoptium API version. Generated builds and Expo conformance builds grant native access to Android's Prefab tool. |
 | Swift | 6.4.0 | pinned via `mise.toml`; compiler version checked on Linux |
 | xtool | 1.20.1 | pinned via `mise.toml`; version checked on Linux, without a Darwin SDK or simulator |
 | pnpm | 12.9.1 | pinned via `packageManager`; fresh generated web, mobile, and MCP lockfiles pass `--frozen-lockfile` |
 | Turbo | 2 | |
+| cargo-fuzz | 0.13.2 | pinned via `mise.toml`; the `fuzz` gate step runs each target with its oracle on nightly |
+| Kani | 0.68.0 | pinned via `mise.toml`; `kani` runs on pull requests, `kani-full` nightly |
+| Verus | 0.2026.11.22.1ce6a59 | pinned via `mise.toml` with its bundled z3 |
+| TLC | 1.7.4 | `tla2tools.jar` pinned in `deploy/tools.toml`; 1.8.0 is a pre-release |
 
 ## Backend (Rust)
 

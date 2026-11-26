@@ -37,8 +37,11 @@ impl JobHandler for SuiteJobHandler {
                                     )
                                 })?,
                                 Timestamp::now(),
-                                job.id,
-                                cancellation.worker_id(),
+                                &DeliveryLease {
+                                    job_id: cancellation.lease().job_id,
+                                    worker_id: cancellation.lease().worker_id.clone(),
+                                    attempt: cancellation.lease().attempt,
+                                },
                             )
                             .await
                     }
@@ -226,8 +229,7 @@ mod tests {
             &self,
             _: SuiteDeliverJobV1,
             _: jiff::Timestamp,
-            _: uuid::Uuid,
-            _: &str,
+            _: &DeliveryLease,
         ) -> Result<DeliveryAction, SuiteServiceError> {
             Err(SuiteStoreError::InvalidData("unexpected delivery during cleanup".into()).into())
         }

@@ -34,7 +34,7 @@ pub struct CredentialCipher {
     random: SystemRandom,
 }
 
-struct KeyMaterial {
+pub(crate) struct KeyMaterial {
     key: LessSafeKey,
     bytes: [u8; KEY_LENGTH],
 }
@@ -130,7 +130,8 @@ impl CredentialCipher {
             .ok_or(CredentialVaultError::InvalidConfiguration)?;
         let mut fields = BTreeMap::new();
         for (name, plaintext) in secrets.iter() {
-            let field = self.encrypt_field(key, scope_id, name, plaintext)?;
+            let aad = associated_data(scope_id, self.active_version, name);
+            let field = self.seal_field(key, &aad, plaintext)?;
             fields.insert(name.to_owned(), field);
         }
         Ok(EncryptedCredentials {
@@ -141,6 +142,11 @@ impl CredentialCipher {
     }
 
     /// Decrypts every field under the key version recorded with the ciphertext.
+    ///
+    /// Fields are independent: a payload missing some fields decrypts to the
+    /// rest, and an older ciphertext for the same scope, field and version
+    /// decrypts too. Use [`CredentialCipher::open_record`] when a record must
+    /// open whole.
     ///
     /// An unknown version, a wrong nonce length, a wrong scope, a renamed
     /// field, and tampered bytes all fail as
@@ -164,8 +170,8 @@ impl CredentialCipher {
             .ok_or(CredentialVaultError::DecryptionFailed)?;
         let mut secrets = CredentialSecrets::new();
         for (name, field) in &encrypted.fields {
-            let plaintext =
-                decrypt_field(key, encrypted.scope_id, encrypted.key_version, name, field)?;
+            let aad = associated_data(encrypted.scope_id, encrypted.key_version, name);
+            let plaintext = open_field(key, &aad, field)?;
             secrets
                 .insert(name.clone(), plaintext)
                 .map_err(|_| CredentialVaultError::DecryptionFailed)?;
@@ -173,23 +179,36 @@ impl CredentialCipher {
         Ok(secrets)
     }
 
-    fn encrypt_field(
+    pub(crate) fn active_key(&self) -> Result<&KeyMaterial, CredentialVaultError> {
+        self.keys
+            .get(&self.active_version)
+            .ok_or(CredentialVaultError::InvalidConfiguration)
+    }
+
+    pub(crate) fn key(&self, version: i32) -> Option<&KeyMaterial> {
+        self.keys.get(&version)
+    }
+
+    pub(crate) fn random_bytes<const N: usize>(&self) -> Result<[u8; N], CredentialVaultError> {
+        let mut bytes = [0_u8; N];
+        self.random
+            .fill(&mut bytes)
+            .map_err(|_| CredentialVaultError::InvalidConfiguration)?;
+        Ok(bytes)
+    }
+
+    pub(crate) fn seal_field(
         &self,
         key: &KeyMaterial,
-        scope_id: Uuid,
-        name: &str,
+        aad: &[u8],
         plaintext: &[u8],
     ) -> Result<EncryptedField, CredentialVaultError> {
-        let mut nonce_bytes = [0_u8; NONCE_LENGTH];
-        self.random
-            .fill(&mut nonce_bytes)
-            .map_err(|_| CredentialVaultError::InvalidConfiguration)?;
+        let nonce_bytes = self.random_bytes::<NONCE_LENGTH>()?;
         let nonce = Nonce::assume_unique_for_key(nonce_bytes);
-        let aad = associated_data(scope_id, self.active_version, name);
         let mut buffer = plaintext.to_vec();
         let result = key
             .key
-            .seal_in_place_append_tag(nonce, Aad::from(&aad), &mut buffer);
+            .seal_in_place_append_tag(nonce, Aad::from(aad), &mut buffer);
         if result.is_err() {
             buffer.zeroize();
             return Err(CredentialVaultError::InvalidConfiguration);
@@ -232,11 +251,9 @@ fn parse_key(encoded: &str) -> Result<KeyMaterial, CredentialVaultError> {
     })
 }
 
-fn decrypt_field(
+pub(crate) fn open_field(
     key: &KeyMaterial,
-    scope_id: Uuid,
-    version: i32,
-    name: &str,
+    aad: &[u8],
     field: &EncryptedField,
 ) -> Result<Vec<u8>, CredentialVaultError> {
     let nonce_bytes: [u8; NONCE_LENGTH] = field
@@ -245,9 +262,8 @@ fn decrypt_field(
         .try_into()
         .map_err(|_| CredentialVaultError::DecryptionFailed)?;
     let nonce = Nonce::assume_unique_for_key(nonce_bytes);
-    let aad = associated_data(scope_id, version, name);
     let mut buffer = field.ciphertext.clone();
-    let Ok(plaintext) = key.key.open_in_place(nonce, Aad::from(&aad), &mut buffer) else {
+    let Ok(plaintext) = key.key.open_in_place(nonce, Aad::from(aad), &mut buffer) else {
         buffer.zeroize();
         return Err(CredentialVaultError::DecryptionFailed);
     };

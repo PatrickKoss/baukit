@@ -4,7 +4,7 @@ use jiff_sqlx::ToSqlx;
 use std::{collections::HashSet, error::Error, path::PathBuf, sync::Arc, time::Duration};
 
 use baukit_jobs::{
-    FailureDisposition, FixedUtcInterval, JobFailureReason, JobStatus, JobStore as _,
+    FailureDisposition, FixedUtcInterval, JobFailureReason, JobLease, JobStatus, JobStore as _,
     MAX_TERMINAL_JOB_CLEANUP_BATCH_SIZE, NewJob, POSTGRES_MIGRATION_0002_SQL,
     POSTGRES_MIGRATION_0003_SQL, POSTGRES_MIGRATION_0004_SQL, POSTGRES_MIGRATION_0005_SQL,
     POSTGRES_MIGRATION_0006_SQL, POSTGRES_MIGRATION_SQL, PostgresJobStore, StoreError,
@@ -143,7 +143,10 @@ async fn postgres_expired_lease_is_reclaimed_without_a_sweep_process() -> Result
 
     assert!(
         store
-            .complete(reclaimed.id, "worker-b", now + SignedDuration::from_secs(2))
+            .complete(
+                &JobLease::new(reclaimed.id, "worker-b", reclaimed.attempts),
+                now + SignedDuration::from_secs(2)
+            )
             .await?
     );
     let exhausted = store
@@ -200,7 +203,13 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
     let retry_at = now + SignedDuration::from_secs(10);
     assert_eq!(
         store
-            .record_failure(retried.id, "worker-a", true, retry_at, "temporary", now,)
+            .record_failure(
+                &JobLease::new(retried.id, "worker-a", 1),
+                true,
+                retry_at,
+                "temporary",
+                now,
+            )
             .await?,
         Some(FailureDisposition::Retry)
     );
@@ -224,8 +233,7 @@ async fn postgres_retry_is_bounded_by_attempts_and_has_terminal_failure()
     assert_eq!(
         store
             .record_failure(
-                retried.id,
-                "worker-b",
+                &JobLease::of(&second, "worker-b"),
                 true,
                 retry_at + SignedDuration::from_secs(20),
                 "still temporary",
@@ -273,8 +281,7 @@ async fn assert_permanent_failure_is_terminal(
     assert_eq!(
         store
             .record_failure(
-                permanent.id,
-                "worker-c",
+                &JobLease::new(permanent.id, "worker-c", 1),
                 false,
                 permanent_now,
                 "invalid payload",
@@ -309,11 +316,19 @@ async fn postgres_completion_is_atomic_lease_owned_and_not_duplicated() -> Resul
         .await?
         .expect("job claim");
 
-    assert!(!store.complete(job.id, "worker-b", now).await?);
+    assert!(
+        !store
+            .complete(&JobLease::new(job.id, "worker-b", job.attempts), now)
+            .await?
+    );
     let mut transaction = pool.begin().await?;
     assert!(
         store
-            .complete_in_transaction(&mut transaction, job.id, "worker-a", now)
+            .complete_lease_in_transaction(
+                &mut transaction,
+                &JobLease::new(job.id, "worker-a", 1),
+                now
+            )
             .await?
     );
     transaction.rollback().await?;
@@ -322,12 +337,20 @@ async fn postgres_completion_is_atomic_lease_owned_and_not_duplicated() -> Resul
     let mut transaction = pool.begin().await?;
     assert!(
         store
-            .complete_in_transaction(&mut transaction, job.id, "worker-a", now)
+            .complete_lease_in_transaction(
+                &mut transaction,
+                &JobLease::new(job.id, "worker-a", 1),
+                now
+            )
             .await?
     );
     transaction.commit().await?;
     assert_eq!(status(&pool, job.id).await?, "succeeded");
-    assert!(!store.complete(job.id, "worker-a", now).await?);
+    assert!(
+        !store
+            .complete(&JobLease::new(job.id, "worker-a", job.attempts), now)
+            .await?
+    );
 
     pool.close().await;
     drop(fixture);
@@ -733,11 +756,10 @@ async fn postgres_terminal_cleanup_skips_concurrent_claim_and_completion()
     let mut completion_transaction = pool.begin().await?;
     assert!(
         store
-            .complete_in_transaction(
+            .complete_lease_in_transaction(
                 &mut completion_transaction,
-                completing.id,
-                "complete-worker",
-                completion_now,
+                &JobLease::new(completing.id, "complete-worker", 1),
+                completion_now
             )
             .await?
     );
@@ -866,8 +888,7 @@ async fn postgres_v051_schema_upgrades_to_failure_reasons() -> Result<(), Box<dy
     assert_eq!(
         store
             .record_failure(
-                current.id,
-                "upgrade-worker",
+                &JobLease::new(current.id, "upgrade-worker", 1),
                 false,
                 now,
                 "permanent failure",

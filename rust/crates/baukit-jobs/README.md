@@ -126,9 +126,9 @@ implementations also need no code change.
 
 Use `PostgresJobStore::enqueue_in_transaction` to commit a domain mutation and
 its outbox row atomically. If a job's product-side result is stored in the same
-PostgreSQL database, use `complete_in_transaction` after writing the result so
-both changes commit together. Pass `JobCancellation::worker_id()` as the lease
-owner. After the transaction commits, call
+PostgreSQL database, use `complete_lease_in_transaction` after writing the result so
+both changes commit together. Pass `JobCancellation::lease()`, which binds the
+worker id and the claimed attempt. After the transaction commits, call
 `JobCancellation::mark_completed_in_transaction()` and return success
 immediately; the runner will record success without attempting a second job
 transition. External side effects still need an idempotency key at the
@@ -263,7 +263,7 @@ Use `FixedUtcSlot::identifier` as the job's idempotency key and
 `FixedUtcSlot::starts_at` as `run_after`. Enqueue the next slot before reporting
 the current handler as successful. When the handler writes product data in
 PostgreSQL, put those writes, `enqueue_in_transaction`, and
-`complete_in_transaction` in one transaction. Commit it, call
+`complete_lease_in_transaction` in one transaction. Commit it, call
 `JobCancellation::mark_completed_in_transaction`, and then return success.
 An enqueue error must leave the current attempt unsuccessful so the worker can
 retry it. Duplicate delivery and process restart calculate the same identifier,
@@ -324,9 +324,9 @@ after commit; rollback preserves the jobs.
 
 ## Lease checks before intermediate writes
 
-Call `check_lease_in_transaction(transaction, job_id, worker_id, now)` before
-writing intermediate product state. It returns true only when the job is
-running, the worker owns it, its lease expires strictly after `now`, and no
+Call `check_lease_held_in_transaction(transaction, cancellation.lease(), now)`
+before writing intermediate product state. It returns true only when the job is
+running, the worker owns it with the same attempt, its lease expires strictly after `now`, and no
 cancellation was requested. It checks the same predicate as completion and
 leaves the lifecycle unchanged.
 

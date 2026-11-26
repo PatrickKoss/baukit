@@ -1,51 +1,16 @@
-use baukit_config::Secret;
-use baukit_erasure::{
-    ErasureFuture, ErasureService, IdentityRetention, POSTGRES_MIGRATION_SQL, PostgresErasureStore,
-    ProductErasure,
-};
+#[path = "postgres_database.rs"]
+mod postgres_database;
+#[path = "profiles_product.rs"]
+mod profiles_product;
+
+pub use postgres_database::database;
+pub use profiles_product::Product;
+
+use baukit_erasure::{ErasureService, IdentityRetention, PostgresErasureStore};
 use baukit_test::{FakeIdentityAccountDeleter, PostgresTestContainer};
-use sqlx::{PgConnection, PgPool};
+use sqlx::PgPool;
 use std::{error::Error, sync::Arc, time::Duration};
 
-pub struct Product;
-impl ProductErasure for Product {
-    fn erase<'a>(
-        &'a self,
-        connection: &'a mut PgConnection,
-        subject: &'a str,
-    ) -> ErasureFuture<'a, Result<(), sqlx::Error>> {
-        Box::pin(async move {
-            sqlx::query("DELETE FROM profiles WHERE subject = $1")
-                .bind(subject)
-                .execute(connection)
-                .await?;
-            Ok(())
-        })
-    }
-}
-pub async fn database()
--> Result<(PostgresTestContainer, PgPool, PostgresErasureStore), Box<dyn Error>> {
-    let container = baukit_test::start_postgres().await?;
-    let pool = PgPool::connect(container.connection_url()).await?;
-    for migration in [
-        baukit_jobs::POSTGRES_MIGRATION_SQL,
-        baukit_jobs::POSTGRES_MIGRATION_0002_SQL,
-        baukit_jobs::POSTGRES_MIGRATION_0003_SQL,
-        baukit_jobs::POSTGRES_MIGRATION_0004_SQL,
-        baukit_jobs::POSTGRES_MIGRATION_0005_SQL,
-        baukit_jobs::POSTGRES_MIGRATION_0006_SQL,
-        POSTGRES_MIGRATION_SQL,
-        baukit_erasure::POSTGRES_REONBOARDING_MIGRATION_SQL,
-        "CREATE TABLE profiles (subject TEXT PRIMARY KEY); INSERT INTO profiles VALUES ('alice'), ('bob');",
-    ] {
-        sqlx::raw_sql(migration).execute(&pool).await?;
-    }
-    let store = PostgresErasureStore::new(
-        pool.clone(),
-        Secret::new("test-key-with-at-least-32-bytes-of-entropy".into()),
-    )?;
-    Ok((container, pool, store))
-}
 pub async fn fixture() -> Result<
     (
         PostgresTestContainer,

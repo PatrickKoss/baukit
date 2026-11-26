@@ -33,6 +33,24 @@ in `scripts/publish-packages.sh` and `scripts/publish-crates.sh`; `make scripts-
 checks coverage and dependency order against the package and crate directories.
 When adding a module, update its fixed group or release-plz entry and publish order.
 
+## Publish gating
+
+A pushed `vX.Y.Z` tag publishes only when all of these hold (F-46):
+
+- `tag-on-main` confirms the tagged commit is an ancestor of `origin/main`.
+- `build-crates` (`cargo package --workspace --locked`) and `build-npm` (`pnpm install`, `pnpm build`)
+  run without an OIDC token and upload their output as artifacts.
+- `publish-crates` and `publish-npm` hold `id-token: write`, run in the `release` environment, install
+  and build nothing, and publish the artifacts. `publish-crates.sh` uses `--no-verify` and refuses a
+  crate without a verified package from `build-crates`.
+
+Set the environment up once under Settings, Environments, `release`: two required reviewers with
+"Prevent self-review", deployment tags limited to `v*.*.*`, and no admin bypass. Name the `release`
+environment in the crates.io and npm trusted-publisher settings, so a token minted elsewhere is
+rejected. `scripts/check-release-shape.py`, run by the `workflows` gate step, fails any workflow job
+that holds `id-token: write` without an environment, runs an install or build, or does not depend on
+the ancestry check.
+
 ## Record changes
 
 For a user-visible TypeScript change, run this from `typescript/` and commit

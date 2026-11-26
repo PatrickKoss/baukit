@@ -1,6 +1,6 @@
 {
   "name": "@baukit/sync-client",
-  "version": "0.30.6",
+  "version": "0.31.0",
   "description": "Client-side scheduling, transport, status reporting, and ordering for offline-capable sync loops.",
   "license": "MIT",
   "author": "Patrick Koss",
@@ -64,6 +64,7 @@
   "devDependencies": {
     "@types/node": "26.6.4",
     "expo-network": "57.0.2",
+    "fast-check": "catalog:",
     "react-native": "0.86.3",
     "typescript": "6.0.3",
     "vitest": "5.0.5"

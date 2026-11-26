@@ -70,6 +70,7 @@ mod ops;
 mod postgres;
 #[cfg(feature = "sqlx-postgres")]
 mod postgres_database;
+mod pull_conformance;
 mod purge_horizon;
 mod redis;
 mod replay_safe_mutation;
@@ -164,16 +165,23 @@ pub use ops::{
     OpsConformanceError, assert_ops_base_url_conformance, assert_ops_router_conformance,
     check_ops_base_url_conformance, check_ops_router_conformance,
 };
+pub use postgres::{
+    EXTERNAL_DATABASE_URL_VAR, PostgresTestContainer, PostgresTestError, PostgresTestOptions,
+    start_postgres,
+};
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::{
     ForeignKeyDeleteMismatch, audit_user_root_foreign_keys, start_postgres_with_migrations,
     start_postgres_with_owner_migrations,
 };
-pub use postgres::{PostgresTestContainer, PostgresTestError, PostgresTestOptions, start_postgres};
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres_database::{
     PostgresAppRole, PostgresDatabaseName, PostgresMigrationOwner, PostgresTestDatabase,
     PostgresTestDatabases,
+};
+pub use pull_conformance::{
+    PULL_CONFORMANCE_TABLES, PullConformanceAdapter, PullConformanceCursor, PullConformanceError,
+    PullConformancePage, PulledRow, assert_pull_conformance, check_pull_conformance,
 };
 pub use purge_horizon::{
     PullPause, PurgeHorizonAdapter, PurgeHorizonConformanceError, PurgeHorizonPull,

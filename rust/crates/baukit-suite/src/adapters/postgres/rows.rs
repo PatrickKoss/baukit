@@ -1,5 +1,6 @@
 use crate::domain::*;
 use crate::ports::SuiteStoreError;
+use jiff::Timestamp;
 use jiff_sqlx::Timestamp as SqlTimestamp;
 use sqlx::FromRow;
 use uuid::Uuid;
@@ -20,6 +21,7 @@ pub(super) struct LinkRow {
     pub(super) secret_ciphertext: Vec<u8>,
     pub(super) secret_nonce: Vec<u8>,
     pub(super) secret_key_version: i32,
+    pub(super) secret_record_id: Option<Uuid>,
     pub(super) sends: Vec<String>,
     pub(super) receives: Vec<String>,
     pub(super) share_xp: bool,
@@ -53,6 +55,7 @@ impl TryFrom<LinkRow> for SuiteLink {
                 ciphertext: r.secret_ciphertext,
                 nonce: r.secret_nonce,
                 key_version: r.secret_key_version,
+                record_id: r.secret_record_id,
             },
             sends: r.sends,
             receives: r.receives,
@@ -81,6 +84,7 @@ pub(super) struct RequestRow {
     pub(super) verifier_ciphertext: Vec<u8>,
     pub(super) verifier_nonce: Vec<u8>,
     pub(super) verifier_key_version: i32,
+    pub(super) verifier_record_id: Option<Uuid>,
     pub(super) client_state_nonce: String,
     pub(super) return_url: String,
     pub(super) link_id: Option<Uuid>,
@@ -88,6 +92,7 @@ pub(super) struct RequestRow {
     pub(super) secret_ciphertext: Option<Vec<u8>>,
     pub(super) secret_nonce: Option<Vec<u8>>,
     pub(super) secret_key_version: Option<i32>,
+    pub(super) secret_record_id: Option<Uuid>,
     pub(super) expires_at: SqlTimestamp,
     pub(super) consumed_at: Option<SqlTimestamp>,
     pub(super) created_at: SqlTimestamp,
@@ -107,6 +112,7 @@ impl TryFrom<RequestRow> for LinkRequest {
                 ciphertext: r.verifier_ciphertext,
                 nonce: r.verifier_nonce,
                 key_version: r.verifier_key_version,
+                record_id: r.verifier_record_id,
             },
             exchange: match (
                 r.initiator_link_id,
@@ -122,6 +128,7 @@ impl TryFrom<RequestRow> for LinkRequest {
                             ciphertext,
                             nonce,
                             key_version,
+                            record_id: r.secret_record_id,
                         },
                     })
                 }
@@ -168,4 +175,29 @@ impl TryFrom<CodeRow> for LinkCode {
             created_at: r.created_at.to_jiff(),
         })
     }
+}
+
+/// PostgreSQL keeps microseconds, so a stored time differs from the original by under one.
+pub(super) fn same_microsecond(stored: Timestamp, original: Timestamp) -> bool {
+    const NANOS_PER_MICRO: i128 = 1_000;
+    (stored.as_nanosecond() - original.as_nanosecond()).abs() < NANOS_PER_MICRO
+}
+
+#[derive(sqlx::FromRow)]
+pub(super) struct InboxRow {
+    pub(super) payload_hash: Vec<u8>,
+    pub(super) event_type: String,
+    pub(super) occurred_at: jiff_sqlx::Timestamp,
+    pub(super) outcome: String,
+    pub(super) ledger_entry_id: Option<String>,
+}
+#[derive(sqlx::FromRow)]
+pub(super) struct DeliveryRow {
+    pub(super) id: Uuid,
+    pub(super) event_type: Option<String>,
+    pub(super) status: String,
+    pub(super) attempt_count: i32,
+    pub(super) last_error: Option<String>,
+    pub(super) created_at: jiff_sqlx::Timestamp,
+    pub(super) updated_at: jiff_sqlx::Timestamp,
 }

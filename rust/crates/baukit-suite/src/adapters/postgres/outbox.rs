@@ -212,7 +212,7 @@ impl PostgresSuiteEventOutbox {
         let links = sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
-            secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
+            secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
             consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at
             FROM suite_links
@@ -310,7 +310,7 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         let link: SuiteLink = sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
-            secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
+            secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
             consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at
             FROM suite_links
@@ -368,7 +368,7 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         super::lock_owner(tx, owner).await?;
         let link: SuiteLink = sqlx::query_as::<_, LinkRow>(r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
-            secret_key_version, sends, receives, share_xp, reward_mode, delivery_health,
+            secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
             consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE id=$1 AND user_id=$2 FOR UPDATE"#)
 .bind(id)

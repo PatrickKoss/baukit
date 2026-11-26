@@ -47,7 +47,7 @@ const HIGH_SURROGATE_MAX = 0xdbff;
 const LOW_SURROGATE_MIN = 0xdc00;
 const LOW_SURROGATE_MAX = 0xdfff;
 const LEADING_WHITESPACE_PATTERN = /^[ \t\r\n]*/;
-const FORMULA_TRIGGERS = new Set(['=', '+', '-', '@']);
+const FORMULA_TRIGGERS = new Set(['=', '+', '-', '@', '\uff1d', '\uff0b', '\uff0d', '\uff20']);
 const CONTROL_TRIGGERS = new Set(['\t', '\r']);
 
 type EncodedCell =
@@ -132,10 +132,26 @@ function isInRange(value: number, min: number, max: number): boolean {
 }
 
 function numericText(cell: unknown): string | undefined {
-  if (typeof cell === 'number') return String(cell);
+  if (typeof cell === 'number') return positionalNumberText(cell);
   if (typeof cell !== 'object' || cell === null || !('numeric' in cell)) return undefined;
   const { numeric } = cell;
   return typeof numeric === 'string' ? numeric : undefined;
+}
+
+const EXPONENT_FORM = /^(-?)(\d)(?:\.(\d+))?e([+-]\d+)$/u;
+
+/** Matches Rust's `f64` Display: no exponent and a signed zero. */
+function positionalNumberText(value: number): string {
+  if (Object.is(value, -0)) return '-0';
+  const text = String(value);
+  const match = EXPONENT_FORM.exec(text);
+  if (match === null) return text;
+  const [, sign = '', lead = '', fraction = '', exponentText = '0'] = match;
+  const digits = lead + fraction;
+  const point = 1 + Number(exponentText);
+  if (point <= 0) return `${sign}0.${'0'.repeat(-point)}${digits}`;
+  if (point >= digits.length) return sign + digits + '0'.repeat(point - digits.length);
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
 }
 
 function writeCell(cell: EncodedCell, policy: WritePolicy): string {

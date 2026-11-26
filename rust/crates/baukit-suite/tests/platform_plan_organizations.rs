@@ -479,6 +479,11 @@ async fn standalone_organizations_get_the_configured_grant() {
             tier: "business".into(),
             features: vec![PRIVACY.into()],
         },
+        Arc::new(AliceInStudio),
+    );
+    assert_eq!(
+        require_feature(&plan, member(AGENCY), PRIVACY).await,
+        Err(PlanError::OrganizationNotAccessible)
     );
     for subject in [member(STUDIO), FeatureSubject::Organization(AGENCY)] {
         assert_eq!(
@@ -493,6 +498,42 @@ async fn standalone_organizations_get_the_configured_grant() {
             locked(AUTOMATION)
         );
     }
+}
+
+#[tokio::test]
+async fn an_account_named_like_an_organization_key_gets_no_organization_grant() {
+    let (_, _, plan) = alice_in_two_organizations();
+    plan.organization_refresh(STUDIO).await.expect("grant");
+    assert_eq!(
+        plan.current(&organization_cache_subject(STUDIO)).await,
+        Err(PlanError::EntitlementsUnavailable)
+    );
+}
+
+struct AliceInStudio;
+#[async_trait]
+impl OrganizationMembership for AliceInStudio {
+    async fn role(
+        &self,
+        organization_id: Uuid,
+        subject: &str,
+    ) -> Result<Option<OrganizationRole>, PlanError> {
+        Ok((organization_id == STUDIO && subject == ALICE).then_some(OrganizationRole::Member))
+    }
+}
+
+#[tokio::test]
+async fn standalone_without_organizations_admits_no_member() {
+    let plan = StandaloneAccountPlan::new(
+        PRODUCT.into(),
+        StandaloneEntitlements::default(),
+        Arc::new(NoOrganizationMembers),
+    );
+    assert!(!plan.is_member(STUDIO, ALICE).await.expect("membership"));
+    assert_eq!(
+        require_feature(&plan, member(STUDIO), PRIVACY).await,
+        Err(PlanError::OrganizationNotAccessible)
+    );
 }
 
 #[test]

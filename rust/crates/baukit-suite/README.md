@@ -167,11 +167,12 @@ Use `SuiteConfig` as the product's `suite` configuration section. Call
 `Arc<dyn baukit_ratelimit::RateLimitStore>`; use Redis for multiple processes.
 
 Copy `SUITE_MIGRATION_SQL`, `SUITE_RUNTIME_MIGRATION_SQL`,
-`SUITE_LOCK_ORDER_MIGRATION_SQL` and `SUITE_DELIVERY_PROBES_MIGRATION_SQL` after the jobs
-migrations for products adding suite tables. Products that already applied `003` add
-`005_suite_delivery_probes.sql` as a new migration. It drops the failed-job trigger and
-`suite_failed_delivery_jobs`, and schedules a probe one hour out for links that are
-already disabled. Keep applied suite migrations when
+`SUITE_LOCK_ORDER_MIGRATION_SQL`, `SUITE_RECORD_IDS_MIGRATION_SQL` and
+`SUITE_DELIVERY_PROBES_MIGRATION_SQL` after the jobs migrations for products adding
+suite tables. Products that already applied `003` add `006_suite_delivery_probes.sql`
+as a new migration. It drops the failed-job trigger and `suite_failed_delivery_jobs`,
+and schedules a probe one hour out for links that are already disabled. Keep applied
+suite migrations when
 their schema matches the shipped SQL, apart from product owner foreign keys.
 Keep the original filenames and SQLx migration history. Do not copy or run the
 crate's `001` and `002` again when their schema is already applied.
@@ -181,6 +182,8 @@ migration after their applied runtime migration. It removes the link foreign key
 from failed-job accounting records and replaces the job failure trigger. Existing
 failure records stay accounted; the new store accounts later records before it
 reads health or queues work. Deploy this migration before the new store code.
+Products upgrading past 0.30.6 add `005_suite_record_ids.sql` the same way, before
+the store code that seals secrets as vault v2 records.
 
 Use `PostgresSuiteErasure` and `erase_with_suite` to check erasure admission before
 notifying peers, then delete suite rows in the erasure transaction. Replays and
@@ -199,7 +202,9 @@ lock lets one replica run cleanup while the others skip the concurrent run.
 ## Packaging
 
 The crate archive includes `migrations/001_suite.sql` and
-`migrations/002_suite_runtime.sql` and `migrations/003_suite_lock_order.sql`.
+`migrations/002_suite_runtime.sql`, `migrations/003_suite_lock_order.sql`,
+`migrations/004_platform.sql`, `migrations/005_suite_record_ids.sql` and
+`migrations/006_suite_delivery_probes.sql`.
 These are the only embedded runtime files.
 Protocol fixtures ship with `baukit-test` under its `suite` feature; products
 provide their own peers and catalog at runtime.

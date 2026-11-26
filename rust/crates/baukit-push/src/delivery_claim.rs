@@ -71,6 +71,30 @@ impl DeliveryClaim {
     }
 }
 
+/// Proof that one `claim` call won. Only its holder can release the claim.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ClaimToken(Uuid);
+
+impl ClaimToken {
+    /// Creates a fresh, unguessable token.
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Uuid::new_v4())
+    }
+
+    /// Returns the stored identifier.
+    #[must_use]
+    pub const fn as_uuid(&self) -> Uuid {
+        self.0
+    }
+}
+
+impl Default for ClaimToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Storage port for daily delivery claims.
 ///
 /// A scheduled sender claims before it sends, so two workers evaluating the
@@ -79,15 +103,21 @@ impl DeliveryClaim {
 /// port. Claims grow by one row per owner, kind, and day, so schedule
 /// [`DeliveryClaimStore::purge`].
 pub trait DeliveryClaimStore: Send + Sync {
-    /// Records the claim; returns `false` when someone already holds it.
+    /// Records the claim; returns `None` when someone already holds it.
     fn claim(
         &self,
         claim: DeliveryClaim,
         claimed_at: Timestamp,
-    ) -> PushStoreFuture<'_, Result<bool, PushStoreError>>;
+    ) -> PushStoreFuture<'_, Result<Option<ClaimToken>, PushStoreError>>;
 
-    /// Drops a claim after a failed send; returns whether it existed.
-    fn release(&self, claim: DeliveryClaim) -> PushStoreFuture<'_, Result<bool, PushStoreError>>;
+    /// Drops a claim after a failed send; returns whether `token` still held it.
+    ///
+    /// A stale token, from a claim that was released and claimed again, releases nothing.
+    fn release(
+        &self,
+        claim: DeliveryClaim,
+        token: ClaimToken,
+    ) -> PushStoreFuture<'_, Result<bool, PushStoreError>>;
 
     /// Deletes up to `limit` claims for local dates before `before`, oldest
     /// date first; returns how many went.

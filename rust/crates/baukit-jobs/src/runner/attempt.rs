@@ -7,8 +7,8 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::{
-    ClaimedJob, FailureDisposition, JobError, JobStore, RecurringJob, ReleaseReason, RunnerError,
-    StoreError,
+    ClaimedJob, FailureDisposition, JobError, JobLease, JobStore, RecurringJob, ReleaseReason,
+    RunnerError, StoreError,
     metrics::{self, CANCELLED, FAILURE, RETRY, SUCCESS},
 };
 
@@ -55,7 +55,7 @@ pub(super) async fn process_claimed_job(
     job: ClaimedJob,
 ) -> Result<(), RunnerError> {
     let started = Instant::now();
-    let cancellation = JobCancellation::new(&context.config.worker_id, &context.drain);
+    let cancellation = JobCancellation::new(attempt_lease(context.as_ref(), &job), &context.drain);
     let result = run_attempt(&context, &job, &cancellation).await;
     let settled = if cancellation.was_completed_in_transaction() {
         Ok(SUCCESS)
@@ -98,7 +98,7 @@ async fn run_attempt(
     tokio::pin!(timeout);
     let cancellation_poll = wait_for_cancellation(store, job.id, config.cancellation_poll_interval);
     tokio::pin!(cancellation_poll);
-    let lease = renew_lease_until_lost(store, job.id, &config.worker_id, config.lease_duration);
+    let lease = renew_lease_until_lost(store, cancellation.lease(), config.lease_duration);
     tokio::pin!(lease);
 
     let result = tokio::select! {
@@ -118,10 +118,10 @@ async fn settle_attempt(
     result: AttemptResult,
 ) -> Result<&'static str, Unsettled> {
     let store = context.store.as_ref();
-    let worker_id = context.config.worker_id.as_str();
+    let lease = attempt_lease(context, job);
     match result {
         AttemptResult::Cancelled => {
-            if store.cancel(job.id, worker_id, Timestamp::now()).await? {
+            if store.cancel(&lease, Timestamp::now()).await? {
                 Ok(CANCELLED)
             } else {
                 Err(Unsettled::LeaseLost)
@@ -134,7 +134,7 @@ async fn settle_attempt(
         }
         AttemptResult::Handled(Ok(())) => {
             let now = Timestamp::now();
-            if store.complete(job.id, worker_id, now).await? {
+            if store.complete(&lease, now).await? {
                 return Ok(SUCCESS);
             }
             cancel_after_lost_transition(context, job, now).await
@@ -159,8 +159,7 @@ async fn release_for_shutdown(
     let released = context
         .store
         .release(
-            job.id,
-            &context.config.worker_id,
+            &attempt_lease(context, job),
             now,
             ReleaseReason::Shutdown,
             now,
@@ -184,7 +183,7 @@ async fn defer(
     let run_after = add_duration(now, delay).map_err(Unsettled::Fatal)?;
     let released = context
         .store
-        .release(job.id, &context.config.worker_id, run_after, reason, now)
+        .release(&attempt_lease(context, job), run_after, reason, now)
         .await?;
     disposition_outcome(context, job, released, now).await
 }
@@ -195,17 +194,19 @@ async fn record_failure(
     error: &JobError,
 ) -> Result<&'static str, Unsettled> {
     let now = Timestamp::now();
-    let delay = error.retry_after().unwrap_or_else(|| {
-        context
-            .jitter
-            .delay(&retry_backoff(&context.config), retry_index(job.attempts))
-    });
+    let delay = error.retry_after().map_or_else(
+        || {
+            context
+                .jitter
+                .delay(&retry_backoff(&context.config), retry_index(job.attempts))
+        },
+        |after| after.min(context.config.retry_max),
+    );
     let retry_at = add_duration(now, delay).map_err(Unsettled::Fatal)?;
     let disposition = context
         .store
         .record_failure(
-            job.id,
-            &context.config.worker_id,
+            &attempt_lease(context, job),
             error.is_retryable(),
             retry_at,
             &error.to_string(),
@@ -240,7 +241,7 @@ async fn cancel_after_lost_transition(
 ) -> Result<&'static str, Unsettled> {
     let store = context.store.as_ref();
     if store.cancellation_requested(job.id).await?
-        && store.cancel(job.id, &context.config.worker_id, now).await?
+        && store.cancel(&attempt_lease(context, job), now).await?
     {
         Ok(CANCELLED)
     } else {
@@ -262,19 +263,15 @@ async fn wait_for_cancellation(store: &dyn JobStore, job_id: Uuid, poll_interval
     }
 }
 
-async fn renew_lease_until_lost(
-    store: &dyn JobStore,
-    job_id: Uuid,
-    worker_id: &str,
-    lease_duration: Duration,
-) {
+async fn renew_lease_until_lost(store: &dyn JobStore, lease: &JobLease, lease_duration: Duration) {
+    let job_id = lease.job_id;
     let mut interval = tokio::time::interval(lease_duration / HEARTBEATS_PER_LEASE);
     interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
     interval.tick().await;
     loop {
         interval.tick().await;
         match store
-            .heartbeat(job_id, worker_id, lease_duration, Timestamp::now())
+            .heartbeat(lease, lease_duration, Timestamp::now())
             .await
         {
             Ok(true) => {}
@@ -282,6 +279,10 @@ async fn renew_lease_until_lost(
             Err(error) => tracing::warn!(%job_id, %error, "lease heartbeat failed"),
         }
     }
+}
+
+fn attempt_lease(context: &AttemptContext, job: &ClaimedJob) -> JobLease {
+    JobLease::of(job, context.config.worker_id.as_str())
 }
 
 /// Keeps a recurring chain alive when one slot fails for good. The slot's

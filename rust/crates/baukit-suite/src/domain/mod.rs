@@ -22,13 +22,18 @@ mod payloads;
 mod probe;
 pub use delivery_key::{SUITE_DELIVERY_MAX_PER_KEY, suite_delivery_concurrency_key};
 pub use probe::*;
+mod return_url;
+pub use return_url::*;
+#[cfg(feature = "runtime")]
+mod signing;
 pub mod validation;
 pub use payloads::*;
+#[cfg(feature = "runtime")]
+pub use signing::*;
 
 pub const SUITE_EVENT_NAMESPACE: Uuid = Uuid::from_u128(0x5f0e8c1a_3b7d_4c2e_9a61_2d8f4b7e0c95);
 pub const SUITE_EVENTS_DELIVER_JOB_TYPE: &str = "suite.events.deliver";
 pub const SUITE_LINKS_REVOKE_JOB_TYPE: &str = "suite.links.revoke";
-const DEV_SCHEME_SUFFIX: &str = "-dev";
 /// Job kinds whose terminal history is managed by suite cleanup.
 pub const SUITE_JOB_TYPES: [&str; 2] = [SUITE_EVENTS_DELIVER_JOB_TYPE, SUITE_LINKS_REVOKE_JOB_TYPE];
 pub const SUITE_QUEUE: &str = "suite-events";
@@ -62,6 +67,8 @@ pub struct EncryptedPayload {
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
     pub key_version: i32,
+    /// Vault v2 record id. `None` marks a v1 payload written before record ids existed.
+    pub record_id: Option<Uuid>,
 }
 
 macro_rules! string_enum {
@@ -163,9 +170,17 @@ pub struct PeerRegistrySettings {
     pub public_web_url: Option<String>,
     pub peers: BTreeMap<String, PeerUrls>,
     pub allow_loopback: bool,
+    /// Accept `<own scheme>-dev` native returns. Enable only for local and dev builds.
+    pub allow_dev_scheme: bool,
 }
 
 impl PeerRegistrySettings {
+    #[must_use]
+    pub fn with_dev_scheme(mut self, allow: bool) -> Self {
+        self.allow_dev_scheme = allow;
+        self
+    }
+
     #[must_use]
     pub fn with_public_urls(
         mut self,
@@ -203,6 +218,7 @@ pub struct ActivePeer {
 #[derive(Clone, Debug)]
 pub struct PeerRegistry {
     own: PeerMetadata,
+    allow_dev_scheme: bool,
     metadata: Vec<PeerMetadata>,
     public_api_url: Option<String>,
     public_web_url: Option<String>,
@@ -285,8 +301,15 @@ impl PeerRegistry {
         if public_api_url.is_none() || public_web_url.is_none() {
             active.clear();
         }
+        let dev_scheme = format!("{}{DEV_SCHEME_SUFFIX}", own.scheme);
+        let allow_dev_scheme = settings.allow_dev_scheme
+            && !file
+                .peers
+                .iter()
+                .any(|peer| peer.id != own.id && peer.scheme == dev_scheme);
         Ok(Self {
             own,
+            allow_dev_scheme,
             metadata: file.peers,
             public_api_url,
             public_web_url,
@@ -330,6 +353,7 @@ impl PeerRegistry {
                 .as_deref()
                 .ok_or(SuiteDataError::ReturnUrlInvalid)?,
             &self.own.scheme,
+            self.allow_dev_scheme,
         )
     }
 }
@@ -389,51 +413,6 @@ pub(crate) fn validate_authorize_url(
     }
     configured_url(value, allow_loopback, false, peer)?;
     Url::parse(value).map_err(|_| SuiteDataError::InvalidUrl(peer.to_owned()))
-}
-
-/// # Errors
-///
-/// `SuiteDataError::ReturnUrlInvalid` when either URL does not parse, either carries
-/// credentials, the origin has a path, query or fragment, or `value` is neither
-/// `<origin>/suite/linked` nor `<own_scheme>://suite/linked`. The template's `dev` build variant
-/// registers `<own_scheme>-dev`, so that scheme is accepted too.
-pub fn validate_return_url(
-    value: &str,
-    own_web_origin: &str,
-    own_scheme: &str,
-) -> Result<(), SuiteDataError> {
-    let invalid = || SuiteDataError::ReturnUrlInvalid;
-    let origin = Url::parse(own_web_origin).map_err(|_| invalid())?;
-    let url = Url::parse(value).map_err(|_| invalid())?;
-    if !url.username().is_empty()
-        || url.password().is_some()
-        || !origin.username().is_empty()
-        || origin.password().is_some()
-        || origin.path() != "/"
-        || origin.query().is_some()
-        || origin.fragment().is_some()
-    {
-        return Err(invalid());
-    }
-    let web = matches!(url.scheme(), "https" | "http")
-        && url.origin() == origin.origin()
-        && url.path() == "/suite/linked";
-    let native = is_own_native_scheme(url.scheme(), own_scheme)
-        && url.host_str() == Some("suite")
-        && url.port().is_none()
-        && url.path() == "/linked";
-    if web || native {
-        Ok(())
-    } else {
-        Err(invalid())
-    }
-}
-
-fn is_own_native_scheme(scheme: &str, own_scheme: &str) -> bool {
-    scheme == own_scheme
-        || scheme
-            .strip_suffix(DEV_SCHEME_SUFFIX)
-            .is_some_and(|base| base == own_scheme)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -606,7 +585,7 @@ impl SuiteEvent {
             event_id: self.event_id().to_string(),
             event_type: self.event_type.clone(),
             user_id: subject.to_owned(),
-            occurred_at: self.occurred_at,
+            occurred_at: baukit_events::wire_instant(self.occurred_at),
             source_app: source_app.to_owned(),
             schema_version: EVENT_SCHEMA_VERSION,
             payload: self.payload.clone(),

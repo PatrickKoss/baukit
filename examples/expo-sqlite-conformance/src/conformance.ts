@@ -1103,7 +1103,7 @@ CREATE TABLE raw_children (
             { id: "preserved", label: "before sync", payload: true },
             "server mismatch changed local data",
           );
-          await lifecycle.handleSessionExpired();
+          await lifecycle.handleSessionExpired("account-e");
           assert(
             lifecycle.state.status === "blocked" &&
               lifecycle.state.reason === "session-expired",

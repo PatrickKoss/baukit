@@ -13,6 +13,7 @@ mod lints;
 mod markup_comments;
 mod observability;
 mod patterns;
+mod security;
 mod suppressions;
 mod template_files;
 mod unused_noqa;
@@ -117,6 +118,7 @@ fn all_rules() -> Vec<Box<dyn Rule>> {
         Box::new(observability::Observability),
         Box::new(template_files::TemplateFiles),
         Box::new(fuzz_lockfile::FuzzLockfile),
+        Box::new(security::Security),
     ]
 }
 

@@ -79,7 +79,14 @@ Implement the product's `PlatformEvents` port in the ports crate, and pass it to
 It returns a retryable error for erasure requests until the product implements
 its erasure policy. Entitlement events use `EntitlementEventHandler`; other
 known events reach the product handler with `EventContext`. Use
-`context.postgres()` for writes that must commit with the receipt. Return
+`context.postgres()` for writes that must commit with the receipt.
+
+When the product adds a `HubAccountPlan` with organizations, wrap its handler in
+`MembershipEvictionHandler::new(plan.clone(), handler)` so membership, seat and
+organization events evict cached roles on this replica. Gate organization
+routes with `require_role`. A `StandaloneAccountPlan` needs an
+`OrganizationMembership` adapter over the product's member table, or
+`NoOrganizationMembers`. Return
 `PlatformError::Unavailable` for a retry and `Invalid` for permanent rejection.
 
 ## Erasure and late events
