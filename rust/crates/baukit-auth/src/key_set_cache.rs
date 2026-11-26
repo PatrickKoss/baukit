@@ -251,8 +251,9 @@ impl<S: KeySource> KeySetCache<S> {
         }
         let inner = Arc::clone(&self.inner);
         runtime.spawn(async move {
+            let guard = RefreshGuard(Arc::clone(&inner));
             let read = inner.cache.get_or_refresh(|| inner.fetch()).await;
-            inner.refreshing.store(false, Ordering::Release);
+            drop(guard);
             match read {
                 Ok(read) if read.freshness == Freshness::Fetched => {
                     inner.record(LookupResult::of(&read));
@@ -311,6 +312,15 @@ impl<S: KeySource> Inner<S> {
         self.unknown_keys
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// Clears the refresh flag even when the refresh task is cancelled.
+struct RefreshGuard<S: KeySource>(Arc<Inner<S>>);
+
+impl<S: KeySource> Drop for RefreshGuard<S> {
+    fn drop(&mut self) {
+        self.0.refreshing.store(false, Ordering::Release);
     }
 }
 

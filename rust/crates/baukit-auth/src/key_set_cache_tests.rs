@@ -15,6 +15,7 @@ type Keys = BTreeMap<String, u32>;
 struct ScriptedSource {
     keys: Mutex<Option<Keys>>,
     fetches: AtomicUsize,
+    panic_next: AtomicBool,
 }
 
 impl ScriptedSource {
@@ -38,6 +39,10 @@ impl KeySource for Arc<ScriptedSource> {
 
     fn fetch(&self) -> KeySourceFuture<'_, Keys, &'static str> {
         self.fetches.fetch_add(1, Ordering::SeqCst);
+        assert!(
+            !self.panic_next.swap(false, Ordering::SeqCst),
+            "scripted fetch panic"
+        );
         let keys = self
             .keys
             .lock()
@@ -100,6 +105,24 @@ async fn known_ids_survive_an_outage_until_the_stale_window_ends() {
         cache.key_for("a").await,
         Err(KeyLookupError::Unavailable { .. })
     ));
+}
+
+#[tokio::test]
+async fn a_panicking_background_refresh_does_not_block_later_refreshes() {
+    let source = Arc::new(ScriptedSource::default());
+    let clock = Arc::new(ManualClock::new());
+    let cache = cache(&source, &clock);
+    source.serve(Some(&[("a", 1)]));
+    cache.key_for("a").await.ok();
+
+    source.panic_next.store(true, Ordering::SeqCst);
+    clock.advance(FRESH_FOR);
+    assert_eq!(cache.key_for("a").await.ok(), Some(1));
+    settle(&cache).await;
+
+    source.serve(Some(&[("a", 1), ("rotated", 2)]));
+    clock.advance(COOLDOWN);
+    assert_eq!(cache.key_for("rotated").await.ok(), Some(2));
 }
 
 #[tokio::test]
