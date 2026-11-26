@@ -29,6 +29,25 @@ has_files() {
   [ -n "$(repository_files "$@" | tr -d '\0')" ]
 }
 
+# Prints Cargo.lock paths, one per line, without test fixtures and vendored crates.
+cargo_lockfiles() {
+  repository_files '*Cargo.lock' | tr '\0' '\n' | sed 's#^\./##' \
+    | grep -E '(^|/)Cargo\.lock$' | grep -Ev '(^|/)(fixtures|vendor)/' | sort
+}
+
+# Prints backend/ when it has a Cargo.toml, then each other directory with a Cargo.toml next to a Cargo.lock.
+cargo_workspaces() {
+  if [ -f backend/Cargo.toml ]; then
+    echo backend
+  fi
+  cargo_lockfiles | while IFS= read -r lockfile; do
+    workspace=$(dirname -- "$lockfile")
+    if [ "$workspace" != backend ] && [ -f "$workspace/Cargo.toml" ]; then
+      echo "$workspace"
+    fi
+  done
+}
+
 workflow_lint() {
   actionlint .github/workflows/*.yml
   zizmor --offline --persona regular --config zizmor.yml .github/workflows
@@ -46,10 +65,18 @@ osv() {
   resolved=$(mktemp -d)
   trap 'rm -rf "$resolved"' EXIT
   set --
-  if [ -f backend/Cargo.lock ]; then
-    python3 scripts/osv-resolved-lock.py backend/Cargo.toml "$resolved/backend"
-    set -- "$@" -L "$resolved/backend/Cargo.lock"
-  fi
+  while IFS= read -r lockfile; do
+    [ -f "$lockfile" ] || continue
+    workspace=$(dirname -- "$lockfile")
+    if [ ! -f "$workspace/Cargo.toml" ]; then
+      set -- "$@" -L "$lockfile"
+      continue
+    fi
+    python3 scripts/osv-resolved-lock.py "$workspace/Cargo.toml" "$resolved/$workspace"
+    set -- "$@" -L "$resolved/$workspace/Cargo.lock"
+  done <<EOF
+$(cargo_lockfiles)
+EOF
   for lockfile in web/pnpm-lock.yaml mobile/pnpm-lock.yaml; do
     if [ -f "$lockfile" ]; then
       set -- "$@" -L "$lockfile"
@@ -63,11 +90,26 @@ osv() {
 }
 
 deny() {
-  if [ ! -f backend/Cargo.toml ]; then
-    echo "repo lint: no Rust backend to check"
+  workspaces=$(cargo_workspaces)
+  if [ -z "$workspaces" ]; then
+    echo "repo lint: no Rust workspace to check"
     return
   fi
-  cargo deny --manifest-path backend/Cargo.toml --config backend/deny.toml check
+  failed=""
+  while IFS= read -r workspace; do
+    config=backend/deny.toml
+    if [ -f "$workspace/deny.toml" ]; then
+      config=$workspace/deny.toml
+    fi
+    echo "repo lint: cargo deny $workspace with $config"
+    cargo deny --manifest-path "$workspace/Cargo.toml" --config "$config" check || failed="$failed $workspace"
+  done <<EOF
+$workspaces
+EOF
+  if [ -n "$failed" ]; then
+    echo "repo lint: cargo deny failed for:$failed" >&2
+    return 1
+  fi
 }
 
 python_lint() {
