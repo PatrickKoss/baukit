@@ -342,10 +342,17 @@ fn policy_denial(state: &Security, denial: PolicyDenial) -> Response {
             }
             challenge(state, StatusCode::FORBIDDEN, "insufficient_scope", &scopes)
         }
-        PolicyDenial::Unavailable => error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "authentication_policy_unavailable",
-        ),
+        PolicyDenial::Unavailable => {
+            let mut response = error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "authentication_policy_unavailable",
+            );
+            response.headers_mut().insert(
+                header::RETRY_AFTER,
+                HeaderValue::from(IDENTITY_UNAVAILABLE_RETRY_AFTER_SECONDS),
+            );
+            response
+        }
         PolicyDenial::RateLimited(retry_after) => {
             let mut response = error(StatusCode::TOO_MANY_REQUESTS, "rate_limited");
             if let Ok(value) = HeaderValue::from_str(&retry_after.as_secs().max(1).to_string()) {

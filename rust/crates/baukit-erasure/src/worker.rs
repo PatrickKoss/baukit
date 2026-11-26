@@ -59,6 +59,12 @@ impl JobHandler for IdentityDeletionHandler {
                         "identity deletion temporarily unavailable",
                     ));
                 }
+                Err(IdentityDeletionError::Unavailable { retry_after }) => {
+                    return Err(JobError::deferred(
+                        "identity provider unavailable",
+                        retry_after,
+                    ));
+                }
                 Err(IdentityDeletionError::Permanent) => {
                     return Err(JobError::permanent(
                         "identity deletion rejected permanently",

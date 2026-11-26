@@ -494,6 +494,46 @@ mod discovery_retry {
     }
 
     #[tokio::test]
+    async fn an_open_oidc_circuit_fails_discovery_fast_as_unavailable() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let issuer = format!("http://{}", listener.local_addr().expect("address"));
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = calls.clone();
+        let router = Router::new().route(
+            "/.well-known/openid-configuration",
+            get(move || async move {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    [(axum::http::header::RETRY_AFTER, "60")],
+                )
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        let budget = Duration::from_secs(1);
+        let config = OidcConfig::new(&issuer, "api")
+            .and_then(|config| config.with_startup_budget(budget))
+            .expect("config");
+        let error = OidcVerifier::discover(config)
+            .await
+            .map(|_| ())
+            .expect_err("the issuer stays down");
+        assert!(error.is_unavailable(), "{error:?}");
+        assert!(
+            matches!(
+                &error,
+                VerificationError::DiscoveryBudgetExhausted(source)
+                    if matches!(&**source, VerificationError::DiscoveryRequest(cause)
+                        if matches!(**cause, baukit_egress::EgressError::CircuitOpen { .. }))
+            ),
+            "{error:?}"
+        );
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
     async fn issuer_mismatch_is_not_retried() {
         let issuer = late_issuer(Duration::ZERO).await;
         let config = OidcConfig::new(format!("{issuer}/"), "api").expect("config");

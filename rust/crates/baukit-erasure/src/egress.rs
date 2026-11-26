@@ -60,6 +60,12 @@ fn transport_error(error: &EgressError) -> IdentityDeletionError {
         EgressError::Destination(_) | EgressError::BlockedAddress => {
             IdentityDeletionError::Permanent
         }
+        EgressError::CircuitOpen { .. } | EgressError::Saturated => error
+            .retry_class()
+            .retry_after()
+            .map_or(IdentityDeletionError::Retryable, |retry_after| {
+                IdentityDeletionError::Unavailable { retry_after }
+            }),
         _ => IdentityDeletionError::Retryable,
     }
 }

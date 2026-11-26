@@ -1,12 +1,27 @@
 use std::time::{Duration, Instant};
 
-use axum::{Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+
+use axum::{
+    Json, Router,
+    extract::State,
+    http::{StatusCode, header},
+    response::IntoResponse,
+    routing::{get, post},
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use baukit_credential_vault::CredentialCipher;
+use baukit_egress::EgressError;
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 
-use super::{BrowserSessionConfig, IdpDiscoveryError, idp::OidcTokenClient};
+use super::{
+    BrowserSessionConfig, IdpDiscoveryError,
+    idp::{IdentityProvider, IdpError, OidcTokenClient},
+};
 
 type TestError = Box<dyn std::error::Error + Send + Sync>;
 
@@ -161,5 +176,58 @@ async fn pathless_issuer_rejects_a_document_that_differs_by_the_trailing_slash()
     assert!(matches!(without, Err(IdpDiscoveryError::IssuerMismatch)));
     let with = discover_root_issuer("/", "{origin}").await?;
     assert!(matches!(with, Err(IdpDiscoveryError::IssuerMismatch)));
+    Ok(())
+}
+
+async fn serve_unavailable_token_endpoint(calls: Arc<AtomicUsize>) -> Result<String, TestError> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let origin = format!("http://{}", listener.local_addr()?);
+    let document = json!({
+        "issuer": format!("{origin}/realms/test"),
+        "jwks_uri": format!("{origin}/realms/test/protocol/openid-connect/certs"),
+        "token_endpoint": format!("{origin}/realms/test/protocol/openid-connect/token"),
+    });
+    let router = Router::new()
+        .route(
+            "/realms/test/.well-known/openid-configuration",
+            get(|State(document): State<Value>| async move { Json(document) }),
+        )
+        .route(
+            "/realms/test/protocol/openid-connect/token",
+            post(move || async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    [(header::RETRY_AFTER, "60")],
+                )
+            }),
+        )
+        .with_state(document);
+    tokio::spawn(async move { axum::serve(listener, router).await });
+    Ok(origin)
+}
+
+#[tokio::test]
+async fn an_open_idp_circuit_fails_fast_as_unavailable_not_as_a_rejected_grant()
+-> Result<(), TestError> {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let origin = serve_unavailable_token_endpoint(calls.clone()).await?;
+    let issuer = format!("{origin}/realms/test");
+    let client = OidcTokenClient::discover(&config_for_issuer(&issuer, None)?).await?;
+    assert!(matches!(
+        client.refresh("refresh-token").await,
+        Err(IdpError::Unavailable(EgressError::Status { .. }))
+    ));
+    let started = Instant::now();
+    let outcome = client.refresh("refresh-token").await.map(|_| ());
+    assert!(started.elapsed() < Duration::from_millis(500));
+    assert!(
+        matches!(
+            outcome,
+            Err(IdpError::Unavailable(EgressError::CircuitOpen { .. }))
+        ),
+        "an open circuit maps to idp_unavailable (503) and keeps the session: {outcome:?}"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
     Ok(())
 }

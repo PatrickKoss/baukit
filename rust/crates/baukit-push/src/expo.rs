@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     MAX_RECEIPT_BATCH_SIZE, PushDeliveryStatus, PushError, PushFuture, PushMessage, PushOptions,
     PushOptionsError, PushOutcome, PushReceipt, PushReceiptFuture, PushReceiptSource,
-    PushRejection, PushSender, PushTicketId,
+    PushRejection, PushSendError, PushSender, PushTicketId,
 };
 
 const OK_STATUS: &str = "ok";
@@ -290,9 +290,24 @@ fn rejection(details: Option<&ExpoErrorDetails>) -> Option<PushRejection> {
 impl PushSender for ExpoPushSender {
     fn send<'a>(&'a self, batch: Vec<PushMessage>) -> PushFuture<'a> {
         Box::pin(async move {
+            let batch_size = self.options.batch_size();
             let mut outcomes = Vec::with_capacity(batch.len());
-            for chunk in batch.chunks(self.options.batch_size()) {
-                outcomes.extend(self.send_chunk(chunk).await?);
+            for (index, chunk) in batch.chunks(batch_size).enumerate() {
+                match self.send_chunk(chunk).await {
+                    Ok(chunk_outcomes) => outcomes.extend(chunk_outcomes),
+                    Err(error) => {
+                        let unsent = batch
+                            .iter()
+                            .skip(index.saturating_mul(batch_size))
+                            .cloned()
+                            .collect();
+                        return Err(PushSendError {
+                            error,
+                            outcomes,
+                            unsent,
+                        });
+                    }
+                }
             }
             Ok(outcomes)
         })
@@ -412,7 +427,7 @@ mod guarded_transport_tests {
             .await
             .expect_err("non-success status fails the batch");
         task.abort();
-        Ok(error)
+        Ok(error.error)
     }
 
     #[tokio::test]

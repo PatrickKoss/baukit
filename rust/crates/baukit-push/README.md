@@ -194,12 +194,24 @@ async fn deliver(
     messages: Vec<PushMessage>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let sent_at = Timestamp::now();
-    let outcomes = sender.send(messages).await?;
+    let (outcomes, failure) = match sender.send(messages).await {
+        Ok(outcomes) => (outcomes, None),
+        Err(failure) => (failure.outcomes.clone(), Some(failure)),
+    };
     registry.invalidate_dead_tokens(&outcomes, sent_at).await?;
     pending.record_accepted(owner_id, &outcomes, sent_at).await?;
-    Ok(())
+    match failure {
+        Some(failure) => Err(failure.into()),
+        None => Ok(()),
+    }
 }
 ```
+
+The adapter sends one request per chunk of `batch_size` messages and stops at
+the first chunk that fails. The `PushSendError` it returns holds the outcomes
+of the chunks Expo already took, including their tickets, and lists the
+failing chunk and everything after it in `unsent`. Record the outcomes first,
+then retry with `unsent` only, so nobody gets the same notification twice.
 
 `record_accepted` stores ticket ID, owner, token, and `sent_at` for every
 `Accepted` outcome of one owner's send, first due `RECEIPT_POLL_DELAY` (15

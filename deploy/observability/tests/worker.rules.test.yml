@@ -59,3 +59,32 @@ tests:
               summary: Worker retries are elevated
               description: Worker retry throughput exceeds one retry per second for job kind failing in fixture-worker.
               runbook_url: RUNBOOK_BASE_URL/worker-retry-storm
+  - interval: 1m
+    input_series:
+      - series: 'worker_job_runs_total{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job="scrape-worker",job_kind="data-subject.export",outcome="failure"}'
+        values: '0x5 1x20'
+      - series: 'worker_job_runs_total{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job="scrape-worker",job_kind="identity.account.delete",outcome="success"}'
+        values: '0+5x25'
+      - series: 'worker_job_runs_total{product="fixture",service="fixture-worker",environment="test",namespace="fixture",job="scrape-worker",job_kind="email.send",outcome="failure"}'
+        values: '0+5x25'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: BaukitPrivacyOperationFailed
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: BaukitPrivacyOperationFailed
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-worker
+              environment: test
+              namespace: fixture
+              job_kind: data-subject.export
+              severity: warning
+            exp_annotations:
+              summary: A privacy operation failed
+              description: A data-subject.export job in fixture-worker failed for good. The erasure or export it belongs to is now failed and needs a person.
+              runbook_url: RUNBOOK_BASE_URL/privacy-operation-failed
+      - eval_time: 24m
+        alertname: BaukitPrivacyOperationFailed
+        exp_alerts: []

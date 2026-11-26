@@ -487,7 +487,7 @@ async fn a_rate_limited_send_reports_the_delay_expo_asked_for()
     assert!(error.is_retryable());
     assert_eq!(error.retry_after(), Some(Duration::from_secs(42)));
     assert!(matches!(
-        error,
+        error.error,
         PushError::Transport {
             class: RetryClass::RetryAfter(_)
         }
@@ -525,7 +525,7 @@ async fn a_rejected_credential_is_not_retried() -> Result<(), Box<dyn std::error
         .expect_err("401 fails the batch");
     assert!(!error.is_retryable());
     assert!(matches!(
-        error,
+        error.error,
         PushError::Transport {
             class: RetryClass::Revoked
         }
@@ -576,7 +576,10 @@ async fn malformed_responses_are_invalid_rather_than_retryable()
             .send(vec![message("token")])
             .await
             .expect_err("a malformed body fails");
-        assert!(matches!(error, PushError::InvalidResponse(_)), "{error:?}");
+        assert!(
+            matches!(error.error, PushError::InvalidResponse(_)),
+            "{error:?}"
+        );
         assert!(!error.is_retryable());
     }
     Ok(())
@@ -592,7 +595,7 @@ async fn an_unreachable_endpoint_is_a_retryable_transport_failure()
         .expect_err("nothing listens there");
     assert!(error.is_retryable());
     assert!(matches!(
-        error,
+        error.error,
         PushError::Transport {
             class: RetryClass::Unavailable
         }
@@ -620,7 +623,7 @@ async fn a_slow_endpoint_is_cut_off_by_the_request_timeout()
         .expect_err("the timeout fires");
     assert!(started.elapsed() < Duration::from_secs(2));
     assert!(matches!(
-        error,
+        error.error,
         PushError::Transport {
             class: RetryClass::Timeout
         }

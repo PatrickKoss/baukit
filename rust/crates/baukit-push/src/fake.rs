@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     DeviceToken, PushDeliveryStatus, PushError, PushFuture, PushMessage, PushOutcome, PushReceipt,
-    PushReceiptFuture, PushReceiptSource, PushRejection, PushSender, PushTicketId,
+    PushReceiptFuture, PushReceiptSource, PushRejection, PushSendError, PushSender, PushTicketId,
 };
 
 #[derive(Default)]
@@ -139,7 +139,7 @@ impl PushSender for FakePushSender {
         Box::pin(async move {
             let mut state = self.state.lock().await;
             if let Some(failure) = state.failure.clone() {
-                return Err(failure);
+                return Err(PushSendError::before_any(failure, batch));
             }
             let outcomes = batch
                 .iter()
@@ -189,7 +189,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn every_token_delivers_and_every_batch_is_recorded() -> Result<(), PushError> {
+    async fn every_token_delivers_and_every_batch_is_recorded()
+    -> Result<(), Box<dyn std::error::Error>> {
         let sender = FakePushSender::new();
         let outcomes = sender.send(vec![message("a"), message("b")]).await?;
         assert_eq!(outcomes.len(), 2);
@@ -204,7 +205,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scripted_tokens_reject_and_surface_as_dead() -> Result<(), PushError> {
+    async fn scripted_tokens_reject_and_surface_as_dead() -> Result<(), Box<dyn std::error::Error>>
+    {
         let sender = FakePushSender::new();
         sender
             .reject(token("gone"), PushRejection::DeviceNotRegistered)
@@ -241,7 +243,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn an_accepted_ticket_settles_once_its_receipt_is_scripted() -> Result<(), PushError> {
+    async fn an_accepted_ticket_settles_once_its_receipt_is_scripted()
+    -> Result<(), Box<dyn std::error::Error>> {
         let sender = FakePushSender::new();
         sender.accept_without_receipt(token("slow")).await;
         let outcomes = sender.send(vec![message("slow")]).await?;
@@ -263,7 +266,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_scripted_failure_applies_until_it_is_cleared() -> Result<(), PushError> {
+    async fn a_scripted_failure_applies_until_it_is_cleared()
+    -> Result<(), Box<dyn std::error::Error>> {
         let sender = FakePushSender::new();
         sender
             .fail_with(PushError::Transport {
@@ -275,6 +279,8 @@ mod tests {
             .await
             .expect_err("scripted failure");
         assert!(error.is_retryable());
+        assert!(error.outcomes.is_empty());
+        assert_eq!(error.unsent, vec![message("a")]);
         assert!(sender.batches().await.is_empty());
         assert!(sender.receipts(Vec::new()).await.is_err());
 
