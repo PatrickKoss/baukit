@@ -12,7 +12,7 @@ Upgrade every Baukit component as one release train. Do not invent or call a `ba
 1. Start with a clean worktree and record the current `baukit.toml` capabilities, quality profile, and dependency source.
 2. Read the target release notes and the target checkout's:
    - `docs/platform/compatibility-matrix.md`
-   - `docs/platform/baukit-conventions.md`
+   - `docs/adr/0008-release-train-and-support-policy.md`
 3. The CLI is not on crates.io. Install it from the target tag when necessary:
 
    ```sh
