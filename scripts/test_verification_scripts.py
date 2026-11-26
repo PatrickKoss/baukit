@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
-import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 import yaml
+from process_runner import run_process
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -94,12 +94,11 @@ class ReleaseShapeTest(unittest.TestCase):
         self.assertEqual(len(release_shape.job_violations(workflow, "ci.yml")), 2)
 
     def test_old_release_workflow_fails_and_current_one_passes(self) -> None:
-        old = subprocess.run(
-            ["git", "show", "44eba6a4:.github/workflows/release.yml"],  # noqa: S607 -- git on PATH
+        old = run_process(
+            ["git", "show", "44eba6a4:.github/workflows/release.yml"],
             cwd=ROOT,
             capture_output=True,
             text=True,
-            check=False,
         )
         if old.returncode == 0:
             self.assertTrue(release_shape.job_violations(yaml.safe_load(old.stdout), "old"))
@@ -201,12 +200,11 @@ class ModelsStepTest(unittest.TestCase):
     def test_models_step_hands_an_explicit_jar_to_models_check(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             jar = Path(directory) / "missing.jar"
-            result = subprocess.run(  # noqa: S603 -- fixed argv
-                ["sh", str(ROOT / "scripts" / "ci-gate.sh"), "--step", "models"],  # noqa: S607 -- sh on PATH
+            result = run_process(
+                ["sh", str(ROOT / "scripts" / "ci-gate.sh"), "--step", "models"],
                 env={"PATH": "/usr/bin:/bin", "TLA2TOOLS_JAR": str(jar), "TLC_WORKERS": "1"},
                 capture_output=True,
                 text=True,
-                check=False,
                 timeout=120,
             )
 

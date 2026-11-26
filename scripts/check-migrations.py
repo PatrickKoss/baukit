@@ -20,6 +20,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from process_runner import run_process
+
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "rust" / "migrations.toml"
 NO_TRANSACTION = "-- no-transaction"
@@ -88,17 +90,11 @@ def runs_outside_transaction(path: Path) -> bool:
 
 def squawk(files: list[str], flags: list[str]) -> int:
     command = ["squawk", f"--pg-version={PG_VERSION}", *flags, *files]
-    return subprocess.run(command, cwd=ROOT, check=False).returncode  # noqa: S603 -- argv list from a checked-in manifest, no shell
+    return run_process(command, cwd=ROOT).returncode
 
 
 def docker(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 -- fixed docker argv, no shell
-        ["docker", *args],  # noqa: S607 -- docker comes from PATH like every gate tool
-        input=stdin,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    return run_process(["docker", *args], input=stdin, capture_output=True, text=True)
 
 
 @contextmanager

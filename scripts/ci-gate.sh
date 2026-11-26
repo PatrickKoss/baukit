@@ -208,8 +208,11 @@ step_kani() {
 }
 step_kani_full() {
   python3 scripts/list-proofs.py --check
-  # shellcheck disable=SC2046 # crate names are single words
-  run_kani $(kani_crates)
+  set --
+  for crate in $(kani_crates); do
+    set -- "$@" "$crate"
+  done
+  run_kani "$@"
 }
 step_verus() {
   if [ ! -d rust/verus ]; then

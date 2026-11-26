@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
 import sys
 import tomllib
 from pathlib import Path
+
+from process_runner import run_process
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "scripts" / "vector-generators.toml"
@@ -43,15 +44,11 @@ def main(argv: list[str] | None = None) -> int:
     for generator in generators:
         print(f"regenerate-vectors: {generator['output']}", flush=True)
         command = generator["command"]
-        status = subprocess.run(command, cwd=ROOT, check=False)  # noqa: S603 -- checked-in argv
+        status = run_process(command, cwd=ROOT)
         if status.returncode != 0:
             errors.append(f"generator for {generator['output']} failed")
     if not errors and args.check:
-        diff = subprocess.run(  # noqa: S603 -- fixed git argv, no shell
-            GIT_DIFF,  # noqa: S607 -- git comes from PATH
-            cwd=ROOT,
-            check=False,
-        )
+        diff = run_process(GIT_DIFF, cwd=ROOT)
         if diff.returncode != 0:
             errors.append("generated vectors differ from the committed fixtures")
     for error in errors:
