@@ -10,6 +10,8 @@ export interface AuthenticatedApiOptions extends ApiEnvironmentConfig {
   readonly auth: AuthTokenClient;
   readonly fetch?: FetchImplementation;
   readonly onProfileErased?: () => void | Promise<void>;
+  /** Confirmed profile ID; a 401 from an earlier profile's request fires no signal. */
+  readonly sessionSubject?: () => string | undefined;
 }
 
 /** Composes token refresh with the runtime's explicit one-replay 401 handshake. */
@@ -18,6 +20,7 @@ export function createAuthenticatedApiRuntime(options: AuthenticatedApiOptions):
     baseUrl: options.baseUrl,
     environment: options.environment,
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    ...(options.sessionSubject === undefined ? {} : { sessionSubject: options.sessionSubject }),
     tokenProvider: async () => (await options.auth.accessToken()) ?? null,
     onProfileErased: async () => {
       await options.auth.clearSession({ reason: 'profile_erased' });

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use super::claims::{authentication_time, scope_claim, selected_profile_claims};
 use super::*;
 
 #[test]
@@ -303,112 +304,6 @@ fn profile_claims_copy_only_selected_strings_and_booleans() {
     assert_eq!(profile["email_verified"].as_bool(), Some(true));
 }
 
-mod stale_keys {
-    use std::{sync::Arc, time::Duration};
-
-    use baukit_resilience::ManualClock;
-    use baukit_test::MockOidcServer;
-
-    use super::*;
-
-    const CONCURRENT_VERIFICATIONS: usize = 100;
-    const FRESH_FOR: Duration = Duration::from_secs(300);
-    const STALE_FOR: Duration = Duration::from_secs(3600);
-    const HUNG_JWKS: Duration = Duration::from_secs(30);
-    const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
-    const NO_WAIT: Duration = Duration::from_millis(500);
-
-    async fn wait_until(condition: impl Fn() -> bool) {
-        for _ in 0..200 {
-            if condition() {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-        panic!("condition not reached");
-    }
-
-    #[tokio::test]
-    async fn stale_keys_serve_known_kids_while_the_jwks_endpoint_is_down() {
-        let server = MockOidcServer::start().await.expect("mock issuer");
-        let clock = Arc::new(ManualClock::new());
-        let config = OidcConfig::new(server.issuer(), "api")
-            .and_then(|config| config.with_request_timeout(REQUEST_TIMEOUT))
-            .expect("config");
-        let verifier = Arc::new(
-            OidcVerifier::from_jwks_uri_with_clock(
-                config,
-                server.jwks_url(),
-                Arc::clone(&clock) as Arc<dyn baukit_resilience::Clock>,
-            )
-            .expect("verifier"),
-        );
-        let claims = server
-            .claims("user-123", "api", Duration::from_secs(7200))
-            .expect("claims");
-        let token = server.mint(&claims).expect("token");
-        let unknown = server
-            .mint_with_key_id(&claims, "rotated-away")
-            .expect("unknown kid token");
-        verifier.verify(&token).await.expect("first verification");
-        assert_eq!(server.jwks_request_count(), 1);
-
-        server.set_jwks_delay(HUNG_JWKS);
-        clock.advance(FRESH_FOR + Duration::from_secs(1));
-        let tasks: Vec<_> = (0..CONCURRENT_VERIFICATIONS)
-            .map(|_| {
-                let verifier = Arc::clone(&verifier);
-                let token = token.clone();
-                tokio::spawn(async move { verifier.verify(&token).await })
-            })
-            .collect();
-        let all = async {
-            for task in tasks {
-                task.await.expect("task").expect("stale key verifies");
-            }
-        };
-        tokio::time::timeout(NO_WAIT, all)
-            .await
-            .expect("no verification waits on the hung JWKS fetch");
-        wait_until(|| server.jwks_request_count() == 2).await;
-        assert_eq!(server.jwks_request_count(), 2, "one refresh attempt");
-
-        let started = std::time::Instant::now();
-        assert!(matches!(
-            verifier.verify(&unknown).await,
-            Err(VerificationError::UnknownKeyId)
-        ));
-        assert!(started.elapsed() < NO_WAIT, "unknown kid fails fast");
-
-        wait_until(|| !verifier.inner.keys.is_refreshing()).await;
-        assert!(matches!(
-            verifier.verify(&unknown).await,
-            Err(VerificationError::UnknownKeyId)
-        ));
-        verifier
-            .verify(&token)
-            .await
-            .expect("still stale and usable");
-        assert_eq!(server.jwks_request_count(), 2, "cooldown blocks refetching");
-
-        drop(server);
-        clock.advance(STALE_FOR);
-        for _ in 0..3 {
-            let error = verifier
-                .verify(&token)
-                .await
-                .map(|_| ())
-                .expect_err("keys expired");
-            assert!(error.is_unavailable(), "{error:?}");
-            assert!(!error.is_misconfigured(), "{error:?}");
-        }
-        assert!(matches!(
-            verifier.verify(&token).await,
-            Err(VerificationError::JwksUnavailable)
-        ));
-    }
-}
-
 mod discovery_retry {
     use std::time::{Duration, Instant};
 
@@ -544,5 +439,100 @@ mod discovery_retry {
             .expect_err("mismatch");
         assert!(matches!(error, VerificationError::DiscoveryIssuerMismatch));
         assert!(started.elapsed() < Duration::from_secs(1));
+    }
+}
+
+mod signed {
+    use aws_lc_rs::{rand::SystemRandom, signature::Ed25519KeyPair, signature::KeyPair as _};
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use serde_json::{Value, json};
+
+    use crate::{OidcConfig, OidcVerifier, SigningAlgorithm, VerificationError};
+
+    const ISSUER: &str = "https://issuer.example";
+    const KID: &str = "ed";
+
+    struct Signer(Ed25519KeyPair);
+
+    impl Signer {
+        fn new() -> Self {
+            let pkcs8 = Ed25519KeyPair::generate_pkcs8(&SystemRandom::new()).expect("key");
+            Self(Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).expect("pair"))
+        }
+
+        fn verifier(&self, config: OidcConfig) -> OidcVerifier {
+            let x = URL_SAFE_NO_PAD.encode(self.0.public_key().as_ref());
+            let jwks = json!({"keys": [{"kty": "OKP", "crv": "Ed25519", "kid": KID, "x": x}]});
+            let config = config
+                .with_allowed_algorithms([SigningAlgorithm::EdDsa])
+                .expect("algorithms");
+            OidcVerifier::from_jwks_document(config, &jwks.to_string()).expect("verifier")
+        }
+
+        fn token(&self, typ: Option<&str>, claims: &Value) -> String {
+            let mut header = json!({"alg": "EdDSA", "kid": KID});
+            if let Some(typ) = typ {
+                header["typ"] = json!(typ);
+            }
+            let input = format!(
+                "{}.{}",
+                URL_SAFE_NO_PAD.encode(header.to_string()),
+                URL_SAFE_NO_PAD.encode(claims.to_string())
+            );
+            let signature = URL_SAFE_NO_PAD.encode(self.0.sign(input.as_bytes()).as_ref());
+            format!("{input}.{signature}")
+        }
+    }
+
+    fn claims(audience: &str) -> Value {
+        json!({"sub": "user", "iss": ISSUER, "aud": audience, "exp": 4_102_444_800_u64})
+    }
+
+    #[tokio::test]
+    async fn required_access_token_type_accepts_only_at_jwt() {
+        let signer = Signer::new();
+        let config = OidcConfig::new(ISSUER, "api").expect("config");
+        let strict = signer.verifier(config.clone().requiring_access_token_type());
+        for typ in ["at+jwt", "application/at+jwt", "AT+JWT"] {
+            let token = signer.token(Some(typ), &claims("api"));
+            assert!(strict.verify(&token).await.is_ok(), "{typ}");
+        }
+        for typ in [Some("JWT"), None, Some("application/jwt")] {
+            let token = signer.token(typ, &claims("api"));
+            assert!(matches!(
+                strict.verify(&token).await,
+                Err(VerificationError::WrongTokenType)
+            ));
+        }
+        let lenient = signer.verifier(config);
+        assert!(
+            lenient
+                .verify(&signer.token(Some("JWT"), &claims("api")))
+                .await
+                .is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn id_tokens_with_a_nonce_are_rejected_as_access_tokens() {
+        let signer = Signer::new();
+        let config = OidcConfig::new(ISSUER, "web")
+            .expect("config")
+            .with_client_id("web")
+            .expect("client");
+        let verifier = signer.verifier(config);
+        let mut id_token = claims("web");
+        id_token["nonce"] = json!("login-nonce");
+        let token = signer.token(Some("JWT"), &id_token);
+        assert!(matches!(
+            verifier.verify(&token).await,
+            Err(VerificationError::WrongTokenType)
+        ));
+        assert!(
+            verifier
+                .verify_id_token(&token, "login-nonce")
+                .await
+                .is_ok()
+        );
     }
 }

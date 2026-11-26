@@ -317,6 +317,12 @@ fn signed_payload_markers_state_and_timestamps_are_checked_after_verification() 
             Err(expected)
         );
     }
+    let mut extended = serde_json::to_value(payload()).expect("JSON value");
+    extended["unsignedNote"] = json!("added by a forwarder");
+    assert_eq!(
+        verifier.verify(&sign_raw(&serde_json::to_vec(&extended).expect("JSON"))),
+        Err(ReceiptError::Payload)
+    );
     for bytes in [b"not JSON".as_slice(), b"{}", b"\xff"] {
         assert_eq!(
             verifier.verify(&sign_raw(bytes)),

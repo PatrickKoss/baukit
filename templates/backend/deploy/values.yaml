@@ -4,8 +4,10 @@ deploymentEnvironment: staging
 config:
   existingSecretRefs:
     - name: {{ context.app_name }}-runtime
-{% if context.worker %}  overrides:
-    WORKER__CONCURRENCY: 5
+  overrides:
+    # Assumes one ingress hop (Traefik) in front of the API.
+    RATE_LIMIT__TRUSTED_PROXY_HOPS: 1
+{% if context.worker %}    WORKER__CONCURRENCY: 5
     WORKER__JOB_TIMEOUT_SECONDS: 600
     WORKER__POLL_INTERVAL_MILLISECONDS: 250
 {% endif %}

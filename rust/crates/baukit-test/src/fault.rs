@@ -30,6 +30,9 @@ pub enum FaultError {
         /// Host port after the restart.
         after: u16,
     },
+    /// The fixture uses an external server, so there is no container to fault.
+    #[error("the fixture runs against an external server and has no container to fault")]
+    NoContainer,
     /// The restarted dependency did not pass its readiness probe in time.
     #[error("the dependency did not become ready within {0:?} after the restart")]
     NotReady(Duration),

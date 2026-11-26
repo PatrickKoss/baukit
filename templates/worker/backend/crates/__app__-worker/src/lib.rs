@@ -140,10 +140,9 @@ pub mod retention {
                 .map_err(|_| JobError::retryable("could not enqueue next retention purge"))?;
             let completed = self
                 .store
-                .complete_in_transaction(
+                .complete_lease_in_transaction(
                     &mut transaction,
-                    job.id,
-                    cancellation.worker_id(),
+                    cancellation.lease(),
                     Timestamp::now(),
                 )
                 .await

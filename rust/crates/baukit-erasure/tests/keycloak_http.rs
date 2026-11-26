@@ -62,14 +62,20 @@ async fn token(State(provider): State<Arc<Provider>>) -> (StatusCode, Json<serde
     )
 }
 
-async fn delete(State(provider): State<Arc<Provider>>) -> StatusCode {
+async fn delete(State(provider): State<Arc<Provider>>) -> (StatusCode, String) {
     provider.delete_calls.fetch_add(1, Ordering::SeqCst);
-    provider
+    let status = provider
         .delete_statuses
         .lock()
         .await
         .pop_front()
-        .expect("scripted deletion response")
+        .expect("scripted deletion response");
+    let body = if status == StatusCode::NOT_FOUND {
+        json!({"error": "User not found"}).to_string()
+    } else {
+        String::new()
+    };
+    (status, body)
 }
 
 async fn server(provider: Arc<Provider>) -> Result<Server, Box<dyn Error>> {
@@ -248,5 +254,20 @@ async fn an_open_circuit_fails_fast_as_unavailable_without_calling_keycloak()
     assert!(started.elapsed() < std::time::Duration::from_millis(500));
     assert!(retry_after > std::time::Duration::from_secs(50));
     assert_eq!(provider.delete_calls.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn unexplained_not_found_and_failed_probe_never_count_as_deleted()
+-> Result<(), Box<dyn Error>> {
+    let provider = Arc::new(Provider::default());
+    let server = server(provider.clone()).await?;
+    let adapter = adapter(&server)?;
+    assert_eq!(
+        adapter.delete_account("unrouted-subject").await,
+        Err(IdentityDeletionError::Permanent)
+    );
+    assert!(adapter.probe().await.is_err());
+    assert_eq!(provider.delete_calls.load(Ordering::SeqCst), 0);
     Ok(())
 }

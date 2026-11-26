@@ -10,7 +10,7 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use baukit_core::webhook_signature::{sign_webhook_hmac_sha256, verify_webhook_hmac_sha256};
-use baukit_credential_vault::{CredentialCipher, EncryptedCredentials, EncryptedField};
+use baukit_credential_vault::{CredentialCipher, EncryptedField, SealedCredentials};
 use baukit_events::EventEnvelope;
 use baukit_jobs::{
     JobStore, NewJob, PostgresJobStore, TerminalJobCleanupOutcome, TerminalJobCutoffs,
@@ -166,8 +166,9 @@ fn query(url: &str, key: &str) -> String {
 
 fn secret(link: &SuiteLink) -> Vec<u8> {
     cipher()
-        .decrypt(&EncryptedCredentials {
+        .open_record(&SealedCredentials {
             scope_id: link.id,
+            record_id: link.secret.record_id.expect("new links carry a record id"),
             key_version: link.secret.key_version,
             fields: BTreeMap::from([(
                 "link_secret".to_owned(),
@@ -731,6 +732,7 @@ async fn assert_start_supersedes_prepared_exchange(
             ciphertext: field.ciphertext.clone(),
             nonce: field.nonce.clone(),
             key_version: sealed.key_version,
+            record_id: None,
         },
     };
     let mut tx = c.store.begin_transaction().await?;
@@ -1320,7 +1322,7 @@ async fn receiving_signature_fixture_matrix_uses_raw_bytes() -> TestResult {
             )?,
         )?;
         let field = &encrypted.fields["link_secret"];
-        sqlx::query("UPDATE suite_links SET secret_ciphertext=$2,secret_nonce=$3,secret_key_version=$4 WHERE id=$1").bind(link.id).bind(&field.ciphertext).bind(&field.nonce).bind(encrypted.key_version).execute(&db.pool).await?;
+        sqlx::query("UPDATE suite_links SET secret_ciphertext=$2,secret_nonce=$3,secret_key_version=$4,secret_record_id=NULL WHERE id=$1").bind(link.id).bind(&field.ciphertext).bind(&field.nonce).bind(encrypted.key_version).execute(&db.pool).await?;
         let stamp = case["timestamp"]
             .as_i64()
             .expect("valid test value")
@@ -1995,6 +1997,9 @@ mod common {
         sqlx::raw_sql(SUITE_LOCK_ORDER_MIGRATION_SQL)
             .execute(&database.pool)
             .await?;
+        sqlx::raw_sql(SUITE_RECORD_IDS_MIGRATION_SQL)
+            .execute(&database.pool)
+            .await?;
         Ok(database)
     }
     pub async fn postgres_database_before_lock_order() -> Result<TestDatabase, Box<dyn Error>> {
@@ -2062,6 +2067,20 @@ mod common {
                 })
                 .expect("test suite public quota is valid"),
         )
+        .layer(axum::middleware::from_fn(with_peer))
+    }
+
+    async fn with_peer(
+        mut request: axum::extract::Request,
+        next: axum::middleware::Next,
+    ) -> axum::response::Response {
+        request
+            .extensions_mut()
+            .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+                [192, 0, 2, 1],
+                4000,
+            ))));
+        next.run(request).await
     }
     pub fn app_with_suite(_pool: &PgPool, api: Arc<dyn SuiteApi>) -> Router {
         Router::new()
@@ -2137,6 +2156,10 @@ async fn signed_route(
         .header(
             "x-suite-signature",
             sign_webhook_hmac_sha256(key, timestamp, &event.event_id, &raw),
+        )
+        .header(
+            SUITE_SIGNATURE_V2_HEADER,
+            sign_suite_v2(key, timestamp, &event.event_id, replay, &raw),
         );
     if replay {
         request = request.header("x-suite-replay", "1");
@@ -2173,6 +2196,10 @@ async fn receiving_deduplicates_conflicts_isolates_owners_and_makes_replay_rewar
     let wrong_key = signed_route(&app, other_link.id, &event, &key, false).await?;
     assert_eq!(wrong_key.0, StatusCode::UNAUTHORIZED);
     assert_eq!(wrong_key.1["error"]["code"], "suite_signature_invalid");
+    let mut moved = event.clone();
+    moved.occurred_at -= SignedDuration::from_secs(60);
+    let moved = signed_route(&app, link.id, &moved, &key, false).await?;
+    assert_eq!(moved.1["error"]["code"], "suite_event_id_conflict");
     event.payload.insert("minutes".into(), json!(25));
     let conflict = signed_route(&app, link.id, &event, &key, false).await?;
     assert_eq!(conflict.0, StatusCode::UNPROCESSABLE_ENTITY);
@@ -2584,6 +2611,47 @@ async fn link_in_process(
     Ok(link)
 }
 
+/// F-05: a reclaimed delivery job's stale attempt must not complete it.
+async fn assert_stale_delivery_attempt_cannot_complete(
+    pool: &PgPool,
+    context: &SuiteContext,
+    owner: Uuid,
+    link_id: Uuid,
+) -> TestResult {
+    const WORKER: &str = "suite-worker";
+    const KIND: &str = "suite.lease.check";
+    let jobs = PostgresJobStore::new(pool.clone());
+    let job = jobs.enqueue(NewJob::new(KIND, json!({}), 3)).await?.job;
+    let start = Timestamp::now();
+    let lease_for = std::time::Duration::from_secs(30);
+    let first = jobs
+        .claim(WORKER, &[KIND], start, lease_for)
+        .await?
+        .ok_or("first claim")?;
+    let later = start + SignedDuration::from_mins(1);
+    let second = jobs
+        .claim(WORKER, &[KIND], later, lease_for)
+        .await?
+        .ok_or("reclaim")?;
+    let lease = |attempt| DeliveryLease {
+        job_id: job.id,
+        worker_id: WORKER.to_owned(),
+        attempt,
+    };
+    assert!(
+        context
+            .store
+            .complete_delivery(owner, link_id, &lease(first.attempts), later)
+            .await
+            .is_err()
+    );
+    context
+        .store
+        .complete_delivery(owner, link_id, &lease(second.attempts), later)
+        .await?;
+    Ok(())
+}
+
 #[tokio::test]
 #[ignore = "requires Docker PostgreSQL"]
 async fn in_process_peer_links_the_second_app_and_delivers_to_its_real_router() -> TestResult {
@@ -2616,7 +2684,7 @@ async fn in_process_peer_links_the_second_app_and_delivers_to_its_real_router() 
     let remote = b_api.get(b_owner, link.remote_link_id).await?.link;
     assert_eq!(secret(&link), secret(&remote));
     let event = activity(15, Some(4));
-    let delivery = SuiteDeliveryService::new(a_context);
+    let delivery = SuiteDeliveryService::new(a_context.clone());
     assert_eq!(
         delivery
             .deliver(
@@ -2634,6 +2702,7 @@ async fn in_process_peer_links_the_second_app_and_delivers_to_its_real_router() 
         b_applier.calls.lock().expect("calls").as_slice(),
         &[(b_owner, RewardMode::Native, false)]
     );
+    assert_stale_delivery_attempt_cannot_complete(&db.pool, &a_context, a_owner, link.id).await?;
     a_api.disconnect(a_owner, link.id, Timestamp::now()).await?;
     assert_eq!(
         delivery
@@ -4297,8 +4366,9 @@ async fn start_preserves_default_and_hosted_authorize_paths_and_protocol_paramet
             })
             .await?
             .ok_or("missing request")?;
-        let verifier = cipher().decrypt(&EncryptedCredentials {
+        let verifier = cipher().open_record(&SealedCredentials {
             scope_id: response.request_id,
+            record_id: request.verifier.record_id.ok_or("no record id")?,
             key_version: request.verifier.key_version,
             fields: BTreeMap::from([(
                 "pkce_verifier".into(),

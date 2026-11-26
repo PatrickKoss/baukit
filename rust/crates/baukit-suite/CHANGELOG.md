@@ -6,7 +6,21 @@
 - `TicketVerifier` keeps its keys in `baukit_auth::KeySetCache` with metric source `ticket` and a 5 second refresh cooldown. Known keys keep verifying for an hour while the key endpoint is down, and no caller waits on a refresh.
 - Hub tokens come from a single-flight `StaleCache` with a 5 second failure cooldown. `HubRequest` decides replay after a 401. GETs, `HubRequest::idempotent` and requests with an `Idempotency-Key` replay once; `HubRequest::post` never does. `HubClient::post_json` is gone; use `send_json`. An open egress breaker maps to `HubError::CoolingDown { retry_after }`.
 - Breaking: `Entitlements::current`, `has_entitlement` and `has_tier` return `EntitlementError`. While the hub fails, `Entitlements::read` serves the last snapshot until `grace_until` with `stale: true`. After that it returns `EntitlementError::Unavailable { retry_after }`, which converts to a 503 with `Retry-After`. `EntitlementCache` gains `retained`. `EntitlementSourceError::CoolingDown` carries a source's own delay.
-- Breaking: delivery failures count per attempt in the store, against `SUITE_CIRCUIT_FAILURES`, instead of per terminal job in a SQL trigger. Disabled links get probe deliveries after 1 hour, doubling up to 24 hours. Apply `SUITE_DELIVERY_PROBES_MIGRATION_SQL` (`005_suite_delivery_probes.sql`). An open egress breaker defers the job with `JobError::deferred` and does not count. `SuiteLinkStore` gains `claim_probe`, `SuiteLink` gains `next_probe_at` and `failed_probes`, `delivery_preflight` and `after_delivery` take `now`.
+- Breaking: delivery failures count per attempt in the store, against `SUITE_CIRCUIT_FAILURES`, instead of per terminal job in a SQL trigger. Disabled links get probe deliveries after 1 hour, doubling up to 24 hours. Apply `SUITE_DELIVERY_PROBES_MIGRATION_SQL` (`006_suite_delivery_probes.sql`). An open egress breaker defers the job with `JobError::deferred` and does not count. `SuiteLinkStore` gains `claim_probe`, `SuiteLink` gains `next_probe_at` and `failed_probes`, `delivery_preflight` and `after_delivery` take `now`.
+
+## [0.31.0] - 2026-11-26
+
+- Breaking: link secrets and PKCE verifiers are sealed as credential-vault v2 records. Apply `migrations/005_suite_record_ids.sql` (`SUITE_RECORD_IDS_MIGRATION_SQL`) before deploying. `EncryptedPayload` gains `record_id: Option<Uuid>`; `None` opens through v1. See docs/migrations/boundary-hardening.md.
+- `SuiteDeliveryService::reseal_legacy_secrets` re-seals v1 link and open request secrets as v2 records in batches. The hourly cleanup runs it, and `SuiteCleanupOutcome` gains `resealed_secrets` and `unreadable_secrets`. The `SuiteLinkStore` port gains `legacy_secrets_in_transaction` and `reseal_secret_in_transaction` with no-op defaults.
+- Suite envelope validation reports `event_in_future` for an event more than the allowed clock skew ahead, the new `baukit-events` code. `SUITE_ERROR_CODES` and the shared fixture list it.
+- Breaking: `StandaloneAccountPlan::new` takes an `OrganizationMembership` port; nobody is an organization member by default. See docs/migrations/suite-correctness-hardening.md.
+- Breaking: the `<scheme>-dev` return URL needs `suite.allow_dev_scheme = true`.
+- Breaking: peers sign the replay flag with `x-suite-signature-v2`; a replay flag without it is refused with 401.
+- Membership caches evict on hub events; a hub read in flight during eviction is discarded.
+- A reused event id with another type or time is a conflict, not a duplicate.
+- Credits answers from the hub are checked against the request; a settled reservation is refused on replay.
+- A free refresh replaces a cached paid plan. Organization grants use their own cache product key.
+- Ticket `manageUrl` follows the same host and port rule as the TS client.
 
 ## [0.30.6] - 2026-11-26
 

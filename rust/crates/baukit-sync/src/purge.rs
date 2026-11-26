@@ -231,6 +231,10 @@ pub async fn purge_horizon(
 
 /// Rejects a pull cursor below the owner's purge horizon.
 ///
+/// Deprecated in favour of [`crate::pull::open_pull_window`]: this guard
+/// returns no upper bound, so a multi-statement pull at READ COMMITTED and a
+/// revision-only cursor can both skip rows.
+///
 /// Call this in the pull's transaction before reading any row. It holds
 /// `FOR KEY SHARE` on the owner's counter row until that transaction ends, so
 /// no purge for the owner commits between this check and the row reads.

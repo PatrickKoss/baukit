@@ -25,6 +25,11 @@ use super::{
 
 /// How long a rotated secret may still fetch its successor's access token.
 pub(crate) const GRACE_WINDOW: Duration = Duration::from_secs(10);
+/// How long after a rotation a lost response may be recovered by the predecessor.
+const LOST_RESPONSE_CAP: Duration = Duration::from_secs(5 * 60);
+/// Attempts to persist a rotated refresh token before giving up.
+const STORE_ATTEMPTS: u32 = 3;
+const STORE_RETRY_DELAY: Duration = Duration::from_millis(50);
 
 pub(crate) trait Clock: Send + Sync {
     fn now(&self) -> Timestamp;
@@ -42,6 +47,7 @@ impl Clock for SystemClock {
 pub(crate) struct Issued {
     pub(crate) access_token: Zeroizing<String>,
     pub(crate) expires_at: Timestamp,
+    pub(crate) expires_in: Duration,
     pub(crate) subject: String,
     pub(crate) cookie: Option<(SessionCredential, Duration)>,
 }
@@ -60,6 +66,8 @@ pub(crate) enum SessionError {
     Crypto(#[from] CryptoError),
     #[error("the IdP response is invalid")]
     InvalidIdpResponse(#[source] IdpError),
+    #[error("the detached session refresh did not complete")]
+    Interrupted,
 }
 
 fn idp_error(error: IdpError) -> SessionError {
@@ -119,11 +127,13 @@ impl SessionService {
         }
     }
 
+    /// Signs in and ends the family of the `previous` cookie, if any.
     pub(crate) async fn exchange(
         &self,
         code: &str,
         code_verifier: &str,
         redirect_uri: &str,
+        previous: Option<&SessionCredential>,
     ) -> Result<Issued, SessionError> {
         if !self.settings.accepts_redirect_uri(redirect_uri) {
             return Err(SessionError::InvalidGrant);
@@ -162,17 +172,35 @@ impl SessionService {
             &lifetimes,
         )?;
         let mut transaction = self.store.begin().await?;
+        if let Some(previous) = previous
+            && let Ok(previous) = locked_match(transaction.as_mut(), previous).await
+        {
+            transaction.revoke_family(previous.family_id, now).await?;
+        }
         transaction.insert(&row).await?;
         transaction.commit().await?;
         Ok(Issued {
             access_token: tokens.access_token.clone(),
             expires_at: after(now, tokens.expires_in),
+            expires_in: tokens.expires_in,
             subject,
             cookie: Some((credential, lifetimes.max_age)),
         })
     }
 
+    /// Refreshes in a detached task, so a dropped request cannot lose a rotated token.
     pub(crate) async fn refresh(
+        self: &Arc<Self>,
+        credential: &SessionCredential,
+    ) -> Result<Issued, SessionError> {
+        let service = Arc::clone(self);
+        let credential = credential.clone();
+        tokio::spawn(async move { service.refresh_detached(&credential).await })
+            .await
+            .map_err(|_| SessionError::Interrupted)?
+    }
+
+    async fn refresh_detached(
         &self,
         credential: &SessionCredential,
     ) -> Result<Issued, SessionError> {
@@ -187,7 +215,7 @@ impl SessionService {
             transaction.commit().await?;
             return Err(SessionError::SessionExpired);
         }
-        let refresh_token = self.open(&row, REFRESH_TOKEN_FIELD, &row.refresh_token)?;
+        let refresh_token = self.open(&row, REFRESH_TOKEN_FIELD)?;
         let tokens = match self.idp.refresh(&refresh_token).await {
             Ok(tokens) => tokens,
             Err(IdpError::InvalidGrant) => {
@@ -197,8 +225,59 @@ impl SessionService {
             }
             Err(error) => return Err(idp_error(error)),
         };
-        self.rotate(transaction, &row, &refresh_token, tokens, now)
+        match self
+            .rotate(transaction, &row, &refresh_token, &tokens, now)
             .await
+        {
+            Err(SessionError::Store(error)) => {
+                tracing::warn!(error = %error, "storing a rotated refresh token failed; retrying");
+                self.retry_rotation(&row, &refresh_token, &tokens, now)
+                    .await
+            }
+            outcome => outcome,
+        }
+    }
+
+    /// Stores the IdP's new tokens after a failed commit. The old token is dead
+    /// at the IdP once it rotated, so keeping it would end the session.
+    async fn retry_rotation(
+        &self,
+        row: &SessionRow,
+        refresh_token: &str,
+        tokens: &TokenSet,
+        now: Timestamp,
+    ) -> Result<Issued, SessionError> {
+        let mut last_error = SessionError::Interrupted;
+        for attempt in 1..STORE_ATTEMPTS {
+            tokio::time::sleep(STORE_RETRY_DELAY * attempt).await;
+            let mut transaction = match self.store.begin().await {
+                Ok(transaction) => transaction,
+                Err(error) => {
+                    last_error = SessionError::Store(error);
+                    continue;
+                }
+            };
+            let current = match transaction.lock(row.id).await {
+                Ok(Some(current)) => current,
+                Ok(None) => return Err(SessionError::SessionExpired),
+                Err(error) => {
+                    last_error = SessionError::Store(error);
+                    continue;
+                }
+            };
+            if current.rotated_to.is_some() || current.revoked_at.is_some() {
+                return Err(SessionError::SessionExpired);
+            }
+            match self
+                .rotate(transaction, &current, refresh_token, tokens, now)
+                .await
+            {
+                Err(SessionError::Store(error)) => last_error = SessionError::Store(error),
+                outcome => return outcome,
+            }
+        }
+        tracing::error!(family_id = %row.family_id, "rotated refresh token could not be stored");
+        Err(last_error)
     }
 
     async fn rotate(
@@ -206,7 +285,7 @@ impl SessionService {
         mut transaction: Box<dyn SessionTransaction>,
         row: &SessionRow,
         refresh_token: &str,
-        tokens: TokenSet,
+        tokens: &TokenSet,
         now: Timestamp,
     ) -> Result<Issued, SessionError> {
         if let Some(id_token) = &tokens.id_token
@@ -219,7 +298,7 @@ impl SessionService {
         let previous_id_token = row
             .id_token
             .as_ref()
-            .map(|sealed| self.open(row, ID_TOKEN_FIELD, sealed))
+            .map(|_| self.open(row, ID_TOKEN_FIELD))
             .transpose()?;
         let id_token = tokens.id_token.as_ref().or(previous_id_token.as_ref());
         let refresh_token = tokens
@@ -243,8 +322,9 @@ impl SessionService {
         transaction.mark_rotated(row.id, successor.id, now).await?;
         transaction.commit().await?;
         Ok(Issued {
-            access_token: tokens.access_token,
+            access_token: tokens.access_token.clone(),
             expires_at,
+            expires_in: tokens.expires_in,
             subject: row.subject.clone(),
             cookie: Some((credential, lifetimes.max_age)),
         })
@@ -258,19 +338,25 @@ impl SessionService {
         now: Timestamp,
     ) -> Result<Issued, SessionError> {
         let successor = transaction.lock(successor).await?;
+        if let Some(head) = &successor
+            && self.is_unused_head(head, now)
+        {
+            return self.rotate_unused_head(transaction, head, now).await;
+        }
         if let Some(successor) = successor
             && successor.revoked_at.is_none()
-            && let (Some(sealed), Some(expires_at), Some(grace_until)) = (
+            && let (Some(_), Some(expires_at), Some(grace_until)) = (
                 &successor.grace_access_token,
                 successor.grace_expires_at,
                 successor.grace_until,
             )
             && now <= grace_until
         {
-            let access_token = self.open(&successor, GRACE_ACCESS_TOKEN_FIELD, sealed)?;
+            let access_token = self.open(&successor, GRACE_ACCESS_TOKEN_FIELD)?;
             return Ok(Issued {
                 access_token,
                 expires_at,
+                expires_in: Duration::try_from(expires_at - now).unwrap_or(Duration::ZERO),
                 subject: successor.subject,
                 cookie: None,
             });
@@ -283,6 +369,31 @@ impl SessionService {
             self.revoke_at_idp(&head).await;
         }
         Err(SessionError::SessionExpired)
+    }
+
+    /// The browser never presented `head`, so its refresh response was lost.
+    /// Past the grace window and within the cap, the predecessor may still
+    /// rotate it. Once the head is used it rotates, and reuse is detected again.
+    fn is_unused_head(&self, head: &SessionRow, now: Timestamp) -> bool {
+        head.rotated_to.is_none()
+            && head.revoked_at.is_none()
+            && head.grace_until.is_some_and(|until| now > until)
+            && now <= after(head.created_at, LOST_RESPONSE_CAP)
+            && now < head.idle_expires_at
+            && now < head.absolute_expires_at
+    }
+
+    async fn rotate_unused_head(
+        &self,
+        transaction: Box<dyn SessionTransaction>,
+        head: &SessionRow,
+        now: Timestamp,
+    ) -> Result<Issued, SessionError> {
+        tracing::info!(family_id = %head.family_id, "re-issuing an unused session head");
+        let refresh_token = self.open(head, REFRESH_TOKEN_FIELD)?;
+        let tokens = self.idp.refresh(&refresh_token).await.map_err(idp_error)?;
+        self.rotate(transaction, head, &refresh_token, &tokens, now)
+            .await
     }
 
     /// Deletes the presented session's family and returns the end-session URL.
@@ -299,6 +410,9 @@ impl SessionService {
             Err(SessionError::SessionExpired) => return Ok(None),
             Err(error) => return Err(error),
         };
+        if !self.is_current(transaction.as_mut(), &row).await? {
+            return Ok(None);
+        }
         let head = transaction.family_head(row.family_id).await?;
         transaction.delete_family(row.family_id).await?;
         transaction.commit().await?;
@@ -309,15 +423,31 @@ impl SessionService {
         let id_token = head
             .id_token
             .as_ref()
-            .map(|sealed| self.open(&head, ID_TOKEN_FIELD, sealed))
+            .map(|_| self.open(&head, ID_TOKEN_FIELD))
             .transpose()?;
         Ok(self
             .idp
             .end_session_url(id_token.as_ref().map(|token| token.as_str())))
     }
 
+    /// Whether `row` is the family head or was rotated within the grace window.
+    async fn is_current(
+        &self,
+        transaction: &mut dyn SessionTransaction,
+        row: &SessionRow,
+    ) -> Result<bool, SessionError> {
+        let Some(successor) = row.rotated_to else {
+            return Ok(true);
+        };
+        let now = self.clock.now();
+        Ok(transaction.lock(successor).await?.is_some_and(|successor| {
+            successor.revoked_at.is_none()
+                && successor.grace_until.is_some_and(|until| now <= until)
+        }))
+    }
+
     async fn revoke_at_idp(&self, row: &SessionRow) {
-        let refresh_token = match self.open(row, REFRESH_TOKEN_FIELD, &row.refresh_token) {
+        let refresh_token = match self.open(row, REFRESH_TOKEN_FIELD) {
             Ok(token) => token,
             Err(error) => {
                 tracing::warn!(error = %error, "could not decrypt refresh token for revocation");
@@ -333,16 +463,8 @@ impl SessionService {
         &self,
         row: &SessionRow,
         field: &'static str,
-        sealed: &[u8],
     ) -> Result<Zeroizing<String>, CryptoError> {
-        crypto::open(
-            &self.settings.cipher,
-            row.id,
-            &row.subject,
-            row.key_version,
-            field,
-            sealed,
-        )
+        crypto::open(&self.settings.cipher, row, field)
     }
 
     fn lifetimes(
@@ -364,13 +486,7 @@ impl SessionService {
             }
             idle = idle.min(refresh_lifetime);
         }
-        let remaining = Duration::try_from(absolute_expires_at - now).unwrap_or(Duration::ZERO);
-        let max_age = idle.min(remaining);
-        Lifetimes {
-            idle_expires_at: after(now, max_age),
-            absolute_expires_at,
-            max_age,
-        }
+        session_lifetimes(now, absolute_expires_at, idle)
     }
 
     #[expect(
@@ -406,6 +522,7 @@ impl SessionService {
             family_id,
             subject: subject.to_owned(),
             key_version: sealed.key_version,
+            record_id: Some(sealed.record_id),
             refresh_token,
             id_token: sealed.fields.remove(ID_TOKEN_FIELD),
             created_at: now,
@@ -435,10 +552,50 @@ async fn locked_match(
     Ok(row)
 }
 
+/// Caps the idle window by the time left before the absolute expiry.
+fn session_lifetimes(now: Timestamp, absolute_expires_at: Timestamp, idle: Duration) -> Lifetimes {
+    let remaining = Duration::try_from(absolute_expires_at - now).unwrap_or(Duration::ZERO);
+    let max_age = idle.min(remaining);
+    Lifetimes {
+        idle_expires_at: after(now, max_age),
+        absolute_expires_at,
+        max_age,
+    }
+}
+
 /// Adds a duration, saturating at the latest representable instant.
 fn after(instant: Timestamp, duration: Duration) -> Timestamp {
     SignedDuration::try_from(duration)
         .ok()
         .and_then(|delta| instant.checked_add(delta).ok())
         .unwrap_or(Timestamp::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    const YEAR_SECONDS: i64 = 365 * 24 * 60 * 60;
+
+    proptest! {
+        /// P-07: the idle expiry never passes the absolute expiry, and the
+        /// cookie max-age never exceeds the configured idle timeout.
+        #[test]
+        fn idle_window_stays_inside_absolute_and_idle_limits(
+            now in -YEAR_SECONDS..YEAR_SECONDS,
+            absolute_offset in -YEAR_SECONDS..YEAR_SECONDS,
+            idle in 0..u64::try_from(2 * YEAR_SECONDS).unwrap_or(u64::MAX),
+        ) {
+            let now = Timestamp::from_second(1_800_000_000 + now).expect("timestamp");
+            let absolute = now + SignedDuration::from_secs(absolute_offset);
+            let idle = Duration::from_secs(idle);
+            let lifetimes = session_lifetimes(now, absolute, idle);
+            prop_assert!(lifetimes.max_age <= idle);
+            prop_assert!(lifetimes.idle_expires_at <= absolute.max(now));
+            prop_assert!(lifetimes.idle_expires_at >= now);
+            prop_assert_eq!(lifetimes.absolute_expires_at, absolute);
+        }
+    }
 }

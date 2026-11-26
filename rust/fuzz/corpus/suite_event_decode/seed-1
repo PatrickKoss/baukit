@@ -1,0 +1,1 @@
+{"eventId": "platform-fixture-2", "type": "schluesselbund.account.updated", "userId": "suite|person-123", "occurredAt": "2026-10-18T10:00:00Z", "sourceApp": "schluesselbund", "schemaVersion": 1, "payload": {"suiteSubject": "suite|person-123", "revision": 7}}

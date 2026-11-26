@@ -61,9 +61,9 @@ that locked removal directly and resolves `true` when it removes an entry or
 parse, edit, or rewrite the serialized registry JSON themselves.
 
 Auth integration must pass the session-expired reason to local-data cleanup.
-For `profile_erased`, call `handleProfileErased()` to close and erase the last
+For `profile_erased`, call `handleProfileErased(subject)` to close and erase the last
 selected partition and remove its registry entry. The lifecycle keeps that
-partition's context after `clear()` or `handleSessionExpired()`, so token clearing
+partition's context after `clear()` or `handleSessionExpired(subject)`, so token clearing
 can close storage before the erasure reason arrives. The state has reason
 `profile-erased` and `cleanup: 'pending'` while the transition is queued or running.
 It becomes `cleanup: 'complete'` after erasure or when no partition needs erasing.
@@ -158,8 +158,8 @@ Other production exports used by this contract include
 `pending`, `complete`, or `failed`. The lifecycle hides an old handle immediately,
 waits for close and user-memory reset, and publishes the new partition only after
 the injected open/migrate/hydrate hook finishes. Product auth integration calls
-`handleProfileErased()` for `profile_erased`. Other terminal expiry reasons call
-`handleSessionExpired()` directly. That method closes and blocks; it does not
+`handleProfileErased(subject)` for `profile_erased`. Other terminal expiry reasons call
+`handleSessionExpired(subject)` directly. That method closes and blocks; it does not
 erase retained data.
 
 The adapter-parameterized `describeScopedPersistenceContract` Vitest suite is

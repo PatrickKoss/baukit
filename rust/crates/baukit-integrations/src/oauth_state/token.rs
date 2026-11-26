@@ -48,8 +48,12 @@ pub(crate) fn random_token(random: &SystemRandom) -> Result<String, OAuthStateEr
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
 
+const fn has_token_length(raw: &str) -> bool {
+    raw.len() == TOKEN_CHARS
+}
+
 fn parse_token(raw: &str) -> Result<String, OAuthStateError> {
-    if raw.len() != TOKEN_CHARS {
+    if !has_token_length(raw) {
         return Err(OAuthStateError::Malformed);
     }
     let decoded = URL_SAFE_NO_PAD
@@ -163,4 +167,27 @@ pub fn binding_from_cookie_header(header: &str) -> Option<&str> {
         let (name, value) = pair.trim().split_once('=')?;
         (name == OAUTH_BINDING_COOKIE).then_some(value)
     })
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::*;
+
+    const FILLER: &str = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+
+    /// K-18: for every input of 0 to 44 characters, the gate in front of the
+    /// decoder in `parse_token` passes iff the length is exactly 43. Canonical
+    /// base64url acceptance at that length is checked by the
+    /// `oauth_state_parse` fuzz oracle, since CBMC cannot bound the decoder.
+    /// No loops run, so no unwind bound is set.
+    /// Bounds: inputs of 0 to 44 characters, no loops.
+    #[kani::proof]
+    fn token_length_gate_admits_only_43_characters() {
+        let len: usize = kani::any();
+        kani::assume(len <= FILLER.len());
+        let Some(raw) = FILLER.get(..len) else {
+            return;
+        };
+        assert_eq!(has_token_length(raw), len == TOKEN_CHARS);
+    }
 }

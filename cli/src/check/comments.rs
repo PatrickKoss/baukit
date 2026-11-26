@@ -211,41 +211,85 @@ fn scan_line_comments(lines: &[&str], language: Language) -> Vec<Suppression> {
 }
 
 fn rust_attribute(lines: &[&str], index: usize) -> Option<Suppression> {
-    let trimmed = lines.get(index)?.trim_start();
-    let body = trimmed
+    let code = rust_code(lines.get(index)?);
+    let at = attribute_start(&code)?;
+    let mut attribute = code.get(at..)?.to_owned();
+    let mut depth = bracket_balance(&attribute);
+    for line in lines.iter().skip(index + 1).take(ATTRIBUTE_SCAN_LINES) {
+        if depth <= 0 {
+            break;
+        }
+        attribute.push('\n');
+        attribute.push_str(line);
+        depth += bracket_balance(line);
+    }
+    let compact: String = attribute.split_whitespace().collect();
+    let body = compact
         .strip_prefix("#![")
-        .or_else(|| trimmed.strip_prefix("#["))?;
-    let kind = if body.starts_with("allow(") {
+        .or_else(|| compact.strip_prefix("#["))?;
+    let kind = if is_allow(body) {
         SuppressionKind::RustAllow
     } else if body.starts_with("expect(") {
         SuppressionKind::RustExpect
     } else {
         return None;
     };
-    let attribute = attribute_text(lines, index);
     Some(Suppression {
         kind,
         line: index + 1,
-        missing_reason: kind == SuppressionKind::RustAllow
-            && !attribute
-                .split_whitespace()
-                .collect::<String>()
-                .contains("reason="),
+        missing_reason: kind == SuppressionKind::RustAllow && !compact.contains("reason="),
     })
 }
 
-fn attribute_text(lines: &[&str], start: usize) -> String {
-    let mut text = String::new();
-    let mut depth = 0_i32;
-    for line in lines.iter().skip(start).take(ATTRIBUTE_SCAN_LINES) {
-        text.push_str(line);
-        text.push('\n');
-        depth += bracket_balance(line);
-        if depth <= 0 {
+fn is_allow(body: &str) -> bool {
+    if body.starts_with("allow(") {
+        return true;
+    }
+    body.strip_prefix("cfg_attr(").is_some_and(|arguments| {
+        arguments
+            .match_indices("allow(")
+            .any(|(offset, _)| offset > 0 && arguments[..offset].ends_with([',', '(']))
+    })
+}
+
+/// The byte offset of the first `#[` or `#![` in `code`, ignoring whitespace inside the opener.
+fn attribute_start(code: &str) -> Option<usize> {
+    code.match_indices('#')
+        .map(|(offset, _)| offset)
+        .find(|&offset| {
+            let rest = code[offset + 1..].trim_start();
+            let rest = rest.strip_prefix('!').map_or(rest, str::trim_start);
+            rest.starts_with('[')
+        })
+}
+
+/// The line with string literal contents blanked and any trailing comment removed.
+fn rust_code(line: &str) -> String {
+    let mut code = String::with_capacity(line.len());
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut previous = '\0';
+    for character in line.chars() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                in_string = false;
+                code.push(character);
+            }
+            continue;
+        }
+        if character == '/' && previous == '/' {
+            code.pop();
             break;
         }
+        in_string = character == '"';
+        code.push(character);
+        previous = character;
     }
-    text
+    code
 }
 
 fn bracket_balance(line: &str) -> i32 {
@@ -419,6 +463,35 @@ mod tests {
                 (SuppressionKind::RustAllow, 1, true),
                 (SuppressionKind::RustAllow, 2, false),
                 (SuppressionKind::RustExpect, 6, false),
+            ]
+        );
+    }
+
+    #[test]
+    fn rust_allow_is_found_in_every_attribute_spelling() {
+        let source = [
+            "#[cfg_attr(test, allow(dead_code))]",
+            "# [allow(dead_code)]",
+            "#[ allow(dead_code)]",
+            "fn f() {} #[allow(unused)] fn g() {}",
+            "#[cfg_attr(",
+            "    feature = \"x\",",
+            "    allow(clippy::y, reason = \"r\")",
+            ")]",
+            "#[cfg_attr(test, disallow(x))]",
+            "let text = \"# [allow(x)]\"; // #[allow(y)]",
+            "# ! [allow(z)]",
+        ]
+        .join("\n");
+        assert_eq!(
+            kinds("a.rs", &source),
+            vec![
+                (SuppressionKind::RustAllow, 1, true),
+                (SuppressionKind::RustAllow, 2, true),
+                (SuppressionKind::RustAllow, 3, true),
+                (SuppressionKind::RustAllow, 4, true),
+                (SuppressionKind::RustAllow, 5, false),
+                (SuppressionKind::RustAllow, 11, true),
             ]
         );
     }

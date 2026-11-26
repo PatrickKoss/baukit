@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: read # paths-filter lists the PR's changed files
     outputs:
       mobile: ${{ steps.filter.outputs.mobile }}
       sqlite: ${{ steps.filter.outputs.sqlite }}
@@ -143,6 +143,7 @@ jobs:
       - run: scripts/ci-gate.sh --step osv
       - run: scripts/ci-gate.sh --step python-lint
       - run: scripts/ci-gate.sh --step shell-lint
+      - run: scripts/ci-gate.sh --step workflows
 
   rustfmt:
     name: Rustfmt
@@ -418,6 +419,92 @@ jobs:
         with:
           tool: cargo-fuzz@0.13.2
       - run: scripts/ci-gate.sh --step fuzz
+
+  kani:
+    name: Kani harnesses
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: "1.100.0"
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.8.11
+          cache: true
+          install_args: rust cargo:kani-verifier
+      - run: scripts/ci-gate.sh --step kani
+
+  verus:
+    name: Verus proofs
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: "1.100.0"
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.8.11
+          cache: true
+          install_args: rust http:verus cargo:kani-verifier
+      - run: scripts/ci-gate.sh --step verus
+
+  models:
+    name: TLA+ models
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # mise lists this Temurin build as 25.0.4.1+1.0.LTS and cannot resolve the mise.toml pin on a fresh runner.
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "25.0.4+101.0.LTS"
+      - run: scripts/ci-gate.sh --step models
+
+  migrations:
+    name: Migration safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: "1.100.0"
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.8.11
+          cache: false
+          install_args: github:sbdchd/squawk
+      - run: scripts/ci-gate.sh --step migrations
+
+  vectors:
+    name: Generated vectors
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: "1.100.0"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: rust -> target
+      - run: scripts/ci-gate.sh --step vectors
 
   mcp-fixture:
     name: Remote MCP fixture and OAuth smoke
@@ -702,6 +789,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-disabled: true
+      - name: Back off longer when Maven Central rate-limits
+        # Gradle's default of 3 retries from 125 ms gave up on HTTP 429 within a second.
+        run: |
+          mkdir -p ~/.gradle
+          printf '%s\n' \
+            'systemProp.org.gradle.internal.repository.max.retries=6' \
+            'systemProp.org.gradle.internal.repository.initial.backoff=2000' >> ~/.gradle/gradle.properties
       - name: Compile Android debug binary
         working-directory: .generated-native-fixture/fixture/mobile
         run: |
@@ -816,6 +910,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-disabled: true
+      - name: Back off longer when Maven Central rate-limits
+        # Gradle's default of 3 retries from 125 ms gave up on HTTP 429 within a second.
+        run: |
+          mkdir -p ~/.gradle
+          printf '%s\n' \
+            'systemProp.org.gradle.internal.repository.max.retries=6' \
+            'systemProp.org.gradle.internal.repository.initial.backoff=2000' >> ~/.gradle/gradle.properties
       - name: Run real Expo SQLite conformance
         env:
           BAUKIT_ANDROID_PHASE: run
@@ -916,6 +1017,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
         with:
           cache-disabled: true
+      - name: Back off longer when Maven Central rate-limits
+        # Gradle's default of 3 retries from 125 ms gave up on HTTP 429 within a second.
+        run: |
+          mkdir -p ~/.gradle
+          printf '%s\n' \
+            'systemProp.org.gradle.internal.repository.max.retries=6' \
+            'systemProp.org.gradle.internal.repository.initial.backoff=2000' >> ~/.gradle/gradle.properties
       - name: Run Hermes vectors and real expo-notifications conformance
         env:
           BAUKIT_ANDROID_PHASE: run

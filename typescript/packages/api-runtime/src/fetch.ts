@@ -48,6 +48,8 @@ export interface FetchSettings {
 
 interface FetchContext extends FetchSettings {
   readonly requestId: string;
+  /** Session subject at send time; 401 signals from an older session are dropped. */
+  readonly sessionSubject: string | undefined;
 }
 
 interface AttemptState {
@@ -79,7 +81,11 @@ export async function runFetch(
   input: RequestInfo | URL,
   init: RequestInit | undefined,
 ): Promise<Response> {
-  const context: FetchContext = { ...settings, requestId: settings.requestIdFactory() };
+  const context: FetchContext = {
+    ...settings,
+    requestId: settings.requestIdFactory(),
+    sessionSubject: settings.options.sessionSubject?.(),
+  };
   const request = await prepareRequest(context, input, init);
   const state: AttemptState = {
     request,
@@ -192,7 +198,7 @@ async function handleResponse(
     return response;
   }
   const error = await normalizeResponseError(response);
-  if (response.status !== UNAUTHORIZED_STATUS) {
+  if (response.status !== UNAUTHORIZED_STATUS || !acceptsSessionSignals(context, state.request)) {
     throw error;
   }
   return handleUnauthorized(context, state, { response, error });
@@ -214,6 +220,7 @@ async function handleUnauthorized(
     ...failure,
     request: state.replaySource?.clone() ?? state.request,
     canRetry,
+    ...(context.sessionSubject === undefined ? {} : { subject: context.sessionSubject }),
   });
   if (isApiError(error, 'profile_erased')) {
     await notifyObserver(() => options.onProfileErased?.(unauthorizedContext(false)));
@@ -348,7 +355,7 @@ async function decorateRequest(context: FetchContext, request: Request): Promise
   const headers = new Headers(request.headers);
   headers.set(REQUEST_ID_HEADER, requestId);
 
-  if (options.tokenProvider !== undefined) {
+  if (options.tokenProvider !== undefined && isApiRequest(request.url, context.baseUrl)) {
     const token = await options.tokenProvider();
     throwIfAborted(request.signal, requestId);
     headers.delete('authorization');
@@ -383,9 +390,40 @@ function createRequest(
   requestConstructor: typeof Request,
 ): Request {
   if (typeof input === 'string' || input instanceof URL) {
-    return new requestConstructor(new URL(input.toString(), `${baseUrl}/`), init);
+    return new requestConstructor(resolveApiUrl(input, baseUrl), init);
   }
   return new requestConstructor(input, init);
+}
+
+const BASE_RELATIVE_PATH = /^\/(?![/\\])/u;
+
+/** Paths starting with a single `/` stay under the base path; `//host` and `/\host` do not. */
+export function resolveApiUrl(input: string | URL, baseUrl: string): URL {
+  if (input instanceof URL) return input;
+  if (BASE_RELATIVE_PATH.test(input)) return new URL(`${baseUrl}${input}`);
+  return new URL(input, `${baseUrl}/`);
+}
+
+/** True when `url` has the base origin and sits at or under the base path. */
+export function isApiRequest(url: string, baseUrl: string): boolean {
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return false;
+  }
+  const base = new URL(baseUrl);
+  if (target.origin !== base.origin) return false;
+  const basePath = base.pathname.replace(/\/$/u, '');
+  return (
+    basePath === '' || target.pathname === basePath || target.pathname.startsWith(`${basePath}/`)
+  );
+}
+
+function acceptsSessionSignals(context: FetchContext, request: Request): boolean {
+  if (!isApiRequest(request.url, context.baseUrl)) return false;
+  const currentSubject = context.options.sessionSubject;
+  return currentSubject === undefined || currentSubject() === context.sessionSubject;
 }
 
 function createUuid(): string {

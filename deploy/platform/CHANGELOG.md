@@ -8,6 +8,8 @@
 - e2e `tenant-postgres` checks the owner's connection limit and that a session through the pooler gets the role's timeouts even when the client sends another `statement_timeout`.
 - e2e `canary`: the baukit-app chart with `canary.enabled` promotes a healthy pod template and rolls back the `echo-faulty` image, which answers 500. `run.sh` builds and imports `localhost/baukit-e2e/echo-faulty:local` next to the echo image.
 - e2e `ingress` sets `terminationGracePeriodSeconds: 11`. The chart refuses 10 since the drain budget change, so the suite could not install.
+
+## [0.31.0] - 2026-11-26
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

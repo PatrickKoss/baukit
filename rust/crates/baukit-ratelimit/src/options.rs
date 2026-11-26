@@ -4,7 +4,7 @@ use baukit_config::{
     RateLimitConfig, RateLimitFailMode, RateLimitScopeConfig, Validate as _, ValidationErrors,
 };
 
-use crate::{Quota, QuotaError};
+use crate::{Quota, QuotaError, ip_bucket};
 
 const MAX_ROUTE_GROUP_NAME_LENGTH: usize = 64;
 
@@ -29,6 +29,8 @@ pub struct RateLimitOptions {
     pub fail_mode: RateLimitFailMode,
     /// Number of trusted reverse-proxy hops, including the socket peer.
     pub trusted_proxy_hops: usize,
+    /// IPv6 prefix length that shares one IP-scope bucket.
+    pub ipv6_prefix_len: u8,
     key_prefix: String,
     redis_key_namespace: String,
 }
@@ -48,6 +50,7 @@ impl RateLimitOptions {
             ip: scope_options(&config.ip)?,
             fail_mode: config.fail_mode,
             trusted_proxy_hops: config.trusted_proxy_hops,
+            ipv6_prefix_len: config.ipv6_prefix_len,
             key_prefix: config.key_prefix.clone(),
             redis_key_namespace: config.redis_key_namespace.clone(),
         })
@@ -86,11 +89,21 @@ impl RateLimitOptions {
     }
 
     /// Derives the fully scoped store key for a client IP address.
+    ///
+    /// IPv4 keys name the address. IPv6 keys name the `ipv6_prefix_len` network,
+    /// for example `rl:ip:2001:db8:1:2::/64`. IPv4-mapped IPv6 keys as IPv4.
     #[must_use]
     pub fn ip_key(&self, address: Option<IpAddr>) -> String {
-        match address {
-            Some(address) => format!("{}ip:{address}", self.key_prefix),
-            None => format!("{}ip:unknown", self.key_prefix),
+        let bucket = address.map_or_else(|| "unknown".to_owned(), |ip| self.ip_bucket_label(ip));
+        format!("{}ip:{bucket}", self.key_prefix)
+    }
+
+    /// Names the IP-scope bucket of `address`: the IPv4 address, or the IPv6 network.
+    #[must_use]
+    pub fn ip_bucket_label(&self, address: IpAddr) -> String {
+        match ip_bucket(address, self.ipv6_prefix_len) {
+            IpAddr::V4(address) => address.to_string(),
+            IpAddr::V6(network) => format!("{network}/{}", self.ipv6_prefix_len),
         }
     }
 }
@@ -263,7 +276,8 @@ mod tests {
     fn defaults_are_valid_and_identity_is_lower_than_ip() {
         let options = RateLimitOptions::default();
         assert!(options.identity.quota.capacity() < options.ip.quota.capacity());
-        assert_eq!(options.trusted_proxy_hops, 1);
+        assert_eq!(options.trusted_proxy_hops, 0);
+        assert_eq!(options.ipv6_prefix_len, 64);
         assert_eq!(options.key_prefix(), "rl:");
     }
 
@@ -287,8 +301,12 @@ mod tests {
         let options = RateLimitOptions::default();
         assert_eq!(options.identity_key("alice"), "rl:id:alice");
         assert_eq!(
-            options.ip_key(Some("2001:db8::1".parse().expect("IP"))),
-            "rl:ip:2001:db8::1"
+            options.ip_key(Some("2001:db8:0:7:1:2:3:4".parse().expect("IP"))),
+            "rl:ip:2001:db8:0:7::/64"
+        );
+        assert_eq!(
+            options.ip_key(Some("::ffff:192.0.2.1".parse().expect("IP"))),
+            "rl:ip:192.0.2.1"
         );
     }
 

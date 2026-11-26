@@ -80,11 +80,18 @@ describe('shared CSV vectors', () => {
 });
 
 describe('encodeCsv', () => {
-  it('writes finite numbers without formula neutralization', () => {
-    expect(encodeCsv([[-5, 0, -0, 1.5, 1e21, csvNumeric('-2.50')]])).toBe(
-      '-5,0,0,1.5,1e+21,-2.50\r\n',
+  it('writes finite numbers like Rust f64 Display, without formula neutralization', () => {
+    expect(encodeCsv([[-5, 0, -0, 1.5, 1e21, 1e-7, -1.5e-7, 1.25e22, csvNumeric('-2.50')]])).toBe(
+      '-5,0,-0,1.5,1000000000000000000000,0.0000001,-0.00000015,12500000000000000000000,-2.50\r\n',
     );
   });
+
+  it.each(['\uff1d1+1', '\uff0bcmd', '\uff0d1', '\uff20SUM(A1)', ' \uff1dx'])(
+    'neutralizes the full-width trigger in %s',
+    (cell) => {
+      expect(encodeCsv([[cell]])).toBe(`'${cell}\r\n`);
+    },
+  );
 
   it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY])(
     'rejects the non-finite number %s',

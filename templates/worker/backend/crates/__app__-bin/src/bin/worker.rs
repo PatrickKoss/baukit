@@ -73,7 +73,7 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
         Arc::new(job_store(&pool)),
         job_types,
         config.product.worker.admin_token.as_ref(),
-    );
+    )?;
     let listener =
         TcpListener::bind(SocketAddr::new(config.ops.bind_address, config.ops.port)).await?;
     tracing::info!(
@@ -160,9 +160,12 @@ async fn supervise(
         },
     );
     let operations_shutdown = shutdown.child_token();
-    let server_result = axum::serve(listener, operations)
-        .with_graceful_shutdown(async move { operations_shutdown.cancelled().await })
-        .await;
+    let server_result = axum::serve(
+        listener,
+        operations.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async move { operations_shutdown.cancelled().await })
+    .await;
     shutdown.trigger();
     tasks.join().await?;
     Ok(server_result)

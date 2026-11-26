@@ -76,6 +76,10 @@ pub enum CreditsError {
     IdempotencyConflict,
     #[error("credits_reservation_expired")]
     ReservationExpired,
+    /// The idempotency key names a reservation that was already settled or
+    /// released, so the action it paid for already ran or was abandoned.
+    #[error("credits_reservation_finished")]
+    AlreadySettled,
     #[error("credits_reservation_not_found")]
     ReservationNotFound,
     #[error("credits_wallet_unknown")]
@@ -126,7 +130,8 @@ impl From<HubError> for CreditsError {
 #[async_trait]
 pub trait Credits: Send + Sync {
     /// A zero amount returns `CreditHold::Free` without a ledger call. Repeating
-    /// a key with the same amount returns the first reservation.
+    /// a key with the same amount returns the first reservation while it is
+    /// pending, and `AlreadySettled` once it was settled or released.
     async fn reserve(
         &self,
         suite_subject: &str,
@@ -265,10 +270,7 @@ impl Credits for HubCredits {
                     .with_idempotency_key(idempotency_key)?,
             )
             .await?;
-        let reservation = self.owned(reservation)?;
-        if reservation.amount != amount {
-            return Err(CreditsError::Hub(HubError::InvalidResponse));
-        }
+        let reservation = checked_reservation(self.owned(reservation)?, amount)?;
         Ok(CreditHold::Reserved(reservation))
     }
     async fn settle(
@@ -279,12 +281,16 @@ impl Credits for HubCredits {
         if actual_amount > MAX_CREDIT_AMOUNT {
             return Err(CreditsError::AmountInvalid);
         }
-        self.finish(reservation_id, "settle", &SettleRequest { actual_amount })
-            .await
+        let reservation = self
+            .finish(reservation_id, "settle", &SettleRequest { actual_amount })
+            .await?;
+        checked_settlement(reservation, actual_amount)
     }
     async fn release(&self, reservation_id: Uuid) -> Result<CreditReservation, CreditsError> {
-        self.finish(reservation_id, "release", &ReleaseRequest {})
-            .await
+        let reservation = self
+            .finish(reservation_id, "release", &ReleaseRequest {})
+            .await?;
+        checked_release(reservation)
     }
     async fn balance(&self, suite_subject: &str) -> Result<CreditBalance, CreditsError> {
         let balance: CreditBalance = self.hub.get_json(&["credits", suite_subject]).await?;
@@ -294,3 +300,53 @@ impl Credits for HubCredits {
         Ok(balance)
     }
 }
+
+fn invalid_response() -> CreditsError {
+    CreditsError::Hub(HubError::InvalidResponse)
+}
+
+/// A reserve answer must hold exactly `amount`, uncharged, and still be pending.
+fn checked_reservation(
+    reservation: CreditReservation,
+    amount: u64,
+) -> Result<CreditReservation, CreditsError> {
+    if reservation.amount != amount {
+        return Err(invalid_response());
+    }
+    match reservation.status {
+        ReservationStatus::Pending if reservation.charged.is_none() => Ok(reservation),
+        ReservationStatus::Pending => Err(invalid_response()),
+        ReservationStatus::Settled | ReservationStatus::Released => {
+            Err(CreditsError::AlreadySettled)
+        }
+        ReservationStatus::Expired => Err(CreditsError::ReservationExpired),
+    }
+}
+
+/// A settle answer must be settled and charge at most the reserved and the actual amount.
+fn checked_settlement(
+    reservation: CreditReservation,
+    actual_amount: u64,
+) -> Result<CreditReservation, CreditsError> {
+    let within = reservation
+        .charged
+        .is_some_and(|charged| charged <= reservation.amount && charged <= actual_amount);
+    if reservation.status != ReservationStatus::Settled || !within {
+        return Err(invalid_response());
+    }
+    Ok(reservation)
+}
+
+/// A release answer must be released and charge nothing.
+fn checked_release(reservation: CreditReservation) -> Result<CreditReservation, CreditsError> {
+    if reservation.status != ReservationStatus::Released
+        || reservation.charged.is_some_and(|charged| charged > 0)
+    {
+        return Err(invalid_response());
+    }
+    Ok(reservation)
+}
+
+#[cfg(test)]
+#[path = "credits_tests.rs"]
+mod tests;

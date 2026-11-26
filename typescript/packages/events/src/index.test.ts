@@ -8,6 +8,7 @@ import {
   EventPayloadSchema,
   IngestOutcomeSchema,
   MAX_EVENT_AGE_SECONDS,
+  MAX_EVENT_CLOCK_SKEW_SECONDS,
   MAX_EVENT_ID_CHARACTERS,
   MAX_EVENT_PAYLOAD_KEYS,
   MAX_EVENT_TYPE_SEGMENT_CHARACTERS,
@@ -25,6 +26,7 @@ interface FixtureDocument {
     maximum_event_type_segment_characters: number;
     maximum_event_age_seconds: number;
     maximum_payload_keys: number;
+    maximum_clock_skew_seconds: number;
   };
   cases: {
     name: string;
@@ -47,6 +49,7 @@ describe('event envelope fixtures', () => {
       maximum_event_type_segment_characters: MAX_EVENT_TYPE_SEGMENT_CHARACTERS,
       maximum_event_age_seconds: MAX_EVENT_AGE_SECONDS,
       maximum_payload_keys: MAX_EVENT_PAYLOAD_KEYS,
+      maximum_clock_skew_seconds: MAX_EVENT_CLOCK_SKEW_SECONDS,
     });
   });
 
@@ -102,5 +105,37 @@ describe('wire names', () => {
     if (canonical === undefined) throw new Error('fixture corpus is empty');
     const { eventId, ...rest } = canonical.input.envelope;
     expect(EventEnvelopeSchema.safeParse({ ...rest, event_id: eventId }).success).toBe(false);
+  });
+});
+
+interface GeneratedCase {
+  name: string;
+  envelope: unknown;
+  expected: { parses: boolean; code: EventValidationCode | null };
+}
+
+interface GeneratedDocument {
+  now: string;
+  expectedUserId: string;
+  cases: GeneratedCase[];
+}
+
+const generatedUrl = new URL('../../../../fixtures/events/generated-v1.json', import.meta.url);
+const generated = JSON.parse(readUtf8File(generatedUrl, 'utf8')) as GeneratedDocument;
+
+describe('Rust-generated envelope corpus', () => {
+  it.each(generated.cases)('$name', ({ envelope, expected }) => {
+    const parsed = EventEnvelopeSchema.safeParse(envelope);
+    if (!parsed.success) {
+      // zod reports id, type and schema codes at parse time; Rust reports them on validate.
+      if (expected.parses) {
+        expect(parsed.error.issues.map(({ message }) => message)).toContain(expected.code);
+      }
+      return;
+    }
+    expect(expected.parses).toBe(true);
+    expect(validateEventEnvelope(parsed.data, generated.expectedUserId, generated.now)).toBe(
+      expected.code,
+    );
   });
 });

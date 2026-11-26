@@ -27,6 +27,22 @@ replayed under a different key version. Every one of those attempts fails as
 flipped bit produces. The variant carries no detail, so a decryption failure
 cannot become an oracle in a log line.
 
+`encrypt` seals each field on its own, so `decrypt` accepts any non-empty
+subset of fields and cannot detect an older ciphertext for the same scope,
+field and key version. When a record must open whole, use `seal_record` and
+`open_record`. Their associated data adds a random per-seal `record_id` and the
+sorted list of every field name:
+
+```text
+"baukit-credential-vault/record/v2\0" || scope_id || key_version || record_id
+  || field count (4 bytes) || (name length (1 byte) || name)* || this field's name
+```
+
+Store `record_id` next to the fields. Dropping, adding or renaming a field, or
+pasting a field from an earlier seal, fails as `DecryptionFailed`. Swapping in
+a whole older record is a rollback only the storage layer can refuse. Records
+written by `encrypt` keep decrypting with `decrypt`.
+
 Plaintext lives in `CredentialSecrets`, which zeroizes every value on drop and
 implements neither `Debug` nor `Display`. Parsed key material is zeroized when
 the cipher's last clone drops.

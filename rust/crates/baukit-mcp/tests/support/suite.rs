@@ -80,6 +80,7 @@ fn test_link(owner: Uuid, id: Uuid) -> SuiteLink {
             ciphertext: vec![1],
             nonce: vec![2],
             key_version: 1,
+            record_id: None,
         },
         sends: vec!["alpha.activity.completed".into()],
         receives: vec!["beta.activity.completed".into()],

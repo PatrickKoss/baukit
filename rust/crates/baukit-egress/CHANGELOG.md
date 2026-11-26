@@ -10,6 +10,16 @@ All notable changes to `baukit-egress` are documented here.
 - The request timeout is capped by the `baukit_resilience::deadline` of the inbound request, and fails fast below 50 ms. A timeout under that deadline counts against the breaker when the time left was at least half the client's request timeout, and is ignored below that.
 - New metrics `egress_requests_total`, `egress_request_duration_seconds`, `egress_circuit_state` and `egress_circuit_transitions_total`.
 
+## [0.31.0] - 2026-11-26
+
+### Added
+
+- `EndpointOrigin` and `AllowedEndpoint::tenant` / `tenant_from_url` for endpoints a tenant configures. A tenant endpoint only reaches public addresses, so a tenant webhook URL whose DNS answer is loopback or private fails. `AllowedEndpoint::new` and `from_url` keep the operator-internal behaviour.
+
+### Changed
+
+- Azure WireServer `168.63.129.16` is denied under every policy, including operator-internal endpoints. See [docs/migrations/boundary-hardening.md](../../../docs/migrations/boundary-hardening.md).
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

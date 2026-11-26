@@ -2,6 +2,7 @@
 #![cfg(test)]
 
 use std::{
+    collections::BTreeMap,
     error::Error,
     future::Future,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -33,9 +34,7 @@ use baukit_auth::{
         BrowserSessionRateLimiter, BrowserSessionState, RateLimitFuture, RateLimitOutcome,
     },
 };
-use baukit_credential_vault::{
-    CredentialCipher, EncryptedCredentials, EncryptedField, NONCE_LENGTH,
-};
+use baukit_credential_vault::{CredentialCipher, EncryptedField, NONCE_LENGTH, SealedCredentials};
 use baukit_http::HttpOptions;
 use baukit_ratelimit::{RateLimitOptions, RedisRateLimitStore, StoreBrowserSessionRateLimiter};
 use baukit_test::{KeycloakTestContainer, PostgresTestContainer, RedisTestContainer};
@@ -334,30 +333,46 @@ fn aad_scope(row_id: Uuid, subject: &str) -> Uuid {
     Uuid::from_bytes(scope)
 }
 
+type StoredTokens = (
+    String,
+    i32,
+    Option<Uuid>,
+    Vec<u8>,
+    Option<Vec<u8>>,
+    Option<Vec<u8>>,
+);
+
+fn unpack(packed: &[u8]) -> Result<EncryptedField, TestError> {
+    let (nonce, ciphertext) = packed
+        .split_at_checked(NONCE_LENGTH)
+        .ok_or("sealed too short")?;
+    Ok(EncryptedField {
+        ciphertext: ciphertext.to_vec(),
+        nonce: nonce.to_vec(),
+    })
+}
+
 async fn stored_refresh_token(pool: &PgPool, row_id: Uuid) -> Result<String, TestError> {
-    let (subject, key_version, sealed): (String, i32, Vec<u8>) = sqlx::query_as(
-        "SELECT subject, key_version, refresh_token FROM baukit_auth_browser_sessions WHERE id = $1",
+    let (subject, key_version, record_id, refresh, id_token, grace): StoredTokens = sqlx::query_as(
+        "SELECT subject, key_version, record_id, refresh_token, id_token, grace_access_token
+             FROM baukit_auth_browser_sessions WHERE id = $1",
     )
     .bind(row_id)
     .fetch_one(pool)
     .await?;
-    let (nonce, ciphertext) = sealed
-        .split_at_checked(NONCE_LENGTH)
-        .ok_or("sealed too short")?;
-    let encrypted = EncryptedCredentials {
-        scope_id: aad_scope(row_id, &subject),
-        fields: [(
-            "refresh_token".to_owned(),
-            EncryptedField {
-                ciphertext: ciphertext.to_vec(),
-                nonce: nonce.to_vec(),
-            },
-        )]
-        .into(),
-        key_version,
-    };
+    let mut fields = BTreeMap::from([("refresh_token".to_owned(), unpack(&refresh)?)]);
+    for (name, packed) in [("id_token", id_token), ("grace_access_token", grace)] {
+        if let Some(packed) = packed {
+            fields.insert(name.to_owned(), unpack(&packed)?);
+        }
+    }
     let cipher = CredentialCipher::parse(&format!("1:{}", STANDARD.encode(KEY)))?;
-    let secrets = cipher.decrypt(&encrypted)?;
+    let secrets = cipher.open_record(&SealedCredentials {
+        scope_id: aad_scope(row_id, &subject),
+        record_id: record_id.ok_or("new rows carry a record id")?,
+        fields,
+        key_version,
+    })?;
     Ok(String::from_utf8(
         secrets.get("refresh_token").ok_or("no field")?.to_vec(),
     )?)
@@ -450,11 +465,14 @@ async fn reusing_a_rotated_cookie_after_the_grace_window_revokes_the_session() -
     let response = refresh(&fixture, &first).await?;
     assert_eq!(response.status(), StatusCode::OK);
     let second = cookie_of(&response)?;
-    let live_refresh = stored_refresh_token(&fixture.pool, session_id(&second)?).await?;
 
     let grace = refresh(&fixture, &first).await?;
     assert_eq!(grace.status(), StatusCode::OK);
     assert!(grace.headers().get(SET_COOKIE).is_none());
+    let used = refresh(&fixture, &second).await?;
+    assert_eq!(used.status(), StatusCode::OK);
+    let third = cookie_of(&used)?;
+    let live_refresh = stored_refresh_token(&fixture.pool, session_id(&third)?).await?;
 
     tokio::time::sleep(Duration::from_secs(11)).await;
     let reuse = refresh(&fixture, &first).await?;

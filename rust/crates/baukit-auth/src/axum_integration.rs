@@ -521,6 +521,7 @@ mod tests {
         let secret = "sensitive.token.value";
 
         let rejection = tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
             log_verification_failure(VerificationError::MalformedToken)
         });
         assert_eq!(rejection, AuthRejection::InvalidToken);
@@ -540,6 +541,7 @@ mod tests {
             .with_writer(move || writer.clone())
             .finish();
         tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
             assert_eq!(
                 AuthRejection::from(VerificationError::Unavailable),
                 AuthRejection::Unavailable

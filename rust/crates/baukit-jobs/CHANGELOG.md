@@ -18,6 +18,17 @@ All notable changes to `baukit-jobs` are documented here.
 - New `PostgresJobStore::requeue_failed` (`MAX_REQUEUE_BATCH_SIZE`) puts failed jobs of one type back to pending. `baukit-ops` serves it on the ops port.
 - Idle polling backs off from `poll_interval` (250 ms) to `WorkerConfig::idle_poll_max` (5 s), and `cancellation_poll_interval` defaults to 2 s instead of 250 ms. Enqueue sends `NOTIFY` on `JOB_ENQUEUED_CHANNEL`, and `spawn_enqueue_listener` with `WorkerRunner::with_wakeup` (`JobWakeup`) wakes an idle runner early.
 
+## [0.31.0] - 2026-11-26
+
+### Changed
+
+- Breaking: `JobStore::complete`, `record_failure` and `cancel` take a `&JobLease`, and every lease predicate checks the attempt. Removed `PostgresJobStore::complete_in_transaction` and `check_lease_in_transaction`; call `complete_lease_in_transaction(tx, cancellation.lease(), now)` and `check_lease_held_in_transaction(tx, cancellation.lease(), now)`. See `docs/migrations/job-lease-attempt.md`.
+- The runner logs a failed attempt and keeps polling, and caps `retry_after` at `retry_max`.
+
+### Added
+
+- `complete_lease_in_transaction`, `check_lease_held_in_transaction`, `JobCancellation::lease` and `lease_predicate_holds`.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

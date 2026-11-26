@@ -121,8 +121,8 @@ pub use locale::{
 };
 pub use middleware::{
     DURATION_BUCKETS, HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_IN_FLIGHT, HTTP_REQUESTS_TOTAL,
-    RequestId, X_ORGANIZATION_ID, X_REQUEST_ID, current_deadline, extract_trace_context,
-    inject_current_trace_context, inject_trace_context, layers,
+    MAX_REQUEST_ID_BYTES, RequestId, X_ORGANIZATION_ID, X_REQUEST_ID, current_deadline,
+    extract_trace_context, inject_current_trace_context, inject_trace_context, layers,
 };
 pub use options::{HttpOptions, HttpOptionsError, JsonRejectionCodes, ResponseCachePolicy};
 pub use precondition::{

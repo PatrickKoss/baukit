@@ -57,7 +57,7 @@ describe('WebStorageKeyValueStore', () => {
     const store = new WebStorageKeyValueStore(storage, 'app:');
 
     await store.set('a', { ready: true });
-    expect(storage.items.get('app:a')).toBe('{"ready":true}');
+    expect(storage.items.get('app:\u001fa')).toBe('{"ready":true}');
 
     await store.clear();
     expect([...storage.items.keys()]).toEqual(['foreign', 'app-other:a']);
@@ -86,10 +86,37 @@ describe('WebStorageKeyValueStore', () => {
 
   it('rejects a payload that is not JSON without echoing it', async () => {
     const storage = new MapStorage();
-    storage.items.set('app:a', 'secret{');
+    storage.items.set('app:\u001fa', 'secret{');
     const store = new WebStorageKeyValueStore(storage, 'app:');
 
     await expect(store.get('a')).rejects.toThrow(TypeError);
     await expect(store.get('a')).rejects.not.toThrow(/secret/);
+  });
+
+  it('keeps a namespace that extends another one intact', async () => {
+    const storage = new MapStorage();
+    const user1 = new WebStorageKeyValueStore(storage, 'drafts:u1');
+    const user10 = new WebStorageKeyValueStore(storage, 'drafts:u10');
+    await user10.set('note', 'kept');
+    await user1.set('0note', 'mine');
+
+    await user1.clear();
+
+    await expect(user10.get('note')).resolves.toBe('kept');
+    await expect(user1.get('0note')).resolves.toBeUndefined();
+  });
+
+  it('rejects a namespace containing the delimiter', () => {
+    expect(() => new WebStorageKeyValueStore(new MapStorage(), 'a\u001fb')).toThrow(RangeError);
+  });
+
+  it('migrates legacy keys of its namespace on first use when asked', async () => {
+    const storage = new MapStorage();
+    storage.items.set('app:a', '1');
+    storage.items.set('foreign', 'kept');
+    const store = new WebStorageKeyValueStore(storage, 'app:', { migrateLegacyKeys: true });
+
+    await expect(store.get('a')).resolves.toBe(1);
+    expect([...storage.items.keys()].sort()).toEqual(['app:\u001fa', 'foreign']);
   });
 });

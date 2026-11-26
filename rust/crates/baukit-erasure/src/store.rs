@@ -1,3 +1,4 @@
+use crate::kernel::{ReplayDecision, replay_decision};
 use crate::{
     ErasureFuture, IDENTITY_DELETE_JOB_TYPE, IdentityAccountDeleter, IdentityDeletionError,
 };
@@ -19,13 +20,18 @@ use uuid::Uuid;
 
 /// Time past the inline timeout before a worker may claim the identity job.
 const INLINE_RESERVATION_MARGIN: Duration = Duration::from_secs(5);
+const MIN_HASH_KEY_BYTES: usize = 32;
+const SUBJECT_DOMAIN: &[u8] = b"erasure-subject\0";
+const KEY_DOMAIN: &[u8] = b"erasure-key\0";
 
-const REJECTED_SESSION_SQL: &str = "SELECT EXISTS (
+/// Mirrored by [`crate::kernel::fence_rejects`]; keep both in step. `$1` is every hash of
+/// the subject, one per configured key.
+pub const REJECTED_SESSION_SQL: &str = "SELECT EXISTS (
     SELECT 1 FROM erasure_fences AS fence
-    WHERE fence.subject_hash = $1 AND (
+    WHERE fence.subject_hash = ANY($1) AND (
         $2::timestamptz IS NULL OR $2 <= fence.erased_at OR EXISTS (
             SELECT 1 FROM erasure_operations AS operation
-            WHERE operation.subject_hash = fence.subject_hash AND operation.state <> 'completed'
+            WHERE operation.subject_hash = ANY($1) AND operation.state <> 'completed'
         )
     )
 )";
@@ -150,20 +156,42 @@ pub trait ProductErasure: Send + Sync {
 pub struct PostgresErasureStore {
     pool: PgPool,
     hash_key: Arc<Secret<String>>,
+    /// Keys from before a rotation, read until every row moved to `hash_key`.
+    retired_keys: Arc<Vec<Secret<String>>>,
 }
 impl PostgresErasureStore {
-    /// Requires at least 32 bytes of secret key material. Keep the key stable.
+    /// Requires at least 32 bytes of secret key material.
     ///
     /// # Errors
     ///
     /// [`ErasureError::Configuration`] when `hash_key` is shorter than 32 bytes.
     pub fn new(pool: PgPool, hash_key: Secret<String>) -> Result<Self, ErasureError> {
-        if hash_key.expose().len() < 32 {
+        Self::with_retired_keys(pool, hash_key, Vec::new())
+    }
+    /// Rotates to `hash_key` while rows hashed with `retired` keys still match.
+    ///
+    /// New rows use `hash_key`. Every locked access to a subject rewrites its rows to
+    /// `hash_key`, and [`Self::rehash_subjects`] does the same for a list of subjects. Drop a
+    /// retired key only after every erased subject was rehashed, or its fence stops matching.
+    ///
+    /// # Errors
+    ///
+    /// [`ErasureError::Configuration`] when any key is shorter than 32 bytes.
+    pub fn with_retired_keys(
+        pool: PgPool,
+        hash_key: Secret<String>,
+        retired: Vec<Secret<String>>,
+    ) -> Result<Self, ErasureError> {
+        if std::iter::once(&hash_key)
+            .chain(&retired)
+            .any(|key| key.expose().len() < MIN_HASH_KEY_BYTES)
+        {
             return Err(ErasureError::Configuration);
         }
         Ok(Self {
             pool,
             hash_key: Arc::new(hash_key),
+            retired_keys: Arc::new(retired),
         })
     }
     /// Underlying product pool for worker composition.
@@ -171,15 +199,75 @@ impl PostgresErasureStore {
         &self.pool
     }
     fn hash(&self, domain: &[u8], input: &str) -> Vec<u8> {
-        let key = hmac::Key::new(hmac::HMAC_SHA256, self.hash_key.expose().as_bytes());
-        let mut context = hmac::Context::with_key(&key);
-        context.update(domain);
-        context.update(input.as_bytes());
-        context.sign().as_ref().to_vec()
+        keyed_hash(&self.hash_key, domain, input)
     }
-    /// Keyed subject hash, never the provider subject itself.
+    fn retired_hashes(&self, domain: &[u8], input: &str) -> Vec<Vec<u8>> {
+        self.retired_keys
+            .iter()
+            .map(|key| keyed_hash(key, domain, input))
+            .collect()
+    }
+    /// The current hash first, then one per retired key.
+    fn hashes(&self, domain: &[u8], input: &str) -> Vec<Vec<u8>> {
+        std::iter::once(self.hash(domain, input))
+            .chain(self.retired_hashes(domain, input))
+            .collect()
+    }
+    /// Keyed subject hash under the current key, never the provider subject itself.
     pub fn subject_hash(&self, subject: &str) -> Vec<u8> {
-        self.hash(b"erasure-subject\0", subject)
+        self.hash(SUBJECT_DOMAIN, subject)
+    }
+    fn subject_hashes(&self, subject: &str) -> Vec<Vec<u8>> {
+        self.hashes(SUBJECT_DOMAIN, subject)
+    }
+    /// Locks `subject` and moves its fence and operations from retired keys to the current
+    /// key. Call it while still holding retired keys, then drop them.
+    ///
+    /// # Errors
+    ///
+    /// [`ErasureError::Database`] when a lock, query or commit fails.
+    pub async fn rehash_subjects(&self, subjects: &[&str]) -> Result<u64, ErasureError> {
+        let mut moved = 0;
+        for subject in subjects {
+            let mut transaction = self.pool.begin().await?;
+            moved += self.lock_subject(&mut transaction, subject).await?;
+            transaction.commit().await?;
+        }
+        Ok(moved)
+    }
+    /// Locks every hash of `subject` and rewrites retired-key rows to the current key.
+    async fn lock_subject(
+        &self,
+        transaction: &mut Transaction<'_, Postgres>,
+        subject: &str,
+    ) -> Result<u64, ErasureError> {
+        lock_all(transaction, &self.subject_hashes(subject)).await?;
+        let current = self.subject_hash(subject);
+        let hashes = self.retired_hashes(SUBJECT_DOMAIN, subject);
+        if hashes.is_empty() {
+            return Ok(0);
+        }
+        let fences = sqlx::query(
+            "WITH retired AS (DELETE FROM erasure_fences WHERE subject_hash = ANY($2) RETURNING erased_at)
+             INSERT INTO erasure_fences (subject_hash, erased_at)
+             SELECT $1, max(erased_at) FROM retired HAVING count(*) > 0
+             ON CONFLICT (subject_hash)
+             DO UPDATE SET erased_at = GREATEST(erasure_fences.erased_at, EXCLUDED.erased_at)",
+        )
+        .bind(&current)
+        .bind(&hashes)
+        .execute(&mut **transaction)
+        .await?
+        .rows_affected();
+        let operations = sqlx::query(
+            "UPDATE erasure_operations SET subject_hash = $1 WHERE subject_hash = ANY($2)",
+        )
+        .bind(&current)
+        .bind(&hashes)
+        .execute(&mut **transaction)
+        .await?
+        .rows_affected();
+        Ok(fences + operations)
     }
     /// Locks subject resolution against erasure and checks this session in the same transaction.
     /// Admission requires a login after the fence and no unfinished erasure operations.
@@ -194,10 +282,9 @@ impl PostgresErasureStore {
         subject: &str,
         authenticated_at: Option<Timestamp>,
     ) -> Result<(), ErasureError> {
-        let hash = self.subject_hash(subject);
-        lock(transaction, &hash).await?;
+        self.lock_subject(transaction, subject).await?;
         let fenced: bool = sqlx::query_scalar(REJECTED_SESSION_SQL)
-            .bind(hash)
+            .bind(self.subject_hashes(subject))
             .bind(authenticated_at.map(ToSqlx::to_sqlx))
             .fetch_one(&mut **transaction)
             .await?;
@@ -207,7 +294,28 @@ impl PostgresErasureStore {
             Ok(())
         }
     }
+    /// Begins a product write transaction that already holds the subject lock and passed the
+    /// fence. Run every product write for an authenticated subject through it: an erase
+    /// that commits first rejects the write, and an erase that starts later waits for the
+    /// write to commit and then deletes its rows.
+    ///
+    /// # Errors
+    ///
+    /// [`ErasureError::ProfileErased`] when the session is fenced, and
+    /// [`ErasureError::Database`] when the transaction, lock or fence query fails.
+    pub async fn begin_guarded_write(
+        &self,
+        subject: &str,
+        authenticated_at: Option<Timestamp>,
+    ) -> Result<Transaction<'static, Postgres>, ErasureError> {
+        let mut transaction = self.pool.begin().await?;
+        self.guard_subject(&mut transaction, subject, authenticated_at)
+            .await?;
+        Ok(transaction)
+    }
     /// Returns whether this session is rejected, without creating a profile.
+    /// This read takes no lock, so it cannot protect a later write. Use
+    /// [`Self::begin_guarded_write`] or [`Self::guard_subject`] for writes.
     /// A missing login time keeps a subject fenced permanently.
     ///
     /// # Errors
@@ -219,7 +327,7 @@ impl PostgresErasureStore {
         authenticated_at: Option<Timestamp>,
     ) -> Result<bool, ErasureError> {
         Ok(sqlx::query_scalar(REJECTED_SESSION_SQL)
-            .bind(self.subject_hash(subject))
+            .bind(self.subject_hashes(subject))
             .bind(authenticated_at.map(ToSqlx::to_sqlx))
             .fetch_one(&self.pool)
             .await?)
@@ -236,10 +344,10 @@ impl PostgresErasureStore {
         operation_id: Uuid,
     ) -> Result<Option<ErasureOutcome>, ErasureError> {
         let response: Option<Value> = sqlx::query_scalar(
-            "SELECT response FROM erasure_operations WHERE id = $1 AND subject_hash = $2",
+            "SELECT response FROM erasure_operations WHERE id = $1 AND subject_hash = ANY($2)",
         )
         .bind(operation_id)
-        .bind(self.subject_hash(subject))
+        .bind(self.subject_hashes(subject))
         .fetch_optional(&self.pool)
         .await?;
         response
@@ -263,20 +371,44 @@ impl PostgresErasureStore {
         Ok(serde_json::from_value(response)?)
     }
 }
-async fn lock(transaction: &mut Transaction<'_, Postgres>, hash: &[u8]) -> Result<(), sqlx::Error> {
-    let key = hash
-        .first_chunk::<8>()
-        .map(|bytes| i64::from_be_bytes(*bytes))
-        .ok_or_else(|| {
-            sqlx::Error::Protocol("advisory lock hash is shorter than 8 bytes".into())
-        })?;
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(key)
-        .execute(&mut **transaction)
-        .await?;
+fn keyed_hash(secret: &Secret<String>, domain: &[u8], input: &str) -> Vec<u8> {
+    let key = hmac::Key::new(hmac::HMAC_SHA256, secret.expose().as_bytes());
+    let mut context = hmac::Context::with_key(&key);
+    context.update(domain);
+    context.update(input.as_bytes());
+    context.sign().as_ref().to_vec()
+}
+/// Takes one advisory lock per hash in ascending key order, so processes on old and new key
+/// rings still exclude each other during a rotation without deadlocking.
+async fn lock_all(
+    transaction: &mut Transaction<'_, Postgres>,
+    hashes: &[Vec<u8>],
+) -> Result<(), sqlx::Error> {
+    let mut keys = hashes
+        .iter()
+        .map(|hash| {
+            hash.first_chunk::<8>()
+                .map(|bytes| i64::from_be_bytes(*bytes))
+                .ok_or_else(|| {
+                    sqlx::Error::Protocol("advisory lock hash is shorter than 8 bytes".into())
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    keys.sort_unstable();
+    keys.dedup();
+    for key in keys {
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(key)
+            .execute(&mut **transaction)
+            .await?;
+    }
     Ok(())
 }
-/// Axum handler helper. Call after authentication, before any product operation.
+/// Axum handler helper. Call after authentication to reject fenced sessions early.
+///
+/// The check takes no lock: an erase can commit between this check and a later write.
+/// Product writes must still run inside [`PostgresErasureStore::begin_guarded_write`] or
+/// call [`PostgresErasureStore::guard_subject`] in their own transaction.
 ///
 /// # Errors
 ///
@@ -349,6 +481,19 @@ impl ErasureService {
     pub fn store(&self) -> &PostgresErasureStore {
         &self.store
     }
+    /// Readiness check for the identity provider in delete mode. Register it with the
+    /// readiness registry so a wrong base URL keeps the service unready.
+    ///
+    /// # Errors
+    ///
+    /// The deleter's [`IdentityDeletionError`] when its endpoint does not answer like the
+    /// provider. Retain mode always succeeds.
+    pub async fn probe_identity_provider(&self) -> Result<(), IdentityDeletionError> {
+        match &self.identity_retention {
+            IdentityRetention::Delete { deleter, .. } => deleter.probe().await,
+            IdentityRetention::Retain => Ok(()),
+        }
+    }
     /// Fences an operator-selected subject inside the caller's transaction.
     ///
     /// The caller erases product rows in this same transaction and commits it.
@@ -369,8 +514,8 @@ impl ErasureService {
         if subject.is_empty() {
             return Err(ErasureError::Configuration);
         }
+        self.store.lock_subject(transaction, subject).await?;
         let subject_hash = self.store.subject_hash(subject);
-        lock(transaction, &subject_hash).await?;
         let outcome = ErasureOutcome {
             status: ErasureState::Pending,
             operation_id: Uuid::now_v7(),
@@ -424,12 +569,12 @@ impl ErasureService {
     ) -> Result<ErasurePreflight, ErasureError> {
         validate_request(subject, key)?;
         let previous = sqlx::query_as(
-            "SELECT subject_hash, response FROM erasure_operations WHERE key_hash = $1",
+            "SELECT subject_hash, response FROM erasure_operations WHERE key_hash = ANY($1)",
         )
-        .bind(self.store.hash(b"erasure-key\0", key))
+        .bind(self.store.hashes(KEY_DOMAIN, key))
         .fetch_optional(&self.store.pool)
         .await?;
-        if let Some(outcome) = replay_outcome(&self.store.subject_hash(subject), previous)? {
+        if let Some(outcome) = replay_outcome(&self.store.subject_hashes(subject), previous)? {
             return Ok(ErasurePreflight::Replay(outcome));
         }
         reject_fenced_subject(&self.store, subject, authenticated_at).await?;
@@ -450,17 +595,18 @@ impl ErasureService {
         product: &dyn ProductErasure,
     ) -> Result<ErasureOutcome, ErasureError> {
         validate_request(subject, key)?;
-        let key_hash = self.store.hash(b"erasure-key\0", key);
+        let key_hashes = self.store.hashes(KEY_DOMAIN, key);
+        let key_hash = self.store.hash(KEY_DOMAIN, key);
         let subject_hash = self.store.subject_hash(subject);
         let mut transaction = self.store.pool.begin().await?;
-        lock(&mut transaction, &key_hash).await?;
+        lock_all(&mut transaction, &key_hashes).await?;
         let previous: Option<(Vec<u8>, Value)> = sqlx::query_as(
-            "SELECT subject_hash, response FROM erasure_operations WHERE key_hash = $1",
+            "SELECT subject_hash, response FROM erasure_operations WHERE key_hash = ANY($1)",
         )
-        .bind(&key_hash)
+        .bind(&key_hashes)
         .fetch_optional(&mut *transaction)
         .await?;
-        if let Some(outcome) = replay_outcome(&subject_hash, previous)? {
+        if let Some(outcome) = replay_outcome(&self.store.subject_hashes(subject), previous)? {
             return Ok(outcome);
         }
         self.store
@@ -634,16 +780,19 @@ fn validate_request(subject: &str, key: &str) -> Result<(), ErasureError> {
 }
 
 fn replay_outcome(
-    subject_hash: &[u8],
+    subject_hashes: &[Vec<u8>],
     previous: Option<(Vec<u8>, Value)>,
 ) -> Result<Option<ErasureOutcome>, ErasureError> {
-    let Some((owner, response)) = previous else {
-        return Ok(None);
-    };
-    if owner != subject_hash {
-        return Err(ErasureError::Conflict);
+    let same_subject = previous
+        .as_ref()
+        .is_some_and(|(owner, _)| subject_hashes.contains(owner));
+    match (replay_decision(previous.is_some(), same_subject), previous) {
+        (ReplayDecision::Replay, Some((_, response))) => {
+            Ok(Some(serde_json::from_value(response)?))
+        }
+        (ReplayDecision::Conflict, _) => Err(ErasureError::Conflict),
+        _ => Ok(None),
     }
-    Ok(Some(serde_json::from_value(response)?))
 }
 
 #[cfg(test)]

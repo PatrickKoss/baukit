@@ -88,8 +88,9 @@ Tombstones can be purged once every client has had time to pull them. Copy
 `rust/crates/baukit-sync/migrations/0002_baukit_sync_purge_horizons.sql` after the counter
 migration, list each syncable table as a `baukit_sync::purge::TombstoneTable` with children before
 parents, and run `purge_tombstones` from a recurring job. Start every pull transaction with
-`guard_pull_cursor` and read the rows in that same transaction. The `baukit-sync` README has the
-full example and the 409 `resync_required` mapping.
+`guard_pull_cursor`, then `open_pull_window`, and read the rows in that same transaction with the
+`(revision, id)` cursor and `revision <= hi`. With more than one table, merge the per-table pages
+through `merge_pull_page`. The `baukit-sync` README has the full example and the 409 `resync_required` mapping.
 
 ## What stays yours
 

@@ -24,6 +24,7 @@ use crate::{
 
 const MAX_BEARER_TOKEN_BYTES: usize = 16 * 1024;
 const IDENTITY_UNAVAILABLE_RETRY_AFTER_SECONDS: u64 = 5;
+const INVALID_BEARER_BUCKET: &str = "invalid-bearer";
 
 #[derive(Clone)]
 struct Security {
@@ -169,10 +170,17 @@ async fn admit(state: &Security, request: Request) -> Result<Request, Box<Respon
             "invalid_host_or_origin",
         )));
     }
+    let presented = request.headers().contains_key(header::AUTHORIZATION);
     let Some(token) = bearer_token(request.headers()) else {
-        return Err(Box::new(invalid_token(state)));
+        return Err(reject_token(state, presented).await);
     };
-    let verified = verify(state, token).await?;
+    let verified = match verify(state, token).await {
+        Ok(verified) => verified,
+        Err(response) if response.status() == StatusCode::UNAUTHORIZED => {
+            return Err(reject_token(state, true).await);
+        }
+        Err(response) => return Err(response),
+    };
     consume_quota(state, &verified).await?;
     let principal = apply_policy(state, &verified, token).await?;
     let mut request = if request.method() == Method::POST {
@@ -228,16 +236,53 @@ async fn verify(state: &Security, token: &str) -> Result<VerifiedPrincipal, Box<
     }
 }
 
+/// Joins parts as `len:part` pairs so no issuer or subject can collide with another split.
+fn quota_key(parts: &[&str]) -> String {
+    parts.iter().fold(String::from("mcp"), |mut key, part| {
+        key.push(':');
+        key.push_str(&part.len().to_string());
+        key.push(':');
+        key.push_str(part);
+        key
+    })
+}
+
+/// Counts a malformed or rejected bearer against one shared per-resource bucket.
+///
+/// Returns 429 once that bucket is spent and 401 otherwise, including when the
+/// store is unavailable, so the denial never weakens.
+async fn reject_token(state: &Security, presented: bool) -> Box<Response> {
+    if !presented {
+        return Box::new(invalid_token(state));
+    }
+    let key = quota_key(&[INVALID_BEARER_BUCKET, &state.config.resource_url]);
+    match state.store.check_and_consume(&key, state.quota).await {
+        Ok(decision) if !decision.allowed => {
+            metrics::counter!("http_rate_limit_decisions_total", "scope" => "mcp", "outcome" => "limited").increment(1);
+            Box::new(rate_limited(decision.retry_after))
+        }
+        _ => Box::new(invalid_token(state)),
+    }
+}
+
+fn rate_limited(retry_after: std::time::Duration) -> Response {
+    let mut response = error(StatusCode::TOO_MANY_REQUESTS, "rate_limited");
+    response.headers_mut().insert(
+        header::RETRY_AFTER,
+        HeaderValue::from(retry_after.as_secs().max(1)),
+    );
+    response
+}
+
 async fn consume_quota(
     state: &Security,
     principal: &VerifiedPrincipal,
 ) -> Result<(), Box<Response>> {
-    let key = format!(
-        "mcp:{}:{}:{}",
-        state.config.resource_url,
+    let key = quota_key(&[
+        &state.config.resource_url,
         principal.issuer().unwrap_or_default(),
-        principal.subject()
-    );
+        principal.subject(),
+    ]);
     let Ok(decision) = state.store.check_and_consume(&key, state.quota).await else {
         return Err(Box::new(error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -248,12 +293,7 @@ async fn consume_quota(
     if decision.allowed {
         return Ok(());
     }
-    let mut response = error(StatusCode::TOO_MANY_REQUESTS, "rate_limited");
-    response.headers_mut().insert(
-        header::RETRY_AFTER,
-        HeaderValue::from(decision.retry_after.as_secs().max(1)),
-    );
-    Err(Box::new(response))
+    Err(Box::new(rate_limited(decision.retry_after)))
 }
 
 async fn apply_policy(
@@ -290,34 +330,35 @@ async fn screen_post_body(
             "request_too_large",
         )));
     };
-    if let Ok(message) = serde_json::from_slice::<Value>(&bytes) {
-        if message.is_array() {
-            return Err(Box::new(error(
-                StatusCode::BAD_REQUEST,
-                "batch_not_supported",
-            )));
-        }
-        if is_cancel_notification(&message) {
-            if let Some(id) = message
-                .pointer("/params/requestId")
-                .and_then(|id| serde_json::from_value(id.clone()).ok())
-            {
-                state.services.requests.cancel(principal, &id);
-            }
-            return Err(Box::new(
-                (StatusCode::ACCEPTED, [(header::CACHE_CONTROL, "no-store")]).into_response(),
-            ));
-        }
-        if let Some(scopes) = state.services.required_scopes(&message)
-            && !permitted_scopes(principal, &scopes)
+    let Ok(message) = serde_json::from_slice::<Value>(&bytes) else {
+        return Err(Box::new(error(StatusCode::BAD_REQUEST, "invalid_json")));
+    };
+    if message.is_array() {
+        return Err(Box::new(error(
+            StatusCode::BAD_REQUEST,
+            "batch_not_supported",
+        )));
+    }
+    if is_cancel_notification(&message) {
+        if let Some(id) = message
+            .pointer("/params/requestId")
+            .and_then(|id| serde_json::from_value(id.clone()).ok())
         {
-            return Err(Box::new(challenge(
-                state,
-                StatusCode::FORBIDDEN,
-                "insufficient_scope",
-                &scopes,
-            )));
+            state.services.requests.cancel(principal, &id);
         }
+        return Err(Box::new(
+            (StatusCode::ACCEPTED, [(header::CACHE_CONTROL, "no-store")]).into_response(),
+        ));
+    }
+    if let Some(scopes) = state.services.required_scopes(&message)
+        && !permitted_scopes(principal, &scopes)
+    {
+        return Err(Box::new(challenge(
+            state,
+            StatusCode::FORBIDDEN,
+            "insufficient_scope",
+            &scopes,
+        )));
     }
     Ok(Request::from_parts(parts, Body::from(bytes)))
 }
@@ -396,6 +437,14 @@ fn error(status: StatusCode, code: &str) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quota_keys_cannot_collide_across_part_boundaries() {
+        let split_a = quota_key(&["https://mcp/x", "https://idp:a", "b"]);
+        let split_b = quota_key(&["https://mcp/x", "https://idp", "a:b"]);
+        assert_ne!(split_a, split_b);
+        assert_eq!(quota_key(&["r", "i:", "s"]), "mcp:1:r:2:i::1:s");
+    }
 
     #[test]
     fn host_and_origin_are_exact_and_duplicates_fail_closed() {

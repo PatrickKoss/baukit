@@ -146,10 +146,23 @@ pub enum HubError {
 
 /// Encodes every byte except ASCII alphanumerics and `*-._`, so `|` in a
 /// suite subject becomes `%7C`.
-fn encode_segment(segment: &str) -> String {
-    url::form_urlencoded::byte_serialize(segment.as_bytes())
-        .map(|part| if part == "+" { "%20" } else { part })
-        .collect()
+const DOT_SEGMENT_CODE: &str = "hub_path_segment_invalid";
+
+/// Percent-encodes one path segment. `None` for `.` and `..`: URL parsers resolve
+/// them, encoded or not, as dot segments that would leave `/platform/v1/`.
+fn encode_segment(segment: &str) -> Option<String> {
+    encode_segment_bytes(segment.as_bytes())
+}
+
+fn encode_segment_bytes(segment: &[u8]) -> Option<String> {
+    if matches!(segment, b"." | b"..") {
+        return None;
+    }
+    Some(
+        url::form_urlencoded::byte_serialize(segment)
+            .map(|part| if part == "+" { "%20" } else { part })
+            .collect(),
+    )
 }
 
 struct CachedToken {
@@ -373,7 +386,10 @@ impl HubClient {
         let mut path = url.path().trim_end_matches('/').to_owned();
         for segment in ["platform", "v1"].iter().chain(segments) {
             path.push('/');
-            path.push_str(&encode_segment(segment));
+            path.push_str(&encode_segment(segment).ok_or(HubError::Rejected {
+                status: 0,
+                code: Some(DOT_SEGMENT_CODE.to_owned()),
+            })?);
         }
         url.set_path(&path);
         Ok(url)
@@ -631,5 +647,129 @@ mod tests {
                 .path(),
             "/api/platform/v1/accounts/suite-dev%7Calice/organizations"
         );
+    }
+
+    #[test]
+    fn dot_segments_stay_inside_the_platform_api() {
+        let hub = client();
+        for subject in ["..", "."] {
+            assert!(hub.url(&["accounts", subject, "organizations"]).is_err());
+        }
+        let encoded = hub
+            .url(&["accounts", "%2E%2E", "organizations"])
+            .expect("url");
+        assert_eq!(
+            encoded.path(),
+            "/api/platform/v1/accounts/%252E%252E/organizations"
+        );
+    }
+}
+
+/// The K-21 property, shared by the Kani proofs and the proptest.
+#[cfg(test)]
+fn segment_stays_in_its_slot(segment: &[u8]) -> bool {
+    if encode_segment_bytes(segment).is_none() {
+        return true;
+    }
+    let mut dots = 0_usize;
+    let mut only_dots = true;
+    let mut escape = [0_u8; 3];
+    let mut escape_len = 0;
+    for byte in url::form_urlencoded::byte_serialize(segment)
+        .map(|part| if part == "+" { "%20" } else { part })
+        .flat_map(str::bytes)
+    {
+        if matches!(byte, b'/' | b'?' | b'#' | b'\\') {
+            return false;
+        }
+        if byte == b'%' || escape_len > 0 {
+            escape[escape_len] = byte;
+            escape_len += 1;
+            if escape_len == escape.len() {
+                if escape.eq_ignore_ascii_case(b"%2e") {
+                    dots += 1;
+                } else {
+                    only_dots = false;
+                }
+                escape_len = 0;
+            }
+        } else if byte == b'.' {
+            dots += 1;
+        } else {
+            only_dots = false;
+        }
+    }
+    !(only_dots && matches!(dots, 1 | 2))
+}
+
+#[cfg(test)]
+mod segment_tests {
+    use super::segment_stays_in_its_slot;
+    use proptest::prelude::*;
+
+    proptest! {
+        /// K-21 beyond the Kani bound: up to 16 arbitrary chars.
+        #[test]
+        fn any_segment_stays_in_its_slot(segment in "\\PC{0,16}") {
+            prop_assert!(segment_stays_in_its_slot(segment.as_bytes()));
+        }
+
+        #[test]
+        fn every_byte_encodes_inside_its_slot(byte in any::<u8>()) {
+            prop_assert!(super::encoded_byte_stays_in_its_slot(byte));
+        }
+
+        #[test]
+        fn dot_like_segments_stay_in_their_slot(segment in "[.%2eE]{0,6}") {
+            prop_assert!(segment_stays_in_its_slot(segment.as_bytes()));
+        }
+    }
+}
+
+/// Encodes one byte the way `encode_segment` does. `byte_serialize` maps each byte on its own,
+/// so a segment stays in its slot when every byte does and the only dot-only inputs, `.` and
+/// `..`, are refused.
+#[cfg(any(kani, test))]
+fn encoded_byte_stays_in_its_slot(byte: u8) -> bool {
+    const ENCODED_DOT: &[u8] = b"%2e";
+    let input = [byte];
+    let Some(part) = url::form_urlencoded::byte_serialize(&input).next() else {
+        return false;
+    };
+    let part = if part == "+" { "%20" } else { part }.as_bytes();
+    let forbidden = part
+        .iter()
+        .any(|encoded| matches!(encoded, b'/' | b'?' | b'#' | b'\\'));
+    let dot = part == b"." || part.eq_ignore_ascii_case(ENCODED_DOT);
+    !forbidden && dot == (byte == b'.')
+}
+
+#[cfg(kani)]
+mod proofs {
+    use super::{encode_segment_bytes, encoded_byte_stays_in_its_slot};
+
+    /// K-21 over every byte string of up to 3 bytes, a superset of every string of up to 3
+    /// bytes. The encoder maps bytes one by one, so the proof checks each byte's encoding and
+    /// that the dot-only segments are refused. Bounds: 3 bytes, unwind 12.
+    #[kani::proof]
+    #[kani::unwind(12)]
+    fn an_encoded_segment_cannot_leave_its_slot() {
+        let bytes: [u8; 3] = kani::any();
+        for byte in bytes {
+            assert!(encoded_byte_stays_in_its_slot(byte));
+        }
+        assert!(encode_segment_bytes(b".").is_none());
+        assert!(encode_segment_bytes(b"..").is_none());
+    }
+
+    /// K-21 for any single `char`, 1 to 4 bytes. Bounds: one char, unwind 12.
+    #[kani::proof]
+    #[kani::unwind(12)]
+    fn any_single_char_segment_stays_in_its_slot() {
+        let c: char = kani::any();
+        let mut buffer = [0_u8; 4];
+        for byte in c.encode_utf8(&mut buffer).bytes() {
+            assert!(encoded_byte_stays_in_its_slot(byte));
+        }
     }
 }

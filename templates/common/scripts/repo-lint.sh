@@ -29,10 +29,19 @@ has_files() {
   [ -n "$(repository_files "$@" | tr -d '\0')" ]
 }
 
-# Prints Cargo.lock paths, one per line, without test fixtures and vendored crates.
+# Prints files matching the patterns, one per line, without test fixtures, vendored code and node_modules.
+lockfiles() {
+  repository_files "$@" | tr '\0' '\n' | sed 's#^\./##' \
+    | grep -Ev '(^|/)(fixtures|vendor|node_modules)/' | sort
+}
+
 cargo_lockfiles() {
-  repository_files '*Cargo.lock' | tr '\0' '\n' | sed 's#^\./##' \
-    | grep -E '(^|/)Cargo\.lock$' | grep -Ev '(^|/)(fixtures|vendor)/' | sort
+  lockfiles '*Cargo.lock' | grep -E '(^|/)Cargo\.lock$' || true
+}
+
+js_lockfiles() {
+  lockfiles '*pnpm-lock.yaml' '*package-lock.json' \
+    | grep -E '(^|/)(pnpm-lock\.yaml|package-lock\.json)$' || true
 }
 
 # Prints backend/ when it has a Cargo.toml, then each other directory with a Cargo.toml next to a Cargo.lock.
@@ -77,11 +86,13 @@ osv() {
   done <<EOF
 $(cargo_lockfiles)
 EOF
-  for lockfile in web/pnpm-lock.yaml mobile/pnpm-lock.yaml; do
+  while IFS= read -r lockfile; do
     if [ -f "$lockfile" ]; then
       set -- "$@" -L "$lockfile"
     fi
-  done
+  done <<EOF
+$(js_lockfiles)
+EOF
   if [ "$#" -eq 0 ]; then
     echo "repo lint: no lockfile to scan"
     return

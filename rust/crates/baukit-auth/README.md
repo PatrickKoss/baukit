@@ -159,14 +159,15 @@ last error. An issuer mismatch or an invalid document fails at once.
 `OidcConfig::with_jwks_uri` sets the JWKS URL directly, so the verifier starts
 without contacting the issuer. Use it in production.
 
-A JWKS is fresh for the cache TTL (300 seconds) and then stale for the stale
-window (one hour, `with_jwks_stale_window`). A stale set keeps verifying known
-key ids while one background task refreshes it, so no request waits for that
-fetch. An unknown key id forces a refresh at most once per 10 seconds and
-otherwise fails with `UnknownKeyId`; it never verifies against a stale set.
-Once the stale window has passed and the issuer is still down, verification
-fails with an error where `is_unavailable()` is true, which the extractor answers
-with `503 unavailable`. `auth_key_cache_requests_total{source="oidc",result}`
+A JWKS is fresh for the cache TTL (300 seconds) and then usable for the stale
+grace (one hour, `with_jwks_stale_grace` or `with_jwks_stale_window`). Known key
+ids never wait on a fetch. Past the TTL one request refreshes the set and every
+other request keeps using the stale keys. An unknown key id forces a refresh at
+most once per cooldown across all key ids (30 seconds,
+`with_jwks_refresh_cooldown`) and otherwise fails with `UnknownKeyId`. Once the
+grace has passed and the issuer is still down, verification fails with an error
+where `is_unavailable()` is true, which the extractor answers with
+`503 unavailable`. `auth_key_cache_requests_total{source="oidc",result}`
 counts lookups by `fresh`, `stale`, `fetched` and `failed`.
 
 ### Reusing the key cache

@@ -280,6 +280,11 @@ async fn sentinel_store_recovers_after_master_failover() -> Result<(), Box<dyn E
     // reconnects to the node that just died.
     fixture.wait_for_failover(&original_master).await?;
 
+    // A call on the dead master's connection may already have been written, so the
+    // store reports it instead of replaying it. The next call uses the new master.
+    let _ = store
+        .check_and_consume("rl:test:sentinel:recovery-probe", probe_quota)
+        .await;
     assert!(
         store
             .check_and_consume("rl:test:sentinel:recovery-probe", probe_quota)

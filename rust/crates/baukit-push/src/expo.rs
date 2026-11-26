@@ -7,8 +7,8 @@ use baukit_egress::{AddressPolicy, AllowedEndpoint, EgressOptions, GuardedClient
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    MAX_RECEIPT_BATCH_SIZE, PushDeliveryStatus, PushError, PushFuture, PushMessage, PushOptions,
-    PushOptionsError, PushOutcome, PushReceipt, PushReceiptFuture, PushReceiptSource,
+    DeviceToken, MAX_RECEIPT_BATCH_SIZE, PushDeliveryStatus, PushError, PushFuture, PushMessage,
+    PushOptions, PushOptionsError, PushOutcome, PushReceipt, PushReceiptFuture, PushReceiptSource,
     PushRejection, PushSendError, PushSender, PushTicketId,
 };
 
@@ -123,34 +123,11 @@ impl ExpoPushSender {
     async fn send_chunk(&self, messages: &[PushMessage]) -> Result<Vec<PushOutcome>, PushError> {
         let payload = messages.iter().map(expo_message).collect::<Vec<_>>();
         let response: ExpoTicketResponse = self.post(self.options.endpoint(), &payload).await?;
-        let tickets = response
-            .data
-            .ok_or_else(|| PushError::InvalidResponse("ticket response has no data".to_owned()))?;
-        if tickets.len() != messages.len() {
-            return Err(PushError::InvalidResponse(format!(
-                "expected {} tickets, got {}",
-                messages.len(),
-                tickets.len()
-            )));
-        }
-
-        let mut outcomes = Vec::with_capacity(messages.len());
-        let mut pending = Vec::new();
-        for (message, ticket) in messages.iter().zip(tickets) {
-            match rejection(ticket.details.as_ref()) {
-                Some(rejection) => outcomes.push(PushOutcome {
-                    token: message.token.clone(),
-                    status: PushDeliveryStatus::Rejected(rejection),
-                }),
-                None if ticket.status == OK_STATUS => {
-                    pending.push((ticket_id(ticket.id)?, message.token.clone()));
-                }
-                None => outcomes.push(PushOutcome {
-                    token: message.token.clone(),
-                    status: PushDeliveryStatus::Rejected(PushRejection::ProviderError),
-                }),
-            }
-        }
+        let tokens = messages
+            .iter()
+            .map(|message| message.token.clone())
+            .collect::<Vec<_>>();
+        let (mut outcomes, pending) = classify_tickets(&tokens, response)?;
         if pending.is_empty() {
             return Ok(outcomes);
         }
@@ -253,6 +230,58 @@ fn endpoint_client(options: &PushOptions) -> Result<GuardedClient, PushOptionsEr
         .with_request_timeout(options.request_timeout())
         .map_err(|_| invalid())?;
     GuardedClient::new("expo", egress).map_err(|_| invalid())
+}
+
+/// Accepted tickets still waiting for a receipt, paired with their device tokens.
+pub type PendingTickets = Vec<(PushTicketId, DeviceToken)>;
+
+/// Parses an Expo ticket response body for `tokens`, in send order.
+///
+/// # Errors
+///
+/// [`PushError::InvalidResponse`] when the body is not a ticket response, has no data, has a
+/// different ticket count than `tokens`, or accepts a ticket without a valid id.
+pub fn parse_tickets(
+    tokens: &[DeviceToken],
+    body: &[u8],
+) -> Result<(Vec<PushOutcome>, PendingTickets), PushError> {
+    let response = serde_json::from_slice(body)
+        .map_err(|error| PushError::InvalidResponse(error.to_string()))?;
+    classify_tickets(tokens, response)
+}
+
+fn classify_tickets(
+    tokens: &[DeviceToken],
+    response: ExpoTicketResponse,
+) -> Result<(Vec<PushOutcome>, PendingTickets), PushError> {
+    let tickets = response
+        .data
+        .ok_or_else(|| PushError::InvalidResponse("ticket response has no data".to_owned()))?;
+    if tickets.len() != tokens.len() {
+        return Err(PushError::InvalidResponse(format!(
+            "expected {} tickets, got {}",
+            tokens.len(),
+            tickets.len()
+        )));
+    }
+    let mut outcomes = Vec::with_capacity(tokens.len());
+    let mut pending = Vec::new();
+    for (token, ticket) in tokens.iter().zip(tickets) {
+        match rejection(ticket.details.as_ref()) {
+            Some(rejection) => outcomes.push(PushOutcome {
+                token: token.clone(),
+                status: PushDeliveryStatus::Rejected(rejection),
+            }),
+            None if ticket.status == OK_STATUS => {
+                pending.push((ticket_id(ticket.id)?, token.clone()));
+            }
+            None => outcomes.push(PushOutcome {
+                token: token.clone(),
+                status: PushDeliveryStatus::Rejected(PushRejection::ProviderError),
+            }),
+        }
+    }
+    Ok((outcomes, pending))
 }
 
 fn ticket_id(id: Option<String>) -> Result<PushTicketId, PushError> {

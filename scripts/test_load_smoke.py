@@ -14,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNNER = REPO_ROOT / "deploy" / "smoke" / "run-load-smoke.sh"
 SCRIPT = REPO_ROOT / "deploy" / "smoke" / "api-load.js"
 MANIFEST = REPO_ROOT / "deploy" / "tools.toml"
+FAKE_TOKEN = "not-a-real-token"
 FAKE_DOCKER = """#!/bin/sh
 printf '%s\\n' "$@" >"$DOCKER_ARGS"
 env | sort >"$DOCKER_ENV"
@@ -63,7 +64,7 @@ class LoadSmokeRunnerTest(unittest.TestCase):
         self.assertEqual(args[-3:], ["run", "--quiet", "/smoke/api-load.js"])
 
     def test_passes_only_the_settings_that_are_set(self) -> None:
-        self.run_runner(API_URL="http://127.0.0.1:18080", SMOKE_TOKEN="secret-token")
+        self.run_runner(API_URL="http://127.0.0.1:18080", SMOKE_TOKEN=FAKE_TOKEN)
 
         args = self.docker_args()
         self.assertIn("API_URL", args)
@@ -72,9 +73,9 @@ class LoadSmokeRunnerTest(unittest.TestCase):
         self.assertNotIn("secret-token", " ".join(args))
 
     def test_forwards_extra_k6_arguments(self) -> None:
-        self.run_runner("--summary-export", "/tmp/summary.json")
+        self.run_runner("--summary-export", "summary.json")
 
-        self.assertEqual(self.docker_args()[-2:], ["--summary-export", "/tmp/summary.json"])
+        self.assertEqual(self.docker_args()[-2:], ["--summary-export", "summary.json"])
 
     def test_returns_the_k6_exit_status(self) -> None:
         result = self.run_runner(DOCKER_EXIT="99")

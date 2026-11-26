@@ -2,6 +2,7 @@ use std::{fmt, time::Duration};
 
 use axum::http::{HeaderName, HeaderValue};
 use baukit_config::HttpConfig;
+use baukit_core::DeploymentEnvironment;
 
 use crate::error::is_valid_error_code;
 
@@ -119,7 +120,9 @@ pub struct HttpOptions {
 impl HttpOptions {
     /// Replaces the CORS origin allowlist.
     ///
-    /// Each origin must be a valid HTTP header value and must not be `*`.
+    /// Each origin must be `https://host[:port]` with no path, query or user
+    /// info. `*` and `null` are rejected, and `http://` is accepted only for
+    /// `localhost`, `127.0.0.1` and `[::1]`.
     ///
     /// # Errors
     ///
@@ -130,7 +133,7 @@ impl HttpOptions {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        self.allowed_origins = parse_origins(origins)?;
+        self.allowed_origins = parse_origins(origins, DeploymentEnvironment::Production)?;
         Ok(self)
     }
 
@@ -273,13 +276,27 @@ impl HttpOptions {
     /// `ZeroRequestTimeout`, `ZeroBodySizeLimit` or `ZeroConcurrencyLimit` when the
     /// matching config value is zero.
     pub fn from_config(config: &HttpConfig) -> Result<Self, HttpOptionsError> {
+        Self::from_config_in(config, DeploymentEnvironment::Production)
+    }
+
+    /// Like [`HttpOptions::from_config`], but `environment` decides whether
+    /// non-loopback `http://` origins are allowed: only in
+    /// [`DeploymentEnvironment::Local`].
+    ///
+    /// # Errors
+    ///
+    /// The same as [`HttpOptions::from_config`].
+    pub fn from_config_in(
+        config: &HttpConfig,
+        environment: DeploymentEnvironment,
+    ) -> Result<Self, HttpOptionsError> {
         Self {
             request_timeout: config.request_timeout,
             body_size_limit: config.body_size_limit,
             concurrency_limit: config.concurrency_limit,
             queue_timeout: DEFAULT_QUEUE_TIMEOUT,
             allow_credentials: false,
-            allowed_origins: parse_origins(&config.cors_allowed_origins)?,
+            allowed_origins: parse_origins(&config.cors_allowed_origins, environment)?,
             additional_allowed_headers: Vec::new(),
             additional_exposed_headers: Vec::new(),
             response_cache_policy: ResponseCachePolicy::default(),
@@ -363,22 +380,52 @@ impl fmt::Display for HttpOptionsError {
 
 impl std::error::Error for HttpOptionsError {}
 
-fn parse_origins<I, S>(origins: I) -> Result<Vec<HeaderValue>, HttpOptionsError>
+const LOOPBACK_HOSTS: [&str; 3] = ["localhost", "127.0.0.1", "[::1]"];
+
+fn parse_origins<I, S>(
+    origins: I,
+    environment: DeploymentEnvironment,
+) -> Result<Vec<HeaderValue>, HttpOptionsError>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<str>,
 {
     origins
         .into_iter()
-        .map(|origin| {
-            let origin = origin.as_ref();
-            if origin == "*" {
-                return Err(HttpOptionsError::WildcardOrigin);
-            }
-            HeaderValue::from_str(origin)
-                .map_err(|_| HttpOptionsError::InvalidOrigin(origin.to_owned()))
-        })
+        .map(|origin| parse_origin(origin.as_ref(), environment))
         .collect()
+}
+
+fn parse_origin(
+    origin: &str,
+    environment: DeploymentEnvironment,
+) -> Result<HeaderValue, HttpOptionsError> {
+    if origin == "*" {
+        return Err(HttpOptionsError::WildcardOrigin);
+    }
+    let invalid = || HttpOptionsError::InvalidOrigin(origin.to_owned());
+    let (secure, authority) = if let Some(rest) = origin.strip_prefix("https://") {
+        (true, rest)
+    } else if let Some(rest) = origin.strip_prefix("http://") {
+        (false, rest)
+    } else {
+        return Err(invalid());
+    };
+    if authority.is_empty() || authority.contains(['/', '?', '#', '@', '\\']) {
+        return Err(invalid());
+    }
+    if !secure && environment != DeploymentEnvironment::Local && !is_loopback(authority) {
+        return Err(invalid());
+    }
+    HeaderValue::from_str(origin).map_err(|_| invalid())
+}
+
+fn is_loopback(authority: &str) -> bool {
+    LOOPBACK_HOSTS.iter().any(|host| {
+        authority
+            .strip_prefix(host)
+            .is_some_and(|port| port.is_empty() || port.starts_with(':'))
+    })
 }
 
 fn extend_header_names<I, S>(
@@ -407,3 +454,6 @@ fn valid_json_rejection_code(code: String) -> Result<String, HttpOptionsError> {
         Err(HttpOptionsError::InvalidJsonRejectionCode(code))
     }
 }
+
+#[cfg(test)]
+mod tests;

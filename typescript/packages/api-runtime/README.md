@@ -281,3 +281,17 @@ The auth templates capture a short-lived access token for this operation before
 clearing local authentication. Status checks use that token while the screen
 stays open, without refreshing or restoring a signed-out session. A failed
 status check does not undo deletion; the server worker continues.
+
+## Base origin and path
+
+String inputs resolve against `baseUrl`. A path with one leading `/` stays under
+the base path: with `https://api.example.test/v1`, `/items` becomes
+`https://api.example.test/v1/items`. `//host` and `/\host` are other origins.
+The runtime adds `Authorization` and runs `onUnauthorized`, the 401 replay and
+`onProfileErased` only for requests whose origin equals the base origin and
+whose path is at or under the base path. Other URLs, `Request` inputs included,
+go out without the token and their 401s fire no hook.
+
+Pass `sessionSubject` to stamp each request with the signed-in subject at send
+time. A 401 whose subject changed before it arrived fires no hook, and the hook
+context carries the stamped `subject`.

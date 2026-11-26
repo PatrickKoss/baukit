@@ -81,6 +81,7 @@ mod axum_integration;
 #[cfg(feature = "browser-session")]
 pub mod browser_session;
 mod config;
+mod kernels;
 pub mod key_set_cache;
 mod oidc_http;
 #[cfg(feature = "sqlx-postgres")]

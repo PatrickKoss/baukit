@@ -8,6 +8,8 @@ All notable changes to `baukit-ops` are documented here.
 - `connect_pool` and `connect_pool_lazy` build a pool from `baukit_config::DatabaseConfig`, with its size, acquire timeout and lifetimes, and send `statement_timeout`, `lock_timeout` and `idle_in_transaction_session_timeout` as startup parameters. `pool_options` and `connect_options` return the two halves.
 - New `jobs` feature with `jobs_admin::requeue_failed_jobs_router`, which serves `POST /admin/jobs/requeue` (`REQUEUE_PATH`) for the ops listener. Every request needs a bearer token matching the configured admin token; a missing or wrong token gets `401`. A store error answers `503` with `Retry-After: 5`.
 
+## [0.31.0] - 2026-11-26
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

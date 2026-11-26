@@ -39,10 +39,10 @@ async fn postgres_query_stalls_while_paused_and_works_after_resume() -> TestResu
     let mut connection = PgConnection::connect(postgres.connection_url()).await?;
     assert_eq!(select_one(&mut connection).await?, 1);
 
-    postgres.fault().pause().await?;
+    postgres.fault()?.pause().await?;
     let stalled = tokio::time::timeout(STALLED_QUERY_BUDGET, select_one(&mut connection)).await;
     assert!(stalled.is_err(), "a paused server must not answer");
-    postgres.fault().resume().await?;
+    postgres.fault()?.resume().await?;
 
     let mut fresh = PgConnection::connect(postgres.connection_url()).await?;
     assert_eq!(select_one(&mut fresh).await?, 1);
@@ -62,14 +62,14 @@ async fn postgres_restart_keeps_url_and_data() -> TestResult {
         .await?;
     drop(connection);
 
-    postgres.fault().stop().await?;
+    postgres.fault()?.stop().await?;
     assert!(
         PgConnection::connect(postgres.connection_url())
             .await
             .is_err(),
         "a stopped server must refuse connections"
     );
-    postgres.fault().start().await?;
+    postgres.fault()?.start().await?;
 
     let mut connection = PgConnection::connect(postgres.connection_url()).await?;
     let tables: i64 =

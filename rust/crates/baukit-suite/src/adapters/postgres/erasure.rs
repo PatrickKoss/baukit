@@ -1,6 +1,6 @@
-use super::PostgresSuiteLinkStore;
+use super::{PostgresSuiteLinkStore, links_for_erasure, lock_owner};
 use crate::{
-    domain::SuiteLink,
+    domain::{SUITE_JOB_TYPES, SuiteLink},
     ports::{SuiteErasureLinks, SuiteStoreError},
 };
 use async_trait::async_trait;
@@ -83,5 +83,56 @@ impl SuiteErasureLinks for PostgresSuiteErasure {
                 .map_err(super::storage),
             None => Ok(Vec::new()),
         }
+    }
+}
+
+impl PostgresSuiteLinkStore {
+    /// Links that a peer may still consider active. Call before the erasure transaction.
+    ///
+    /// # Errors
+    ///
+    /// Returns the `sqlx::Error` when the link query fails.
+    pub async fn links_for_owner_erasure(
+        &self,
+        owner: Uuid,
+    ) -> Result<Vec<SuiteLink>, sqlx::Error> {
+        links_for_erasure(&self.pool, owner).await
+    }
+    /// Deletes suite jobs and every suite row in the product's erasure transaction.
+    /// Follow the crate lock order when locking product rows.
+    /// `PostgresSuiteErasure` takes the owner locks before calling this method.
+    ///
+    /// # Errors
+    ///
+    /// Returns `sqlx::Error::Protocol` when the owner lock fails and the `sqlx::Error` of any failed
+    /// select or delete.
+    pub async fn erase_owner(
+        &self,
+        connection: &mut sqlx::PgConnection,
+        owner: Uuid,
+    ) -> Result<(), sqlx::Error> {
+        lock_owner(connection, owner)
+            .await
+            .map_err(|error| sqlx::Error::Protocol(error.to_string()))?;
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM suite_links WHERE user_id=$1 ORDER BY id FOR UPDATE",
+        )
+        .bind(owner)
+        .fetch_all(&mut *connection)
+        .await?;
+        sqlx::query("DELETE FROM job_outbox WHERE job_type=ANY($2) AND payload->>'link_id' IN (SELECT id::text FROM suite_links WHERE user_id=$1)")
+            .bind(owner).bind(SUITE_JOB_TYPES.as_slice()).execute(&mut *connection).await?;
+        for statement in [
+            "DELETE FROM suite_inbound_events WHERE user_id=$1",
+            "DELETE FROM suite_link_codes WHERE user_id=$1",
+            "DELETE FROM suite_link_requests WHERE user_id=$1",
+            "DELETE FROM suite_links WHERE user_id=$1",
+        ] {
+            sqlx::query(statement)
+                .bind(owner)
+                .execute(&mut *connection)
+                .await?;
+        }
+        Ok(())
     }
 }

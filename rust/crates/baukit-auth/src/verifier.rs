@@ -6,26 +6,27 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::authorized_party::{validate_clerk_authorized_party, validate_client_id};
-use crate::config::ClaimPath;
-use crate::oidc_http::{self, Document};
-use crate::{
-    ApiToken, ClerkVerifier, OidcConfig, SigningAlgorithm, WorkOsVerifier, config::TokenProfile,
-};
-use aws_lc_rs::signature;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use baukit_egress::{EgressClientError, EgressError, EgressOptionsError, GuardedClient};
 use jiff::Timestamp;
-use reqwest::{StatusCode, Url};
+use reqwest::Url;
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
 
+use baukit_egress::GuardedClient;
+
+use crate::oidc_http::{self, Document};
 use crate::startup::{RetryFailure, retry_within};
+use crate::{ApiToken, ClerkVerifier, OidcConfig, SigningAlgorithm, WorkOsVerifier};
 
-mod keys;
+mod claims;
+mod error;
+mod jwks;
 
-use keys::KeyCache;
+pub use error::VerificationError;
+
+use claims::Audience;
+use jwks::{HttpKeySource, Jwk, JwkSet, JwksCache, JwksPolicy, KeySource};
 
 /// A verified, provider-neutral application identity.
 ///
@@ -483,7 +484,8 @@ pub enum MultiIssuerError {
 
 struct VerifierInner {
     config: OidcConfig,
-    keys: KeyCache,
+    source: KeySource,
+    jwks: JwksCache,
 }
 
 impl OidcVerifier {
@@ -505,34 +507,60 @@ impl OidcVerifier {
         let jwks_uri =
             Url::parse(jwks_uri.as_ref()).map_err(|_| VerificationError::InvalidJwksUri)?;
         let client = oidc_http::configured_client(&config, &jwks_uri)?;
-        Ok(Self::with_keys(config, client, jwks_uri))
+        Ok(Self::with_http_keys(config, client, jwks_uri))
     }
 
-    #[cfg(test)]
-    fn from_jwks_uri_with_clock(
-        config: OidcConfig,
-        jwks_uri: &str,
-        clock: Arc<dyn baukit_resilience::Clock>,
-    ) -> Result<Self, VerificationError> {
-        let jwks_uri = Url::parse(jwks_uri).map_err(|_| VerificationError::InvalidJwksUri)?;
-        let client = oidc_http::configured_client(&config, &jwks_uri)?;
-        let keys = keys::key_cache_with_clock(
-            client,
-            jwks_uri,
-            config.cache_ttl,
-            config.jwks_stale_for,
-            clock,
-        );
+    /// Constructs a verifier that checks tokens against a fixed JWKS document.
+    ///
+    /// The keys never refresh. Use this for offline verification and tests.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`VerificationError::InvalidJwksDocument`] when `jwks` is not a
+    /// JSON object with a `keys` array.
+    pub fn from_jwks_document(config: OidcConfig, jwks: &str) -> Result<Self, VerificationError> {
+        let set: JwkSet =
+            serde_json::from_str(jwks).map_err(VerificationError::InvalidJwksDocument)?;
         Ok(Self {
-            inner: Arc::new(VerifierInner { config, keys }),
+            inner: Arc::new(VerifierInner {
+                jwks: JwksCache::new(JwksPolicy::from_config(&config)),
+                config,
+                source: KeySource::Static(Arc::new(set)),
+            }),
         })
     }
 
-    fn with_keys(config: OidcConfig, client: GuardedClient, jwks_uri: Url) -> Self {
-        let keys = keys::key_cache(client, jwks_uri, config.cache_ttl, config.jwks_stale_for);
-        Self {
-            inner: Arc::new(VerifierInner { config, keys }),
+    /// Verifies an access token at a fixed Unix time. Fuzzing support only.
+    #[cfg(feature = "fuzzing")]
+    #[doc(hidden)]
+    pub async fn verify_at(&self, token: &str, now: u64) -> Result<Principal, VerificationError> {
+        self.verify_token_at(token, TokenVerification::Access, now)
+            .await
+    }
+
+    /// Verifies an ID token at a fixed Unix time. Fuzzing support only.
+    #[cfg(feature = "fuzzing")]
+    #[doc(hidden)]
+    pub async fn verify_id_token_at(
+        &self,
+        token: &str,
+        expected_nonce: &str,
+        now: u64,
+    ) -> Result<Principal, VerificationError> {
+        if expected_nonce.is_empty() {
+            return Err(VerificationError::WrongNonce);
         }
+        let client_id = self
+            .inner
+            .config
+            .client_id
+            .as_deref()
+            .ok_or(VerificationError::MissingClientId)?;
+        let verification = TokenVerification::Id {
+            client_id,
+            expected_nonce: Some(expected_nonce),
+        };
+        self.verify_token_at(token, verification, now).await
     }
 
     /// Discovers the configured issuer and constructs a verifier.
@@ -554,7 +582,7 @@ impl OidcVerifier {
     pub async fn discover(config: OidcConfig) -> Result<Self, VerificationError> {
         if let Some(jwks_uri) = config.jwks_uri.clone() {
             let client = oidc_http::configured_client(&config, &jwks_uri)?;
-            return Ok(Self::with_keys(config, client, jwks_uri));
+            return Ok(Self::with_http_keys(config, client, jwks_uri));
         }
         let discovery = oidc_http::configured_client(&config, &config.issuer_url)?;
         let metadata = retry_within(
@@ -581,7 +609,17 @@ impl OidcVerifier {
         let jwks_uri =
             Url::parse(&metadata.jwks_uri).map_err(|_| VerificationError::InvalidJwksUri)?;
         let client = oidc_http::discovered_jwks_client(&config, discovery, &jwks_uri)?;
-        Ok(Self::with_keys(config, client, jwks_uri))
+        Ok(Self::with_http_keys(config, client, jwks_uri))
+    }
+
+    fn with_http_keys(config: OidcConfig, client: GuardedClient, jwks_uri: Url) -> Self {
+        Self {
+            inner: Arc::new(VerifierInner {
+                jwks: JwksCache::new(JwksPolicy::from_config(&config)),
+                config,
+                source: KeySource::Http(Arc::new(HttpKeySource { client, jwks_uri })),
+            }),
+        }
     }
 
     /// Returns the exact issuer this verifier accepts.
@@ -595,9 +633,12 @@ impl OidcVerifier {
     }
 
     pub(crate) fn with_config(&self, config: OidcConfig) -> Self {
-        let keys = keys::emptied(&self.inner.keys, config.cache_ttl, config.jwks_stale_for);
         Self {
-            inner: Arc::new(VerifierInner { config, keys }),
+            inner: Arc::new(VerifierInner {
+                jwks: JwksCache::new(JwksPolicy::from_config(&config)),
+                config,
+                source: self.inner.source.clone(),
+            }),
         }
     }
 
@@ -675,6 +716,19 @@ impl OidcVerifier {
         token: &str,
         verification: TokenVerification<'_>,
     ) -> Result<Principal, VerificationError> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|_| VerificationError::Clock)?
+            .as_secs();
+        self.verify_token_at(token, verification, now).await
+    }
+
+    async fn verify_token_at(
+        &self,
+        token: &str,
+        verification: TokenVerification<'_>,
+        now: u64,
+    ) -> Result<Principal, VerificationError> {
         let ParsedToken {
             header,
             claims,
@@ -687,8 +741,14 @@ impl OidcVerifier {
         if header.crit.is_some_and(|critical| !critical.is_empty()) {
             return Err(VerificationError::UnsupportedCriticalHeader);
         }
+        if matches!(verification, TokenVerification::Access)
+            && self.inner.config.require_access_token_type
+            && !header.typ.as_deref().is_some_and(is_access_token_type)
+        {
+            return Err(VerificationError::WrongTokenType);
+        }
         let key_id = header.kid.ok_or(VerificationError::MissingKeyId)?;
-        let key = keys::key_for(&self.inner.keys, &key_id).await?;
+        let key = self.key_for(&key_id).await?;
         key.verify(algorithm, &signing_input, &signature)?;
         if let TokenVerification::Id {
             expected_nonce: Some(expected_nonce),
@@ -701,13 +761,27 @@ impl OidcVerifier {
                 _ => return Err(VerificationError::WrongNonce),
             }
         }
-        claims.validate(&self.inner.config, verification)
+        claims.validate(&self.inner.config, verification, now)
+    }
+
+    async fn key_for(&self, key_id: &str) -> Result<Jwk, VerificationError> {
+        self.inner
+            .jwks
+            .key_for(&self.inner.source, key_id, self.inner.jwks.now())
+            .await
     }
 
     #[cfg(test)]
     async fn fetch_jwks(&self) -> Result<JwkSet, VerificationError> {
-        keys::fetch(&self.inner.keys).await
+        use jwks::FetchKeys as _;
+        self.inner.source.fetch().await
     }
+}
+
+/// RFC 9068 media type, compared case-insensitively with or without `application/`.
+fn is_access_token_type(typ: &str) -> bool {
+    let typ = typ.strip_prefix("application/").unwrap_or(typ);
+    typ.eq_ignore_ascii_case("at+jwt")
 }
 
 impl IdentityVerifier for OidcVerifier {
@@ -724,7 +798,7 @@ impl std::fmt::Debug for OidcVerifier {
         formatter
             .debug_struct("OidcVerifier")
             .field("issuer", &self.inner.config.issuer.as_str())
-            .field("jwks_uri", keys::jwks_uri(&self.inner.keys))
+            .field("jwks_source", &self.inner.source)
             .finish_non_exhaustive()
     }
 }
@@ -733,155 +807,6 @@ impl std::fmt::Debug for OidcVerifier {
 struct DiscoveryDocument {
     issuer: String,
     jwks_uri: String,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-struct JwkSet {
-    keys: Vec<Jwk>,
-}
-
-impl JwkSet {
-    fn find(&self, key_id: &str) -> Option<&Jwk> {
-        self.keys
-            .iter()
-            .find(|key| key.kid.as_deref() == Some(key_id))
-    }
-}
-
-#[derive(Clone, Debug, Deserialize)]
-struct Jwk {
-    kty: String,
-    kid: Option<String>,
-    #[serde(rename = "use")]
-    key_use: Option<String>,
-    key_ops: Option<Vec<String>>,
-    alg: Option<String>,
-    n: Option<String>,
-    e: Option<String>,
-    crv: Option<String>,
-    x: Option<String>,
-    y: Option<String>,
-}
-
-impl Jwk {
-    fn verify(
-        &self,
-        algorithm: SigningAlgorithm,
-        message: &[u8],
-        token_signature: &[u8],
-    ) -> Result<(), VerificationError> {
-        if self.key_use.as_deref().is_some_and(|usage| usage != "sig")
-            || self
-                .key_ops
-                .as_ref()
-                .is_some_and(|operations| !operations.iter().any(|operation| operation == "verify"))
-            || self
-                .alg
-                .as_deref()
-                .is_some_and(|alg| alg != algorithm.name())
-        {
-            return Err(VerificationError::KeyNotUsable);
-        }
-        match algorithm {
-            SigningAlgorithm::Rs256 => self.verify_rsa(
-                &signature::RSA_PKCS1_2048_8192_SHA256,
-                message,
-                token_signature,
-            ),
-            SigningAlgorithm::Rs384 => self.verify_rsa(
-                &signature::RSA_PKCS1_2048_8192_SHA384,
-                message,
-                token_signature,
-            ),
-            SigningAlgorithm::Rs512 => self.verify_rsa(
-                &signature::RSA_PKCS1_2048_8192_SHA512,
-                message,
-                token_signature,
-            ),
-            SigningAlgorithm::Ps256 => self.verify_rsa(
-                &signature::RSA_PSS_2048_8192_SHA256,
-                message,
-                token_signature,
-            ),
-            SigningAlgorithm::Ps384 => self.verify_rsa(
-                &signature::RSA_PSS_2048_8192_SHA384,
-                message,
-                token_signature,
-            ),
-            SigningAlgorithm::Ps512 => self.verify_rsa(
-                &signature::RSA_PSS_2048_8192_SHA512,
-                message,
-                token_signature,
-            ),
-            SigningAlgorithm::Es256 => self.verify_ec(
-                "P-256",
-                &signature::ECDSA_P256_SHA256_FIXED,
-                message,
-                token_signature,
-            ),
-            SigningAlgorithm::Es384 => self.verify_ec(
-                "P-384",
-                &signature::ECDSA_P384_SHA384_FIXED,
-                message,
-                token_signature,
-            ),
-            SigningAlgorithm::EdDsa => {
-                if self.kty != "OKP" || self.crv.as_deref() != Some("Ed25519") {
-                    return Err(VerificationError::KeyAlgorithmMismatch);
-                }
-                let public_key = decode_component(self.x.as_deref())?;
-                signature::UnparsedPublicKey::new(&signature::ED25519, public_key)
-                    .verify(message, token_signature)
-                    .map_err(|_| VerificationError::InvalidSignature)
-            }
-        }
-    }
-
-    fn verify_rsa(
-        &self,
-        algorithm: &'static signature::RsaParameters,
-        message: &[u8],
-        token_signature: &[u8],
-    ) -> Result<(), VerificationError> {
-        if self.kty != "RSA" {
-            return Err(VerificationError::KeyAlgorithmMismatch);
-        }
-        let modulus = decode_component(self.n.as_deref())?;
-        let exponent = decode_component(self.e.as_deref())?;
-        signature::RsaPublicKeyComponents {
-            n: &modulus,
-            e: &exponent,
-        }
-        .verify(algorithm, message, token_signature)
-        .map_err(|_| VerificationError::InvalidSignature)
-    }
-
-    fn verify_ec(
-        &self,
-        curve: &str,
-        algorithm: &'static dyn signature::VerificationAlgorithm,
-        message: &[u8],
-        token_signature: &[u8],
-    ) -> Result<(), VerificationError> {
-        if self.kty != "EC" || self.crv.as_deref() != Some(curve) {
-            return Err(VerificationError::KeyAlgorithmMismatch);
-        }
-        let x = decode_component(self.x.as_deref())?;
-        let y = decode_component(self.y.as_deref())?;
-        let mut public_key = Vec::with_capacity(1 + x.len() + y.len());
-        public_key.push(4);
-        public_key.extend_from_slice(&x);
-        public_key.extend_from_slice(&y);
-        signature::UnparsedPublicKey::new(algorithm, public_key)
-            .verify(message, token_signature)
-            .map_err(|_| VerificationError::InvalidSignature)
-    }
-}
-
-fn decode_component(value: Option<&str>) -> Result<Vec<u8>, VerificationError> {
-    URL_SAFE_NO_PAD
-        .decode(value.ok_or(VerificationError::InvalidJwk)?)
-        .map_err(|_| VerificationError::InvalidJwk)
 }
 
 #[derive(Clone, Copy)]
@@ -938,6 +863,7 @@ impl ParsedToken {
 struct JwtHeader {
     alg: String,
     kid: Option<String>,
+    typ: Option<String>,
     crit: Option<Vec<String>>,
 }
 
@@ -950,427 +876,6 @@ struct JwtClaims {
     nbf: Option<u64>,
     #[serde(flatten)]
     extra: BTreeMap<String, Value>,
-}
-
-impl JwtClaims {
-    fn validate(
-        mut self,
-        config: &OidcConfig,
-        verification: TokenVerification<'_>,
-    ) -> Result<Principal, VerificationError> {
-        let subject = self
-            .sub
-            .as_deref()
-            .filter(|subject| !subject.is_empty())
-            .map(str::to_owned)
-            .ok_or(VerificationError::MissingSubject)?;
-        if self.iss.as_deref() != Some(config.issuer.as_str()) {
-            return Err(VerificationError::WrongIssuer);
-        }
-        validate_token_profile(&self, config, verification)?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| VerificationError::Clock)?
-            .as_secs();
-        let skew = config.clock_skew.as_secs();
-        let expiry = self.exp.ok_or(VerificationError::MissingExpiry)?;
-        if now > expiry.saturating_add(skew) {
-            return Err(VerificationError::Expired);
-        }
-        if self
-            .nbf
-            .is_some_and(|not_before| not_before > now.saturating_add(skew))
-        {
-            return Err(VerificationError::NotYetValid);
-        }
-        let mapped_time = self
-            .extra
-            .remove(config.claim_mapping.authenticated_at.as_ref());
-        let auth_time = self.extra.remove("auth_time");
-        let authenticated_at = authentication_time(mapped_time.or(auth_time).as_ref(), now, skew)?;
-        let organization = mapped_claim(&self.extra, config.claim_mapping.organization.as_ref())?;
-        let tenant = mapped_claim(&self.extra, config.claim_mapping.tenant.as_ref())?;
-        let client_id = mapped_claim(&self.extra, config.claim_mapping.client_id.as_ref())?;
-        let scopes = scope_claim(self.extra.get(config.claim_mapping.scope.as_ref()))?;
-        let profile_claims = selected_profile_claims(&self.extra, &config.claim_mapping.profile);
-        Ok(Principal {
-            subject,
-            issuer: Some(config.issuer().to_owned()),
-            authenticated_at,
-            organization,
-            tenant,
-            client_id,
-            scopes,
-            profile_claims,
-            api_token: None,
-        })
-    }
-}
-
-fn authentication_time(
-    value: Option<&Value>,
-    now: u64,
-    skew: u64,
-) -> Result<Option<Timestamp>, VerificationError> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-    let seconds = value.as_u64().ok_or(VerificationError::MalformedToken)?;
-    let timestamp = i64::try_from(seconds)
-        .ok()
-        .and_then(|seconds| jiff::Timestamp::from_second(seconds).ok())
-        .ok_or(VerificationError::MalformedToken)?;
-    if seconds > now.saturating_add(skew) {
-        return Err(VerificationError::NotYetValid);
-    }
-    Ok(Some(timestamp))
-}
-
-fn validate_token_profile(
-    claims: &JwtClaims,
-    config: &OidcConfig,
-    verification: TokenVerification<'_>,
-) -> Result<(), VerificationError> {
-    if let TokenVerification::Id { client_id, .. } = verification {
-        return validate_id_token_client(claims, client_id);
-    }
-    if !config.audiences.is_empty() {
-        validate_audience(claims, config)?;
-    }
-    match &config.token_profile {
-        TokenProfile::Oidc => validate_oidc_authorized_party(claims, config),
-        TokenProfile::Clerk {
-            authorized_parties,
-            allow_missing_azp,
-        } => validate_clerk_authorized_party(
-            claims.extra.get("azp"),
-            authorized_parties,
-            *allow_missing_azp,
-        ),
-        TokenProfile::ClientBound { client_id } => {
-            validate_client_id(claims.extra.get("client_id"), Some(client_id.as_str()))
-        }
-        TokenProfile::ScopeBound { required_scopes } => {
-            validate_client_id(claims.extra.get("client_id"), None)?;
-            let granted = scope_claim(claims.extra.get(config.claim_mapping.scope.as_ref()))?;
-            if required_scopes.is_subset(&granted) {
-                Ok(())
-            } else {
-                Err(VerificationError::MissingScope)
-            }
-        }
-    }
-}
-
-fn validate_oidc_authorized_party(
-    claims: &JwtClaims,
-    config: &OidcConfig,
-) -> Result<(), VerificationError> {
-    if let Some(allowed_clients) = &config.allowed_clients {
-        return match claims.extra.get("azp") {
-            Some(Value::String(client)) if allowed_clients.contains(client) => Ok(()),
-            _ => Err(VerificationError::WrongAuthorizedParty),
-        };
-    }
-    if !has_several_audiences(claims) {
-        return Ok(());
-    }
-    match claims.extra.get("azp") {
-        Some(Value::String(_)) => Ok(()),
-        _ => Err(VerificationError::WrongAuthorizedParty),
-    }
-}
-
-fn validate_id_token_client(claims: &JwtClaims, client_id: &str) -> Result<(), VerificationError> {
-    if !claims
-        .aud
-        .as_ref()
-        .is_some_and(|audience| audience.values().any(|value| value == client_id))
-    {
-        return Err(VerificationError::WrongAudience);
-    }
-    match claims.extra.get("azp") {
-        None if !has_several_audiences(claims) => Ok(()),
-        Some(Value::String(client)) if client == client_id => Ok(()),
-        _ => Err(VerificationError::WrongAuthorizedParty),
-    }
-}
-
-fn has_several_audiences(claims: &JwtClaims) -> bool {
-    claims
-        .aud
-        .as_ref()
-        .is_some_and(|audience| audience.values().count() > 1)
-}
-
-fn validate_audience(claims: &JwtClaims, config: &OidcConfig) -> Result<(), VerificationError> {
-    let audience = claims
-        .aud
-        .as_ref()
-        .ok_or(VerificationError::WrongAudience)?;
-    if audience
-        .values()
-        .any(|audience| config.audiences.contains(audience))
-    {
-        Ok(())
-    } else {
-        Err(VerificationError::WrongAudience)
-    }
-}
-
-fn scope_claim(value: Option<&Value>) -> Result<BTreeSet<String>, VerificationError> {
-    match value {
-        None | Some(Value::Null) => Ok(BTreeSet::new()),
-        Some(Value::String(scopes)) => {
-            Ok(scopes.split_ascii_whitespace().map(str::to_owned).collect())
-        }
-        Some(Value::Array(scopes)) => scopes
-            .iter()
-            .map(|scope| match scope {
-                Value::String(scope) if !scope.is_empty() => Ok(scope.clone()),
-                _ => Err(VerificationError::InvalidPrincipalContext),
-            })
-            .collect(),
-        Some(_) => Err(VerificationError::InvalidPrincipalContext),
-    }
-}
-
-fn selected_profile_claims(
-    claims: &BTreeMap<String, Value>,
-    selected: &BTreeSet<String>,
-) -> BTreeMap<String, ProfileClaim> {
-    selected
-        .iter()
-        .filter_map(|name| {
-            let claim = match claims.get(name)? {
-                Value::String(value) => ProfileClaim::String(value.clone()),
-                Value::Bool(value) => ProfileClaim::Bool(*value),
-                _ => return None,
-            };
-            Some((name.clone(), claim))
-        })
-        .collect()
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum Audience {
-    One(String),
-    Many(Vec<String>),
-}
-
-impl Audience {
-    fn values(&self) -> Box<dyn Iterator<Item = &String> + '_> {
-        match self {
-            Self::One(value) => Box::new(std::iter::once(value)),
-            Self::Many(values) => Box::new(values.iter()),
-        }
-    }
-}
-
-fn mapped_claim(
-    claims: &BTreeMap<String, Value>,
-    claim_path: Option<&ClaimPath>,
-) -> Result<Option<String>, VerificationError> {
-    let Some(claim_path) = claim_path else {
-        return Ok(None);
-    };
-    let mut segments = claim_path.segments().iter();
-    let Some(first) = segments.next() else {
-        return Ok(None);
-    };
-    let mut value = claims.get(first);
-    for segment in segments {
-        value = match value {
-            None | Some(Value::Null) => return Ok(None),
-            Some(Value::Object(object)) => object.get(segment),
-            Some(_) => return Err(VerificationError::InvalidPrincipalContext),
-        };
-    }
-    match value {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) if !value.is_empty() => Ok(Some(value.clone())),
-        Some(_) => Err(VerificationError::InvalidPrincipalContext),
-    }
-}
-
-/// Failure while discovering an issuer or verifying an access token.
-#[derive(Debug, Error)]
-#[non_exhaustive]
-pub enum VerificationError {
-    /// Verification could not complete because a backing service is unavailable.
-    #[error("identity verification is temporarily unavailable")]
-    Unavailable,
-    /// The HTTP client could not be created.
-    #[error("could not create OIDC HTTP client")]
-    Client(#[source] EgressClientError),
-    /// The issuer or JWKS URL cannot form the default egress allowance.
-    #[error("OIDC endpoint cannot be used as an egress endpoint")]
-    EgressEndpoint,
-    /// The egress options derived from the configuration are invalid.
-    #[error("invalid OIDC egress options")]
-    EgressOptions(#[source] EgressOptionsError),
-    /// OIDC discovery exceeded the configured timeout.
-    #[error("OIDC discovery timed out")]
-    DiscoveryTimeout,
-    /// OIDC discovery failed while sending the request or reading the response.
-    #[error("OIDC discovery request failed")]
-    DiscoveryRequest(#[source] Box<EgressError>),
-    /// OIDC discovery returned a non-success status.
-    #[error("OIDC discovery returned HTTP {0}")]
-    DiscoveryStatus(StatusCode),
-    /// OIDC discovery returned invalid JSON.
-    #[error("OIDC discovery document was invalid")]
-    InvalidDiscoveryDocument(#[source] serde_json::Error),
-    /// Discovery metadata did not report the configured issuer exactly.
-    #[error("OIDC discovery issuer did not match configuration")]
-    DiscoveryIssuerMismatch,
-    /// Discovery metadata contained an invalid JWKS URL.
-    #[error("OIDC discovery returned an invalid JWKS URI")]
-    InvalidJwksUri,
-    /// A JWKS request exceeded the configured timeout.
-    #[error("JWKS request timed out")]
-    JwksTimeout,
-    /// JWKS failed while sending the request or reading the response.
-    #[error("JWKS request failed")]
-    JwksRequest(#[source] Box<EgressError>),
-    /// JWKS returned a non-success status.
-    #[error("JWKS returned HTTP {0}")]
-    JwksStatus(StatusCode),
-    /// No usable JWKS is cached and a recent fetch failure blocks fetching.
-    ///
-    /// Returned until the failure cooldown ends; [`Self::is_unavailable`] is true.
-    #[error("JWKS are unavailable")]
-    JwksUnavailable,
-    /// Discovery kept failing with transient errors until the startup budget ran out.
-    #[error("OIDC discovery did not succeed within the startup budget")]
-    DiscoveryBudgetExhausted(#[source] Box<VerificationError>),
-    /// JWKS returned invalid JSON.
-    #[error("JWKS document was invalid")]
-    InvalidJwksDocument(#[source] serde_json::Error),
-    /// The JWT did not have three valid base64url-encoded segments.
-    #[error("access token was malformed")]
-    MalformedToken,
-    /// The JWT signing algorithm was not in the configured allowlist.
-    #[error("access token signing algorithm is not allowed")]
-    DisallowedAlgorithm,
-    /// A critical JWT header is unsupported.
-    #[error("access token contains unsupported critical headers")]
-    UnsupportedCriticalHeader,
-    /// The JWT omitted its key identifier.
-    #[error("access token has no key identifier")]
-    MissingKeyId,
-    /// No current provider key matched the JWT key identifier.
-    #[error("access token key identifier is unknown")]
-    UnknownKeyId,
-    /// The matching JWK cannot be used for signature verification.
-    #[error("provider key is not usable for signature verification")]
-    KeyNotUsable,
-    /// The JWK type does not match the JWT algorithm.
-    #[error("provider key type does not match the signing algorithm")]
-    KeyAlgorithmMismatch,
-    /// A required JWK component was missing or malformed.
-    #[error("provider key is invalid")]
-    InvalidJwk,
-    /// JWT signature verification failed.
-    #[error("access token signature is invalid")]
-    InvalidSignature,
-    /// The subject claim was absent or empty.
-    #[error("access token subject is missing")]
-    MissingSubject,
-    /// The issuer claim did not match configuration.
-    #[error("access token issuer is invalid")]
-    WrongIssuer,
-    /// The token names an issuer outside the configured allowlist.
-    #[error("access token issuer is not configured")]
-    UnconfiguredIssuer,
-    /// No token audience matched configuration.
-    #[error("access token audience is invalid")]
-    WrongAudience,
-    /// The authorized party was missing when required or outside the allowed clients.
-    #[error("access token authorized party is invalid")]
-    WrongAuthorizedParty,
-    /// The ID token's nonce was missing, malformed, or did not match the login request.
-    #[error("ID token nonce is invalid")]
-    WrongNonce,
-    /// ID-token verification requires an explicitly configured OAuth client ID.
-    #[error("ID token verification requires a configured client ID")]
-    MissingClientId,
-    /// A WorkOS token did not name the configured application client.
-    #[error("access token client ID is invalid")]
-    WrongClientId,
-    /// The token did not grant every scope the verifier requires.
-    #[error("access token lacks a required scope")]
-    MissingScope,
-    /// The required expiry claim was absent.
-    #[error("access token expiry is missing")]
-    MissingExpiry,
-    /// The token has expired outside the configured clock skew.
-    #[error("access token has expired")]
-    Expired,
-    /// The token is not valid yet outside the configured clock skew.
-    #[error("access token is not valid yet")]
-    NotYetValid,
-    /// The system clock is before the Unix epoch.
-    #[error("system clock is invalid")]
-    Clock,
-    /// A configured principal-context claim was not a non-empty string, or the
-    /// scope claim was neither a string nor an array of non-empty strings.
-    #[error("principal context claim has an invalid shape")]
-    InvalidPrincipalContext,
-}
-
-impl VerificationError {
-    /// Returns whether verification failed because infrastructure is temporarily unavailable.
-    ///
-    /// Retry these failures without asking the caller to replace its credentials.
-    #[must_use]
-    pub fn is_unavailable(&self) -> bool {
-        match self {
-            Self::Unavailable
-            | Self::DiscoveryTimeout
-            | Self::JwksTimeout
-            | Self::JwksUnavailable
-            | Self::DiscoveryBudgetExhausted(_) => true,
-            Self::DiscoveryRequest(error) | Self::JwksRequest(error) => error.is_retryable(),
-            Self::DiscoveryStatus(status) | Self::JwksStatus(status) => {
-                is_transient_status(*status)
-            }
-            _ => false,
-        }
-    }
-
-    /// Returns whether verification failed because of server or provider configuration.
-    ///
-    /// These failures need operator attention rather than a client retry or sign-in.
-    #[must_use]
-    pub fn is_misconfigured(&self) -> bool {
-        match self {
-            Self::Client(_)
-            | Self::EgressEndpoint
-            | Self::EgressOptions(_)
-            | Self::InvalidDiscoveryDocument(_)
-            | Self::DiscoveryIssuerMismatch
-            | Self::InvalidJwksUri
-            | Self::InvalidJwksDocument(_)
-            | Self::InvalidJwk
-            | Self::MissingClientId
-            | Self::Clock => true,
-            Self::DiscoveryStatus(status) | Self::JwksStatus(status) => {
-                !is_transient_status(*status)
-            }
-            Self::DiscoveryRequest(error) | Self::JwksRequest(error) => !error.is_retryable(),
-            _ => false,
-        }
-    }
-}
-
-fn is_transient_status(status: StatusCode) -> bool {
-    status.is_server_error()
-        || matches!(
-            status,
-            StatusCode::TOO_MANY_REQUESTS | StatusCode::REQUEST_TIMEOUT
-        )
 }
 
 #[cfg(test)]

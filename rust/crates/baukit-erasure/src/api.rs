@@ -1,10 +1,12 @@
 use crate::{ErasureFuture, IdentityAccountDeleter, IdentityDeletionError};
-use axum::http::StatusCode;
 use baukit_config::Secret;
 use baukit_egress::{EgressRequest, GuardedClient};
 use url::Url;
 
-use crate::egress::{bearer, endpoint_client, status};
+use crate::egress::{
+    MissingUserDialect, bearer, deletion_outcome, endpoint_client, is_loopback, status, user_url,
+};
+use crate::kernel::deletion_status_outcome;
 
 /// API credentials for an identity provider. The key never appears in errors.
 #[derive(Clone, Debug)]
@@ -17,19 +19,26 @@ pub struct ApiDeletionConfig {
     pub allow_local_http: bool,
 }
 
+const PROBE_QUERY: &str = "limit=1";
+
 #[derive(Clone)]
 struct ApiDeleter {
     client: GuardedClient,
     base: Url,
     key: Secret<String>,
+    parts: &'static [&'static str],
+    dialect: MissingUserDialect,
 }
 
 impl ApiDeleter {
-    fn new(config: ApiDeletionConfig) -> Result<Self, IdentityDeletionError> {
+    fn new(
+        config: ApiDeletionConfig,
+        parts: &'static [&'static str],
+        dialect: MissingUserDialect,
+    ) -> Result<Self, IdentityDeletionError> {
         let base = Url::parse(&config.base_url).map_err(|_| IdentityDeletionError::Permanent)?;
-        let local = matches!(base.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"));
-        if !(base.scheme() == "https"
-            || base.scheme() == "http" && local && config.allow_local_http)
+        let local_http = base.scheme() == "http" && is_loopback(&base) && config.allow_local_http;
+        if !(base.scheme() == "https" || local_http)
             || base.host_str().is_none()
             || !base.username().is_empty()
             || base.password().is_some()
@@ -44,30 +53,29 @@ impl ApiDeleter {
             client,
             base,
             key: config.api_key,
+            parts,
+            dialect,
         })
     }
 
-    async fn delete(&self, parts: &[&str], subject: &str) -> Result<(), IdentityDeletionError> {
-        if subject.is_empty() || matches!(subject, "." | "..") {
-            return Err(IdentityDeletionError::Permanent);
-        }
+    async fn delete(&self, subject: &str) -> Result<(), IdentityDeletionError> {
+        let url = user_url(&self.base, self.parts, subject)?;
+        let request = EgressRequest::new(axum::http::Method::DELETE, url)
+            .with_headers(bearer(self.key.expose())?);
+        deletion_outcome(self.dialect, &status(&self.client, request).await?)
+    }
+
+    async fn probe(&self) -> Result<(), IdentityDeletionError> {
         let mut url = self.base.clone();
         url.path_segments_mut()
             .map_err(|_| IdentityDeletionError::Permanent)?
             .pop_if_empty()
-            .extend(parts)
-            .push(subject);
-        let request = EgressRequest::new(axum::http::Method::DELETE, url)
+            .extend(self.parts);
+        url.set_query(Some(PROBE_QUERY));
+        let request = EgressRequest::new(axum::http::Method::GET, url)
             .with_headers(bearer(self.key.expose())?);
-        let status = status(&self.client, request).await?;
-        if status.is_success() || status == StatusCode::NOT_FOUND {
-            return Ok(());
-        }
-        if status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS {
-            Err(IdentityDeletionError::Retryable)
-        } else {
-            Err(IdentityDeletionError::Permanent)
-        }
+        let (status, _) = status(&self.client, request).await?;
+        deletion_status_outcome(status.as_u16(), false)
     }
 }
 
@@ -84,7 +92,7 @@ impl ClerkAccountDeleter {
     /// loopback with `allow_local_http`), a URL with credentials, query or fragment, an empty
     /// API key, or when the egress client cannot be built.
     pub fn new(config: ApiDeletionConfig) -> Result<Self, IdentityDeletionError> {
-        ApiDeleter::new(config).map(Self)
+        ApiDeleter::new(config, &["users"], MissingUserDialect::Clerk).map(Self)
     }
 }
 
@@ -93,7 +101,10 @@ impl IdentityAccountDeleter for ClerkAccountDeleter {
         &'a self,
         subject: &'a str,
     ) -> ErasureFuture<'a, Result<(), IdentityDeletionError>> {
-        Box::pin(self.0.delete(&["users"], subject))
+        Box::pin(self.0.delete(subject))
+    }
+    fn probe(&self) -> ErasureFuture<'_, Result<(), IdentityDeletionError>> {
+        Box::pin(self.0.probe())
     }
 }
 
@@ -110,7 +121,12 @@ impl WorkOsAccountDeleter {
     /// loopback with `allow_local_http`), a URL with credentials, query or fragment, an empty
     /// API key, or when the egress client cannot be built.
     pub fn new(config: ApiDeletionConfig) -> Result<Self, IdentityDeletionError> {
-        ApiDeleter::new(config).map(Self)
+        ApiDeleter::new(
+            config,
+            &["user_management", "users"],
+            MissingUserDialect::WorkOs,
+        )
+        .map(Self)
     }
 }
 
@@ -119,6 +135,9 @@ impl IdentityAccountDeleter for WorkOsAccountDeleter {
         &'a self,
         subject: &'a str,
     ) -> ErasureFuture<'a, Result<(), IdentityDeletionError>> {
-        Box::pin(self.0.delete(&["user_management", "users"], subject))
+        Box::pin(self.0.delete(subject))
+    }
+    fn probe(&self) -> ErasureFuture<'_, Result<(), IdentityDeletionError>> {
+        Box::pin(self.0.probe())
     }
 }

@@ -46,7 +46,7 @@ pub struct BrowserSessionState {
 }
 
 struct StateInner {
-    service: SessionService,
+    service: Arc<SessionService>,
     cookie: CookieSettings,
     allowed_origins: Vec<String>,
     rate_limiter: Arc<dyn BrowserSessionRateLimiter>,
@@ -129,7 +129,7 @@ impl BrowserSessionState {
         };
         Ok(Self {
             inner: Arc::new(StateInner {
-                service: SessionService::new(settings, store, idp, clock),
+                service: Arc::new(SessionService::new(settings, store, idp, clock)),
                 cookie,
                 allowed_origins,
                 rate_limiter,
@@ -200,6 +200,7 @@ struct ExchangeRequest {
 struct SessionResponse {
     access_token: String,
     expires_at: i64,
+    expires_in: u64,
     subject: String,
 }
 
@@ -225,10 +226,16 @@ async fn exchange(
             "The request body is invalid.",
         );
     };
+    let previous = state.inner.cookie.read(&headers);
     let issued = state
         .inner
         .service
-        .exchange(&request.code, &request.code_verifier, &request.redirect_uri)
+        .exchange(
+            &request.code,
+            &request.code_verifier,
+            &request.redirect_uri,
+            previous.as_ref(),
+        )
         .await;
     state.issued_response(issued)
 }
@@ -347,6 +354,7 @@ impl BrowserSessionState {
         let body = SessionResponse {
             access_token: issued.access_token.to_string(),
             expires_at: issued.expires_at.as_millisecond(),
+            expires_in: issued.expires_in.as_secs(),
             subject: issued.subject,
         };
         let mut response = Json(body).into_response();
@@ -404,7 +412,7 @@ impl BrowserSessionState {
                     "The identity provider returned an invalid response.",
                 )
             }
-            SessionError::Store(_) | SessionError::Crypto(_) => {
+            SessionError::Store(_) | SessionError::Crypto(_) | SessionError::Interrupted => {
                 ApiError::internal(error).into_response()
             }
         }

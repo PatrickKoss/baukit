@@ -6,8 +6,8 @@ use sqlx::{PgConnection, PgPool, Postgres, Row as _, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobStatus, NewJob,
-    QueueDepth, ReleaseReason, StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
+    CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobLease, JobStatus,
+    NewJob, QueueDepth, ReleaseReason, StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
 
 mod claim;
@@ -27,12 +27,14 @@ use requeue::{requeue_failed_on, validate_requeue};
 /// The claim's candidate query, exposed so tests can `EXPLAIN` it.
 #[doc(hidden)]
 pub const CLAIM_CANDIDATE_SQL: &str = claim::CANDIDATE_SQL;
-use lease::{heartbeat_on, lease_deadline, release_on};
+use lease::{
+    LeaseKey, attempt_param, check_lease_on, finish_on, heartbeat_on, lease_deadline, release_on,
+};
 use queue::{oldest_ready_age_on, queue_depth_on};
 
 use validation::{
-    bound_error, parse_failure_reason, parse_status, status_name, validate_deduplicated_job,
-    validate_job_types, validate_new_job, validate_text, validate_worker_id,
+    bound_error, parse_failure_reason, parse_status, validate_deduplicated_job, validate_job_types,
+    validate_new_job, validate_text, validate_worker_id,
 };
 
 const MAX_JOB_TYPE_LENGTH: usize = 200;
@@ -46,12 +48,6 @@ const MAX_ERROR_LENGTH: usize = 10_000;
 enum Deduplication {
     Active,
     Pending,
-}
-
-macro_rules! owned_lease_predicate {
-    () => {
-        "status = 'running' AND locked_by = $2 AND locked_until > $3 AND ($4 OR cancel_requested_at IS NULL)"
-    };
 }
 
 macro_rules! cancellation_assignments {
@@ -104,19 +100,19 @@ pub trait JobStore: Send + Sync + 'static {
         max_per_key: Option<NonZeroU32>,
     ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>>;
 
-    /// Completes a currently owned job atomically.
+    /// Completes the job while `lease` still owns it.
     fn complete<'a>(
         &'a self,
-        job_id: Uuid,
-        worker_id: &'a str,
+        lease: &'a JobLease,
         now: Timestamp,
     ) -> StoreFuture<'a, Result<bool, StoreError>>;
 
     /// Records a failed attempt, retrying only when permitted and attempts remain.
+    ///
+    /// Returns `None` when `lease` no longer owns the job.
     fn record_failure<'a>(
         &'a self,
-        job_id: Uuid,
-        worker_id: &'a str,
+        lease: &'a JobLease,
         retryable: bool,
         retry_at: Timestamp,
         error: &'a str,
@@ -133,11 +129,10 @@ pub trait JobStore: Send + Sync + 'static {
         now: Timestamp,
     ) -> StoreFuture<'_, Result<bool, StoreError>>;
 
-    /// Marks a currently owned job cancelled.
+    /// Marks the job cancelled while `lease` still owns it.
     fn cancel<'a>(
         &'a self,
-        job_id: Uuid,
-        worker_id: &'a str,
+        lease: &'a JobLease,
         now: Timestamp,
     ) -> StoreFuture<'a, Result<bool, StoreError>>;
 
@@ -147,8 +142,7 @@ pub trait JobStore: Send + Sync + 'static {
     /// unexpired lease.
     fn heartbeat<'a>(
         &'a self,
-        job_id: Uuid,
-        worker_id: &'a str,
+        lease: &'a JobLease,
         lease_for: Duration,
         now: Timestamp,
     ) -> StoreFuture<'a, Result<bool, StoreError>>;
@@ -161,8 +155,7 @@ pub trait JobStore: Send + Sync + 'static {
     /// no longer owns the job.
     fn release<'a>(
         &'a self,
-        job_id: Uuid,
-        worker_id: &'a str,
+        lease: &'a JobLease,
         run_after: Timestamp,
         reason: ReleaseReason,
         now: Timestamp,
@@ -360,68 +353,52 @@ impl PostgresJobStore {
         enqueue_deduplicated_on(transaction, job, dedupe_key, Deduplication::Pending).await
     }
 
-    /// Marks a job successful inside a caller-owned transaction.
+    /// Marks the job successful inside a caller-owned transaction while `lease` owns it.
     ///
-    /// Product writes performed earlier in the transaction and this lease-owned
-    /// transition commit or roll back together.
+    /// Product writes made earlier in the transaction commit or roll back with
+    /// it. A stale attempt of the same worker never matches after a sibling
+    /// slot reclaimed the job.
     ///
     /// # Errors
     ///
-    /// [`StoreError::InvalidInput`] for an invalid `worker_id` and [`StoreError::Database`]
-    /// when the update fails.
-    pub async fn complete_in_transaction(
+    /// [`StoreError::InvalidInput`] for an invalid worker id or attempt and
+    /// [`StoreError::Database`] when the update fails.
+    pub async fn complete_lease_in_transaction(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
-        job_id: Uuid,
-        worker_id: &str,
+        lease: &JobLease,
         now: Timestamp,
     ) -> Result<bool, StoreError> {
-        validate_worker_id(worker_id)?;
+        validate_worker_id(&lease.worker_id)?;
         finish_on(
             transaction,
-            job_id,
-            worker_id,
+            LeaseKey::attempt(lease)?,
             JobStatus::Succeeded,
-            None,
             now,
         )
         .await
     }
 
-    /// Checks lease ownership without completing the job, locking it until commit.
+    /// Checks that `lease` still owns the job, locking the row until commit.
     ///
-    /// Returns true only for a running job owned by `worker_id`, with a lease
-    /// strictly later than `now` and no cancellation request. `SELECT FOR UPDATE`
-    /// holds the row lock until the caller commits or rolls back. Concurrent
-    /// cancellation or reclaim waits for that lock; claim's `SKIP LOCKED`
-    /// selection skips the row. Time can still pass beyond the lease deadline,
-    /// so completion must check the lease again using a fresh timestamp.
+    /// Returns true only for a running job held by the lease's worker and
+    /// attempt, with a lease strictly later than `now` and no cancellation
+    /// request. Concurrent cancellation or reclaim waits for the row lock, and
+    /// claim's `SKIP LOCKED` skips the row. Time can still pass the deadline,
+    /// so completion checks the lease again with a fresh timestamp.
     ///
     /// # Errors
     ///
-    /// [`StoreError::InvalidInput`] for an invalid `worker_id` and [`StoreError::Database`]
-    /// when the query fails.
-    pub async fn check_lease_in_transaction(
+    /// [`StoreError::InvalidInput`] for an invalid worker id or attempt and
+    /// [`StoreError::Database`] when the query fails.
+    pub async fn check_lease_held_in_transaction(
         &self,
         transaction: &mut Transaction<'_, Postgres>,
-        job_id: Uuid,
-        worker_id: &str,
+        lease: &JobLease,
         now: Timestamp,
     ) -> Result<bool, StoreError> {
-        validate_worker_id(worker_id)?;
-        sqlx::query_scalar::<_, Uuid>(concat!(
-            "SELECT id FROM job_outbox WHERE id = $1 AND ",
-            owned_lease_predicate!(),
-            " FOR UPDATE"
-        ))
-        .bind(job_id)
-        .bind(worker_id)
-        .bind(now.to_sqlx())
-        .bind(false)
-        .fetch_optional(&mut **transaction)
-        .await
-        .map(|row| row.is_some())
-        .map_err(StoreError::database)
+        validate_worker_id(&lease.worker_id)?;
+        check_lease_on(transaction, LeaseKey::attempt(lease)?, now).await
     }
 
     /// Cancels jobs with an exact idempotency key inside the caller's transaction.
@@ -603,19 +580,16 @@ impl JobStore for PostgresJobStore {
 
     fn complete<'a>(
         &'a self,
-        job_id: Uuid,
-        worker_id: &'a str,
+        lease: &'a JobLease,
         now: Timestamp,
     ) -> StoreFuture<'a, Result<bool, StoreError>> {
         Box::pin(async move {
-            validate_worker_id(worker_id)?;
+            validate_worker_id(&lease.worker_id)?;
             let mut connection = self.pool.acquire().await.map_err(StoreError::database)?;
             finish_on(
                 &mut connection,
-                job_id,
-                worker_id,
+                LeaseKey::attempt(lease)?,
                 JobStatus::Succeeded,
-                None,
                 now,
             )
             .await
@@ -624,24 +598,25 @@ impl JobStore for PostgresJobStore {
 
     fn record_failure<'a>(
         &'a self,
-        job_id: Uuid,
-        worker_id: &'a str,
+        lease: &'a JobLease,
         retryable: bool,
         retry_at: Timestamp,
         error: &'a str,
         now: Timestamp,
     ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>> {
         Box::pin(async move {
-            validate_worker_id(worker_id)?;
+            validate_worker_id(&lease.worker_id)?;
+            let attempt = attempt_param(lease.attempt)?;
             let row = sqlx::query(
-                "UPDATE job_outbox SET status = CASE WHEN $3 AND attempts < max_attempts THEN 'pending' ELSE 'failed' END, run_after = CASE WHEN $3 AND attempts < max_attempts THEN $4 ELSE run_after END, locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = $5, failure_reason = CASE WHEN $3 AND attempts < max_attempts THEN NULL WHEN $3 THEN 'attempts_exhausted' ELSE 'permanent' END, updated_at = $6 WHERE id = $1 AND status = 'running' AND locked_by = $2 AND locked_until > $6 RETURNING status",
+                "UPDATE job_outbox SET status = CASE WHEN $3 AND attempts < max_attempts THEN 'pending' ELSE 'failed' END, run_after = CASE WHEN $3 AND attempts < max_attempts THEN $4 ELSE run_after END, locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = $5, failure_reason = CASE WHEN $3 AND attempts < max_attempts THEN NULL WHEN $3 THEN 'attempts_exhausted' ELSE 'permanent' END, updated_at = $6 WHERE id = $1 AND status = 'running' AND locked_by = $2 AND locked_until > $6 AND attempts = $7 RETURNING status",
             )
-            .bind(job_id)
-            .bind(worker_id)
+            .bind(lease.job_id)
+            .bind(&lease.worker_id)
             .bind(retryable)
             .bind(retry_at.to_sqlx())
             .bind(bound_error(error))
             .bind(now.to_sqlx())
+            .bind(attempt)
             .fetch_optional(&self.pool)
             .await
             .map_err(StoreError::database)?;
@@ -691,19 +666,16 @@ impl JobStore for PostgresJobStore {
 
     fn cancel<'a>(
         &'a self,
-        job_id: Uuid,
-        worker_id: &'a str,
+        lease: &'a JobLease,
         now: Timestamp,
     ) -> StoreFuture<'a, Result<bool, StoreError>> {
         Box::pin(async move {
-            validate_worker_id(worker_id)?;
+            validate_worker_id(&lease.worker_id)?;
             let mut connection = self.pool.acquire().await.map_err(StoreError::database)?;
             finish_on(
                 &mut connection,
-                job_id,
-                worker_id,
+                LeaseKey::attempt(lease)?,
                 JobStatus::Cancelled,
-                None,
                 now,
             )
             .await
@@ -712,29 +684,34 @@ impl JobStore for PostgresJobStore {
 
     fn heartbeat<'a>(
         &'a self,
-        job_id: Uuid,
-        worker_id: &'a str,
+        lease: &'a JobLease,
         lease_for: Duration,
         now: Timestamp,
     ) -> StoreFuture<'a, Result<bool, StoreError>> {
         Box::pin(async move {
-            validate_worker_id(worker_id)?;
+            validate_worker_id(&lease.worker_id)?;
             let locked_until = lease_deadline(now, lease_for)?;
-            heartbeat_on(&self.pool, job_id, worker_id, locked_until, now).await
+            heartbeat_on(&self.pool, LeaseKey::attempt(lease)?, locked_until, now).await
         })
     }
 
     fn release<'a>(
         &'a self,
-        job_id: Uuid,
-        worker_id: &'a str,
+        lease: &'a JobLease,
         run_after: Timestamp,
         reason: ReleaseReason,
         now: Timestamp,
     ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>> {
         Box::pin(async move {
-            validate_worker_id(worker_id)?;
-            release_on(&self.pool, job_id, worker_id, run_after, reason, now).await
+            validate_worker_id(&lease.worker_id)?;
+            release_on(
+                &self.pool,
+                LeaseKey::attempt(lease)?,
+                run_after,
+                reason,
+                now,
+            )
+            .await
         })
     }
 
@@ -785,32 +762,6 @@ async fn owned_operation<T: Send + 'static>(
     operation: impl Future<Output = Result<T, StoreError>> + Send + 'static,
 ) -> Result<T, StoreError> {
     tokio::spawn(operation).await.map_err(StoreError::Task)?
-}
-
-async fn finish_on(
-    connection: &mut PgConnection,
-    job_id: Uuid,
-    worker_id: &str,
-    status: JobStatus,
-    error: Option<&str>,
-    now: Timestamp,
-) -> Result<bool, StoreError> {
-    let status = status_name(status);
-    let allow_cancellation = status == "cancelled";
-    sqlx::query(concat!(
-        "UPDATE job_outbox SET status = $5, locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = $6, failure_reason = NULL, updated_at = $3 WHERE id = $1 AND ",
-        owned_lease_predicate!()
-    ))
-    .bind(job_id)
-    .bind(worker_id)
-    .bind(now.to_sqlx())
-    .bind(allow_cancellation)
-    .bind(status)
-    .bind(error.map(bound_error))
-    .execute(connection)
-    .await
-    .map(|result| result.rows_affected() == 1)
-    .map_err(StoreError::database)
 }
 
 async fn request_cancellation_by_key_on(

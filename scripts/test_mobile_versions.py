@@ -39,7 +39,7 @@ class MobileReactVersionsTest(unittest.TestCase):
             ROOT / "templates/common/.github/workflows/ci.yml",
             ROOT / "templates/common/.github/workflows/native.yml",
         ]
-        for path, expected_count in zip(workflows, (3, 1, 1), strict=True):
+        for path, expected_count in zip(workflows, (4, 1, 1), strict=True):
             with self.subTest(workflow=path):
                 pins = re.findall(r'java-version: "([^"\n]+)"', path.read_text())
                 self.assertEqual(pins, ["25.0.4+101.0.LTS"] * expected_count)

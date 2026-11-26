@@ -58,11 +58,13 @@
 
 #![deny(missing_docs)]
 
+mod redaction;
+
 use std::{
     collections::BTreeMap,
     env, fmt,
     sync::{
-        LazyLock, Mutex,
+        Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -78,7 +80,6 @@ use opentelemetry_sdk::{
     propagation::TraceContextPropagator,
     trace::{Sampler, SdkTracerProvider},
 };
-use regex::Regex;
 use serde_json::{Map, Value, json};
 use tracing::{Event, Id, Subscriber, field::Visit};
 use tracing_subscriber::{
@@ -90,6 +91,7 @@ use tracing_subscriber::{
 };
 
 mod process;
+use redaction::{RedactingExporter, redact_json};
 
 pub use baukit_core::{DeploymentEnvironment, LogFormat, ProcessKind, ServiceIdentity};
 pub use metrics;
@@ -134,13 +136,6 @@ pub const WORKER_DURATION_BUCKETS: &[f64] = &[
 const RUST_VERSION: &str = env!("BAUKIT_RUST_VERSION");
 
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
-static EMAIL_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| scrubber(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b"));
-static BEARER_PATTERN: LazyLock<Regex> =
-    LazyLock::new(|| scrubber(r"(?i)\bbearer\s+[A-Z0-9._~+/=-]+"));
-static SECRET_ASSIGNMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    scrubber(r#"(?i)\b(authorization|cookie|token|password)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)"#)
-});
 const METRIC_BUCKETS: [(&str, &[f64]); 4] = [
     ("http_request_duration_seconds", HTTP_DURATION_BUCKETS),
     ("egress_request_duration_seconds", HTTP_DURATION_BUCKETS),
@@ -150,14 +145,6 @@ const METRIC_BUCKETS: [(&str, &[f64]); 4] = [
     ),
     ("worker_job_duration_seconds", WORKER_DURATION_BUCKETS),
 ];
-
-#[expect(
-    clippy::expect_used,
-    reason = "scrubber patterns are string literals in this file, compiled by every redaction test"
-)]
-fn scrubber(pattern: &str) -> Regex {
-    Regex::new(pattern).expect("scrubber patterns are valid regexes")
-}
 
 #[expect(
     clippy::expect_used,
@@ -319,7 +306,8 @@ impl TelemetryBuilder {
                 .with_endpoint(endpoint)
                 .build()
                 .map_err(TelemetryError::OtlpExporter)?;
-            provider_builder = provider_builder.with_batch_exporter(exporter);
+            provider_builder =
+                provider_builder.with_batch_exporter(RedactingExporter::new(exporter));
         }
         Ok(provider_builder.build())
     }
@@ -554,43 +542,9 @@ impl Visit for JsonVisitor {
 
 impl JsonVisitor {
     fn record_value(&mut self, field: &tracing::field::Field, value: Value) {
-        let value = if is_sensitive_field(field.name()) {
-            Value::String("[REDACTED]".to_owned())
-        } else if let Value::String(value) = value {
-            Value::String(scrub_text(&value))
-        } else {
-            value
-        };
-        self.fields.insert(field.name().to_owned(), value);
+        self.fields
+            .insert(field.name().to_owned(), redact_json(field.name(), value));
     }
-}
-
-fn scrub_text(value: &str) -> String {
-    let value = EMAIL_PATTERN.replace_all(value, "[REDACTED]");
-    let value = BEARER_PATTERN.replace_all(&value, "Bearer [REDACTED]");
-    SECRET_ASSIGNMENT_PATTERN
-        .replace_all(&value, "$1=[REDACTED]")
-        .into_owned()
-}
-
-fn is_sensitive_field(name: &str) -> bool {
-    let normalized = name
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .flat_map(char::to_lowercase)
-        .collect::<String>();
-    [
-        "authorization",
-        "cookie",
-        "token",
-        "password",
-        "email",
-        "requestbody",
-        "responsebody",
-        "providerpayload",
-    ]
-    .iter()
-    .any(|sensitive| normalized.contains(sensitive))
 }
 
 #[derive(Default)]

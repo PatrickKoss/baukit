@@ -7,6 +7,12 @@ All notable changes to `baukit-telemetry` are documented here.
 - The HTTP duration histogram gains a 30 s bucket, so requests near the default request timeout are visible. `egress_request_duration_seconds` uses the same buckets.
 - `init` refreshes `process_cpu_seconds_total`, `process_resident_memory_bytes`, `process_open_fds`, `process_max_fds` and `process_start_time_seconds` every 5 s on a background thread (`record_process_metrics` for a manual refresh). With the default `tokio-metrics` feature and inside a Tokio runtime it also records `tokio_runtime_workers`, `tokio_runtime_alive_tasks`, `tokio_runtime_global_queue_depth` and `tokio_runtime_busy_seconds_total`.
 
+## [0.31.0] - 2026-11-26
+
+### Fixed
+
+- OTLP span export applies the stdout log redaction to span attributes, event names and event attributes. The rules also cover `secret`, `credential`, `api_key`, `private_key`, `session`, `key`, `auth_code` and `code_verifier` fields, plus `?code=` in text. Bare `code` stays readable because it carries error codes.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

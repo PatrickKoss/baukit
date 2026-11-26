@@ -24,8 +24,10 @@ export interface BrowserSessionEnvironment extends OidcClientEnvironment {
 /** What the backend returns from `exchange` and `refresh`. */
 export interface IssuedSession {
   readonly accessToken: string;
-  /** Epoch milliseconds. */
+  /** Epoch milliseconds by the server clock. */
   readonly expiresAt: number;
+  /** Seconds until expiry, measured from when the response was sent. */
+  readonly expiresIn?: number;
   readonly subject: string;
 }
 
@@ -60,9 +62,21 @@ export function isIssuedSession(value: unknown): value is IssuedSession {
     value['accessToken'].length > 0 &&
     typeof value['expiresAt'] === 'number' &&
     Number.isFinite(value['expiresAt']) &&
+    isOptionalLifetime(value['expiresIn']) &&
     typeof value['subject'] === 'string' &&
     value['subject'].length > 0
   );
+}
+
+function isOptionalLifetime(value: unknown): boolean {
+  return value === undefined || (typeof value === 'number' && Number.isFinite(value) && value >= 0);
+}
+
+/** Expiry in local epoch milliseconds, from `expiresIn` when the server sent it. */
+export function localExpiry(session: IssuedSession, receivedAt: number): number {
+  return session.expiresIn === undefined
+    ? session.expiresAt
+    : receivedAt + session.expiresIn * 1000;
 }
 
 export function readSessionMessage(value: unknown): SessionMessage | undefined {

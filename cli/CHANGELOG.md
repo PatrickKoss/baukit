@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
+- New `baukit check security` rule. It fails when an `axum::serve` call lacks `into_make_service_with_connect_info`, a router is merged without `rate_limited` or `protect_routes`, an ops service is not `ClusterIP`, or a CORS origin is `null` or plain `http` outside local config.
+- `baukit check` lists files through git inside a work tree, so a force-added file under an ignored directory is still checked.
+- `baukit generate release-age-excludes` skips `fixtures/` and `vendor/` directories, as `scripts/repo-lint.sh` does, so a test fixture's pnpm workspace no longer gets a block.
+
+- Generated OIDC products set `auth.authorized_parties` in `config/local.toml` to the realm's web, mobile and local client IDs, so access tokens from other clients fail even when they carry the backend audience.
+
 ## [0.30.6] - 2026-11-26
 
 - Generated `scripts/repo-lint.sh` scans every `Cargo.lock` outside `fixtures/` and `vendor/` directories with osv-scanner, not only `backend/Cargo.lock`, and runs `cargo deny check` on each workspace beside one, with its own `deny.toml` or else `backend/deny.toml`. `deny` exits 1 when any workspace fails. New products get `scripts/repo-lint.test.py`, which `baukit doctor` now requires, run by the `generated-scripts` CI job and the strict `scripts-tests` step. Existing products copy both files, add the test to CI and run `baukit check template-files --update`; the product `CHANGELOG.md` has the full steps.

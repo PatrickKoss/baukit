@@ -138,8 +138,10 @@ underneath its own engine:
   `(owner_id, revision)` index) shipped as reference migration SQL. Its `sqlx-postgres` feature
   adds the section 4 server side: `purge_tombstones` deletes caller-listed tombstones in bounded
   batches and raises `sync_purge_horizons` in the same transaction, and `guard_pull_cursor` rejects
-  a stale cursor inside the pull transaction. `baukit-test` checks a product's purge and pull with
-  `check_purge_horizon_conformance`.
+  a stale cursor inside the pull transaction. `open_pull_window` bounds each pull by the highest
+  committed revision, and `merge_pull_page` cuts a multi-table page so no row is skipped.
+  `baukit-test` checks a product's purge and pull with `check_purge_horizon_conformance` and
+  `check_pull_conformance`.
 - Owner isolation on the server is the product's job, because the product owns push and pull SQL.
   Clients choose row ids, so two owners can send the same id. Key syncable tables by
   `PRIMARY KEY (owner_id, id)`, or keep the owner in the `WHERE` of every write. A bare

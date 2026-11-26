@@ -12,3 +12,9 @@ swift = "6.4.0"
 "aqua:koalaman/shellcheck" = "0.11.0"
 "aqua:EmbarkStudios/cargo-deny" = "0.20.2"
 "aqua:ast-grep/ast-grep" = "0.51.1"
+"github:sbdchd/squawk" = { version = "2.74.0", bin = "squawk", rename_exe = "squawk" }
+"cargo:cargo-fuzz" = "0.13.2"
+"cargo:kani-verifier" = { version = "0.68.0", postinstall = "cargo kani setup" }
+# Verus release zip with its own z3; it verifies rust/verus with the pinned rust toolchain above.
+"http:verus" = { version = "0.2026.11.22.1ce6a59", bin_path = "verus-x86-linux", platforms = { linux-x64 = { url = "https://github.com/verus-lang/verus/releases/download/release%2F0.2026.11.22.1ce6a59/verus-0.2026.11.22.1ce6a59-x86-linux.zip", checksum = "sha256:c955d5958877f4f907cce80aa996d4239a481984829d82e325938c7bf242b0db" } } }
+# tla2tools.jar is pinned in deploy/tools.toml (TLA2TOOLS_JAR).

@@ -3,6 +3,7 @@ use std::{
     fmt,
     future::Future,
     io,
+    net::SocketAddr,
     pin::{Pin, pin},
     sync::{
         Arc, Mutex, PoisonError,
@@ -12,7 +13,12 @@ use std::{
     time::Duration,
 };
 
-use axum::{Router, body::Body, extract::Request, http::Response};
+use axum::{
+    Router,
+    body::Body,
+    extract::{ConnectInfo, Request},
+    http::Response,
+};
 use hyper::body::Incoming;
 use hyper_util::{
     rt::{TokioExecutor, TokioIo, TokioTimer},
@@ -148,7 +154,7 @@ pub enum ServerOptionsError {
 ///
 /// Once `shutdown` fires the listener stops accepting, every open connection
 /// is shut down gracefully, and the future completes when the last one has
-/// closed, exactly like `axum::serve(..).with_graceful_shutdown(..)`. Bounding
+/// closed, exactly like axum's own graceful shutdown. Bounding
 /// that wait is the caller's job.
 ///
 /// # Errors
@@ -164,10 +170,12 @@ pub async fn serve(
     let slots = Arc::new(Semaphore::new(
         options.max_connections.min(Semaphore::MAX_PERMITS),
     ));
-    while let Some((stream, slot)) = accept(&listener, &slots, &shutdown).await {
+    while let Some((stream, peer, slot)) = accept(&listener, &slots, &shutdown).await {
         let router = router.clone();
         let shutdown = shutdown.clone();
-        connections.spawn(serve_connection(stream, router, options, shutdown, slot));
+        connections.spawn(serve_connection(
+            stream, peer, router, options, shutdown, slot,
+        ));
     }
     drop(listener);
     connections.close();
@@ -179,7 +187,7 @@ async fn accept(
     listener: &TcpListener,
     slots: &Arc<Semaphore>,
     shutdown: &CancellationToken,
-) -> Option<(TcpStream, OwnedSemaphorePermit)> {
+) -> Option<(TcpStream, SocketAddr, OwnedSemaphorePermit)> {
     loop {
         let slot = tokio::select! {
             () = shutdown.cancelled() => return None,
@@ -190,7 +198,7 @@ async fn accept(
             accepted = listener.accept() => accepted,
         };
         match accepted {
-            Ok((stream, _)) => return Some((stream, slot)),
+            Ok((stream, peer)) => return Some((stream, peer, slot)),
             Err(error) => handle_accept_error(&error).await,
         }
     }
@@ -211,6 +219,7 @@ async fn handle_accept_error(error: &io::Error) {
 
 async fn serve_connection(
     stream: TcpStream,
+    peer: SocketAddr,
     router: Router,
     options: ServerOptions,
     shutdown: CancellationToken,
@@ -219,6 +228,7 @@ async fn serve_connection(
     let activity = Arc::new(ConnectionActivity::new());
     let service = TowerToHyperService::new(TrackedRouter {
         router,
+        peer,
         activity: Arc::clone(&activity),
     });
     let mut builder = Builder::new(TokioExecutor::new());
@@ -310,6 +320,7 @@ impl Drop for RequestActivity {
 #[derive(Clone)]
 struct TrackedRouter {
     router: Router,
+    peer: SocketAddr,
     activity: Arc<ConnectionActivity>,
 }
 
@@ -334,7 +345,9 @@ impl Service<Request<Incoming>> for TrackedRouter {
 
     fn call(&mut self, request: Request<Incoming>) -> Self::Future {
         let activity = self.activity.begin();
-        let response = self.router.call(request.map(Body::new));
+        let mut request = request.map(Body::new);
+        request.extensions_mut().insert(ConnectInfo(self.peer));
+        let response = self.router.call(request);
         Box::pin(async move {
             let response = response.await;
             drop(activity);

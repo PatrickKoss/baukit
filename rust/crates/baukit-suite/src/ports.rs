@@ -15,6 +15,18 @@ use jiff::civil::Date;
 use thiserror::Error;
 use uuid::Uuid;
 
+/// The claimed job attempt a delivery completes. Completion fails once
+/// another attempt of the same job holds the lease.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeliveryLease {
+    /// Claimed job id.
+    pub job_id: Uuid,
+    /// Lease owner.
+    pub worker_id: String,
+    /// Attempt number the claim returned.
+    pub attempt: u32,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AppliedOutcomeStatus {
     Granted,
@@ -105,6 +117,40 @@ pub struct SuiteCleanupOutcome {
     pub revoked_links: u64,
     pub unused_links: u64,
     pub terminal_jobs: u64,
+    /// v1 secrets sealed again as vault v2 records.
+    pub resealed_secrets: u64,
+    /// v1 secrets that failed to open and were left as they are.
+    pub unreadable_secrets: u64,
+}
+
+/// Where a sealed secret lives. The row id is also its vault scope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LegacySecretKind {
+    /// `suite_links.secret_*`, field `link_secret`.
+    LinkSecret,
+    /// `suite_link_requests.verifier_*` of an open request, field `pkce_verifier`.
+    RequestVerifier,
+    /// `suite_link_requests.secret_*` of an open request, field `link_secret`.
+    RequestSecret,
+}
+
+impl LegacySecretKind {
+    pub const ALL: [Self; 3] = [Self::LinkSecret, Self::RequestVerifier, Self::RequestSecret];
+
+    #[must_use]
+    pub const fn field(self) -> &'static str {
+        match self {
+            Self::LinkSecret | Self::RequestSecret => "link_secret",
+            Self::RequestVerifier => "pkce_verifier",
+        }
+    }
+}
+
+/// A secret stored without a vault record id.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LegacySecret {
+    pub row_id: Uuid,
+    pub payload: crate::domain::EncryptedPayload,
 }
 
 // One transaction crosses link replacement, inbox, applier and outbox operations.
@@ -263,16 +309,16 @@ pub trait SuiteLinkStore: Send + Sync {
         &self,
         owner_id: Uuid,
         link_id: Uuid,
-        job_id: Uuid,
-        worker_id: &str,
+        lease: &DeliveryLease,
         now: Timestamp,
     ) -> Result<(), SuiteStoreError>;
+    /// `EventIdConflict` when a stored event with this id differs in payload hash,
+    /// event type or occurrence time.
     async fn inbox_in_transaction(
         &self,
         tx: &mut sqlx::PgConnection,
         link_id: Uuid,
-        event_id: &str,
-        payload_hash: [u8; 32],
+        event: InboxIdentity<'_>,
     ) -> Result<InboxLookup, SuiteStoreError>;
     /// Stores the outcome and updates the link's last_received_at in this transaction.
     async fn record_inbound_in_transaction(
@@ -295,6 +341,27 @@ pub trait SuiteLinkStore: Send + Sync {
         limit: u32,
     ) -> Result<Vec<SuiteDeliveryRecord>, SuiteStoreError>;
     async fn cleanup(&self, now: Timestamp) -> Result<SuiteCleanupOutcome, SuiteStoreError>;
+    /// Locks up to `limit` secrets of `kind` without a record id and with a row id above `after`,
+    /// in row id order, skipping rows another transaction holds.
+    async fn legacy_secrets_in_transaction(
+        &self,
+        _tx: &mut sqlx::PgConnection,
+        _kind: LegacySecretKind,
+        _after: Uuid,
+        _limit: u32,
+    ) -> Result<Vec<LegacySecret>, SuiteStoreError> {
+        Ok(Vec::new())
+    }
+    /// Replaces a secret that still has no record id. Returns false when the row changed.
+    async fn reseal_secret_in_transaction(
+        &self,
+        _tx: &mut sqlx::PgConnection,
+        _kind: LegacySecretKind,
+        _row_id: Uuid,
+        _sealed: &crate::domain::EncryptedPayload,
+    ) -> Result<bool, SuiteStoreError> {
+        Ok(false)
+    }
 }
 
 #[async_trait]
@@ -357,6 +424,15 @@ pub enum SuitePeerError {
     /// the request was not sent.
     #[error("suite peer call deferred for {retry_after:?}")]
     Deferred { retry_after: std::time::Duration },
+}
+
+/// What a stored inbound event must match to count as a duplicate.
+#[derive(Clone, Copy, Debug)]
+pub struct InboxIdentity<'a> {
+    pub event_id: &'a str,
+    pub event_type: &'a str,
+    pub occurred_at: Timestamp,
+    pub payload_hash: [u8; 32],
 }
 
 pub struct SuiteSignedCall<'a> {

@@ -1,23 +1,62 @@
 use std::{
     fs, io,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
+    process::Command,
 };
 
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
 
-const SKIPPED_DIRECTORIES: &[&str] = &[
-    ".git",
-    "target",
-    "node_modules",
-    "vendor",
-    ".generated-fixture",
-];
+const SKIPPED_DIRECTORIES: &[&str] = &[".git", "target", "node_modules", ".generated-fixture"];
 
-/// Lists every regular file under `root` that `keep` accepts, sorted. It honours `.gitignore`
-/// files (also outside a git repository), `.git/info/exclude` and the global excludes, does not
-/// follow symlinks, and never enters build, dependency or VCS directories.
+/// Lists every regular file under `root` that `keep` accepts, sorted.
+///
+/// Inside a git work tree it lists the tracked files plus the untracked ones that are not
+/// ignored, so a force-added file under an ignored directory is still checked. Elsewhere it
+/// walks the tree honouring `.gitignore` files. Either way it skips symlinks and build, VCS and
+/// fixture directories.
 pub fn files(root: &Path, keep: impl Fn(&Path) -> bool) -> Result<Vec<PathBuf>> {
+    let listed = match git_files(root) {
+        Some(listed) => listed,
+        None => walked_files(root)?,
+    };
+    let mut found: Vec<PathBuf> = listed
+        .into_iter()
+        .filter(|path| is_regular_file(path) && keep(path))
+        .collect();
+    found.sort();
+    found.dedup();
+    Ok(found)
+}
+
+fn git_files(root: &Path) -> Option<Vec<PathBuf>> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    Some(
+        text.split('\0')
+            .filter(|relative| !relative.is_empty())
+            .map(Path::new)
+            .filter(|relative| !relative.components().any(is_skipped_component))
+            .map(|relative| root.join(relative))
+            .collect(),
+    )
+}
+
+fn walked_files(root: &Path) -> Result<Vec<PathBuf>> {
     let walker = WalkBuilder::new(root)
         .hidden(false)
         .git_ignore(true)
@@ -30,15 +69,20 @@ pub fn files(root: &Path, keep: impl Fn(&Path) -> bool) -> Result<Vec<PathBuf>> 
     let mut found = Vec::new();
     for entry in walker {
         let entry = entry.with_context(|| format!("failed to list {}", root.display()))?;
-        let is_file = entry
-            .file_type()
-            .is_some_and(|file_type| file_type.is_file());
-        if is_file && keep(entry.path()) {
-            found.push(entry.into_path());
-        }
+        found.push(entry.into_path());
     }
-    found.sort();
     Ok(found)
+}
+
+fn is_regular_file(path: &Path) -> bool {
+    fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
+}
+
+fn is_skipped_component(component: Component<'_>) -> bool {
+    component
+        .as_os_str()
+        .to_str()
+        .is_some_and(|name| SKIPPED_DIRECTORIES.contains(&name))
 }
 
 fn is_skipped(path: &Path) -> bool {
@@ -69,12 +113,25 @@ mod tests {
     #[test]
     fn skips_build_and_dependency_directories() -> Result<()> {
         let root = tempfile::tempdir()?;
-        for directory in ["src", "target/debug", "node_modules/x", "vendor/y"] {
+        for directory in [
+            "src",
+            "target/debug",
+            "node_modules/x",
+            "vendor/y",
+            "a/b/vendor",
+        ] {
             fs::create_dir_all(root.path().join(directory))?;
             fs::write(root.path().join(directory).join("a.rs"), "")?;
         }
         let listed = files(root.path(), |_| true)?;
-        assert_eq!(listed, vec![root.path().join("src/a.rs")]);
+        assert_eq!(
+            listed,
+            vec![
+                root.path().join("a/b/vendor/a.rs"),
+                root.path().join("src/a.rs"),
+                root.path().join("vendor/y/a.rs"),
+            ]
+        );
         Ok(())
     }
 
@@ -99,6 +156,47 @@ mod tests {
             path.extension().is_some_and(|ext| ext == "rs")
         })?;
         assert_eq!(listed, vec![root.path().join("src/.hidden.rs")]);
+        Ok(())
+    }
+
+    #[test]
+    fn lists_force_added_ignored_files_and_vendor_in_a_git_repository() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let git = |args: &[&str]| -> Result<()> {
+            let status = Command::new("git")
+                .arg("-C")
+                .arg(root.path())
+                .args(args)
+                .status()?;
+            anyhow::ensure!(status.success(), "git {args:?} failed");
+            Ok(())
+        };
+        git(&["init", "-q"])?;
+        fs::write(root.path().join(".gitignore"), "ignored/\n")?;
+        for path in [
+            "ignored/forced.rs",
+            "ignored/skipped.rs",
+            "deep/vendor/v.rs",
+            "src/new.rs",
+        ] {
+            let file = root.path().join(path);
+            if let Some(parent) = file.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(file, "")?;
+        }
+        git(&["add", "-f", "ignored/forced.rs"])?;
+        let listed = files(root.path(), |path| {
+            path.extension().is_some_and(|ext| ext == "rs")
+        })?;
+        assert_eq!(
+            listed,
+            vec![
+                root.path().join("deep/vendor/v.rs"),
+                root.path().join("ignored/forced.rs"),
+                root.path().join("src/new.rs"),
+            ]
+        );
         Ok(())
     }
 }

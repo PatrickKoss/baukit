@@ -122,4 +122,54 @@ mod tests {
             &signature,
         ));
     }
+
+    mod properties {
+        use proptest::prelude::*;
+
+        use super::super::*;
+
+        const SECRET: &[u8] = b"property-secret";
+
+        fn flip(bytes: &mut [u8], bit: usize) {
+            let index = bit / 8 % bytes.len();
+            bytes[index] ^= 1 << (bit % 8);
+        }
+
+        proptest! {
+            #[test]
+            fn signing_input_is_injective(
+                left in (any::<i64>(), ".{0,24}", prop::collection::vec(any::<u8>(), 0..32)),
+                right in (any::<i64>(), ".{0,24}", prop::collection::vec(any::<u8>(), 0..32)),
+            ) {
+                prop_assume!(left != right);
+                prop_assert_ne!(
+                    webhook_signing_input(left.0, &left.1, &left.2),
+                    webhook_signing_input(right.0, &right.1, &right.2)
+                );
+            }
+
+            #[test]
+            fn any_bit_flip_fails_verification(
+                timestamp in any::<i64>(),
+                id in "[ -~]{1,24}",
+                body in prop::collection::vec(any::<u8>(), 1..64),
+                bit in any::<usize>(),
+                target in 0_u8..4,
+            ) {
+                let signature = sign_webhook_hmac_sha256(SECRET, timestamp, &id, &body);
+                prop_assert!(verify_webhook_hmac_sha256([SECRET], timestamp, &id, &body, &signature));
+                let (mut timestamp, mut id, mut body, mut signature) =
+                    (timestamp, id.into_bytes(), body, signature.into_bytes());
+                match target {
+                    0 => timestamp ^= 1_i64 << (bit % 64),
+                    1 => flip(&mut id, bit),
+                    2 => flip(&mut body, bit),
+                    _ => flip(&mut signature, bit),
+                }
+                let id = String::from_utf8_lossy(&id).into_owned();
+                let signature = String::from_utf8_lossy(&signature).into_owned();
+                prop_assert!(!verify_webhook_hmac_sha256([SECRET], timestamp, &id, &body, &signature));
+            }
+        }
+    }
 }

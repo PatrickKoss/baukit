@@ -4,6 +4,14 @@ All notable changes to `baukit-events` are documented here.
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-26
+
+### Changed
+
+- `EventEnvelope` serializes `occurredAt` truncated to the millisecond, so its own output parses again; before, a `Timestamp::now()` envelope serialized nanoseconds that the parser rejects. New `wire_instant` truncates the same way for code that compares an envelope with its parsed JSON.
+- Deserializing an `EventEnvelope` enforces the wire shape the TypeScript schema already enforced: no unknown fields, `userId` of 1 to 255 characters without edge whitespace, `sourceApp` matching `^[a-z][a-z0-9_-]{0,31}$`, at most 32 payload keys matching `^[a-z][a-zA-Z0-9]{0,63}$`, and `occurredAt` as `YYYY-MM-DDTHH:MM:SS[.fff]Z`.
+- New `EventValidationCode::EventInFuture` (`event_in_future`) when `occurredAt` is more than `MAX_EVENT_CLOCK_SKEW_SECONDS` (300) ahead. Exhaustive matches need the new arm. See [docs/migrations/boundary-hardening.md](../../../docs/migrations/boundary-hardening.md).
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

@@ -6,11 +6,13 @@ import { DeleteProfileScreen } from './delete-profile-screen';
 
 export function DeleteProfileRoute({
   subject,
+  profileId,
   eraseLocalPartition,
   onSignedOut,
   ready,
 }: {
   readonly subject: string | undefined;
+  readonly profileId: string | undefined;
   readonly eraseLocalPartition: () => Promise<void>;
   readonly onSignedOut: () => void;
   readonly ready: boolean;
@@ -27,6 +29,7 @@ export function DeleteProfileRoute({
         if (subject === undefined) throw new Error('No signed-in account.');
         client.current = await createDeleteProfileClient(subject);
         return deleteProfile({
+          ...(profileId === undefined ? {} : { profileId }),
           client: client.current,
           eraseLocalPartition,
           onSignedOut,

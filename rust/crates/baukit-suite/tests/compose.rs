@@ -97,11 +97,53 @@ fn suite() -> Result<PostgresSuite, Box<dyn std::error::Error>> {
 }
 
 fn post(uri: &str) -> Result<Request<Body>, axum::http::Error> {
+    post_from(uri, std::net::SocketAddr::from(([192, 0, 2, 1], 4000)))
+}
+
+fn post_from(uri: &str, peer: std::net::SocketAddr) -> Result<Request<Body>, axum::http::Error> {
+    let mut request = post_without_peer(uri)?;
+    request
+        .extensions_mut()
+        .insert(axum::extract::ConnectInfo(peer));
+    Ok(request)
+}
+
+fn post_without_peer(uri: &str) -> Result<Request<Body>, axum::http::Error> {
     Request::builder()
         .method(Method::POST)
         .uri(uri)
         .header(header::CONTENT_TYPE, "application/json")
         .body(Body::from("{}"))
+}
+
+#[tokio::test]
+async fn public_routes_fail_closed_without_a_peer_address() -> TestResult {
+    let suite = suite()?;
+    let response = suite
+        .router(suite.api())
+        .oneshot(post_without_peer("/suite/links/exchange")?)
+        .await?;
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    Ok(())
+}
+
+#[tokio::test]
+async fn ipv6_clients_in_one_64_share_the_public_bucket() -> TestResult {
+    let suite = suite()?;
+    let router = suite.router(suite.api());
+    let first: std::net::SocketAddr = "[2001:db8:0:1::1]:4000".parse()?;
+    let second: std::net::SocketAddr = "[2001:db8:0:1::2]:4000".parse()?;
+    statuses(
+        &router,
+        || post_from("/suite/links/exchange", first),
+        PUBLIC_LIMIT,
+    )
+    .await?;
+    let limited = router
+        .oneshot(post_from("/suite/links/exchange", second)?)
+        .await?;
+    assert_eq!(limited.status(), StatusCode::TOO_MANY_REQUESTS);
+    Ok(())
 }
 
 async fn statuses(
@@ -152,7 +194,13 @@ async fn callback_and_revoke_share_the_public_ip_bucket() -> TestResult {
     let router = suite.router(suite.api());
     let revoke = format!("/suite/links/{}/revoke", Uuid::nil());
     statuses(&router, || post(&revoke), PUBLIC_LIMIT).await?;
-    let callback = Request::get("/suite/links/callback").body(Body::empty())?;
+    let mut callback = Request::get("/suite/links/callback").body(Body::empty())?;
+    callback
+        .extensions_mut()
+        .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+            [192, 0, 2, 1],
+            4000,
+        ))));
     assert_eq!(
         router.oneshot(callback).await?.status(),
         StatusCode::TOO_MANY_REQUESTS

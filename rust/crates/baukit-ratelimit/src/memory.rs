@@ -1,12 +1,13 @@
 use std::{
     collections::HashMap,
     sync::Mutex,
-    time::{Instant, SystemTime},
+    time::{Duration, Instant, SystemTime},
 };
 
 use crate::{
     AmountBudgetStore, AmountBudgetStoreDecision, Quota, RateLimitDecision, RateLimitStore,
     RateLimitStoreError,
+    kernels::bucket::{ScaledQuota, admit, refill},
 };
 
 const DEFAULT_MAX_ENTRIES: usize = 10_000;
@@ -17,6 +18,7 @@ const PRUNE_INTERVAL: u64 = 256;
 pub struct InMemoryRateLimitStore {
     inner: std::sync::Arc<Mutex<State>>,
     max_entries: usize,
+    epoch: Instant,
 }
 
 #[derive(Debug, Default)]
@@ -29,9 +31,16 @@ struct State {
 
 #[derive(Clone, Copy, Debug)]
 struct Entry {
-    tokens: f64,
-    last_refill: Instant,
-    expires_at: Instant,
+    tokens: u64,
+    last_ms: u64,
+    rate: u64,
+    capacity: u64,
+}
+
+impl Entry {
+    fn is_full_at(&self, now_ms: u64) -> bool {
+        refill(self.tokens, self.last_ms, now_ms, self.rate, self.capacity) >= self.capacity
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -57,6 +66,7 @@ impl InMemoryRateLimitStore {
         Self {
             inner: std::sync::Arc::new(Mutex::new(State::default())),
             max_entries,
+            epoch: Instant::now(),
         }
     }
 
@@ -70,45 +80,51 @@ impl InMemoryRateLimitStore {
             .inner
             .lock()
             .map_err(|_| RateLimitStoreError::unavailable("in-memory store lock poisoned"))?;
+        let now_ms = self.millis_since_epoch(now);
         state.checks = state.checks.wrapping_add(1);
         if state.checks % PRUNE_INTERVAL == 0 || state.entries.len() >= self.max_entries {
-            state.entries.retain(|_, entry| entry.expires_at > now);
+            state.entries.retain(|_, entry| !entry.is_full_at(now_ms));
         }
         if !state.entries.contains_key(key) && state.entries.len() >= self.max_entries {
-            let oldest = state
-                .entries
-                .iter()
-                .min_by_key(|(_, entry)| entry.expires_at)
-                .map(|(key, _)| key.clone());
-            if let Some(oldest) = oldest {
-                state.entries.remove(&oldest);
-            }
+            return Err(RateLimitStoreError::unavailable(
+                "in-memory store is full of buckets that are still refilling",
+            ));
         }
 
-        let capacity = as_tokens(quota.capacity());
+        let scaled = ScaledQuota::from_quota(quota);
         let entry = state.entries.entry(key.to_owned()).or_insert(Entry {
-            tokens: capacity,
-            last_refill: now,
-            expires_at: expires_at(now, quota),
+            tokens: scaled.capacity,
+            last_ms: now_ms,
+            rate: scaled.rate,
+            capacity: scaled.capacity,
         });
-        let elapsed = now.saturating_duration_since(entry.last_refill);
-        let refill = elapsed.as_secs_f64() * as_tokens(quota.requests_per_period())
-            / quota.period().as_secs_f64();
-        entry.tokens = (entry.tokens + refill).min(capacity);
-        entry.last_refill = now;
-        entry.expires_at = expires_at(now, quota);
-
-        if entry.tokens >= 1.0 {
-            entry.tokens -= 1.0;
-            Ok(RateLimitDecision::allowed(whole_tokens(entry.tokens)))
+        let (allowed, tokens, retry_ms) = admit(
+            entry.tokens,
+            entry.last_ms,
+            now_ms,
+            scaled.rate,
+            scaled.capacity,
+            scaled.cost,
+        );
+        *entry = Entry {
+            tokens,
+            last_ms: now_ms.max(entry.last_ms),
+            rate: scaled.rate,
+            capacity: scaled.capacity,
+        };
+        let remaining = tokens / scaled.cost;
+        if allowed {
+            Ok(RateLimitDecision::allowed(remaining))
         } else {
-            let seconds = (1.0 - entry.tokens) * quota.period().as_secs_f64()
-                / as_tokens(quota.requests_per_period());
             Ok(RateLimitDecision::limited(
-                whole_tokens(entry.tokens),
-                std::time::Duration::from_secs_f64(seconds.max(0.000_001)),
+                remaining,
+                Duration::from_millis(retry_ms),
             ))
         }
+    }
+
+    fn millis_since_epoch(&self, now: Instant) -> u64 {
+        u64::try_from(now.saturating_duration_since(self.epoch).as_millis()).unwrap_or(u64::MAX)
     }
 
     fn check_amount_at(
@@ -210,28 +226,6 @@ fn remove_earliest_amount_entry(state: &mut State) {
     }
 }
 
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "request counts stay far below 2^53, where u64 to f64 is exact; the token bucket works in f64"
-)]
-const fn as_tokens(count: u64) -> f64 {
-    count as f64
-}
-
-#[expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "a bucket holds a finite, non-negative token count no larger than its u64 capacity"
-)]
-fn whole_tokens(tokens: f64) -> u64 {
-    tokens.floor() as u64
-}
-
-fn expires_at(now: Instant, quota: Quota) -> Instant {
-    now.checked_add(quota.idle_ttl())
-        .unwrap_or_else(|| now + std::time::Duration::from_secs(365 * 24 * 60 * 60))
-}
-
 impl Default for InMemoryRateLimitStore {
     fn default() -> Self {
         Self::with_max_entries(DEFAULT_MAX_ENTRIES)
@@ -300,7 +294,7 @@ pub enum InMemoryStoreError {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{Duration, UNIX_EPOCH};
+    use std::time::UNIX_EPOCH;
 
     use super::*;
 
@@ -343,6 +337,23 @@ mod tests {
         let state = store.inner.lock().expect("state");
         assert_eq!(state.entries.len(), 1);
         assert!(state.entries.contains_key("second"));
+    }
+
+    #[test]
+    fn a_drained_bucket_is_never_evicted_to_come_back_full() {
+        let store = InMemoryRateLimitStore::new(1).expect("store");
+        let quota = Quota::new(1, Duration::from_secs(60), 0).expect("quota");
+        let started = Instant::now();
+        assert!(
+            store
+                .check_at("victim", quota, started)
+                .expect("decision")
+                .allowed
+        );
+
+        assert!(store.check_at("attacker", quota, started).is_err());
+        let again = store.check_at("victim", quota, started).expect("decision");
+        assert!(!again.allowed);
     }
 
     #[test]
@@ -439,5 +450,50 @@ mod tests {
         assert_eq!(state.amount_entries.len(), 1);
         assert!(!state.amount_entries.contains_key("old-window"));
         assert!(state.amount_entries.contains_key("new-window"));
+    }
+
+    mod properties {
+        use proptest::prelude::*;
+
+        use super::*;
+
+        const KEYS: usize = 4;
+        const MAX_ENTRIES: usize = 2;
+
+        proptest! {
+            /// P-01: admitted requests per key in any interval stay within
+            /// `capacity + rate * length`, with eviction pressure from more keys than slots.
+            #[test]
+            fn admitted_cost_never_exceeds_capacity_plus_refill(
+                requests in 1_u64..5,
+                burst in 0_u64..3,
+                period_ms in 1_u64..2_000,
+                trace in prop::collection::vec((0..KEYS, 0_u64..1_500), 1..200),
+            ) {
+                let store = InMemoryRateLimitStore::new(MAX_ENTRIES).expect("store");
+                let quota = Quota::new(requests, Duration::from_millis(period_ms), burst)
+                    .expect("quota");
+                let mut now_ms = 0_u64;
+                let mut admitted: Vec<Vec<u64>> = vec![Vec::new(); KEYS];
+                for (key, step) in trace {
+                    now_ms += step;
+                    let now = store.epoch + Duration::from_millis(now_ms);
+                    let name = format!("k{key}");
+                    if store.check_at(&name, quota, now).is_ok_and(|decision| decision.allowed) {
+                        admitted[key].push(now_ms);
+                    }
+                }
+                for times in &admitted {
+                    for (first, start) in times.iter().enumerate() {
+                        for (last, end) in times.iter().enumerate().skip(first) {
+                            let count = u128::try_from(last - first + 1).expect("count");
+                            let budget = u128::from(quota.capacity()) * u128::from(period_ms)
+                                + u128::from(requests) * u128::from(end - start);
+                            prop_assert!(count * u128::from(period_ms) <= budget);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

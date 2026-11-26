@@ -80,12 +80,15 @@ Call `next_revision` inside the transaction that writes the row, and stamp the r
 that row:
 
 ```rust,no_run
-# async fn example(pool: &sqlx::PgPool, owner_id: uuid::Uuid) -> Result<(), sqlx::Error> {
+# async fn example(pool: &sqlx::PgPool, owner_id: uuid::Uuid, id: uuid::Uuid) -> Result<(), sqlx::Error> {
 let mut transaction = pool.begin().await?;
 let revision = baukit_sync::next_revision(&mut transaction, owner_id).await?;
-sqlx::query("UPDATE product_records SET revision = $1, updated_at = now() WHERE id = $2")
+sqlx::query(
+    "UPDATE product_records SET revision = $1, updated_at = now() WHERE owner_id = $2 AND id = $3",
+)
     .bind(revision)
     .bind(owner_id)
+    .bind(id)
     .execute(&mut *transaction)
     .await?;
 transaction.commit().await?;
@@ -163,6 +166,13 @@ Copy [`migrations/0002_baukit_sync_purge_horizons.sql`](migrations/0002_baukit_s
 after the revision migration. It creates `sync_purge_horizons (owner_id, horizon_revision,
 updated_at)`. The table name is fixed, like `sync_revisions`. Its foreign key to `sync_revisions`
 cascades, so erasing an owner's counter also removes the horizon.
+
+Deleting an owner's `sync_revisions` row restarts its counter at zero if the owner comes back.
+`open_pull_window` answers a cursor above the current counter with `resync_required`, so a client
+holding a pre-erasure cursor rebuilds instead of pulling nothing. That only helps until new writes
+pass the old cursor. If an owner id can come back, erase its rows but keep the counter: in one
+transaction delete the rows, allocate one more revision with `next_revision`, and raise the owner's
+`sync_purge_horizons` row to it. Every older cursor then gets `resync_required`.
 
 ### Purging
 
@@ -251,10 +261,26 @@ Enqueue `next` with `next.identifier()` as the idempotency key and `next.starts_
 
 ### Guarding pulls
 
-Call `guard_pull_cursor` first in the pull transaction, then read rows in that same transaction. It
+Call `open_pull_window` first in the pull transaction, then read rows in that same transaction. It
 takes `FOR KEY SHARE` on the owner's counter row, which does not block `next_revision`, but keeps a
 purge for that owner from committing until the pull ends. Without that lock a purge can commit
 between the horizon check and the row reads, and the pull silently drops a deletion.
+
+The window also carries `hi`, the owner's committed counter when the pull started. Every table query
+filters `revision <= hi` and pages with a `(revision, id)` cursor. Both matter:
+
+- One push can stamp the same revision on several rows. With a revision-only cursor and a page that
+  ends inside that revision, `revision > cursor` skips the rest of it forever.
+- Under READ COMMITTED each statement sees a fresh snapshot. Without `hi`, a writer that commits
+  between two table reads can make the client store a cursor past a row it never saw.
+- Each table query has its own `LIMIT`. If `product_records` returns rows up to revision 9 and
+  `product_tags` fills its limit at revision 5, a cursor of 9 skips tags 6 to 9.
+
+`merge_pull_page` handles the last case. It ends the page at the lowest last row among tables that
+filled their limit, drops rows above it, and sets `more`. Once no table fills its limit it returns
+`window.drained_cursor()`. `guard_pull_cursor` still
+works but returns no window; new code should not use it. `PullCursor::after_revision(n)` converts a
+stored revision-only cursor.
 
 ```rust
 use std::collections::BTreeMap;
@@ -262,28 +288,46 @@ use std::collections::BTreeMap;
 use axum::http::StatusCode;
 use baukit_http::ApiError;
 use baukit_sync::horizon::{HORIZON_REVISION_DETAIL, PullCursorError, RESYNC_REQUIRED_CODE};
-use baukit_sync::purge::{PullGuardError, guard_pull_cursor};
+use std::num::NonZeroUsize;
+
+use baukit_sync::pull::{MergedPullPage, PullCursor, merge_pull_page, open_pull_window};
+use baukit_sync::purge::PullGuardError;
+
+const PAGE_SIZE: NonZeroUsize = NonZeroUsize::MIN.saturating_add(99);
+const TABLES: [&str; 2] = ["product_records", "product_tags"];
+
+type Row = (i64, uuid::Uuid);
 
 async fn pull_page(
     pool: &sqlx::PgPool,
     owner_id: uuid::Uuid,
-    cursor: i64,
-) -> Result<Vec<i64>, ApiError> {
+    after: PullCursor,
+) -> Result<MergedPullPage<Row>, ApiError> {
     let mut transaction = pool.begin().await.map_err(ApiError::internal)?;
-    guard_pull_cursor(&mut transaction, owner_id, cursor)
+    let window = open_pull_window(&mut transaction, owner_id, after)
         .await
         .map_err(pull_guard_error)?;
-    let revisions = sqlx::query_scalar(
-        "SELECT revision FROM product_records WHERE owner_id = $1 AND revision > $2
-         ORDER BY revision LIMIT 100",
-    )
-    .bind(owner_id)
-    .bind(cursor)
-    .fetch_all(&mut *transaction)
-    .await
-    .map_err(ApiError::internal)?;
+    let mut tables = Vec::new();
+    for table in TABLES {
+        let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT revision, id FROM {table}
+             WHERE owner_id = $1 AND revision <= $2 AND (revision, id) > ($3, $4)
+             ORDER BY revision, id LIMIT $5"
+        )))
+        .bind(owner_id)
+        .bind(window.hi)
+        .bind(window.after.revision)
+        .bind(window.after.id)
+        .bind(i64::try_from(PAGE_SIZE.get()).map_err(ApiError::internal)?)
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(ApiError::internal)?;
+        tables.push(rows);
+    }
     transaction.commit().await.map_err(ApiError::internal)?;
-    Ok(revisions)
+    Ok(merge_pull_page(&window, tables, PAGE_SIZE, |&(revision, id)| {
+        PullCursor::after_row(revision, id)
+    }))
 }
 
 fn pull_guard_error(error: PullGuardError) -> ApiError {

@@ -38,7 +38,7 @@ function expected(name: string): ProductProfileErasureResult {
 function dependencies(outcome: string, events: string[] = []): ProductProfileErasureDependencies {
   return {
     beforeServerErase:
-      outcome === 'warnings-only'
+      outcome === 'before-server-failure'
         ? [
             () => {
               events.push('before');
@@ -113,12 +113,12 @@ describe('product-profile erasure', () => {
     );
   });
 
-  it('continues after a failed pre-server hook and reports a safe warning', async () => {
+  it('aborts before the server call when a pre-server hook fails', async () => {
     const events: string[] = [];
-    const result = await eraseProductProfile(dependencies('warnings-only', events));
+    const result = await eraseProductProfile(dependencies('before-server-failure', events));
 
-    expect(result).toEqual(expected('warnings-only'));
-    expect(events).toEqual(['before', 'server', 'local', 'sign-out']);
+    expect(result).toEqual(expected('before-server-failure'));
+    expect(events).toEqual(['before']);
     expect(JSON.stringify(result)).not.toMatch(
       /user@example|secret|request body|resource content/u,
     );
