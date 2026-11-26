@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- A rotated session stays in memory when secure storage fails, and is no longer dropped when the stored session object is replaced by one with the same refresh token.
+
 ## 0.30.4
 
 ### Patch Changes
