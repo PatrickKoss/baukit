@@ -29,8 +29,13 @@ fuzz_target!(|data: &[u8]| {
         return;
     };
     let setup = &*SETUP;
-    let Ok(claims) = verify_ticket(ticket, &setup.jwks, &setup.issuer, &setup.audience, setup.now)
-    else {
+    let Ok(claims) = verify_ticket(
+        ticket,
+        &setup.jwks,
+        &setup.issuer,
+        &setup.audience,
+        setup.now,
+    ) else {
         return;
     };
     let reencoded = serde_json::to_vec(&claims).expect("serialize claims");

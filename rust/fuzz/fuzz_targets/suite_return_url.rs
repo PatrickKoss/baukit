@@ -29,6 +29,7 @@ fuzz_target!(|data: &[u8]| {
             ciphertext: Vec::new(),
             nonce: Vec::new(),
             key_version: 1,
+            record_id: None,
         },
         exchange: None,
         client_state_nonce: "nonce".into(),

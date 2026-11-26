@@ -294,8 +294,7 @@ fn profile_rule(profile: Profile, claims: &Map<String, Value>) -> Outcome {
             }
             let allowed = match profile {
                 Profile::OidcAllowList => is_string(azp, "web"),
-                Profile::OidcWithClient => !several || is_string(azp, "web"),
-                _ => !several,
+                _ => !several || matches!(azp, Some(Value::String(_))),
             };
             if allowed {
                 Ok(())
