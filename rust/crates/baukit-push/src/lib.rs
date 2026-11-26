@@ -65,7 +65,9 @@
 //! Whole-request failures arrive as [`PushError::Transport`] carrying a
 //! [`baukit_http::RetryClass`], so an Expo rate limit with a `Retry-After`
 //! header reaches the caller as a concrete delay through
-//! [`PushError::retry_after`]. Per-notification refusals are not errors:
+//! [`PushError::retry_after`]. [`PushSender::send`] wraps it in a
+//! [`PushSendError`] that keeps the outcomes of chunks the provider already
+//! took and lists the messages still unsent; retry only those. Per-notification refusals are not errors:
 //! inspect [`PushRejection::is_retryable`] on each outcome instead.
 
 #![deny(missing_docs)]
@@ -101,7 +103,8 @@ pub use pending_receipt::{
 };
 pub use port::{
     MAX_PUSH_TICKET_ID_LENGTH, PushDeliveryStatus, PushError, PushFuture, PushMessage, PushOutcome,
-    PushReceipt, PushReceiptFuture, PushReceiptSource, PushRejection, PushSender, PushTicketId,
+    PushReceipt, PushReceiptFuture, PushReceiptSource, PushRejection, PushSendError, PushSender,
+    PushTicketId,
 };
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::{

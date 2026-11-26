@@ -232,6 +232,18 @@ groups:
           description: 'More than 10% of worker runs are failing for job kind {{ $labels.job_kind }} in {{ $labels.service }}.'
           runbook_url: RUNBOOK_BASE_URL/worker-failure-rate-high
 
+      - alert: BaukitPrivacyOperationFailed
+        expr: |
+          sum by (product, service, environment, namespace, job_kind) (
+            increase(worker_job_runs_total{service!="", outcome="failure", job_kind=~"identity\\.account\\.delete|data-subject\\..+"}[15m])
+          ) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: A privacy operation failed
+          description: 'A {{ $labels.job_kind }} job in {{ $labels.service }} failed for good. The erasure or export it belongs to is now failed and needs a person.'
+          runbook_url: RUNBOOK_BASE_URL/privacy-operation-failed
+
       - alert: BaukitWorkerRetryStorm
         expr: |
           sum by (product, service, environment, namespace, job_kind) (

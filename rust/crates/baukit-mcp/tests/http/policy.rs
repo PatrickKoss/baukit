@@ -69,6 +69,9 @@ fn assert_policy_denial_headers(
     if expected == StatusCode::TOO_MANY_REQUESTS {
         assert_eq!(headers[header::RETRY_AFTER], "7");
     }
+    if expected == StatusCode::SERVICE_UNAVAILABLE {
+        assert_eq!(headers[header::RETRY_AFTER], "5");
+    }
 }
 
 fn assert_policy_decision_metrics(snapshotter: &metrics_util::debugging::Snapshotter) {
