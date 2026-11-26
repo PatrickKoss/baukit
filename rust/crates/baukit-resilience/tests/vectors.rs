@@ -1,10 +1,12 @@
 //! Replays `fixtures/resilience/*.json`.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use baukit_resilience::{
     Admission, Backoff, BackoffStrategy, BreakerMachine, BreakerPolicy, BreakerState, Outcome,
+    Permit,
 };
 use serde::Deserialize;
 
@@ -107,6 +109,7 @@ struct Event {
     expect_state: String,
     expect_admission: Option<String>,
     expect_retry_after_ms: Option<u64>,
+    permit: Option<String>,
     outcome: Option<String>,
     fraction: Option<f64>,
     hold_for_ms: Option<u64>,
@@ -125,14 +128,13 @@ fn outcome(event: &Event) -> Option<Outcome> {
     }
 }
 
-fn expected_admission(event: &Event) -> Option<Admission> {
-    match event.expect_admission.as_deref()? {
-        "allowed" => Some(Admission::Allowed),
-        "probe" => Some(Admission::Probe),
-        "rejected" => event.expect_retry_after_ms.map(|ms| Admission::Rejected {
-            retry_after: Duration::from_millis(ms),
-        }),
-        _ => None,
+fn admission_matches(admission: Admission, event: &Event) -> bool {
+    match (admission, event.expect_admission.as_deref()) {
+        (Admission::Allowed(_), Some("allowed")) | (Admission::Probe(_), Some("probe")) => true,
+        (Admission::Rejected { retry_after }, Some("rejected")) => {
+            event.expect_retry_after_ms.map(Duration::from_millis) == Some(retry_after)
+        }
+        _ => false,
     }
 }
 
@@ -149,19 +151,35 @@ fn breaker_vectors() {
     let start = Instant::now();
     for scenario in file.scenarios {
         let mut machine = BreakerMachine::new();
+        let mut permits: HashMap<String, Permit> = HashMap::new();
         for (index, event) in scenario.events.iter().enumerate() {
             let now = start + Duration::from_millis(event.at_ms);
             let context = format!("{} event {index}", scenario.name);
             match event.op.as_str() {
-                "admit" => assert_eq!(
-                    Some(machine.admit(&policy, now)),
-                    expected_admission(event),
-                    "{context}"
-                ),
+                "admit" => {
+                    let admission = machine.admit(&policy, now);
+                    assert!(
+                        admission_matches(admission, event),
+                        "{context}: got {admission:?}"
+                    );
+                    if let (Some(label), Some(permit)) = (&event.permit, admission.permit()) {
+                        permits.insert(label.clone(), permit);
+                    }
+                }
                 "record" => {
                     let outcome =
                         outcome(event).unwrap_or_else(|| panic!("{context}: bad outcome"));
-                    machine.record(&policy, outcome, now, event.fraction.unwrap());
+                    let label = event
+                        .permit
+                        .as_deref()
+                        .unwrap_or_else(|| panic!("{context}: no permit"));
+                    machine.record(
+                        &policy,
+                        permits[label],
+                        outcome,
+                        now,
+                        event.fraction.unwrap(),
+                    );
                 }
                 other => panic!("unknown op {other}"),
             }

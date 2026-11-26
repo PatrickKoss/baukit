@@ -85,13 +85,47 @@ pub enum Outcome {
     HoldFor(Duration),
 }
 
+/// What an admitted call was admitted as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PermitKind {
+    /// Admitted while closed.
+    Allowed,
+    /// Admitted as the half-open probe.
+    Probe,
+}
+
+/// Proof of admission that [`BreakerMachine::record`] takes back.
+///
+/// Outcomes only count for the phase that issued the permit: a call admitted
+/// while closed that finishes after the breaker opened, or a probe that was
+/// replaced, is ignored (except `HoldFor`, which may still extend an open breaker).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Permit {
+    kind: PermitKind,
+    ticket: u64,
+}
+
+impl Permit {
+    /// What the call was admitted as.
+    #[must_use]
+    pub const fn kind(&self) -> PermitKind {
+        self.kind
+    }
+
+    /// The generation the permit belongs to.
+    #[must_use]
+    pub const fn ticket(&self) -> u64 {
+        self.ticket
+    }
+}
+
 /// Whether a call may go ahead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Admission {
-    /// Closed: go ahead.
-    Allowed,
-    /// Half-open: this call is the single probe and must report its outcome.
-    Probe,
+    /// Closed: go ahead and record the outcome with the permit.
+    Allowed(Permit),
+    /// Half-open: this call is the single probe and must record its outcome.
+    Probe(Permit),
     /// Open: do not call before `retry_after` has passed.
     Rejected {
         /// Time until the breaker admits a call again.
@@ -104,6 +138,15 @@ impl Admission {
     #[must_use]
     pub const fn is_admitted(&self) -> bool {
         !matches!(self, Self::Rejected { .. })
+    }
+
+    /// The permit to record the outcome with, `None` when rejected.
+    #[must_use]
+    pub const fn permit(&self) -> Option<Permit> {
+        match self {
+            Self::Allowed(permit) | Self::Probe(permit) => Some(*permit),
+            Self::Rejected { .. } => None,
+        }
     }
 }
 
@@ -169,6 +212,7 @@ impl Phase {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BreakerMachine {
     phase: Phase,
+    generation: u64,
 }
 
 impl Default for BreakerMachine {
@@ -181,8 +225,18 @@ impl BreakerMachine {
     /// A closed breaker with an empty window.
     #[must_use]
     pub const fn new() -> Self {
+        Self::starting_at(0)
+    }
+
+    /// A closed breaker whose permits start at `generation`. A [`BreakerSet`]
+    /// uses distinct starts so permits from an evicted breaker never match.
+    ///
+    /// [`BreakerSet`]: crate::BreakerSet
+    #[must_use]
+    pub const fn starting_at(generation: u64) -> Self {
         Self {
             phase: Phase::closed(),
+            generation,
         }
     }
 
@@ -200,7 +254,7 @@ impl BreakerMachine {
     /// Decides whether a call at `now` may go ahead.
     pub fn admit(&mut self, policy: &BreakerPolicy, now: Instant) -> Admission {
         match &mut self.phase {
-            Phase::Closed { .. } => Admission::Allowed,
+            Phase::Closed { .. } => Admission::Allowed(self.permit(PermitKind::Allowed)),
             Phase::Open { until, opens } => {
                 let (until, opens) = (*until, *opens);
                 if now < until {
@@ -208,42 +262,43 @@ impl BreakerMachine {
                         retry_after: until.saturating_duration_since(now),
                     };
                 }
-                self.phase = Phase::HalfOpen {
+                self.enter(Phase::HalfOpen {
                     probe_since: Some(now),
                     opens,
-                };
-                Admission::Probe
+                });
+                Admission::Probe(self.permit(PermitKind::Probe))
             }
             Phase::HalfOpen { probe_since, .. } => {
                 let lease_end =
                     probe_since.and_then(|since| since.checked_add(policy.probe_timeout));
-                match lease_end {
-                    Some(end) if now < end => Admission::Rejected {
+                if let Some(end) = lease_end.filter(|end| now < *end) {
+                    return Admission::Rejected {
                         retry_after: end.saturating_duration_since(now),
-                    },
-                    _ => {
-                        *probe_since = Some(now);
-                        Admission::Probe
-                    }
+                    };
                 }
+                *probe_since = Some(now);
+                self.bump();
+                Admission::Probe(self.permit(PermitKind::Probe))
             }
         }
     }
 
-    /// Records the outcome of an admitted call. `fraction` in `[0, 1)` jitters
-    /// the open time if this outcome opens the breaker.
+    /// Records the outcome of the call admitted with `permit`. `fraction` in
+    /// `[0, 1)` jitters the open time if this outcome opens the breaker.
     pub fn record(
         &mut self,
         policy: &BreakerPolicy,
+        permit: Permit,
         outcome: Outcome,
         now: Instant,
         fraction: f64,
     ) {
+        let current = permit.ticket == self.generation;
         let next = match &mut self.phase {
             Phase::Closed {
                 failures,
                 consecutive_timeouts,
-            } => record_closed(
+            } if current && permit.kind == PermitKind::Allowed => record_closed(
                 policy,
                 failures,
                 consecutive_timeouts,
@@ -251,14 +306,32 @@ impl BreakerMachine {
                 now,
                 fraction,
             ),
+            Phase::Closed { .. } => None,
             Phase::Open { until, opens } => record_open(policy, *until, *opens, outcome, now),
-            Phase::HalfOpen { probe_since, opens } => {
-                record_half_open(policy, probe_since, *opens, outcome, now, fraction)
+            Phase::HalfOpen { opens, .. } if current && permit.kind == PermitKind::Probe => {
+                record_half_open(policy, *opens, outcome, now, fraction)
             }
+            Phase::HalfOpen { .. } => None,
         };
         if let Some(phase) = next {
-            self.phase = phase;
+            self.enter(phase);
         }
+    }
+
+    const fn permit(&self, kind: PermitKind) -> Permit {
+        Permit {
+            kind,
+            ticket: self.generation,
+        }
+    }
+
+    fn enter(&mut self, phase: Phase) {
+        self.phase = phase;
+        self.bump();
+    }
+
+    const fn bump(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
     }
 }
 
@@ -333,7 +406,6 @@ fn record_open(
 
 fn record_half_open(
     policy: &BreakerPolicy,
-    probe_since: &mut Option<Instant>,
     opens: u32,
     outcome: Outcome,
     now: Instant,
@@ -345,10 +417,10 @@ fn record_half_open(
             Some(open(policy, now, opens.saturating_add(1), fraction))
         }
         Outcome::HoldFor(delay) => Some(hold(policy, now, delay, opens)),
-        Outcome::Ignored => {
-            *probe_since = None;
-            None
-        }
+        Outcome::Ignored => Some(Phase::HalfOpen {
+            probe_since: None,
+            opens,
+        }),
     }
 }
 
@@ -429,12 +501,14 @@ impl CircuitBreaker {
         self.lock().machine.admit(&self.policy, now)
     }
 
-    /// Records the outcome of an admitted call.
-    pub fn record(&self, outcome: Outcome) {
+    /// Records the outcome of the call admitted with `permit`.
+    pub fn record(&self, permit: Permit, outcome: Outcome) {
         let now = self.clock.now();
         let mut guarded = self.lock();
         let fraction = guarded.jitter.next_fraction();
-        guarded.machine.record(&self.policy, outcome, now, fraction);
+        guarded
+            .machine
+            .record(&self.policy, permit, outcome, now, fraction);
     }
 
     /// The current state.

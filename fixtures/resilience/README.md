@@ -43,13 +43,24 @@ Each scenario starts a fresh breaker in `closed` with time `0` and applies
 
 - `admit`: ask whether a call may go ahead. Check `expect_admission`
   (`allowed`, `probe` or `rejected`) and, for `rejected`,
-  `expect_retry_after_ms`.
+  `expect_retry_after_ms`. An admitted call returns a permit; when the event
+  has `permit`, store it under that label.
 - `record`: report an `outcome` (`success`, `failure`, `timeout`, `ignored`,
-  or `hold_for` with `hold_for_ms`) using jitter `fraction`.
+  or `hold_for` with `hold_for_ms`) for the call admitted with the permit
+  labelled `permit`, using jitter `fraction`.
 
 After every event the state must equal `expect_state` (`closed`, `half_open`
 or `open`). An open breaker stays `open` until an `admit` at or after its end
 moves it to `half_open`.
+
+Permits: the breaker keeps a generation counter, starting at 0. It goes up by
+one on every phase change (including half-open to half-open after an ignored
+probe) and on every new probe. A permit carries its kind (`allowed` or
+`probe`) and the generation at the moment it was issued, after any change the
+admission itself caused. An outcome counts only if its permit's generation is
+the current one and its kind matches the phase: `allowed` in closed, `probe`
+in half-open. Any other outcome is dropped, except `hold_for` while open, which
+applies with any permit.
 
 Rules:
 
@@ -70,4 +81,5 @@ Rules:
 - Half-open: `admit` is `rejected` with the time left on the probe lease
   (`probe_timeout_ms` from the probe's admission), or `probe` when no probe is
   out or its lease has run out. `success` closes the breaker and resets `n`;
-  `failure` or `timeout` opens it with `n + 1`; `ignored` frees the probe slot.
+  `failure` or `timeout` opens it with `n + 1`; `ignored` frees the probe slot
+  and spends the permit, so the next `admit` returns a new probe.

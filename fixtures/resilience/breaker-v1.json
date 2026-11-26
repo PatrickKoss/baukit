@@ -18,39 +18,73 @@
           "at_ms": 0,
           "op": "admit",
           "expect_admission": "allowed",
-          "expect_state": "closed"
+          "expect_state": "closed",
+          "permit": "c0"
         },
         {
           "at_ms": 0,
           "op": "record",
+          "permit": "c0",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c1"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c1",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c2"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c2",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c3"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c3",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c4"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c4",
           "outcome": "timeout",
           "fraction": 0.5,
           "expect_state": "open"
@@ -66,7 +100,8 @@
           "at_ms": 27000,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "p"
         },
         {
           "at_ms": 27001,
@@ -78,6 +113,7 @@
         {
           "at_ms": 27500,
           "op": "record",
+          "permit": "p",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
@@ -86,7 +122,8 @@
           "at_ms": 27500,
           "op": "admit",
           "expect_admission": "allowed",
-          "expect_state": "closed"
+          "expect_state": "closed",
+          "permit": "a"
         }
       ]
     },
@@ -95,70 +132,150 @@
       "events": [
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c5"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c5",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c6"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c6",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c7"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c7",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c8"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c8",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c9"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c9",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c10"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c10",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c11"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c11",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c12"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c12",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c13"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c13",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c14"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c14",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "open"
@@ -177,70 +294,150 @@
       "events": [
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c15"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c15",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 1,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c16"
+        },
+        {
+          "at_ms": 1,
           "op": "record",
+          "permit": "c16",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 2,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c17"
+        },
+        {
+          "at_ms": 2,
           "op": "record",
+          "permit": "c17",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 3,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c18"
+        },
+        {
+          "at_ms": 3,
           "op": "record",
+          "permit": "c18",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 4,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c19"
+        },
+        {
+          "at_ms": 4,
           "op": "record",
+          "permit": "c19",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 5,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c20"
+        },
+        {
+          "at_ms": 5,
           "op": "record",
+          "permit": "c20",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 6,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c21"
+        },
+        {
+          "at_ms": 6,
           "op": "record",
+          "permit": "c21",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 7,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c22"
+        },
+        {
+          "at_ms": 7,
           "op": "record",
+          "permit": "c22",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 8,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c23"
+        },
+        {
+          "at_ms": 8,
           "op": "record",
+          "permit": "c23",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 9,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c24"
+        },
+        {
+          "at_ms": 9,
           "op": "record",
+          "permit": "c24",
           "outcome": "failure",
           "fraction": 0.999,
           "expect_state": "open"
@@ -259,210 +456,450 @@
       "events": [
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c25"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c25",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c26"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c26",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c27"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c27",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c28"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c28",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c29"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c29",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c30"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c30",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c31"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c31",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c32"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c32",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c33"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c33",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c34"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c34",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c35"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c35",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c36"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c36",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c37"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c37",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c38"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c38",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c39"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c39",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c40"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c40",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c41"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c41",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c42"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c42",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c43"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c43",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c44"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c44",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c45"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c45",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c46"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c46",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c47"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c47",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c48"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c48",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c49"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c49",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c50"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c50",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c51"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c51",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c52"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c52",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c53"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c53",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c54"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c54",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "open"
@@ -474,35 +911,75 @@
       "events": [
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c55"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c55",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c56"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c56",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c57"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c57",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c58"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c58",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c59"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c59",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "open"
@@ -518,11 +995,13 @@
           "at_ms": 30000,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "p2"
         },
         {
           "at_ms": 30000,
           "op": "record",
+          "permit": "p2",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "open"
@@ -538,11 +1017,13 @@
           "at_ms": 90000,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "p3"
         },
         {
           "at_ms": 90000,
           "op": "record",
+          "permit": "p3",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "open"
@@ -558,11 +1039,13 @@
           "at_ms": 210000,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "p4"
         },
         {
           "at_ms": 210000,
           "op": "record",
+          "permit": "p4",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "open"
@@ -578,11 +1061,13 @@
           "at_ms": 450000,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "p5"
         },
         {
           "at_ms": 450000,
           "op": "record",
+          "permit": "p5",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "open"
@@ -598,11 +1083,13 @@
           "at_ms": 750000,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "p6"
         },
         {
           "at_ms": 750000,
           "op": "record",
+          "permit": "p6",
           "outcome": "failure",
           "fraction": 0.0,
           "expect_state": "open"
@@ -611,46 +1098,88 @@
           "at_ms": 1050000,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "last"
         },
         {
           "at_ms": 1050000,
           "op": "record",
+          "permit": "last",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 1050000,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c60"
+        },
+        {
+          "at_ms": 1050000,
           "op": "record",
+          "permit": "c60",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 1050000,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c61"
+        },
+        {
+          "at_ms": 1050000,
           "op": "record",
+          "permit": "c61",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 1050000,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c62"
+        },
+        {
+          "at_ms": 1050000,
           "op": "record",
+          "permit": "c62",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 1050000,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c63"
+        },
+        {
+          "at_ms": 1050000,
           "op": "record",
+          "permit": "c63",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 1050000,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c64"
+        },
+        {
+          "at_ms": 1050000,
           "op": "record",
+          "permit": "c64",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "open"
@@ -669,7 +1198,15 @@
       "events": [
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c65"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c65",
           "outcome": "hold_for",
           "fraction": 0.0,
           "expect_state": "open",
@@ -686,11 +1223,13 @@
           "at_ms": 60000,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "p1"
         },
         {
           "at_ms": 60000,
           "op": "record",
+          "permit": "p1",
           "outcome": "ignored",
           "fraction": 0.0,
           "expect_state": "half_open"
@@ -699,11 +1238,13 @@
           "at_ms": 60001,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "p2"
         },
         {
           "at_ms": 60001,
           "op": "record",
+          "permit": "p2",
           "outcome": "hold_for",
           "fraction": 0.0,
           "expect_state": "open",
@@ -720,11 +1261,13 @@
           "at_ms": 360001,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "p3"
         },
         {
           "at_ms": 360001,
           "op": "record",
+          "permit": "p3",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
@@ -736,70 +1279,150 @@
       "events": [
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c66"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c66",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c67"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c67",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c68"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c68",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c69"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c69",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c70"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c70",
           "outcome": "success",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c71"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c71",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c72"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c72",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c73"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c73",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c74"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c74",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c75"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c75",
           "outcome": "ignored",
           "fraction": 0.0,
           "expect_state": "closed"
@@ -808,7 +1431,8 @@
           "at_ms": 0,
           "op": "admit",
           "expect_admission": "allowed",
-          "expect_state": "closed"
+          "expect_state": "closed",
+          "permit": "z"
         }
       ]
     },
@@ -817,35 +1441,75 @@
       "events": [
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c76"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c76",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c77"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c77",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c78"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c78",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c79"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c79",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "closed"
         },
         {
           "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c80"
+        },
+        {
+          "at_ms": 0,
           "op": "record",
+          "permit": "c80",
           "outcome": "timeout",
           "fraction": 0.0,
           "expect_state": "open"
@@ -854,7 +1518,8 @@
           "at_ms": 30000,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "p1"
         },
         {
           "at_ms": 59999,
@@ -867,11 +1532,13 @@
           "at_ms": 60000,
           "op": "admit",
           "expect_admission": "probe",
-          "expect_state": "half_open"
+          "expect_state": "half_open",
+          "permit": "p2"
         },
         {
           "at_ms": 60000,
           "op": "record",
+          "permit": "p2",
           "outcome": "timeout",
           "fraction": 0.5,
           "expect_state": "open"
@@ -882,6 +1549,648 @@
           "expect_admission": "rejected",
           "expect_state": "open",
           "expect_retry_after_ms": 54000
+        }
+      ]
+    },
+    {
+      "name": "a late allowed outcome during half-open does not decide it",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "late_ok"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "late_bad"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c81"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c81",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c82"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c82",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c83"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c83",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c84"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c84",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c85"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c85",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 1000,
+          "op": "record",
+          "permit": "late_bad",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 30000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open",
+          "permit": "p"
+        },
+        {
+          "at_ms": 30001,
+          "op": "record",
+          "permit": "late_ok",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 30002,
+          "op": "record",
+          "permit": "late_bad",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 30003,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "half_open",
+          "expect_retry_after_ms": 29997
+        },
+        {
+          "at_ms": 30004,
+          "op": "record",
+          "permit": "p",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        }
+      ]
+    },
+    {
+      "name": "a stale probe ticket is ignored",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c86"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c86",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c87"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c87",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c88"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c88",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c89"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c89",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c90"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c90",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 30000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open",
+          "permit": "p1"
+        },
+        {
+          "at_ms": 60000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open",
+          "permit": "p2"
+        },
+        {
+          "at_ms": 60001,
+          "op": "record",
+          "permit": "p1",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 60002,
+          "op": "record",
+          "permit": "p1",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 60003,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "half_open",
+          "expect_retry_after_ms": 29997
+        },
+        {
+          "at_ms": 60004,
+          "op": "record",
+          "permit": "p2",
+          "outcome": "failure",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 60004,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 60000
+        }
+      ]
+    },
+    {
+      "name": "a late hold-for from an allowed call still extends the open time",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "x"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c91"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c91",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c92"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c92",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c93"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c93",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c94"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c94",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c95"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c95",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 1000,
+          "op": "record",
+          "permit": "x",
+          "outcome": "hold_for",
+          "fraction": 0.0,
+          "expect_state": "open",
+          "hold_for_ms": 120000
+        },
+        {
+          "at_ms": 30000,
+          "op": "admit",
+          "expect_admission": "rejected",
+          "expect_state": "open",
+          "expect_retry_after_ms": 91000
+        }
+      ]
+    },
+    {
+      "name": "permits from before the breaker last closed are ignored",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "old"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c96"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c96",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c97"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c97",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c98"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c98",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c99"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c99",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c100"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c100",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 30000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open",
+          "permit": "p"
+        },
+        {
+          "at_ms": 30000,
+          "op": "record",
+          "permit": "p",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 30001,
+          "op": "record",
+          "permit": "old",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 30001,
+          "op": "record",
+          "permit": "old",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 30001,
+          "op": "record",
+          "permit": "old",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 30001,
+          "op": "record",
+          "permit": "old",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 30001,
+          "op": "record",
+          "permit": "old",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 30002,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "new"
+        }
+      ]
+    },
+    {
+      "name": "a probe that reported ignored cannot report again",
+      "events": [
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c101"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c101",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c102"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c102",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c103"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c103",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c104"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c104",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "closed"
+        },
+        {
+          "at_ms": 0,
+          "op": "admit",
+          "expect_admission": "allowed",
+          "expect_state": "closed",
+          "permit": "c105"
+        },
+        {
+          "at_ms": 0,
+          "op": "record",
+          "permit": "c105",
+          "outcome": "timeout",
+          "fraction": 0.0,
+          "expect_state": "open"
+        },
+        {
+          "at_ms": 30000,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open",
+          "permit": "p1"
+        },
+        {
+          "at_ms": 30000,
+          "op": "record",
+          "permit": "p1",
+          "outcome": "ignored",
+          "fraction": 0.0,
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 30001,
+          "op": "record",
+          "permit": "p1",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "half_open"
+        },
+        {
+          "at_ms": 30002,
+          "op": "admit",
+          "expect_admission": "probe",
+          "expect_state": "half_open",
+          "permit": "p2"
+        },
+        {
+          "at_ms": 30003,
+          "op": "record",
+          "permit": "p2",
+          "outcome": "success",
+          "fraction": 0.0,
+          "expect_state": "closed"
         }
       ]
     }

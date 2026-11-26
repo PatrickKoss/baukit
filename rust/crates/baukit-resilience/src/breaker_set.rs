@@ -1,11 +1,12 @@
 //! One breaker per key under a shared policy.
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::hash::Hash;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 
-use crate::breaker::{Admission, BreakerMachine, BreakerPolicy, BreakerState, Outcome};
+use crate::breaker::{Admission, BreakerMachine, BreakerPolicy, BreakerState, Outcome, Permit};
 use crate::clock::{Clock, SystemClock};
 use crate::jitter::{JitterSource, SplitMixJitter};
 
@@ -17,8 +18,11 @@ struct Tracked {
     last_used: Instant,
 }
 
+const GENERATION_SPACING_BITS: u32 = 32;
+
 struct Entries<K> {
     breakers: HashMap<K, Tracked>,
+    next_epoch: u64,
     jitter: Box<dyn JitterSource>,
 }
 
@@ -78,6 +82,7 @@ impl<K: Hash + Eq + Clone> BreakerSet<K> {
             clock,
             entries: Arc::new(Mutex::new(Entries {
                 breakers: HashMap::new(),
+                next_epoch: 0,
                 jitter,
             })),
         }
@@ -101,23 +106,32 @@ impl<K: Hash + Eq + Clone> BreakerSet<K> {
     pub fn admit(&self, key: &K) -> Admission {
         let now = self.clock.now();
         let mut entries = self.lock();
-        if !entries.breakers.contains_key(key) {
-            evict_if_full(&mut entries.breakers, self.max_keys);
+        let Entries {
+            breakers,
+            next_epoch,
+            ..
+        } = &mut *entries;
+        if !breakers.contains_key(key) {
+            evict_if_full(breakers, self.max_keys);
         }
-        let tracked = entries
-            .breakers
-            .entry(key.clone())
-            .or_insert_with(|| Tracked {
-                machine: BreakerMachine::new(),
-                last_used: now,
-            });
+        let tracked = match breakers.entry(key.clone()) {
+            Entry::Occupied(occupied) => occupied.into_mut(),
+            Entry::Vacant(vacant) => {
+                let start = *next_epoch << GENERATION_SPACING_BITS;
+                *next_epoch = next_epoch.wrapping_add(1);
+                vacant.insert(Tracked {
+                    machine: BreakerMachine::starting_at(start),
+                    last_used: now,
+                })
+            }
+        };
         tracked.last_used = now;
         tracked.machine.admit(&self.policy, now)
     }
 
-    /// Records the outcome of an admitted call to `key`. Unknown keys (never
-    /// admitted or evicted since) are ignored.
-    pub fn record(&self, key: &K, outcome: Outcome) {
+    /// Records the outcome of the call to `key` admitted with `permit`.
+    /// Unknown keys (never admitted or evicted since) are ignored.
+    pub fn record(&self, key: &K, permit: Permit, outcome: Outcome) {
         let now = self.clock.now();
         let mut entries = self.lock();
         let fraction = entries.jitter.next_fraction();
@@ -125,7 +139,9 @@ impl<K: Hash + Eq + Clone> BreakerSet<K> {
             return;
         };
         tracked.last_used = now;
-        tracked.machine.record(&self.policy, outcome, now, fraction);
+        tracked
+            .machine
+            .record(&self.policy, permit, outcome, now, fraction);
     }
 
     /// The state of `key`'s breaker; untracked keys are closed.

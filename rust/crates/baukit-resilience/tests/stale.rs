@@ -22,7 +22,19 @@ fn cache(clock: &Arc<ManualClock>) -> StaleCache<u32> {
 }
 
 fn read(value: u32, freshness: Freshness) -> Result<CacheRead<u32>, StaleCacheError<Down>> {
-    Ok(CacheRead { value, freshness })
+    Ok(CacheRead {
+        value,
+        freshness,
+        refresh_failed: false,
+    })
+}
+
+fn failed_refresh(value: u32) -> Result<CacheRead<u32>, StaleCacheError<Down>> {
+    Ok(CacheRead {
+        value,
+        freshness: Freshness::Stale,
+        refresh_failed: true,
+    })
 }
 
 struct Source {
@@ -77,12 +89,16 @@ async fn stale_value_is_served_while_the_source_fails() {
     clock.advance(FRESH);
     assert_eq!(
         cache.get_or_refresh(|| source.down()).await,
+        failed_refresh(1)
+    );
+    assert_eq!(
+        cache.get_or_refresh(|| source.down()).await,
         read(1, Freshness::Stale)
     );
     clock.advance(COOLDOWN);
     assert_eq!(
         cache.get_or_refresh(|| source.down()).await,
-        read(1, Freshness::Stale)
+        failed_refresh(1)
     );
     assert_eq!(source.calls(), 3);
     clock.advance(COOLDOWN);
@@ -125,7 +141,7 @@ async fn value_expires_after_the_stale_window() {
     clock.advance(FRESH + STALE - Duration::from_millis(1));
     assert_eq!(
         cache.get_or_refresh(|| source.down()).await,
-        read(1, Freshness::Stale)
+        failed_refresh(1)
     );
     clock.advance(Duration::from_millis(1));
     assert_eq!(cache.current(), None);
@@ -154,7 +170,11 @@ async fn force_refresh_fetches_a_fresh_value_but_respects_the_cooldown() {
     clock.advance(COOLDOWN);
     assert_eq!(
         cache.force_refresh(|| source.down()).await,
-        read(2, Freshness::Fresh)
+        Ok(CacheRead {
+            value: 2,
+            freshness: Freshness::Fresh,
+            refresh_failed: true,
+        })
     );
     assert_eq!(
         cache.force_refresh(|| source.ok(4)).await,

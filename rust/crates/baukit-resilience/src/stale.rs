@@ -65,6 +65,8 @@ pub struct CacheRead<T> {
     pub value: T,
     /// Where it came from.
     pub freshness: Freshness,
+    /// This call fetched, the fetch failed, and the stale value was served instead.
+    pub refresh_failed: bool,
 }
 
 /// Why no value could be returned.
@@ -258,11 +260,17 @@ impl<T: Clone> StaleCache<T> {
                 Ok(CacheRead {
                     value,
                     freshness: Freshness::Fetched,
+                    refresh_failed: false,
                 })
             }
             Err(error) => {
                 slot.last_failure = Some(now);
-                self.cached(&slot, now).ok_or(StaleCacheError::Fetch(error))
+                self.cached(&slot, now)
+                    .map(|read| CacheRead {
+                        refresh_failed: true,
+                        ..read
+                    })
+                    .ok_or(StaleCacheError::Fetch(error))
             }
         }
     }
@@ -280,6 +288,7 @@ impl<T: Clone> StaleCache<T> {
         Some(CacheRead {
             value: value.clone(),
             freshness,
+            refresh_failed: false,
         })
     }
 

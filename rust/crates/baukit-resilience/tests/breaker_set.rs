@@ -5,12 +5,14 @@ use std::time::Duration;
 
 use baukit_resilience::{
     Admission, BreakerPolicy, BreakerSet, BreakerState, CircuitBreaker, DEFAULT_MAX_KEYS,
-    JitterSource, ManualClock, Outcome, SplitMixJitter, SystemClock,
+    JitterSource, ManualClock, Outcome, Permit, SplitMixJitter, SystemClock,
 };
 
-fn trip(record: impl Fn(Outcome)) {
+fn trip(admit: impl Fn() -> Admission, record: impl Fn(Permit, Outcome)) {
     for _ in 0..BreakerPolicy::default().consecutive_timeouts {
-        record(Outcome::Timeout);
+        if let Some(permit) = admit().permit() {
+            record(permit, Outcome::Timeout);
+        }
     }
 }
 
@@ -28,12 +30,15 @@ fn keys_are_independent_and_worst_state_reports_the_open_one() {
     let breakers = set(&clock);
     let dead = "dead".to_owned();
     let alive = "alive".to_owned();
-    assert_eq!(breakers.admit(&dead), Admission::Allowed);
-    assert_eq!(breakers.admit(&alive), Admission::Allowed);
-    trip(|outcome| breakers.record(&dead, outcome));
+    assert!(matches!(breakers.admit(&dead), Admission::Allowed(_)));
+    assert!(matches!(breakers.admit(&alive), Admission::Allowed(_)));
+    trip(
+        || breakers.admit(&dead),
+        |permit, outcome| breakers.record(&dead, permit, outcome),
+    );
     assert_eq!(breakers.state(&dead), BreakerState::Open);
     assert!(!breakers.admit(&dead).is_admitted());
-    assert_eq!(breakers.admit(&alive), Admission::Allowed);
+    assert!(matches!(breakers.admit(&alive), Admission::Allowed(_)));
     assert_eq!(breakers.worst_state(), BreakerState::Open);
 }
 
@@ -44,7 +49,10 @@ fn clones_share_state() {
     let other = breakers.clone();
     let key = "peer".to_owned();
     let _ = breakers.admit(&key);
-    trip(|outcome| other.record(&key, outcome));
+    trip(
+        || other.admit(&key),
+        |permit, outcome| other.record(&key, permit, outcome),
+    );
     assert_eq!(breakers.state(&key), BreakerState::Open);
 }
 
@@ -54,7 +62,10 @@ fn eviction_drops_the_longest_idle_closed_key_and_keeps_open_ones() {
     let breakers = set(&clock).with_max_keys(3);
     let open = "open".to_owned();
     let _ = breakers.admit(&open);
-    trip(|outcome| breakers.record(&open, outcome));
+    trip(
+        || breakers.admit(&open),
+        |permit, outcome| breakers.record(&open, permit, outcome),
+    );
     clock.advance(Duration::from_millis(1));
     let _ = breakers.admit(&"idle".to_owned());
     clock.advance(Duration::from_millis(1));
@@ -82,7 +93,8 @@ fn default_cap_is_256() {
 fn record_for_unknown_key_is_ignored() {
     let clock = Arc::new(ManualClock::new());
     let breakers = set(&clock);
-    breakers.record(&"never".to_owned(), Outcome::Failure);
+    let permit = set(&clock).admit(&"elsewhere".to_owned()).permit().unwrap();
+    breakers.record(&"never".to_owned(), permit, Outcome::Failure);
     assert!(breakers.is_empty());
 }
 
@@ -94,18 +106,23 @@ fn circuit_breaker_recovers_through_a_probe() {
         clock.clone(),
         Box::new(SplitMixJitter::with_seed(2)),
     );
-    trip(|outcome| breaker.record(outcome));
+    trip(
+        || breaker.admit(),
+        |permit, outcome| breaker.record(permit, outcome),
+    );
     let Admission::Rejected { retry_after } = breaker.admit() else {
         panic!("breaker should be open");
     };
     assert!(retry_after <= Duration::from_secs(30));
     assert!(retry_after >= Duration::from_secs(24));
     clock.advance(retry_after);
-    assert_eq!(breaker.admit(), Admission::Probe);
+    let Admission::Probe(probe) = breaker.admit() else {
+        panic!("expected the probe");
+    };
     assert!(!breaker.admit().is_admitted());
-    breaker.record(Outcome::Success);
+    breaker.record(probe, Outcome::Success);
     assert_eq!(breaker.state(), BreakerState::Closed);
-    assert_eq!(breaker.admit(), Admission::Allowed);
+    assert!(matches!(breaker.admit(), Admission::Allowed(_)));
 }
 
 struct FnJitter(Box<dyn FnMut() -> f64 + Send>);
@@ -128,9 +145,27 @@ fn a_poisoned_lock_does_not_panic_later_callers() {
         }))),
     );
     let clone = breaker.clone();
-    let poisoned = std::thread::spawn(move || clone.record(Outcome::Failure)).join();
+    let permit = breaker.admit().permit().unwrap();
+    let poisoned = std::thread::spawn(move || clone.record(permit, Outcome::Failure)).join();
     assert!(poisoned.is_err());
-    assert_eq!(breaker.admit(), Admission::Allowed);
-    trip(|outcome| breaker.record(outcome));
+    assert!(matches!(breaker.admit(), Admission::Allowed(_)));
+    trip(
+        || breaker.admit(),
+        |permit, outcome| breaker.record(permit, outcome),
+    );
     assert_eq!(breaker.state(), BreakerState::Open);
+}
+
+#[test]
+fn permits_from_an_evicted_breaker_do_not_match_its_replacement() {
+    let clock = Arc::new(ManualClock::new());
+    let breakers = set(&clock).with_max_keys(1);
+    let key = "peer".to_owned();
+    let old = breakers.admit(&key).permit().unwrap();
+    let _ = breakers.admit(&"other".to_owned());
+    let _ = breakers.admit(&key);
+    for _ in 0..BreakerPolicy::default().consecutive_timeouts {
+        breakers.record(&key, old, Outcome::Timeout);
+    }
+    assert_eq!(breakers.state(&key), BreakerState::Closed);
 }

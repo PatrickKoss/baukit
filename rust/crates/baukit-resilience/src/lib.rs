@@ -22,7 +22,8 @@ pub mod stale;
 
 pub use backoff::{Backoff, BackoffStrategy};
 pub use breaker::{
-    Admission, BreakerMachine, BreakerPolicy, BreakerState, CircuitBreaker, Outcome,
+    Admission, BreakerMachine, BreakerPolicy, BreakerState, CircuitBreaker, Outcome, Permit,
+    PermitKind,
 };
 pub use breaker_set::{BreakerSet, DEFAULT_MAX_KEYS};
 #[cfg(feature = "test-support")]
