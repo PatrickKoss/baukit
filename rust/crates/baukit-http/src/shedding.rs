@@ -33,7 +33,7 @@ impl ConcurrencyGate {
         match time::timeout(self.queue_timeout, acquire).await {
             Ok(Ok(permit)) => Ok(permit),
             Ok(Err(_)) | Err(_) => {
-                tracing::warn!("request shed: no concurrency permit within the queue timeout");
+                tracing::debug!("request shed: no concurrency permit within the queue timeout");
                 metrics::counter!(HTTP_REQUESTS_SHED_TOTAL, "reason" => CONCURRENCY_REASON)
                     .increment(1);
                 Err(ApiError::unavailable(SHED_RETRY_AFTER))
