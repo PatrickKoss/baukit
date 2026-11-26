@@ -32,7 +32,8 @@ def deployment(docs: list[dict], process: str) -> dict:
     [found] = [
         doc
         for doc in docs
-        if doc["kind"] == "Deployment" and doc["metadata"]["labels"]["baukit.dev/process"] == process
+        if doc["kind"] == "Deployment"
+        and doc["metadata"]["labels"]["baukit.dev/process"] == process
     ]
     return found
 
@@ -121,10 +122,14 @@ class RetryMiddlewareTest(unittest.TestCase):
         chain = api["traefik.ingress.kubernetes.io/router.middlewares"].split(",")
         self.assertEqual(chain[-1], f"{NAMESPACE}-{self.MIDDLEWARE}@kubernetescrd")
         web = ingresses[f"{FULLNAME}-web"]["metadata"].get("annotations", {})
-        self.assertNotIn(self.MIDDLEWARE, web.get("traefik.ingress.kubernetes.io/router.middlewares", ""))
+        self.assertNotIn(
+            self.MIDDLEWARE, web.get("traefik.ingress.kubernetes.io/router.middlewares", "")
+        )
 
     def test_rate_limit_runs_before_the_retry(self) -> None:
-        docs = render("ingress.enabled=true", "ingress.rateLimitMiddleware=shop-limit@kubernetescrd")
+        docs = render(
+            "ingress.enabled=true", "ingress.rateLimitMiddleware=shop-limit@kubernetescrd"
+        )
         api = by_kind(docs, "Ingress")[FULLNAME]["metadata"]["annotations"]
         self.assertEqual(
             api["traefik.ingress.kubernetes.io/router.middlewares"],
