@@ -31,6 +31,7 @@ pub use axum_layer::{
     authenticated_route_group, layers, resolve_client_ip,
 };
 pub use baukit_config::RateLimitFailMode;
+pub use baukit_resilience::startup::StartupError;
 #[cfg(feature = "browser-session")]
 pub use browser_session::StoreBrowserSessionRateLimiter;
 pub use memory::{InMemoryRateLimitStore, InMemoryStoreError};

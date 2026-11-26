@@ -40,7 +40,15 @@ and otherwise falls back to Axum `ConnectInfo<SocketAddr>`.
 `RedisRateLimitStore::connect_if_enabled` returns `None` without parsing the URL
 or opening a connection when both scopes are disabled. This lets deployments
 turn request limiting off without setting a placeholder Redis URL. An enabled
-scope still requires a valid, reachable Redis URL.
+scope still requires a valid Redis URL.
+
+`connect_if_enabled(&options, config.startup.budget)` waits for Redis with backoff, like
+`connect_with_backoff`. Connection refused, DNS, timeouts, `LOADING`, `MASTERDOWN` and Sentinel
+answers without a master are retried; authentication and URL errors fail at once. When Redis is
+still down after the budget, the API starts anyway with a degraded store (`connect_or_degraded`).
+Every decision then fails with `RateLimitStoreError`, so the layer applies `rate_limit.fail_mode`
+(open by default, closed returns `503`), and a background task keeps reconnecting until Redis
+answers. `is_connected` reports whether it has.
 
 ## Redis connection modes
 

@@ -23,6 +23,7 @@ axum.workspace = true
 baukit-auth.workspace = true
 baukit-config.workspace = true
 baukit-http.workspace = true
+baukit-resilience = { workspace = true, features = ["startup"] }
 metrics.workspace = true
 redis.workspace = true
 thiserror.workspace = true

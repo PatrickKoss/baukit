@@ -589,6 +589,7 @@ dependencies = [
  "axum",
  "baukit-config",
  "baukit-core",
+ "baukit-resilience",
  "baukit-telemetry",
  "baukit-test",
  "metrics-exporter-prometheus",
@@ -597,6 +598,7 @@ dependencies = [
  "sqlx",
  "tokio",
  "tower",
+ "tracing",
 ]
 
 [[package]]
@@ -630,6 +632,7 @@ dependencies = [
  "baukit-auth",
  "baukit-config",
  "baukit-http",
+ "baukit-resilience",
  "baukit-test",
  "metrics",
  "metrics-util",

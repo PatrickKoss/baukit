@@ -414,7 +414,7 @@ impl Validate for ShutdownConfig {
 /// Standard Baukit sections plus flattened, product-specific configuration.
 ///
 /// Product fields live at the top level beside `http`, `ops`, optional `database`,
-/// `rate_limit`, `telemetry`, and `shutdown`, while validation errors are prefixed with
+/// `rate_limit`, `telemetry`, `shutdown`, and `startup`, while validation errors are prefixed with
 /// `product.` to distinguish their ownership. Product types should use
 /// `#[serde(default)]` when their default field values should apply to omitted
 /// configuration keys.
@@ -438,6 +438,8 @@ pub struct BaukitConfig<T: Default> {
     pub telemetry: TelemetryConfig,
     /// Graceful shutdown settings.
     pub shutdown: ShutdownConfig,
+    /// Dependency wait budget at startup.
+    pub startup: StartupConfig,
     /// Product-owned extension fields, flattened into the top-level document.
     #[serde(flatten)]
     pub product: T,
@@ -453,6 +455,7 @@ impl<T: Default> Default for BaukitConfig<T> {
             rate_limit: RateLimitConfig::default(),
             telemetry: TelemetryConfig::default(),
             shutdown: ShutdownConfig::default(),
+            startup: StartupConfig::default(),
             product: T::default(),
         }
     }
@@ -468,6 +471,7 @@ struct StandardConfig {
     rate_limit: RateLimitConfig,
     telemetry: TelemetryConfig,
     shutdown: ShutdownConfig,
+    startup: StartupConfig,
 }
 
 impl<T> Validate for BaukitConfig<T>
@@ -489,6 +493,7 @@ where
         extend_validation(&mut errors, self.rate_limit.validate(), Some("rate_limit"));
         extend_validation(&mut errors, self.telemetry.validate(), Some("telemetry"));
         extend_validation(&mut errors, self.shutdown.validate(), Some("shutdown"));
+        extend_validation(&mut errors, self.startup.validate(), Some("startup"));
         extend_validation(&mut errors, self.product.validate(), Some("product"));
         validation_result(errors)
     }
@@ -708,6 +713,7 @@ impl ConfigLoader {
             rate_limit: standard.rate_limit,
             telemetry: standard.telemetry,
             shutdown: standard.shutdown,
+            startup: standard.startup,
             product,
         };
         loaded.validate()?;
@@ -821,6 +827,7 @@ where
             "rate_limit",
             "telemetry",
             "shutdown",
+            "startup",
         ] {
             table.remove(standard_key);
         }
@@ -923,6 +930,8 @@ mod http;
 
 pub use database::DatabaseConfig;
 pub use http::{DEFAULT_HSTS_MAX_AGE, HttpConfig};
+mod startup;
+pub use startup::StartupConfig;
 mod redis_namespace;
 pub use redis_namespace::validate_redis_key_namespace;
 
