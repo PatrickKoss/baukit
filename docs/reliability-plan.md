@@ -410,14 +410,14 @@ them.
   `ApiUnavailableError { retryAt }`. Backoff and cooldown replay `fixtures/resilience/*.json`.
   Acceptance: vitest for each path; a fake-timer test that 50 concurrent calls after a 503 with
   `Retry-After: 5` produce one request, not 50.
-- [ ] **CL2 One retry layer in the web template** (RL-62): `QueryClient` with `retry: false`,
+- [x] **CL2 One retry layer in the web template** (RL-62): `QueryClient` with `retry: false`,
   `refetchOnWindowFocus` jittered or off, and a shared `isApiUnavailable` state from the cooldown.
 - [x] **CL3 Sync scheduler defaults** (RL-63): default `delayMs` uses full jitter and
   `SyncRateLimitError.retryAt`; recovery triggers wait a random 0-5 s; the interval gets 10% jitter.
-- [~] **CL4 Token refresh under outage** (RL-64, RL-65): the refresh POST gets a 10 s timeout; a
+- [x] **CL4 Token refresh under outage** (RL-64, RL-65): the refresh POST gets a 10 s timeout; a
   retryable failure keeps using the current token until `expiresAt`; mobile renewal reschedules with
   jittered backoff on retryable failure and stops only on `invalid_grant`.
-- [~] **CL5 Degraded UI** (RL-66): `networkFirst` gains a network timeout (default 4 s) before falling
+- [x] **CL5 Degraded UI** (RL-66): `networkFirst` gains a network timeout (default 4 s) before falling
   back to cache; the web and mobile templates get a top-level error boundary and an "unavailable, retrying
   at HH:MM" banner driven by the cooldown, with a11y tests and localized strings.
 - [ ] **CL6 compose** (RL-67): `restart: unless-stopped` everywhere and a `/readyz` healthcheck for the
@@ -698,3 +698,18 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   - `postgres/mod.rs` is down to 1000 lines, so its file-size allowlist entry is removed.
 - rel-tpl-backend started. It covers the CB3 helper, the WK5 suite key, and all backend, worker and
   platform template wiring.
+- rel-tpl-clients merged.
+  - The web `QueryClient` no longer retries and does not refetch on window focus. I prefer that to
+    jitter: one tab's refetch cannot be jittered, and many tabs focusing together after an outage
+    would hit the API at once.
+  - Web and mobile share one availability store fed by `ApiUnavailableError`, which drives an
+    "unavailable, retrying at HH:MM" banner and a top-level error boundary. The strings are in English
+    and German, with a11y tests.
+  - auth-native gains `scheduleTokenRenewal`, which retries with jittered backoff and stops on a
+    terminal refresh error. `accessToken()` keeps the current token on a retryable failure before
+    expiry.
+  - Left open: `delete-profile.ts` builds its own runtime, so its cooldown does not reach the banner.
+    The mobile hook calls `setError` on every transient renewal failure, which is noisy during an
+    outage.
+- Release to-do, all waves: no TypeScript package has CHANGELOG `Unreleased` entries yet (api-runtime,
+  auth-web, auth-native, sync-client, pwa-web). They get written in REL1.
