@@ -17,31 +17,18 @@ use serde::{
 
 const CLI_GUIDE: &str = "docs/guide/cli.md";
 const MANIFEST_GUIDE: &str = "docs/guide/manifest.md";
-// Temporary: Phase 4 writes these pages, and the last docs-overhaul phase deletes this list.
-const EXPECTED_MISSING_PAGES: &[&str] = &[CLI_GUIDE, MANIFEST_GUIDE];
 const MAX_TRACE_ROUNDS: usize = 16;
 
-fn repository_page(relative: &str) -> Option<String> {
-    fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join(relative),
-    )
-    .ok()
+fn repository_page(relative: &str) -> String {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(relative);
+    fs::read_to_string(&path).unwrap_or_else(|error| panic!("{relative} is unreadable: {error}"))
 }
 
 fn assert_page_documents(relative: &str, missing: impl Fn(&str) -> Vec<String>) {
-    let expected_missing = EXPECTED_MISSING_PAGES.contains(&relative);
-    match repository_page(relative) {
-        None => assert!(expected_missing, "{relative} is missing"),
-        Some(_) if expected_missing => {
-            panic!("{relative} exists now, remove it from the expected-failure list")
-        }
-        Some(page) => {
-            let gaps = missing(&page);
-            assert!(gaps.is_empty(), "{relative} does not mention: {gaps:?}");
-        }
-    }
+    let gaps = missing(&repository_page(relative));
+    assert!(gaps.is_empty(), "{relative} does not mention: {gaps:?}");
 }
 
 fn cli_terms() -> Vec<String> {
@@ -79,14 +66,30 @@ fn contains_term(page: &str, term: &str) -> bool {
     })
 }
 
+fn names_section(page: &str, section: &str) -> bool {
+    [
+        format!("[{section}]"),
+        format!("`{section}`"),
+        format!("[{section}."),
+    ]
+    .iter()
+    .any(|form| page.contains(form.as_str()))
+}
+
+fn names_key_of_parent(page: &str, section: &str) -> bool {
+    section.rsplit_once('.').is_some_and(|(parent, key)| {
+        names_key_of_parent_or_section(page, parent) && page.contains(&format!("| `{key}` |"))
+    })
+}
+
+fn names_key_of_parent_or_section(page: &str, section: &str) -> bool {
+    names_section(page, section) || names_key_of_parent(page, section)
+}
+
 fn missing_sections(page: &str, sections: &BTreeSet<String>) -> Vec<String> {
     sections
         .iter()
-        .filter(|section| {
-            ![format!("[{section}]"), format!("`{section}`")]
-                .iter()
-                .any(|form| page.contains(form.as_str()))
-        })
+        .filter(|section| !names_key_of_parent_or_section(page, section))
         .cloned()
         .collect()
 }
@@ -450,5 +453,22 @@ fn missing_sections_accepts_headings_and_code_spans() {
     assert_eq!(
         missing_sections("## [app]\nSet `quality.ci` here.", &sections),
         vec!["gitops".to_owned()]
+    );
+}
+
+#[test]
+fn missing_sections_accepts_subtables_and_keys_of_a_named_parent() {
+    let sections = [
+        "dependencies",
+        "backend.image.downloads",
+        "backend.image.pre_build",
+    ]
+    .into_iter()
+    .map(str::to_owned)
+    .collect::<BTreeSet<_>>();
+    let page = "## `[dependencies.baukit]`\n## `[backend.image]`\n| `downloads` | `[]` |\n";
+    assert_eq!(
+        missing_sections(page, &sections),
+        vec!["backend.image.pre_build".to_owned()]
     );
 }

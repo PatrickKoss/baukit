@@ -20,45 +20,6 @@ ADR_SECTIONS = ("## Enforced by", "## History")
 UNITS = r"(?:rust |typescript |npm |library )?(?:crates?|packages?)\b"
 ALLOWED_COUNT = re.compile(r"one[ -]+(?:crate|package) per\b", re.IGNORECASE)
 
-# Temporary: later docs-overhaul phases fix these, and the last phase deletes the lists.
-EXPECTED_INVENTORY_FAILURES = {
-    "docs/guide/README.md: missing",
-    "CLAUDE.md: layout misses typescript/packages/csp",
-    "CLAUDE.md: layout misses typescript/packages/eslint-config",
-    "CLAUDE.md: layout misses typescript/packages/purchases-core",
-    "CLAUDE.md: layout misses typescript/packages/purchases-revenuecat",
-    "CLAUDE.md: layout misses typescript/packages/type-guards",
-}
-EXPECTED_COUNT_FAILURES = {
-    "README.md:10: Twenty-one Rust crates",
-    "README.md:10: twenty-four npm packages",
-    "README.md:40: one crate",
-    "README.md:177: 19 library crates",
-    "README.md:178: 21 packages",
-    "README.md:194: eighteen library crates",
-}
-EXPECTED_ADR_FAILURES = {
-    "docs/adr/README.md: missing",
-    *(
-        f"docs/adr/{name}: no {section}"
-        for name in (
-            "0001-product-experience-package-boundaries.md",
-            "0002-integration-connector-contract.md",
-            "0003-event-envelope.md",
-            "0004-integration-client-contract.md",
-            "0005-shared-application-navigation.md",
-            "0006-browser-token-handling.md",
-        )
-        for section in ADR_SECTIONS
-    ),
-}
-EXPECTED_GUIDE_FAILURES = {"docs/README.md: missing", "docs/guide/README.md: missing"}
-EXPECTED_HOME_PATH_FAILURES = {
-    "deploy/platform/flagger/README.md: /home/ path",
-    "docs/quality-security/E3-products.md: /home/ path",
-    "docs/quality-security/I-tenancy-ratelimit.md: /home/ path",
-}
-
 ONES = [
     "one",
     "two",
@@ -234,31 +195,21 @@ def home_path_failures(root: Path, roots: tuple[str, ...]) -> set[str]:
     }
 
 
-class ExpectedFailures(unittest.TestCase):
-    def assert_only_expected(self, actual: set[str], expected: set[str]) -> None:
-        unexpected = sorted(actual - expected)
-        fixed = sorted(expected - actual)
-        self.assertEqual(unexpected, [], "new docs inventory failures")
-        self.assertEqual(fixed, [], "these pass now, remove it from the expected-failure list")
-
-
-class DocsInventoryTests(ExpectedFailures):
+class DocsInventoryTests(unittest.TestCase):
     def test_every_crate_and_package_is_indexed(self):
-        self.assert_only_expected(inventory_failures(ROOT), EXPECTED_INVENTORY_FAILURES)
+        self.assertEqual(sorted(inventory_failures(ROOT)), [])
 
     def test_readme_and_guide_state_no_unit_counts(self):
-        self.assert_only_expected(count_failures(ROOT), EXPECTED_COUNT_FAILURES)
+        self.assertEqual(sorted(count_failures(ROOT)), [])
 
     def test_adrs_are_indexed_with_status_and_sections(self):
-        self.assert_only_expected(adr_failures(ROOT), EXPECTED_ADR_FAILURES)
+        self.assertEqual(sorted(adr_failures(ROOT)), [])
 
     def test_guide_pages_are_indexed(self):
-        self.assert_only_expected(guide_failures(ROOT), EXPECTED_GUIDE_FAILURES)
+        self.assertEqual(sorted(guide_failures(ROOT)), [])
 
     def test_public_docs_hold_no_home_paths(self):
-        self.assert_only_expected(
-            home_path_failures(ROOT, docs_roots()), EXPECTED_HOME_PATH_FAILURES
-        )
+        self.assertEqual(sorted(home_path_failures(ROOT, docs_roots())), [])
 
 
 class DocsInventoryCheckTests(unittest.TestCase):
@@ -349,9 +300,6 @@ class DocsInventoryCheckTests(unittest.TestCase):
         run_process(["git", "-C", str(self.root), "add", "."], check=True)
         self.assertEqual(home_path_failures(self.root, ("docs",)), {"docs/a.md: /home/ path"})
 
-    def test_fixed_expected_failure_asks_to_shrink_the_list(self):
-        with self.assertRaisesRegex(AssertionError, "remove it from the expected-failure list"):
-            ExpectedFailures().assert_only_expected(set(), {"README.md: gone"})
 
 
 if __name__ == "__main__":

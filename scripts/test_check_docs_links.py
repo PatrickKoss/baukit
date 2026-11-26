@@ -50,33 +50,16 @@ class CheckDocsLinksTests(unittest.TestCase):
         self.commit({"README.md": "# r\n"})
         self.assertEqual(links.check(self.root, ["nothing"]), (0, []))
 
-    def test_links_to_pending_guide_and_adr_pages_pass(self):
-        self.commit(
-            {
-                "README.md": "[g](docs/guide/cli.md) [a](docs/adr/0007-toolkit.md)\n",
-                "docs/platform/x.md": "[g](../guide/auth.md) [o](../other.md)\n",
-            }
-        )
+    def test_link_to_a_missing_guide_page_fails(self):
+        self.commit({"README.md": "[g](docs/guide/nope.md)\n"})
         self.assertEqual(
-            links.check(self.root, ["README.md", "docs"]),
-            (2, ["docs/platform/x.md:1 -> ../other.md"]),
+            links.check(self.root, ["README.md"]), (1, ["README.md:1 -> docs/guide/nope.md"])
         )
 
-    def test_expected_broken_links_may_only_shrink(self):
-        self.commit({"README.md": "[x](gone.md)\n"})
-        self.assertEqual(links.check(self.root, ["README.md"], {"README.md -> gone.md"}), (1, []))
-        _, missing = links.check(self.root, ["README.md"], {"README.md -> gone.md", "a.md -> b.md"})
-        self.assertEqual(
-            missing, ["a.md -> b.md resolves now, remove it from the expected-failure list"]
-        )
-
-    def test_repository_docs_pass_with_the_expected_list(self):
-        checked, missing = links.check(
-            links.ROOT, list(links.DOCS_ROOTS), links.EXPECTED_BROKEN_LINKS
-        )
+    def test_repository_docs_links_resolve(self):
+        checked, missing = links.check(links.ROOT, list(links.DOCS_ROOTS))
         self.assertGreater(checked, 0)
         self.assertEqual(missing, [])
-
 
 if __name__ == "__main__":
     unittest.main()

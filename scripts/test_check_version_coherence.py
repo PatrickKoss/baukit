@@ -262,17 +262,9 @@ class DocVersionTests(unittest.TestCase):
             }
         )
         self.assertEqual(
-            check.crate_snippet_problems(root, "1.2.3", set()),
+            check.crate_snippet_problems(root, "1.2.3"),
             ['rust/crates/baukit-a/README.md pins baukit-a = "1.1", expected "1.2"'],
         )
-
-    def test_expected_stale_snippets_may_only_shrink(self) -> None:
-        root = self.repo({"rust/crates/baukit-a/README.md": 'baukit-a = { version = "1.2" }\n'})
-        problems = check.crate_snippet_problems(
-            root, "1.2.3", {("rust/crates/baukit-a/README.md", "baukit-a", "1.0")}
-        )
-        self.assertEqual(len(problems), 1)
-        self.assertIn("remove it from the expected-failure list", problems[0])
 
     def test_matrix_baukit_row_names_the_release(self) -> None:
         matrix = "| Tool | Tested baseline | Notes |\n|---|---|---|\n| Baukit | 1.2.2 | x |\n"
@@ -288,9 +280,7 @@ class DocVersionTests(unittest.TestCase):
     def test_the_repository_docs_pass(self) -> None:
         version = check.check_rust_workspace()
         self.assertEqual(check.install_tag_problems(check.ROOT, version), [])
-        self.assertEqual(
-            check.crate_snippet_problems(check.ROOT, version, check.EXPECTED_STALE_SNIPPETS), []
-        )
+        self.assertEqual(check.crate_snippet_problems(check.ROOT, version), [])
         self.assertEqual(check.matrix_problems(check.ROOT, version), [])
 
 

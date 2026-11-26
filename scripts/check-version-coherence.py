@@ -22,14 +22,6 @@ CRATE_SNIPPET = re.compile(
 )
 COMPATIBILITY_MATRIX = "docs/platform/compatibility-matrix.md"
 MATRIX_RELEASE = re.compile(r"^\| Baukit \| ([^ |]+) \|", re.MULTILINE)
-# Temporary: the docs overhaul rewrites these READMEs and empties this list.
-EXPECTED_STALE_SNIPPETS = {
-    ("rust/crates/baukit-core/README.md", "baukit-core", "0.4"),
-    ("rust/crates/baukit-core/README.md", "baukit-core", "0.5"),
-    ("rust/crates/baukit-data-subject/README.md", "baukit-data-subject", "=0.10.31"),
-    ("rust/crates/baukit-suite/README.md", "baukit-suite", "0.10.0"),
-    ("rust/crates/baukit-sync/README.md", "baukit-sync", "0.4"),
-}
 
 
 def fail(message: str) -> None:
@@ -334,21 +326,13 @@ def crate_snippets(root: Path) -> set[tuple[str, str, str]]:
     }
 
 
-def crate_snippet_problems(
-    root: Path, version: str, expected_stale: set[tuple[str, str, str]]
-) -> list[str]:
+def crate_snippet_problems(root: Path, version: str) -> list[str]:
     train = ".".join(version.split(".")[:2])
-    stale = {snippet for snippet in crate_snippets(root) if snippet[2] != train}
-    problems = [
+    return [
         f'{path} pins {name} = "{requirement}", expected "{train}"'
-        for path, name, requirement in sorted(stale - expected_stale)
+        for path, name, requirement in sorted(crate_snippets(root))
+        if requirement != train
     ]
-    problems.extend(
-        f"{path} {name} = {requirement!r} passes now, remove it from the expected-failure list"
-        for path, name, requirement in sorted(expected_stale - stale)
-        if (root / path).is_file()
-    )
-    return problems
 
 
 def matrix_problems(root: Path, version: str) -> list[str]:
@@ -363,7 +347,7 @@ def matrix_problems(root: Path, version: str) -> list[str]:
 def check_docs(rust_version: str) -> None:
     problems = [
         *install_tag_problems(ROOT, rust_version),
-        *crate_snippet_problems(ROOT, rust_version, EXPECTED_STALE_SNIPPETS),
+        *crate_snippet_problems(ROOT, rust_version),
         *matrix_problems(ROOT, rust_version),
     ]
     if problems:
