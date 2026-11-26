@@ -12,6 +12,10 @@ spec:
     name: {{ include "baukit-app.fullname" . }}-api
   minReplicas: {{ .Values.autoscaling.minReplicas }}
   maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  {{- with .Values.autoscaling.behavior }}
+  behavior:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   metrics:
     {{- with .Values.autoscaling.targetCPUUtilizationPercentage }}
     - type: Resource

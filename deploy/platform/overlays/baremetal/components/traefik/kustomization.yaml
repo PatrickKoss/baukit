@@ -5,3 +5,13 @@ resources:
   - ../../cluster-network
 components:
   - ../../../../components/network-policy/node-cidr
+patches:
+  - target:
+      group: helm.toolkit.fluxcd.io
+      version: v2
+      kind: HelmRelease
+      name: traefik
+    patch: |-
+      - op: replace
+        path: /spec/values/deployment/replicas
+        value: 2

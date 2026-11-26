@@ -16,3 +16,75 @@ groups:
             and the pod will not start again until users.acl is fixed. The acl-reload container logs
             the line Redis rejected.
           runbook_url: RUNBOOK_BASE_URL/redis-acl-load-failing
+      - alert: BaukitRedisMasterDown
+        expr: |
+          count by (namespace) (redis_up{namespace="platform-redis"})
+          unless on (namespace)
+          count by (namespace) (redis_instance_info{namespace="platform-redis", role="master"})
+        for: 2m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: Redis in {{ $labels.namespace }} has no master
+          description: >-
+            No Redis pod in {{ $labels.namespace }} has reported the master role for 2 minutes, although
+            the exporters still run. Sentinel failover finishes within about 30 seconds, so it is stuck.
+            Writes fail, and products fall back to their degraded rate-limit path.
+          runbook_url: RUNBOOK_BASE_URL/redis-master-down
+      - alert: BaukitRedisSentinelQuorumLost
+        expr: |
+          sum by (namespace) (kube_pod_container_status_ready{namespace="platform-redis", container="sentinel"}) < 2
+        for: 2m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: Redis Sentinel in {{ $labels.namespace }} has lost its quorum
+          description: >-
+            Fewer than 2 Sentinel containers in {{ $labels.namespace }} have been ready for 2 minutes.
+            Sentinel needs 2 to agree before it fails over, so the next master loss stays an outage, and
+            clients that resolve the master through Sentinel cannot connect.
+          runbook_url: RUNBOOK_BASE_URL/redis-sentinel-quorum-lost
+      - alert: BaukitRedisReplicationLinkDown
+        expr: |
+          max by (namespace, pod) (redis_master_link_up{namespace="platform-redis"}) == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: Redis replica {{ $labels.namespace }}/{{ $labels.pod }} lost its master
+          description: >-
+            The replica {{ $labels.namespace }}/{{ $labels.pod }} has not had a working link to its master
+            for 5 minutes. It serves stale data and cannot take over with current data if the master fails.
+          runbook_url: RUNBOOK_BASE_URL/redis-replication-link-down
+      - alert: BaukitRedisEvictingKeys
+        expr: |
+          sum by (namespace, pod) (increase(redis_evicted_keys_total{namespace="platform-redis"}[10m])) > 0
+        for: 15m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: Redis {{ $labels.namespace }}/{{ $labels.pod }} keeps evicting keys
+          description: >-
+            Redis {{ $labels.namespace }}/{{ $labels.pod }} has evicted keys at maxmemory for 15 minutes.
+            Evicted rate-limit counters start over, so tenants get more requests through than their quota.
+          runbook_url: RUNBOOK_BASE_URL/redis-evicting-keys
+      - alert: BaukitRedisMemoryNearLimit
+        expr: |
+          max by (namespace, pod) (redis_memory_used_bytes{namespace="platform-redis"})
+          /
+          max by (namespace, pod) (redis_memory_max_bytes{namespace="platform-redis"} > 0)
+          > 0.9
+        for: 15m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: Redis {{ $labels.namespace }}/{{ $labels.pod }} uses over 90% of maxmemory
+          description: >-
+            Redis {{ $labels.namespace }}/{{ $labels.pod }} has used more than 90% of its maxmemory for
+            15 minutes. Past the limit it evicts keys, and rate-limit counters start over.
+          runbook_url: RUNBOOK_BASE_URL/redis-memory-near-limit

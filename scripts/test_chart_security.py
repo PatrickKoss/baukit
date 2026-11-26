@@ -132,11 +132,13 @@ class LifecycleTest(unittest.TestCase):
         api = containers(workloads(render())["api"])[0]
         self.assertEqual(api["lifecycle"]["preStop"], {"sleep": {"seconds": 5}})
         env = {e["name"]: e.get("value") for e in api["env"]}
-        self.assertEqual(env["CHART_OPTIONS__SHUTDOWN__DRAIN_TIMEOUT"], "25")
+        self.assertEqual(env["CHART_OPTIONS__SHUTDOWN__DRAIN_TIMEOUT"], "35")
 
     def test_pre_stop_sleep_must_stay_below_the_grace_period(self) -> None:
-        with self.assertRaisesRegex(AssertionError, "api.preStopSleepSeconds must be lower"):
-            render("--set", "api.preStopSleepSeconds=30")
+        with self.assertRaisesRegex(
+            AssertionError, "api.terminationGracePeriodSeconds .* must exceed"
+        ):
+            render("--set", "api.preStopSleepSeconds=40")
 
     def test_serving_processes_spread_softly_across_nodes(self) -> None:
         found = workloads(render())

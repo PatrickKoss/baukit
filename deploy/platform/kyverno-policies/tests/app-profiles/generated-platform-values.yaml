@@ -6,7 +6,6 @@ config:
     - name: snapshot-app-runtime
   overrides:
     WORKER__CONCURRENCY: 5
-    WORKER__LEASE_DURATION_SECONDS: 900
     WORKER__JOB_TIMEOUT_SECONDS: 600
     WORKER__POLL_INTERVAL_MILLISECONDS: 250
 
