@@ -709,6 +709,9 @@ fails when a harness has no `Bounds:` sentence. The V-01 and V-02 rows are the e
   reads `BAUKIT_TEST_DATABASE_URL` yet. Fill it right after this release ships. Until then the expand migrations
   (auth `0003`, suite `005`, push `0005` to `0007`) are covered by the double-apply and Postgres suites, not by an
   old binary running against the new schema.
+- **Suite peers still accept v1-only live deliveries.** Receivers refuse a replay flag without
+  `x-suite-signature-v2`, but refusing every v1-only delivery has to wait until all peers run this release.
+  See `docs/migrations/suite-correctness-hardening.md`.
 - **Pull page merge has no Kani equivalence harness.** CBMC runs out of 8 GB on the production `Uuid` compare and
   sort even for two one-row tables. `merge_matches_production` in `rust/verus/equivalence/src/pull.rs` checks
   twin and production against each other over 4096 proptest cases instead. V-03 itself is proven unbounded in
