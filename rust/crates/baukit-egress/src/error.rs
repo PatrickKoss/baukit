@@ -1,7 +1,9 @@
-use std::fmt;
+use std::{fmt, time::Duration};
 
 use axum::http::{HeaderMap, StatusCode};
 use baukit_http::{RetryClass, classify_transport_error};
+
+use crate::breaker::SATURATED_RETRY_AFTER;
 
 /// A bounded non-`2xx` response body, read only when explicitly enabled.
 ///
@@ -159,6 +161,15 @@ pub enum EgressError {
         /// [`MAX_ERROR_HEADER_VALUE_BYTES`](crate::MAX_ERROR_HEADER_VALUE_BYTES) are dropped.
         headers: Box<HeaderMap>,
     },
+    /// The destination's circuit is open; no request was sent.
+    #[error("egress circuit is open for this destination")]
+    CircuitOpen {
+        /// Time until the breaker admits a call again.
+        retry_after: Duration,
+    },
+    /// The destination already has the maximum number of requests in flight.
+    #[error("egress destination has too many requests in flight")]
+    Saturated,
     /// The response body was larger than the configured limit.
     #[error("egress response body exceeded {limit} bytes")]
     ResponseTooLarge {
@@ -194,6 +205,8 @@ impl EgressError {
             Self::Resolve | Self::Transport(_) => classify_transport_error(false),
             Self::Timeout => classify_transport_error(true),
             Self::Status { class, .. } => *class,
+            Self::CircuitOpen { retry_after } => RetryClass::RetryAfter(*retry_after),
+            Self::Saturated => RetryClass::RetryAfter(SATURATED_RETRY_AFTER),
         }
     }
 
@@ -214,6 +227,8 @@ impl EgressError {
             Self::Transport(_) => "transport_failed",
             Self::Status { .. } => "upstream_status",
             Self::ResponseTooLarge { .. } => "response_too_large",
+            Self::CircuitOpen { .. } => "circuit_open",
+            Self::Saturated => "saturated",
         }
     }
 }

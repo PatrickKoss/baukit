@@ -55,7 +55,7 @@ fn build(config: &OidcConfig, policy: AddressPolicy) -> Result<GuardedClient, Ve
         .with_policy(policy)
         .with_request_timeout(config.request_timeout)
         .map_err(VerificationError::EgressOptions)?;
-    GuardedClient::new(options).map_err(VerificationError::Client)
+    GuardedClient::new("oidc", options).map_err(VerificationError::Client)
 }
 
 pub(crate) async fn get_json<T: DeserializeOwned>(

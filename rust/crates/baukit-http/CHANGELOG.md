@@ -4,6 +4,8 @@ All notable changes to `baukit-http` are documented here.
 
 ## [Unreleased]
 
+- The lifecycle middleware sets a request deadline (start plus `request_timeout`), and `route_timeout` tightens it. `current_deadline()` reads it; `baukit-egress` caps outbound timeouts with it.
+
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

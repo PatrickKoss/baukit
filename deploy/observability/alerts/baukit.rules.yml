@@ -254,3 +254,45 @@ groups:
           summary: Worker queue age is high
           description: 'The oldest queued job is more than five minutes old in queue {{ $labels.queue }} of {{ $labels.service }}.'
           runbook_url: RUNBOOK_BASE_URL/worker-queue-oldest-age-high
+
+  - name: baukit-egress-alerts
+    rules:
+      - alert: BaukitEgressErrorRatioHigh
+        expr: |
+          (
+            baukit:egress_requests_failed:rate5m{service!=""}
+            /
+            baukit:egress_requests:rate5m{service!=""}
+          ) > 0.1
+          and on (product, service, environment, namespace, destination)
+          baukit:egress_requests:rate5m{service!=""} > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Outbound calls to a destination fail
+          description: 'More than 10% of calls from {{ $labels.service }} to {{ $labels.destination }} in {{ $labels.namespace }} failed, timed out or were refused by the circuit breaker for ten minutes.'
+          runbook_url: RUNBOOK_BASE_URL/egress-error-ratio-high
+
+      - alert: BaukitEgressCircuitOpen
+        expr: |
+          max by (product, service, environment, namespace, destination) (
+            egress_circuit_state{service!=""}
+          ) == 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: An outbound circuit breaker stays open
+          description: 'The circuit breaker of {{ $labels.service }} for {{ $labels.destination }} in {{ $labels.namespace }} has been open for five minutes.'
+          runbook_url: RUNBOOK_BASE_URL/egress-circuit-open
+
+      - alert: BaukitEgressLatencyHigh
+        expr: baukit:egress_request_duration_seconds:p95_5m{service!=""} > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Outbound calls to a destination are slow
+          description: 'The p95 time to response headers from {{ $labels.destination }} has exceeded 2s for ten minutes in {{ $labels.service }} in {{ $labels.namespace }}.'
+          runbook_url: RUNBOOK_BASE_URL/egress-latency-high

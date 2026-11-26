@@ -48,6 +48,10 @@ SPEC_METRICS = (
     "worker_queue_depth",
     "worker_lease_expired_total",
     "worker_job_deferrals_total",
+    "egress_requests_total",
+    "egress_request_duration_seconds",
+    "egress_circuit_state",
+    "egress_circuit_transitions_total",
 )
 
 PROMETHEUS_BUILTINS = {"up"}
@@ -60,6 +64,7 @@ HISTOGRAM_METRICS = {
     "http_request_duration_seconds",
     "db_pool_acquire_duration_seconds",
     "worker_job_duration_seconds",
+    "egress_request_duration_seconds",
 }
 METRIC_SELECTOR = re.compile(r"(?<![A-Za-z0-9_:])([A-Za-z_:][A-Za-z0-9_:]*)\s*(?=\{|\[)")
 IDENTIFIER = re.compile(r"(?<![A-Za-z0-9_:])([A-Za-z_:][A-Za-z0-9_:]*)")

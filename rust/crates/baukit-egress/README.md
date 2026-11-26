@@ -12,11 +12,14 @@ wired into `baukit_config::BaukitConfig`.
 ```rust,ignore
 use baukit_egress::{EgressOptions, EgressRequest, GuardedClient};
 
-let client = GuardedClient::new(EgressOptions::default())?;
+let client = GuardedClient::new("provider", EgressOptions::default())?;
 let response = client
     .execute(EgressRequest::post(url).with_headers(headers).with_body(body))
     .await?;
 ```
+
+The first argument names the destination for metrics (`hub`, `oidc`, `expo`, a
+provider name). It must be a fixed name, never a host or URL.
 
 ## What the client enforces
 
@@ -40,6 +43,65 @@ headers before `Retry-After`, and `with_retry_after_first_field()` takes the
 first field of a list such as Polar's `ratelimit-reset: 30, 3600`.
 `with_extra_root_certificates_pem(pem)` trusts a private CA on top of the
 built-in roots; the address policy still applies.
+
+## Circuit breaker and in-flight cap
+
+Each `(scheme, host, port)` gets a circuit breaker from `baukit-resilience` and
+a cap of 32 requests in flight. Clones of a client share both, and one dead host
+does not block the other hosts the same client calls. The breaker is checked
+before the DNS lookup, so an open circuit costs nothing.
+
+| Outcome | Breaker |
+|---|---|
+| `2xx`, or an opted-in redirect | success |
+| `Resolve`, `Transport`, `5xx` without `Retry-After` | failure |
+| `Timeout`, `504`, `408` | timeout |
+| `429` or `5xx` with `Retry-After` | stays open for exactly that delay, not a failure |
+| other `4xx`, `Revoked`, `Permanent`, a timeout under a deadline that left less than half the client timeout | ignored |
+
+The outcome is recorded when the headers arrive. A body read that fails later
+does not count. `BreakerPolicy::default()` opens at 50% failures over the last
+20 calls (at least 10) or after 5 consecutive timeouts, stays open 30 s,
+doubles on each failed probe up to 5 min, and admits one probe when half-open.
+
+An open circuit returns `EgressError::CircuitOpen { retry_after }` and a full
+cap returns `EgressError::Saturated`; both have `RetryClass::RetryAfter` and
+send nothing. `execute` holds its in-flight slot until the body is buffered.
+`execute_stream` releases it when it returns, so an open body stream does not
+hold a slot.
+
+```rust,ignore
+let options = EgressOptions::default()
+    .with_circuit_breaker(BreakerPolicy { open_base: Duration::from_secs(10), ..BreakerPolicy::default() })
+    .with_max_in_flight(8)?;
+let one_shot = EgressOptions::default().without_circuit_breaker();
+```
+
+## Request deadline
+
+Inside a request served by `baukit_http::layers`, the handler has a deadline:
+its start plus the request timeout, or the route timeout when that is earlier.
+The client caps its own timeout with the time left. With less than 50 ms left
+it fails with `EgressError::Timeout` without sending anything. The deadline is
+never sent to the destination. A timeout under the deadline counts against the
+breaker when the time left was at least half the client's own request timeout.
+With less, the caller gave the destination too little time to judge it, and the
+breaker ignores the timeout. A 5 s route timeout against the default 10 s client
+timeout still counts. Tasks spawned by the handler do not inherit it; wrap them in
+`baukit_resilience::deadline::scope` to pass it on.
+
+## Metrics
+
+| Metric | Type | Labels |
+|---|---|---|
+| `egress_requests_total` | counter | `destination`, `status` (`none` without a response), `outcome` |
+| `egress_request_duration_seconds` | histogram | `destination` |
+| `egress_circuit_state` | gauge | `destination` (worst breaker: 0 closed, 1 half-open, 2 open) |
+| `egress_circuit_transitions_total` | counter | `destination`, `to` |
+
+`outcome` is one of `success`, `unavailable`, `timeout`, `rate_limited`,
+`revoked`, `permanent`, `circuit_open` and `saturated`. The duration covers
+requests that were sent, up to the response headers.
 
 ## Address policy
 
@@ -85,7 +147,7 @@ use url::Url;
 # async fn collect() -> Result<(), Box<dyn std::error::Error>> {
 let networks = PrivateNetworks::new(["10.43.0.0/16".parse()?])?;
 let options = EgressOptions::default().with_policy(AddressPolicy::AllowPrivate(networks));
-let client = GuardedClient::new(options)?;
+let client = GuardedClient::new("provider", options)?;
 let url = Url::parse("http://prometheus.monitoring.svc:9090/api/v1/query?query=up")?;
 let response = client.execute(EgressRequest::get(url)).await?;
 # let _ = response;
@@ -140,7 +202,7 @@ use baukit_egress::{EgressOptions, EgressRequest, GuardedClient};
 use url::Url;
 
 # async fn read_events() -> Result<(), Box<dyn std::error::Error>> {
-let client = GuardedClient::new(EgressOptions::default())?;
+let client = GuardedClient::new("provider", EgressOptions::default())?;
 let url = Url::parse("https://events.example.com/stream")?;
 let mut response = client.execute_stream(EgressRequest::get(url)).await?;
 while let Some(chunk) = response.chunk().await? {
@@ -190,7 +252,7 @@ use baukit_egress::{EgressError, EgressOptions, EgressRequest, GuardedClient};
 use axum::http::StatusCode;
 
 let options = EgressOptions::default().with_error_body_limit(4096)?;
-let client = GuardedClient::new(options)?;
+let client = GuardedClient::new("provider", options)?;
 match client.execute(EgressRequest::post(url).with_body(body)).await {
     Ok(response) => tracing::debug!(status = %response.status(), "request succeeded"),
     Err(EgressError::Status { status: StatusCode::SERVICE_UNAVAILABLE, class, .. }) => {
@@ -242,6 +304,8 @@ example one backed by a DNS library with its own cache.
 | `Transport` | `transport_failed` | `Unavailable` |
 | `Status { status, class, body }` | `upstream_status` | `classify_http_status_with_options(status, headers, options)` |
 | `ResponseTooLarge { limit }` | `response_too_large` | `Permanent` |
+| `CircuitOpen { retry_after }` | `circuit_open` | `RetryAfter(retry_after)` |
+| `Saturated` | `saturated` | `RetryAfter(1 s)` |
 
 `Status` uses `baukit_http::classify_http_status_with_options`. A `429` with `Retry-After`
 comes back as `RetryClass::RetryAfter` and without it as `RateLimited`. Every `5xx`,

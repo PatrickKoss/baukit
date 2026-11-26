@@ -60,7 +60,7 @@ async fn classify(
     let url = serve_once(status, header).await?;
     let resolver =
         Arc::new(StaticResolver::new().with_host(HOST, [IpAddr::V4(Ipv4Addr::LOCALHOST)]));
-    let client = GuardedClient::with_resolver(resolver, options)?;
+    let client = GuardedClient::with_resolver("test", resolver, options)?;
     match client.execute(EgressRequest::get(url)).await {
         Err(EgressError::Status { status, class, .. }) => Ok((status, class)),
         other => Err(format!("expected a status error, got {other:?}").into()),

@@ -176,6 +176,7 @@ impl MockHub {
 
 fn guarded() -> Result<GuardedClient, Box<dyn std::error::Error>> {
     Ok(GuardedClient::new(
+        "hub",
         EgressOptions::default()
             .with_policy(AddressPolicy::AllowLoopback)
             .with_error_body_limit(16 * 1024)?,
@@ -464,8 +465,10 @@ async fn hub_client_settings_are_validated() -> TestResult {
     let hub = MockHub::start().await?;
     let mut config = hub.config();
     assert!(config.validate().is_ok());
-    let plain =
-        GuardedClient::new(EgressOptions::default().with_policy(AddressPolicy::AllowLoopback))?;
+    let plain = GuardedClient::new(
+        "hub",
+        EgressOptions::default().with_policy(AddressPolicy::AllowLoopback),
+    )?;
     assert!(
         HubClient::new(&config, "hebkit", plain).is_err(),
         "error bodies are required for typed hub errors"

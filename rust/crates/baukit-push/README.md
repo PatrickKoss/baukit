@@ -317,7 +317,7 @@ let options = PushOptions::default();
 let egress = EgressOptions::default()
     .with_request_timeout(options.request_timeout())?;
 let sender = ExpoPushSender::with_options(options)?
-    .with_guarded_client(GuardedClient::new(egress)?);
+    .with_guarded_client(GuardedClient::new("expo", egress)?);
 # Ok(sender)
 # }
 ```

@@ -252,7 +252,7 @@ fn endpoint_client(options: &PushOptions) -> Result<GuardedClient, PushOptionsEr
         .with_policy(AddressPolicy::OnlyEndpoint(endpoint))
         .with_request_timeout(options.request_timeout())
         .map_err(|_| invalid())?;
-    GuardedClient::new(egress).map_err(|_| invalid())
+    GuardedClient::new("expo", egress).map_err(|_| invalid())
 }
 
 fn ticket_id(id: Option<String>) -> Result<PushTicketId, PushError> {
@@ -526,6 +526,7 @@ mod guarded_transport_tests {
         let options = PushOptions::new(&endpoint)?.with_batch_size(1)?;
         let sender = ExpoPushSender::with_options(options.clone())?.with_guarded_client(
             baukit_egress::GuardedClient::new(
+                "expo",
                 baukit_egress::EgressOptions::default()
                     .with_policy(baukit_egress::AddressPolicy::AllowLoopback),
             )?,
@@ -559,7 +560,7 @@ mod guarded_transport_tests {
             );
         }
         let blocked = ExpoPushSender::with_options(options)?.with_guarded_client(
-            baukit_egress::GuardedClient::new(baukit_egress::EgressOptions::default())?,
+            baukit_egress::GuardedClient::new("expo", baukit_egress::EgressOptions::default())?,
         );
         assert!(
             blocked

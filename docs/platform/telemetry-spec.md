@@ -117,6 +117,17 @@ outcomes `allowed` or `limited`.
 
 Each key lookup counts once: `fresh` and `stale` were served from the cache, `fetched` came from a fetch made by that lookup, and `failed` means the lookup got no key set or its own fetch failed while a stale set was served. A background refresh of a stale set also counts once, as `fetched` or `failed`. A rising `stale` or `failed` rate means the issuer's JWKS endpoint is unreachable while verification still runs on cached keys.
 
+### 2.9 Outbound HTTP (owned by `baukit-egress`)
+
+| Metric | Type | Labels |
+|---|---|---|
+| `egress_requests_total` | counter | `destination`, `status`, `outcome` (`success`, `unavailable`, `timeout`, `rate_limited`, `revoked`, `permanent`, `circuit_open`, `saturated`) |
+| `egress_request_duration_seconds` | histogram | `destination` |
+| `egress_circuit_state` | gauge | `destination` (`0` closed, `1` half-open, `2` open) |
+| `egress_circuit_transitions_total` | counter | `destination`, `to` (`closed`, `half_open`, `open`) |
+
+`destination` is the name passed to `GuardedClient::new` (`oidc`, `idp`, `hub`, `suite-peer`, `expo`, `keycloak-admin`, `mcp-introspection`, or a product provider name), never a host. `status` is the numeric response status, or `none` when no response arrived. Each call to `execute` or `execute_stream` adds one `egress_requests_total` sample, including calls refused by an open circuit or a full in-flight cap. `egress_request_duration_seconds` measures the time to the response headers of requests that were sent and uses the HTTP buckets from 2.1. `egress_circuit_state` is the worst state across the `(scheme, host, port)` breakers of one destination. A breaker reports open until the next call moves it to half-open, so a destination nobody calls keeps reporting open.
+
 ## 3. Logs
 
 - JSON to stdout in deployed environments; human-readable format in local development. The switch follows `deployment.environment.name`.

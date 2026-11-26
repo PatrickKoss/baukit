@@ -17,14 +17,17 @@ workspace = true
 [dependencies]
 axum.workspace = true
 baukit-http.workspace = true
+baukit-resilience = { workspace = true, features = ["task-deadline"] }
+metrics.workspace = true
 reqwest.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["net", "time"] }
+tokio = { workspace = true, features = ["net", "sync", "time"] }
 tracing.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+metrics-util.workspace = true
 rcgen = { version = "0.14.7", default-features = false, features = ["aws_lc_rs", "pem"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std"] }
 tokio-rustls = { version = "0.26.6", default-features = false }

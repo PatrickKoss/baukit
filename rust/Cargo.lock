@@ -408,6 +408,9 @@ version = "0.30.6"
 dependencies = [
  "axum",
  "baukit-http",
+ "baukit-resilience",
+ "metrics",
+ "metrics-util",
  "rcgen",
  "reqwest",
  "rustls",
@@ -469,6 +472,7 @@ dependencies = [
  "baukit-config",
  "baukit-core",
  "baukit-openapi",
+ "baukit-resilience",
  "metrics",
  "metrics-util",
  "opentelemetry",

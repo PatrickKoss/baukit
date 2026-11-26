@@ -630,6 +630,7 @@ async fn a_slow_endpoint_is_cut_off_by_the_request_timeout()
 
 fn guarded_client() -> baukit_egress::GuardedClient {
     baukit_egress::GuardedClient::new(
+        "expo",
         baukit_egress::EgressOptions::default()
             .with_policy(baukit_egress::AddressPolicy::AllowLoopback),
     )
@@ -734,6 +735,7 @@ async fn guarded_errors_keep_retry_classification_and_omit_provider_bodies()
     ))
     .await;
     let guard = baukit_egress::GuardedClient::new(
+        "expo",
         baukit_egress::EgressOptions::default()
             .with_policy(baukit_egress::AddressPolicy::AllowLoopback)
             .with_error_body_limit(100)?,

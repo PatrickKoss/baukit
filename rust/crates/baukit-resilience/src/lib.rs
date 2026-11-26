@@ -4,7 +4,8 @@
 //! - [`backoff`]: [`Backoff`] with full or decorrelated jitter.
 //! - [`breaker`]: the [`CircuitBreaker`] state machine and its policy.
 //! - [`breaker_set`]: [`BreakerSet`], one breaker per key under a shared policy.
-//! - [`deadline`]: [`Deadline`], a fixed point in time that caps timeouts.
+//! - [`deadline`]: [`Deadline`], a fixed point in time that caps timeouts, and
+//!   with the `task-deadline` feature a task-local current deadline.
 //! - [`stale`]: [`StaleCache`], a single-flight cache that serves stale values on error.
 //!
 //! Every time-dependent decision takes `now` from a [`Clock`] and every random

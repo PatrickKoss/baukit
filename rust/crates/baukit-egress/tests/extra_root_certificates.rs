@@ -78,7 +78,7 @@ async fn serve_tls(ca: &PrivateCa, connections: usize) -> TestResult<Url> {
 
 fn client(options: EgressOptions) -> TestResult<GuardedClient> {
     let resolver = Arc::new(StaticResolver::new().with_host(HOST, [LOOPBACK]));
-    Ok(GuardedClient::with_resolver(resolver, options)?)
+    Ok(GuardedClient::with_resolver("test", resolver, options)?)
 }
 
 #[tokio::test]

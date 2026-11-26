@@ -450,6 +450,7 @@ mod tests {
             client_secret: Some(Secret::new("secret".into())),
         };
         let guarded = GuardedClient::new(
+            "hub",
             baukit_egress::EgressOptions::default()
                 .with_error_body_limit(1024)
                 .expect("limit"),

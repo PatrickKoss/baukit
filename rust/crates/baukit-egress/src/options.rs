@@ -1,6 +1,7 @@
 use std::{fmt, str::FromStr, sync::Arc, time::Duration};
 
 use axum::http::HeaderName;
+use baukit_resilience::BreakerPolicy;
 use reqwest::Certificate;
 
 use crate::AddressPolicy;
@@ -12,6 +13,7 @@ const DEFAULT_MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 /// The longest header value kept by [`EgressOptions::with_error_headers`].
 pub const MAX_ERROR_HEADER_VALUE_BYTES: usize = 4096;
 const DEFAULT_MAX_RETRY_AFTER: Duration = Duration::from_secs(300);
+const DEFAULT_MAX_IN_FLIGHT: usize = 32;
 
 /// Limits and address policy for a [`GuardedClient`](crate::GuardedClient).
 ///
@@ -20,6 +22,8 @@ const DEFAULT_MAX_RETRY_AFTER: Duration = Duration::from_secs(300);
 /// including the body, a 1 MiB response body limit, and a 300 second cap on
 /// the `Retry-After` delay reported in [`EgressError::Status`](crate::EgressError::Status).
 /// Error bodies are not read unless [`Self::with_error_body_limit`] is set.
+/// The circuit breaker is on with [`BreakerPolicy::default`] and each
+/// `(scheme, host, port)` allows 32 requests in flight.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EgressOptions {
     policy: AddressPolicy,
@@ -35,6 +39,8 @@ pub struct EgressOptions {
     retry_after_first_field: bool,
     error_headers: Vec<HeaderName>,
     extra_roots: ExtraRoots,
+    circuit_breaker: Option<BreakerPolicy>,
+    max_in_flight: usize,
 }
 
 /// A rejected [`EgressOptions`] value.
@@ -64,6 +70,9 @@ pub enum EgressOptionsError {
     /// The root certificate PEM held no certificate or a malformed one.
     #[error("egress root certificate PEM holds no valid certificate")]
     InvalidRootCertificate,
+    /// The in-flight limit was zero.
+    #[error("egress in-flight limit must be greater than zero")]
+    ZeroMaxInFlight,
 }
 
 /// Extra trusted roots, compared by the PEM they were parsed from.
@@ -106,6 +115,8 @@ impl Default for EgressOptions {
             retry_after_first_field: false,
             error_headers: Vec::new(),
             extra_roots: ExtraRoots::default(),
+            circuit_breaker: Some(BreakerPolicy::default()),
+            max_in_flight: DEFAULT_MAX_IN_FLIGHT,
         }
     }
 }
@@ -204,6 +215,46 @@ impl EgressOptions {
         }
         self.error_body_limit = Some(limit);
         Ok(self)
+    }
+
+    /// Replaces the circuit breaker policy, one breaker per `(scheme, host, port)`.
+    #[must_use]
+    pub const fn with_circuit_breaker(mut self, policy: BreakerPolicy) -> Self {
+        self.circuit_breaker = Some(policy);
+        self
+    }
+
+    /// Turns the circuit breaker off, for tests and one-shot tools.
+    #[must_use]
+    pub const fn without_circuit_breaker(mut self) -> Self {
+        self.circuit_breaker = None;
+        self
+    }
+
+    /// Caps the requests in flight per `(scheme, host, port)`. A request above
+    /// the cap fails at once with [`EgressError::Saturated`](crate::EgressError::Saturated).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`EgressOptionsError::ZeroMaxInFlight`] for `0`.
+    pub fn with_max_in_flight(mut self, limit: usize) -> Result<Self, EgressOptionsError> {
+        if limit == 0 {
+            return Err(EgressOptionsError::ZeroMaxInFlight);
+        }
+        self.max_in_flight = limit;
+        Ok(self)
+    }
+
+    /// The circuit breaker policy, `None` when the breaker is off.
+    #[must_use]
+    pub const fn circuit_breaker(&self) -> Option<&BreakerPolicy> {
+        self.circuit_breaker.as_ref()
+    }
+
+    /// The cap on requests in flight per `(scheme, host, port)`.
+    #[must_use]
+    pub const fn max_in_flight(&self) -> usize {
+        self.max_in_flight
     }
 
     /// Sets the largest `Retry-After` delay a status error reports.

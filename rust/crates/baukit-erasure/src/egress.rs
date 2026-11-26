@@ -19,7 +19,7 @@ pub(crate) fn endpoint_client(base: &Url) -> Result<GuardedClient, IdentityDelet
         .with_connect_timeout(CONNECT_TIMEOUT)
         .and_then(|options| options.with_request_timeout(REQUEST_TIMEOUT))
         .map_err(|_| IdentityDeletionError::Permanent)?;
-    GuardedClient::new(options).map_err(|_| IdentityDeletionError::Permanent)
+    GuardedClient::new("keycloak-admin", options).map_err(|_| IdentityDeletionError::Permanent)
 }
 
 pub(crate) fn bearer(token: &str) -> Result<HeaderMap, IdentityDeletionError> {

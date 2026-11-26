@@ -722,6 +722,147 @@
       "fieldConfig": {
         "defaults": {
           "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "id": 17,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "sum by (destination, outcome) (rate(egress_requests_total{product=~\"$product\", service=~\"$service\", environment=~\"$environment\"}[5m]))",
+          "legendFormat": "{{destination}} {{outcome}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Outbound requests by destination and outcome",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 48
+      },
+      "id": 18,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (destination, le) (rate(egress_request_duration_seconds_bucket{product=~\"$product\", service=~\"$service\", environment=~\"$environment\"}[5m])))",
+          "legendFormat": "p95 {{destination}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Outbound p95 by destination",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 48
+      },
+      "id": 19,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "editorMode": "code",
+          "expr": "max by (destination) (egress_circuit_state{product=~\"$product\", service=~\"$service\", environment=~\"$environment\"})",
+          "legendFormat": "{{destination}} (0 closed, 1 half-open, 2 open)",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Outbound circuit state",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
             "mode": "thresholds"
           },
           "thresholds": {
@@ -749,7 +890,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 48
+        "y": 56
       },
       "id": 15,
       "options": {
@@ -814,7 +955,7 @@
         "h": 6,
         "w": 12,
         "x": 12,
-        "y": 48
+        "y": 56
       },
       "id": 16,
       "options": {
@@ -853,7 +994,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 54
+        "y": 62
       },
       "id": 12,
       "options": {

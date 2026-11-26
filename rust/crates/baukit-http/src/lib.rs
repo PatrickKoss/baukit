@@ -121,7 +121,7 @@ pub use locale::{
 };
 pub use middleware::{
     DURATION_BUCKETS, HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_IN_FLIGHT, HTTP_REQUESTS_TOTAL,
-    RequestId, X_ORGANIZATION_ID, X_REQUEST_ID, extract_trace_context,
+    RequestId, X_ORGANIZATION_ID, X_REQUEST_ID, current_deadline, extract_trace_context,
     inject_current_trace_context, inject_trace_context, layers,
 };
 pub use options::{HttpOptions, HttpOptionsError, JsonRejectionCodes, ResponseCachePolicy};
@@ -140,6 +140,9 @@ pub use routing::finalize;
 pub use security_headers::{SecurityHeaders, SecurityHeadersLayer, X_BAUKIT_SESSION};
 pub use shedding::HTTP_REQUESTS_SHED_TOTAL;
 
+/// The request deadline type returned by [`current_deadline`].
+pub use baukit_resilience::Deadline;
+
 /// The metrics facade used by the HTTP lifecycle middleware.
 ///
 /// Applications normally initialize a recorder through `baukit-telemetry`.
@@ -147,6 +150,8 @@ pub use metrics;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_deadline;
 #[cfg(test)]
 mod tests_overload;
 

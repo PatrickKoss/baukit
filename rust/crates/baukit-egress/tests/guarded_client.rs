@@ -249,7 +249,7 @@ fn development() -> EgressOptions {
 }
 
 fn client(resolver: Arc<dyn Resolver>, options: EgressOptions) -> GuardedClient {
-    GuardedClient::with_resolver(resolver, options).expect("guarded client should build")
+    GuardedClient::with_resolver("test", resolver, options).expect("guarded client should build")
 }
 
 fn loopback_resolver(hosts: &[&str]) -> Arc<StaticResolver> {
@@ -1405,6 +1405,7 @@ async fn streaming_uses_the_connecting_resolver_and_status_options() {
     let client = client(
         resolver.clone(),
         development()
+            .without_circuit_breaker()
             .with_max_retry_after(Duration::from_secs(3))
             .expect("cap")
             .with_error_body_limit(20)

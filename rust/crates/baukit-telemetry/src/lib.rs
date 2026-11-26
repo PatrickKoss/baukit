@@ -141,8 +141,9 @@ static BEARER_PATTERN: LazyLock<Regex> =
 static SECRET_ASSIGNMENT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     scrubber(r#"(?i)\b(authorization|cookie|token|password)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)"#)
 });
-const METRIC_BUCKETS: [(&str, &[f64]); 3] = [
+const METRIC_BUCKETS: [(&str, &[f64]); 4] = [
     ("http_request_duration_seconds", HTTP_DURATION_BUCKETS),
+    ("egress_request_duration_seconds", HTTP_DURATION_BUCKETS),
     (
         "db_pool_acquire_duration_seconds",
         DB_POOL_ACQUIRE_DURATION_BUCKETS,
