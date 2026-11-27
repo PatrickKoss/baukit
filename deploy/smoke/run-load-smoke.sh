@@ -29,10 +29,9 @@ done
 
 out_dir=$(mktemp -d)
 trap 'rm -rf "$out_dir"' EXIT
-chmod 0777 "$out_dir"
 
 status=0
-docker run --rm --network host -v "$smoke_dir:/smoke:ro" -v "$out_dir:/out" \
+docker run --rm --network host --user "$(id -u):$(id -g)" -v "$smoke_dir:/smoke:ro" -v "$out_dir:/out" \
   -e K6_CSV_TIME_FORMAT=unix_milli "${env_args[@]}" "$image" \
   run --quiet --out csv=/out/samples.csv.gz /smoke/api-load.js "$@" || status=$?
 ((status == 0)) || exit "$status"
