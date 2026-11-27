@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ErasureService::preflight`, `erase` and `fence_as_operator_in_transaction` reject a subject that fails the 0.31.0 subject rule with the new `ErasureError::InvalidSubject`, before anything is written or queued. 0.31.0 queued it and the worker rejected it later.
+- The identity deletion worker sets the operation to `failed` when it rejects a payload whose `operationId` is readable, without relying on the `erasure_job_failed` trigger. A payload without a readable `operationId` is logged and dead-lettered. See `docs/migrations/erasure-subject-rule.md`.
+
 ## [0.31.0] - 2026-11-26
 
 ### Changed

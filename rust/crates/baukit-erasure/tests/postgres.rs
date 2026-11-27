@@ -829,3 +829,113 @@ async fn clerk_sessions_pass_the_fence_only_with_a_sign_in_time_after_it()
     }
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn control_character_subjects_are_rejected_before_any_write() -> Result<(), Box<dyn Error>> {
+    let (_container, pool, _store, fake, service) = fixture().await?;
+    let subject = "https://issuer.example\nalice";
+    assert!(matches!(
+        service
+            .preflight(subject, None, "newline-subject-key-01")
+            .await,
+        Err(ErasureError::InvalidSubject)
+    ));
+    assert!(matches!(
+        service
+            .erase(subject, None, "newline-subject-key-01", &Product)
+            .await,
+        Err(ErasureError::InvalidSubject)
+    ));
+    let mut transaction = pool.begin().await?;
+    assert!(matches!(
+        service
+            .fence_as_operator_in_transaction(&mut transaction, subject)
+            .await,
+        Err(ErasureError::InvalidSubject)
+    ));
+    transaction.rollback().await?;
+    assert_eq!(count(&pool, "erasure_operations").await?, 0);
+    assert_eq!(count(&pool, "erasure_fences").await?, 0);
+    assert_eq!(count(&pool, "job_outbox").await?, 0);
+    assert!(fake.calls().is_empty());
+    Ok(())
+}
+
+async fn drop_failure_trigger(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query("DROP TRIGGER erasure_job_failed ON job_outbox")
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn worker_fails_the_operation_of_a_legacy_invalid_subject() -> Result<(), Box<dyn Error>> {
+    let (_container, pool, store, fake, service) = fixture().await?;
+    drop_failure_trigger(&pool).await?;
+    fake.push_outcome(Err(IdentityDeletionError::Retryable));
+    let pending = service
+        .erase("alice", None, "legacy-subject-key-01", &Product)
+        .await?;
+    sqlx::query("UPDATE job_outbox SET payload = jsonb_set(payload, '{subject}', to_jsonb(E'issuer\\nalice'::text))")
+        .execute(&pool)
+        .await?;
+    run_until(
+        store,
+        fake.clone(),
+        "alice",
+        pending.operation_id,
+        ErasureState::Failed,
+    )
+    .await?;
+    assert_eq!(fake.calls(), ["alice"]);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn worker_dead_letters_a_payload_without_operation_id() -> Result<(), Box<dyn Error>> {
+    let (_container, pool, store, fake, _service) = fixture().await?;
+    drop_failure_trigger(&pool).await?;
+    let job = PostgresJobStore::new(pool.clone())
+        .enqueue(baukit_jobs::NewJob::new(
+            baukit_erasure::IDENTITY_DELETE_JOB_TYPE,
+            serde_json::json!({"subject": "alice", "providerId": "test"}),
+            2,
+        ))
+        .await?
+        .job;
+    let runner = WorkerRunner::new(
+        Arc::new(PostgresJobStore::new(store.pool().clone())),
+        Arc::new(IdentityDeletionHandler::new(
+            store,
+            "test".into(),
+            fake.clone(),
+        )),
+        WorkerConfig {
+            poll_interval: Duration::from_millis(10),
+            ..WorkerConfig::default()
+        },
+    )?;
+    let shutdown = ShutdownToken::new(Duration::from_secs(1));
+    let worker = tokio::spawn(runner.run(shutdown.clone()));
+    let status = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let status: String = sqlx::query_scalar("SELECT status FROM job_outbox WHERE id = $1")
+                .bind(job.id)
+                .fetch_one(&pool)
+                .await?;
+            if status != "pending" && status != "running" {
+                break Ok::<_, sqlx::Error>(status);
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    shutdown.trigger();
+    worker.await??;
+    assert_eq!(status??, "failed");
+    assert!(fake.calls().is_empty());
+    Ok(())
+}

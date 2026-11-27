@@ -59,6 +59,32 @@ impl IdentityDeletionHandler {
         }
     }
 }
+impl IdentityDeletionHandler {
+    /// Fails the operation of a payload the worker will never run, so nothing waits on it.
+    /// A store failure is retryable, so a later attempt records the failure again.
+    async fn reject_payload(&self, job: &ClaimedJob, error: JobError) -> JobError {
+        let Some(operation_id) = recoverable_operation_id(&job.payload) else {
+            tracing::error!(job_id = %job.id, "identity deletion payload has no operation id");
+            return error;
+        };
+        match self.store.fail(operation_id).await {
+            Ok(_) => {
+                tracing::error!(
+                    job_id = %job.id,
+                    operation_id = %operation_id,
+                    "identity deletion payload rejected, operation failed",
+                );
+                error
+            }
+            Err(_) => JobError::retryable("erasure failure receipt unavailable"),
+        }
+    }
+}
+
+fn recoverable_operation_id(value: &serde_json::Value) -> Option<Uuid> {
+    value.get("operationId")?.as_str()?.parse().ok()
+}
+
 impl JobHandler for IdentityDeletionHandler {
     fn job_types(&self) -> &'static [&'static str] {
         &[IDENTITY_DELETE_JOB_TYPE]
@@ -72,7 +98,10 @@ impl JobHandler for IdentityDeletionHandler {
             if job.job_type != IDENTITY_DELETE_JOB_TYPE {
                 return Err(JobError::permanent("identity deletion provider mismatch"));
             }
-            let payload = parse_payload(&job.payload, &self.provider_id)?;
+            let payload = match parse_payload(&job.payload, &self.provider_id) {
+                Ok(payload) => payload,
+                Err(error) => return Err(self.reject_payload(job, error).await),
+            };
             match self.deleter.delete_account(&payload.subject).await {
                 Ok(()) => {}
                 Err(IdentityDeletionError::Retryable) => {
@@ -119,5 +148,25 @@ impl JobHandler for IdentityDeletionHandler {
             cancellation.mark_completed_in_transaction();
             Ok(())
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn operation_id_survives_an_invalid_subject_but_not_a_malformed_id() {
+        let id = Uuid::now_v7();
+        let payload = serde_json::json!({"subject": "a\nb", "providerId": "p", "operationId": id});
+        assert!(parse_payload(&payload, "p").is_err());
+        assert_eq!(recoverable_operation_id(&payload), Some(id));
+        for unreadable in [
+            serde_json::json!({"subject": "a"}),
+            serde_json::json!({"operationId": "not-a-uuid"}),
+            serde_json::json!("garbage"),
+        ] {
+            assert_eq!(recoverable_operation_id(&unreadable), None);
+        }
     }
 }
