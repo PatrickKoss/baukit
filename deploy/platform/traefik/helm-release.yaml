@@ -42,6 +42,14 @@ spec:
     global:
       checkNewVersion: false
       sendAnonymousUsage: false
+    # The default ServersTransport. The chart's serversTransport value covers only the v3.8 read and
+    # write timeouts, so dial and response-header timeouts go in as static flags. The response-header
+    # timeout sits above the 30 s app request timeout.
+    additionalArguments:
+      - --serversTransport.forwardingTimeouts.dialTimeout=5s
+      - --serversTransport.forwardingTimeouts.responseHeaderTimeout=35s
+      # Below the API's 10 s header read timeout, which also closes idle keep-alive connections.
+      - --serversTransport.forwardingTimeouts.idleConnTimeout=5s
     service:
       enabled: true
       spec:
@@ -62,6 +70,11 @@ spec:
       web:
         expose:
           default: true
+        transport:
+          respondingTimeouts:
+            readTimeout: 60s
+            writeTimeout: 60s
+            idleTimeout: 180s
         http:
           redirections:
             entryPoint:
@@ -74,6 +87,11 @@ spec:
       websecure:
         expose:
           default: true
+        transport:
+          respondingTimeouts:
+            readTimeout: 60s
+            writeTimeout: 60s
+            idleTimeout: 180s
         http:
           middlewares:
             - traefik-default-rate-limit@kubernetescrd
@@ -93,12 +111,15 @@ spec:
           enabled: true
           interval: 30s
           scrapeTimeout: 10s
+    # allowEmptyServices answers 503 instead of 404 when a Service has no ready pod, which the edge SLI counts.
     providers:
       kubernetesCRD:
         allowCrossNamespace: false
         allowExternalNameServices: false
+        allowEmptyServices: true
       kubernetesIngress:
         allowExternalNameServices: false
+        allowEmptyServices: true
     tlsOptions:
       default:
         minVersion: VersionTLS12

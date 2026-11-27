@@ -175,13 +175,12 @@ impl PostgresSuiteEventOutbox {
                 }
                 None => format!("{}:{}", envelope.event_id, link.id),
             };
-            let job = NewJob::new(
-                SUITE_EVENTS_DELIVER_JOB_TYPE,
+            let job = delivery_job(
+                &link.peer_app,
                 serde_json::to_value(SuiteDeliverJobV1::new(link.id, envelope, replay.is_some()))
                     .map_err(|error| SuiteEmissionError::new(&event.event_type, invalid(error)))?,
-                SUITE_MAX_ATTEMPTS,
-            )
-            .idempotency_key(key);
+                key,
+            );
             count += u64::from(
                 self.jobs
                     .enqueue_in_transaction(tx, job)
@@ -210,20 +209,16 @@ impl PostgresSuiteEventOutbox {
                 SuiteStoreError::Timeout,
             ));
         }
-        super::account_owner_failures(tx, owner)
-            .await
-            .map_err(|error| SuiteEmissionError::new(&first.event_type, error))?;
         let links = sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at
             FROM suite_links
             WHERE user_id=$1
             AND status='active'
-            AND delivery_health<>'disabled'
-            AND consecutive_failures<20
+            AND (delivery_health<>'disabled' OR next_probe_at<=now())
             ORDER BY id"#,
         )
         .bind(owner)
@@ -245,6 +240,11 @@ impl PostgresSuiteEventOutbox {
         }
         Ok(count)
     }
+}
+fn delivery_job(peer_app: &str, payload: serde_json::Value, idempotency_key: String) -> NewJob {
+    NewJob::new(SUITE_EVENTS_DELIVER_JOB_TYPE, payload, SUITE_MAX_ATTEMPTS)
+        .idempotency_key(idempotency_key)
+        .concurrency_key(suite_delivery_concurrency_key(peer_app))
 }
 #[async_trait]
 impl SuiteEventOutbox for PostgresSuiteEventOutbox {
@@ -281,7 +281,6 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         tx: &mut PgConnection,
         id: Uuid,
     ) -> Result<(), SuiteStoreError> {
-        super::account_failures(tx, id).await?;
         self.jobs
             .enqueue_in_transaction(
                 tx,
@@ -308,12 +307,11 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         validate_replay_since(since, now.to_zoned_datetime(jiff::tz::TimeZone::UTC).date())
             .map_err(invalid)?;
         super::lock_owner(tx, owner).await?;
-        super::account_owner_failures(tx, owner).await?;
         let link: SuiteLink = sqlx::query_as::<_, LinkRow>(
             r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at
             FROM suite_links
             WHERE id=$1
@@ -368,11 +366,10 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         event: &SuiteEvent,
     ) -> Result<(), SuiteStoreError> {
         super::lock_owner(tx, owner).await?;
-        super::account_owner_failures(tx, owner).await?;
         let link: SuiteLink = sqlx::query_as::<_, LinkRow>(r#"SELECT id, user_id, peer_app, role, remote_link_id, remote_subject,
             remote_display_name, suite_subject, status, secret_ciphertext, secret_nonce,
             secret_key_version, secret_record_id, sends, receives, share_xp, reward_mode, delivery_health,
-            consecutive_failures, last_delivery_at, last_failure_at, last_failure_code,
+            consecutive_failures, next_probe_at, failed_probes, last_delivery_at, last_failure_at, last_failure_code,
             last_received_at, created_at, updated_at, revoked_at FROM suite_links WHERE id=$1 AND user_id=$2 FOR UPDATE"#)
 .bind(id)
 .bind(owner)
@@ -399,4 +396,19 @@ fn ensure_active(link: &SuiteLink) -> Result<(), SuiteStoreError> {
         return Err(SuiteStoreError::LinkInactive);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::delivery_job;
+    use crate::domain::SUITE_EVENTS_DELIVER_JOB_TYPE;
+
+    #[test]
+    fn delivery_jobs_are_keyed_by_peer_app() {
+        let job = delivery_job("beta", serde_json::json!({}), "event:link".to_owned());
+
+        assert_eq!(job.job_type, SUITE_EVENTS_DELIVER_JOB_TYPE);
+        assert_eq!(job.concurrency_key.as_deref(), Some("suite-peer:beta"));
+        assert_eq!(job.idempotency_key.as_deref(), Some("event:link"));
+    }
 }

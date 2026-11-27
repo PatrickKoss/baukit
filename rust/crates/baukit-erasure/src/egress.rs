@@ -98,7 +98,7 @@ pub(crate) fn endpoint_client(base: &Url) -> Result<GuardedClient, IdentityDelet
         .and_then(|options| options.with_request_timeout(REQUEST_TIMEOUT))
         .and_then(|options| options.with_error_body_limit(ERROR_BODY_LIMIT))
         .map_err(|_| IdentityDeletionError::Permanent)?;
-    GuardedClient::new(options).map_err(|_| IdentityDeletionError::Permanent)
+    GuardedClient::new("keycloak-admin", options).map_err(|_| IdentityDeletionError::Permanent)
 }
 
 pub(crate) fn bearer(token: &str) -> Result<HeaderMap, IdentityDeletionError> {
@@ -141,6 +141,12 @@ fn transport_error(error: &EgressError) -> IdentityDeletionError {
         EgressError::Destination(_) | EgressError::BlockedAddress => {
             IdentityDeletionError::Permanent
         }
+        EgressError::CircuitOpen { .. } | EgressError::Saturated => error
+            .retry_class()
+            .retry_after()
+            .map_or(IdentityDeletionError::Retryable, |retry_after| {
+                IdentityDeletionError::Unavailable { retry_after }
+            }),
         _ => IdentityDeletionError::Retryable,
     }
 }

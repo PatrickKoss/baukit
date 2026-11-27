@@ -90,12 +90,22 @@ use tracing_subscriber::{
     util::SubscriberInitExt as _,
 };
 
+mod process;
 use redaction::{RedactingExporter, redact_json};
 
 pub use baukit_core::{DeploymentEnvironment, LogFormat, ProcessKind, ServiceIdentity};
 pub use metrics;
 pub use metrics_exporter_prometheus::PrometheusHandle;
 pub use opentelemetry;
+pub use process::{
+    PROCESS_CPU_SECONDS_TOTAL, PROCESS_MAX_FDS, PROCESS_OPEN_FDS, PROCESS_RESIDENT_MEMORY_BYTES,
+    PROCESS_START_TIME_SECONDS, record_process_metrics,
+};
+#[cfg(feature = "tokio-metrics")]
+pub use process::{
+    TOKIO_RUNTIME_ALIVE_TASKS, TOKIO_RUNTIME_BUSY_SECONDS_TOTAL, TOKIO_RUNTIME_GLOBAL_QUEUE_DEPTH,
+    TOKIO_RUNTIME_WORKERS,
+};
 pub use tracing;
 pub use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -109,7 +119,7 @@ const OTEL_SDK_DISABLED_ENV: &str = "OTEL_SDK_DISABLED";
 /// as required by telemetry-spec §2.1. `baukit-http` records the metric; this
 /// crate owns the recorder and therefore the bucket configuration.
 pub const HTTP_DURATION_BUCKETS: &[f64] = &[
-    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0,
 ];
 /// Histogram buckets in seconds applied to
 /// `db_pool_acquire_duration_seconds`. The low-millisecond boundaries make
@@ -126,8 +136,9 @@ pub const WORKER_DURATION_BUCKETS: &[f64] = &[
 const RUST_VERSION: &str = env!("BAUKIT_RUST_VERSION");
 
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
-const METRIC_BUCKETS: [(&str, &[f64]); 3] = [
+const METRIC_BUCKETS: [(&str, &[f64]); 4] = [
     ("http_request_duration_seconds", HTTP_DURATION_BUCKETS),
+    ("egress_request_duration_seconds", HTTP_DURATION_BUCKETS),
     (
         "db_pool_acquire_duration_seconds",
         DB_POOL_ACQUIRE_DURATION_BUCKETS,
@@ -351,11 +362,13 @@ impl TelemetryBuilder {
         subscriber_result.map_err(|_| TelemetryError::TracingAlreadyInitialized)?;
 
         register_build_info(&self.identity);
+        let process_metrics = process::ProcessMetricsTask::start();
 
         global::set_text_map_propagator(TraceContextPropagator::new());
 
         Ok(Telemetry {
             prometheus_handle,
+            _process_metrics: process_metrics,
             provider: Mutex::new(provider),
             sdk_disabled,
         })
@@ -379,8 +392,14 @@ impl TelemetryBuilder {
 }
 
 /// Owns the Prometheus render handle and OpenTelemetry shutdown lifecycle.
+///
+/// It also refreshes the `process_*` gauges, and the `tokio_runtime_*` gauges
+/// when `init` ran inside a Tokio runtime and the default `tokio-metrics`
+/// feature is on, every 5 seconds on a background thread that stops when this
+/// value is dropped.
 pub struct Telemetry {
     prometheus_handle: PrometheusHandle,
+    _process_metrics: process::ProcessMetricsTask,
     provider: Mutex<Option<SdkTracerProvider>>,
     sdk_disabled: bool,
 }

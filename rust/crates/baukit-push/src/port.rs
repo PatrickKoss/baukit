@@ -224,62 +224,88 @@ pub enum PushError {
     /// The provider answered with a body that does not match its contract.
     #[error("push provider returned an invalid response: {0}")]
     InvalidResponse(String),
-    /// Earlier provider requests of the batch succeeded before `error` stopped it.
-    ///
-    /// `outcomes` covers exactly the messages the provider already accepted or refused.
-    /// Record them like a successful result; never resend those messages. Retry only the
-    /// rest, by `error`'s classification.
-    #[error("push batch stopped after {} outcomes: {error}", outcomes.len())]
-    Partial {
-        /// Outcomes of the chunks that completed before the failure.
-        outcomes: Vec<PushOutcome>,
-        /// The failure that stopped the remaining chunks.
-        error: Box<PushError>,
-    },
 }
 
 impl PushError {
     /// Returns whether sending the same batch again can succeed.
     #[must_use]
-    pub fn is_retryable(&self) -> bool {
+    pub const fn is_retryable(&self) -> bool {
         match self {
             Self::Transport { class } => class.is_retryable(),
             Self::InvalidResponse(_) => false,
-            Self::Partial { error, .. } => error.is_retryable(),
         }
     }
 
     /// Returns the wait the provider asked for, if it named one.
     #[must_use]
-    pub fn retry_after(&self) -> Option<Duration> {
+    pub const fn retry_after(&self) -> Option<Duration> {
         match self {
             Self::Transport { class } => class.retry_after(),
             Self::InvalidResponse(_) => None,
-            Self::Partial { error, .. } => error.retry_after(),
+        }
+    }
+}
+
+/// A send that stopped at a failing provider request.
+///
+/// Senders split a batch into provider-sized chunks and stop at the first chunk
+/// that fails. Chunks before it are already with the provider: `outcomes` holds
+/// their results, including [`PushDeliveryStatus::Accepted`] tickets that still
+/// need a receipt poll. `unsent` holds the failing chunk and every chunk after
+/// it. Record the outcomes, then retry only `unsent`, so no notification goes
+/// out twice.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+#[error("{error} ({} sent before the failure, {} unsent)", outcomes.len(), unsent.len())]
+pub struct PushSendError {
+    /// Why the failing chunk could not be sent.
+    pub error: PushError,
+    /// Outcomes of the chunks the provider took before the failure.
+    pub outcomes: Vec<PushOutcome>,
+    /// The failing chunk and every chunk after it, in batch order.
+    pub unsent: Vec<PushMessage>,
+}
+
+impl PushSendError {
+    /// Wraps a failure that happened before any chunk reached the provider.
+    #[must_use]
+    pub const fn before_any(error: PushError, unsent: Vec<PushMessage>) -> Self {
+        Self {
+            error,
+            outcomes: Vec::new(),
+            unsent,
         }
     }
 
-    /// Returns the outcomes of the messages already handled before the failure.
+    /// Returns whether sending `unsent` again can succeed.
     #[must_use]
-    pub fn completed_outcomes(&self) -> &[PushOutcome] {
-        match self {
-            Self::Partial { outcomes, .. } => outcomes,
-            Self::Transport { .. } | Self::InvalidResponse(_) => &[],
-        }
+    pub const fn is_retryable(&self) -> bool {
+        self.error.is_retryable()
+    }
+
+    /// Returns the wait the provider asked for, if it named one.
+    #[must_use]
+    pub const fn retry_after(&self) -> Option<Duration> {
+        self.error.retry_after()
     }
 }
 
 /// The future returned by [`PushSender::send`].
 pub type PushFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<Vec<PushOutcome>, PushError>> + Send + 'a>>;
+    Pin<Box<dyn Future<Output = Result<Vec<PushOutcome>, PushSendError>> + Send + 'a>>;
 
 /// Outbound port for delivering notifications to devices.
 ///
 /// Implementations split a batch into provider-sized chunks themselves. The
 /// returned outcomes cover every message in the batch, in no guaranteed order;
-/// match them to messages by token.
+/// match them to messages by token. A failing chunk ends the send with a
+/// [`PushSendError`] that keeps the outcomes of the chunks before it.
 pub trait PushSender: Send + Sync {
     /// Delivers a batch of notifications and reports the outcome of each.
+    ///
+    /// # Errors
+    ///
+    /// [`PushSendError`] when a provider request fails; its `outcomes` must still
+    /// be recorded and only its `unsent` messages retried.
     fn send<'a>(&'a self, batch: Vec<PushMessage>) -> PushFuture<'a>;
 }
 

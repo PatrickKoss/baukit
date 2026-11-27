@@ -546,6 +546,8 @@ impl SuiteLinkService {
             reward_mode: RewardMode::Native,
             delivery_health: DeliveryHealth::Healthy,
             consecutive_failures: 0,
+            next_probe_at: None,
+            failed_probes: 0,
             last_delivery_at: None,
             last_failure_at: None,
             last_failure_code: None,

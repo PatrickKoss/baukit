@@ -58,6 +58,11 @@ Handlers read entitlements through `Extension<Entitlements>`:
 - `has_entitlement(subject, feature, now)` checks one feature key.
 - `has_tier(subject, tier, now)` checks the tier.
 
+They return `EntitlementError`. `Unavailable { retry_after }` means the hub failed and no
+snapshot is inside its grace window, and converts into `503` with `Retry-After` through `?`.
+While the hub fails, `Entitlements::read` serves the last snapshot until its `grace_until` and
+sets `stale: true`.
+
 Your product decides what each feature and tier means.
 
 ## Connect to the hub

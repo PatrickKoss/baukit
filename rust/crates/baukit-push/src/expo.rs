@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     DeviceToken, MAX_RECEIPT_BATCH_SIZE, PushDeliveryStatus, PushError, PushFuture, PushMessage,
     PushOptions, PushOptionsError, PushOutcome, PushReceipt, PushReceiptFuture, PushReceiptSource,
-    PushRejection, PushSender, PushTicketId,
+    PushRejection, PushSendError, PushSender, PushTicketId,
 };
 
 const OK_STATUS: &str = "ok";
@@ -229,7 +229,7 @@ fn endpoint_client(options: &PushOptions) -> Result<GuardedClient, PushOptionsEr
         .with_policy(AddressPolicy::OnlyEndpoint(endpoint))
         .with_request_timeout(options.request_timeout())
         .map_err(|_| invalid())?;
-    GuardedClient::new(egress).map_err(|_| invalid())
+    GuardedClient::new("expo", egress).map_err(|_| invalid())
 }
 
 /// Accepted tickets still waiting for a receipt, paired with their device tokens.
@@ -319,15 +319,21 @@ fn rejection(details: Option<&ExpoErrorDetails>) -> Option<PushRejection> {
 impl PushSender for ExpoPushSender {
     fn send<'a>(&'a self, batch: Vec<PushMessage>) -> PushFuture<'a> {
         Box::pin(async move {
+            let batch_size = self.options.batch_size();
             let mut outcomes = Vec::with_capacity(batch.len());
-            for chunk in batch.chunks(self.options.batch_size()) {
+            for (index, chunk) in batch.chunks(batch_size).enumerate() {
                 match self.send_chunk(chunk).await {
                     Ok(chunk_outcomes) => outcomes.extend(chunk_outcomes),
-                    Err(error) if outcomes.is_empty() => return Err(error),
                     Err(error) => {
-                        return Err(PushError::Partial {
+                        let unsent = batch
+                            .iter()
+                            .skip(index.saturating_mul(batch_size))
+                            .cloned()
+                            .collect();
+                        return Err(PushSendError {
+                            error,
                             outcomes,
-                            error: Box::new(error),
+                            unsent,
                         });
                     }
                 }
@@ -450,7 +456,7 @@ mod guarded_transport_tests {
             .await
             .expect_err("non-success status fails the batch");
         task.abort();
-        Ok(error)
+        Ok(error.error)
     }
 
     #[tokio::test]
@@ -564,6 +570,7 @@ mod guarded_transport_tests {
         let options = PushOptions::new(&endpoint)?.with_batch_size(1)?;
         let sender = ExpoPushSender::with_options(options.clone())?.with_guarded_client(
             baukit_egress::GuardedClient::new(
+                "expo",
                 baukit_egress::EgressOptions::default()
                     .with_policy(baukit_egress::AddressPolicy::AllowLoopback),
             )?,
@@ -597,7 +604,7 @@ mod guarded_transport_tests {
             );
         }
         let blocked = ExpoPushSender::with_options(options)?.with_guarded_client(
-            baukit_egress::GuardedClient::new(baukit_egress::EgressOptions::default())?,
+            baukit_egress::GuardedClient::new("expo", baukit_egress::EgressOptions::default())?,
         );
         assert!(
             blocked

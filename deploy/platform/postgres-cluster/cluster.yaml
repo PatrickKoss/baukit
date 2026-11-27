@@ -16,8 +16,11 @@ spec:
     name: postgresql
     major: 18
   enableSuperuserAccess: false
-  # A member of baukit_tenants may connect only to the database named like a role it belongs to.
   postgresql:
+    # Sized in README.md "Connection budget".
+    parameters:
+      max_connections: "150"
+    # A member of baukit_tenants may connect only to the database named like a role it belongs to.
     pg_hba:
       - host samerole +baukit_tenants all scram-sha-256
       - host all +baukit_tenants all reject
@@ -27,6 +30,13 @@ spec:
       owner: product_owner
       secret:
         name: product-db-credentials
+      # Tenant role settings, as in product-database.example.yaml. PgBouncer drops the
+      # client's startup options, so the role carries baukit-config's default timeouts.
+      postInitApplicationSQL:
+        - ALTER ROLE product_owner CONNECTION LIMIT 25
+        - ALTER ROLE product_owner SET statement_timeout = '29s'
+        - ALTER ROLE product_owner SET lock_timeout = '5s'
+        - ALTER ROLE product_owner SET idle_in_transaction_session_timeout = '60s'
   plugins:
     - name: barman-cloud.cloudnative-pg.io
       isWALArchiver: true

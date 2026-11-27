@@ -156,8 +156,8 @@ installation registers again with one. A claim made before 0006 has no
 A scheduled sender claims a `DeliveryClaim` keyed by owner, local date, and
 `DeliveryKind` before it sends. `claim` returns `None` when another worker
 already holds it, and a `ClaimToken` otherwise. If the send fails before any
-notification went out, `release` the claim with that token so a later run can try again. A `PushError::Partial` means earlier
-chunks already went out: record its `outcomes` and keep the claim, because a
+notification went out, `release` the claim with that token so a later run can try again. A
+`PushSendError` with `outcomes` means earlier chunks already went out: record them and keep the claim, because a
 retry would send those notifications twice. Event-driven senders do not need claims, which is why this is a
 separate `DeliveryClaimStore` port with its own table.
 
@@ -185,10 +185,10 @@ match sender.send(messages).await {
         registry.invalidate_dead_tokens(&outcomes, sent_at).await?;
     }
     Err(error) => {
-        if error.completed_outcomes().is_empty() {
+        if error.outcomes.is_empty() {
             claims.release(claim, token).await?;
         } else {
-            registry.invalidate_dead_tokens(error.completed_outcomes(), sent_at).await?;
+            registry.invalidate_dead_tokens(&error.outcomes, sent_at).await?;
         }
         return Err(error.into());
     }
@@ -233,12 +233,24 @@ async fn deliver(
     messages: Vec<PushMessage>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let sent_at = Timestamp::now();
-    let outcomes = sender.send(messages).await?;
+    let (outcomes, failure) = match sender.send(messages).await {
+        Ok(outcomes) => (outcomes, None),
+        Err(failure) => (failure.outcomes.clone(), Some(failure)),
+    };
     registry.invalidate_dead_tokens(&outcomes, sent_at).await?;
     pending.record_accepted(owner_id, &outcomes, sent_at).await?;
-    Ok(())
+    match failure {
+        Some(failure) => Err(failure.into()),
+        None => Ok(()),
+    }
 }
 ```
+
+The adapter sends one request per chunk of `batch_size` messages and stops at
+the first chunk that fails. The `PushSendError` it returns holds the outcomes
+of the chunks Expo already took, including their tickets, and lists the
+failing chunk and everything after it in `unsent`. Record the outcomes first,
+then retry with `unsent` only, so nobody gets the same notification twice.
 
 `record_accepted` stores ticket ID, owner, token, and `sent_at` for every
 `Accepted` outcome of one owner's send, first due `RECEIPT_POLL_DELAY` (15
@@ -356,7 +368,7 @@ let options = PushOptions::default();
 let egress = EgressOptions::default()
     .with_request_timeout(options.request_timeout())?;
 let sender = ExpoPushSender::with_options(options)?
-    .with_guarded_client(GuardedClient::new(egress)?);
+    .with_guarded_client(GuardedClient::new("expo", egress)?);
 # Ok(sender)
 # }
 ```
@@ -392,10 +404,10 @@ if error.is_retryable() {
 ```
 
 A malformed provider response is a `PushError::InvalidResponse` and is never
-retryable. When a later chunk of a multi-chunk batch fails, `send` returns
-`PushError::Partial` with the outcomes of the chunks Expo already handled and
-the error that stopped the rest; `is_retryable` and `retry_after` follow that
-inner error. Retry only the messages without an outcome. Per-notification refusals are not errors at all; check
+retryable. When a chunk fails, `send` returns a `PushSendError` with the outcomes
+of the chunks Expo already handled, the error that stopped the rest and the
+`unsent` messages; `is_retryable` and `retry_after` follow that error. Retry only
+`unsent`. Per-notification refusals are not errors at all; check
 `PushRejection::is_retryable` on each outcome instead.
 
 ## Configuration

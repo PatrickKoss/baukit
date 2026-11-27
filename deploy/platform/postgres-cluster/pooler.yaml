@@ -1,0 +1,47 @@
+# PgBouncer in transaction mode in front of the primary. Products connect to
+# postgres-cluster-pooler-rw:5432 instead of postgres-cluster-rw, so many app pods share a
+# small set of server connections. Session state (LISTEN, advisory locks held across
+# transactions, SET without LOCAL) does not survive transaction mode; such clients keep a
+# direct connection to postgres-cluster-rw.
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: postgres-cluster-pooler-rw
+spec:
+  cluster:
+    name: postgres-cluster
+  instances: 1
+  type: rw
+  pgbouncer:
+    image: ghcr.io/cloudnative-pg/pgbouncer:1.26.1@sha256:9f648625e11f67f5171f1edd31648c7d02a1a4a5e1b8adf7d4a9db30dce8c22b
+    poolMode: transaction
+    parameters:
+      default_pool_size: "10"
+      reserve_pool_size: "2"
+      max_db_connections: "12"
+      max_client_conn: "500"
+      max_prepared_statements: "200"
+      # Clients send their timeouts as startup options, which PgBouncer cannot forward. The
+      # tenant role's ALTER ROLE ... SET values apply instead.
+      ignore_startup_parameters: extra_float_digits,options
+      # Seconds. Above the role's 29 s statement_timeout, so PostgreSQL cancels first and
+      # the client sees its error; this only catches a server that stopped answering.
+      query_timeout: "35"
+      # Matches the role's idle_in_transaction_session_timeout of 60 s.
+      idle_transaction_timeout: "60"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: postgres-pooler
+        app.kubernetes.io/part-of: baukit-platform
+    spec:
+      priorityClassName: platform-critical
+      containers:
+        - name: pgbouncer
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi

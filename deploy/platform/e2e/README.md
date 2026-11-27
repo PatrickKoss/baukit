@@ -119,6 +119,26 @@ and need a cluster that composes it.
 the probe runner to show that Traefik's pods get in and a pod from another namespace does not, even
 with Traefik's labels.
 
+## Disruption suites
+
+These cases back the reliability claims in the hardening plan (R1, R2) and the reliability plan (FX3).
+
+- `tests/api-disruption` installs two echo API replicas behind Traefik. `edge-load.sh` starts a loader
+  pod (the echo image, with `hostAliases` pointing the ingress host at the Traefik ClusterIP) that
+  requests the host over HTTPS about eight times a second and prints a summary. An image tag change
+  from `echo:local` to `echo:next` (both tags `run.sh` imports) must finish with zero failed
+  requests. A force-deleted replica skips the preStop drain, so up to `kill_shed_budget` (20)
+  requests may fail before Traefik drops its endpoint, and the replacement must become ready.
+- `tests/node-drain` runs `kubectl drain --dry-run=server` on every node and fails when a
+  PodDisruptionBudget still blocks an eviction after three minutes. Other suites kill pods at the same
+  time, which can hold a budget at zero for a moment, so it retries inside that window.
+- `tests/postgres-failover` creates a single-instance CNPG cluster in `e2e-tenant`, deletes its primary
+  pod and waits for a client pod that queries every second to succeed against the recreated instance
+  without restarting. A two-instance switchover would need a replica and its base backup on a cluster
+  sized for one instance, so the suite covers the single-instance case the local and small overlays run.
+- The Flagger rollback is `tests/canary`: the `echo-faulty` image fails the error gate twice and
+  Flagger leaves the primary on the healthy image.
+
 ## Persistent clusters
 
 `persistent.sh` runs suites against a cluster that outlives the run, by default `k3d-platform-local`:

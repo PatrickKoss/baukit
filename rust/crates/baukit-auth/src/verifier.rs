@@ -13,7 +13,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
 
+use baukit_egress::GuardedClient;
+
 use crate::oidc_http::{self, Document};
+use crate::startup::{RetryFailure, retry_within};
 use crate::{ApiToken, ClerkVerifier, OidcConfig, SigningAlgorithm, WorkOsVerifier};
 
 mod claims;
@@ -504,13 +507,7 @@ impl OidcVerifier {
         let jwks_uri =
             Url::parse(jwks_uri.as_ref()).map_err(|_| VerificationError::InvalidJwksUri)?;
         let client = oidc_http::configured_client(&config, &jwks_uri)?;
-        Ok(Self {
-            inner: Arc::new(VerifierInner {
-                jwks: JwksCache::new(JwksPolicy::from_config(&config)),
-                config,
-                source: KeySource::Http(Arc::new(HttpKeySource { client, jwks_uri })),
-            }),
-        })
+        Ok(Self::with_http_keys(config, client, jwks_uri))
     }
 
     /// Constructs a verifier that checks tokens against a fixed JWKS document.
@@ -570,31 +567,59 @@ impl OidcVerifier {
     ///
     /// The discovery response must report the exact configured issuer. JWKS are
     /// fetched lazily on first verification and then cached according to the
-    /// configured TTL.
+    /// configured TTL. With [`OidcConfig::with_jwks_uri`] no discovery request is
+    /// sent. Transient discovery failures are retried with jittered backoff until
+    /// [`OidcConfig::with_startup_budget`] runs out.
     ///
     /// # Errors
     ///
-    /// Returns the egress client errors of [`Self::from_jwks_uri`], a discovery
-    /// transport error (`DiscoveryTimeout`, `DiscoveryRequest`, `DiscoveryStatus`,
+    /// Returns the egress client errors of [`Self::from_jwks_uri`], a permanent
+    /// discovery error (`DiscoveryStatus` for a non-transient status,
     /// `InvalidDiscoveryDocument`), [`VerificationError::DiscoveryIssuerMismatch`]
-    /// when metadata names another issuer, and `InvalidJwksUri` for a bad `jwks_uri`.
+    /// when metadata names another issuer, `InvalidJwksUri` for a bad `jwks_uri`,
+    /// and [`VerificationError::DiscoveryBudgetExhausted`] holding the last
+    /// transient error when the budget runs out.
     pub async fn discover(config: OidcConfig) -> Result<Self, VerificationError> {
+        if let Some(jwks_uri) = config.jwks_uri.clone() {
+            let client = oidc_http::configured_client(&config, &jwks_uri)?;
+            return Ok(Self::with_http_keys(config, client, jwks_uri));
+        }
         let discovery = oidc_http::configured_client(&config, &config.issuer_url)?;
-        let metadata: DiscoveryDocument =
-            oidc_http::get_json(&discovery, config.discovery_url(), Document::Discovery).await?;
+        let metadata = retry_within(
+            config.startup_budget,
+            VerificationError::is_unavailable,
+            || {
+                oidc_http::get_json::<DiscoveryDocument>(
+                    &discovery,
+                    config.discovery_url(),
+                    Document::Discovery,
+                )
+            },
+        )
+        .await
+        .map_err(|failure| match failure {
+            RetryFailure::Permanent(error) => error,
+            RetryFailure::Exhausted(error) => {
+                VerificationError::DiscoveryBudgetExhausted(Box::new(error))
+            }
+        })?;
         if metadata.issuer != config.issuer.as_str() {
             return Err(VerificationError::DiscoveryIssuerMismatch);
         }
         let jwks_uri =
             Url::parse(&metadata.jwks_uri).map_err(|_| VerificationError::InvalidJwksUri)?;
         let client = oidc_http::discovered_jwks_client(&config, discovery, &jwks_uri)?;
-        Ok(Self {
+        Ok(Self::with_http_keys(config, client, jwks_uri))
+    }
+
+    fn with_http_keys(config: OidcConfig, client: GuardedClient, jwks_uri: Url) -> Self {
+        Self {
             inner: Arc::new(VerifierInner {
                 jwks: JwksCache::new(JwksPolicy::from_config(&config)),
                 config,
                 source: KeySource::Http(Arc::new(HttpKeySource { client, jwks_uri })),
             }),
-        })
+        }
     }
 
     /// Returns the exact issuer this verifier accepts.

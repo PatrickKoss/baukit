@@ -9,6 +9,7 @@ use baukit_config::RateLimitFailMode;
 use crate::{Quota, RateLimitOptions, RateLimitStore, resolve_client_ip};
 
 const BUCKET_PERIOD: Duration = Duration::from_secs(60);
+const STORE_UNAVAILABLE_RETRY_AFTER: Duration = Duration::from_secs(1);
 
 /// [`BrowserSessionRateLimiter`] over a [`RateLimitStore`].
 ///
@@ -46,8 +47,8 @@ impl StoreBrowserSessionRateLimiter {
     fn on_failure(&self) -> RateLimitOutcome {
         match self.options.fail_mode {
             RateLimitFailMode::Open => RateLimitOutcome::Allowed,
-            RateLimitFailMode::Closed => RateLimitOutcome::Limited {
-                retry_after: BUCKET_PERIOD,
+            RateLimitFailMode::Closed => RateLimitOutcome::Unavailable {
+                retry_after: STORE_UNAVAILABLE_RETRY_AFTER,
             },
         }
     }
@@ -278,8 +279,8 @@ mod tests {
             (RateLimitFailMode::Open, RateLimitOutcome::Allowed),
             (
                 RateLimitFailMode::Closed,
-                RateLimitOutcome::Limited {
-                    retry_after: BUCKET_PERIOD,
+                RateLimitOutcome::Unavailable {
+                    retry_after: STORE_UNAVAILABLE_RETRY_AFTER,
                 },
             ),
         ] {

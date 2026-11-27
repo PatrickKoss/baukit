@@ -11,20 +11,27 @@ use metrics_exporter_prometheus::{Matcher, PrometheusBuilder};
 use serde_json::json;
 use tokio::sync::Notify;
 
-use super::*;
-use crate::{EnqueueOutcome, Job, JobStatus, NewJob, StoreError, StoreFuture};
+use super::{attempt::retry_delay, *};
+use crate::{
+    EnqueueOutcome, FailureDisposition, Job, JobLease, JobStatus, NewJob, QueueDepth,
+    ReleaseReason, StoreError, StoreFuture,
+};
+
+mod lifecycle;
+mod reliability;
 
 #[test]
-fn retry_delay_is_exponential_and_bounded() {
+fn retry_delay_is_full_jitter_under_an_exponential_bound() {
     let config = WorkerConfig {
         retry_initial: Duration::from_secs(5),
         retry_max: Duration::from_secs(60),
         ..WorkerConfig::default()
     };
-    assert_eq!(retry_delay(&config, 1), Duration::from_secs(5));
-    assert_eq!(retry_delay(&config, 2), Duration::from_secs(10));
-    assert_eq!(retry_delay(&config, 5), Duration::from_secs(60));
-    assert_eq!(retry_delay(&config, u32::MAX), Duration::from_secs(60));
+    assert_eq!(retry_delay(&config, 1, 0.5), Duration::from_millis(2500));
+    assert_eq!(retry_delay(&config, 2, 0.5), Duration::from_secs(5));
+    assert_eq!(retry_delay(&config, 5, 0.5), Duration::from_secs(30));
+    assert_eq!(retry_delay(&config, u32::MAX, 0.5), Duration::from_secs(30));
+    assert_eq!(retry_delay(&config, 3, 0.0), Duration::ZERO);
 }
 
 #[test]
@@ -230,9 +237,7 @@ async fn provider_retry_delay_is_capped_at_retry_max() {
 async fn recorded_retry_delay(config: WorkerConfig) -> Option<SignedDuration> {
     let store = Arc::new(FakeStore::with_jobs(0));
     process_claimed_job(
-        store.clone(),
-        Arc::new(RetryAfterHandler),
-        config,
+        attempt_context(store.clone(), Arc::new(RetryAfterHandler), config),
         fake_job(0),
     )
     .await
@@ -247,9 +252,11 @@ async fn recorded_retry_delay(config: WorkerConfig) -> Option<SignedDuration> {
 async fn handler_owned_transactional_completion_is_not_completed_twice() {
     let store = Arc::new(FakeStore::with_jobs(0));
     process_claimed_job(
-        store.clone(),
-        Arc::new(TransactionalCompletionHandler),
-        test_config(),
+        attempt_context(
+            store.clone(),
+            Arc::new(TransactionalCompletionHandler),
+            test_config(),
+        ),
         fake_job(0),
     )
     .await
@@ -264,9 +271,7 @@ async fn a_pending_cancellation_query_does_not_stop_the_handler() {
     store.block_cancellation_poll.store(true, Ordering::SeqCst);
     let handler = Arc::new(BlockingHandler::default());
     let task = tokio::spawn(process_claimed_job(
-        store.clone(),
-        handler.clone(),
-        test_config(),
+        attempt_context(store.clone(), handler.clone(), test_config()),
         fake_job(0),
     ));
     tokio::time::timeout(
@@ -292,12 +297,14 @@ async fn a_pending_cancellation_query_does_not_stop_the_timeout() {
     store.block_cancellation_poll.store(true, Ordering::SeqCst);
     let handler = Arc::new(BlockingHandler::default());
     let task = tokio::spawn(process_claimed_job(
-        store.clone(),
-        handler.clone(),
-        WorkerConfig {
-            job_timeout: Duration::from_millis(20),
-            ..test_config()
-        },
+        attempt_context(
+            store.clone(),
+            handler.clone(),
+            WorkerConfig {
+                job_timeout: Duration::from_millis(20),
+                ..test_config()
+            },
+        ),
         fake_job(0),
     ));
     tokio::time::timeout(
@@ -331,12 +338,34 @@ fn test_config() -> WorkerConfig {
         queue: "test",
         concurrency: 1,
         poll_interval: Duration::from_millis(5),
+        idle_poll_max: Duration::from_millis(5),
         lease_duration: Duration::from_secs(120),
         job_timeout: Duration::from_secs(60),
         cancellation_poll_interval: Duration::from_millis(5),
         retry_initial: Duration::from_millis(5),
         retry_max: Duration::from_secs(1),
+        max_per_key: None,
+        max_deferrals: 2,
+        queue_sample_interval: Duration::from_millis(5),
+        release_reserve: Duration::from_millis(100),
+        store_call_timeout: Duration::from_millis(200),
     }
+}
+
+fn attempt_context(
+    store: Arc<FakeStore>,
+    handler: Arc<dyn JobHandler>,
+    config: WorkerConfig,
+) -> Arc<AttemptContext> {
+    Arc::new(AttemptContext {
+        store,
+        handler,
+        config,
+        drain: CancellationToken::new(),
+        release_now: CancellationToken::new(),
+        jitter: SharedJitter::from_entropy(),
+        recurring: Vec::new(),
+    })
 }
 
 struct FakeStore {
@@ -352,6 +381,25 @@ struct FakeStore {
     recorded_retry_delay: Mutex<Option<jiff::SignedDuration>>,
     claimed_job_types: Mutex<Vec<Vec<String>>>,
     enqueue_during_claim: AtomicBool,
+    failing_store_calls: AtomicUsize,
+    heartbeats: AtomicUsize,
+    lease_owned: AtomicBool,
+    releases: Mutex<Vec<Release>>,
+    sampled_job_types: Mutex<Vec<Vec<String>>>,
+    block_claim: AtomicBool,
+    hang_claims: AtomicBool,
+    claim_started: Notify,
+    claim_release: Notify,
+    enqueued: Mutex<Vec<NewJob>>,
+    enqueue_status: Mutex<JobStatus>,
+    failure_disposition: Mutex<FailureDisposition>,
+    max_per_key_seen: Mutex<Vec<Option<std::num::NonZeroU32>>>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Release {
+    reason: ReleaseReason,
+    delay: SignedDuration,
 }
 
 impl FakeStore {
@@ -369,7 +417,47 @@ impl FakeStore {
             recorded_retry_delay: Mutex::new(None),
             claimed_job_types: Mutex::new(Vec::new()),
             enqueue_during_claim: AtomicBool::new(false),
+            failing_store_calls: AtomicUsize::new(0),
+            heartbeats: AtomicUsize::new(0),
+            lease_owned: AtomicBool::new(true),
+            releases: Mutex::new(Vec::new()),
+            sampled_job_types: Mutex::new(Vec::new()),
+            block_claim: AtomicBool::new(false),
+            hang_claims: AtomicBool::new(false),
+            claim_started: Notify::new(),
+            claim_release: Notify::new(),
+            enqueued: Mutex::new(Vec::new()),
+            enqueue_status: Mutex::new(JobStatus::Pending),
+            failure_disposition: Mutex::new(FailureDisposition::Retry),
+            max_per_key_seen: Mutex::new(Vec::new()),
         }
+    }
+
+    fn fail_next_store_calls(&self, count: usize) {
+        self.failing_store_calls.store(count, Ordering::SeqCst);
+    }
+
+    fn take_failure(&self) -> Result<(), StoreError> {
+        loop {
+            let left = self.failing_store_calls.load(Ordering::SeqCst);
+            let Some(next) = left.checked_sub(1) else {
+                return Ok(());
+            };
+            if self
+                .failing_store_calls
+                .compare_exchange(left, next, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                return Err(StoreError::InvalidData("injected store outage".to_owned()));
+            }
+        }
+    }
+
+    fn releases(&self) -> Vec<Release> {
+        self.releases
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     fn remaining(&self) -> usize {
@@ -381,22 +469,45 @@ impl FakeStore {
 }
 
 impl JobStore for FakeStore {
-    fn enqueue(&self, _job: NewJob) -> StoreFuture<'_, Result<EnqueueOutcome, StoreError>> {
-        Box::pin(async {
-            Err(StoreError::InvalidInput(
-                "enqueue is unused by this fake".to_owned(),
-            ))
+    fn enqueue(&self, job: NewJob) -> StoreFuture<'_, Result<EnqueueOutcome, StoreError>> {
+        Box::pin(async move {
+            let status = *lock(&self.enqueue_status);
+            let stored = Job {
+                id: job.id,
+                job_type: job.job_type.clone(),
+                payload: job.payload.clone(),
+                status,
+                run_after: job.run_after,
+                idempotency_key: job.idempotency_key.clone(),
+                ..fake_job(0)
+            };
+            lock(&self.enqueued).push(job);
+            self.transition.notify_one();
+            Ok(EnqueueOutcome {
+                job: stored,
+                created: status == JobStatus::Pending,
+            })
         })
     }
 
-    fn claim<'a>(
+    fn claim_with_key_limit<'a>(
         &'a self,
         _worker_id: &'a str,
         job_types: &'a [&'a str],
         now: jiff::Timestamp,
         _lease_for: Duration,
+        max_per_key: Option<std::num::NonZeroU32>,
     ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>> {
         Box::pin(async move {
+            self.take_failure()?;
+            lock(&self.max_per_key_seen).push(max_per_key);
+            if self.hang_claims.load(Ordering::SeqCst) {
+                std::future::pending::<()>().await;
+            }
+            if self.block_claim.swap(false, Ordering::SeqCst) {
+                self.claim_started.notify_one();
+                self.claim_release.notified().await;
+            }
             self.claimed_job_types
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -454,7 +565,7 @@ impl JobStore for FakeStore {
                 .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(retry_at - now);
             self.retried.fetch_add(1, Ordering::SeqCst);
             self.transition.notify_one();
-            Ok(Some(FailureDisposition::Retry))
+            Ok(Some(*lock(&self.failure_disposition)))
         })
     }
 
@@ -488,11 +599,58 @@ impl JobStore for FakeStore {
         })
     }
 
-    fn oldest_pending_age(
-        &self,
+    fn heartbeat<'a>(
+        &'a self,
+        _lease: &'a JobLease,
+        _lease_for: Duration,
         _now: jiff::Timestamp,
-    ) -> StoreFuture<'_, Result<Duration, StoreError>> {
-        Box::pin(async { Ok(Duration::ZERO) })
+    ) -> StoreFuture<'a, Result<bool, StoreError>> {
+        Box::pin(async move {
+            self.heartbeats.fetch_add(1, Ordering::SeqCst);
+            Ok(self.lease_owned.load(Ordering::SeqCst))
+        })
+    }
+
+    fn release<'a>(
+        &'a self,
+        _lease: &'a JobLease,
+        run_after: jiff::Timestamp,
+        reason: ReleaseReason,
+        now: jiff::Timestamp,
+    ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>> {
+        Box::pin(async move {
+            self.releases
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(Release {
+                    reason,
+                    delay: run_after - now,
+                });
+            self.transition.notify_one();
+            Ok(Some(FailureDisposition::Retry))
+        })
+    }
+
+    fn oldest_pending_age<'a>(
+        &'a self,
+        job_types: &'a [&'a str],
+        _now: jiff::Timestamp,
+    ) -> StoreFuture<'a, Result<Duration, StoreError>> {
+        Box::pin(async move {
+            self.take_failure()?;
+            self.sampled_job_types
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(job_types.iter().map(|job| (*job).to_owned()).collect());
+            Ok(Duration::ZERO)
+        })
+    }
+
+    fn queue_depth<'a>(
+        &'a self,
+        _job_types: &'a [&'a str],
+    ) -> StoreFuture<'a, Result<QueueDepth, StoreError>> {
+        Box::pin(async { Ok(QueueDepth::default()) })
     }
 
     fn ready(&self) -> StoreFuture<'_, Result<(), StoreError>> {
@@ -608,7 +766,15 @@ fn fake_job(sequence: usize) -> Job {
         last_error: None,
         failure_reason: None,
         cancel_requested_at: None,
+        deferrals: 0,
+        concurrency_key: None,
         created_at: now,
         updated_at: now,
     }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }

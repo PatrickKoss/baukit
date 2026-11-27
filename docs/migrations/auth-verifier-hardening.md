@@ -39,7 +39,13 @@ last fetch ends. Tests that rotate keys right after the first fetch should set
 a short cooldown.
 
 When a refetch fails, the verifier serves the last good set for
-`with_jwks_stale_grace(Duration)`, default 10 minutes, past its TTL.
+`with_jwks_stale_grace(Duration)`, default one hour, past its TTL.
+
+0.31.0 shipped a 10 minute default. The release after it raises the default
+to one hour, so a longer IdP outage does not reject every token whose key the
+verifier already knows. A key the IdP revoked stays usable for up to that
+hour while refetches fail. Products that need the shorter window set
+`with_jwks_stale_grace(Duration::from_secs(600))`.
 
 ## BFF session response
 

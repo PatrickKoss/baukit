@@ -1,0 +1,169 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: api-disruption
+spec:
+  description: >-
+    Two echo API replicas behind Traefik, with a loader pod requesting the ingress host about eight
+    times a second. An image tag change rolls both replicas with maxUnavailable 0 and the preStop
+    drain, and no request fails. A force-deleted replica gets no preStop, so Traefik keeps routing
+    to it until the EndpointSlice update reaches its provider; at most kill_shed_budget requests
+    fail in that window and the replacement pod comes up.
+  namespaceTemplate:
+    metadata:
+      labels:
+        baukit.dev/ingress-backend: "true"
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/enforce-version: v1.37
+        pod-security.kubernetes.io/audit: restricted
+        pod-security.kubernetes.io/warn: restricted
+  timeouts:
+    exec: 5m
+  steps:
+    - name: install-two-replicas
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              helm install echo ../../../../chart/baukit-app --namespace "$NAMESPACE" \
+                --values values.yaml --wait --timeout 4m
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: echo-api
+              status:
+                readyReplicas: 2
+        - assert:
+            resource:
+              apiVersion: policy/v1
+              kind: PodDisruptionBudget
+              metadata:
+                name: echo-api
+              spec:
+                maxUnavailable: 1
+    - name: rollout-under-load
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              # Covers two 11 s pod terminations and two readiness waits with margin.
+              load_seconds=90
+              min_ok=100
+              bash ./edge-load.sh start rollout echo-disruption.localhost "$load_seconds"
+              helm upgrade echo ../../../../chart/baukit-app --namespace "$NAMESPACE" \
+                --values values.yaml --set api.image.tag=next --wait --timeout 3m
+              kubectl -n "$NAMESPACE" rollout status deployment/echo-api --timeout=2m
+              bash ./edge-load.sh finish rollout 0 "$min_ok"
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" get deployment echo-api \
+                -o jsonpath='{.spec.template.spec.containers[0].image}'
+            check:
+              ($stdout): localhost/baukit-e2e/echo:next
+      catch:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" get pods,endpointslices -o wide
+              kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -30
+    - name: pod-kill-under-load
+      try:
+        - script:
+            timeout: 4m
+            content: |
+              set -eu
+              load_seconds=45
+              min_ok=100
+              # About 2.5 s of the killed replica's half of the traffic at eight requests a second:
+              # the EndpointSlice update plus Traefik's provider throttle.
+              kill_shed_budget=20
+              selector=baukit.dev/workload=echo-api
+              bash ./edge-load.sh start kill echo-disruption.localhost "$load_seconds"
+              sleep 5
+              victim=$(kubectl -n "$NAMESPACE" get pods -l "$selector" -o jsonpath='{.items[0].metadata.name}')
+              kubectl -n "$NAMESPACE" delete pod "$victim" --grace-period=0 --force --wait=false
+              deadline=$(($(date +%s) + 120))
+              until ready=$(kubectl -n "$NAMESPACE" get pods -l "$selector" \
+                -o jsonpath='{range .items[*]}{.metadata.name}={.status.containerStatuses[0].ready}{"\n"}{end}' |
+                grep -v "^$victim=" | grep -c '=true$') && [ "$ready" -ge 2 ]; do
+                [ "$(date +%s)" -lt "$deadline" ] || { echo "no replacement for $victim became ready" >&2; exit 1; }
+                sleep 2
+              done
+              echo "replacement for $victim is ready"
+              bash ./edge-load.sh finish kill "$kill_shed_budget" "$min_ok"
+      catch:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" get pods,endpointslices -o wide
+              kubectl -n "$NAMESPACE" get events --sort-by=.lastTimestamp | tail -30
+    # kubectl rollout restart sets spec.template.metadata.annotations["kubectl.kubernetes.io/restartedAt"]
+    # under the kubectl-rollout field manager. helm-controller drift detection diffs a server-side apply
+    # dry run of the Helm manifest against the live object, and that dry run keeps fields other managers
+    # own, so the annotation is no drift and the restart is neither reverted nor rolled twice.
+    - name: traefik-rollout-under-load
+      try:
+        - script:
+            timeout: 6m
+            content: |
+              set -eu
+              # Covers the surge pod's start and readiness plus the old pod's graceful shutdown.
+              load_seconds=90
+              min_ok=100
+              rollout_timeout=3m
+              old_pod_deadline_seconds=90
+              selector=app.kubernetes.io/name=traefik
+              annotation='kubectl\.kubernetes\.io/restartedAt'
+              original=$(kubectl -n traefik get deployment traefik \
+                -o jsonpath="{.spec.template.metadata.annotations.$annotation}")
+              kubectl -n "$NAMESPACE" create configmap traefik-original \
+                --from-literal=restartedAt="$original" --from-literal=recorded=true
+              kubectl -n traefik rollout status deployment/traefik --timeout="$rollout_timeout"
+              old_pods=$(kubectl -n traefik get pods -l "$selector" -o jsonpath='{.items[*].metadata.name}')
+              [ -n "$old_pods" ] || { echo "no Traefik pod before the rollout" >&2; exit 1; }
+              bash ./edge-load.sh start traefik echo-disruption.localhost "$load_seconds"
+              kubectl -n traefik rollout restart deployment/traefik
+              kubectl -n traefik rollout status deployment/traefik --timeout="$rollout_timeout"
+              deadline=$(($(date +%s) + old_pod_deadline_seconds))
+              for pod in $old_pods; do
+                until ! kubectl -n traefik get pod "$pod" >/dev/null 2>&1; do
+                  [ "$(date +%s)" -lt "$deadline" ] || { echo "old Traefik pod $pod is still present" >&2; exit 1; }
+                  sleep 2
+                done
+              done
+              ready=$(kubectl -n traefik get pods -l "$selector" \
+                -o jsonpath='{range .items[*]}{.metadata.name}={.status.containerStatuses[0].ready}{"\n"}{end}' |
+                grep -c '=true$' || true)
+              [ "$ready" -ge 1 ] || { echo "no new Traefik pod is Ready" >&2; exit 1; }
+              echo "old Traefik pods $old_pods are gone, $ready new pod(s) Ready"
+              bash ./edge-load.sh finish traefik 0 "$min_ok"
+      catch:
+        - script:
+            content: |
+              kubectl -n traefik get deployment,replicasets,pods,endpointslices -o wide
+              kubectl -n traefik get events --sort-by=.lastTimestamp | tail -30
+              kubectl -n traefik get helmrelease traefik -o yaml | tail -40
+      cleanup:
+        - script:
+            timeout: 4m
+            content: |
+              set -eu
+              recorded=$(kubectl -n "$NAMESPACE" get configmap traefik-original \
+                -o jsonpath='{.data.recorded}' 2>/dev/null || true)
+              [ "$recorded" = true ] || exit 0
+              original=$(kubectl -n "$NAMESPACE" get configmap traefik-original -o jsonpath='{.data.restartedAt}')
+              current=$(kubectl -n traefik get deployment traefik \
+                -o jsonpath='{.spec.template.metadata.annotations.kubectl\.kubernetes\.io/restartedAt}')
+              if [ "$current" != "$original" ]; then
+                if [ -z "$original" ]; then
+                  kubectl -n traefik patch deployment traefik --type=json \
+                    -p '[{"op":"remove","path":"/spec/template/metadata/annotations/kubectl.kubernetes.io~1restartedAt"}]'
+                else
+                  kubectl -n traefik patch deployment traefik --type=merge \
+                    -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"kubectl.kubernetes.io/restartedAt\":\"$original\"}}}}}"
+                fi
+              fi
+              kubectl -n traefik rollout status deployment/traefik --timeout=3m

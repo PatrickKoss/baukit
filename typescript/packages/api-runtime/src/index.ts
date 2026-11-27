@@ -3,6 +3,7 @@
 import createClient from 'openapi-fetch';
 import type { Client, ClientOptions } from 'openapi-fetch';
 
+import type { CooldownOptions } from './cooldown.js';
 import type { ApiError, HttpError } from './errors.js';
 import { fetchSettings, runFetch } from './fetch.js';
 
@@ -19,10 +20,13 @@ export {
 } from './sign-in-session.js';
 
 export { IDEMPOTENCY_KEY_HEADER, REQUEST_ID_HEADER } from './headers.js';
+export type { CooldownOptions } from './cooldown.js';
 export {
   ApiError,
+  ApiUnavailableError,
   HttpError,
   isApiError,
+  isApiUnavailableError,
   isHttpError,
   isNetworkError,
   NetworkError,
@@ -75,6 +79,8 @@ export interface RetryOptions {
   readonly baseDelayMs?: number;
   /** Maximum backoff ceiling in milliseconds. Defaults to 2,000. */
   readonly maxDelayMs?: number;
+  /** Upper bound for a honoured `Retry-After` delay in milliseconds. Defaults to 30,000. */
+  readonly maxRetryAfterMs?: number;
   /** Methods eligible for retries. Defaults to GET and HEAD. */
   readonly methods?: readonly RetryableMethod[];
   /** Random source used for full jitter. Defaults to `Math.random`. */
@@ -132,6 +138,12 @@ export interface ApiRuntimeOptions extends ApiEnvironmentConfig {
    */
   readonly sessionSubject?: () => string | undefined;
   readonly retry?: RetryOptions | false;
+  /** Per-attempt timeout in milliseconds, combined with the caller's signal. Defaults to 30,000. */
+  readonly requestTimeoutMs?: number | false;
+  /** Per-origin fail-fast cooldown. On by default; `false` disables it. */
+  readonly cooldown?: CooldownOptions | false;
+  /** Epoch-millisecond clock for cooldowns and `Retry-After` dates. Defaults to `Date.now`. */
+  readonly now?: () => number;
 }
 
 /** A configured runtime that can be handed to a product's generated client. */

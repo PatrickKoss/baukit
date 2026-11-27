@@ -57,7 +57,7 @@
 //!
 //! # async fn deliver(body: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
 //! let options = EgressOptions::default().with_error_body_limit(4096)?;
-//! let client = GuardedClient::new(options)?;
+//! let client = GuardedClient::new("provider", options)?;
 //! let url = Url::parse("https://hooks.example.com/deliver")?;
 //! match client.execute(EgressRequest::post(url).with_body(body)).await {
 //!     Ok(response) => tracing::debug!(status = %response.status(), "request succeeded"),
@@ -84,7 +84,7 @@
 //! # async fn collect() -> Result<(), Box<dyn std::error::Error>> {
 //! let networks = PrivateNetworks::new(["10.43.0.0/16".parse()?])?;
 //! let options = EgressOptions::default().with_policy(AddressPolicy::AllowPrivate(networks));
-//! let client = GuardedClient::new(options)?;
+//! let client = GuardedClient::new("provider", options)?;
 //! let url = Url::parse("http://prometheus.monitoring.svc:9090/api/v1/query?query=up")?;
 //! let response = client.execute(EgressRequest::get(url)).await?;
 //! # let _ = response;
@@ -94,19 +94,26 @@
 
 #![deny(missing_docs)]
 
+mod breaker;
 mod client;
 mod endpoint;
 mod error;
+mod metrics;
 mod options;
 mod policy;
 mod resolver;
 
+pub use baukit_resilience::BreakerPolicy;
 pub use client::{
     EgressClientError, EgressRequest, EgressResponse, EgressStreamResponse, GuardedClient,
     ResponseBody, validate_destination,
 };
 pub use endpoint::{AllowedEndpoint, AllowedEndpointError, EndpointOrigin};
 pub use error::{DestinationRejection, EgressError, ErrorBody};
+pub use metrics::{
+    EGRESS_CIRCUIT_STATE, EGRESS_CIRCUIT_TRANSITIONS_TOTAL, EGRESS_REQUEST_DURATION_SECONDS,
+    EGRESS_REQUESTS_TOTAL,
+};
 pub use options::{EgressOptions, EgressOptionsError, MAX_ERROR_HEADER_VALUE_BYTES};
 pub use policy::{
     AddressPolicy, PrivateNetwork, PrivateNetworkError, PrivateNetworks, is_public_address,

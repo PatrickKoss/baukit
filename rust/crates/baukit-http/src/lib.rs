@@ -3,7 +3,9 @@
 //! [`finalize`] applies one consistent request lifecycle: standard extractor and
 //! routing errors, request identity, W3C trace extraction and response
 //! propagation, route-template spans, HTTP RED metrics, panic and timeout
-//! envelopes, body and concurrency limits, and explicit CORS.
+//! envelopes, body limits, a concurrency limit that sheds with `503` after a
+//! bounded queue wait, and explicit CORS. [`route_timeout`] tightens the
+//! timeout for a single route.
 //!
 //! # Example
 //!
@@ -99,8 +101,10 @@ mod middleware;
 mod options;
 mod precondition;
 pub mod retry;
+mod route_timeout;
 mod routing;
 mod security_headers;
+mod shedding;
 
 pub use baukit_openapi::{ErrorBody, ErrorEnvelope, ResponseEnvelope, Rfc3339DateTime};
 pub use error::ApiError;
@@ -117,8 +121,8 @@ pub use locale::{
 };
 pub use middleware::{
     DURATION_BUCKETS, HTTP_REQUEST_DURATION_SECONDS, HTTP_REQUESTS_IN_FLIGHT, HTTP_REQUESTS_TOTAL,
-    MAX_REQUEST_ID_BYTES, RequestId, X_ORGANIZATION_ID, X_REQUEST_ID, extract_trace_context,
-    inject_current_trace_context, inject_trace_context, layers,
+    MAX_REQUEST_ID_BYTES, RequestId, X_ORGANIZATION_ID, X_REQUEST_ID, current_deadline,
+    extract_trace_context, inject_current_trace_context, inject_trace_context, layers,
 };
 pub use options::{HttpOptions, HttpOptionsError, JsonRejectionCodes, ResponseCachePolicy};
 pub use precondition::{
@@ -131,8 +135,13 @@ pub use retry::{
     retry_after_from_headers_at, retry_after_from_headers_with_options,
     retry_after_from_headers_with_options_at,
 };
+pub use route_timeout::{RouteTimeout, RouteTimeoutLayer, route_timeout};
 pub use routing::finalize;
 pub use security_headers::{SecurityHeaders, SecurityHeadersLayer, X_BAUKIT_SESSION};
+pub use shedding::HTTP_REQUESTS_SHED_TOTAL;
+
+/// The request deadline type returned by [`current_deadline`].
+pub use baukit_resilience::Deadline;
 
 /// The metrics facade used by the HTTP lifecycle middleware.
 ///
@@ -141,6 +150,10 @@ pub use metrics;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_deadline;
+#[cfg(test)]
+mod tests_overload;
 
 // Compiles the README's examples so they cannot drift from the API.
 #[doc = include_str!("../README.md")]

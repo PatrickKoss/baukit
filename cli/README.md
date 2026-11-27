@@ -3,7 +3,7 @@
 Install the CLI from the release tag:
 
 ```sh
-cargo install --git https://github.com/PatrickKoss/baukit --tag v0.31.0 --locked baukit-cli
+cargo install --git https://github.com/PatrickKoss/baukit --tag v0.32.0 --locked baukit-cli
 baukit --version
 ```
 
@@ -374,7 +374,7 @@ above. Add the capability and next migration path to the product manifest:
 platform = true
 
 [platform]
-migration = "backend/migrations/0012_platform.sql"
+migration = "backend/migrations/0016_platform.sql"
 ```
 
 Generate a reference product with the same flags in an empty directory, then copy

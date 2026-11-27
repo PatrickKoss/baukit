@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.32.0
+
+- New `scheduleTokenRenewal({ expiresAt, renew })` renews 30 s before expiry, retries with full-jitter backoff from 1 s up to 60 s, and stops on a terminal refresh rejection. It returns a cancel function.
+- `accessToken()` returns the current token through a retryable refresh failure while the token has not expired. `{ forceRefresh: true }` still rejects.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.32.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/type-guards@0.32.0
+
 ## 0.31.0
 
 - A rotated session stays in memory when secure storage fails, and is no longer dropped when the stored session object is replaced by one with the same refresh token.

@@ -17,7 +17,11 @@ use uuid::Uuid;
 mod link_protocol;
 pub use link_protocol::*;
 
+mod delivery_key;
 mod payloads;
+mod probe;
+pub use delivery_key::{SUITE_DELIVERY_MAX_PER_KEY, suite_delivery_concurrency_key};
+pub use probe::*;
 mod return_url;
 pub use return_url::*;
 #[cfg(feature = "runtime")]
@@ -33,6 +37,7 @@ pub const SUITE_LINKS_REVOKE_JOB_TYPE: &str = "suite.links.revoke";
 /// Job kinds whose terminal history is managed by suite cleanup.
 pub const SUITE_JOB_TYPES: [&str; 2] = [SUITE_EVENTS_DELIVER_JOB_TYPE, SUITE_LINKS_REVOKE_JOB_TYPE];
 pub const SUITE_QUEUE: &str = "suite-events";
+/// Failed delivery attempts in a row that disable a link.
 pub const SUITE_CIRCUIT_FAILURES: u32 = 20;
 pub const SUITE_MAX_ATTEMPTS: u32 = 10;
 const SECONDS_PER_DAY: i64 = 86_400;
@@ -428,6 +433,10 @@ pub struct SuiteLink {
     pub reward_mode: RewardMode,
     pub delivery_health: DeliveryHealth,
     pub consecutive_failures: u32,
+    /// When a disabled link may send its next probe delivery.
+    pub next_probe_at: Option<Timestamp>,
+    /// Probes claimed since the link was disabled.
+    pub failed_probes: u32,
     pub last_delivery_at: Option<Timestamp>,
     pub last_failure_at: Option<Timestamp>,
     pub last_failure_code: Option<String>,
@@ -438,6 +447,12 @@ pub struct SuiteLink {
 }
 
 impl SuiteLink {
+    /// Whether a disabled link may send a probe delivery at `now`.
+    pub fn probe_due(&self, now: Timestamp) -> bool {
+        self.status == LinkStatus::Active
+            && self.delivery_health == DeliveryHealth::Disabled
+            && self.next_probe_at.is_some_and(|at| at <= now)
+    }
     pub fn can_enqueue(&self) -> bool {
         self.status == LinkStatus::Active
             && self.delivery_health != DeliveryHealth::Disabled
@@ -832,6 +847,10 @@ pub enum DeliveryResult {
     Timeout,
     Transport,
     Dns,
+    /// The egress breaker or concurrency limit refused the call.
+    Deferred {
+        retry_after: Duration,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -840,7 +859,13 @@ pub enum DeliveryAction {
     LinkRevoked,
     Disabled,
     Delivered,
-    Retry { after: Option<Duration> },
+    Retry {
+        after: Option<Duration>,
+    },
+    /// The egress breaker or concurrency limit refused the call; nothing reached the peer.
+    Deferred {
+        after: Duration,
+    },
     Unauthorized,
     Revoked,
     Rejected,
@@ -853,6 +878,7 @@ impl DeliveryAction {
             Self::Disabled => Some("disabled"),
             Self::Delivered => Some("delivered"),
             Self::Retry { .. } => Some("retry"),
+            Self::Deferred { .. } => Some("deferred"),
             Self::Unauthorized => Some("unauthorized"),
             Self::Revoked => Some("revoked"),
             Self::Rejected => Some("rejected"),
@@ -870,15 +896,22 @@ impl DeliveryAction {
             Self::Revoked => Some(SuiteErrorCode::SuiteLinkRevoked),
             Self::Rejected => Some(SuiteErrorCode::SuiteRejected),
             Self::Disabled => Some(SuiteErrorCode::SuiteLinkDisabled),
-            Self::LinkMissing | Self::LinkRevoked | Self::Delivered | Self::Retry { .. } => None,
+            Self::LinkMissing
+            | Self::LinkRevoked
+            | Self::Delivered
+            | Self::Retry { .. }
+            | Self::Deferred { .. } => None,
         }
     }
 }
 
-pub fn delivery_preflight(link: Option<&SuiteLink>) -> Option<DeliveryAction> {
+/// The action that ends a delivery before the peer call, if any. A disabled link
+/// whose probe is due proceeds; the caller claims the probe first.
+pub fn delivery_preflight(link: Option<&SuiteLink>, now: Timestamp) -> Option<DeliveryAction> {
     match link {
         None => Some(DeliveryAction::LinkMissing),
         Some(link) if link.status == LinkStatus::Revoked => Some(DeliveryAction::LinkRevoked),
+        Some(link) if link.probe_due(now) => None,
         Some(link)
             if link.delivery_health == DeliveryHealth::Disabled
                 || link.consecutive_failures >= SUITE_CIRCUIT_FAILURES =>
@@ -907,35 +940,8 @@ pub fn map_delivery_result(result: DeliveryResult) -> DeliveryAction {
         DeliveryResult::Timeout | DeliveryResult::Transport | DeliveryResult::Dns => {
             DeliveryAction::Retry { after: None }
         }
+        DeliveryResult::Deferred { retry_after } => DeliveryAction::Deferred { after: retry_after },
         _ => DeliveryAction::Rejected,
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DeliveryState {
-    pub status: LinkStatus,
-    pub health: DeliveryHealth,
-    pub consecutive_failures: u32,
-}
-
-pub fn after_delivery(state: DeliveryState, action: DeliveryAction) -> DeliveryState {
-    match action {
-        DeliveryAction::Delivered if state.health == DeliveryHealth::Disabled => state,
-        DeliveryAction::Delivered => DeliveryState {
-            status: state.status,
-            health: DeliveryHealth::Healthy,
-            consecutive_failures: 0,
-        },
-        DeliveryAction::Unauthorized => DeliveryState {
-            status: LinkStatus::NeedsAttention,
-            health: DeliveryHealth::NeedsAttention,
-            ..state
-        },
-        DeliveryAction::Revoked => DeliveryState {
-            status: LinkStatus::Revoked,
-            ..state
-        },
-        _ => state,
     }
 }
 

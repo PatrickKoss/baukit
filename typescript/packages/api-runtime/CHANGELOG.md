@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## 0.32.0
+
+- Breaking: each attempt times out after `requestTimeoutMs` (default 30,000 ms, `false` disables it). A timeout rejects with a retryable `NetworkError`.
+- Breaking: a per-origin cooldown is on by default (`cooldown`, `false` disables it). A `429` or `503` with `Retry-After`, or 5 network failures in a row, block the origin; calls then reject with the new `ApiUnavailableError` (`retryAt`, `isApiUnavailableError`) without sending a request. The network cooldown starts at 30 s minus up to 20% jitter and doubles per run up to 300 s.
+- `GET` and `HEAD` retry `429` and `503` after their `Retry-After`, clamped to `maxRetryAfterMs` (default 30,000 ms). `now` sets the clock for cooldowns and `Retry-After` dates.
+- `fullJitterBackoffMs` returns whole milliseconds and saturates like `fixtures/resilience/backoff-v1.json`.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.32.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/type-guards@0.32.0
+
 ## 0.31.0
 
 - Breaking: a path starting with `/` stays under the base path, so `/items` on base `https://api.example.test/v1` goes to `/v1/items`.

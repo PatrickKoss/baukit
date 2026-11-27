@@ -1,16 +1,18 @@
 use std::{
     collections::BTreeMap,
     sync::{Arc, RwLock},
-};
+{% if context.worker %}    time::Duration,
+{% endif %}};
 
 use axum::Router;
 use baukit_config::{Validate{% if context.auth_enabled or context.worker %}, ValidationError{% endif %}, ValidationErrors};
-{% if context.worker %}use baukit_jobs::WorkerRunner;
+{% if context.worker %}use baukit_jobs::{WorkerConfig, WorkerRunner};
 {% endif %}use baukit_ops::{
     OpsRouter, PrometheusHandle, ReadinessError, ReadinessRegistry, RegistrationError,
     ServiceIdentity, TrafficGate,
 };
-
+{% if context.worker %}use baukit_runtime::{DrainBudget, DrainBudgetError};
+{% endif %}
 {% if context.auth_enabled %}use {{ context.app_crate }}_domain::InternalUser;
 use {{ context.app_crate }}_domain::Item;
 {% else %}use {{ context.app_crate }}_domain::Item;
@@ -27,9 +29,11 @@ use uuid::Uuid;
 mod compose;
 mod config;
 {% if context.platform %}pub mod platform;
-{% endif %}mod rate_limits;
+{% endif %}mod probe;
+mod rate_limits;
 pub use compose::{ApiDependencies, ComposedApi, compose_api};
 pub use config::config_loader;
+pub use probe::{PROBE_READINESS_FLAG, probe_readiness};
 pub use rate_limits::{RateLimits, {% if context.auth_enabled %}protect_routes, {% endif %}rate_limited};
 
 {% if context.auth_enabled %}mod browser_session;
@@ -186,7 +190,9 @@ impl Validate for AuthConfig {
 #[serde(default)]
 pub struct WorkerProductConfig {
     pub concurrency: usize,
-    pub lease_duration_seconds: u64,
+    /// Bearer token for `POST /admin/jobs/requeue` on the operations listener.
+    /// The route stays off while this is unset.
+    pub admin_token: Option<baukit_config::Secret<String>>,
     pub job_timeout_seconds: u64,
     pub poll_interval_milliseconds: u64,
 }
@@ -195,11 +201,37 @@ impl Default for WorkerProductConfig {
     fn default() -> Self {
         Self {
             concurrency: 5,
-            lease_duration_seconds: 15 * 60,
+            admin_token: None,
             job_timeout_seconds: 10 * 60,
             poll_interval_milliseconds: 250,
         }
     }
+}
+
+impl WorkerProductConfig {
+    /// Runner settings from this section, with `WorkerConfig` defaults for the rest.
+    pub fn worker_config(&self) -> WorkerConfig {
+        WorkerConfig {
+            concurrency: self.concurrency,
+            poll_interval: Duration::from_millis(self.poll_interval_milliseconds),
+            job_timeout: Duration::from_secs(self.job_timeout_seconds),
+            ..WorkerConfig::default()
+        }
+    }
+}
+
+/// Checks the drain against the runner's release reserve, not the job timeout,
+/// because the runner releases attempts that outlive the drain back to pending.
+///
+/// # Errors
+///
+/// Returns [`DrainBudgetError`] when the release reserve and the flush reserve
+/// do not fit in `drain_timeout`.
+pub fn worker_drain_budget(
+    drain_timeout: Duration,
+    worker: &WorkerConfig,
+) -> Result<DrainBudget, DrainBudgetError> {
+    DrainBudget::new(drain_timeout, worker.release_reserve)
 }
 
 impl Validate for WorkerProductConfig {
@@ -212,7 +244,6 @@ impl Validate for WorkerProductConfig {
             ));
         }
         for (field, value) in [
-            ("worker.lease_duration_seconds", self.lease_duration_seconds),
             ("worker.job_timeout_seconds", self.job_timeout_seconds),
             (
                 "worker.poll_interval_milliseconds",
@@ -222,12 +253,6 @@ impl Validate for WorkerProductConfig {
             if value == 0 {
                 errors.push(ValidationError::new(field, "must be greater than zero"));
             }
-        }
-        if self.job_timeout_seconds >= self.lease_duration_seconds {
-            errors.push(ValidationError::new(
-                "worker.job_timeout_seconds",
-                "must be less than worker.lease_duration_seconds",
-            ));
         }
         if errors.is_empty() {
             Ok(())
@@ -392,9 +417,14 @@ pub fn worker_operations_router(
     traffic_gate: TrafficGate,
 ) -> Result<(Router, ReadinessRegistry), RegistrationError> {
     let readiness = ReadinessRegistry::new();
+    let store_health = runner.store_health();
     readiness.register_fn_default("job_store", move || {
         let runner = runner.clone();
+        let store_health = store_health.clone();
         async move {
+            if !store_health.is_healthy() {
+                return Err(ReadinessError::new("job store calls are failing"));
+            }
             runner
                 .ready()
                 .await
@@ -406,6 +436,53 @@ pub fn worker_operations_router(
         .with_traffic_gate(traffic_gate)
         .into_router();
     Ok((router, readiness))
+}
+
+/// Requeue calls one client IP may make per [`REQUEUE_PERIOD`] before the route answers 429.
+pub const REQUEUE_REQUESTS_PER_PERIOD: u64 = 10;
+/// Refill period of the requeue route's IP quota.
+pub const REQUEUE_PERIOD: std::time::Duration = std::time::Duration::from_secs(60);
+const REQUEUE_BURST: u64 = 0;
+
+/// Merges the failed-job requeue route into `operations` only when an admin token is configured.
+///
+/// The route sits behind its own in-memory IP limiter, because the worker has no Redis store.
+///
+/// # Errors
+///
+/// Returns an error when the requeue quota is invalid.
+pub fn mount_requeue_route(
+    operations: Router,
+    requeue: std::sync::Arc<dyn baukit_ops::jobs_admin::FailedJobRequeue>,
+    job_types: &'static [&'static str],
+    admin_token: Option<&baukit_config::Secret<String>>,
+) -> Result<Router, baukit_ratelimit::QuotaError> {
+    let Some(token) = admin_token else {
+        return Ok(operations);
+    };
+    let limits = requeue_limits()?;
+    let requeue =
+        baukit_ops::jobs_admin::requeue_failed_jobs_router(requeue, job_types, token.clone());
+    Ok(operations.merge(rate_limited(requeue, Some(&limits))))
+}
+
+fn requeue_limits() -> Result<RateLimits, baukit_ratelimit::QuotaError> {
+    let mut options = baukit_ratelimit::RateLimitOptions::default();
+    options.identity.enabled = false;
+    options.ip = baukit_ratelimit::RateLimitScopeOptions {
+        enabled: true,
+        quota: baukit_ratelimit::Quota::new(
+            REQUEUE_REQUESTS_PER_PERIOD,
+            REQUEUE_PERIOD,
+            REQUEUE_BURST,
+        )?,
+    };
+    Ok(RateLimits {
+        store: baukit_ratelimit::SharedRateLimitStore::new(
+            baukit_ratelimit::InMemoryRateLimitStore::default(),
+        ),
+        options,
+    })
 }{% endif %}{% if context.auth_enabled %}
 
 /// Fails readiness while the identity provider rejects the deleter's base URL or credentials.

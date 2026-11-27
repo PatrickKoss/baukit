@@ -24,6 +24,29 @@ let app = finalize(Router::new().route("/hello", get(hello)), options);
 Defaults are a 2 MiB body limit, 1,024 concurrent requests, and a 30 second timeout. CORS origins
 start empty and have to be named; there is no permissive default to forget to tighten.
 
+## Overload and slow routes
+
+A request waits at most `queue_timeout` (default 1 second, `HttpOptions::with_queue_timeout`) for
+one of the concurrency permits. If none frees up, it gets `503 unavailable` with `Retry-After: 1`
+and counts in `http_requests_shed_total{reason="concurrency"}`. Before this, excess requests sat in
+the queue until the 30 second timeout and came back as a `504` with nothing telling the client when
+to retry.
+
+`route_timeout` gives one route a tighter timeout inside the global one:
+
+```rust
+use std::time::Duration;
+use axum::{Router, routing::get};
+use baukit_http::route_timeout;
+
+let app: Router = Router::new().route(
+    "/search",
+    get(|| async { "results" }).layer(route_timeout(Duration::from_secs(1))),
+);
+```
+
+An override longer than the global timeout does nothing, because the global timeout still wraps it.
+
 ## Browser-visible headers
 
 Browsers hide response headers from cross-origin scripts unless `Access-Control-Expose-Headers`
@@ -71,7 +94,9 @@ listener without these layers, so the policy does not touch them.
 `baukit-openapi`, so the documented schema and the actual response body come from one type.
 
 Constructors cover the usual cases: `bad_request`, `validation_field`, `unauthenticated`,
-`permission_denied`, `not_found`, `conflict`, `rate_limited`. The interesting one is `internal`:
+`permission_denied`, `not_found`, `conflict`, `rate_limited`, and `unavailable(retry_after)` for
+outages. `unavailable` returns `503` with `Retry-After` rounded up to whole seconds, never below 1,
+so a client can tell a database outage from a bug and back off. The interesting one is `internal`:
 
 ```rust
 use baukit_http::ApiError;
@@ -194,9 +219,11 @@ one per widget.
 
 ## Metrics
 
-The crate records `http_requests_total`, `http_request_duration_seconds`, and
-`http_requests_in_flight` through the `metrics` facade and never installs a recorder. The recorder
-owner, normally `baukit-telemetry`, configures the duration histogram with `DURATION_BUCKETS`.
+The crate records `http_requests_total`, `http_request_duration_seconds`, `http_requests_in_flight`
+and `http_requests_shed_total` through the `metrics` facade and never installs a recorder. The recorder
+owner, normally `baukit-telemetry`, configures the duration histogram with `DURATION_BUCKETS`. The
+top bucket is 30 seconds, the default timeout. `http_requests_in_flight` counts only requests that
+hold a permit, so queued requests do not inflate it.
 
 One recorder per process is the reason for that split. Two crates each installing their own is a
 runtime conflict, and buckets configured in two places drift apart.

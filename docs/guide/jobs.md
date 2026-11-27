@@ -17,7 +17,7 @@ The worker capability adds these files to the backend workspace:
 
 - `backend/crates/<app>-worker/src/lib.rs`, the job handler. From `templates/worker/backend/crates/__app__-worker/src/lib.rs`.
 - `backend/crates/<app>-bin/src/bin/worker.rs`, the worker process. From `templates/worker/backend/crates/__app__-bin/src/bin/worker.rs`.
-- `backend/migrations/0003_baukit_jobs.sql` and `0007_baukit_jobs_active_deduplication.sql`, the product-owned copy of the outbox schema.
+- `backend/migrations/0003_baukit_jobs.sql`, `0007_baukit_jobs_active_deduplication.sql` and `0012` to `0015` (deferrals, concurrency keys, check validation and the running-key index), the product-owned copy of the outbox schema.
 - `backend/tests/worker_integration.rs`, a PostgreSQL integration test.
 - `docs/durable-jobs.md`, the product-side maintenance notes.
 
@@ -27,8 +27,9 @@ The worker capability adds these files to the backend workspace:
 
 The `job_outbox` table belongs to the product. `baukit-jobs` never runs migrations at startup.
 A product that adds the crate without the template copies the reference migrations from
-`rust/crates/baukit-jobs/migrations/` into its own ordered migrations, `0001` through `0004` in
-order. The crate README lists the extra steps for products that applied an older subset, and how
+`rust/crates/baukit-jobs/migrations/` into its own ordered migrations, `0001` through `0008` in
+order. `0008_baukit_jobs_running_key_index.sql` starts with `-- no-transaction` and builds its
+index `CONCURRENTLY`. If your migration runner ignores that marker, run the file on its own. The crate README lists the extra steps for products that applied an older subset, and how
 to split `0004` on a large outbox.
 
 ## Enqueue in the domain transaction
@@ -104,14 +105,21 @@ The error you return decides what happens next:
 - `JobError::permanent` fails the job now. Its `failure_reason` becomes `permanent`.
 - `JobError::retryable` schedules another attempt with exponential backoff.
 - `JobError::retryable_after` uses the delay you pass, for example a provider's `Retry-After`.
+- `JobError::deferred(message, delay)` puts the job back to pending after `delay` and gives the
+  attempt back. Use it when the job is fine and a dependency is not, such as an open circuit. A job
+  may defer `WorkerConfig::max_deferrals` times (100) for free. After that each deferral costs an
+  attempt. For outbound calls, `egress_job_error` picks the deferral for you, see
+  [outbound HTTP](outbound-and-limits.md#handle-failures-and-retries).
 
 `max_attempts` still caps retries. A job that runs out ends with `failure_reason` set to
 `attempts_exhausted`.
 
 ### Leases and side effects
 
-A claim gives the worker a lease. If the process dies, the lease expires and another worker
-reclaims the job, which consumes an attempt. Handlers therefore run more than once in some cases.
+A claim gives the worker a lease of `WorkerConfig::lease_duration`, 60 s by default. The runner
+renews it every third of that while the attempt runs, so a long job keeps its lease. If the
+process dies, the lease expires and another worker reclaims the job, which consumes an attempt.
+A lost lease logs a warning and counts in `worker_lease_expired_total`. Handlers therefore run more than once in some cases.
 Send an idempotency key with every external side effect.
 
 When the handler writes its result to the same database, commit the result and the job's
@@ -129,8 +137,12 @@ an intermediate write in a long job.
 
 The generated `worker.rs` builds a `WorkerRunner` from a `PostgresJobStore`, the handler and a
 `WorkerConfig`, and runs it under a `baukit_runtime::TaskSupervisor` with the process
-`ShutdownToken`. On shutdown the runner stops claiming and drains running attempts within the
-drain deadline. The ops listener serves readiness from `WorkerRunner::ready`, which runs the claim
+`ShutdownToken` built from `worker_drain_budget`, which checks the drain timeout against
+`release_reserve`, not the job timeout. On shutdown
+the runner stops claiming and cancels running attempts. It waits until `release_reserve` (5 s)
+before the drain deadline, then puts the unfinished ones back to pending without spending their
+attempt. A store error does not stop the runner. It backs off up to 30 s and reports through
+`WorkerRunner::store_health()`, which the generated readiness check reads. The ops listener serves readiness from `WorkerRunner::ready`, which runs the claim
 query with `LIMIT 0` and so catches a missing or incompatible table.
 
 The generated product reads these settings from the `worker` section of its config. The defaults
@@ -139,14 +151,37 @@ and checks live in `ProductConfig` in `backend/crates/<app>-bin/src/lib.rs`:
 | Key | Default | Check |
 |---|---|---|
 | `worker.concurrency` | 5 | 1 to 64 |
-| `worker.lease_duration_seconds` | 900 | above zero |
-| `worker.job_timeout_seconds` | 600 | above zero, below the lease |
+| `worker.job_timeout_seconds` | 600 | above zero |
 | `worker.poll_interval_milliseconds` | 250 | above zero |
+| `worker.admin_token` | unset | turns on the requeue route |
 
 Set them with environment variables, for example `MY_PRODUCT__WORKER__CONCURRENCY=10`. The
 [baukit-config README](../../rust/crates/baukit-config/README.md#layering) explains the prefix and
 the layering. The other `WorkerConfig` fields, such as the retry backoff bounds, keep the crate
-defaults in the generated worker.
+defaults in the generated worker. The worker raises `statement_timeout` on its own database
+config to the job timeout, so long jobs are not cut off by the API's 29 s limit. Idle polling
+starts at the poll interval and doubles up to `idle_poll_max` (5 s).
+
+### Limit jobs per destination
+
+`NewJob::concurrency_key(key)` tags a job, and `WorkerConfig::max_per_key` caps how many running
+jobs share a key. It defaults to `None`, no limit. Jobs without a key are never limited. Give
+every job that calls one slow provider the same key, so that provider cannot fill every runner
+slot:
+
+```rust,ignore
+let job = NewJob::new("invoice.sync", payload, 5).concurrency_key("billing-provider");
+```
+
+### Requeue failed jobs
+
+`PostgresJobStore::requeue_failed(job_type, ids)` puts failed jobs back to pending, at most 1000
+ids per call. The generated worker serves it as `POST /admin/jobs/requeue` on the ops listener,
+with the body `{"jobType": "<type>", "ids": ["<uuid>"]}` and the header
+`Authorization: Bearer <worker.admin_token>`. The route stays off while `worker.admin_token` is
+unset and allows 10 calls per 60 s per IP. Mount it with
+`baukit_ops::jobs_admin::requeue_failed_jobs_router` on the operations router only, never the
+public one.
 
 ### Split job types across deployments
 
@@ -165,6 +200,9 @@ parser and no scheduler. Each run enqueues the next slot before it reports succe
 - Use `slot.identifier()` as the idempotency key and `slot.starts_at()` as `run_after`. A duplicate
   delivery computes the same key and gets the existing row back.
 - Put the product write, the next enqueue and the lease completion in one transaction.
+- Register the job with `WorkerRunner::with_recurring(RecurringJob::new(job_type, interval,
+  max_attempts))` and call `enqueue_initial(store, now)` at startup. The runner then enqueues the
+  next slot after a slot fails for good, so one failed run does not end the chain.
 
 The full handler body is in `templates/worker/docs/durable-jobs.md`, under "Enqueue a fixed
 recurring slot". `FixedUtcJitter` spreads per-key jobs inside a slot without changing the slot
@@ -218,9 +256,11 @@ worker:
 ```
 
 The chart defaults in `deploy/chart/baukit-app/values.yaml` set one replica, an ops port of 9090,
-a 30 second termination grace period, and startup, liveness and readiness probes. Keep
-`terminationGracePeriodSeconds` above the config's shutdown drain timeout, or Kubernetes kills
-attempts mid-drain. The worker gets no Redis access unless you set `worker.redis.enabled: true`.
+a 60 second termination grace period, and startup, liveness and readiness probes. The chart sets
+`SHUTDOWN__DRAIN_TIMEOUT` to the grace period minus 15 s, 45 s by default, and fails to render
+when that comes out zero or less. The drain must exceed `release_reserve` plus the 3 s flush
+reserve, or the worker stops at startup with a `DrainBudgetError`. A job that runs longer than the
+drain goes back to pending and runs again on another pod, so keep handlers idempotent. The worker gets no Redis access unless you set `worker.redis.enabled: true`.
 `baukit generate dockerfile` builds the `worker` stage when `capabilities.worker` is true. See
 [deploying](deploying.md) for images and releases.
 
@@ -238,6 +278,10 @@ The shared alert rules in `deploy/observability/alerts/baukit.rules.yml` have th
 | `BaukitWorkerFailureRateHigh` | more than 10% of runs fail for a `job_kind` | [worker-failure-rate-high](../runbooks/app/worker-failure-rate-high.md) |
 | `BaukitWorkerRetryStorm` | more than one retry per second for a `job_kind` | [worker-retry-storm](../runbooks/app/worker-retry-storm.md) |
 | `BaukitWorkerQueueOldestAgeHigh` | `worker_queue_oldest_age_seconds` above 300 | [worker-queue-oldest-age-high](../runbooks/app/worker-queue-oldest-age-high.md) |
+| `BaukitWorkerJobsFailed` | the failed count in `worker_queue_depth` grew in the last 15 minutes, fires at once | [worker-jobs-failed](../runbooks/app/worker-jobs-failed.md) |
+
+`worker_queue_depth{status}` counts pending, running and failed rows, `worker_job_deferrals_total`
+counts deferrals and `worker_lease_expired_total` counts lost leases.
 
 A queue-age alert with no failures often means a job type that no deployed handler claims.
 
@@ -247,6 +291,7 @@ A queue-age alert with no failures often means a job type that no deployed handl
 - [baukit-runtime README](../../rust/crates/baukit-runtime/README.md)
 - [baukit-config README](../../rust/crates/baukit-config/README.md)
 - [baukit-erasure README](../../rust/crates/baukit-erasure/README.md)
+- [Migration: job deferrals and concurrency keys](../migrations/job-deferrals-and-concurrency-keys.md)
 - [Template durable-jobs notes](../../templates/worker/docs/durable-jobs.md)
 - [Generated worker process](../../templates/worker/backend/crates/__app__-bin/src/bin/worker.rs)
 - [baukit-app chart README](../../deploy/chart/baukit-app/README.md)

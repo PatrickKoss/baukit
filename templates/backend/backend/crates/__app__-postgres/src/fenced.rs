@@ -12,5 +12,7 @@ pub(crate) async fn begin_write(
             baukit_erasure::ErasureError::ProfileErased => RepositoryError::ProfileErased,
             error => RepositoryError::unavailable(error),
         })
-{% else %}    pool.begin().await.map_err(RepositoryError::unavailable)
+{% else %}    baukit_ops::begin(pool)
+        .await
+        .map_err(RepositoryError::unavailable)
 {% endif %}}

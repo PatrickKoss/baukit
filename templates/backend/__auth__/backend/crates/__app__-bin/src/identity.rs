@@ -4,19 +4,20 @@ use std::{error::Error, sync::Arc, time::Duration};
 
 pub async fn auth_verifier(
     config: &AuthConfig,
+    startup_budget: Duration,
 ) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
     match config.provider {
         AuthProvider::Oidc => {
-            let mut oidc =
-                OidcConfig::new(&config.issuer, &config.audience)?.with_clock_skew(Duration::ZERO);
+            let mut oidc = OidcConfig::new(&config.issuer, &config.audience)?
+                .with_clock_skew(Duration::ZERO)
+                .with_startup_budget(startup_budget)?;
             if !config.authorized_parties.is_empty() {
                 oidc = oidc.with_allowed_clients(config.authorized_parties.clone())?;
             }
-            let verifier = match &config.jwks_uri {
-                Some(uri) => OidcVerifier::from_jwks_uri(oidc, uri)?,
-                None => OidcVerifier::discover(oidc).await?,
-            };
-            Ok(Arc::new(verifier))
+            if let Some(uri) = &config.jwks_uri {
+                oidc = oidc.with_jwks_uri(uri)?;
+            }
+            Ok(Arc::new(OidcVerifier::discover(oidc).await?))
         }
         AuthProvider::Clerk => {
             let verifier = match &config.jwks_uri {
@@ -45,6 +46,7 @@ pub async fn auth_verifier(
 pub async fn mcp_verifier(
     auth: &AuthConfig,
     config: &baukit_mcp::McpConfig,
+    startup_budget: Duration,
 ) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
     if auth.provider == AuthProvider::Clerk {
         let client_id = config
@@ -78,9 +80,10 @@ pub async fn mcp_verifier(
             "client_id"
         })
         .organization_claim("org_id");
-    let oidc = OidcConfig::new(&config.issuer, &config.resource_url)?
+    let mut oidc = OidcConfig::new(&config.issuer, &config.resource_url)?
         .with_clock_skew(Duration::ZERO)
-        .with_principal_claims(mapping);
+        .with_principal_claims(mapping)
+        .with_startup_budget(startup_budget)?;
     let jwks = config.jwks_uri.clone().or_else(|| match auth.provider {
         AuthProvider::Oidc => None,
         AuthProvider::Clerk => Some(format!(
@@ -92,11 +95,10 @@ pub async fn mcp_verifier(
             config.issuer.trim_end_matches('/')
         )),
     });
-    let verifier = match jwks {
-        Some(uri) => OidcVerifier::from_jwks_uri(oidc, uri)?,
-        None => OidcVerifier::discover(oidc).await?,
-    };
-    Ok(Arc::new(verifier))
+    if let Some(uri) = jwks {
+        oidc = oidc.with_jwks_uri(uri)?;
+    }
+    Ok(Arc::new(OidcVerifier::discover(oidc).await?))
 }
 
 pub fn mcp_policy(

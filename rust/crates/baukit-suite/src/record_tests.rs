@@ -7,8 +7,9 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
-    SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_MIGRATION_SQL, SUITE_RECORD_IDS_MIGRATION_SQL,
-    SUITE_RUNTIME_MIGRATION_SQL,
+    SUITE_DELIVERY_PROBES_MIGRATION_SQL, SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_MIGRATION_SQL,
+    SUITE_RECORD_IDS_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL,
+    SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL,
     adapters::postgres::PostgresSuiteLinkStore,
     domain::{DeliveryHealth, EncryptedPayload, LinkRole, LinkStatus, RewardMode, SuiteLink},
     ports::SuiteLinkStore as _,
@@ -52,6 +53,8 @@ fn link(owner: Uuid, peer: &str) -> SuiteLink {
         reward_mode: RewardMode::Native,
         delivery_health: DeliveryHealth::Healthy,
         consecutive_failures: 0,
+        next_probe_at: None,
+        failed_probes: 0,
         last_delivery_at: None,
         last_failure_at: None,
         last_failure_code: None,
@@ -71,6 +74,17 @@ async fn migrated_before_record_ids(pool: &PgPool) -> TestResult {
         SUITE_MIGRATION_SQL,
         SUITE_RUNTIME_MIGRATION_SQL,
         SUITE_LOCK_ORDER_MIGRATION_SQL,
+    ] {
+        sqlx::raw_sql(migration).execute(pool).await?;
+    }
+    Ok(())
+}
+
+async fn migrate_to_current(pool: &PgPool) -> TestResult {
+    for migration in [
+        SUITE_RECORD_IDS_MIGRATION_SQL,
+        SUITE_DELIVERY_PROBES_MIGRATION_SQL,
+        SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL,
     ] {
         sqlx::raw_sql(migration).execute(pool).await?;
     }
@@ -139,9 +153,7 @@ async fn v2_secrets_reject_tampering_and_v1_rows_written_before_the_migration_st
     migrated_before_record_ids(&pool).await?;
     let owner = Uuid::now_v7();
     let legacy = insert_v1_link(&pool, owner, b"legacy-secret").await?;
-    sqlx::raw_sql(SUITE_RECORD_IDS_MIGRATION_SQL)
-        .execute(&pool)
-        .await?;
+    migrate_to_current(&pool).await?;
     let store = PostgresSuiteLinkStore::new(pool.clone());
     let secrets = SecretCipher::new(Some(cipher()?));
     assert_eq!(
@@ -263,9 +275,7 @@ async fn reseal_converts_v1_secrets_once_skips_unreadable_ones_and_leaves_v2_alo
         .execute(&pool)
         .await?;
     let request = insert_v1_request(&pool, owner).await?;
-    sqlx::raw_sql(SUITE_RECORD_IDS_MIGRATION_SQL)
-        .execute(&pool)
-        .await?;
+    migrate_to_current(&pool).await?;
     let store = PostgresSuiteLinkStore::new(pool.clone());
     let secrets = SecretCipher::new(Some(cipher()?));
     let current = insert_v2_link(&store, &secrets, owner, "current").await?;

@@ -59,6 +59,15 @@ backing:
     shared:
       namespace: postgres
       clusterName: postgres-cluster
+      # PgBouncer Pooler the API may reach. Defaults to <clusterName>-pooler-rw.
+      poolerName: ""
+      # Secret with a URL to <clusterName>-rw. When name is set, the worker,
+      # migrate and seed processes use it instead of the URL from
+      # config.existingSecretRefs and lose egress to the pooler: transaction
+      # pooling drops their statement_timeout and query_timeout cuts long jobs.
+      directUrlSecretRef:
+        name: ""
+        key: uri
     dedicated:
       # Defaults to <release>-postgres.
       clusterName: ""
@@ -90,9 +99,11 @@ api:
   ports:
     http: 8080
     ops: 9090
-  terminationGracePeriodSeconds: 30
-  # Keeps the pod serving while endpoints drop. The drain timeout is the
-  # grace period minus this sleep, so it must stay below the grace period.
+  # The drain timeout is this grace period minus the preStop sleep minus 5 s
+  # for the telemetry flush and process exit, so it must exceed both by more
+  # than 5 s. The default leaves 35 s, above the 30 s request timeout.
+  terminationGracePeriodSeconds: 45
+  # Keeps the pod serving while endpoints drop.
   preStopSleepSeconds: 5
   strategy:
     maxUnavailable: 0
@@ -119,7 +130,9 @@ api:
     enabled: true
     initialDelaySeconds: 2
     periodSeconds: 5
-    timeoutSeconds: 2
+    # Above the 2 s readiness check, so a slow database reads as not ready
+    # instead of a probe timeout.
+    timeoutSeconds: 4
     failureThreshold: 3
   nodeSelector: {}
   tolerations: []
@@ -151,7 +164,9 @@ worker:
   ops:
     enabled: true
     port: 9090
-  terminationGracePeriodSeconds: 30
+  # The worker drains for this grace period minus 15 s, which leaves time to
+  # release leases and flush telemetry before SIGKILL. Must exceed 15.
+  terminationGracePeriodSeconds: 60
   resources:
     requests:
       cpu: 50m
@@ -174,7 +189,9 @@ worker:
     enabled: true
     initialDelaySeconds: 2
     periodSeconds: 5
-    timeoutSeconds: 2
+    # Above the 2 s readiness check, so a slow database reads as not ready
+    # instead of a probe timeout.
+    timeoutSeconds: 4
     failureThreshold: 3
   nodeSelector: {}
   tolerations: []
@@ -311,6 +328,13 @@ ingress:
     clusterIssuer: ""
   # Example: namespace-traefik-ratelimit@kubernetescrd
   rateLimitMiddleware: ""
+  # A Traefik retry Middleware on the API Ingress only. Traefik retries when
+  # it cannot reach a pod and stops as soon as the pod answers, whatever the
+  # status. Needs the Traefik CRDs.
+  retry:
+    enabled: true
+    attempts: 2
+    initialInterval: 100ms
   hosts:
     - host: minimal-api.example.com
       paths:
@@ -320,16 +344,48 @@ ingress:
 
 autoscaling:
   enabled: false
-  minReplicas: 1
+  # Two keeps a pod serving through a node drain and lets the PDB render.
+  minReplicas: 2
   maxReplicas: 4
   targetCPUUtilizationPercentage: 70
   targetMemoryUtilizationPercentage: ""
+  # Rendered as the HPA's spec.behavior.
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+    scaleUp:
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 60
 
 serviceMonitor:
   enabled: false
   interval: 30s
   scrapeTimeout: 10s
   labels: {}
+
+# Flagger progressive delivery for the API Deployment. Needs the Flagger and Traefik CRDs.
+# Flagger routes through a TraefikService named <fullname>-api, so the chart renders an
+# IngressRoute to it instead of the Ingress.
+canary:
+  enabled: false
+  # Flagger's provider address for the chart's MetricTemplates. Empty means the
+  # tenant-metrics-proxy in the release namespace, which tenant namespaces require.
+  prometheusAddress: ""
+  progressDeadlineSeconds: 600
+  analysis:
+    interval: 1m
+    # Failed checks before Flagger rolls back.
+    threshold: 5
+    stepWeight: 10
+    maxWeight: 50
+  metrics:
+    # Range of the rate() windows in the error and p95 queries.
+    interval: 1m
+    maxErrorPercent: 1
+    # The 0.5 s latency SLI target in deploy/observability.
+    maxP95Seconds: 0.5
 
 networkPolicy:
   enabled: true
@@ -402,6 +458,20 @@ web:
     digest: ""
     pullPolicy: IfNotPresent
   port: 8080
+  terminationGracePeriodSeconds: 30
+  # Keeps nginx serving while endpoints drop. Must stay below the grace period.
+  preStopSleepSeconds: 5
+  startupProbe:
+    enabled: true
+    periodSeconds: 2
+    timeoutSeconds: 2
+    failureThreshold: 15
+  # Renders only with more than one replica. Set at most one of minAvailable
+  # or maxUnavailable; neither means maxUnavailable: 1.
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: ""
+    maxUnavailable: ""
   # Required when enabled. Pass the build's policy unchanged:
   # --set-file web.contentSecurityPolicy=web/dist/csp.txt
   contentSecurityPolicy: ""

@@ -11,6 +11,8 @@ resources:
   - pushgateway.yaml
   - restore-test.yaml
   - podmonitor.yaml
+  - pooler.yaml
+  - pooler-podmonitor.yaml
   - network-policy.yaml
 components:
   - ../components/network-policy/default-deny

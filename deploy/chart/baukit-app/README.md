@@ -132,7 +132,7 @@ The pod and container security-context maps can be replaced when an image needs 
 
 | Value | Default | Description |
 |---|---:|---|
-| `api.replicas` | `1` | API replicas when HPA is disabled. |
+| `api.replicas` | `1` | API replicas when HPA is disabled. With `canary.enabled`, Flagger ignores it, so values above 1 need `autoscaling.enabled=true`. |
 | `api.image.repository` | `ghcr.io/example/minimal-api` | API-only image repository. |
 | `api.image.tag` / `api.image.digest` | `""` / `""` | API image tag or `sha256:` digest; one is required and `latest` is rejected. |
 | `api.image.pullPolicy` | `IfNotPresent` | API image pull policy. |
@@ -142,8 +142,8 @@ The pod and container security-context maps can be replaced when an image needs 
 | `api.networkPolicy.additionalIngress` | `[]` | Ingress rules admitted only to API pods. |
 | `api.networkPolicy.additionalEgress` | `[]` | Egress rules added only for API pods. |
 | `api.ports.http` / `api.ports.ops` | `8080` / `9090` | Public API and private operations listener ports. |
-| `api.terminationGracePeriodSeconds` | `30` | Pod grace period. `SHUTDOWN__DRAIN_TIMEOUT` is this value minus `api.preStopSleepSeconds`. |
-| `api.preStopSleepSeconds` | `5` | `preStop` sleep that keeps the API serving while endpoints drop. Must be lower than the grace period. |
+| `api.terminationGracePeriodSeconds` | `45` | Pod grace period. `SHUTDOWN__DRAIN_TIMEOUT` is this value minus `api.preStopSleepSeconds` minus 5 s for the telemetry flush and exit, 35 s by default. Rendering fails when nothing is left for the drain. |
+| `api.preStopSleepSeconds` | `5` | `preStop` sleep that keeps the API serving while endpoints drop. |
 | `api.strategy.maxUnavailable` / `api.strategy.maxSurge` | `0` / `1` | RollingUpdate availability controls. |
 | `api.resources.requests.cpu` / `memory` | `50m` / `64Mi` | Initial API resource requests. |
 | `api.resources.limits.cpu` / `memory` | `250m` / `128Mi` | Initial API resource limits. |
@@ -152,7 +152,7 @@ The pod and container security-context maps can be replaced when an image needs 
 | `api.livenessProbe.enabled` | `true` | Enable ops `/healthz` liveness probing. |
 | `api.livenessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `5` / `10` / `2` / `3` | Liveness timing and failure threshold. |
 | `api.readinessProbe.enabled` | `true` | Enable ops `/readyz` readiness probing. |
-| `api.readinessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `2` / `5` / `2` / `3` | Readiness timing and failure threshold. |
+| `api.readinessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `2` / `5` / `4` / `3` | Readiness timing and failure threshold. The 4 s timeout sits above the 2 s readiness check, so a slow database reports not ready instead of timing out the probe. |
 | `api.nodeSelector` / `api.affinity` / `api.tolerations` | `{}` / `{}` / `[]` | API scheduling controls. |
 | `api.podDisruptionBudget.enabled` | `true` | Create a `policy/v1` PodDisruptionBudget for the API pods when `api.replicas > 1` or autoscaling is on. |
 | `api.podDisruptionBudget.minAvailable` / `maxUnavailable` | `""` / `""` | Set at most one, as an integer or a percentage such as `50%`. Neither means `maxUnavailable: 1`; both fail rendering. |
@@ -170,7 +170,7 @@ The pod and container security-context maps can be replaced when an image needs 
 | `worker.networkPolicy.additionalEgress` | `[]` | Egress rules added only for worker pods. |
 | `worker.redis.enabled` | `false` | Opt in to give the worker the backing Redis the API gets: URL, key namespace, client label and network path. |
 | `worker.ops.enabled` / `worker.ops.port` | `true` / `9090` | Enable the worker ops listener, probes, and private ops Service. |
-| `worker.terminationGracePeriodSeconds` | `30` | Worker SIGTERM drain window and injected shutdown timeout. |
+| `worker.terminationGracePeriodSeconds` | `60` | Worker pod grace period. `SHUTDOWN__DRAIN_TIMEOUT` is this value minus 15 s, which leaves time to release leases and flush telemetry before SIGKILL. Must exceed 15. |
 | `worker.resources.requests.cpu` / `memory` | `50m` / `64Mi` | Initial worker requests. |
 | `worker.resources.limits.cpu` / `memory` | `250m` / `128Mi` | Initial worker limits. |
 | `worker.startupProbe.enabled` | `true` | Probe ops `/healthz` until the process starts, before liveness takes over. |
@@ -178,7 +178,7 @@ The pod and container security-context maps can be replaced when an image needs 
 | `worker.livenessProbe.enabled` | `true` | Probe worker `/healthz` when worker ops is enabled. |
 | `worker.livenessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `5` / `10` / `2` / `3` | Worker liveness settings. |
 | `worker.readinessProbe.enabled` | `true` | Probe worker `/readyz` when worker ops is enabled. |
-| `worker.readinessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `2` / `5` / `2` / `3` | Worker readiness settings. |
+| `worker.readinessProbe.initialDelaySeconds` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `2` / `5` / `4` / `3` | Worker readiness settings. |
 | `worker.nodeSelector` / `worker.affinity` / `worker.tolerations` | `{}` / `{}` / `[]` | Worker scheduling controls. |
 | `worker.podDisruptionBudget.enabled` | `true` | Create a PodDisruptionBudget for the worker pods when the worker is enabled with `worker.replicas > 1`. |
 | `worker.podDisruptionBudget.minAvailable` / `maxUnavailable` | `""` / `""` | Set at most one, as for the API budget. |
@@ -237,15 +237,24 @@ Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops a
 | `ingress.annotations` | `{}` | Additional API Ingress annotations. |
 | `ingress.certManager.clusterIssuer` | `""` | Add the cert-manager cluster-issuer annotation when set. |
 | `ingress.rateLimitMiddleware` | `""` | Add Traefik's router middleware annotation when set; empty keeps the hook disabled. |
+| `ingress.retry.enabled` / `attempts` / `initialInterval` | `true` / `2` / `100ms` | A Traefik retry `Middleware` on the API Ingress, after the rate limit. Traefik retries only when it cannot reach a pod and stops once a pod answers, whatever the status. Needs the Traefik CRDs; turn it off for another ingress controller. The web Ingress never retries. |
 | `ingress.hosts` | example host/path | Networking v1 host entries, each with `paths[].path` and `paths[].pathType`. |
 | `ingress.tls` | `[]` | Standard Ingress TLS entries with `secretName` and `hosts`. |
 | `autoscaling.enabled` | `false` | Enable an autoscaling/v2 HPA for the API. |
-| `autoscaling.minReplicas` / `maxReplicas` | `1` / `4` | HPA replica range. |
+| `autoscaling.minReplicas` / `maxReplicas` | `2` / `4` | HPA replica range. Two keeps one pod serving through a node drain. |
+| `autoscaling.behavior` | scale down after 300 s stable, scale up at most 100% per 60 s | HPA `spec.behavior`, rendered as given. |
 | `autoscaling.targetCPUUtilizationPercentage` | `70` | CPU utilization target; set empty to omit. |
 | `autoscaling.targetMemoryUtilizationPercentage` | `""` | Optional memory utilization target. |
 | `serviceMonitor.enabled` | `false` | Request capability-gated API/worker ServiceMonitors. |
 | `serviceMonitor.interval` / `scrapeTimeout` | `30s` / `10s` | ServiceMonitor endpoint timing. |
 | `serviceMonitor.labels` | `{}` | Extra labels used by the Prometheus Operator's monitor selector. |
+| `backing.postgres.shared.poolerName` | `""` | PgBouncer Pooler the API may reach in shared mode. Empty means `<clusterName>-pooler-rw`. |
+| `backing.postgres.shared.directUrlSecretRef.name` / `key` | `""` / `uri` | Secret holding a URL to `<clusterName>-rw`. When set, the worker, migrate and seed processes read `<PREFIX>__DATABASE__URL` from it and get no egress to the pooler; only the API keeps the pooled URL from `config.existingSecretRefs`. Transaction pooling drops the worker's `statement_timeout` and the pooler's 35 s `query_timeout` cuts longer jobs. |
+| `canary.enabled` | `false` | Render a Flagger `Canary` for the API Deployment, its two `MetricTemplate`s and an `IngressRoute` to Flagger's `TraefikService` instead of the Ingress. See "Progressive delivery". |
+| `canary.prometheusAddress` | `""` | Prometheus API the `MetricTemplate`s query. Empty means `http://tenant-metrics-proxy.<namespace>.svc.cluster.local:8080`, which tenant namespaces require. |
+| `canary.progressDeadlineSeconds` | `600` | Flagger's progress deadline for the canary Deployment. |
+| `canary.analysis.interval` / `threshold` / `stepWeight` / `maxWeight` | `1m` / `5` / `10` / `50` | Flagger analysis schedule; `threshold` failed checks roll back. |
+| `canary.metrics.interval` / `maxErrorPercent` / `maxP95Seconds` | `1m` / `1` / `0.5` | `rate()` window and the gates on the canary's 5xx percentage and p95 latency. |
 
 ### NetworkPolicy
 
@@ -261,6 +270,28 @@ Redis uses a fixed image-specific UID/GID security context (`999:1000`), drops a
 | `networkPolicy.dns.k3sCompatible` | `false` | Add a destination-independent TCP/UDP port-53 rule for k3s Service-IP policy enforcement. |
 | `networkPolicy.additionalIngress` | `[]` | Raw NetworkPolicy ingress-rule list admitted to every process. |
 | `networkPolicy.additionalEgress` | `[]` | Raw NetworkPolicy egress-rule list appended after TCP/UDP DNS. |
+
+## Progressive delivery
+
+The API and worker Deployments select on `baukit.dev/workload: <fullname>-<process>`, the label the
+platform's Flagger base selects on. With `canary.enabled=true`, Flagger copies the API Deployment to
+`<fullname>-api-primary`, rewrites that label to `<fullname>-api-primary` there, scales the chart's
+Deployment to zero, and runs each new pod template as the canary. Traffic goes through the
+`TraefikService` named `<fullname>-api` that Flagger writes, which is why the chart renders an
+`IngressRoute` on `websecure` instead of the Ingress. Its TLS secret is `ingress.tls[0].secretName`, or
+Traefik's default certificate without one.
+
+The API ServiceMonitor sets `rollout="primary"` on series from pods whose workload label ends in
+`-primary` and `rollout="canary"` on the others. The two `MetricTemplate`s filter on
+`rollout="canary"`, so the gates see only the canary: the 5xx share of `http_requests_total` and the p95
+of `http_request_duration_seconds`. A gate with no data counts as a failed check, so the canary needs
+traffic during the analysis. Set `serviceMonitor.enabled=true` with the canary. The worker is not
+promoted. With a canary or an HPA the API Deployment has no `replicas` field, so a Helm upgrade never
+scales the idle canary Deployment back up. Flagger 1.45 creates the primary with the target's
+replica count, 1 when the field is absent, and runs the canary at the primary's count
+(`pkg/canary/deployment_controller.go`). Without `autoscaling.enabled` the primary therefore runs
+one pod and `api.replicas` has no effect; enable autoscaling to run more, and Flagger copies the
+HPA to `<fullname>-api-primary`.
 
 ## Web app and CSP
 
@@ -281,6 +312,14 @@ helm upgrade --install app deploy/chart/baukit-app --set web.enabled=true \
 Rendering fails when the policy is empty, spans lines, contains a double quote or allows
 `'unsafe-inline'` scripts. `web.ingress` reuses the API ingress class, annotations and cert-manager
 issuer. Serve web and API on one registrable domain (ADR 0006 section 8).
+
+| Value | Default | Description |
+|---|---:|---|
+| `web.terminationGracePeriodSeconds` | `30` | nginx pod grace period. |
+| `web.preStopSleepSeconds` | `5` | `preStop` sleep that keeps nginx serving while endpoints drop. Must be lower than the grace period. |
+| `web.startupProbe.enabled` / `periodSeconds` / `timeoutSeconds` / `failureThreshold` | `true` / `2` / `2` / `15` | `/healthz` startup probe. |
+| `web.podDisruptionBudget.enabled` | `true` | Create a PodDisruptionBudget for the web pods when `web.replicas > 1`. |
+| `web.podDisruptionBudget.minAvailable` / `maxUnavailable` | `""` / `""` | Set at most one, as for the API budget. |
 
 ## Local validation
 

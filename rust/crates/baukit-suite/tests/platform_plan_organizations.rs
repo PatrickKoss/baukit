@@ -130,6 +130,13 @@ impl EntitlementCache for ShiftedCache {
         let now = now + self.offset.load(Ordering::SeqCst);
         self.inner.get(subject, product_id, now).await
     }
+    async fn retained(
+        &self,
+        subject: &str,
+        product_id: &str,
+    ) -> Result<Option<EntitlementSnapshot>, PlatformError> {
+        self.inner.retained(subject, product_id).await
+    }
     async fn revision(&self, subject: &str, product_id: &str) -> Result<u64, PlatformError> {
         self.inner.revision(subject, product_id).await
     }

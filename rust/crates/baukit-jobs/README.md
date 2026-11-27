@@ -12,9 +12,14 @@ defines the compatibility and migration requirements for that later change.
 
 Copy `migrations/0001_baukit_jobs.sql`,
 `migrations/0002_baukit_jobs_failure_reason.sql`,
-`migrations/0003_baukit_jobs_claim_by_type.sql`, and
-`migrations/0004_baukit_jobs_active_deduplication.sql` into the product's own
-migrations in that order. Do not point a production service at this crate
+`migrations/0003_baukit_jobs_claim_by_type.sql`,
+`migrations/0004_baukit_jobs_active_deduplication.sql`,
+`migrations/0005_baukit_jobs_deferrals.sql`,
+`migrations/0006_baukit_jobs_concurrency_key.sql`,
+`migrations/0007_baukit_jobs_validate_checks.sql`, and
+`migrations/0008_baukit_jobs_running_key_index.sql` into the product's own
+migrations in that order. `0008` starts with `-- no-transaction`, so sqlx runs
+it outside a transaction and builds the index concurrently. Do not point a production service at this crate
 directory and do not run schema changes during application startup. A product
 may add foreign keys or indexes in a later migration, but the lifecycle columns
 and constraints used by the claim query must remain compatible.
@@ -111,6 +116,14 @@ New worker and authenticated backend templates include the same SQL in
 `backend/migrations/0007_baukit_jobs_active_deduplication.sql`. Existing products
 must add their own migration, without editing one they already applied.
 
+Products with migrations 0001 through 0004 applied add
+`migrations/0005_baukit_jobs_deferrals.sql` (also available as
+`POSTGRES_MIGRATION_0005_SQL`) as their next migration before upgrading. It
+adds `deferrals integer not null default 0`. Add `0006`, `0007` and `0008`
+after it. Every claim and enqueue returns the
+column, so the store fails without it. Code that constructs `Job` sets
+`deferrals`, usually to `0`.
+
 The terminal cleanup and fixed UTC slot APIs added after 0.2.1 need no schema
 migration. Cleanup is a `PostgresJobStore` method, so custom `JobStore`
 implementations also need no code change.
@@ -126,9 +139,15 @@ transition. External side effects still need an idempotency key at the
 destination because a crashed worker's expired lease is reclaimed.
 
 Handlers classify failures with `JobError::permanent`, `JobError::retryable`,
-or `JobError::retryable_after`. The last form preserves a provider's
-`Retry-After` signal instead of using the runner's exponential delay; the
-job's `max_attempts` remains authoritative. Terminal jobs keep status `failed`
+`JobError::retryable_after`, or `JobError::deferred`. `retryable_after`
+preserves a provider's `Retry-After` signal instead of using the runner's
+exponential delay; the job's `max_attempts` remains authoritative.
+`deferred(message, delay)` is for a dependency that refuses work for a known
+time, such as an open circuit breaker. The runner releases the job to pending
+at `now + delay`, gives the attempt back and increments `deferrals`. After
+`WorkerConfig::max_deferrals` (default 100) such releases, a deferral consumes
+an attempt, and on the final attempt the job fails with `attempts_exhausted`.
+Each deferral increments `worker_job_deferrals_total{job_kind}`. Terminal jobs keep status `failed`
 and expose `failure_reason` as `permanent` or `attempts_exhausted` alongside
 the bounded diagnostic `last_error`.
 
@@ -262,6 +281,18 @@ The application still owns the interval, initial seed, job type, payload,
 catch-up policy, and decision to stop recurring work. `FixedUtcInterval` does
 not parse cron expressions or run a scheduler.
 
+### Recurring chains that survive a failed slot
+
+`RecurringJob::new(job_type, interval, max_attempts)` fixes that row shape:
+payload `{"slot": <slot start>}`, `run_after` at the slot start and the slot
+identifier as idempotency key. `job_for(slot)` builds a slot's row and
+`next_job(job, now)` the row the handler enqueues on success. Register it with
+`WorkerRunner::with_recurring`: when a slot fails for good, the runner enqueues
+the next slot itself, so one bad day does not stop the chain. Call
+`RecurringJob::enqueue_initial(&store, now)` from every replica at startup. It
+enqueues the current slot, or the next one when the current slot already
+failed.
+
 ## Per-key recurring jitter
 
 Create `FixedUtcJitter::new(fraction)` with a finite fraction in `(0, 1]`, then
@@ -321,8 +352,8 @@ one outbox without taking each other's work. An empty set is rejected with
 `StoreError::InvalidInput`, as are blank or overlong entries.
 
 A job type that no running handler declares stays `pending` with zero attempts.
-`worker_queue_oldest_age_seconds` counts pending rows of every type, so such a
-row keeps every runner's queue-age gauge rising and trips the queue-age alert.
+Runner gauges only count the runner's own job types, so no runner reports such
+a row. Check the table directly when a type has no worker.
 
 Claim recovery still runs for every type. Before selecting a row, a claim
 cancels expired leases that carry a cancellation request and fails expired
@@ -333,15 +364,97 @@ types.
 Custom `JobStore` implementations must apply the same type filter to pending
 rows and to expired leases they reclaim.
 
+## Per-key concurrency
+
+`NewJob::concurrency_key(key)` tags a job with a key, such as the peer
+application a delivery calls. With `WorkerConfig::max_per_key = Some(n)` the
+claim skips ready rows whose key already has `n` running jobs with a live lease,
+so a hanging peer holds at most `n` worker slots while other keys keep flowing.
+Keys are shared across job types. Jobs without a key are never limited. The
+claim takes a transaction-scoped advisory lock per key before it recounts, so
+concurrent workers cannot both take a key's last slot. Apply migration 0006,
+whose partial index keeps that count to the running rows of one key.
+
+## Outbound calls and open circuits
+
+Enable the `egress` feature and map a failed `GuardedClient` call with
+`baukit_jobs::egress_job_error(&error)`. An open circuit or a full bulkhead
+becomes `JobError::deferred` for the time the breaker names, so a dead provider
+does not burn the job's attempts. Other errors keep their retry class: a
+provider delay becomes `retryable_after`, transport failures and timeouts
+`retryable`, and refused destinations or permanent statuses `permanent`.
+
+```rust,ignore
+let response = client.execute(request).await.map_err(|error| egress_job_error(&error))?;
+```
+
+## Requeue failed jobs
+
+`PostgresJobStore::requeue_failed(job_type, ids)` returns failed rows of one
+type to pending with zero attempts and deferrals and no failure reason, ready
+now. It takes 1 to `MAX_REQUEUE_BATCH_SIZE` (1000) ids, ignores ids of other
+types or statuses, and returns the ids it requeued. A failed row whose active
+dedupe key is held by a pending or running row stays failed. The `jobs`
+feature of `baukit-ops` serves it as `POST /admin/jobs/requeue` for the
+private operations listener. `requeue_failed_jobs_router(store, job_types,
+admin_token)` takes the token as a `baukit_config::Secret<String>` and requires
+`Authorization: Bearer <token>`, compared in constant time. A missing, wrong or
+empty token gets `401 unauthenticated` in the standard error envelope.
+
 ## Runtime and operations
 
 Create one `WorkerRunner` with a product `JobHandler` and run it in a
 `baukit_runtime::TaskSupervisor`. Pass the same process `ShutdownToken` to the
-runner. On shutdown it stops claiming and drains in-flight attempts; the
-supervisor's shared deadline bounds the drain. Wire `WorkerRunner::ready` (or
-`JobStore::ready`) into the worker readiness checks. The probe executes the
-`FOR UPDATE SKIP LOCKED` claim-query shape with `LIMIT 0`, so it detects a
-missing or incompatible outbox table without consuming work.
+runner. Wire `WorkerRunner::ready` (or `JobStore::ready`) into the worker
+readiness checks. The probe executes the `FOR UPDATE SKIP LOCKED` claim-query
+shape with `LIMIT 0`, so it detects a missing or incompatible outbox table
+without consuming work. Also wire `WorkerRunner::store_health()`, taken before
+`run`, into readiness: it turns false at the first failing store call in the
+runner loop and back to true at the next success.
+
+An empty claim doubles the delay before the next one from `poll_interval`
+(250 ms) up to `idle_poll_max` (5 s); a claim resets it. Running attempts check
+durable cancellation every `cancellation_poll_interval` (2 s). An idle replica
+therefore issues well under one query per second. For low latency anyway, pass
+a `JobWakeup` to `WorkerRunner::with_wakeup` and start
+`spawn_enqueue_listener(pool, wakeup, shutdown)`. Every enqueue and requeue
+sends `NOTIFY job_enqueued` inside its own transaction, so the listener hears
+it after commit. The listener holds one connection outside the pool; behind a
+transaction-mode pooler give it a pool that connects to PostgreSQL directly.
+It reconnects with jittered backoff and polling continues while it is down.
+
+Failed attempts retry after a full-jitter delay drawn from
+`baukit_resilience::Backoff`: uniform between zero and
+`min(retry_max, retry_initial * 2^(attempt - 1))`. `WorkerRunner::with_jitter`
+replaces the random source for tests.
+
+Store errors in the loop do not end `run`. The runner logs them and retries
+with full-jitter exponential backoff that starts at `poll_interval` and stops
+growing at 30 s. Each claim and queue sample is bounded by
+`WorkerConfig::store_call_timeout` (default 5 s), so a database that hangs
+instead of failing also turns health red, as `StoreError::Timeout`. Running
+attempts keep going. An attempt that cannot record its
+outcome because its lease is gone logs a warning and increments
+`worker_lease_expired_total{queue}`. Only invalid configuration and a panicking
+claim or attempt task end `run` with an error.
+
+Leases default to 60 s. While a handler runs, the runner renews the lease every
+`lease_duration / 3` with `JobStore::heartbeat`. If renewal finds the lease
+gone, the runner drops the handler and counts a lease expiry. `job_timeout`
+no longer has to be shorter than the lease.
+
+On shutdown the runner stops claiming and cancels every attempt's
+`JobCancellation`. It waits for attempts until `release_reserve` (default 5 s)
+before the `ShutdownToken` deadline. Then it drops the handlers still running
+and calls `JobStore::release(.., ReleaseReason::Shutdown, ..)` for each, so another
+worker claims them at once with the same attempt count. An attempt that ends in
+a retryable error after shutdown began is released the same way, so a job on
+its final attempt is not failed by a rollout. A `job_timeout` that fires during
+drain is still recorded as a failure. A claim still in flight when
+shutdown begins is awaited until the same point and released. If it is still
+running then, the runner stops waiting and lease expiry recovers the job.
+Shutdown releases leave `deferrals` unchanged, so rollouts never push a job
+toward `max_deferrals`.
 
 The runner emits the telemetry-spec §2.4 families. Job and queue labels come
 only from the handler and runner's static identifiers. Configure process
@@ -349,9 +462,16 @@ telemetry with `baukit-telemetry`; it owns the real Prometheus histogram buckets
 for `worker_job_duration_seconds`.
 
 Store-owned claim, enqueue, and readiness transactions finish in owned tasks even if their
-caller is cancelled. Shutdown stops new claims and drains running attempts.
-An abandoned claim stays leased until lease expiry, then a matching worker can
-recover it. Each such claim consumes an attempt.
+caller is cancelled. A claim abandoned by a crashed worker stays leased until
+lease expiry, then a matching worker can recover it. Each such claim consumes an
+attempt.
+
+The runner samples `worker_queue_oldest_age_seconds{queue}` and
+`worker_queue_depth{queue,status}` every `queue_sample_interval` (default 15 s)
+for its handler's job types. Age is measured from `run_after` of the oldest
+pending row that is due, so rows scheduled for later, such as the next recurring
+slot, report zero. Depth covers `pending`, `running` and `failed` rows.
+Cancelled attempts count as `worker_job_runs_total{outcome="cancelled"}`.
 
 Call `retain_failed_kinds(&["identity.account.delete"])` on every store used for
 terminal cleanup when identity deletion failures need repair. The exclusion

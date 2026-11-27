@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "database configuration is required; set {{ context.app_env }}__DATABASE__URL",
         )
     })?;
-    let pool = sqlx::PgPool::connect(database.url.expose()).await?;
+    let pool = baukit_ops::connect_for_migrations(&database, config.startup.budget).await?;
     let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
     let migrator = sqlx::migrate::Migrator::new(migrations.clone()).await?;
     migrator.run(&pool).await?;

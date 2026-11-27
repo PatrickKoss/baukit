@@ -1,4 +1,4 @@
-{{- range $process := list "api" "worker" }}
+{{- range $process := list "api" "worker" "web" }}
 {{- $workload := index $.Values $process }}
 {{- $budget := $workload.podDisruptionBudget }}
 {{- $running := or (eq $process "api") $workload.enabled }}

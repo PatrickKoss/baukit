@@ -22,7 +22,7 @@ baukit-http.workspace = true
 {{ context.app_crate }}-mcp.workspace = true
 {% endif %}baukit-config.workspace = true
 baukit-openapi.workspace = true
-baukit-ops = { workspace = true, features = ["sqlx-postgres"] }
+baukit-ops = { workspace = true, features = ["sqlx-postgres"{% if context.worker %}, "jobs"{% endif %}] }
 baukit-runtime.workspace = true
 baukit-telemetry.workspace = true
 {{ context.app_crate }}-api.workspace = true
@@ -85,7 +85,19 @@ path = "../../tests/openapi_drift.rs"
 [[test]]
 name = "postgres_integration"
 path = "../../tests/postgres_integration.rs"
+
+[[test]]
+name = "postgres_outage"
+path = "../../tests/postgres_outage.rs"
 {% if context.worker %}
+[[test]]
+name = "requeue_mount"
+path = "../../tests/requeue_mount.rs"
+
+[[test]]
+name = "worker_drain"
+path = "../../tests/worker_drain.rs"
+
 [[test]]
 name = "worker_integration"
 path = "../../tests/worker_integration.rs"

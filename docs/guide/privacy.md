@@ -45,11 +45,18 @@ four values:
 - `inline_timeout`, the budget for one inline provider call after commit
 - `max_attempts`, for the durable worker
 
+The subject must pass `baukit_erasure::kernel::is_well_formed_subject`: not empty, not `.` or
+`..`, at most 256 bytes and no control characters. `preflight`, `erase` and
+`fence_as_operator_in_transaction` return `ErasureError::InvalidSubject` before they write
+anything. Build composite subjects with a space, `|` or `#`, never a newline.
+
 The service enqueues an `identity.account.delete` job (`IDENTITY_DELETE_JOB_TYPE`) in the
 erasure transaction and tries the provider once after commit. The template uses 3 seconds
 and 12 attempts. Keep the timeout short, because the call holds a job row lock and a pool
 connection. Register `IdentityDeletionHandler` with a `WorkerRunner`, and alert on failed
-operations. [Run background jobs](jobs.md) covers the worker.
+operations. When the provider is unavailable, including an open `keycloak-admin` circuit, the
+deleter returns `IdentityDeletionError::Unavailable` and the worker defers the job instead of
+spending an attempt. [Run background jobs](jobs.md) covers the worker.
 
 The decision table:
 

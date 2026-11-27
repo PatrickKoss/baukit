@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::StartContainer as _;
+use crate::fault::{FaultError, RedisFault, reserve_host_port};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt as _,
     core::{ExecCommand, IntoContainerPort as _, WaitFor},
@@ -42,6 +43,7 @@ fn redis_image() -> GenericImage {
 pub struct RedisTestContainer {
     connection_url: String,
     container: ContainerAsync<GenericImage>,
+    host_port: u16,
 }
 
 impl RedisTestContainer {
@@ -55,6 +57,15 @@ impl RedisTestContainer {
     #[must_use]
     pub const fn container(&self) -> &ContainerAsync<GenericImage> {
         &self.container
+    }
+
+    /// Returns a handle that stops, restarts, pauses and resumes this container.
+    ///
+    /// Start the fixture with [`start_redis_with_stable_port`] when the test restarts it, so
+    /// the connection URL stays valid.
+    #[must_use]
+    pub fn fault(&self) -> RedisFault<'_> {
+        RedisFault::new(&self.container, REDIS_PORT, Some(self.host_port))
     }
 
     /// Splits the fixture into an owned URL and its lifetime guard.
@@ -104,10 +115,19 @@ impl RedisSentinelTestContainer {
     ///
     /// # Errors
     ///
-    /// Returns [`RedisTestError::Container`] when Docker cannot stop the master.
+    /// Returns [`RedisTestError::Fault`] when Docker cannot stop the master.
     pub async fn stop_master(&self) -> Result<(), RedisTestError> {
-        self.master.stop_with_timeout(Some(0)).await?;
+        self.master_fault().stop().await?;
         Ok(())
+    }
+
+    /// Returns a handle that stops, pauses and resumes the master node.
+    ///
+    /// Pausing the master instead of stopping it keeps its TCP connections open without
+    /// answers, which is how a partitioned master looks to Sentinel and to clients.
+    #[must_use]
+    pub fn master_fault(&self) -> RedisFault<'_> {
+        RedisFault::new(&self.master, REDIS_PORT, None)
     }
 
     /// Requests promotion without waiting for automatic failure detection.
@@ -351,6 +371,9 @@ pub enum RedisTestError {
     /// Testcontainers could not start or inspect the Redis container.
     #[error("could not start Redis test container: {0}")]
     Container(#[from] testcontainers::TestcontainersError),
+    /// Injecting a fault into a node failed.
+    #[error(transparent)]
+    Fault(#[from] FaultError),
     /// Reading Sentinel's published state failed.
     #[error("could not read Sentinel state: {0}")]
     Io(#[from] std::io::Error),
@@ -388,17 +411,38 @@ fn sentinel_has_new_master(reply: &[String], previous_address: &str) -> bool {
 /// Returns [`RedisTestError::Container`] when Docker cannot start the image or
 /// report its host and port.
 pub async fn start_redis() -> Result<RedisTestContainer, RedisTestError> {
-    let container = redis_image()
+    start_redis_on(None).await
+}
+
+/// Starts a disposable Redis container on a host port that survives restarts.
+///
+/// Use it with [`RedisTestContainer::fault`] when a test stops and starts Redis while a
+/// client keeps the same URL.
+///
+/// # Errors
+///
+/// Returns [`RedisTestError::Io`] when no host port can be reserved, otherwise fails like
+/// [`start_redis`].
+pub async fn start_redis_with_stable_port() -> Result<RedisTestContainer, RedisTestError> {
+    start_redis_on(Some(reserve_host_port()?)).await
+}
+
+async fn start_redis_on(host_port: Option<u16>) -> Result<RedisTestContainer, RedisTestError> {
+    let request = redis_image()
         .with_tag(REDIS_IMAGE_TAG)
-        .with_labels(crate::container_labels())
-        .start_container()
-        .await?;
+        .with_labels(crate::container_labels());
+    let request = match host_port {
+        Some(host_port) => request.with_mapped_port(host_port, REDIS_PORT.tcp()),
+        None => request,
+    };
+    let container = request.start_container().await?;
     let host = container.get_host().await?;
     let port = container.get_host_port_ipv4(REDIS_PORT).await?;
     let connection_url = format!("redis://{host}:{port}/");
     Ok(RedisTestContainer {
         connection_url,
         container,
+        host_port: port,
     })
 }
 

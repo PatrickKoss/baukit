@@ -86,7 +86,13 @@ class PodDisruptionBudgetChartTest(unittest.TestCase):
                 name = f"name: {RELEASE}-baukit-app-{process}\n"
                 deployment = next(d for d in docs if "kind: Deployment" in d and name in d)
                 budget = next(d for d in docs if "kind: PodDisruptionBudget" in d and name in d)
-                self.assertEqual(self.match_labels(budget), self.match_labels(deployment))
+                # The budget leaves out baukit.dev/workload to cover the -primary pods.
+                workload = f"baukit.dev/workload: {RELEASE}-baukit-app-{process}"
+                self.assertIn(workload, self.match_labels(deployment))
+                self.assertEqual(
+                    self.match_labels(budget),
+                    [label for label in self.match_labels(deployment) if label != workload],
+                )
 
     @staticmethod
     def match_labels(doc: str) -> list[str]:
@@ -99,6 +105,21 @@ class PodDisruptionBudgetChartTest(unittest.TestCase):
                 break
             labels.append(line.strip())
         return labels
+
+    def test_web_budget_selects_the_web_pods(self) -> None:
+        web_settings = ["web.enabled=true", "web.contentSecurityPolicy=default-src 'self'"]
+        self.assertEqual(self.budgets(*web_settings), {})
+        result = self.render(*web_settings, "web.replicas=2")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        docs = result.stdout.split("---")
+        name = f"name: {RELEASE}-baukit-app-web\n"
+        budget = next(d for d in docs if "kind: PodDisruptionBudget" in d and name in d)
+        deployment = next(d for d in docs if "kind: Deployment" in d and name in d)
+        self.assertIn("  maxUnavailable: 1\n", budget)
+        self.assertEqual(self.match_labels(budget), self.match_labels(deployment))
+
+    def test_web_budget_needs_the_web(self) -> None:
+        self.assertEqual(self.budgets("web.replicas=2"), {})
 
     def test_worker_budget_needs_the_worker(self) -> None:
         self.assertEqual(self.budgets("worker.replicas=2"), {})
@@ -126,7 +147,7 @@ class PodDisruptionBudgetChartTest(unittest.TestCase):
 
     def test_readme_documents_the_values(self) -> None:
         readme = (CHART / "README.md").read_text()
-        for process in ["api", "worker"]:
+        for process in ["api", "worker", "web"]:
             self.assertIn(f"`{process}.podDisruptionBudget.enabled`", readme)
 
 

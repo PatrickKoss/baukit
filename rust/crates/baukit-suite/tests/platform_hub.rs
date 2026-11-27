@@ -10,6 +10,7 @@ use axum::{
 };
 use baukit_config::{Secret, Validate};
 use baukit_egress::{AddressPolicy, EgressOptions, GuardedClient};
+use baukit_resilience::ManualClock;
 use baukit_suite::platform::*;
 use serde_json::{Value, json};
 use std::{
@@ -50,6 +51,7 @@ struct Recorded {
     path: String,
     query: Option<String>,
     authorization: Option<String>,
+    idempotency_key: Option<String>,
     body: Option<Value>,
 }
 
@@ -108,6 +110,11 @@ async fn platform(State(state): State<Arc<HubState>>, request: Request) -> Respo
         authorization: parts
             .headers
             .get(header::AUTHORIZATION)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned),
+        idempotency_key: parts
+            .headers
+            .get("idempotency-key")
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned),
         body: (!body.is_empty()).then(|| serde_json::from_slice(&body).expect("json body")),
@@ -172,10 +179,19 @@ impl MockHub {
             guarded()?,
         )?))
     }
+    fn clocked_client(
+        &self,
+        product_id: &str,
+    ) -> Result<(Arc<HubClient>, Arc<ManualClock>), Box<dyn std::error::Error>> {
+        let clock = Arc::new(ManualClock::new());
+        let client = HubClient::with_clock(&self.config(), product_id, guarded()?, clock.clone())?;
+        Ok((Arc::new(client), clock))
+    }
 }
 
 fn guarded() -> Result<GuardedClient, Box<dyn std::error::Error>> {
     Ok(GuardedClient::new(
+        "hub",
         EgressOptions::default()
             .with_policy(AddressPolicy::AllowLoopback)
             .with_error_body_limit(16 * 1024)?,
@@ -384,7 +400,8 @@ async fn hub_credits_reject_another_wallet_or_subject() -> TestResult {
 #[tokio::test]
 async fn hub_client_refreshes_once_after_401() -> TestResult {
     let hub = MockHub::start().await?;
-    let credits = HubCredits::new(hub.client("hebkit")?);
+    let (client, clock) = hub.clocked_client("hebkit")?;
+    let credits = HubCredits::new(client);
     hub.state.script(&["unauthenticated", "creditBalance"]);
     credits.balance(SUBJECT).await?;
     let requests = hub.state.requests();
@@ -398,13 +415,93 @@ async fn hub_client_refreshes_once_after_401() -> TestResult {
         Some("Bearer recorded-platform-token-2")
     );
 
+    hub.state.script(&["unauthenticated"]);
+    assert_eq!(
+        credits.balance(SUBJECT).await,
+        Err(CreditsError::Hub(HubError::Unauthorized))
+    );
+    assert_eq!(
+        (hub.state.requests().len(), hub.state.token_calls()),
+        (3, 2),
+        "within the token cooldown a 401 is not retried with the same token"
+    );
+
+    clock.advance(TOKEN_FAILURE_COOLDOWN);
     hub.state.script(&["unauthenticated", "unauthenticated"]);
     assert_eq!(
         credits.balance(SUBJECT).await,
         Err(CreditsError::Hub(HubError::Unauthorized))
     );
-    assert_eq!(hub.state.requests().len(), 4, "only one retry per call");
+    assert_eq!(hub.state.requests().len(), 5, "only one retry per call");
     assert_eq!(hub.state.token_calls(), 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn non_idempotent_posts_are_not_replayed_after_401() -> TestResult {
+    let hub = MockHub::start().await?;
+    let credits = HubCredits::new(hub.client("hebkit")?);
+    hub.state.script(&["unauthenticated", "reservationSettled"]);
+    assert_eq!(
+        credits.settle(reservation_id(), 1).await,
+        Err(CreditsError::Hub(HubError::Unauthorized))
+    );
+    assert_eq!(
+        hub.state.requests().len(),
+        1,
+        "a settle may already be applied"
+    );
+    assert_eq!(hub.state.token_calls(), 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn posts_with_an_idempotency_key_are_replayed_once_after_401() -> TestResult {
+    let hub = MockHub::start().await?;
+    let credits = HubCredits::new(hub.client("hebkit")?);
+    hub.state.script(&["unauthenticated", "reservationPending"]);
+    assert!(matches!(
+        credits.reserve(SUBJECT, 4, "job-1").await?,
+        CreditHold::Reserved(_)
+    ));
+    let requests = hub.state.requests();
+    assert_eq!(requests.len(), 2);
+    for request in &requests {
+        assert_eq!(request.idempotency_key.as_deref(), Some("job-1"));
+    }
+    assert_eq!(requests[0].body, requests[1].body);
+    assert_eq!(hub.state.token_calls(), 2);
+    Ok(())
+}
+
+#[test]
+fn hub_requests_reject_invalid_idempotency_keys() {
+    let request = HubRequest::post(&["credits", "reservations"], &json!({})).expect("request");
+    assert_eq!(
+        request.clone().with_idempotency_key("").err(),
+        Some(HubError::InvalidResponse)
+    );
+    assert_eq!(
+        request.with_idempotency_key("line\nbreak").err(),
+        Some(HubError::InvalidResponse)
+    );
+}
+
+#[tokio::test]
+async fn concurrent_first_calls_share_one_token_request() -> TestResult {
+    let hub = MockHub::start().await?;
+    let credits = HubCredits::new(hub.client("hebkit")?);
+    let calls = 20;
+    hub.state.script(&vec!["creditBalance"; calls]);
+    let mut tasks = tokio::task::JoinSet::new();
+    for _ in 0..calls {
+        let credits = credits.clone();
+        tasks.spawn(async move { credits.balance(SUBJECT).await });
+    }
+    while let Some(result) = tasks.join_next().await {
+        result??;
+    }
+    assert_eq!(hub.state.token_calls(), 1);
     Ok(())
 }
 
@@ -447,11 +544,19 @@ async fn hub_client_reports_rejected_credentials_without_the_secret() -> TestRes
         .lock()
         .expect("tokens")
         .push_back((400, json!({"error": "invalid_client"})));
-    let client = hub.client("hebkit")?;
+    let (client, clock) = hub.clocked_client("hebkit")?;
     let credits = HubCredits::new(client.clone());
     let unauthorized = Err(CreditsError::Hub(HubError::Unauthorized));
     assert_eq!(credits.balance(SUBJECT).await, unauthorized);
+    assert_eq!(
+        credits.balance(SUBJECT).await,
+        Err(CreditsError::Unavailable),
+        "a failed token request cools down instead of retrying per call"
+    );
+    assert_eq!(hub.state.token_calls(), 1);
+    clock.advance(TOKEN_FAILURE_COOLDOWN);
     assert_eq!(credits.balance(SUBJECT).await, unauthorized);
+    assert_eq!(hub.state.token_calls(), 2);
     assert!(hub.state.requests().is_empty());
     let config = hub.config();
     assert!(!format!("{config:?}").contains(SECRET));
@@ -464,8 +569,10 @@ async fn hub_client_settings_are_validated() -> TestResult {
     let hub = MockHub::start().await?;
     let mut config = hub.config();
     assert!(config.validate().is_ok());
-    let plain =
-        GuardedClient::new(EgressOptions::default().with_policy(AddressPolicy::AllowLoopback))?;
+    let plain = GuardedClient::new(
+        "hub",
+        EgressOptions::default().with_policy(AddressPolicy::AllowLoopback),
+    )?;
     assert!(
         HubClient::new(&config, "hebkit", plain).is_err(),
         "error bodies are required for typed hub errors"
@@ -875,7 +982,7 @@ async fn subject_organizations_map_hub_errors() -> TestResult {
 #[tokio::test]
 async fn hub_client_refreshes_once_after_401_with_a_query() -> TestResult {
     let hub = MockHub::start().await?;
-    let client = hub.client("laufbefund")?;
+    let (client, clock) = hub.clocked_client("laufbefund")?;
     let query = [("product", "laufbefund"), ("cursor", "a+b/c=")];
     hub.state
         .script(&["unauthenticated", "organizationMembersLastPage"]);
@@ -896,6 +1003,7 @@ async fn hub_client_refreshes_once_after_401_with_a_query() -> TestResult {
         );
     }
 
+    clock.advance(TOKEN_FAILURE_COOLDOWN);
     hub.state.script(&["unauthenticated", "unauthenticated"]);
     let result: Result<OrganizationMemberPage, _> = client
         .get_json_with_query(&["organizations", ORGANIZATION, "members"], &query)

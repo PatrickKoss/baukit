@@ -12,18 +12,25 @@ Outbound HTTP goes through `baukit_egress::GuardedClient`. Do not build a raw
 `reqwest::Client`. The guarded client checks the URL and every DNS answer
 against an `AddressPolicy`, connects only to the answers it checked, never
 follows redirects and ignores `HTTP_PROXY` and `HTTPS_PROXY`. Defaults are a 3 s
-lookup, a 5 s connect, a 10 s request and a 1 MiB response body.
+lookup, a 5 s connect, a 10 s request and a 1 MiB response body. Inside an
+inbound request, the time left on the request deadline caps the request timeout.
 
 The smallest call, from `rust/crates/baukit-egress/README.md`:
 
 ```rust,ignore
 use baukit_egress::{EgressOptions, EgressRequest, GuardedClient};
 
-let client = GuardedClient::new(EgressOptions::default())?;
+let client = GuardedClient::new("provider", EgressOptions::default())?;
 let response = client
     .execute(EgressRequest::post(url).with_headers(headers).with_body(body))
     .await?;
 ```
+
+The first argument is the destination name. It becomes the `destination` label
+on the egress metrics, so use one short, lowercase, static name per provider and
+never a host, tenant, user or URL. Do not reuse the names baukit crates already
+use: `oidc`, `idp`, `hub`, `suite-peer`, `expo`, `keycloak-admin` and
+`mcp-introspection`.
 
 The crate is opt-in. The generated backend does not depend on it, and its
 options are not part of `baukit_config::BaukitConfig`. Your product builds
@@ -68,7 +75,7 @@ use url::Url;
 # async fn collect() -> Result<(), Box<dyn std::error::Error>> {
 let networks = PrivateNetworks::new(["10.43.0.0/16".parse()?])?;
 let options = EgressOptions::default().with_policy(AddressPolicy::AllowPrivate(networks));
-let client = GuardedClient::new(options)?;
+let client = GuardedClient::new("provider", options)?;
 let url = Url::parse("http://prometheus.monitoring.svc:9090/api/v1/query?query=up")?;
 let response = client.execute(EgressRequest::get(url)).await?;
 # let _ = response;
@@ -78,6 +85,24 @@ let response = client.execute(EgressRequest::get(url)).await?;
 
 `AllowLoopback` exists for tests. Never select it outside the `local`
 environment.
+
+## The circuit breaker and the in-flight cap
+
+Every client puts a circuit breaker and an in-flight cap in front of each
+`(scheme, host, port)`. Both are on by default. `BreakerPolicy::default()` opens
+the circuit at 50% failures over the last 20 calls, with at least 10 calls, or
+after 5 consecutive timeouts. It stays open 30 s and doubles on each failed probe
+up to 5 min. A `429`, or a `5xx` with `Retry-After`, holds it open for exactly
+that delay. Each `(scheme, host, port)` allows 32 requests in flight.
+
+Change them on the options with `with_circuit_breaker(policy)` and
+`with_max_in_flight(n)`. `without_circuit_breaker()` is for tests and one-shot
+tools, not services. `baukit-resilience` holds the breaker itself.
+
+`GuardedClient` never retries. Do not wrap it in a retry loop: the breaker counts
+every call, so a loop multiplies load on a failing provider and opens the circuit
+sooner. In a job, the runner's attempts and deferrals do the retrying. In a
+request, answer `503` and let the client retry.
 
 ## Handle failures and retries
 
@@ -89,6 +114,27 @@ environment.
 rate limits with `403`. A webhook sender that ignores the receiver's answer sets
 `ResponseBody::Discard`. The full table of variants and status classes is in the
 crate README.
+
+Two variants send nothing at all. `EgressError::CircuitOpen { retry_after }`
+(`circuit_open`) means the breaker is open, and `EgressError::Saturated`
+(`saturated`) means the in-flight cap is full. Both have
+`RetryClass::RetryAfter`, the breaker's delay or 1 s. A `match` without a
+wildcard arm must handle them.
+
+A job handler maps egress errors with `baukit_jobs::egress_job_error`, behind
+the `egress` feature of `baukit-jobs`:
+
+```rust,ignore
+use baukit_jobs::egress_job_error;
+
+let response = client.execute(request).await.map_err(|error| egress_job_error(&error))?;
+```
+
+It defers the job on `CircuitOpen` and `Saturated`, so the attempt is not spent,
+and keeps the retry class of every other error. Inside an HTTP handler, answer
+`ApiError::unavailable(retry_after)` instead. The
+[egress migration guide](../migrations/egress-circuit-breaker.md) has the full
+mapping.
 
 No error variant and no span field carries the URL path or query, because
 webhook URLs often embed tokens there. Keep it that way when you log.
@@ -150,15 +196,18 @@ and the fail mode semantics. See the crate README for releases and windows.
 ## Choose the store and the fail mode
 
 `RedisRateLimitStore::connect_if_enabled` returns `None` when both scopes are
-disabled and opens no connection. With a scope enabled it needs a reachable
-Redis. A `redis://` URL selects a single node. A `redis+sentinel://` URL
+disabled and opens no connection. With a scope enabled it takes the startup budget and retries the connection
+within it. If Redis is still down after the budget, the process starts with a
+degraded store that reconnects in the background, and `is_connected()` reports
+which state it is in. A `redis://` URL selects a single node. A `redis+sentinel://` URL
 selects Sentinel mode, with the master name as the only path segment.
 `InMemoryRateLimitStore` is bounded and per process, so it suits tests and local
 runs only.
 
 `fail_mode` decides what happens when the store cannot answer. `open`, the
 default, logs the error and lets the request through, so a Redis outage turns
-limiting off. `closed` rejects the request. Pick `closed` where abuse costs more
+limiting off. `closed` answers `503` with `Retry-After: 1`, for route groups
+and the browser-session limiter too. Pick `closed` where abuse costs more
 than downtime, for example a route that sends email or SMS. The
 `BaukitRateLimitStoreErrors` alert fires on `outcome="error"` in either mode, see
 [the rate-limit runbook](../runbooks/app/rate-limit-store-errors.md).
@@ -234,12 +283,15 @@ replace the in-process limiter.
 ## Reference
 
 - [`rust/crates/baukit-egress/README.md`](../../rust/crates/baukit-egress/README.md)
+- [`rust/crates/baukit-resilience/README.md`](../../rust/crates/baukit-resilience/README.md)
 - [`rust/crates/baukit-ratelimit/README.md`](../../rust/crates/baukit-ratelimit/README.md)
 - [`rust/crates/baukit-config/src/rate_limit.rs`](../../rust/crates/baukit-config/src/rate_limit.rs)
 - [`deploy/chart/baukit-app/README.md`](../../deploy/chart/baukit-app/README.md)
 - [`templates/backend/backend/crates/__app__-bin/src/rate_limits.rs`](../../templates/backend/backend/crates/__app__-bin/src/rate_limits.rs)
 - [`fixtures/egress/address-policy-v1.json`](../../fixtures/egress/address-policy-v1.json)
 - [Migration: rate limiting client IP and buckets](../migrations/rate-limit-client-ip-and-buckets.md)
+- [Migration: egress circuit breaker](../migrations/egress-circuit-breaker.md)
+- [Runbook: egress circuit open](../runbooks/app/egress-circuit-open.md)
 - [Runbook: rate-limit store errors](../runbooks/app/rate-limit-store-errors.md)
 - [ADR 0015: request admission](../adr/0015-request-admission.md)
 - [ADR 0016: outbound HTTP through egress](../adr/0016-outbound-http-through-egress.md)

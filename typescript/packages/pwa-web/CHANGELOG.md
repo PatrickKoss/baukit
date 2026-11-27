@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.32.0
+
+- `networkFirst` serves the cached copy when the network is still pending after `networkTimeoutMs` (default 4,000 ms, `false` disables it). The late response still updates the cache.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.32.0 train.
+
 ## 0.31.0
 
 ### Minor Changes

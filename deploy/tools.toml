@@ -114,3 +114,6 @@ sha256 = { linux-amd64 = "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23
 [images]
 prometheus = "prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06"
 falco = "falcosecurity/falco:0.45.2@sha256:1562a643953f938e02f47319b5214d93a235f11f646d60e9b8a516fd5a64698e"
+# deploy/smoke/run-load-smoke.sh runs the load smoke with it. k6 ships macOS builds only as zip, which
+# the tool installer does not unpack, so it runs as an image.
+k6 = "grafana/k6:2.4.0@sha256:d41bb79cd8de5a7ad619b53570e3712633e8bff0937010a5c6c57a4747e7a276"

@@ -4,6 +4,13 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
+- Worker conformance accepts `worker_job_runs_total{outcome="cancelled"}`.
+- Fault fixtures: `PostgresTestContainer::fault` and `RedisTestContainer::fault` return `PostgresFault` and `RedisFault` handles that stop, start, pause and resume the container. `PostgresTestOptions::with_stable_host_port` and `start_redis_with_stable_port` keep the URL valid across restarts. `RedisSentinelTestContainer::master_fault` pauses the master like a partition.
+- Toxiproxy fixture: `start_toxiproxy` runs `ghcr.io/shopify/toxiproxy` pinned by digest. `Toxiproxy::proxy` and `proxy_container` return a `ToxiproxyProxy` that adds and removes `Toxic` latency, reset-peer and timeout faults or disables the link.
+- Breaking: `stop_master` fails with the new `RedisTestError::Fault` instead of `RedisTestError::Container`.
+
 ## [0.31.0] - 2026-11-26
 
 - Breaking: `check_auth_negative_suite` fails on operations documented without security unless the case lists them with `.public(method, path, reason)`, sends 11 invalid credentials instead of 5, requires `WWW-Authenticate` on the missing-token 401, and fails a route that also rejects a valid token. See `docs/migrations/security-suites-and-composed-api.md`.

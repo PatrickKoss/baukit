@@ -51,6 +51,84 @@ Before reconciliation, an overlay must:
   `hcloud-volumes`), set the CronJob's `RESTORE_STORAGE_CLASS` env to a
   Delete-policy class such as `hcloud-volumes-delete`.
 
+## Connection pooling
+
+`pooler.yaml` runs a CNPG `Pooler` named `postgres-cluster-pooler-rw`: PgBouncer
+1.26.1 in transaction mode in front of the primary, with its own Service of the
+same name on port 5432. `pooler-podmonitor.yaml` scrapes its exporter on port
+9127 (`cnpg_pgbouncer_*`), and `allow-postgres-pooler` admits the same
+`baukit.dev/postgres-client` pods as the instances. Products point their
+connection string at `postgres-cluster-pooler-rw.postgres.svc.cluster.local`.
+
+Transaction mode hands a server connection to a client for one transaction
+only. `max_prepared_statements: 200` keeps sqlx's named prepared statements
+working, but session state does not survive: `LISTEN`, session advisory locks
+and plain `SET`. A worker that listens for notifications keeps one direct
+connection to `postgres-cluster-rw` for the listener.
+
+The base runs one pooler pod, so it has no PDB. The baremetal overlay runs two
+on different nodes with a PDB of `maxUnavailable: 1`.
+
+### Connection budget
+
+| Setting | Value | Where |
+|---|---:|---|
+| App pool per pod (`database.max_connections`) | 10 | `baukit-config` default |
+| PgBouncer `default_pool_size` per database and user | 10 | `pooler.yaml` |
+| PgBouncer `reserve_pool_size` | 2 | `pooler.yaml` |
+| PgBouncer `max_db_connections` per database | 12 | `pooler.yaml` |
+| PgBouncer `max_client_conn` | 500 | `pooler.yaml` |
+| Tenant owner `connectionLimit` | 25 | `product-database.example.yaml` |
+| Keycloak pool (`KC_DB_POOL_MAX_SIZE`) | 10 | `keycloak/statefulset.yaml` |
+| Keycloak owner `connectionLimit` | 12 | `keycloak/database.yaml` |
+| PostgreSQL `max_connections` | 150 | `cluster.yaml` |
+
+Only API pods go through the pooler. An API pod opens up to 10 client
+connections to PgBouncer, and every API pod of a product shares the same 10
+server connections, plus 2 reserve ones when a client waits longer than
+`reserve_pool_timeout`, capped at `max_db_connections` 12. The worker, the
+migration Job and the seed Job connect to `postgres-cluster-rw` directly, so
+their startup timeouts apply and no `query_timeout` cuts a long job. Each tenant
+owner can open 25 connections: 12 through the pooler and 13 direct, enough for
+one worker pod at the default pool of 10 plus the migration Job and an operator
+session. More worker replicas need a smaller worker pool. Five tenants at their
+limit (125), Keycloak (12), CNPG's own connections and the 3 superuser slots fit
+under 150. Raise `max_connections` before the sixth tenant, and size memory
+with it.
+
+### Timeouts through the pooler
+
+baukit-config sends `statement_timeout` (29 s), `lock_timeout` (5 s) and
+`idle_in_transaction_session_timeout` (60 s) as startup `options`. PgBouncer
+cannot forward those to a shared server connection, so the pooler lists
+`options` in `ignore_startup_parameters` and the owner role carries the same
+values through `ALTER ROLE ... SET`. `cluster.yaml` sets them for the bootstrap
+owner in `postInitApplicationSQL`; every other tenant owner sets them on itself
+once over a direct connection, as `product-database.example.yaml` shows, so
+nothing execs into the `postgres` namespace. An API that overrides a
+timeout in its config gets the role's value through the pooler. The worker and
+migrations run on direct connections to `postgres-cluster-rw`, where startup
+options still apply: the worker's `statement_timeout` follows its job timeout
+and the migration connection drops `statement_timeout`.
+
+PgBouncer adds two limits of its own. `query_timeout` 35 s sits above the role's
+`statement_timeout`, so PostgreSQL cancels a slow statement first and the
+client sees its error; the pooler only cuts a server that stopped answering.
+`idle_transaction_timeout` 60 s matches `idle_in_transaction_session_timeout`.
+Keycloak connects directly and keeps its own timeouts.
+
+## Synchronous replication
+
+An overlay with two or more instances sets
+`spec.postgresql.synchronous` to `method: any`, `number: 1` and
+`dataDurability: preferred`, as the baremetal overlay does. A commit then waits
+for one standby to flush it, so a failover does not lose acknowledged writes.
+With `preferred`, CNPG drops the standby from `synchronous_standby_names` while
+it is unavailable, so the primary keeps accepting writes instead of blocking;
+those commits are async until the standby is back. `required` would block
+writes instead. Both fields exist in the CNPG 1.30.2 `Cluster` CRD pinned in
+`deploy/platform/cnpg`.
+
 ## Node drains and PodDisruptionBudgets
 
 The instance runs as `platform-critical`. The pushgateway, the restore-test

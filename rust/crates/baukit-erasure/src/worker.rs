@@ -135,6 +135,12 @@ impl JobHandler for IdentityDeletionHandler {
                         )
                         .await);
                 }
+                Err(IdentityDeletionError::Unavailable { retry_after }) => {
+                    return Err(JobError::deferred(
+                        "identity provider unavailable",
+                        retry_after,
+                    ));
+                }
                 Err(IdentityDeletionError::Permanent) => {
                     return Err(self
                         .fail_operation(

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## 0.32.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.32.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/integrations-client@0.32.0
+  - @baukit/localization-core@0.32.0
+  - @baukit/type-guards@0.32.0
+
 ## 0.31.0
 
 - Breaking: tickets with duplicate JSON keys or non-integer numbers are rejected, matching Rust. `kid` length counts UTF-8 bytes. `manageUrl` rejects backslashes and ports above 65535.

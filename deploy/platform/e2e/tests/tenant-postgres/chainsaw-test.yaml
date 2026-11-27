@@ -10,7 +10,9 @@ spec:
     component. The operator reaches the instance, the instance archives WAL to rustfs, its CNPG app
     Secret carries a uri, and an on-demand backup completes, all under the tenant's Kyverno policies
     and default-deny. On the shared postgres-cluster, a tenant owner from product-database.example.yaml
-    reaches its own database and pg_hba rejects it on another tenant's database and on postgres.
+    reaches its own database and pg_hba rejects it on another tenant's database and on postgres. The
+    owner has connection limit 25, and through the pooler its session gets the role's timeouts even when
+    the client asks for another statement_timeout in its startup options.
   timeouts:
     exec: 25m
   steps:
@@ -61,6 +63,7 @@ spec:
                 cluster: {name: postgres-cluster}
                 name: ${tenant}_owner
                 login: true
+                connectionLimit: 25
                 inRoles: [baukit_tenants, $tenant]
                 databaseRoleReclaimPolicy: delete
                 passwordSecret: {name: ${k8s}-db}
@@ -104,6 +107,15 @@ spec:
                             cnpg.io/cluster: postgres-cluster
                     ports:
                       - {protocol: TCP, port: 5432}
+                  - to:
+                      - namespaceSelector:
+                          matchLabels:
+                            kubernetes.io/metadata.name: postgres
+                        podSelector:
+                          matchLabels:
+                            cnpg.io/poolerName: postgres-cluster-pooler-rw
+                    ports:
+                      - {protocol: TCP, port: 5432}
               ---
               apiVersion: v1
               kind: Pod
@@ -135,6 +147,18 @@ spec:
                           sleep 3
                         done
                         printf 'own database: %s\n' "\$out"
+                        limit="\$(psql -XtAq -v ON_ERROR_STOP=1 -d e2e_iso_a -c 'select rolconnlimit from pg_roles where rolname = current_user')"
+                        [ "\$limit" = 25 ] || { printf 'owner connection limit is %s, not 25\n' "\$limit"; exit 1; }
+                        # The owner sets its own timeouts directly, as product-database.example.yaml shows.
+                        psql -XtAq -v ON_ERROR_STOP=1 -d e2e_iso_a \
+                          -c "ALTER ROLE CURRENT_USER SET statement_timeout = '29s'" \
+                          -c "ALTER ROLE CURRENT_USER SET lock_timeout = '5s'" \
+                          -c "ALTER ROLE CURRENT_USER SET idle_in_transaction_session_timeout = '60s'"
+                        # Through PgBouncer the startup options are dropped; the role's settings must arrive.
+                        pooled="\$(PGHOST=postgres-cluster-pooler-rw.postgres PGOPTIONS='-c statement_timeout=1s' \
+                          psql -XtAq -v ON_ERROR_STOP=1 -d e2e_iso_a -c 'show statement_timeout' -c 'show lock_timeout' -c 'show idle_in_transaction_session_timeout' | tr '\\n' ' ')"
+                        [ "\$pooled" = '29s 5s 1min ' ] || { printf 'pooled session timeouts: %s\n' "\$pooled"; exit 1; }
+                        printf 'pooled session timeouts: %s\n' "\$pooled"
                         for db in e2e_iso_b postgres; do
                           if out="\$(connect "\$db")"; then printf '%s reachable: %s\n' "\$db" "\$out"; exit 1; fi
                           case "\$out" in

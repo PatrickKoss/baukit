@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.32.0
+
+- Breaking: the scheduler retries failed runs by default, up to 5 times, honouring `SyncRateLimitError.retryAt`, skipping a non-retryable `SyncTransportError`, and otherwise using full jitter from 1 s up to 60 s. The policy is exported as `defaultSyncRetryDelayMs`. Pass `retry: false` for the old behaviour.
+- Online and foreground triggers wait a random 0 to 5 s and collapse into one run, and interval ticks land within 10% of `intervalMs`. `random` sets the jitter source and `now` the clock.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.32.0 train.
+
 ## 0.31.0
 
 - Breaking: `observe` rejects remote timestamps more than 24 hours ahead (`maxDriftMs`), and corrupt stored HLC state restarts at physical time.

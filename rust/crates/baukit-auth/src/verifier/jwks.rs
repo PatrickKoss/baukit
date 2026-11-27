@@ -19,6 +19,22 @@ use crate::kernels::jwks_refresh_allowed;
 use crate::oidc_http::{self, Document};
 use crate::{OidcConfig, SigningAlgorithm};
 
+const AUTH_KEY_CACHE_REQUESTS_TOTAL: &str = "auth_key_cache_requests_total";
+const OIDC_SOURCE: &str = "oidc";
+const LOOKUP_FRESH: &str = "fresh";
+const LOOKUP_STALE: &str = "stale";
+const LOOKUP_FETCHED: &str = "fetched";
+const LOOKUP_FAILED: &str = "failed";
+
+fn record(result: &'static str) {
+    metrics::counter!(
+        AUTH_KEY_CACHE_REQUESTS_TOTAL,
+        "source" => OIDC_SOURCE,
+        "result" => result
+    )
+    .increment(1);
+}
+
 /// Fetches the provider's current key set.
 pub(crate) trait FetchKeys: Sync {
     fn fetch(&self) -> impl Future<Output = Result<JwkSet, VerificationError>> + Send;
@@ -126,6 +142,7 @@ impl JwksCache {
         };
         match snapshot.set.find(key_id) {
             Some(key) if now.saturating_sub(snapshot.fetched_at) < self.policy.ttl => {
+                record(LOOKUP_FRESH);
                 Ok(key.clone())
             }
             Some(key) => self.refresh_stale(source, key_id, key, now).await,
@@ -229,9 +246,11 @@ impl JwksCache {
         now: Duration,
     ) -> Result<Jwk, VerificationError> {
         let Ok(_flight) = self.refresh.try_lock() else {
+            record(LOOKUP_STALE);
             return Ok(stale.clone());
         };
         if !self.claim_refresh(now) {
+            record(LOOKUP_STALE);
             return Ok(stale.clone());
         }
         match self.fetch_and_store(source, now).await {
@@ -241,6 +260,7 @@ impl JwksCache {
                 .ok_or(VerificationError::UnknownKeyId),
             Err(error) => {
                 tracing::warn!(error = %error, "JWKS refresh failed; serving the stale key set");
+                record(LOOKUP_STALE);
                 Ok(stale.clone())
             }
         }
@@ -253,6 +273,11 @@ impl JwksCache {
     ) -> Result<Arc<Snapshot>, VerificationError> {
         let result = source.fetch().await;
         self.attempts.fetch_add(1, Ordering::AcqRel);
+        record(if result.is_ok() {
+            LOOKUP_FETCHED
+        } else {
+            LOOKUP_FAILED
+        });
         let snapshot = Arc::new(Snapshot {
             set: result?,
             fetched_at: now,

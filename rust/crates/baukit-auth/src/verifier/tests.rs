@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::claims::{authentication_time, scope_claim, selected_profile_claims};
 use super::*;
 
@@ -68,11 +70,14 @@ async fn interrupted_document_bodies_are_retryable_but_invalid_json_is_not() {
                 stream.shutdown().await.expect("shutdown");
             }
         });
-        let config = OidcConfig::new(&issuer, "api").expect("config");
-        let discovery_error = OidcVerifier::discover(config.clone())
-            .await
-            .map(|_| ())
-            .expect_err("invalid discovery response");
+        let config = OidcConfig::new(&issuer, "api")
+            .and_then(|config| config.with_startup_budget(Duration::from_nanos(1)))
+            .expect("config");
+        let discovery_error = match OidcVerifier::discover(config.clone()).await {
+            Ok(_) => panic!("invalid discovery response"),
+            Err(VerificationError::DiscoveryBudgetExhausted(source)) if truncated => *source,
+            Err(error) => error,
+        };
         let verifier =
             OidcVerifier::from_jwks_uri(config, format!("{issuer}/jwks")).expect("verifier");
         let jwks_error = verifier
@@ -297,6 +302,144 @@ fn profile_claims_copy_only_selected_strings_and_booleans() {
     );
     assert_eq!(profile["email"].as_str(), Some("ada@example.com"));
     assert_eq!(profile["email_verified"].as_bool(), Some(true));
+}
+
+mod discovery_retry {
+    use std::time::{Duration, Instant};
+
+    use axum::{
+        Json, Router, extract::State, http::StatusCode, response::IntoResponse, routing::get,
+    };
+    use serde_json::json;
+
+    use super::*;
+
+    const IDP_COMES_UP_AFTER: Duration = Duration::from_secs(3);
+
+    async fn late_issuer(comes_up_after: Duration) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let issuer = format!("http://{}", listener.local_addr().expect("address"));
+        let state = (Instant::now(), issuer.clone());
+        let router = Router::new()
+            .route(
+                "/.well-known/openid-configuration",
+                get(
+                    move |State((started, issuer)): State<(Instant, String)>| async move {
+                        if started.elapsed() < comes_up_after {
+                            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                        }
+                        Json(json!({"issuer": issuer, "jwks_uri": format!("{issuer}/certs")}))
+                            .into_response()
+                    },
+                ),
+            )
+            .with_state(state);
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        issuer
+    }
+
+    #[tokio::test]
+    async fn discovery_waits_for_an_issuer_that_comes_up_late() {
+        let issuer = late_issuer(IDP_COMES_UP_AFTER).await;
+        let started = Instant::now();
+        let verifier = OidcVerifier::discover(OidcConfig::new(&issuer, "api").expect("config"))
+            .await
+            .expect("discovery succeeds once the issuer is up");
+        assert!(started.elapsed() >= IDP_COMES_UP_AFTER);
+        assert_eq!(verifier.issuer(), issuer);
+    }
+
+    #[tokio::test]
+    async fn discovery_fails_clearly_after_the_startup_budget() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("listener");
+        let issuer = format!("http://{}", listener.local_addr().expect("address"));
+        drop(listener);
+        let budget = Duration::from_secs(1);
+        let config = OidcConfig::new(&issuer, "api")
+            .and_then(|config| config.with_startup_budget(budget))
+            .expect("config");
+        let started = Instant::now();
+        let error = OidcVerifier::discover(config)
+            .await
+            .map(|_| ())
+            .expect_err("issuer never comes up");
+        assert!(started.elapsed() >= budget);
+        assert!(
+            matches!(&error, VerificationError::DiscoveryBudgetExhausted(source) if matches!(**source, VerificationError::DiscoveryRequest(_))),
+            "{error:?}"
+        );
+        assert_eq!(
+            error.to_string(),
+            "OIDC discovery did not succeed within the startup budget"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_static_jwks_uri_skips_discovery() {
+        let config = OidcConfig::new("http://127.0.0.1:9/realms/test", "api")
+            .and_then(|config| config.with_jwks_uri("http://127.0.0.1:9/realms/test/certs"))
+            .expect("config");
+        let verifier = tokio::time::timeout(Duration::from_secs(1), OidcVerifier::discover(config))
+            .await
+            .expect("no discovery request")
+            .expect("verifier");
+        assert_eq!(verifier.issuer(), "http://127.0.0.1:9/realms/test");
+    }
+
+    #[tokio::test]
+    async fn an_open_oidc_circuit_fails_discovery_fast_as_unavailable() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let issuer = format!("http://{}", listener.local_addr().expect("address"));
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = calls.clone();
+        let router = Router::new().route(
+            "/.well-known/openid-configuration",
+            get(move || async move {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    [(axum::http::header::RETRY_AFTER, "60")],
+                )
+            }),
+        );
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        let budget = Duration::from_secs(1);
+        let config = OidcConfig::new(&issuer, "api")
+            .and_then(|config| config.with_startup_budget(budget))
+            .expect("config");
+        let error = OidcVerifier::discover(config)
+            .await
+            .map(|_| ())
+            .expect_err("the issuer stays down");
+        assert!(error.is_unavailable(), "{error:?}");
+        assert!(
+            matches!(
+                &error,
+                VerificationError::DiscoveryBudgetExhausted(source)
+                    if matches!(&**source, VerificationError::DiscoveryRequest(cause)
+                        if matches!(**cause, baukit_egress::EgressError::CircuitOpen { .. }))
+            ),
+            "{error:?}"
+        );
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn issuer_mismatch_is_not_retried() {
+        let issuer = late_issuer(Duration::ZERO).await;
+        let config = OidcConfig::new(format!("{issuer}/"), "api").expect("config");
+        let started = Instant::now();
+        let error = OidcVerifier::discover(config)
+            .await
+            .map(|_| ())
+            .expect_err("mismatch");
+        assert!(matches!(error, VerificationError::DiscoveryIssuerMismatch));
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
 }
 
 mod signed {

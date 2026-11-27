@@ -5,6 +5,7 @@ evaluation_interval: 1m
 group_eval_order:
   - baukit-red-recording
   - baukit-error-budget-recording
+  - baukit-slo-traffic-recording
   - baukit-slo-alerts
 tests:
   - name: a 2% 5xx ratio burns the budget 20x and fires the fast burn alert
@@ -184,3 +185,23 @@ tests:
       - eval_time: 20m
         alertname: BaukitHttpP99LatencyHigh
         exp_alerts: []
+
+  - name: one failing request per minute stays under the 100-request floor of the fast burn alert
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{product="fixture",service="fixture-api",environment="test",route="/items",status="500"}'
+        values: '0+1x90'
+    promql_expr_test:
+      - expr: baukit:http_requests_5xx:error_budget_burn_rate1h{service!=""}
+        eval_time: 70m
+        exp_samples:
+          - labels: 'baukit:http_requests_5xx:error_budget_burn_rate1h{product="fixture",service="fixture-api",environment="test"}'
+            value: 1000
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: BaukitHighErrorBudgetBurnFast
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: BaukitHighErrorBudgetBurnSlow
+        exp_alerts: []
+

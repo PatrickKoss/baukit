@@ -4,6 +4,17 @@
 # `password`; its username must match `spec.name` on the owner DatabaseRole.
 # The owner joins baukit_tenants and the role named like the database, so the
 # cluster's pg_hba admits it to that database and rejects it on every other one.
+# connectionLimit caps the owner at 25 connections: 12 through the pooler
+# (max_db_connections) and 13 direct ones for the worker, migrations and LISTEN.
+# PgBouncer drops the client's startup options, and DatabaseRole has no field for
+# role settings, so the owner sets baukit-config's default timeouts on itself
+# once, over a direct connection to postgres-cluster-rw with its own credentials
+# (cluster.yaml does the same for the bootstrap owner). A role may set its own
+# defaults, so nothing execs into the postgres namespace:
+#   psql "host=postgres-cluster-rw.postgres dbname=product user=product_owner sslmode=require" \
+#     -c "ALTER ROLE product_owner SET statement_timeout = '29s'" \
+#     -c "ALTER ROLE product_owner SET lock_timeout = '5s'" \
+#     -c "ALTER ROLE product_owner SET idle_in_transaction_session_timeout = '60s'"
 #
 # apiVersion: postgresql.cnpg.io/v1
 # kind: DatabaseRole
@@ -31,6 +42,7 @@
 #   superuser: false
 #   createdb: false
 #   createrole: false
+#   connectionLimit: 25
 #   inRoles:
 #     - baukit_tenants
 #     - product

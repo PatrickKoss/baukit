@@ -170,6 +170,17 @@ async fn jwks_url_serves_verifiers_without_discovery_and_refreshes_after_ttl()
 
     sleep(cache_ttl * 2).await;
     verifier.verify(&token).await?;
+    let refreshed = tokio::time::timeout(Duration::from_secs(2), async {
+        while server.jwks_request_count() < 2 {
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    assert!(
+        refreshed.is_ok(),
+        "stale JWKS was not refreshed in the background within 2 s; requests: {}",
+        server.jwks_request_count()
+    );
     assert_eq!(server.jwks_request_count(), 2);
     Ok(())
 }

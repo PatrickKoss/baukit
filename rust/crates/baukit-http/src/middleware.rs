@@ -1,4 +1,8 @@
-use std::{any::Any, fmt, time::Instant};
+use std::{
+    any::Any,
+    fmt,
+    time::{Duration, Instant},
+};
 
 use axum::{
     Router,
@@ -14,13 +18,13 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
 };
+use baukit_resilience::{Deadline, deadline};
 use metrics::Gauge;
 use opentelemetry::{
     Context, global,
     propagation::{Extractor, Injector},
 };
 use tokio::time;
-use tower::limit::ConcurrencyLimitLayer;
 use tower_http::{
     catch_panic::CatchPanicLayer,
     cors::{AllowOrigin, CorsLayer},
@@ -33,6 +37,7 @@ use uuid::Uuid;
 use crate::{
     ApiError, HttpOptions, IDEMPOTENCY_KEY, ResponseCachePolicy,
     security_headers::{SecurityHeadersLayer, X_BAUKIT_SESSION},
+    shedding::ConcurrencyGate,
 };
 
 /// The standard request ID header.
@@ -52,7 +57,8 @@ const UNMATCHED_ROUTE: &str = "unmatched";
 pub const HTTP_REQUESTS_TOTAL: &str = "http_requests_total";
 /// Histogram metric for HTTP request seconds, labeled `method`, `route`, and `status`.
 pub const HTTP_REQUEST_DURATION_SECONDS: &str = "http_request_duration_seconds";
-/// Gauge metric for active HTTP requests, labeled `method` and `route`.
+/// Gauge metric for HTTP requests holding a concurrency permit, labeled
+/// `method` and `route`. Requests still waiting for a permit are not counted.
 pub const HTTP_REQUESTS_IN_FLIGHT: &str = "http_requests_in_flight";
 
 /// Required Prometheus buckets for [`HTTP_REQUEST_DURATION_SECONDS`], in seconds.
@@ -62,7 +68,7 @@ pub const HTTP_REQUESTS_IN_FLIGHT: &str = "http_requests_in_flight";
 /// slice to `metrics_exporter_prometheus::PrometheusBuilder::set_buckets` or a
 /// metric-specific equivalent before installing the recorder.
 pub const DURATION_BUCKETS: &[f64] = &[
-    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0,
 ];
 
 tokio::task_local! {
@@ -182,15 +188,17 @@ where
     let options = options.validate().unwrap_or_default();
     let cors = cors_layer(&options);
     let body_size_limit = options.body_size_limit;
-    let concurrency_limit = options.concurrency_limit;
     let security_headers = SecurityHeadersLayer::new(options.hsts_max_age);
+    let lifecycle = LifecycleState {
+        gate: ConcurrencyGate::new(options.concurrency_limit, options.queue_timeout),
+        options,
+    };
 
     router
         .layer(RequestBodyLimitLayer::new(body_size_limit))
-        .layer(ConcurrencyLimitLayer::new(concurrency_limit))
         .layer(cors)
         .layer(CatchPanicLayer::custom(panic_response))
-        .layer(middleware::from_fn_with_state(options, request_lifecycle))
+        .layer(middleware::from_fn_with_state(lifecycle, request_lifecycle))
         .layer(security_headers)
 }
 
@@ -262,8 +270,14 @@ fn apply_cache_policy(policy: ResponseCachePolicy, headers: &mut HeaderMap) {
     }
 }
 
+#[derive(Clone, Debug)]
+struct LifecycleState {
+    options: HttpOptions,
+    gate: ConcurrencyGate,
+}
+
 async fn request_lifecycle(
-    State(options): State<HttpOptions>,
+    State(LifecycleState { options, gate }): State<LifecycleState>,
     mut request: Request,
     next: Next,
 ) -> Response {
@@ -273,11 +287,16 @@ async fn request_lifecycle(
         .extensions_mut()
         .insert(options.json_rejection_codes.clone());
     CURRENT_REQUEST_ID
-        .scope(request_id, lifecycle_inner(options, request, next))
+        .scope(request_id, lifecycle_inner(options, gate, request, next))
         .await
 }
 
-async fn lifecycle_inner(options: HttpOptions, request: Request, next: Next) -> Response {
+async fn lifecycle_inner(
+    options: HttpOptions,
+    gate: ConcurrencyGate,
+    request: Request,
+    next: Next,
+) -> Response {
     let request_id = current_request_id();
     let method = bounded_method(request.method());
     let route = request
@@ -306,11 +325,15 @@ async fn lifecycle_inner(options: HttpOptions, request: Request, next: Next) -> 
             "method" => method,
             "route" => route.clone()
         );
-        in_flight.increment(1.0);
-        let _in_flight = InFlightGuard(in_flight);
+        let admitted = with_deadline(
+            started,
+            options.request_timeout,
+            admit_and_run(&gate, in_flight, request, next),
+        );
 
-        let mut response = match time::timeout(options.request_timeout, next.run(request)).await {
-            Ok(mut response) => {
+        let mut response = match time::timeout(options.request_timeout, admitted).await {
+            Ok(Err(shed)) => shed.into_response(),
+            Ok(Ok(mut response)) => {
                 if response.extensions_mut().remove::<PanicCaught>().is_some() {
                     tracing::error!("request handler panicked");
                     ApiError::internal_without_cause().into_response()
@@ -354,6 +377,36 @@ async fn lifecycle_inner(options: HttpOptions, request: Request, next: Next) -> 
     }
     .instrument(span)
     .await
+}
+
+async fn with_deadline<F: Future>(started: Instant, budget: Duration, future: F) -> F::Output {
+    match Deadline::after(started, budget) {
+        Some(deadline) => deadline::scope(deadline, future).await,
+        None => future.await,
+    }
+}
+
+/// The deadline of the request being served: its start plus
+/// [`HttpOptions::request_timeout`], tightened by a [`route_timeout`](crate::route_timeout).
+///
+/// `None` outside a request handled by [`layers`], and in tasks the handler
+/// spawns. Outbound clients cap their timeouts with it; it is never sent to a
+/// destination.
+#[must_use]
+pub fn current_deadline() -> Option<Deadline> {
+    deadline::current()
+}
+
+async fn admit_and_run(
+    gate: &ConcurrencyGate,
+    in_flight: Gauge,
+    request: Request,
+    next: Next,
+) -> Result<Response, ApiError> {
+    let _permit = gate.admit().await?;
+    in_flight.increment(1.0);
+    let _in_flight = InFlightGuard(in_flight);
+    Ok(next.run(request).await)
 }
 
 pub(crate) fn current_request_id() -> RequestId {

@@ -45,6 +45,51 @@ fn copied_name(crate_name: &str) -> Option<&str> {
         .filter(|name| name.starts_with(COPIED_PREFIX))
 }
 
+const TEMPLATE_MIGRATION_DIRS: &[&str] = &[
+    "templates/worker/backend/migrations",
+    "templates/backend/__auth__/backend/migrations",
+];
+
+const JOBS_MIGRATION_COPIES: &[(&str, &str)] = &[
+    (
+        "0007_baukit_jobs_active_deduplication.sql",
+        "0004_baukit_jobs_active_deduplication.sql",
+    ),
+    (
+        "0012_baukit_jobs_deferrals.sql",
+        "0005_baukit_jobs_deferrals.sql",
+    ),
+    (
+        "0013_baukit_jobs_concurrency_key.sql",
+        "0006_baukit_jobs_concurrency_key.sql",
+    ),
+    (
+        "0014_baukit_jobs_validate_checks.sql",
+        "0007_baukit_jobs_validate_checks.sql",
+    ),
+    (
+        "0015_baukit_jobs_running_key_index.sql",
+        "0008_baukit_jobs_running_key_index.sql",
+    ),
+];
+
+#[test]
+fn template_jobs_migrations_match_the_crate_sql() -> Result<()> {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let crate_migrations = repository.join("rust/crates/baukit-jobs/migrations");
+    for directory in TEMPLATE_MIGRATION_DIRS {
+        for (template, source) in JOBS_MIGRATION_COPIES {
+            let copy = fs::read_to_string(repository.join(directory).join(template))?;
+            let original = fs::read_to_string(crate_migrations.join(source))?;
+            assert_eq!(
+                copy, original,
+                "{directory}/{template} drifted from {source}"
+            );
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn auth_template_copies_every_browser_session_migration() -> Result<()> {
     let template = sql_files(&repository_path(TEMPLATE_MIGRATIONS))?;

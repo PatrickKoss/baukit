@@ -149,7 +149,7 @@ async fn assert_failed_requests_redacted() {
         .with_policy(AddressPolicy::AllowLoopback)
         .with_error_body_limit(1024)
         .expect("error body limit is valid");
-    let client = GuardedClient::with_resolver(Arc::new(resolver), options)
+    let client = GuardedClient::with_resolver("test", Arc::new(resolver), options)
         .expect("guarded client should build");
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -205,7 +205,7 @@ async fn assert_stream_failure_redacted(oversized: bool) {
         .expect("limit")
         .with_request_timeout(Duration::from_secs(2))
         .expect("timeout");
-    let client = GuardedClient::new(options).expect("client");
+    let client = GuardedClient::new("test", options).expect("client");
     let mut response = client
         .execute_stream(EgressRequest::get(secret_url(&format!("127.0.0.1:{port}"))))
         .await

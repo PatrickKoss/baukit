@@ -1,17 +1,20 @@
 use async_trait::async_trait;
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use baukit_auth::{KeyLookupError, KeySetCache, KeySource, KeySourceFuture};
 use baukit_egress::{EgressRequest, GuardedClient};
+use baukit_resilience::{Clock, StalePolicy, SystemClock};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
-use tokio::{sync::Mutex, time::Instant};
 use url::Url;
 
 pub const MAX_TICKET_REVISION: u64 = 9_007_199_254_740_991;
 pub const MAX_TICKET_LIFETIME_SECONDS: i64 = 7 * 24 * 60 * 60;
 pub const TICKET_IAT_LEEWAY_SECONDS: i64 = 60;
 const JWKS_TTL: Duration = Duration::from_secs(300);
+const JWKS_STALE_FOR: Duration = Duration::from_secs(60 * 60);
 const REFRESH_COOLDOWN: Duration = Duration::from_secs(5);
+const TICKET_KEY_SOURCE: &str = "ticket";
 const MAX_JWKS_BYTES: usize = 64 * 1024;
 const MAX_JWKS_KEYS: usize = 64;
 const MAX_TICKET_BYTES: usize = 32 * 1024;
@@ -342,20 +345,31 @@ impl TicketJwksSource for GuardedJwksSource {
         serde_json::from_slice(response.body()).map_err(|_| TicketError::KeysUnavailable)
     }
 }
-#[derive(Default)]
-struct KeyCache {
-    keys: BTreeMap<String, TicketJwk>,
-    fetched_at: Option<Instant>,
-    attempted_at: Option<Instant>,
-    unknown_attempted_at: Option<Instant>,
+/// Adapts a [`TicketJwksSource`] to the shared signing-key cache.
+struct TicketKeySource(Arc<dyn TicketJwksSource>);
+impl KeySource for TicketKeySource {
+    type Set = BTreeMap<String, TicketJwk>;
+    type Error = TicketError;
+
+    fn fetch(&self) -> KeySourceFuture<'_, Self::Set, TicketError> {
+        Box::pin(async move {
+            self.0
+                .fetch()
+                .await?
+                .by_kid()
+                .map_err(|_| TicketError::KeysUnavailable)
+        })
+    }
 }
+
+/// Verifies tickets against the hub key set. Known key ids keep verifying
+/// from the last fetched set for `JWKS_STALE_FOR` after `JWKS_TTL` while the key
+/// endpoint fails; no verification waits on a refresh while a usable set is cached.
 #[derive(Clone)]
 pub struct TicketVerifier {
     issuer: String,
     product_id: String,
-    source: Arc<dyn TicketJwksSource>,
-    cache: Arc<Mutex<KeyCache>>,
-    refresh: Arc<Mutex<()>>,
+    keys: KeySetCache<TicketKeySource>,
 }
 impl TicketVerifier {
     /// # Errors
@@ -382,23 +396,33 @@ impl TicketVerifier {
         product_id: String,
         source: Arc<dyn TicketJwksSource>,
     ) -> Result<Self, TicketError> {
+        Self::with_source_and_clock(issuer, product_id, source, Arc::new(SystemClock))
+    }
+    /// [`Self::with_source`] on `clock`, for deterministic cache tests.
+    ///
+    /// # Errors
+    ///
+    /// `TicketError::Invalid` when `issuer` or `product_id` is empty.
+    pub fn with_source_and_clock(
+        issuer: String,
+        product_id: String,
+        source: Arc<dyn TicketJwksSource>,
+        clock: Arc<dyn Clock>,
+    ) -> Result<Self, TicketError> {
         if issuer.is_empty() || product_id.is_empty() {
             return Err(TicketError::Invalid);
         }
+        let policy = StalePolicy::new(JWKS_TTL, JWKS_STALE_FOR, REFRESH_COOLDOWN);
         Ok(Self {
             issuer,
             product_id,
-            source,
-            cache: Arc::default(),
-            refresh: Arc::default(),
+            keys: KeySetCache::with_clock(
+                TicketKeySource(source),
+                policy,
+                TICKET_KEY_SOURCE,
+                clock,
+            ),
         })
-    }
-    async fn cached_key(&self, kid: &str) -> Option<TicketJwk> {
-        let cache = self.cache.lock().await;
-        cache
-            .fetched_at
-            .filter(|at| at.elapsed() < JWKS_TTL)
-            .and_then(|_| cache.keys.get(kid).cloned())
     }
     /// # Errors
     ///
@@ -409,57 +433,21 @@ impl TicketVerifier {
     }
     /// # Errors
     ///
-    /// `TicketError::KeysUnavailable` when the key set fetch fails or returns an invalid set, or a
-    /// stale cache was refreshed within the cooldown. `Invalid` when the ticket is malformed or its
-    /// key id stays unknown after a refresh. Key, signature and claim errors as in
+    /// `TicketError::KeysUnavailable` when no usable key set is cached and the fetch fails, returns
+    /// an invalid set, or is cooling down after a failure. `Invalid` when the ticket is malformed or
+    /// its key id is not in a freshly fetched set. Key, signature and claim errors as in
     /// [`verify_ticket`].
     pub async fn verify_at(&self, ticket: &str, now: i64) -> Result<TicketClaims, TicketError> {
         let parsed = ParsedTicket::parse(ticket)?;
-        if let Some(key) = self.cached_key(&parsed.kid).await {
-            return parsed.verify(&key, &self.issuer, &self.product_id, now);
-        }
-        let _refresh = self.refresh.lock().await;
-        // Another caller may have refreshed while this caller waited.
-        if let Some(key) = self.cached_key(&parsed.kid).await {
-            return parsed.verify(&key, &self.issuer, &self.product_id, now);
-        }
-        {
-            let mut cache = self.cache.lock().await;
-            let fresh = cache.fetched_at.is_some_and(|at| at.elapsed() < JWKS_TTL);
-            if fresh {
-                if cache
-                    .unknown_attempted_at
-                    .is_some_and(|at| at.elapsed() < REFRESH_COOLDOWN)
-                {
-                    return Err(TicketError::Invalid);
-                }
-                cache.unknown_attempted_at = Some(Instant::now());
-            } else if cache
-                .attempted_at
-                .is_some_and(|at| at.elapsed() < REFRESH_COOLDOWN)
-            {
-                return Err(TicketError::KeysUnavailable);
-            }
-            cache.attempted_at = Some(Instant::now());
-        }
-        // The refresh lock coalesces fetches, but cached-key reads need only
-        // the short cache lock and remain available during this network call.
-        let keys = self
-            .source
-            .fetch()
-            .await?
-            .by_kid()
-            .map_err(|_| TicketError::KeysUnavailable)?;
-        let key = {
-            let mut cache = self.cache.lock().await;
-            cache.keys = keys;
-            cache.fetched_at = Some(Instant::now());
-            cache
-                .keys
-                .get(&parsed.kid)
-                .cloned()
-                .ok_or(TicketError::Invalid)?
-        };
+        let key = self
+            .keys
+            .key_for(&parsed.kid)
+            .await
+            .map_err(|error| match error {
+                KeyLookupError::UnknownKeyId => TicketError::Invalid,
+                KeyLookupError::Fetch(error) => error,
+                KeyLookupError::Unavailable { .. } => TicketError::KeysUnavailable,
+            })?;
         parsed.verify(&key, &self.issuer, &self.product_id, now)
     }
 }

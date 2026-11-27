@@ -2,12 +2,16 @@ groups:
   - name: baukit-slo-alerts
     rules:
       # 99.9% availability SLO template. Tune the recording-rule budget divisor
-      # and both burn thresholds as one product-specific policy.
+      # and both burn thresholds as one product-specific policy. Every burn alert
+      # needs at least 100 requests in its long window, so a single failed request
+      # on an idle service does not page.
       - alert: BaukitHighErrorBudgetBurnFast
         expr: |
           baukit:http_requests_5xx:error_budget_burn_rate5m{service!=""} > 14.4
           and on (product, service, environment)
           baukit:http_requests_5xx:error_budget_burn_rate1h{service!=""} > 14.4
+          and on (product, service, environment)
+          baukit:http_requests:increase1h >= 100
         for: 2m
         labels:
           severity: critical
@@ -21,6 +25,8 @@ groups:
           baukit:http_requests_5xx:error_budget_burn_rate30m{service!=""} > 6
           and on (product, service, environment)
           baukit:http_requests_5xx:error_budget_burn_rate6h{service!=""} > 6
+          and on (product, service, environment)
+          baukit:http_requests:increase6h >= 100
         for: 15m
         labels:
           severity: warning
@@ -28,6 +34,36 @@ groups:
           summary: Sustained 5xx error-budget burn
           description: 'The 30m and 6h windows exceed 6x budget for {{ $labels.service }} in {{ $labels.environment }}.'
           runbook_url: RUNBOOK_BASE_URL/high-error-budget-burn-slow
+
+      - alert: BaukitErrorBudgetBurnTicket
+        expr: |
+          baukit:http_requests_5xx:error_budget_burn_rate1d{service!=""} > 1
+          and on (product, service, environment)
+          baukit:http_requests_5xx:error_budget_burn_rate3d{service!=""} > 1
+          and on (product, service, environment)
+          baukit:http_requests:increase3d >= 100
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: 5xx errors spend the error budget faster than it accrues
+          description: 'The 1d and 3d windows exceed 1x the 5xx budget for {{ $labels.service }} in {{ $labels.environment }}, so the 30-day budget runs out before the month ends.'
+          runbook_url: RUNBOOK_BASE_URL/error-budget-burn-ticket
+
+      - alert: BaukitLatencyBudgetBurnTicket
+        expr: |
+          baukit:http_request_latency:error_budget_burn_rate1d{service!=""} > 1
+          and on (product, service, environment)
+          baukit:http_request_latency:error_budget_burn_rate3d{service!=""} > 1
+          and on (product, service, environment)
+          baukit:http_requests:increase3d >= 100
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: Slow requests spend the latency budget faster than it accrues
+          description: 'More than 1% of requests took over 0.5s in the 1d and 3d windows for {{ $labels.service }} in {{ $labels.environment }}.'
+          runbook_url: RUNBOOK_BASE_URL/latency-budget-burn-ticket
 
       - alert: BaukitHttpP95LatencyHigh
         expr: baukit:http_request_duration_seconds:p95_5m{service!=""} > 0.5
@@ -116,6 +152,49 @@ groups:
           description: 'Database acquire timeouts increased during the last 10m on {{ $labels.instance }} of {{ $labels.service }} in {{ $labels.namespace }}.'
           runbook_url: RUNBOOK_BASE_URL/database-acquire-timeouts
 
+      - alert: BaukitDatabaseAcquireLatencyHigh
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (product, service, environment, namespace, instance, le) (
+              rate(db_pool_acquire_duration_seconds_bucket{service!=""}[5m])
+            )
+          ) > 0.1
+          and on (product, service, environment, namespace, instance)
+          sum by (product, service, environment, namespace, instance) (
+            rate(db_pool_acquire_duration_seconds_count{service!=""}[5m])
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Database connection acquisition is slow
+          description: 'The p95 wait for a pooled database connection has exceeded 100ms for ten minutes on {{ $labels.instance }} of {{ $labels.service }} in {{ $labels.namespace }}.'
+          runbook_url: RUNBOOK_BASE_URL/database-acquire-latency-high
+
+  - name: baukit-mcp-alerts
+    rules:
+      - alert: BaukitMcpErrorRatioHigh
+        expr: |
+          sum by (product, service, environment, namespace) (
+            rate(mcp_requests_total{service!="", status=~"5.."}[5m])
+          )
+          /
+          sum by (product, service, environment, namespace) (
+            rate(mcp_requests_total{service!=""}[5m])
+          ) > 0.05
+          and on (product, service, environment, namespace)
+          sum by (product, service, environment, namespace) (
+            rate(mcp_requests_total{service!=""}[5m])
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: MCP requests fail with 5xx
+          description: 'More than 5% of MCP requests to {{ $labels.service }} in {{ $labels.namespace }} returned 5xx for ten minutes.'
+          runbook_url: RUNBOOK_BASE_URL/mcp-error-ratio-high
+
   - name: baukit-rate-limit-alerts
     rules:
       - alert: BaukitRateLimitStoreErrors
@@ -145,13 +224,29 @@ groups:
             ),
             0.001
           ) > 0.1
+          and on (product, service, environment, namespace, job_kind)
+          sum by (product, service, environment, namespace, job_kind) (
+            baukit:worker_job_runs:rate5m{service!=""}
+          ) > 0.01
         for: 10m
         labels:
           severity: warning
         annotations:
           summary: Worker failure rate is high
-          description: 'More than 10% of worker runs are failing for job kind {{ $labels.job_kind }} in {{ $labels.service }}.'
+          description: 'More than 10% of worker runs are failing for job kind {{ $labels.job_kind }} in {{ $labels.service }}, at more than 3 runs per 5 minutes.'
           runbook_url: RUNBOOK_BASE_URL/worker-failure-rate-high
+
+      - alert: BaukitPrivacyOperationFailed
+        expr: |
+          sum by (product, service, environment, namespace, job_kind) (
+            increase(worker_job_runs_total{service!="", outcome="failure", job_kind=~"identity\\.account\\.delete|data-subject\\..+"}[15m])
+          ) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: A privacy operation failed
+          description: 'A {{ $labels.job_kind }} job in {{ $labels.service }} failed for good. The erasure or export it belongs to is now failed and needs a person.'
+          runbook_url: RUNBOOK_BASE_URL/privacy-operation-failed
 
       - alert: BaukitWorkerRetryStorm
         expr: |
@@ -173,5 +268,59 @@ groups:
           severity: warning
         annotations:
           summary: Worker queue age is high
-          description: 'The oldest queued job is more than five minutes old for job kind {{ $labels.job_kind }} in {{ $labels.service }}.'
+          description: 'The oldest queued job is more than five minutes old in queue {{ $labels.queue }} of {{ $labels.service }}.'
           runbook_url: RUNBOOK_BASE_URL/worker-queue-oldest-age-high
+
+      - alert: BaukitWorkerJobsFailed
+        expr: |
+          max by (product, service, environment, namespace, queue) (
+            delta(worker_queue_depth{service!="", status="failed"}[15m])
+          ) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Worker jobs ended as failed
+          description: 'Queue {{ $labels.queue }} of {{ $labels.service }} gained failed jobs in the last 15 minutes. Their outbox rows, such as suite peer deliveries, are not retried.'
+          runbook_url: RUNBOOK_BASE_URL/worker-jobs-failed
+
+  - name: baukit-egress-alerts
+    rules:
+      - alert: BaukitEgressErrorRatioHigh
+        expr: |
+          (
+            baukit:egress_requests_failed:rate5m{service!=""}
+            /
+            baukit:egress_requests:rate5m{service!=""}
+          ) > 0.1
+          and on (product, service, environment, namespace, destination)
+          baukit:egress_requests:rate5m{service!=""} > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Outbound calls to a destination fail
+          description: 'More than 10% of calls from {{ $labels.service }} to {{ $labels.destination }} in {{ $labels.namespace }} failed, timed out or were refused by the circuit breaker for ten minutes.'
+          runbook_url: RUNBOOK_BASE_URL/egress-error-ratio-high
+
+      - alert: BaukitEgressCircuitOpen
+        expr: |
+          max by (product, service, environment, namespace, destination) (
+            egress_circuit_state{service!=""}
+          ) == 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: An outbound circuit breaker stays open
+          description: 'The circuit breaker of {{ $labels.service }} for {{ $labels.destination }} in {{ $labels.namespace }} has been open for five minutes.'
+          runbook_url: RUNBOOK_BASE_URL/egress-circuit-open
+
+      - alert: BaukitEgressLatencyHigh
+        expr: baukit:egress_request_duration_seconds:p95_5m{service!=""} > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Outbound calls to a destination are slow
+          description: 'The p95 time to response headers from {{ $labels.destination }} has exceeded 2s for ten minutes in {{ $labels.service }} in {{ $labels.namespace }}.'
+          runbook_url: RUNBOOK_BASE_URL/egress-latency-high

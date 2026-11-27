@@ -17,6 +17,10 @@ from process_runner import run_process
 
 CHART = Path(__file__).resolve().parents[1] / "deploy" / "chart" / "baukit-app"
 ENVIRONMENTS = ("testing", "production")
+# Production runs two API and worker pods so a node drain keeps one serving.
+# Every other Deployment runs one.
+SCALED_PROCESSES = ("api", "worker")
+SCALED_REPLICAS = {"testing": 1, "production": 2}
 ARGUMENT_COUNT = 2
 USAGE_EXIT = 2
 
@@ -87,13 +91,34 @@ def check_environment(root: Path, manifest: dict, environment: str) -> list[str]
         errors.append(
             f"{environment}: route targets Service {service}, chart renders {sorted(services)}"
         )
+    errors.extend(check_replicas(app, rendered, environment))
+    return errors
+
+
+def expected_replicas(app: str, name: str, environment: str) -> int:
+    scaled = {f"{app}-{process}" for process in SCALED_PROCESSES}
+    return SCALED_REPLICAS[environment] if name in scaled else 1
+
+
+def check_replicas(app: str, rendered: list[dict], environment: str) -> list[str]:
+    errors = []
+    budgets = {
+        document["metadata"]["name"]
+        for document in rendered
+        if document["kind"] == "PodDisruptionBudget"
+    }
     for document in rendered:
         if document["kind"] == "HorizontalPodAutoscaler":
             errors.append(f"{environment}: renders an HPA")
-        if document["kind"] == "Deployment" and document["spec"].get("replicas", 1) != 1:
-            errors.append(
-                f"{environment}: {document['metadata']['name']} runs more than one replica"
-            )
+        if document["kind"] != "Deployment":
+            continue
+        name = document["metadata"]["name"]
+        replicas = document["spec"].get("replicas", 1)
+        expected = expected_replicas(app, name, environment)
+        if replicas != expected:
+            errors.append(f"{environment}: {name} runs {replicas} replicas, expected {expected}")
+        if expected > 1 and name not in budgets:
+            errors.append(f"{environment}: {name} runs {replicas} replicas without a PDB")
     return errors
 
 

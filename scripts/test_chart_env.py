@@ -53,7 +53,7 @@ class EnvContractTest(unittest.TestCase):
         self.assertEqual(api["MINIMAL_API__OPS__PORT"], "9090")
         worker = env(found["worker"])
         self.assertNotIn("MINIMAL_API__HTTP__PORT", worker)
-        self.assertEqual(worker["MINIMAL_API__SHUTDOWN__DRAIN_TIMEOUT"], "30")
+        self.assertEqual(worker["MINIMAL_API__SHUTDOWN__DRAIN_TIMEOUT"], "45")
         for job in ["migrate", "seed"]:
             self.assertNotIn("MINIMAL_API__OPS__PORT", env(found[job]))
 

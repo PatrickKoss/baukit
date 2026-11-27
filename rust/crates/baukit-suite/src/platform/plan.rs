@@ -298,13 +298,16 @@ impl TicketSource for PlatformTicketSource {
     async fn ticket(&self, suite_subject: &str) -> Result<String, EntitlementSourceError> {
         let response: TicketResponse = self
             .hub
-            .post_json(
-                &["entitlements", "tickets"],
-                &TicketRequest {
-                    suite_subject,
-                    product_id: self.hub.product_id(),
-                    include_billing: true,
-                },
+            .send_json(
+                HubRequest::idempotent(
+                    &["entitlements", "tickets"],
+                    &TicketRequest {
+                        suite_subject,
+                        product_id: self.hub.product_id(),
+                        include_billing: true,
+                    },
+                )
+                .map_err(|error| hub_source_error(&error))?,
             )
             .await
             .map_err(|error| hub_source_error(&error))?;
@@ -317,6 +320,9 @@ fn hub_source_error(error: &HubError) -> EntitlementSourceError {
             EntitlementSourceError::from_hub_response(*status, code.as_deref().unwrap_or_default())
         }
         HubError::InvalidResponse => EntitlementSourceError::Invalid,
+        HubError::CoolingDown { retry_after } => EntitlementSourceError::CoolingDown {
+            retry_after: *retry_after,
+        },
         HubError::Unavailable | HubError::Unauthorized => EntitlementSourceError::Unavailable,
     }
 }

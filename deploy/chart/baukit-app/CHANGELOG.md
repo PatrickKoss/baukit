@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
+- The API Deployment renders no `replicas` with `canary.enabled`, as it already did with `autoscaling.enabled`. A Helm upgrade used to scale the canary target back to `api.replicas` next to Flagger's primary.
+- Shared Postgres: `backing.postgres.shared.directUrlSecretRef` points the worker, migrate and seed processes at a direct `<clusterName>-rw` URL, and backing egress admits the API, and the other processes without that Secret, to the `<clusterName>-pooler-rw` pods (`backing.postgres.shared.poolerName`). Before, the chart allowed only the cluster pods, so an API URL to the pooler was blocked.
+- Breaking: the API and worker Deployment selectors and pod labels gain `baukit.dev/workload: <fullname>-<process>`, the label Flagger selects on and rewrites to `<fullname>-<process>-primary`. A selector is immutable, so delete both Deployments before upgrading. Services, PDBs and topology spread leave the label out, so they cover the `-primary` pods too.
+- `canary.enabled` hands the API Deployment to Flagger: a `Canary` with the Traefik provider, two `MetricTemplate`s copied from the platform's `baukit-http-error-percent` and `baukit-http-p95-seconds` (gates at 1% 5xx and 0.5 s p95), an `IngressRoute` to Flagger's `TraefikService` in place of the Ingress, and API ServiceMonitor relabelings that set `rollout="primary"` or `rollout="canary"` from the pod's workload label. The templates query the release namespace's `tenant-metrics-proxy` unless `canary.prometheusAddress` is set. cert-manager annotations do not apply to an IngressRoute, so `ingress.certManager.clusterIssuer` is refused with a canary.
+- The API grace period defaults to 45 s and the drain is the grace minus the preStop sleep minus 5 s (35 s), above the 30 s request timeout. Rendering fails when nothing is left for the drain.
+- The worker grace period defaults to 60 s and the worker drains for the grace minus 15 s, so it no longer runs into SIGKILL.
+- API and worker readiness probes time out after 4 s instead of 2 s, above the 2 s readiness check.
+- The web Deployment gets a preStop sleep, a startup probe, a configurable grace period and a PodDisruptionBudget above one replica.
+- The HPA defaults to `minReplicas: 2` and renders `autoscaling.behavior` (scale-down stabilization 300 s, scale-up at most 100% per 60 s).
+- The API Ingress gets a Traefik retry Middleware (`ingress.retry`, 2 attempts, 100ms initial interval) for connection errors. The web Ingress does not retry.
+
 ## [0.31.0] - 2026-11-26
 
 - `opsService.type` accepts only `ClusterIP`. The ops port serves metrics and admin endpoints and must not leave the cluster; values with `NodePort` or `LoadBalancer` now fail schema validation.

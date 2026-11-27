@@ -1,0 +1,12 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-cluster-pooler-rw
+  namespace: postgres
+  labels:
+    app.kubernetes.io/part-of: baukit-platform
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      cnpg.io/poolerName: postgres-cluster-pooler-rw

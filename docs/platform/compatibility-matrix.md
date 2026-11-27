@@ -11,7 +11,7 @@ The CHANGELOGs record what each release changed. This page records only the curr
 
 | Tool | Tested baseline | Notes |
 |---|---|---|
-| Baukit | 0.31.0 | Crates, packages, templates and the chart release together at this version |
+| Baukit | 0.32.0 | Crates, packages, templates and the chart release together at this version |
 | Rust | 1.95.0 MSRV | CI-enforced with Rust 1.95; CI and the local gate pin 1.100.0 from `mise.toml` |
 | Node | 26.10.0 | pinned via `mise.toml` and `typescript/.nvmrc`; Node types use major 26. Package engines still accept Node 24 and later. |
 | Corepack | 0.36.0 | installed through mise locally and npm in CI; Node 26 does not bundle it |
@@ -43,8 +43,9 @@ The CHANGELOGs record what each release changed. This page records only the curr
 | Local object storage | RustFS | 1.0.6 | [Release 1.0.6](https://github.com/rustfs/rustfs/releases/tag/1.0.6), pinned by multi-platform image digest. Local Loki, PostHog and CNPG use path-style S3 with region `us-east-1`. |
 | Development identity provider | Keycloak | 26.8.2 | Generated `compose.yaml` image; `make dev` reconciles the development realm from `realm-policy.json`. |
 | Integration tests | testcontainers | 0.28.0 | `baukit-test` uses `GenericImage` and no longer depends on testcontainers-modules, whose 0.15.0 release requires 0.27. `baukit-test` pins `postgres:18.7-alpine`; templates and smoke deploys use the same image. |
-| Sync revisions | `baukit-sync` | 0.31.0 | Per-owner revision allocation, locking revision reads, tombstone purge horizons with a pull-cursor guard, the syncable-table column convention, and a `user_id` to `owner_id` migration. SQLx 0.9 and PostgreSQL behind the `sqlx-postgres` feature; the hybrid logical clock needs neither. |
-| Provider connectors | `baukit-integrations` | 0.31.0 | Contract-only connector port, cursor-paged pages, and `baukit-http` retry classes; no SQLx, no HTTP client. |
+| Sync revisions | `baukit-sync` | 0.32.0 | Per-owner revision allocation, locking revision reads, tombstone purge horizons with a pull-cursor guard, the syncable-table column convention, and a `user_id` to `owner_id` migration. SQLx 0.9 and PostgreSQL behind the `sqlx-postgres` feature; the hybrid logical clock needs neither. |
+| Provider connectors | `baukit-integrations` | 0.32.0 | Contract-only connector port, cursor-paged pages, and `baukit-http` retry classes; no SQLx, no HTTP client. |
+| Resilience | `baukit-resilience` | 0.32.0 | Circuit breaker, jittered backoff, deadlines and a stale-on-error cache. `baukit-egress` keeps a breaker and a deadline per destination, `baukit-http` carries request deadlines, and `baukit-jobs` retries with the jittered backoff. |
 
 ## PostgreSQL 18 storage and compatibility
 
@@ -65,7 +66,7 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 
 | Responsibility | Rust and TypeScript packages | Tested baseline | Notes |
 |---|---|---|---|
-| Suite event envelope | `baukit-events` and `@baukit/events` | 0.31.0 | Version 1 envelope, stable validation codes, seven-day replay boundary, and one fixture corpus exercised in both languages. |
+| Suite event envelope | `baukit-events` and `@baukit/events` | 0.32.0 | Version 1 envelope, stable validation codes, seven-day replay boundary, and one fixture corpus exercised in both languages. |
 
 ## Frontend (TypeScript)
 
@@ -76,17 +77,17 @@ columns. See the [PostgreSQL 18 release notes](https://www.postgresql.org/docs/1
 | Remote state | TanStack Query | 5 | |
 | Web routing | TanStack Router | current v1 | re-verify TanStack Start status separately |
 | Local state | Zustand | 5 | |
-| Accessibility behavior | `@baukit/a11y-core` | 0.31.0 | Overlay focus, inert, announcements and reduced motion (both also on the `/web` entry). React peer range is `^19.2.0`; React Native is optional, and a plain web app imports `@baukit/a11y-core/web` instead. |
-| Localization behavior | `@baukit/localization-core` | 0.31.0 | Locale resolution, catalog key comparison, stable-code localization, timezone-safe civil-date arithmetic, and local-time resolution with required gap and fold policies. |
-| Local notification planning | `@baukit/notifications-core` | 0.31.0 | Zoned occurrence resolution through `resolveZonedLocalTime`, horizon filtering, deterministic keep, cancel, and schedule sets, and owner-scoped replacement over a platform port. No dependencies besides `@baukit/localization-core`. |
-| Local notification delivery | `@baukit/notifications-expo` / `expo-notifications` | 0.31.0 / 57.0.25 | Optional adapter. Imports only types from `expo-notifications`; the product passes the module in. DATE triggers, per-item results, no cancel-all. |
-| Mobile purchases | `@baukit/purchases-core` / `@baukit/purchases-revenuecat` / `react-native-purchases` | 0.31.0 / 0.31.0 / 10.14.0 | Store-neutral flow gated on the backend-verified entitlement. The adapter imports only types from `react-native-purchases`; the app passes the module in. No config plugin. `useFeature` returns `FeatureAccess`, `PurchasesProvider` requires `productId`, and the entitlement comes from the kit's `GET /me/entitlement`. |
-| Platform plan kit | `baukit-suite` `platform` / `@baukit/suite-client` | 0.31.0 / 0.31.0 | `AccountPlan`, `require_feature` and the `/me/entitlement` and `/me/credits` router. The bucketed `CreditBalance` reads `total` and `packs[].available`, and the hub must serve that balance and the `billing` ticket claim. Upgrade the hub first. |
-| Preference behavior | `@baukit/preferences-core` | 0.31.0 | Identity guard and repository store, with `null` repository records treated as missing. |
-| Node device authentication | `@baukit/auth-node` | 0.31.0 | Node 24 OIDC device authorization with S256 PKCE, bounded responses and timeouts, refresh rotation, and a locked local profile cache. Plain HTTP requires an explicit loopback-only development policy. The `/keycloak-testing` entry holds Keycloak e2e helpers. |
-| Provider registry | `@baukit/integrations-client` | 0.31.0 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
-| Client sync primitives | `@baukit/sync-client` | 0.31.0 | Scheduler with optional retry, request-function and HTTP transports, status store, push-batch ranking, a persisted hybrid logical clock, and tombstone-horizon conformance. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.2 and React Native 0.86.3; the root entry has no runtime dependencies and no React. |
-| PWA cache strategy | `@baukit/pwa-web` | 0.31.0 | ESM and CJS builds, request classification, `navigationFallback`, and strategy execution for a product-owned service worker; no dependencies and no service-worker globals. |
+| Accessibility behavior | `@baukit/a11y-core` | 0.32.0 | Overlay focus, inert, announcements and reduced motion (both also on the `/web` entry). React peer range is `^19.2.0`; React Native is optional, and a plain web app imports `@baukit/a11y-core/web` instead. |
+| Localization behavior | `@baukit/localization-core` | 0.32.0 | Locale resolution, catalog key comparison, stable-code localization, timezone-safe civil-date arithmetic, and local-time resolution with required gap and fold policies. |
+| Local notification planning | `@baukit/notifications-core` | 0.32.0 | Zoned occurrence resolution through `resolveZonedLocalTime`, horizon filtering, deterministic keep, cancel, and schedule sets, and owner-scoped replacement over a platform port. No dependencies besides `@baukit/localization-core`. |
+| Local notification delivery | `@baukit/notifications-expo` / `expo-notifications` | 0.32.0 / 57.0.25 | Optional adapter. Imports only types from `expo-notifications`; the product passes the module in. DATE triggers, per-item results, no cancel-all. |
+| Mobile purchases | `@baukit/purchases-core` / `@baukit/purchases-revenuecat` / `react-native-purchases` | 0.32.0 / 0.32.0 / 10.14.0 | Store-neutral flow gated on the backend-verified entitlement. The adapter imports only types from `react-native-purchases`; the app passes the module in. No config plugin. `useFeature` returns `FeatureAccess`, `PurchasesProvider` requires `productId`, and the entitlement comes from the kit's `GET /me/entitlement`. |
+| Platform plan kit | `baukit-suite` `platform` / `@baukit/suite-client` | 0.32.0 / 0.32.0 | `AccountPlan`, `require_feature` and the `/me/entitlement` and `/me/credits` router. The bucketed `CreditBalance` reads `total` and `packs[].available`, and the hub must serve that balance and the `billing` ticket claim. Upgrade the hub first. |
+| Preference behavior | `@baukit/preferences-core` | 0.32.0 | Identity guard and repository store, with `null` repository records treated as missing. |
+| Node device authentication | `@baukit/auth-node` | 0.32.0 | Node 24 OIDC device authorization with S256 PKCE, bounded responses and timeouts, refresh rotation, and a locked local profile cache. Plain HTTP requires an explicit loopback-only development policy. The `/keycloak-testing` entry holds Keycloak e2e helpers. |
+| Provider registry | `@baukit/integrations-client` | 0.32.0 | Typed product connectors, stable registration order, and immutable connection-state overlays. |
+| Client sync primitives | `@baukit/sync-client` | 0.32.0 | Scheduler with optional retry, request-function and HTTP transports, status store, push-batch ranking, a persisted hybrid logical clock, and tombstone-horizon conformance. The optional `@baukit/sync-client/expo` entry uses Expo Network 57.0.2 and React Native 0.86.3; the root entry has no runtime dependencies and no React. |
+| PWA cache strategy | `@baukit/pwa-web` | 0.32.0 | ESM and CJS builds, request classification, `navigationFallback`, and strategy execution for a product-owned service worker; no dependencies and no service-worker globals. |
 | MCP server | `rmcp` | 3.9.0 | `--mcp --backend --auth oidc` generates Rust Streamable HTTP with resource OAuth and service ports. |
 | Web build | Vite | 8.3.3 | |
 | Styling | Tailwind CSS | 4 | |

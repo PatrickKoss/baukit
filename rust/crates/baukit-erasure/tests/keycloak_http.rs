@@ -1,7 +1,13 @@
 #![cfg(test)]
 #![cfg(feature = "keycloak")]
 
-use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::{StatusCode, header},
+    response::IntoResponse,
+    routing::post,
+};
 use baukit_config::Secret;
 use baukit_erasure::{
     IdentityAccountDeleter, IdentityDeletionError, KeycloakAccountDeleter, KeycloakDeletionConfig,
@@ -206,6 +212,48 @@ async fn whole_call_timeout_cancels_token_acquisition_before_deletion() -> Resul
     assert_eq!(provider.token_calls.load(Ordering::SeqCst), 1);
     assert_eq!(provider.delete_calls.load(Ordering::SeqCst), 0);
     provider.release_token.notify_one();
+    Ok(())
+}
+
+async fn unavailable_delete(State(provider): State<Arc<Provider>>) -> impl IntoResponse {
+    provider.delete_calls.fetch_add(1, Ordering::SeqCst);
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        [(header::RETRY_AFTER, "60")],
+    )
+}
+
+#[tokio::test]
+async fn an_open_circuit_fails_fast_as_unavailable_without_calling_keycloak()
+-> Result<(), Box<dyn Error>> {
+    let provider = Arc::new(Provider::default());
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let base = format!("http://{}", listener.local_addr()?);
+    let router = Router::new()
+        .route("/realms/test/protocol/openid-connect/token", post(token))
+        .route(
+            "/admin/realms/test/users/subject",
+            axum::routing::delete(unavailable_delete),
+        )
+        .with_state(provider.clone());
+    let server = Server {
+        base,
+        task: tokio::spawn(async move { axum::serve(listener, router).await }),
+    };
+    let adapter = adapter(&server)?;
+    assert_eq!(
+        adapter.delete_account("subject").await,
+        Err(IdentityDeletionError::Retryable)
+    );
+    let started = std::time::Instant::now();
+    let Err(IdentityDeletionError::Unavailable { retry_after }) =
+        adapter.delete_account("subject").await
+    else {
+        panic!("the Retry-After hold must open the keycloak-admin circuit");
+    };
+    assert!(started.elapsed() < std::time::Duration::from_millis(500));
+    assert!(retry_after > std::time::Duration::from_secs(50));
+    assert_eq!(provider.delete_calls.load(Ordering::SeqCst), 1);
     Ok(())
 }
 

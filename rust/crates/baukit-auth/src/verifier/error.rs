@@ -39,6 +39,9 @@ pub enum VerificationError {
     /// A JWKS request exceeded the configured timeout.
     #[error("JWKS request timed out")]
     JwksTimeout,
+    /// Discovery kept failing with transient errors until the startup budget ran out.
+    #[error("OIDC discovery did not succeed within the startup budget")]
+    DiscoveryBudgetExhausted(#[source] Box<VerificationError>),
     /// JWKS failed while sending the request or reading the response.
     #[error("JWKS request failed")]
     JwksRequest(#[source] Box<EgressError>),
@@ -130,7 +133,10 @@ impl VerificationError {
     #[must_use]
     pub fn is_unavailable(&self) -> bool {
         match self {
-            Self::Unavailable | Self::DiscoveryTimeout | Self::JwksTimeout => true,
+            Self::Unavailable
+            | Self::DiscoveryTimeout
+            | Self::JwksTimeout
+            | Self::DiscoveryBudgetExhausted(_) => true,
             Self::DiscoveryRequest(error) | Self::JwksRequest(error) => error.is_retryable(),
             Self::DiscoveryStatus(status) | Self::JwksStatus(status) => {
                 is_transient_status(*status)

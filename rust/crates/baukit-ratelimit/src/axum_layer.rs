@@ -23,6 +23,7 @@ pub const RATE_LIMIT_REMAINING: HeaderName = HeaderName::from_static("ratelimit-
 /// IETF rate-limit reset-delay header.
 pub const RATE_LIMIT_RESET: HeaderName = HeaderName::from_static("ratelimit-reset");
 
+const STORE_UNAVAILABLE_RETRY_AFTER: Duration = Duration::from_secs(1);
 const X_FORWARDED_FOR: HeaderName = HeaderName::from_static("x-forwarded-for");
 
 #[derive(Debug, thiserror::Error)]
@@ -129,14 +130,7 @@ async fn rate_limit_authenticated_route_group(
             );
             match state.options.fail_mode {
                 RateLimitFailMode::Open => next.run(request).await,
-                RateLimitFailMode::Closed => limited_response(
-                    state.options.quota,
-                    RateLimitDecision {
-                        allowed: false,
-                        remaining: 0,
-                        retry_after: state.options.quota.period(),
-                    },
-                ),
+                RateLimitFailMode::Closed => store_unavailable_response(),
             }
         }
     }
@@ -232,17 +226,14 @@ async fn evaluate(
             tracing::warn!(scope, error = %error, "rate-limit store decision failed");
             match state.options.fail_mode {
                 RateLimitFailMode::Open => Evaluation::PassAfterError,
-                RateLimitFailMode::Closed => Evaluation::Rejected(limited_response(
-                    options.quota,
-                    RateLimitDecision {
-                        allowed: false,
-                        remaining: 0,
-                        retry_after: options.quota.period(),
-                    },
-                )),
+                RateLimitFailMode::Closed => Evaluation::Rejected(store_unavailable_response()),
             }
         }
     }
+}
+
+fn store_unavailable_response() -> Response {
+    baukit_http::ApiError::unavailable(STORE_UNAVAILABLE_RETRY_AFTER).into_response()
 }
 
 fn limited_response(quota: Quota, decision: RateLimitDecision) -> Response {

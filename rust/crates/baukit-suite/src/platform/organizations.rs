@@ -101,7 +101,7 @@ impl From<HubError> for OrganizationError {
             {
                 Self::NotFound
             }
-            HubError::Unavailable => Self::Unavailable,
+            HubError::Unavailable | HubError::CoolingDown { .. } => Self::Unavailable,
             other => Self::Hub(other),
         }
     }

@@ -113,7 +113,9 @@ Behavior per strategy:
 - `network-only` fetches with `cache: 'no-store'` and never writes to the cache.
 - `cache-first` returns a hit, otherwise fetches and stores a cacheable response.
 - `network-first` fetches and stores a cacheable response, and falls back to the cache when the
-  fetch throws. If the request is an eligible navigation and its own cache entry is absent,
+  fetch throws. A fetch still pending after `networkTimeoutMs` (default 4,000 ms, `false`
+  disables it) serves the cached copy instead; the late response still updates the cache, and a
+  late failure goes to `onRevalidateError`. With nothing cached it keeps waiting for the network. If the request is an eligible navigation and its own cache entry is absent,
   `navigationFallback` supplies one final cache lookup. With nothing cached it rethrows.
 - `stale-while-revalidate` returns the cached response and refreshes in the background. On a
   miss it awaits the network. A background failure goes to `onRevalidateError`.

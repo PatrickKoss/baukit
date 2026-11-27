@@ -42,7 +42,7 @@ fn introspection_client(
         .with_request_timeout(timeout)
         .and_then(|options| options.with_max_response_bytes(MAX_RESPONSE_BYTES))
         .map_err(|_| McpConfigError::Invalid("invalid introspection egress options"))?;
-    GuardedClient::new(options)
+    GuardedClient::new("mcp-introspection", options)
         .map_err(|_| McpConfigError::Invalid("cannot build introspection client"))
 }
 
@@ -674,6 +674,52 @@ mod tests {
         );
         server.abort();
         assert!(server.await.expect_err("cancelled server").is_cancelled());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn an_open_circuit_fails_fast_as_unavailable_without_calling_keycloak()
+    -> Result<(), Box<dyn Error>> {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let config = KeycloakIntrospectionConfig::new(
+            format!("http://{}", listener.local_addr()?),
+            "resource",
+            Secret::new("secret".to_owned()),
+        );
+        let policy = KeycloakIntrospectionPolicy::new(config)?;
+        let counted = calls.clone();
+        let server = tokio::spawn(
+            axum::serve(
+                listener,
+                Router::new().route(
+                    "/protocol/openid-connect/token/introspect",
+                    post(move || async move {
+                        counted.fetch_add(1, Ordering::SeqCst);
+                        (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            [(header::RETRY_AFTER, "60")],
+                        )
+                    }),
+                ),
+            )
+            .into_future(),
+        );
+        let principal = VerifiedPrincipal::new("alice");
+        for _ in 0..2 {
+            let started = Instant::now();
+            assert_eq!(
+                policy.authenticate(&principal, "verified-token").await,
+                Err(PolicyDenial::Unavailable)
+            );
+            assert!(started.elapsed() < Duration::from_millis(500));
+        }
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "the Retry-After hold opens the mcp-introspection circuit"
+        );
+        server.abort();
         Ok(())
     }
 

@@ -171,8 +171,13 @@ Workers use queue `suite-events`, concurrency 4, ten attempts and backoff
 starting at 30 seconds up to six hours. A 2xx succeeds; 401/403 marks
 `needs_attention`; 410 revokes. Other nonretryable statuses reject the job.
 408, 425, 429, 5xx and transport failures retry. Peer `Retry-After` is capped
-at 300 seconds. Twenty consecutive permanent failures disable delivery;
-reenable resets the count. Successful delivery resets degraded health.
+at 300 seconds. Each failed attempt counts once when it finishes, and twenty
+in a row disable delivery. A disabled link gets one probe delivery after an
+hour, then after 2, 4, 8 and 16 hours and every 24 hours after that. A
+delivered probe, or reenable, resets the count and the link is healthy again.
+When the egress breaker for the peer is open, or its concurrency limit is
+full, the job is deferred for the breaker's delay. Nothing reaches the peer
+and the attempt does not count. Its outcome is `deferred`.
 
 Metrics use the product's configured prefix, with these suffixes and labels:
 
@@ -202,9 +207,9 @@ a product prefix or labels.
    `Validate` implementation. Call `validate_for(own_app, peers_json, cipher)`
    at startup. Active mode requires a credential cipher. URLs require HTTPS;
    `allow_loopback` permits HTTP only for localhost, 127.0.0.1 or ::1.
-3. For a product adding suite tables, copy the three suite SQL files after the three
+3. For a product adding suite tables, copy the suite SQL files after the
    jobs migrations. Constants are
-   `baukit_suite::{SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL, SUITE_LOCK_ORDER_MIGRATION_SQL}`.
+   `baukit_suite::{SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL, SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_RECORD_IDS_MIGRATION_SQL, SUITE_DELIVERY_PROBES_MIGRATION_SQL, SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL}`.
    Keep applied suite migrations in products that already have these tables.
    A product that copied the suite SQL under its own numbers keeps the files
    that correspond to `001_suite.sql` and `002_suite_runtime.sql`.

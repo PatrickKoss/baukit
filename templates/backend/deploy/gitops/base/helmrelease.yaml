@@ -39,7 +39,6 @@ spec:
       otlpEndpoint: http://tempo.observability.svc.cluster.local:4317
 {% if context.worker %}      overrides:
         WORKER__CONCURRENCY: "5"
-        WORKER__LEASE_DURATION_SECONDS: "900"
         WORKER__JOB_TIMEOUT_SECONDS: "600"
         WORKER__POLL_INTERVAL_MILLISECONDS: "250"
 {% endif %}      existingSecretRefs:

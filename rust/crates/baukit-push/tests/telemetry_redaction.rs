@@ -72,6 +72,7 @@ async fn send_with_failing_receipts(
     )?;
     let sender = if guarded {
         sender.with_guarded_client(GuardedClient::new(
+            "expo",
             EgressOptions::default().with_policy(AddressPolicy::AllowLoopback),
         )?)
     } else {

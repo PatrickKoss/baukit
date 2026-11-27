@@ -102,3 +102,9 @@ http_server_requests_seconds_count
 keycloak_user_events_total
 agroal_awaiting_count
 redis_commands_failed_calls_total
+redis_up
+redis_instance_info
+redis_master_link_up
+redis_evicted_keys_total
+redis_memory_used_bytes
+redis_memory_max_bytes

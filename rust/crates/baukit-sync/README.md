@@ -19,7 +19,7 @@ should. The clock orders timestamps. It does not choose which record wins.
 A backend that allocates revisions or purges tombstones enables the feature:
 
 ```toml
-baukit-sync = { version = "0.31", features = ["sqlx-postgres"] }
+baukit-sync = { version = "0.32", features = ["sqlx-postgres"] }
 ```
 
 A crate that only needs the clock uses the plain dependency and pulls in no database driver.

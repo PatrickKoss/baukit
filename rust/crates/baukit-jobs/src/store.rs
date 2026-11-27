@@ -1,6 +1,5 @@
-use jiff::SignedDuration;
 use jiff_sqlx::{Timestamp as SqlTimestamp, ToSqlx};
-use std::{future::Future, pin::Pin, time::Duration};
+use std::{future::Future, num::NonZeroU32, pin::Pin, time::Duration};
 
 use jiff::Timestamp;
 use sqlx::{PgConnection, PgPool, Postgres, Row as _, Transaction};
@@ -8,35 +7,47 @@ use uuid::Uuid;
 
 use crate::{
     CancellationOutcome, ClaimedJob, EnqueueOutcome, FailureDisposition, Job, JobLease, JobStatus,
-    NewJob, StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
+    NewJob, QueueDepth, ReleaseReason, StoreError, TerminalJobCleanupOutcome, TerminalJobCutoffs,
 };
 
+mod claim;
+mod enqueue;
+mod lease;
+mod listener;
+mod queue;
+mod requeue;
 mod validation;
 
+use claim::{ClaimRequest, claim_on};
+use enqueue::{enqueue_deduplicated_on, enqueue_on};
+pub use listener::{JOB_ENQUEUED_CHANNEL, spawn_enqueue_listener};
+pub use requeue::MAX_REQUEUE_BATCH_SIZE;
+use requeue::{requeue_failed_on, validate_requeue};
+
+/// The claim's candidate query, exposed so tests can `EXPLAIN` it.
+#[doc(hidden)]
+pub const CLAIM_CANDIDATE_SQL: &str = claim::CANDIDATE_SQL;
+use lease::{
+    LeaseKey, attempt_param, check_lease_on, finish_on, heartbeat_on, lease_deadline, release_on,
+};
+use queue::{oldest_ready_age_on, queue_depth_on};
+
 use validation::{
-    bound_error, parse_failure_reason, parse_status, status_name, validate_deduplicated_job,
-    validate_job_types, validate_new_job, validate_text, validate_worker_id,
+    bound_error, parse_failure_reason, parse_status, validate_deduplicated_job, validate_job_types,
+    validate_new_job, validate_text, validate_worker_id,
 };
 
 const MAX_JOB_TYPE_LENGTH: usize = 200;
 const MAX_WORKER_ID_LENGTH: usize = 300;
 const MAX_IDEMPOTENCY_KEY_LENGTH: usize = 500;
 const MAX_DEDUPE_KEY_LENGTH: usize = 500;
+const MAX_CONCURRENCY_KEY_LENGTH: usize = 500;
 const MAX_ERROR_LENGTH: usize = 10_000;
 
 #[derive(Clone, Copy)]
 enum Deduplication {
     Active,
     Pending,
-}
-
-macro_rules! owned_lease_predicate {
-    ($attempt:literal) => {
-        concat!(
-            "status = 'running' AND locked_by = $2 AND locked_until > $3 AND ($4 OR cancel_requested_at IS NULL) AND attempts = ",
-            $attempt
-        )
-    };
 }
 
 macro_rules! cancellation_assignments {
@@ -65,13 +76,28 @@ pub trait JobStore: Send + Sync + 'static {
     ///
     /// Rows of other types stay untouched, so a type that no worker handles
     /// remains pending. An empty `job_types` set is invalid input because it
-    /// can never claim a job.
+    /// can never claim a job. Concurrency keys are not limited; see
+    /// [`Self::claim_with_key_limit`].
     fn claim<'a>(
         &'a self,
         worker_id: &'a str,
         job_types: &'a [&'a str],
         now: Timestamp,
         lease_for: Duration,
+    ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>> {
+        self.claim_with_key_limit(worker_id, job_types, now, lease_for, None)
+    }
+
+    /// Claims like [`Self::claim`], skipping ready rows whose
+    /// [`NewJob::concurrency_key`] already has `max_per_key` running jobs with
+    /// a live lease. `None` claims regardless of keys.
+    fn claim_with_key_limit<'a>(
+        &'a self,
+        worker_id: &'a str,
+        job_types: &'a [&'a str],
+        now: Timestamp,
+        lease_for: Duration,
+        max_per_key: Option<NonZeroU32>,
     ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>>;
 
     /// Completes the job while `lease` still owns it.
@@ -110,9 +136,46 @@ pub trait JobStore: Send + Sync + 'static {
         now: Timestamp,
     ) -> StoreFuture<'a, Result<bool, StoreError>>;
 
-    /// Returns the age of the oldest pending job of any type, or zero for an
-    /// empty queue.
-    fn oldest_pending_age(&self, now: Timestamp) -> StoreFuture<'_, Result<Duration, StoreError>>;
+    /// Extends the lease of a job this worker still owns to `now + lease_for`.
+    ///
+    /// Returns false when the job is no longer running under this worker's
+    /// unexpired lease.
+    fn heartbeat<'a>(
+        &'a self,
+        lease: &'a JobLease,
+        lease_for: Duration,
+        now: Timestamp,
+    ) -> StoreFuture<'a, Result<bool, StoreError>>;
+
+    /// Returns an owned running job to pending at `run_after`.
+    ///
+    /// `reason` decides whether the attempt is given back and whether
+    /// `deferrals` grows; see [`ReleaseReason`]. A job with
+    /// a cancellation request is not released. Returns `None` when this worker
+    /// no longer owns the job.
+    fn release<'a>(
+        &'a self,
+        lease: &'a JobLease,
+        run_after: Timestamp,
+        reason: ReleaseReason,
+        now: Timestamp,
+    ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>>;
+
+    /// Returns how long the oldest claimable pending job of `job_types` has
+    /// been ready, or zero when none is ready.
+    ///
+    /// Rows scheduled after `now` do not count.
+    fn oldest_pending_age<'a>(
+        &'a self,
+        job_types: &'a [&'a str],
+        now: Timestamp,
+    ) -> StoreFuture<'a, Result<Duration, StoreError>>;
+
+    /// Counts pending, running and failed rows of `job_types`.
+    fn queue_depth<'a>(
+        &'a self,
+        job_types: &'a [&'a str],
+    ) -> StoreFuture<'a, Result<QueueDepth, StoreError>>;
 
     /// Probes the same locking query shape used to claim work without claiming it.
     fn ready(&self) -> StoreFuture<'_, Result<(), StoreError>>;
@@ -384,6 +447,32 @@ impl PostgresJobStore {
         request_cancellation_by_key_prefix_on(transaction, job_type, prefix, now).await
     }
 
+    /// Returns failed jobs of `job_type` among `ids` to pending, ready now.
+    ///
+    /// Requeued rows restart with zero attempts and deferrals and no failure
+    /// reason or last error. Ids of other types or statuses are ignored. A
+    /// failed row whose active dedupe key a pending or running row holds stays
+    /// failed, and of several failed rows sharing one key only the newest is
+    /// requeued. Returns the requeued ids and notifies
+    /// [`JOB_ENQUEUED_CHANNEL`] when there is at least one.
+    ///
+    /// # Errors
+    ///
+    /// [`StoreError::InvalidInput`] for an invalid `job_type` or when `ids` is
+    /// empty or longer than [`MAX_REQUEUE_BATCH_SIZE`], and
+    /// [`StoreError::Database`] when the transaction fails.
+    pub async fn requeue_failed(
+        &self,
+        job_type: &str,
+        ids: &[Uuid],
+    ) -> Result<Vec<Uuid>, StoreError> {
+        validate_requeue(job_type, ids)?;
+        let mut transaction = self.pool.begin().await.map_err(StoreError::database)?;
+        let requeued = requeue_failed_on(&mut transaction, job_type, ids, Timestamp::now()).await?;
+        transaction.commit().await.map_err(StoreError::database)?;
+        Ok(requeued)
+    }
+
     /// Deletes at most one batch of terminal jobs.
     ///
     /// A row is eligible when its status is `succeeded`, `cancelled`, or
@@ -461,62 +550,31 @@ impl JobStore for PostgresJobStore {
         }))
     }
 
-    fn claim<'a>(
+    fn claim_with_key_limit<'a>(
         &'a self,
         worker_id: &'a str,
         job_types: &'a [&'a str],
         now: Timestamp,
         lease_for: Duration,
+        max_per_key: Option<NonZeroU32>,
     ) -> StoreFuture<'a, Result<Option<ClaimedJob>, StoreError>> {
         let pool = self.pool.clone();
         let worker_id = worker_id.to_owned();
-        let job_types = job_types
-            .iter()
-            .map(|kind| (*kind).to_owned())
-            .collect::<Vec<_>>();
+        let job_types = owned_job_types(job_types);
         Box::pin(owned_operation(async move {
             validate_worker_id(&worker_id)?;
             validate_job_types(&job_types.iter().map(String::as_str).collect::<Vec<_>>())?;
-            if lease_for.is_zero() {
-                return Err(StoreError::InvalidInput(
-                    "lease duration must be non-zero".to_owned(),
-                ));
-            }
-            let lease_for = SignedDuration::try_from(lease_for).map_err(|_| {
-                StoreError::InvalidInput("lease duration is out of range".to_owned())
-            })?;
-            let locked_until = now.checked_add(lease_for).map_err(|_| {
-                StoreError::InvalidInput("lease deadline is out of range".to_owned())
-            })?;
+            let request = ClaimRequest {
+                worker_id: &worker_id,
+                job_types: &job_types,
+                now,
+                locked_until: lease_deadline(now, lease_for)?,
+                max_per_key,
+            };
             let mut transaction = pool.begin().await.map_err(StoreError::database)?;
-
-            sqlx::query(
-                "UPDATE job_outbox SET status = 'cancelled', locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, updated_at = $1 WHERE status = 'running' AND locked_until <= $1 AND cancel_requested_at IS NOT NULL",
-            )
-            .bind(now.to_sqlx())
-            .execute(&mut *transaction)
-            .await
-            .map_err(StoreError::database)?;
-            sqlx::query(
-                "UPDATE job_outbox SET status = 'failed', locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = COALESCE(last_error, 'worker lease expired after final attempt'), failure_reason = 'attempts_exhausted', updated_at = $1 WHERE status = 'running' AND locked_until <= $1 AND attempts >= max_attempts",
-            )
-            .bind(now.to_sqlx())
-            .execute(&mut *transaction)
-            .await
-            .map_err(StoreError::database)?;
-
-            let row = sqlx::query(
-                "WITH candidate AS (SELECT id FROM job_outbox WHERE attempts < max_attempts AND cancel_requested_at IS NULL AND job_type = ANY($4) AND ((status = 'pending' AND run_after <= $1) OR (status = 'running' AND locked_until <= $1)) ORDER BY run_after, created_at, id FOR UPDATE SKIP LOCKED LIMIT 1) UPDATE job_outbox AS job SET status = 'running', pending_dedupe_key = NULL, attempts = job.attempts + 1, locked_by = $2, locked_until = $3, last_error = NULL, failure_reason = NULL, updated_at = $1 FROM candidate WHERE job.id = candidate.id RETURNING job.id, job.job_type, job.payload, job.status, job.attempts, job.max_attempts, job.run_after, job.locked_by, job.locked_until, job.idempotency_key, job.dedupe_key, job.pending_dedupe_key, job.last_error, job.failure_reason, job.cancel_requested_at, job.created_at, job.updated_at",
-            )
-                .bind(now.to_sqlx())
-                .bind(worker_id)
-                .bind(locked_until.to_sqlx())
-                .bind(job_types)
-                .fetch_optional(&mut *transaction)
-                .await
-                .map_err(StoreError::database)?;
+            let claimed = claim_on(&mut transaction, &request).await?;
             transaction.commit().await.map_err(StoreError::database)?;
-            row.as_ref().map(row_to_job).transpose()
+            Ok(claimed)
         }))
     }
 
@@ -624,16 +682,57 @@ impl JobStore for PostgresJobStore {
         })
     }
 
-    fn oldest_pending_age(&self, now: Timestamp) -> StoreFuture<'_, Result<Duration, StoreError>> {
+    fn heartbeat<'a>(
+        &'a self,
+        lease: &'a JobLease,
+        lease_for: Duration,
+        now: Timestamp,
+    ) -> StoreFuture<'a, Result<bool, StoreError>> {
         Box::pin(async move {
-            let seconds = sqlx::query_scalar::<_, f64>(
-                "SELECT COALESCE(GREATEST(0, EXTRACT(EPOCH FROM ($1 - MIN(created_at)))), 0)::double precision FROM job_outbox WHERE status = 'pending'",
+            validate_worker_id(&lease.worker_id)?;
+            let locked_until = lease_deadline(now, lease_for)?;
+            heartbeat_on(&self.pool, LeaseKey::attempt(lease)?, locked_until, now).await
+        })
+    }
+
+    fn release<'a>(
+        &'a self,
+        lease: &'a JobLease,
+        run_after: Timestamp,
+        reason: ReleaseReason,
+        now: Timestamp,
+    ) -> StoreFuture<'a, Result<Option<FailureDisposition>, StoreError>> {
+        Box::pin(async move {
+            validate_worker_id(&lease.worker_id)?;
+            release_on(
+                &self.pool,
+                LeaseKey::attempt(lease)?,
+                run_after,
+                reason,
+                now,
             )
-            .bind(now.to_sqlx())
-            .fetch_one(&self.pool)
             .await
-            .map_err(StoreError::database)?;
-            Ok(Duration::from_secs_f64(seconds))
+        })
+    }
+
+    fn oldest_pending_age<'a>(
+        &'a self,
+        job_types: &'a [&'a str],
+        now: Timestamp,
+    ) -> StoreFuture<'a, Result<Duration, StoreError>> {
+        Box::pin(async move {
+            validate_job_types(job_types)?;
+            oldest_ready_age_on(&self.pool, &owned_job_types(job_types), now).await
+        })
+    }
+
+    fn queue_depth<'a>(
+        &'a self,
+        job_types: &'a [&'a str],
+    ) -> StoreFuture<'a, Result<QueueDepth, StoreError>> {
+        Box::pin(async move {
+            validate_job_types(job_types)?;
+            queue_depth_on(&self.pool, &owned_job_types(job_types)).await
         })
     }
 
@@ -655,183 +754,14 @@ impl JobStore for PostgresJobStore {
     }
 }
 
+fn owned_job_types(job_types: &[&str]) -> Vec<String> {
+    job_types.iter().map(|kind| (*kind).to_owned()).collect()
+}
+
 async fn owned_operation<T: Send + 'static>(
     operation: impl Future<Output = Result<T, StoreError>> + Send + 'static,
 ) -> Result<T, StoreError> {
     tokio::spawn(operation).await.map_err(StoreError::Task)?
-}
-
-async fn enqueue_on(
-    connection: &mut PgConnection,
-    job: NewJob,
-) -> Result<EnqueueOutcome, StoreError> {
-    let max_attempts = i32::try_from(job.max_attempts).map_err(|_| {
-        StoreError::InvalidInput("max_attempts exceeds PostgreSQL INTEGER".to_owned())
-    })?;
-    let inserted = sqlx::query(
-        "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, idempotency_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7) ON CONFLICT (job_type, idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at",
-    )
-        .bind(job.id)
-        .bind(&job.job_type)
-        .bind(&job.payload)
-        .bind(max_attempts)
-        .bind(job.run_after.to_sqlx())
-        .bind(&job.idempotency_key)
-        .bind(job.created_at.to_sqlx())
-        .fetch_optional(&mut *connection)
-        .await
-        .map_err(StoreError::database)?;
-    if let Some(row) = inserted {
-        return Ok(EnqueueOutcome {
-            job: row_to_job(&row)?,
-            created: true,
-        });
-    }
-
-    let key = job.idempotency_key.ok_or_else(|| {
-        StoreError::InvalidData("non-idempotent enqueue unexpectedly conflicted".to_owned())
-    })?;
-    let row = sqlx::query(
-        "SELECT id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at FROM job_outbox WHERE job_type = $1 AND idempotency_key = $2",
-    )
-        .bind(job.job_type)
-        .bind(key)
-        .fetch_one(connection)
-        .await
-        .map_err(StoreError::database)?;
-    Ok(EnqueueOutcome {
-        job: row_to_job(&row)?,
-        created: false,
-    })
-}
-
-async fn enqueue_deduplicated_on(
-    connection: &mut PgConnection,
-    job: NewJob,
-    dedupe_key: &str,
-    deduplication: Deduplication,
-) -> Result<EnqueueOutcome, StoreError> {
-    let max_attempts = i32::try_from(job.max_attempts).map_err(|_| {
-        StoreError::InvalidInput("max_attempts exceeds PostgreSQL INTEGER".to_owned())
-    })?;
-    let insert_sql = match deduplication {
-        Deduplication::Active => {
-            "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, dedupe_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7) ON CONFLICT (job_type, dedupe_key) WHERE status IN ('pending', 'running') AND dedupe_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at"
-        }
-        Deduplication::Pending => {
-            "INSERT INTO job_outbox (id, job_type, payload, status, attempts, max_attempts, run_after, pending_dedupe_key, created_at, updated_at) VALUES ($1, $2, $3, 'pending', 0, $4, $5, $6, $7, $7) ON CONFLICT (job_type, pending_dedupe_key) WHERE status = 'pending' AND pending_dedupe_key IS NOT NULL DO NOTHING RETURNING id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at"
-        }
-    };
-    let select_sql = match deduplication {
-        Deduplication::Active => {
-            "SELECT id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at FROM job_outbox WHERE job_type = $1 AND dedupe_key = $2 AND status IN ('pending', 'running') AND dedupe_key IS NOT NULL FOR UPDATE"
-        }
-        Deduplication::Pending => {
-            "SELECT id, job_type, payload, status, attempts, max_attempts, run_after, locked_by, locked_until, idempotency_key, dedupe_key, pending_dedupe_key, last_error, failure_reason, cancel_requested_at, created_at, updated_at FROM job_outbox WHERE job_type = $1 AND pending_dedupe_key = $2 AND status = 'pending' AND pending_dedupe_key IS NOT NULL FOR UPDATE"
-        }
-    };
-    loop {
-        let inserted = sqlx::query(insert_sql)
-            .bind(job.id)
-            .bind(&job.job_type)
-            .bind(&job.payload)
-            .bind(max_attempts)
-            .bind(job.run_after.to_sqlx())
-            .bind(dedupe_key)
-            .bind(job.created_at.to_sqlx())
-            .fetch_optional(&mut *connection)
-            .await
-            .map_err(StoreError::database)?;
-        if let Some(row) = inserted {
-            return Ok(EnqueueOutcome {
-                job: row_to_job(&row)?,
-                created: true,
-            });
-        }
-
-        // Use a fresh statement snapshot to see a concurrent insert's commit.
-        // If that row left the deduplicated statuses meanwhile, retry the
-        // insert. Lock an existing row until this transaction commits.
-        let existing = sqlx::query(select_sql)
-            .bind(&job.job_type)
-            .bind(dedupe_key)
-            .fetch_optional(&mut *connection)
-            .await
-            .map_err(StoreError::database)?;
-        if let Some(row) = existing {
-            return Ok(EnqueueOutcome {
-                job: row_to_job(&row)?,
-                created: false,
-            });
-        }
-    }
-}
-
-/// Lease identity bound into an owned write.
-struct LeaseKey<'a> {
-    job_id: Uuid,
-    worker_id: &'a str,
-    attempt: i32,
-}
-
-impl<'a> LeaseKey<'a> {
-    fn attempt(lease: &'a JobLease) -> Result<Self, StoreError> {
-        Ok(Self {
-            job_id: lease.job_id,
-            worker_id: &lease.worker_id,
-            attempt: attempt_param(lease.attempt)?,
-        })
-    }
-}
-
-fn attempt_param(attempt: u32) -> Result<i32, StoreError> {
-    i32::try_from(attempt)
-        .map_err(|_| StoreError::InvalidInput("attempt exceeds PostgreSQL INTEGER".to_owned()))
-}
-
-async fn check_lease_on(
-    connection: &mut PgConnection,
-    key: LeaseKey<'_>,
-    now: Timestamp,
-) -> Result<bool, StoreError> {
-    sqlx::query_scalar::<_, Uuid>(concat!(
-        "SELECT id FROM job_outbox WHERE id = $1 AND ",
-        owned_lease_predicate!("$5"),
-        " FOR UPDATE"
-    ))
-    .bind(key.job_id)
-    .bind(key.worker_id)
-    .bind(now.to_sqlx())
-    .bind(false)
-    .bind(key.attempt)
-    .fetch_optional(connection)
-    .await
-    .map(|row| row.is_some())
-    .map_err(StoreError::database)
-}
-
-async fn finish_on(
-    connection: &mut PgConnection,
-    key: LeaseKey<'_>,
-    status: JobStatus,
-    now: Timestamp,
-) -> Result<bool, StoreError> {
-    let status = status_name(status);
-    let allow_cancellation = status == "cancelled";
-    sqlx::query(concat!(
-        "UPDATE job_outbox SET status = $6, locked_by = NULL, locked_until = NULL, cancel_requested_at = NULL, last_error = NULL, failure_reason = NULL, updated_at = $3 WHERE id = $1 AND ",
-        owned_lease_predicate!("$5")
-    ))
-    .bind(key.job_id)
-    .bind(key.worker_id)
-    .bind(now.to_sqlx())
-    .bind(allow_cancellation)
-    .bind(key.attempt)
-    .bind(status)
-    .execute(connection)
-    .await
-    .map(|result| result.rows_affected() == 1)
-    .map_err(StoreError::database)
 }
 
 async fn request_cancellation_by_key_on(
@@ -893,6 +823,7 @@ fn count_cancellation_statuses(statuses: Vec<String>) -> Result<CancellationOutc
 fn row_to_job(row: &sqlx::postgres::PgRow) -> Result<Job, StoreError> {
     let attempts = row.try_get::<i32, _>("attempts")?;
     let max_attempts = row.try_get::<i32, _>("max_attempts")?;
+    let deferrals = row.try_get::<i32, _>("deferrals")?;
     Ok(Job {
         id: row.try_get("id")?,
         job_type: row.try_get("job_type")?,
@@ -920,6 +851,9 @@ fn row_to_job(row: &sqlx::postgres::PgRow) -> Result<Job, StoreError> {
         cancel_requested_at: row
             .try_get::<Option<SqlTimestamp>, _>("cancel_requested_at")?
             .map(SqlTimestamp::to_jiff),
+        deferrals: u32::try_from(deferrals)
+            .map_err(|_| StoreError::InvalidData(format!("negative deferral count {deferrals}")))?,
+        concurrency_key: row.try_get("concurrency_key")?,
         created_at: row.try_get::<SqlTimestamp, _>("created_at")?.to_jiff(),
         updated_at: row.try_get::<SqlTimestamp, _>("updated_at")?.to_jiff(),
     })

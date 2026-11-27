@@ -4,6 +4,8 @@ All notable changes to `baukit-openapi` are documented here.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
 ## [0.31.0] - 2026-11-26
 
 ## [0.30.6] - 2026-11-26

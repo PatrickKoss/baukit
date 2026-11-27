@@ -1,15 +1,28 @@
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
 use baukit_config::{Secret, Validate, ValidationError, ValidationErrors};
-use baukit_egress::{EgressError, EgressRequest, GuardedClient};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::{sync::Arc, time::Duration};
-use tokio::{sync::Mutex, time::Instant};
+use baukit_egress::{EgressError, EgressRequest, EgressResponse, GuardedClient};
+use baukit_resilience::{
+    CacheRead, Clock, Freshness, StaleCache, StaleCacheError, StalePolicy, SystemClock,
+};
+use serde::{Deserialize, de::DeserializeOwned};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use url::Url;
+
+pub use super::hub_request::HubRequest;
+use super::hub_request::Replay;
 
 /// Tokens are replaced this long before `expires_in` elapses, or at half their
 /// lifetime when that is shorter.
 pub const TOKEN_REFRESH_MARGIN: Duration = Duration::from_secs(30);
+/// Minimum gap between token requests after a failed one.
+pub const TOKEN_FAILURE_COOLDOWN: Duration = Duration::from_secs(5);
+/// Upper bound for a token's `expires_in`, and the cache's fresh window.
+const MAX_TOKEN_LIFETIME: Duration = Duration::from_secs(24 * 60 * 60);
 const CLIENT_ID_PREFIX: &str = "platform-";
+const IDEMPOTENCY_KEY: HeaderName = HeaderName::from_static("idempotency-key");
 const JSON: &str = "application/json";
 const FORM: &str = "application/x-www-form-urlencoded";
 
@@ -114,6 +127,10 @@ pub enum HubError {
     /// Transport failure, timeout, rate limit, or a 408 or 5xx response.
     #[error("hub_unavailable")]
     Unavailable,
+    /// The egress breaker is open, the client is saturated, or token requests
+    /// are cooling down after a failure. No request was sent.
+    #[error("hub_unavailable")]
+    CoolingDown { retry_after: Duration },
     /// The token endpoint refused the credentials, the API returned 401
     /// again with a freshly issued token, or it returned 401 for the static
     /// service token.
@@ -151,7 +168,24 @@ fn encode_segment_bytes(segment: &[u8]) -> Option<String> {
 struct CachedToken {
     value: Secret<String>,
     refresh_at: Instant,
+    expires_at: Instant,
 }
+impl CachedToken {
+    fn needs_refresh(&self, now: Instant) -> bool {
+        now >= self.refresh_at
+    }
+    fn usable(&self, now: Instant) -> bool {
+        now < self.expires_at
+    }
+}
+
+struct TokenGrant {
+    token_url: Url,
+    client_id: String,
+    client_secret: Secret<String>,
+}
+
+type TokenCache = StaleCache<Arc<CachedToken>>;
 
 #[derive(Deserialize)]
 struct TokenResponse {
@@ -171,12 +205,11 @@ struct ErrorCode {
 
 #[derive(Clone)]
 enum Credentials {
-    Static(Arc<CachedToken>),
+    Static(Secret<String>),
     ClientCredentials {
-        token_url: Url,
-        client_id: String,
-        client_secret: Secret<String>,
-        cache: Arc<Mutex<Option<Arc<CachedToken>>>>,
+        grant: Arc<TokenGrant>,
+        cache: Arc<TokenCache>,
+        clock: Arc<dyn Clock>,
     },
 }
 
@@ -203,6 +236,20 @@ impl HubClient {
         product_id: &str,
         client: GuardedClient,
     ) -> Result<Self, ValidationErrors> {
+        Self::with_clock(config, product_id, client, Arc::new(SystemClock))
+    }
+    /// [`Self::new`] with the clock that drives token expiry and the token
+    /// failure cooldown.
+    ///
+    /// # Errors
+    ///
+    /// The errors of [`Self::new`].
+    pub fn with_clock(
+        config: &HubClientConfig,
+        product_id: &str,
+        client: GuardedClient,
+        clock: Arc<dyn Clock>,
+    ) -> Result<Self, ValidationErrors> {
         config.validate()?;
         let invalid =
             |field, message| ValidationErrors::new(vec![ValidationError::new(field, message)]);
@@ -218,22 +265,25 @@ impl HubClient {
         let settings_error = || invalid("platform_client", "invalid hub client settings");
         let api_url = base_url(&config.api_url).ok_or_else(settings_error)?;
         let credentials = match config.static_token() {
-            Some(token) => Credentials::Static(Arc::new(CachedToken {
-                value: token.clone(),
-                refresh_at: Instant::now(),
-            })),
+            Some(token) => Credentials::Static(token.clone()),
             None => Credentials::ClientCredentials {
-                token_url: config
-                    .token_url
-                    .as_deref()
-                    .and_then(base_url)
-                    .ok_or_else(settings_error)?,
-                client_id: config
-                    .client_id
-                    .clone()
-                    .unwrap_or_else(|| format!("{CLIENT_ID_PREFIX}{product_id}")),
-                client_secret: config.client_secret.clone().ok_or_else(settings_error)?,
-                cache: Arc::default(),
+                grant: Arc::new(TokenGrant {
+                    token_url: config
+                        .token_url
+                        .as_deref()
+                        .and_then(base_url)
+                        .ok_or_else(settings_error)?,
+                    client_id: config
+                        .client_id
+                        .clone()
+                        .unwrap_or_else(|| format!("{CLIENT_ID_PREFIX}{product_id}")),
+                    client_secret: config.client_secret.clone().ok_or_else(settings_error)?,
+                }),
+                cache: Arc::new(StaleCache::with_clock(
+                    StalePolicy::new(MAX_TOKEN_LIFETIME, Duration::ZERO, TOKEN_FAILURE_COOLDOWN),
+                    Arc::clone(&clock),
+                )),
+                clock,
             },
         };
         Ok(Self {
@@ -251,41 +301,81 @@ impl HubClient {
     ///
     /// # Errors
     ///
-    /// `HubError::Unavailable` on transport failure, timeout, 408, 429 or 5xx. `Unauthorized` when
-    /// the token endpoint refuses the credentials or the API returns 401 after any refresh.
-    /// `Rejected` for other statuses. `InvalidResponse` when the body is too large or does not
-    /// decode into `T`, or the token response is malformed.
+    /// The errors of [`Self::send_json`].
     pub async fn get_json<T: DeserializeOwned>(&self, segments: &[&str]) -> Result<T, HubError> {
-        self.send(EgressRequest::get(self.url(segments)?)).await
+        self.send_json(HubRequest::get(segments)).await
     }
     /// `GET <api_url>/platform/v1/<segments>?<query>`. Names and values are
     /// form-encoded in the given order. An empty `query` sends no `?`.
     ///
     /// # Errors
     ///
-    /// The errors of [`Self::get_json`].
+    /// The errors of [`Self::send_json`].
     pub async fn get_json_with_query<T: DeserializeOwned>(
         &self,
         segments: &[&str],
         query: &[(&str, &str)],
     ) -> Result<T, HubError> {
-        self.send(EgressRequest::get(self.url_with_query(segments, query)?))
+        self.send_json(HubRequest::get_with_query(segments, query))
             .await
     }
-    /// `POST <api_url>/platform/v1/<segments>` with a JSON body. A 401 retry
-    /// repeats the request, so use it only for idempotent routes.
+    /// Sends `request` with the service token and decodes the JSON response.
+    ///
+    /// After a 401 with a client-credentials token, the request is repeated
+    /// once with a fresh token only when it is replayable: a GET, a
+    /// [`HubRequest::idempotent`] POST, or one with an idempotency key.
     ///
     /// # Errors
     ///
-    /// The errors of [`Self::get_json`]. `HubError::InvalidResponse` also covers a body that does
-    /// not serialize.
-    pub async fn post_json<B: Serialize + Sync, T: DeserializeOwned>(
+    /// `HubError::Unavailable` on transport failure, timeout, 408, 429 or 5xx. `CoolingDown` when the
+    /// egress breaker is open, the client is saturated or token requests cool down after a
+    /// failure. `Unauthorized` when the token endpoint refuses the credentials or the API returns
+    /// 401 and the request is not replayed or fails again. `Rejected` for other statuses.
+    /// `InvalidResponse` when a URL cannot be built, the body is too large or does not decode into
+    /// `T`, or the token response is malformed.
+    pub async fn send_json<T: DeserializeOwned>(&self, request: HubRequest) -> Result<T, HubError> {
+        let egress = self.egress_request(&request)?;
+        let token = self.token().await?;
+        match self.execute(&egress, authorization(&token)?).await {
+            Err(EgressError::Status { status, .. })
+                if status == StatusCode::UNAUTHORIZED
+                    && request.replay() == Replay::Allowed
+                    && self.refreshes() =>
+            {
+                let token = self.refreshed_token(&token).await?;
+                decode(self.execute(&egress, authorization(&token)?).await)
+            }
+            result => decode(result),
+        }
+    }
+    fn egress_request(&self, request: &HubRequest) -> Result<EgressRequest, HubError> {
+        let mut url = self.url(&request.segment_refs())?;
+        if !request.query().is_empty() {
+            url.query_pairs_mut().extend_pairs(request.query());
+        }
+        let mut headers = HeaderMap::new();
+        headers.insert(header::ACCEPT, HeaderValue::from_static(JSON));
+        if let Some(key) = request.idempotency_key() {
+            headers.insert(IDEMPOTENCY_KEY, key.clone());
+        }
+        let egress = match request.body() {
+            Some(body) => {
+                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(JSON));
+                EgressRequest::post(url).with_body(body.to_vec())
+            }
+            None => EgressRequest::get(url),
+        };
+        Ok(egress.with_headers(headers))
+    }
+    async fn execute(
         &self,
-        segments: &[&str],
-        body: &B,
-    ) -> Result<T, HubError> {
-        let body = serde_json::to_vec(body).map_err(|_| HubError::InvalidResponse)?;
-        self.send(EgressRequest::post(self.url(segments)?).with_body(body))
+        request: &EgressRequest,
+        authorization: HeaderValue,
+    ) -> Result<EgressResponse, EgressError> {
+        let mut headers = request.headers().clone();
+        headers.insert(header::AUTHORIZATION, authorization);
+        self.client
+            .execute(request.clone().with_headers(headers))
             .await
     }
     fn url(&self, segments: &[&str]) -> Result<Url, HubError> {
@@ -304,84 +394,68 @@ impl HubClient {
         url.set_path(&path);
         Ok(url)
     }
+    #[cfg(test)]
     fn url_with_query(&self, segments: &[&str], query: &[(&str, &str)]) -> Result<Url, HubError> {
-        let mut url = self.url(segments)?;
-        if !query.is_empty() {
-            url.query_pairs_mut().extend_pairs(query);
-        }
-        Ok(url)
-    }
-    async fn send<T: DeserializeOwned>(&self, request: EgressRequest) -> Result<T, HubError> {
-        let has_body = !request.body().is_empty();
-        let mut refreshed = false;
-        loop {
-            let token = self.token().await?;
-            let mut headers = HeaderMap::new();
-            headers.insert(header::ACCEPT, HeaderValue::from_static(JSON));
-            if has_body {
-                headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(JSON));
-            }
-            let mut authorization =
-                HeaderValue::from_str(&format!("Bearer {}", token.value.expose()))
-                    .map_err(|_| HubError::Unauthorized)?;
-            authorization.set_sensitive(true);
-            headers.insert(header::AUTHORIZATION, authorization);
-            match self
-                .client
-                .execute(request.clone().with_headers(headers))
-                .await
-            {
-                Ok(response) => {
-                    return serde_json::from_slice(response.body())
-                        .map_err(|_| HubError::InvalidResponse);
-                }
-                Err(EgressError::Status { status, .. })
-                    if status == StatusCode::UNAUTHORIZED && !refreshed && self.refreshes() =>
-                {
-                    refreshed = true;
-                    self.invalidate(&token).await;
-                }
-                Err(error) => return Err(classify(&error)),
-            }
-        }
+        self.egress_request(&HubRequest::get_with_query(segments, query))
+            .map(|request| request.url().clone())
     }
     fn refreshes(&self) -> bool {
         matches!(self.credentials, Credentials::ClientCredentials { .. })
     }
-    async fn invalidate(&self, used: &Arc<CachedToken>) {
-        let Credentials::ClientCredentials { cache, .. } = &self.credentials else {
-            return;
-        };
-        let mut cached = cache.lock().await;
-        if cached
-            .as_ref()
-            .is_some_and(|token| Arc::ptr_eq(token, used))
-        {
-            *cached = None;
-        }
-    }
-    async fn token(&self) -> Result<Arc<CachedToken>, HubError> {
-        let (token_url, client_id, client_secret, cache) = match &self.credentials {
+    async fn token(&self) -> Result<Secret<String>, HubError> {
+        let (grant, cache, clock) = match &self.credentials {
             Credentials::Static(token) => return Ok(token.clone()),
             Credentials::ClientCredentials {
-                token_url,
-                client_id,
-                client_secret,
+                grant,
                 cache,
-            } => (token_url, client_id, client_secret, cache),
+                clock,
+            } => (grant, cache, clock),
         };
-        let mut cached = cache.lock().await;
-        if let Some(token) = cached
-            .as_ref()
-            .filter(|token| Instant::now() < token.refresh_at)
-        {
-            return Ok(token.clone());
+        let read = cache
+            .get_or_refresh(|| self.fetch_token(grant, clock.as_ref()))
+            .await
+            .map_err(token_error)?;
+        if !read.value.needs_refresh(clock.now()) {
+            return Ok(read.value.value.clone());
         }
-        let requested_at = Instant::now();
+        let read = cache
+            .force_refresh(|| self.fetch_token(grant, clock.as_ref()))
+            .await
+            .map_err(token_error)?;
+        usable_token(&read, clock.now())
+    }
+    /// A new token after the API refused `rejected`. Concurrent callers share
+    /// one token request. Within the cooldown after the last token request the
+    /// cached token is `rejected` itself, so the call is not repeated.
+    async fn refreshed_token(&self, rejected: &Secret<String>) -> Result<Secret<String>, HubError> {
+        let Credentials::ClientCredentials {
+            grant,
+            cache,
+            clock,
+        } = &self.credentials
+        else {
+            return Err(HubError::Unauthorized);
+        };
+        let read = cache
+            .force_refresh(|| self.fetch_token(grant, clock.as_ref()))
+            .await
+            .map_err(token_error)?;
+        let token = usable_token(&read, clock.now())?;
+        if token.expose() == rejected.expose() {
+            return Err(HubError::Unauthorized);
+        }
+        Ok(token)
+    }
+    async fn fetch_token(
+        &self,
+        grant: &TokenGrant,
+        clock: &dyn Clock,
+    ) -> Result<Arc<CachedToken>, HubError> {
+        let requested_at = clock.now();
         let body = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("grant_type", "client_credentials")
-            .append_pair("client_id", client_id)
-            .append_pair("client_secret", client_secret.expose())
+            .append_pair("client_id", &grant.client_id)
+            .append_pair("client_secret", grant.client_secret.expose())
             .finish();
         let mut headers = HeaderMap::new();
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(FORM));
@@ -389,7 +463,7 @@ impl HubClient {
         let response = self
             .client
             .execute(
-                EgressRequest::post(token_url.clone())
+                EgressRequest::post(grant.token_url.clone())
                     .with_headers(headers)
                     .with_body(body),
             )
@@ -406,14 +480,49 @@ impl HubClient {
         {
             return Err(HubError::InvalidResponse);
         }
-        let lifetime = Duration::from_secs(response.expires_in);
-        let token = Arc::new(CachedToken {
+        let lifetime = Duration::from_secs(response.expires_in).min(MAX_TOKEN_LIFETIME);
+        let expires_at = requested_at
+            .checked_add(lifetime)
+            .ok_or(HubError::InvalidResponse)?;
+        Ok(Arc::new(CachedToken {
             value: Secret::new(response.access_token),
-            refresh_at: requested_at + lifetime - TOKEN_REFRESH_MARGIN.min(lifetime / 2),
-        });
-        *cached = Some(token.clone());
-        Ok(token)
+            refresh_at: expires_at
+                .checked_sub(TOKEN_REFRESH_MARGIN.min(lifetime / 2))
+                .unwrap_or(requested_at),
+            expires_at,
+        }))
     }
+}
+
+/// A token that is fresh, or still valid while a refresh failed or cools down.
+fn usable_token(
+    read: &CacheRead<Arc<CachedToken>>,
+    now: Instant,
+) -> Result<Secret<String>, HubError> {
+    let fetched = read.freshness == Freshness::Fetched && !read.refresh_failed;
+    if fetched || read.value.usable(now) {
+        return Ok(read.value.value.clone());
+    }
+    Err(HubError::Unavailable)
+}
+
+fn authorization(token: &Secret<String>) -> Result<HeaderValue, HubError> {
+    let mut value = HeaderValue::from_str(&format!("Bearer {}", token.expose()))
+        .map_err(|_| HubError::Unauthorized)?;
+    value.set_sensitive(true);
+    Ok(value)
+}
+
+fn token_error(error: StaleCacheError<HubError>) -> HubError {
+    match error {
+        StaleCacheError::Fetch(error) => error,
+        StaleCacheError::CoolingDown { retry_after } => HubError::CoolingDown { retry_after },
+    }
+}
+
+fn decode<T: DeserializeOwned>(result: Result<EgressResponse, EgressError>) -> Result<T, HubError> {
+    let response = result.map_err(|error| classify(&error))?;
+    serde_json::from_slice(response.body()).map_err(|_| HubError::InvalidResponse)
 }
 
 fn classify(error: &EgressError) -> HubError {
@@ -438,6 +547,12 @@ fn classify(error: &EgressError) -> HubError {
             }
         }
         EgressError::ResponseTooLarge { .. } => HubError::InvalidResponse,
+        EgressError::CircuitOpen { .. } | EgressError::Saturated => HubError::CoolingDown {
+            retry_after: error
+                .retry_class()
+                .retry_after()
+                .unwrap_or(TOKEN_FAILURE_COOLDOWN),
+        },
         _ => HubError::Unavailable,
     }
 }
@@ -466,6 +581,7 @@ mod tests {
             client_secret: Some(Secret::new("secret".into())),
         };
         let guarded = GuardedClient::new(
+            "hub",
             baukit_egress::EgressOptions::default()
                 .with_error_body_limit(1024)
                 .expect("limit"),
@@ -480,6 +596,19 @@ mod tests {
             .expect("url")
             .query()
             .map(str::to_owned)
+    }
+
+    #[test]
+    fn open_circuits_and_saturation_cool_down_with_the_breaker_delay() {
+        let retry_after = Duration::from_secs(17);
+        assert_eq!(
+            classify(&EgressError::CircuitOpen { retry_after }),
+            HubError::CoolingDown { retry_after }
+        );
+        assert!(matches!(
+            classify(&EgressError::Saturated),
+            HubError::CoolingDown { retry_after } if retry_after > Duration::ZERO
+        ));
     }
 
     #[test]

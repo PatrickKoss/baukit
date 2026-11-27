@@ -150,7 +150,9 @@ ConfigMaps, and a `PrometheusRule` when the cluster serves
 
 The shipped alerts cover error budget burn, p95 and p99 latency, scrape and
 target absence, missing `build_info`, database pool saturation and acquire
-timeouts, rate-limit store errors, and worker failure, retry and queue age. The
+timeouts, rate-limit store errors, MCP errors, failed privacy operations, worker
+failure, retry, queue age and failed jobs, and egress error ratio, latency and
+open circuits. The
 thresholds and the 99.9% SLO they assume are described in the pack README.
 Change them there, then run `promtool check rules`.
 

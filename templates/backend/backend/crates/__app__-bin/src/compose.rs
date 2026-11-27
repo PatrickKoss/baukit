@@ -67,7 +67,10 @@ pub async fn compose_api(
     let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
     let redis = match deps.rate_limit_store {
         Some(_) => None,
-        None => RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?,
+        None => {
+            RedisRateLimitStore::connect_if_enabled(&rate_limit_options, config.startup.budget)
+                .await?
+        }
     };
     let store = deps
         .rate_limit_store
@@ -94,6 +97,7 @@ pub async fn compose_api(
             rate_limit: &rate_limit_options,
             rate_limit_store: redis,
             environment: config.environment,
+            startup_budget: config.startup.budget,
         };
         if let Some(router) =
             browser_session_router(&config.product.auth.browser_session, dependencies).await?
@@ -158,7 +162,12 @@ async fn mcp_caller_verifier(
     deps: &ApiDependencies,
 ) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
     if config.product.mcp.enabled {
-        return mcp_verifier(&config.product.auth, &config.product.mcp).await;
+        return mcp_verifier(
+            &config.product.auth,
+            &config.product.mcp,
+            config.startup.budget,
+        )
+        .await;
     }
     Ok(deps.verifier.clone())
 }

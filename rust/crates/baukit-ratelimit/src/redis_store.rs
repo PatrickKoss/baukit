@@ -10,11 +10,11 @@ use redis::{
     aio::{ConnectionManager, MultiplexedConnection},
     sentinel::{SentinelClient, SentinelNodeConnectionInfo, SentinelServerType},
 };
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, OnceCell, RwLock};
 
 use crate::{
-    AmountBudgetStore, AmountBudgetStoreDecision, Quota, RateLimitDecision, RateLimitOptions,
-    RateLimitStore, RateLimitStoreError,
+    AmountBudgetStore, AmountBudgetStoreDecision, Quota, RateLimitDecision, RateLimitStore,
+    RateLimitStoreError,
     kernels::bucket::ScaledQuota,
     redis_scripts::{AMOUNT_BUDGET_SCRIPT, RELEASE_AMOUNT_SCRIPT, TOKEN_BUCKET_SCRIPT},
 };
@@ -28,9 +28,13 @@ use crate::{
 /// An optional key namespace is prepended to every key of every operation, so
 /// a tenant restricted by a Redis ACL pattern `~<namespace>*` never touches
 /// keys outside it.
+///
+/// A store from [`Self::connect_or_degraded`] may start without a connection.
+/// Until a background task connects it, every decision fails with
+/// [`RateLimitStoreError`] and the layer applies its fail mode.
 #[derive(Clone)]
 pub struct RedisRateLimitStore {
-    connection: StoreConnection,
+    connection: Arc<OnceCell<StoreConnection>>,
     namespace: Option<Arc<str>>,
 }
 
@@ -90,28 +94,6 @@ impl NodeCredentials {
 }
 
 impl RedisRateLimitStore {
-    /// Connects only when at least one request-limit scope is enabled.
-    ///
-    /// Fully disabled request limiting returns `None` without parsing the Redis
-    /// URL or opening a connection. The store uses
-    /// [`RateLimitOptions::redis_key_namespace`] as its key namespace.
-    ///
-    /// # Errors
-    ///
-    /// The errors of [`Self::connect`] and [`Self::with_key_namespace`] when
-    /// limiting is enabled.
-    pub async fn connect_if_enabled(
-        options: &RateLimitOptions,
-    ) -> Result<Option<Self>, RateLimitStoreError> {
-        if !options.is_enabled() {
-            return Ok(None);
-        }
-        Self::connect(options.redis_url())
-            .await?
-            .with_key_namespace(options.redis_key_namespace())
-            .map(Some)
-    }
-
     /// Prepends `namespace` to every key this store reads or writes.
     ///
     /// The empty string removes the namespace. A non-empty namespace must end
@@ -149,23 +131,7 @@ impl RedisRateLimitStore {
     /// [`RateLimitStoreError`] when the URL is invalid or unsupported, or the first connection
     /// to Redis or a Sentinel master fails.
     pub async fn connect(redis_url: &str) -> Result<Self, RateLimitStoreError> {
-        match parse_redis_target(redis_url)? {
-            RedisTarget::Direct(redis_url) => {
-                let client = redis::Client::open(redis_url).map_err(RateLimitStoreError::new)?;
-                let connection = client
-                    .get_connection_manager()
-                    .await
-                    .map_err(RateLimitStoreError::new)?;
-                Ok(Self::from_connection_manager(connection))
-            }
-            RedisTarget::Sentinel(target) => {
-                let node_info = target
-                    .credentials
-                    .as_ref()
-                    .map(NodeCredentials::connection_info);
-                Self::connect_sentinel_nodes(target.sentinels, &target.master_name, node_info).await
-            }
-        }
+        open_connection(redis_url).await.map(Self::from_connection)
     }
 
     /// Connects through Sentinel and discovers the writable Redis master.
@@ -186,67 +152,103 @@ impl RedisRateLimitStore {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
-        Self::connect_sentinel_nodes(sentinels, master_name, None).await
-    }
-
-    async fn connect_sentinel_nodes<I, S>(
-        sentinels: I,
-        master_name: &str,
-        node_info: Option<SentinelNodeConnectionInfo>,
-    ) -> Result<Self, RateLimitStoreError>
-    where
-        I: IntoIterator<Item = S>,
-        S: AsRef<str>,
-    {
-        validate_master_name(master_name)?;
-        let sentinels = sentinels
-            .into_iter()
-            .map(|sentinel| normalize_sentinel_endpoint(sentinel.as_ref()))
-            .collect::<Result<Vec<_>, _>>()?;
-        if sentinels.is_empty() {
-            return Err(configuration_error(
-                "Redis Sentinel configuration requires at least one sentinel host",
-            ));
-        }
-
-        let mut client = SentinelClient::build(
-            sentinels,
-            master_name.to_owned(),
-            node_info,
-            SentinelServerType::Master,
-        )
-        .map_err(RateLimitStoreError::new)?;
-        let connection = client
-            .get_async_connection()
+        connect_sentinel_nodes(sentinels, master_name, None)
             .await
-            .map_err(RateLimitStoreError::new)?;
-        Ok(Self {
-            connection: StoreConnection::Sentinel(Arc::new(SentinelState {
-                client: Mutex::new(client),
-                current: RwLock::new(ResolvedMaster {
-                    connection,
-                    generation: 0,
-                }),
-            })),
-            namespace: None,
-        })
+            .map(Self::from_connection)
     }
 
     /// Creates an adapter from an existing Redis connection manager.
     #[must_use]
-    pub const fn from_connection_manager(connection: ConnectionManager) -> Self {
+    pub fn from_connection_manager(connection: ConnectionManager) -> Self {
+        Self::from_connection(StoreConnection::Direct(connection))
+    }
+
+    /// Returns `false` while a degraded store still waits for Redis.
+    #[must_use]
+    pub fn is_connected(&self) -> bool {
+        self.connection.initialized()
+    }
+
+    fn from_connection(connection: StoreConnection) -> Self {
         Self {
-            connection: StoreConnection::Direct(connection),
+            connection: Arc::new(OnceCell::new_with(Some(connection))),
             namespace: None,
+        }
+    }
+
+    fn ready(&self) -> Result<&StoreConnection, RateLimitStoreError> {
+        self.connection.get().ok_or_else(|| {
+            RateLimitStoreError::unavailable("Redis rate-limit store is not connected yet")
+        })
+    }
+}
+
+async fn open_connection(redis_url: &str) -> Result<StoreConnection, RateLimitStoreError> {
+    match parse_redis_target(redis_url)? {
+        RedisTarget::Direct(redis_url) => {
+            let client = redis::Client::open(redis_url).map_err(RateLimitStoreError::new)?;
+            let connection = client
+                .get_connection_manager()
+                .await
+                .map_err(RateLimitStoreError::new)?;
+            Ok(StoreConnection::Direct(connection))
+        }
+        RedisTarget::Sentinel(target) => {
+            let node_info = target
+                .credentials
+                .as_ref()
+                .map(NodeCredentials::connection_info);
+            connect_sentinel_nodes(target.sentinels, &target.master_name, node_info).await
         }
     }
 }
 
+async fn connect_sentinel_nodes<I, S>(
+    sentinels: I,
+    master_name: &str,
+    node_info: Option<SentinelNodeConnectionInfo>,
+) -> Result<StoreConnection, RateLimitStoreError>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    validate_master_name(master_name)?;
+    let sentinels = sentinels
+        .into_iter()
+        .map(|sentinel| normalize_sentinel_endpoint(sentinel.as_ref()))
+        .collect::<Result<Vec<_>, _>>()?;
+    if sentinels.is_empty() {
+        return Err(configuration_error(
+            "Redis Sentinel configuration requires at least one sentinel host",
+        ));
+    }
+
+    let mut client = SentinelClient::build(
+        sentinels,
+        master_name.to_owned(),
+        node_info,
+        SentinelServerType::Master,
+    )
+    .map_err(RateLimitStoreError::new)?;
+    let connection = client
+        .get_async_connection()
+        .await
+        .map_err(RateLimitStoreError::new)?;
+    Ok(StoreConnection::Sentinel(Arc::new(SentinelState {
+        client: Mutex::new(client),
+        current: RwLock::new(ResolvedMaster {
+            connection,
+            generation: 0,
+        }),
+    })))
+}
+
 impl fmt::Debug for RedisRateLimitStore {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mode = match &self.connection {
-            StoreConnection::Direct(_) => "direct",
-            StoreConnection::Sentinel(_) => "sentinel",
+        let mode = match self.connection.get() {
+            Some(StoreConnection::Direct(_)) => "direct",
+            Some(StoreConnection::Sentinel(_)) => "sentinel",
+            None => "connecting",
         };
         formatter
             .debug_struct("RedisRateLimitStore")
@@ -273,7 +275,7 @@ impl RateLimitStore for RedisRateLimitStore {
             let key = key.as_ref();
             let scaled = ScaledQuota::from_quota(quota);
             let ttl_ms = duration_millis_ceil(quota.idle_ttl());
-            let (allowed, remaining, retry_ms) = match &self.connection {
+            let (allowed, remaining, retry_ms) = match self.ready()? {
                 StoreConnection::Direct(connection) => {
                     let mut connection = connection.clone();
                     eval_token_bucket(&mut connection, key, scaled, ttl_ms).await
@@ -325,7 +327,7 @@ impl AmountBudgetStore for RedisRateLimitStore {
             let reset_at_ms = system_time_millis_ceil(reset_at)?;
             let key = self.store_key(key);
             let key = key.as_ref();
-            let (allowed, remaining) = match &self.connection {
+            let (allowed, remaining) = match self.ready()? {
                 StoreConnection::Direct(connection) => {
                     let mut connection = connection.clone();
                     eval_amount_budget(&mut connection, key, amount, limit, reset_at_ms).await
@@ -374,7 +376,7 @@ impl AmountBudgetStore for RedisRateLimitStore {
             let reset_at_ms = system_time_millis_ceil(reset_at)?;
             let key = self.store_key(key);
             let key = key.as_ref();
-            let (allowed, remaining) = match &self.connection {
+            let (allowed, remaining) = match self.ready()? {
                 StoreConnection::Direct(connection) => {
                     let mut connection = connection.clone();
                     eval_release_amount(&mut connection, key, amount, limit, reset_at_ms).await
@@ -687,11 +689,14 @@ fn system_time_millis_ceil(time: SystemTime) -> Result<i64, RateLimitStoreError>
     })
 }
 
+mod startup;
+
 #[cfg(test)]
 mod tests {
     use baukit_config::{RateLimitConfig, Secret};
 
     use super::*;
+    use crate::RateLimitOptions;
 
     #[tokio::test]
     async fn disabled_scopes_skip_redis_url_parsing_and_connection() {
@@ -701,7 +706,7 @@ mod tests {
         config.redis_url = Secret::new("not a Redis URL".to_owned());
         let options = RateLimitOptions::from_config(&config).expect("disabled options");
 
-        let store = RedisRateLimitStore::connect_if_enabled(&options)
+        let store = RedisRateLimitStore::connect_if_enabled(&options, Duration::from_secs(1))
             .await
             .expect("disabled limiter");
 

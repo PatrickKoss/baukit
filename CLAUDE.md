@@ -16,7 +16,7 @@ free of product-specific logic.
 ```text
 rust/crates/        baukit-auth, -config, -core, -credential-vault, -data-subject, -egress, -erasure,
                     -events, -http, -integrations, -jobs, -mcp, -openapi, -ops, -push, -ratelimit,
-                    -runtime, -suite, -sync, -telemetry, -test
+                    -resilience, -runtime, -suite, -sync, -telemetry, -test
 rust/fuzz           cargo-fuzz targets for decoders of untrusted bytes
 rust/verus          Verus proofs on twins of production kernels
 typescript/packages/ a11y-core, analytics-core, analytics-posthog-{web,native},
@@ -53,6 +53,15 @@ and each CI job calls one of its steps with `scripts/ci-gate.sh --step NAME`.
 `--list-steps` prints the step table, `--affected BASE` runs only the lanes that
 `scripts/ci-gate.toml` maps to changed paths, and `--plan` prints the selection
 without running it. Timings and lane logs land in `.ci-gate/`.
+
+On a clean tree the gate skips a step that already passed on the same inputs and
+prints `cached (passed at <sha>, <age>)`. A cached step passed for the same tracked
+files `--affected` would send to it, the same gate scripts and settings, and the same
+`BAUKIT_*` run settings, within the last 7 days. It did not run again, so host tool
+upgrades since then go unseen. `cargo-deny`, `osv`, `secret-scan`, `platform-images`
+and `migrations` never come from the cache (`[quality.cache] never` in
+`scripts/ci-gate.toml`). Pass `--no-cache` or set `BAUKIT_GATE_CACHE=off` to run every
+step; CI never uses the cache.
 
 `make ci` covers most of it (fmt, clippy `-D warnings`, tests, and cargo check
 for `rust/` and `cli/`, plus pnpm build/format/lint/test/check for

@@ -342,7 +342,7 @@ async fn route_group_headers_and_body_use_the_same_retry_delay() {
 async fn route_group_store_errors_follow_the_configured_fail_mode() {
     for (fail_mode, expected) in [
         (RateLimitFailMode::Open, StatusCode::OK),
-        (RateLimitFailMode::Closed, StatusCode::TOO_MANY_REQUESTS),
+        (RateLimitFailMode::Closed, StatusCode::SERVICE_UNAVAILABLE),
     ] {
         let mut rate_limit = RateLimitOptions::default();
         rate_limit.fail_mode = fail_mode;
@@ -360,7 +360,8 @@ async fn route_group_store_errors_follow_the_configured_fail_mode() {
             .expect("response");
         assert_eq!(response.status(), expected);
         if fail_mode == RateLimitFailMode::Closed {
-            assert_eq!(response.headers()[RETRY_AFTER], "60");
+            assert_eq!(response.headers()[RETRY_AFTER], "1");
+            assert_unavailable_envelope(response).await;
         }
     }
 }
@@ -634,9 +635,18 @@ async fn store_errors_fail_open_or_closed() {
         closed,
     );
     let response = app.oneshot(request_with_peer()).await.expect("response");
-    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-    assert!(response.headers().contains_key(RETRY_AFTER));
-    assert!(response.headers().contains_key(RATE_LIMIT_LIMIT));
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.headers()[RETRY_AFTER], "1");
+    assert!(!response.headers().contains_key(RATE_LIMIT_LIMIT));
+    assert_unavailable_envelope(response).await;
+}
+
+async fn assert_unavailable_envelope(response: Response) {
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body");
+    let json: Value = serde_json::from_slice(&body).expect("JSON");
+    assert_eq!(json["error"]["code"], "unavailable");
 }
 
 fn request_with_peer() -> Request<Body> {

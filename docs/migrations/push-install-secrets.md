@@ -21,9 +21,8 @@ locks the row to it.
 Handle `PushStoreError::TokenHeldByAnotherOwner` as a `409`. Code that builds
 `DeviceRegistration` with a struct literal must switch to `DeviceRegistration::new`.
 
-`PushError::Partial` is a new variant. A sender that matches on `PushError` exhaustively needs
-an arm for it. Its `completed_outcomes()` lists notifications that were already sent, so do
-not resend those.
+`PushSender::send` fails with `PushSendError`. Its `outcomes` lists notifications that were
+already sent, so do not resend those; retry only its `unsent` messages.
 
 ## Delivery claim tokens
 

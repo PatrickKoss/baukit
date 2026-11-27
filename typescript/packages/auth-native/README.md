@@ -30,7 +30,17 @@ The issuer is resolved only through `/.well-known/openid-configuration`; provide
 
 `offlineAccess` deliberately defaults to `false`; set it to `true` only when the provider is configured to issue refresh tokens for `offline_access`. `accessToken()` shares one refresh across concurrent callers. Pass `{ forceRefresh: true }` after a 401 to bypass the proactive expiry window while still joining any refresh already in flight.
 
-Terminal refresh rejection (`invalid_grant`, `invalid_token`, or HTTP 400/401) clears the session and resolves to `undefined`. Subscribe with `subscribeSessionExpired()` to stop schedulers and move UI to signed-out state. Network, malformed-response, rate-limit, and provider 5xx failures preserve the stored session and reject with a sanitized `OidcError` whose `retryable` property is `true`.
+Terminal refresh rejection (`invalid_grant`, `invalid_token`, or HTTP 400/401) clears the session and resolves to `undefined`. Subscribe with `subscribeSessionExpired()` to stop schedulers and move UI to signed-out state. Network, malformed-response, rate-limit, and provider 5xx failures preserve the stored session and reject with a sanitized `OidcError` whose `retryable` property is `true`. While the access token has not reached `expiresAt`, a plain `accessToken()` call returns it instead of rejecting; `{ forceRefresh: true }` still rejects.
+
+`scheduleTokenRenewal({ expiresAt, renew })` runs `renew` 30 s before `expiresAt`. A failed attempt retries with full-jitter exponential backoff (1 s ceiling, doubled per retry, capped at 60 s) and stops only on a terminal refresh rejection. It returns a cancel function; call it when the session changes or ends.
+
+```ts
+const cancel = scheduleTokenRenewal({
+  expiresAt: session.expiresAt,
+  renew: () => auth.accessToken({ forceRefresh: true }),
+  onError: (cause) => setError(safeAuthErrorMessage(cause)),
+});
+```
 
 `subscribeSessionExpired()` reports `refresh_rejected`, `refresh_unavailable`, or `profile_erased`. On a backend 401 with code `profile_erased`, call `clearSession({ reason: 'profile_erased' })`. It clears the local session and emits the reason once per call. Plain `clearSession()` emits nothing. OIDC persists a force-login marker under `storageKeyPrefix`, so the next `signIn()` requests `prompt=login` even after a reload. A failed or cancelled login keeps the marker; a successful sign-in removes it. Fresh authentication gives the provider a new `auth_time` for profile re-onboarding.
 

@@ -200,7 +200,7 @@ async fn every_dns_answer_is_checked_and_public_hosts_cannot_rebind_private()
             .await?,
             vec!["8.8.8.8".parse::<IpAddr>()?]
         );
-        let client = GuardedClient::with_resolver(resolver, EgressOptions::default())?;
+        let client = GuardedClient::with_resolver("test", resolver, EgressOptions::default())?;
         assert!(matches!(
             client
                 .execute(EgressRequest::get(Url::parse("https://unlisted.internal")?))
@@ -238,6 +238,7 @@ async fn allowed_endpoint_blocks_redirects_and_rechecks_new_dns_connections()
         &["169.254.169.254"],
     ]));
     let client = GuardedClient::with_resolver(
+        "test",
         resolver,
         EgressOptions::default().with_policy(policy("proxy.internal", port, true)),
     )?;
@@ -263,11 +264,10 @@ async fn allowed_endpoint_blocks_redirects_and_rechecks_new_dns_connections()
             assert!(socket.read(&mut buffer).await.expect("request") > 0);
             socket.write_all(format!("HTTP/1.1 307 Temporary Redirect\r\nLocation: {destination}\r\nContent-Length: 0\r\n\r\n").as_bytes()).await.expect("response");
         });
-        let client = GuardedClient::new(EgressOptions::default().with_policy(policy(
-            "127.0.0.1",
-            port,
-            true,
-        )))?;
+        let client = GuardedClient::new(
+            "test",
+            EgressOptions::default().with_policy(policy("127.0.0.1", port, true)),
+        )?;
         assert!(
             matches!(client.execute(EgressRequest::get(Url::parse(&format!("http://127.0.0.1:{port}"))?)).await, Err(EgressError::Status {status, ..}) if status.as_u16() == 307)
         );

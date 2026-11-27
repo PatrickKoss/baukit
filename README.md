@@ -26,7 +26,7 @@ Baukit is that work, extracted from real products, with the tests attached.
 You need Docker, because `make test` runs the Docker-backed integration tests. Scaffold a product:
 
 ```bash
-cargo install --git https://github.com/PatrickKoss/baukit --tag v0.31.0 --locked baukit-cli
+cargo install --git https://github.com/PatrickKoss/baukit --tag v0.32.0 --locked baukit-cli
 baukit new orders --backend --web
 cd orders && make check
 ```
@@ -39,8 +39,8 @@ Or add a crate to a service you already have:
 
 ```toml
 [dependencies]
-baukit-http = "0.31"
-baukit-ops = "0.31"
+baukit-http = "0.32"
+baukit-ops = "0.32"
 ```
 
 ## What it looks like running
@@ -109,7 +109,7 @@ Nothing here depends on the CLI, and no crate drags in the rest. Take the error 
 | Third-party integrations | [`baukit-integrations`](rust/crates/baukit-integrations), [`baukit-credential-vault`](rust/crates/baukit-credential-vault) | [`@baukit/integrations-client`](typescript/packages/integrations-client) | [Integrations](docs/guide/integrations.md) |
 | Push and local notifications | [`baukit-push`](rust/crates/baukit-push) | [`@baukit/notifications-core`](typescript/packages/notifications-core), [`@baukit/notifications-expo`](typescript/packages/notifications-expo) | [Push and notifications](docs/guide/push-and-notifications.md) |
 | Erasure and data-subject requests | [`baukit-erasure`](rust/crates/baukit-erasure), [`baukit-data-subject`](rust/crates/baukit-data-subject) | [`@baukit/analytics-core`](typescript/packages/analytics-core) | [Privacy](docs/guide/privacy.md) |
-| Outbound HTTP and rate limits | [`baukit-egress`](rust/crates/baukit-egress), [`baukit-ratelimit`](rust/crates/baukit-ratelimit) | none | [Outbound HTTP and limits](docs/guide/outbound-and-limits.md) |
+| Outbound HTTP and rate limits | [`baukit-egress`](rust/crates/baukit-egress), [`baukit-resilience`](rust/crates/baukit-resilience), [`baukit-ratelimit`](rust/crates/baukit-ratelimit) | none | [Outbound HTTP and limits](docs/guide/outbound-and-limits.md) |
 | Web and native UI foundations | none | [`@baukit/ui-tokens`](typescript/packages/ui-tokens), [`@baukit/a11y-core`](typescript/packages/a11y-core), [`@baukit/navigation`](typescript/packages/navigation), [`@baukit/localization-core`](typescript/packages/localization-core), [`@baukit/preferences-core`](typescript/packages/preferences-core), [`@baukit/pwa-web`](typescript/packages/pwa-web), [`@baukit/csp`](typescript/packages/csp), [`@baukit/type-guards`](typescript/packages/type-guards), [`@baukit/eslint-config`](typescript/packages/eslint-config), [`@baukit/analytics-posthog-web`](typescript/packages/analytics-posthog-web), [`@baukit/analytics-posthog-native`](typescript/packages/analytics-posthog-native) | [Frontend](docs/guide/frontend.md) |
 | Logs, traces and metrics | [`baukit-telemetry`](rust/crates/baukit-telemetry) | none | [Observability](docs/guide/observability.md) |
 | Tests and conformance suites | [`baukit-test`](rust/crates/baukit-test) | none | [Quality gates](docs/guide/quality-gates.md) |

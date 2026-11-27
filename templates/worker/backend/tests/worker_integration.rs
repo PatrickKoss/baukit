@@ -1,10 +1,21 @@
-use std::{error::Error, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    error::Error,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 {% if context.auth_enabled %}use baukit_config::Secret;
 use baukit_erasure::{
     ErasureService, ErasureState, IdentityDeletionError, IdentityRetention, PostgresErasureStore,
 };
-{% endif %}use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
+{% endif %}use baukit_jobs::{
+    ClaimedJob, JobCancellation, JobError, JobFuture, JobHandler, JobStore as _, NewJob,
+    PostgresJobStore, WorkerConfig, WorkerRunner,
+};
 use baukit_ops::TrafficGate;
 use baukit_runtime::{DeploymentEnvironment, ProcessKind, ServiceInfo, ShutdownToken, build_info};
 use baukit_telemetry::TelemetryBuilder;
@@ -193,6 +204,193 @@ async fn pending_erasure(
     Ok((fake, erasure, operation))
 }
 {% endif %}
+const BLOCKING_JOB_TYPE: &str = "test.blocking";
+
+/// Blocks every attempt until the test releases it and records overlapping runs.
+struct BlockingHandler {
+    started: Arc<tokio::sync::Notify>,
+    release: Arc<tokio::sync::Notify>,
+    running: AtomicUsize,
+    max_running: AtomicUsize,
+    attempts: AtomicUsize,
+}
+
+impl BlockingHandler {
+    fn new() -> Self {
+        Self {
+            started: Arc::new(tokio::sync::Notify::new()),
+            release: Arc::new(tokio::sync::Notify::new()),
+            running: AtomicUsize::new(0),
+            max_running: AtomicUsize::new(0),
+            attempts: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl JobHandler for BlockingHandler {
+    fn job_types(&self) -> &'static [&'static str] {
+        &[BLOCKING_JOB_TYPE]
+    }
+
+    fn handle<'a>(
+        &'a self,
+        _job: &'a ClaimedJob,
+        _cancellation: JobCancellation,
+    ) -> JobFuture<'a, Result<(), JobError>> {
+        Box::pin(async move {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            let running = self.running.fetch_add(1, Ordering::SeqCst) + 1;
+            self.max_running.fetch_max(running, Ordering::SeqCst);
+            self.started.notify_one();
+            self.release.notified().await;
+            self.running.fetch_sub(1, Ordering::SeqCst);
+            Ok(())
+        })
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires a reachable Docker daemon; pauses PostgreSQL while a job runs"]
+async fn a_postgres_pause_mid_job_neither_loses_nor_doubles_the_job() -> Result<(), Box<dyn Error>>
+{
+    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    let fixture = baukit_test::PostgresTestOptions::new()
+        .with_migrations(migrations)
+        .with_migration_owner(baukit_test::PostgresMigrationOwner::default(){% if context.postgres_owner_create_role %}.with_create_role(){% endif %})
+        .start()
+        .await?;
+    let owner_url = fixture.owner_connection_url().ok_or("missing owner URL")?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(Duration::from_secs(1))
+        .connect(owner_url)
+        .await?;
+    let store = PostgresJobStore::new(pool.clone());
+    let job_id = store
+        .enqueue(NewJob::new(BLOCKING_JOB_TYPE, serde_json::json!({}), 5))
+        .await?
+        .job
+        .id;
+    let handler = Arc::new(BlockingHandler::new());
+    let runner = WorkerRunner::new(
+        Arc::new(store),
+        handler.clone(),
+        WorkerConfig {
+            worker_id: "generated-pause-test".to_owned(),
+            concurrency: 2,
+            poll_interval: Duration::from_millis(10),
+            lease_duration: Duration::from_secs(3),
+            job_timeout: Duration::from_secs(60),
+            retry_initial: Duration::from_millis(10),
+            retry_max: Duration::from_millis(200),
+            ..WorkerConfig::default()
+        },
+    )?;
+    let health = runner.store_health();
+    let shutdown = ShutdownToken::new(Duration::from_secs(10));
+    let task = tokio::spawn(runner.run(shutdown.clone()));
+
+    tokio::time::timeout(Duration::from_secs(10), handler.started.notified()).await?;
+    fixture.fault()?.pause().await?;
+    let unready = tokio::time::timeout(Duration::from_secs(20), async {
+        while health.is_healthy() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    fixture.fault()?.resume().await?;
+    assert!(
+        unready.is_ok(),
+        "a paused store must mark the worker unhealthy"
+    );
+    assert!(
+        !task.is_finished(),
+        "a store outage must not end the runner"
+    );
+
+    let finished = tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            handler.release.notify_waiters();
+            let status: String = sqlx::query_scalar("SELECT status FROM job_outbox WHERE id = $1")
+                .bind(job_id)
+                .fetch_one(&pool)
+                .await?;
+            if status == "succeeded" {
+                return Ok::<_, sqlx::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    shutdown.trigger();
+    handler.release.notify_waiters();
+    task.await??;
+    finished??;
+    assert_eq!(
+        handler.max_running.load(Ordering::SeqCst),
+        1,
+        "the job must never run twice at once"
+    );
+    assert!(handler.attempts.load(Ordering::SeqCst) >= 1);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires a reachable Docker daemon; pauses PostgreSQL under a running worker"]
+async fn a_paused_postgres_marks_the_worker_unready_and_the_job_still_finishes()
+-> Result<(), Box<dyn Error>> {
+    let migrations = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    let fixture = baukit_test::PostgresTestOptions::new()
+        .with_migrations(migrations)
+        .with_migration_owner(baukit_test::PostgresMigrationOwner::default(){% if context.postgres_owner_create_role %}.with_create_role(){% endif %})
+        .start()
+        .await?;
+    let owner_url = fixture.owner_connection_url().ok_or("missing owner URL")?;
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(Duration::from_secs(1))
+        .connect(owner_url)
+        .await?;
+    let runner = demo_runner(&pool)?;
+    let health = runner.store_health();
+    let shutdown = ShutdownToken::new(Duration::from_secs(5));
+    let task = tokio::spawn(runner.run(shutdown.clone()));
+
+    fixture.fault()?.pause().await?;
+    let unready = tokio::time::timeout(Duration::from_secs(20), async {
+        while health.is_healthy() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    fixture.fault()?.resume().await?;
+    assert!(
+        unready.is_ok(),
+        "a paused store must mark the worker unhealthy"
+    );
+
+    let service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
+    let item = service
+        .create("paused-owner", "paused fixture".to_owned())
+        .await?;
+    let finished = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let status: Option<String> =
+                sqlx::query_scalar("SELECT status FROM job_outbox WHERE idempotency_key = $1")
+                    .bind(format!("item-created:{}", item.id))
+                    .fetch_optional(&pool)
+                    .await?;
+            if status.as_deref() == Some("succeeded") && health.is_healthy() {
+                return Ok::<_, sqlx::Error>(());
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
+    .await;
+    shutdown.trigger();
+    task.await??;
+    finished??;
+    Ok(())
+}
+
 fn demo_runner(pool: &sqlx::PgPool) -> Result<WorkerRunner, Box<dyn Error>> {
     Ok(WorkerRunner::new(
         Arc::new(PostgresJobStore::new(pool.clone())),

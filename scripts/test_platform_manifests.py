@@ -59,6 +59,34 @@ class TraefikExposureTest(unittest.TestCase):
                 for port in values["ports"].values():
                     self.assertNotIn("hostPort", port)
 
+    def test_entrypoints_bound_client_reads_writes_and_idle_connections(self) -> None:
+        values = helm_values("traefik", "traefik")
+        for entrypoint in ("web", "websecure"):
+            with self.subTest(entrypoint=entrypoint):
+                self.assertEqual(
+                    values["ports"][entrypoint]["transport"]["respondingTimeouts"],
+                    {"readTimeout": "60s", "writeTimeout": "60s", "idleTimeout": "180s"},
+                )
+
+    def test_default_servers_transport_stays_below_the_backend_timeouts(self) -> None:
+        arguments = helm_values("traefik", "traefik")["additionalArguments"]
+        for flag in (
+            "--serversTransport.forwardingTimeouts.dialTimeout=5s",
+            "--serversTransport.forwardingTimeouts.responseHeaderTimeout=35s",
+            "--serversTransport.forwardingTimeouts.idleConnTimeout=5s",
+        ):
+            self.assertIn(flag, arguments)
+
+    def test_services_without_ready_pods_answer_503(self) -> None:
+        providers = helm_values("traefik", "traefik")["providers"]
+        for provider in ("kubernetesCRD", "kubernetesIngress"):
+            with self.subTest(provider=provider):
+                self.assertIs(providers[provider]["allowEmptyServices"], True)
+
+    def test_baremetal_runs_two_replicas(self) -> None:
+        values = helm_values("traefik", "overlays/baremetal/components/traefik")
+        self.assertEqual(values["deployment"]["replicas"], 2)
+
     def test_pdb_never_blocks_a_drain_at_one_replica(self) -> None:
         values = helm_values("traefik", "traefik")
         pdb = values["podDisruptionBudget"]

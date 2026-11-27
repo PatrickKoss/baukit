@@ -447,6 +447,24 @@
                 "clusterName": {
                   "type": "string",
                   "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$"
+                },
+                "poolerName": {
+                  "type": "string",
+                  "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$"
+                },
+                "directUrlSecretRef": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "pattern": "^([a-z0-9]([-a-z0-9.]*[a-z0-9])?)?$"
+                    },
+                    "key": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
                 }
               }
             },
@@ -542,7 +560,8 @@
         },
         "terminationGracePeriodSeconds": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 6,
+          "description": "Must exceed preStopSleepSeconds by more than 5; the chart fails otherwise."
         },
         "preStopSleepSeconds": {
           "type": "integer",
@@ -664,7 +683,8 @@
         },
         "terminationGracePeriodSeconds": {
           "type": "integer",
-          "minimum": 1
+          "minimum": 16,
+          "description": "The worker drains for this value minus 15 seconds."
         },
         "startupProbe": {
           "$ref": "#/$defs/startupProbe"
@@ -895,6 +915,23 @@
         "rateLimitMiddleware": {
           "type": "string"
         },
+        "retry": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "attempts": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "initialInterval": {
+              "type": "string",
+              "pattern": "^([0-9]+(ns|us|ms|s|m|h))+$"
+            }
+          },
+          "additionalProperties": false
+        },
         "hosts": {
           "type": "array",
           "items": {
@@ -977,6 +1014,19 @@
               "const": ""
             }
           ]
+        },
+        "behavior": {
+          "type": "object",
+          "description": "HorizontalPodAutoscaler spec.behavior, rendered as given.",
+          "properties": {
+            "scaleUp": {
+              "type": "object"
+            },
+            "scaleDown": {
+              "type": "object"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -1001,6 +1051,64 @@
         }
       },
       "additionalProperties": false
+    },
+    "canary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "prometheusAddress": {
+          "type": "string"
+        },
+        "progressDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "analysis": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "interval": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$"
+            },
+            "threshold": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "stepWeight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "maxWeight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "interval": {
+              "type": "string",
+              "pattern": "^[0-9]+(ms|s|m|h)$"
+            },
+            "maxErrorPercent": {
+              "type": "number",
+              "minimum": 0
+            },
+            "maxP95Seconds": {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          }
+        }
+      }
     },
     "networkPolicy": {
       "type": "object",
@@ -1129,6 +1237,20 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 65535
+        },
+        "terminationGracePeriodSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "preStopSleepSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "startupProbe": {
+          "$ref": "#/$defs/startupProbe"
+        },
+        "podDisruptionBudget": {
+          "$ref": "#/$defs/pdb"
         },
         "contentSecurityPolicy": {
           "type": "string"

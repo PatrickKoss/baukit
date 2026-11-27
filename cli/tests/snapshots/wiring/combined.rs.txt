@@ -1,13 +1,22 @@
 ===== src/bin/api.rs =====
-use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    env,
+    error::Error,
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 
 use axum::Router;
 use baukit_config::{BaukitConfig, Environment};
 use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
-use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
+use baukit_runtime::{
+    DrainBudget, ProcessKind, ServiceInfo, ShutdownOrder, ShutdownToken, build_info,
+    serve_listener_pair_with_shutdown_order,
+};
 use baukit_telemetry::{Telemetry, TelemetryBuilder, tracing};
 
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use tokio::net::TcpListener;
 
 use snapshot_app_bin::ApiDependencies;
@@ -16,6 +25,7 @@ use snapshot_app_bin::ProductConfig;
 use snapshot_app_bin::compose_api;
 use snapshot_app_bin::config_loader;
 use snapshot_app_bin::operations_router;
+use snapshot_app_bin::{PROBE_READINESS_FLAG, probe_readiness};
 use snapshot_app_ports::ItemRepository;
 use snapshot_app_postgres::PostgresItemRepository;
 use snapshot_app_services::ItemService;
@@ -31,7 +41,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(Environment::Local);
-    let config = config_loader(environment)?.load()?;
+    let config: BaukitConfig<ProductConfig> = config_loader(environment)?.load()?;
+    if env::args().any(|argument| argument == PROBE_READINESS_FLAG) {
+        let ops = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), config.ops.port);
+        return if probe_readiness(ops).await? {
+            Ok(())
+        } else {
+            Err("not ready".into())
+        };
+    }
     run(config).await
 }
 
@@ -63,12 +81,7 @@ async fn connect_pool(
     let Some(database) = &config.database else {
         return Ok(None);
     };
-    let pool = PgPoolOptions::new()
-        .max_connections(database.max_connections)
-        .min_connections(database.min_connections)
-        .acquire_timeout(database.acquire_timeout)
-        .connect(database.url.expose())
-        .await?;
+    let pool = baukit_ops::connect_with_backoff(database, config.startup.budget).await?;
     let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), POOL_METRICS_INTERVAL)?;
     Ok(Some((pool, pool_metrics)))
 }
@@ -110,7 +123,10 @@ async fn serve(
     backend: Backend,
     api: Router,
 ) -> Result<(), Box<dyn Error>> {
-    let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
+    let shutdown = ShutdownToken::with_budget(DrainBudget::new(
+        config.shutdown.drain_timeout,
+        config.http.request_timeout,
+    )?);
     let traffic_gate = TrafficGate::new();
     shutdown.on_drain({
         let traffic_gate = traffic_gate.clone();
@@ -133,12 +149,13 @@ async fn serve(
         operations_address = %operations_listener.local_addr()?,
     );
     let signal_task = shutdown.spawn_signal_listener();
-    let result = serve_listener_pair(
+    let result = serve_listener_pair_with_shutdown_order(
         api_listener,
         api,
         operations_listener,
         operations,
         shutdown.clone(),
+        ShutdownOrder::OpsOutlivesApi,
     )
     .await;
     shutdown.trigger();
@@ -150,9 +167,7 @@ async fn serve(
         pool_metrics.shutdown().await;
     }
     shutdown
-        .run_during_drain(
-            async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await },
-        )
+        .run_flush(async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await })
         .await???;
     result?;
     Ok(())
@@ -258,9 +273,11 @@ use uuid::Uuid;
 
 mod compose;
 mod config;
+mod probe;
 mod rate_limits;
 pub use compose::{ApiDependencies, ComposedApi, compose_api};
 pub use config::config_loader;
+pub use probe::{PROBE_READINESS_FLAG, probe_readiness};
 pub use rate_limits::{RateLimits, rate_limited};
 
 #[derive(Clone, Debug, Default, Deserialize)]

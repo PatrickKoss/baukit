@@ -36,6 +36,33 @@ authentication and the rate limiter around `routes(state)` from the API crate, t
 listener on 9090 serves `/healthz`, `/readyz`, `/metrics` and `/buildinfo` and has none of the
 public layers. [ADR 0011](../adr/0011-separate-api-and-ops-listeners.md) explains why.
 
+## Overload and shutdown
+
+The HTTP layers bound every wait:
+
+- A request that gets no concurrency permit within 1 s (`HttpOptions::with_queue_timeout`) is shed
+  with `503 unavailable` and `Retry-After: 1`, and counts in
+  `http_requests_shed_total{reason="concurrency"}`.
+- Every request carries a deadline of its start plus `http.request_timeout`.
+  `baukit_http::current_deadline()` returns it, and `GuardedClient` caps outbound timeouts with
+  it. The `route_timeout(duration)` layer tightens it for one route and answers `504` on expiry.
+- `ServerOptions` closes connections that send no headers within 10 s or sit idle for 60 s, and
+  caps open connections at 4096.
+- `ApiError::unavailable(retry_after)` answers `503` with `Retry-After` when a dependency is down
+  inside a request.
+
+`api.rs` builds the shutdown token with `ShutdownToken::with_budget(DrainBudget::new(drain_timeout,
+request_timeout)?)`. The budget fails at startup unless the request timeout plus a 3 s flush
+reserve fits inside `shutdown.drain_timeout`, which defaults to 35 s. The listener drain and
+supervised tasks stop when only the reserve is left. The telemetry flush runs in `run_flush`, the
+one call that may use the reserve.
+
+The `baukit-app` chart derives `SHUTDOWN__DRAIN_TIMEOUT` from the pod grace period. The API
+default is `api.terminationGracePeriodSeconds: 45` minus the 5 s preStop sleep minus 5 s, so
+35 s. With the default request timeout and preStop sleep, the API needs a grace period of at
+least 44 s. The [overload and drain migration guide](../migrations/http-overload-and-drain.md)
+has the details.
+
 `examples/minimal-api` is the same composition in one small crate, without auth or a database.
 Its `src/main.rs` and `src/lib.rs` are the shortest working reference:
 
@@ -64,6 +91,24 @@ Config comes from `config/*.toml` and environment variables with the product pre
 underscores between levels: `NOTES__DATABASE__URL`. `NOTES_ENVIRONMENT` picks the environment
 and defaults to `local`. Without a database URL the API falls back to an in-memory repository.
 Migrations run only through `make migrate`, never at startup.
+
+At startup the API retries PostgreSQL, Redis and the identity provider for `startup.budget`
+seconds, 60 by default, with jittered backoff, then fails. Keep it inside your startup probe
+window. `startup` is a reserved top-level key, so a product field of that name stops receiving
+values. Pools come from `baukit_ops::connect_with_backoff(&config.database, budget)`, which also
+sends the session timeouts from `DatabaseConfig`:
+
+| Key | Default (seconds) |
+| --- | --- |
+| `database.statement_timeout` | 29, must stay below `http.request_timeout` |
+| `database.lock_timeout` | 5 |
+| `database.idle_in_transaction_session_timeout` | 60 |
+| `database.max_lifetime` | 1800 |
+| `database.idle_timeout` | 600 |
+
+The `migrate` binary uses `connect_for_migrations`, which sends only `lock_timeout`. On shared
+platform Postgres the pooler drops these parameters, so set them on the owner role as the
+[startup budget migration guide](../migrations/startup-budget-and-postgres-timeouts.md) shows.
 
 ## Add a resource
 
@@ -140,6 +185,8 @@ address rules.
 - `templates/backend/backend/`
 - [`examples/minimal-api`](../../examples/minimal-api/README.md)
 - [`baukit.toml` reference](manifest.md)
+- [Migration: overload shedding and the drain budget](../migrations/http-overload-and-drain.md)
+- [Migration: startup budget and PostgreSQL timeouts](../migrations/startup-budget-and-postgres-timeouts.md)
 - [ADR 0009: hexagonal generated backend](../adr/0009-hexagonal-generated-backend.md)
 - [ADR 0011: separate API and ops listeners](../adr/0011-separate-api-and-ops-listeners.md)
 - [ADR 0012: HTTP wire contract](../adr/0012-http-wire-contract.md)

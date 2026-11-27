@@ -4,6 +4,18 @@ All notable changes to `baukit-auth` are documented here.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
+- Browser-session `idp_unavailable` (503) now sends `Retry-After`: the open circuit's or full bulkhead's delay, otherwise 5 s.
+- `OidcVerifier::discover` and `BrowserSessionState::discover` retry transient discovery failures with jittered backoff within a startup budget (60 s, `OidcConfig::with_startup_budget`, `BrowserSessionConfig::with_startup_budget`) through `baukit_resilience::startup::retry_within`. After the budget they fail with the new `VerificationError::DiscoveryBudgetExhausted` or `IdpDiscoveryError::BudgetExhausted`. Issuer mismatches and invalid documents still fail at once.
+- `OidcConfig::with_jwks_uri` sets the JWKS URL and skips discovery, so the verifier starts without the issuer. Invalid URLs fail with the new `OidcConfigError::InvalidJwksUri`.
+- The default JWKS stale grace (`DEFAULT_JWKS_STALE_GRACE`) goes from 10 min to 1 h, so verification survives a longer IdP outage with the last good key set. Set `with_jwks_stale_grace` to keep 10 min.
+- `OidcConfig::with_jwks_stale_window` sets the stale grace from 0.31.0 and rejects zero.
+- New public `key_set_cache` module: `KeySetCache<S>` behind a `KeySource` port, with `KeySet`, `KeySourceFuture` and `KeyLookupError`, for any signing-key source.
+- New metric `auth_key_cache_requests_total{source,result}` from `KeySetCache`. The OIDC verifier keeps the 0.31.0 JWKS cache and counts its lookups under `source="oidc"`.
+- Breaking: `RateLimitOutcome` gains `Unavailable { retry_after }`. A browser-session rate limit that fails closed answers `503` with `Retry-After` instead of `429`.
+- Outbound clients use the destination names `oidc` and `idp`. An open `idp` circuit maps to `idp_unavailable` (503) and keeps the session.
+
 ## [0.31.0] - 2026-11-26
 
 - Breaking (schema): browser sessions seal their tokens as one credential-vault v2 record and store `record_id`. Apply `migrations/0003_baukit_auth_browser_session_record_ids.sql` (`POSTGRES_BROWSER_SESSION_RECORD_IDS_MIGRATION_SQL`) before deploying. Rows without a record id still open through v1. See docs/migrations/boundary-hardening.md.

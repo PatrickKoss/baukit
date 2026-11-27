@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, error::Error as StdError, fmt};
+use std::{collections::BTreeMap, error::Error as StdError, fmt, time::Duration};
 
 use axum::{
     Json,
@@ -206,6 +206,20 @@ impl ApiError {
         )
     }
 
+    /// Returns a `503 unavailable` error with a `Retry-After` header.
+    ///
+    /// Use it for transient outages, such as a database or upstream that is
+    /// down, so clients and proxies can tell them from bugs and back off.
+    /// `retry_after` is rounded up to whole seconds and is at least 1 second.
+    pub fn unavailable(retry_after: Duration) -> Self {
+        Self::new(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "unavailable",
+            "The service is temporarily unavailable",
+        )
+        .with_retry_after(retry_after_seconds(retry_after))
+    }
+
     /// Returns an opaque `500 internal` error and retains its cause for logging.
     pub fn internal(error: impl StdError + Send + Sync + 'static) -> Self {
         let mut api_error = Self::internal_without_cause();
@@ -313,6 +327,13 @@ impl From<PaginationError> for ApiError {
             PaginationError::InvalidCursor => Self::validation_field("cursor", error.to_string()),
         }
     }
+}
+
+fn retry_after_seconds(retry_after: Duration) -> u64 {
+    let rounded_up = retry_after
+        .as_secs()
+        .saturating_add(u64::from(retry_after.subsec_nanos() > 0));
+    rounded_up.max(1)
 }
 
 pub(crate) fn is_valid_error_code(code: &str) -> bool {

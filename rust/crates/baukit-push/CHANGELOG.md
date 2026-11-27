@@ -4,6 +4,10 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
+- Breaking: `PushSender::send` fails with `PushSendError` instead of `PushError`. A failing chunk no longer drops the tickets of the chunks Expo already accepted: the error carries their `outcomes` and the `unsent` messages, so a retry resends only those. It replaces `PushError::Partial` and `PushError::completed_outcomes` from 0.31.0.
+
 ## [0.31.0] - 2026-11-26
 
 ### Changed

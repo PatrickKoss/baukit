@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.32.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.32.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/type-guards@0.32.0
+
 ## 0.31.0
 
 - A stale `tokens.json.lock` left by a dead process, or older than the new `staleLockMs` option (default 60 s), is removed instead of failing with `cache_lock_timeout`.

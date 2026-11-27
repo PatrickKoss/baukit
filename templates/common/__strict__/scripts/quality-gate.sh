@@ -7,7 +7,7 @@ PYTHONDONTWRITEBYTECODE=1
 export PYTHONDONTWRITEBYTECODE
 
 usage() {
-  echo "usage: sh scripts/quality-gate.sh [--affected BASE] [--plan]" >&2
+  echo "usage: sh scripts/quality-gate.sh [--affected BASE] [--plan] [--no-cache]" >&2
   exit 2
 }
 
@@ -199,6 +199,7 @@ step_scripts_tests() {
   python3 scripts/gate.test.py
   python3 scripts/gate_disk.test.py
   python3 scripts/gate_locks.test.py
+  python3 scripts/gate_results.test.py
 {% if context.web %}  python3 scripts/with-loopback-network.test.py
 {% endif %}}
 
@@ -337,12 +338,57 @@ step_rust_doctests() {
   cargo test --manifest-path backend/Cargo.toml --workspace --doc
 }
 
-# Runs each cargo-fuzz target in backend/fuzz for BAUKIT_FUZZ_SECONDS and fails on any crash.
+# Runs one cargo-fuzz target in backend/fuzz for BAUKIT_FUZZ_SECONDS; new inputs go to scratch.
+fuzz_target() {
+  target=$1
+  mkdir -p "corpus/$target" "artifacts/$target" "$fuzz_scratch/$target" || return
+  echo "quality gate: fuzz $target for ${fuzz_seconds}s"
+  cargo +nightly fuzz run --target "$host" "$target" "$fuzz_scratch/$target" "corpus/$target" -- \
+    -max_total_time="$fuzz_seconds" \
+    -artifact_prefix="artifacts/$target/"
+}
+
+# A directory is the only lock POSIX sh can take atomically; it keeps whole logs apart.
+print_fuzz_log() {
+  until mkdir "$fuzz_state/print.lock" 2>/dev/null; do
+    sleep 1
+  done
+  cat "$fuzz_state/$1.log"
+  rmdir "$fuzz_state/print.lock"
+}
+
+# Worker $1 of $fuzz_jobs runs every target whose position modulo $fuzz_jobs is $1.
+fuzz_worker() {
+  position=0
+  for name in $fuzz_targets; do
+    position=$((position + 1))
+    [ $((position % fuzz_jobs)) -eq "$1" ] || continue
+    status=0
+    if [ "$fuzz_jobs" -eq 1 ]; then
+      fuzz_target "$name" || status=$?
+    else
+      fuzz_target "$name" >"$fuzz_state/$name.log" 2>&1 || status=$?
+      print_fuzz_log "$name"
+    fi
+    [ "$status" -ne 0 ] || : >"$fuzz_state/$name.passed"
+  done
+}
+
+# Runs every target in backend/fuzz, BAUKIT_FUZZ_JOBS (default $workers) at once, and fails on any crash.
 step_fuzz() {
   fuzz_seconds=${BAUKIT_FUZZ_SECONDS:-60}
+  fuzz_jobs=${BAUKIT_FUZZ_JOBS:-$workers}
+  case $fuzz_jobs in
+    '' | *[!0-9]* | 0)
+      echo "quality gate: BAUKIT_FUZZ_JOBS must be a positive integer, got '$fuzz_jobs'" >&2
+      return 2
+      ;;
+  esac
   cargo fmt --manifest-path backend/fuzz/Cargo.toml --all --check
   fuzz_scratch="${BAUKIT_GATE_LOG_DIR:-$(pwd)/.quality-gate}/fuzz-corpus"
-  rm -rf "$fuzz_scratch"
+  fuzz_state="${BAUKIT_GATE_LOG_DIR:-$(pwd)/.quality-gate}/fuzz-state"
+  rm -rf "$fuzz_scratch" "$fuzz_state"
+  mkdir -p "$fuzz_state"
   (
     cd backend/fuzz
     # The fuzz lockfile is not committed: start from the backend's resolution, not the newest crates.
@@ -350,12 +396,21 @@ step_fuzz() {
     # cargo-fuzz defaults --target to the triple it was built for; prebuilt binaries are musl.
     host=$(rustc +nightly -vV | sed -n 's/^host: //p')
     cargo +nightly fuzz build --target "$host"
-    for target in $(cargo +nightly fuzz list); do
-      mkdir -p "corpus/$target" "artifacts/$target" "$fuzz_scratch/$target"
-      cargo +nightly fuzz run --target "$host" "$target" "$fuzz_scratch/$target" "corpus/$target" -- \
-        -max_total_time="$fuzz_seconds" \
-        -artifact_prefix="artifacts/$target/"
+    fuzz_targets=$(cargo +nightly fuzz list)
+    worker=0
+    while [ "$worker" -lt "$fuzz_jobs" ]; do
+      fuzz_worker "$worker" &
+      worker=$((worker + 1))
     done
+    wait
+    failed=''
+    for name in $fuzz_targets; do
+      [ -e "$fuzz_state/$name.passed" ] || failed="$failed $name"
+    done
+    if [ -n "$failed" ]; then
+      echo "quality gate: fuzz crashes in:$failed (inputs under backend/fuzz/artifacts/)" >&2
+      exit 1
+    fi
   )
 }
 {% if context.mcp %}
@@ -621,7 +676,7 @@ case "${1:-}" in
     [ "$#" -eq 2 ] || usage
     "step_$(printf %s "$2" | tr - _)"
     ;;
-  "" | --affected | --plan)
+  "" | --affected | --plan | --no-cache)
     exec python3 scripts/gate.py run --script "sh scripts/quality-gate.sh" --settings baukit.toml \
       --log-dir "${BAUKIT_GATE_LOG_DIR:-.quality-gate}"{% if context.backend %} --cargo-workspace backend/Cargo.toml{% endif %} "$@"
     ;;

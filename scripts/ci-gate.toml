@@ -18,6 +18,18 @@ shared = [
   "renovate*.json",
 ]
 
+# gate.py skips a step that passed on the same inputs. These steps read data that changes
+# without a commit: advisory databases (cargo-deny, osv, trivy in platform-images), the
+# git history (secret-scan) and the last release tag (migrations), so they always run.
+[quality.cache]
+never = ["cargo-deny", "osv", "secret-scan", "platform-images", "migrations"]
+
+# The 0.32.0 gate started fuzz after the other lanes had drained the pool, so it got 1 core
+# and ran its 19 targets of 60 s one after another: 2236 s, the slowest lane. With 6 cores
+# the targets run in 4 rounds (about 240 s) and the build gets 6 jobs.
+[quality.min_cores]
+fuzz = 6
+
 [quality.gate_budget_minutes]
 full = 30
 affected = 15
@@ -49,7 +61,9 @@ migrations = 30
 "osv-scanner.toml" = []
 "ruff.toml" = []
 "zizmor.yml" = ["workflows"]
-"rust/crates/**" = ["rust", "fixtures", "mcp-fixture", "fuzz", "kani"]
+# vectors runs generators in workspace crates; verus/equivalence path-depends on baukit-sync and
+# baukit-ratelimit, whose normal dependencies reach most crates.
+"rust/crates/**" = ["rust", "fixtures", "mcp-fixture", "fuzz", "kani", "vectors", "verus"]
 "rust/crates/*/migrations/**" = ["migrations"]
 "rust/migrations.toml" = ["migrations"]
 "scripts/check-migrations.py" = ["migrations"]
@@ -70,9 +84,21 @@ migrations = 30
 "scripts/fuzz.sh" = ["fuzz"]
 "cli/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
 "templates/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
+# rust/crates/baukit-openapi/tests/naming.rs include_str!s the template OpenAPI documents.
+"templates/backend/**/openapi.json" = ["rust"]
 "agent-skills/**" = ["cli", "fixtures"]
-"lint/**" = ["cli"]
-"baukit-check.toml" = ["cli"]
+# Scripts only the generated-fixture gates run; scripts-tests covers their tests in the fast lane.
+"scripts/generated-fixture-gate.sh" = ["fixtures"]
+"scripts/check-gitops-fixture.py" = ["fixtures"]
+"scripts/check-deploy-values.py" = ["fixtures"]
+"scripts/check-production-bundle.test.mjs" = ["fixtures"]
+"scripts/check-web-headers.sh" = ["fixtures"]
+"scripts/web-session-stack.py" = ["fixtures"]
+"scripts/build-fixture-ts-packages.sh" = ["fixtures", "mcp-fixture"]
+"scripts/fixture-ts-packages.txt" = ["fixtures", "mcp-fixture"]
+# The CLI embeds lint/ (agent rules, Rust lint tables, ast-grep rules) into generated products.
+"lint/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
+"baukit-check.toml" = ["cli", "fixtures", "mcp-fixture", "native-android"]
 "typescript/**" = ["ts", "fixtures", "mcp-fixture", "android"]
 "examples/minimal-api/**" = ["examples-test"]
 "examples/expo-sqlite-conformance/**" = ["expo-sqlite"]
@@ -84,6 +110,8 @@ migrations = 30
 # these paths add only the lanes that render or run them beyond that.
 "deploy/platform/**" = ["platform-e2e", "platform-images"]
 "deploy/observability/**" = ["platform-e2e"]
+# cli/src/check/observability/promql.rs include_str!s the metric-name linter.
+"deploy/observability/lint/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
 "deploy/observability-platform/**" = ["platform-e2e"]
 "deploy/chart/**" = ["platform-e2e", "platform-images", "fixtures"]
 "deploy/media-grants/**" = []

@@ -40,6 +40,7 @@ export type {
   RankPushBatchOptions,
 } from './push-batch.js';
 export { SyncScheduler } from './scheduler.js';
+export { defaultSyncRetryDelayMs, type RandomSource } from './scheduler-policy.js';
 export type {
   SyncSchedulerEnvironment,
   SyncSchedulerOptions,

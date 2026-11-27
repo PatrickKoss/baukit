@@ -10,7 +10,7 @@ use axum::{
 use baukit_config::Secret;
 use baukit_http::{ApiError, IdempotencyKeyRule};
 use baukit_jobs::{NewJob, PostgresJobStore};
-use jiff::Timestamp;
+use jiff::{SignedDuration, Timestamp};
 use jiff_sqlx::ToSqlx;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -18,6 +18,8 @@ use sqlx::{PgConnection, PgPool, Postgres, Transaction};
 use std::{sync::Arc, time::Duration};
 use uuid::Uuid;
 
+/// Time past the inline timeout before a worker may claim the identity job.
+const INLINE_RESERVATION_MARGIN: Duration = Duration::from_secs(5);
 const MIN_HASH_KEY_BYTES: usize = 32;
 const SUBJECT_DOMAIN: &[u8] = b"erasure-subject\0";
 const KEY_DOMAIN: &[u8] = b"erasure-key\0";
@@ -445,7 +447,8 @@ pub enum IdentityRetention {
         /// Provider id matching the registered worker handler.
         provider_id: String,
         /// Whole-provider-call budget, including token acquisition.
-        /// Keep this short because the call holds a pooled connection and job row lock.
+        /// No database connection or lock is held during the call. Workers leave the
+        /// queued job alone until this budget plus a 5 s margin has passed, so keep it short.
         inline_timeout: Duration,
         /// Maximum durable worker attempts.
         max_attempts: u32,
@@ -653,7 +656,8 @@ impl ErasureService {
             .enqueue_in_transaction(
                 &mut transaction,
                 NewJob::new(IDENTITY_DELETE_JOB_TYPE, payload, *max_attempts)
-                    .idempotency_key(outcome.operation_id.to_string()),
+                    .idempotency_key(outcome.operation_id.to_string())
+                    .run_after(reservation_end(*inline_timeout)?),
             )
             .await?
             .job;
@@ -689,26 +693,12 @@ impl ErasureService {
         deleter: &dyn IdentityAccountDeleter,
         inline_timeout: Duration,
     ) -> Result<ErasureOutcome, ErasureError> {
-        let mut transaction = self.store.pool.begin().await?;
-        // A worker may already own the job. Only an unclaimed job is completed inline.
-        let pending: Option<String> =
-            sqlx::query_scalar("SELECT status FROM job_outbox WHERE id = $1 FOR UPDATE")
-                .bind(job_id)
-                .fetch_optional(&mut *transaction)
-                .await?;
-        if pending.as_deref() != Some("pending") {
-            transaction.rollback().await?;
-            return Ok(self
-                .store
-                .status(subject, outcome.operation_id)
-                .await?
-                .unwrap_or(outcome));
-        }
         let error_class =
             match tokio::time::timeout(inline_timeout, deleter.delete_account(subject)).await {
                 Ok(Ok(())) => None,
                 Ok(Err(IdentityDeletionError::Retryable)) => Some("retryable"),
                 Ok(Err(IdentityDeletionError::Permanent)) => Some("permanent"),
+                Ok(Err(IdentityDeletionError::Unavailable { .. })) => Some("unavailable"),
                 Err(_) => Some("timeout"),
             };
         if let Some(error_class) = error_class {
@@ -717,8 +707,37 @@ impl ErasureService {
                 error_class,
                 "inline identity deletion failed",
             );
-            transaction.rollback().await?;
+            self.release_reservation(job_id, outcome.operation_id).await;
             return Ok(outcome);
+        }
+        match self.complete_reserved(subject, job_id, &outcome).await {
+            Ok(completed) => Ok(completed),
+            Err(error) => {
+                self.release_reservation(job_id, outcome.operation_id).await;
+                Err(error)
+            }
+        }
+    }
+    /// Completes the operation only while no worker has claimed its job.
+    async fn complete_reserved(
+        &self,
+        subject: &str,
+        job_id: Uuid,
+        outcome: &ErasureOutcome,
+    ) -> Result<ErasureOutcome, ErasureError> {
+        let mut transaction = self.store.pool.begin().await?;
+        let status: Option<String> =
+            sqlx::query_scalar("SELECT status FROM job_outbox WHERE id = $1 FOR UPDATE")
+                .bind(job_id)
+                .fetch_optional(&mut *transaction)
+                .await?;
+        if status.as_deref() != Some("pending") {
+            transaction.rollback().await?;
+            return Ok(self
+                .store
+                .status(subject, outcome.operation_id)
+                .await?
+                .unwrap_or_else(|| outcome.clone()));
         }
         let completed = self
             .store
@@ -731,6 +750,34 @@ impl ErasureService {
         transaction.commit().await?;
         Ok(completed)
     }
+    /// Makes a reserved job claimable now, so a worker retries without waiting out the reservation.
+    ///
+    /// A failure only delays the worker until the reservation ends, so it is logged, not returned.
+    async fn release_reservation(&self, job_id: Uuid, operation_id: Uuid) {
+        let released = sqlx::query(
+            "UPDATE job_outbox SET run_after = LEAST(run_after, now()) WHERE id = $1 AND status = 'pending'",
+        )
+        .bind(job_id)
+        .execute(&self.store.pool)
+        .await;
+        if released.is_err() {
+            tracing::warn!(
+                %operation_id,
+                "inline identity job release failed; a worker claims it after the reservation"
+            );
+        }
+    }
+}
+
+/// Keeps workers off a job while its inline attempt runs without a database lock.
+fn reservation_end(inline_timeout: Duration) -> Result<Timestamp, ErasureError> {
+    let reserved = inline_timeout
+        .checked_add(INLINE_RESERVATION_MARGIN)
+        .and_then(|reserved| SignedDuration::try_from(reserved).ok())
+        .ok_or(ErasureError::Configuration)?;
+    Timestamp::now()
+        .checked_add(reserved)
+        .map_err(|_| ErasureError::Configuration)
 }
 
 fn validate_request(subject: &str, key: &str) -> Result<(), ErasureError> {

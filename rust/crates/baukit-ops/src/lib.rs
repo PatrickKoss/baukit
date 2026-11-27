@@ -17,7 +17,13 @@
 //!
 //! # PostgreSQL acquisition instrumentation
 //!
-//! With the `sqlx-postgres` feature, use `baukit_ops::acquire` instead of
+//! With the `sqlx-postgres` feature, build the pool with `baukit_ops::connect_pool`
+//! (or `connect_pool_lazy`) from a `baukit_config::DatabaseConfig`. It applies the
+//! pool limits, connection lifetimes and the PostgreSQL session timeouts
+//! `statement_timeout`, `lock_timeout` and `idle_in_transaction_session_timeout`
+//! as startup parameters on every connection.
+//!
+//! Use `baukit_ops::acquire` instead of
 //! `PgPool::acquire`, and pass `&mut *connection` to queries that would otherwise
 //! execute directly against `&PgPool`. Use `baukit_ops::begin` instead of
 //! `PgPool::begin`. These patterns record pool wait duration and timeouts. SQLx
@@ -91,12 +97,27 @@ pub use baukit_telemetry::PrometheusHandle;
 use serde::Serialize;
 use tokio::task::JoinSet;
 
+#[cfg(feature = "jobs")]
+pub mod jobs_admin;
+#[cfg(feature = "sqlx-postgres")]
+pub use baukit_resilience::startup::{RetryAttempt, StartupError};
+
 #[cfg(feature = "sqlx-postgres")]
 mod postgres;
+#[cfg(feature = "sqlx-postgres")]
+mod postgres_pool;
+#[cfg(feature = "sqlx-postgres")]
+mod postgres_startup;
 
 #[cfg(feature = "sqlx-postgres")]
 pub use postgres::{
     PoolMetricsSampler, PoolMetricsSamplerError, acquire, begin, spawn_pool_metrics_sampler,
+};
+#[cfg(feature = "sqlx-postgres")]
+pub use postgres_pool::{connect_options, connect_pool, connect_pool_lazy, pool_options};
+#[cfg(feature = "sqlx-postgres")]
+pub use postgres_startup::{
+    connect_for_migrations, connect_with_backoff, is_transient_connect_error,
 };
 
 /// Default timeout applied by [`ReadinessRegistry::register_default`].

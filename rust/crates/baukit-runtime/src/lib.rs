@@ -74,22 +74,30 @@
 
 #![deny(missing_docs)]
 
+mod budget;
+mod listeners;
+mod server;
+
+pub use budget::{DEFAULT_FLUSH_RESERVE, DrainBudget, DrainBudgetError};
+pub use listeners::{
+    ListenerKind, ListenerPairError, ServeOptions, ShutdownOrder, serve_listener_pair,
+    serve_listener_pair_with_options, serve_listener_pair_with_shutdown_order,
+};
+pub use server::{ServerOptions, ServerOptionsError, serve};
+
 use std::{
     fmt,
     future::Future,
     io,
-    net::SocketAddr,
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 
-use axum::Router;
 pub use baukit_core::{BuildInfo, DeploymentEnvironment, ProcessKind, ServiceIdentity};
 use thiserror::Error;
 use tokio::{
-    net::TcpListener,
-    task::{JoinError, JoinHandle, JoinSet},
+    task::{JoinHandle, JoinSet},
     time::{Instant, timeout},
 };
 use tokio_util::sync::CancellationToken;
@@ -208,14 +216,31 @@ impl fmt::Debug for ShutdownState {
 /// the first trigger and is shared by all clones and children.
 #[derive(Clone, Debug)]
 pub struct ShutdownToken {
-    observed: CancellationToken,
+    pub(crate) observed: CancellationToken,
     state: Arc<ShutdownState>,
     drain_timeout: Duration,
+    flush_reserve: Duration,
 }
 
 impl ShutdownToken {
     /// Creates a shutdown handle with the maximum duration allowed for draining.
+    ///
+    /// It keeps no flush reserve. Services that flush telemetry at the end of
+    /// draining should use [`ShutdownToken::with_budget`].
     pub fn new(drain_timeout: Duration) -> Self {
+        Self::build(drain_timeout, Duration::ZERO)
+    }
+
+    /// Creates a shutdown handle from a validated [`DrainBudget`].
+    ///
+    /// Listener draining, [`TaskSupervisor::join`] and
+    /// [`ShutdownToken::run_during_drain`] end `flush_reserve` before the drain
+    /// deadline; [`ShutdownToken::run_flush`] may run until the deadline itself.
+    pub fn with_budget(budget: DrainBudget) -> Self {
+        Self::build(budget.drain_timeout(), budget.flush_reserve())
+    }
+
+    fn build(drain_timeout: Duration, flush_reserve: Duration) -> Self {
         let root = CancellationToken::new();
         Self {
             observed: root.clone(),
@@ -225,6 +250,7 @@ impl ShutdownToken {
                 drain_hooks: Mutex::new(Vec::new()),
             }),
             drain_timeout,
+            flush_reserve,
         }
     }
 
@@ -237,6 +263,7 @@ impl ShutdownToken {
             observed: self.observed.child_token(),
             state: Arc::clone(&self.state),
             drain_timeout: self.drain_timeout,
+            flush_reserve: self.flush_reserve,
         }
     }
 
@@ -324,6 +351,11 @@ impl ShutdownToken {
         self.drain_timeout
     }
 
+    /// Returns the part of the drain timeout only [`ShutdownToken::run_flush`] may use.
+    pub const fn flush_reserve(&self) -> Duration {
+        self.flush_reserve
+    }
+
     /// Returns the shared absolute drain deadline after shutdown has begun.
     pub fn deadline(&self) -> Option<Instant> {
         self.state
@@ -335,8 +367,9 @@ impl ShutdownToken {
     /// Waits for shutdown, then runs `future` within the remaining drain budget.
     ///
     /// Every call uses the same absolute deadline, so sequential cleanup steps
-    /// cannot accidentally receive a fresh timeout. On expiry, the future is
-    /// dropped and [`DrainTimeout`] is returned.
+    /// cannot accidentally receive a fresh timeout. That deadline ends the
+    /// [`ShutdownToken::flush_reserve`] before the drain deadline. On expiry,
+    /// the future is dropped and [`DrainTimeout`] is returned.
     ///
     /// # Errors
     ///
@@ -347,6 +380,28 @@ impl ShutdownToken {
     {
         self.cancelled().await;
         let remaining = self.remaining();
+        timeout(remaining, future)
+            .await
+            .map_err(|_| DrainTimeout::new(self.drain_timeout))
+    }
+
+    /// Waits for shutdown, then runs the final telemetry flush until the drain deadline.
+    ///
+    /// Unlike [`ShutdownToken::run_during_drain`] it may use the
+    /// [`ShutdownToken::flush_reserve`], so it still gets that time after a
+    /// listener drain that ran into its own deadline. Call it once, last.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DrainTimeout`] when `future` does not finish before the deadline.
+    pub async fn run_flush<F>(&self, future: F) -> Result<F::Output, DrainTimeout>
+    where
+        F: Future,
+    {
+        self.cancelled().await;
+        let remaining = self.deadline().map_or(self.drain_timeout, |deadline| {
+            deadline.saturating_duration_since(Instant::now())
+        });
         timeout(remaining, future)
             .await
             .map_err(|_| DrainTimeout::new(self.drain_timeout))
@@ -372,10 +427,14 @@ impl ShutdownToken {
         tokio::spawn(async move { shutdown.shutdown_on_signal().await })
     }
 
-    fn remaining(&self) -> Duration {
-        self.deadline()
-            .map(|deadline| deadline.saturating_duration_since(Instant::now()))
-            .unwrap_or(self.drain_timeout)
+    pub(crate) fn remaining(&self) -> Duration {
+        let work_budget = self.drain_timeout.saturating_sub(self.flush_reserve);
+        self.state
+            .started_at
+            .get()
+            .map_or(work_budget, |started_at| {
+                (*started_at + work_budget).saturating_duration_since(Instant::now())
+            })
     }
 }
 
@@ -433,7 +492,7 @@ pub struct DrainTimeout {
 }
 
 impl DrainTimeout {
-    const fn new(timeout: Duration) -> Self {
+    pub(crate) const fn new(timeout: Duration) -> Self {
         Self { timeout }
     }
 
@@ -589,230 +648,10 @@ impl<T> Drop for AbortOnDropTask<T> {
     }
 }
 
-/// Identifies one member of an API/operations listener pair.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ListenerKind {
-    /// The product API listener.
-    Api,
-    /// The operations listener.
-    Operations,
-}
-
-impl fmt::Display for ListenerKind {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Api => "API",
-            Self::Operations => "operations",
-        })
-    }
-}
-
-/// An error returned while running the API and operations listeners.
-#[derive(Debug, Error)]
-pub enum ListenerPairError {
-    /// A listener returned an I/O error.
-    #[error("{listener} listener failed: {source}")]
-    Listener {
-        /// The listener which failed.
-        listener: ListenerKind,
-        /// The underlying server error.
-        #[source]
-        source: io::Error,
-    },
-    /// A listener task panicked or was externally cancelled.
-    #[error("listener task failed: {0}")]
-    Task(#[source] JoinError),
-    /// A listener stopped successfully before shutdown was requested.
-    #[error("{0} listener exited before shutdown")]
-    UnexpectedExit(ListenerKind),
-    /// One or both listeners did not drain before the process deadline.
-    #[error(transparent)]
-    Drain(#[from] DrainTimeout),
-}
-
-type ListenerResult = Result<ListenerKind, (ListenerKind, io::Error)>;
-
-/// Controls when the operations listener stops relative to the public API.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub enum ShutdownOrder {
-    /// Stops both listeners together when process shutdown begins.
-    #[default]
-    Together,
-    /// Keeps operations serving until the API has drained or the deadline expires.
-    OpsOutlivesApi,
-}
-
-/// Runs public API and operations routers concurrently with graceful shutdown.
-///
-/// Both TCP listeners are supplied already bound, keeping addresses and socket
-/// policy in the composition root. If either listener fails, process shutdown is
-/// triggered and the peer is drained. Once shutdown begins, both Axum servers
-/// receive the token through `with_graceful_shutdown`; remaining work is bounded
-/// by the token's shared deadline and forcefully aborted on expiry.
-///
-/// # Errors
-///
-/// Fails like [`serve_listener_pair_with_shutdown_order`].
-pub async fn serve_listener_pair(
-    api_listener: TcpListener,
-    api_router: Router,
-    operations_listener: TcpListener,
-    operations_router: Router,
-    shutdown: ShutdownToken,
-) -> Result<(), ListenerPairError> {
-    serve_listener_pair_with_shutdown_order(
-        api_listener,
-        api_router,
-        operations_listener,
-        operations_router,
-        shutdown,
-        ShutdownOrder::Together,
-    )
-    .await
-}
-
-/// Runs an API/operations listener pair with an explicit shutdown order.
-///
-/// [`ShutdownOrder::Together`] is identical to [`serve_listener_pair`]. With
-/// [`ShutdownOrder::OpsOutlivesApi`], process shutdown first stops the API from
-/// accepting new work and lets its in-flight requests drain. The operations
-/// listener continues serving readiness and metrics until the API server exits;
-/// it is then gracefully stopped within the same process-wide drain deadline.
-/// If that deadline expires first, both listener tasks are aborted.
-///
-/// # Errors
-///
-/// Returns [`ListenerPairError::Listener`] when a server fails with an I/O error,
-/// [`ListenerPairError::UnexpectedExit`] when one stops before shutdown,
-/// [`ListenerPairError::Task`] when a listener task panics, and
-/// [`ListenerPairError::Drain`] when the drain deadline expires.
-pub async fn serve_listener_pair_with_shutdown_order(
-    api_listener: TcpListener,
-    api_router: Router,
-    operations_listener: TcpListener,
-    operations_router: Router,
-    shutdown: ShutdownToken,
-    shutdown_order: ShutdownOrder,
-) -> Result<(), ListenerPairError> {
-    let mut listeners = JoinSet::new();
-    let operations_shutdown = match shutdown_order {
-        ShutdownOrder::Together => shutdown.observed.clone(),
-        ShutdownOrder::OpsOutlivesApi => CancellationToken::new(),
-    };
-    spawn_listener(
-        &mut listeners,
-        ListenerKind::Api,
-        api_listener,
-        api_router,
-        shutdown.observed.clone(),
-    );
-    spawn_listener(
-        &mut listeners,
-        ListenerKind::Operations,
-        operations_listener,
-        operations_router,
-        operations_shutdown.clone(),
-    );
-
-    let mut first_error = None;
-    while !listeners.is_empty() && !shutdown.is_cancelled() {
-        tokio::select! {
-            _ = shutdown.cancelled() => {}
-            result = listeners.join_next() => {
-                stop_operations_after_api(
-                    result.as_ref(),
-                    shutdown_order,
-                    &operations_shutdown,
-                );
-                record_listener_result(result, &shutdown, &mut first_error);
-            }
-        }
-    }
-
-    if listeners.is_empty() {
-        return first_error.map_or(Ok(()), Err);
-    }
-
-    let remaining = shutdown.remaining();
-    let drained = timeout(remaining, async {
-        while let Some(result) = listeners.join_next().await {
-            stop_operations_after_api(Some(&result), shutdown_order, &operations_shutdown);
-            record_listener_result(Some(result), &shutdown, &mut first_error);
-        }
-    })
-    .await;
-
-    if drained.is_err() {
-        listeners.abort_all();
-        while listeners.join_next().await.is_some() {}
-        return Err(DrainTimeout::new(shutdown.drain_timeout).into());
-    }
-
-    first_error.map_or(Ok(()), Err)
-}
-
-fn spawn_listener(
-    listeners: &mut JoinSet<ListenerResult>,
-    kind: ListenerKind,
-    listener: TcpListener,
-    router: Router,
-    shutdown: CancellationToken,
-) {
-    listeners.spawn(async move {
-        axum::serve(
-            listener,
-            router.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(async move { shutdown.cancelled().await })
-        .await
-        .map(|()| kind)
-        .map_err(|error| (kind, error))
-    });
-}
-
-fn stop_operations_after_api(
-    result: Option<&Result<ListenerResult, JoinError>>,
-    shutdown_order: ShutdownOrder,
-    operations_shutdown: &CancellationToken,
-) {
-    if shutdown_order != ShutdownOrder::OpsOutlivesApi {
-        return;
-    }
-
-    let listener = match result {
-        Some(Ok(Ok(kind) | Err((kind, _)))) => Some(*kind),
-        Some(Err(_)) | None => None,
-    };
-    if listener == Some(ListenerKind::Api) {
-        operations_shutdown.cancel();
-    }
-}
-
-fn record_listener_result(
-    result: Option<Result<ListenerResult, JoinError>>,
-    shutdown: &ShutdownToken,
-    first_error: &mut Option<ListenerPairError>,
-) {
-    let error = match result {
-        Some(Ok(Ok(kind))) if !shutdown.is_cancelled() => {
-            Some(ListenerPairError::UnexpectedExit(kind))
-        }
-        Some(Ok(Ok(_))) | None => None,
-        Some(Ok(Err((listener, source)))) => Some(ListenerPairError::Listener { listener, source }),
-        Some(Err(error)) => Some(ListenerPairError::Task(error)),
-    };
-
-    if let Some(error) = error {
-        tracing::error!(%error, "listener pair initiated process shutdown");
-        if first_error.is_none() {
-            *first_error = Some(error);
-        }
-        shutdown.trigger();
-    }
-}
-
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_serving;
 
 // Compiles the README's examples so they cannot drift from the API.
 #[doc = include_str!("../README.md")]

@@ -47,7 +47,9 @@ The product backend is a narrow backend-for-frontend for token issuance only. AP
   burst 4. Logout uses the IP bucket only. `StoreBrowserSessionRateLimiter` in `baukit-ratelimit`
   resolves the client IP through `resolve_client_ip` with `trusted_proxy_hops`, which defaults to 0,
   and buckets IPv6 by prefix. With no socket peer it returns 429 instead of sharing one unknown
-  bucket. `BrowserSessionConfig::with_rate_limits` changes the numbers but not the group names.
+  bucket. `BrowserSessionConfig::with_rate_limits` changes the numbers but not the group names. When
+  the store is down in closed mode the request gets 503 with `Retry-After: 1`, because no bucket was
+  checked.
 - `BrowserSessionClient` in `@baukit/auth-web` keeps the access token in memory and refreshes under
   `navigator.locks`, sharing the result over `BroadcastChannel`. Only its session calls use
   `credentials: 'include'`. `localStorage` holds the account hint `{ subject, signedInAt }` and a

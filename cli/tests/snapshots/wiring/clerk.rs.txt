@@ -1,15 +1,24 @@
 ===== src/bin/api.rs =====
-use std::{env, error::Error, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    env,
+    error::Error,
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+    time::Duration,
+};
 
 use axum::Router;
 use baukit_auth::AuthState;
 use baukit_config::{BaukitConfig, Environment};
 use baukit_jobs::{PostgresJobStore, WorkerConfig, WorkerRunner};
 use baukit_ops::{PoolMetricsSampler, TrafficGate, spawn_pool_metrics_sampler};
-use baukit_runtime::{ProcessKind, ServiceInfo, ShutdownToken, build_info, serve_listener_pair};
+use baukit_runtime::{
+    DrainBudget, ProcessKind, ServiceInfo, ShutdownOrder, ShutdownToken, build_info,
+    serve_listener_pair_with_shutdown_order,
+};
 use baukit_telemetry::{Telemetry, TelemetryBuilder, tracing};
 
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::PgPool;
 use tokio::net::TcpListener;
 
 use snapshot_app_api::ApiState;
@@ -22,6 +31,7 @@ use snapshot_app_bin::config_loader;
 use snapshot_app_bin::identity_erasure;
 use snapshot_app_bin::operations_router;
 use snapshot_app_bin::register_identity_provider_readiness;
+use snapshot_app_bin::{PROBE_READINESS_FLAG, probe_readiness};
 use snapshot_app_postgres::PostgresItemRepository;
 use snapshot_app_postgres::PostgresProfileErasure;
 use snapshot_app_postgres::PostgresUserRepository;
@@ -39,7 +49,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .map(|value| value.parse())
         .transpose()?
         .unwrap_or(Environment::Local);
-    let config = config_loader(environment)?.load()?;
+    let config: BaukitConfig<ProductConfig> = config_loader(environment)?.load()?;
+    if env::args().any(|argument| argument == PROBE_READINESS_FLAG) {
+        let ops = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), config.ops.port);
+        return if probe_readiness(ops).await? {
+            Ok(())
+        } else {
+            Err("not ready".into())
+        };
+    }
     run(config).await
 }
 
@@ -71,12 +89,7 @@ async fn connect_pool(
     let Some(database) = &config.database else {
         return Ok(None);
     };
-    let pool = PgPoolOptions::new()
-        .max_connections(database.max_connections)
-        .min_connections(database.min_connections)
-        .acquire_timeout(database.acquire_timeout)
-        .connect(database.url.expose())
-        .await?;
+    let pool = baukit_ops::connect_with_backoff(database, config.startup.budget).await?;
     let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), POOL_METRICS_INTERVAL)?;
     Ok(Some((pool, pool_metrics)))
 }
@@ -111,7 +124,7 @@ impl Backend {
             pool.clone(),
             erasure_service.store().clone(),
         )));
-        let verifier = auth_verifier(&config.product.auth).await?;
+        let verifier = auth_verifier(&config.product.auth, config.startup.budget).await?;
         let auth = AuthState::from_shared(verifier.clone());
         let api_state = ApiState {
             items: item_service.clone(),
@@ -144,7 +157,10 @@ async fn serve(
     backend: Backend,
     api: Router,
 ) -> Result<(), Box<dyn Error>> {
-    let shutdown = ShutdownToken::new(config.shutdown.drain_timeout);
+    let shutdown = ShutdownToken::with_budget(DrainBudget::new(
+        config.shutdown.drain_timeout,
+        config.http.request_timeout,
+    )?);
     let traffic_gate = TrafficGate::new();
     shutdown.on_drain({
         let traffic_gate = traffic_gate.clone();
@@ -181,12 +197,13 @@ async fn serve(
         result
     });
     let signal_task = shutdown.spawn_signal_listener();
-    let result = serve_listener_pair(
+    let result = serve_listener_pair_with_shutdown_order(
         api_listener,
         api,
         operations_listener,
         operations,
         shutdown.clone(),
+        ShutdownOrder::OpsOutlivesApi,
     )
     .await;
     shutdown.trigger();
@@ -199,9 +216,7 @@ async fn serve(
         pool_metrics.shutdown().await;
     }
     shutdown
-        .run_during_drain(
-            async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await },
-        )
+        .run_flush(async move { tokio::task::spawn_blocking(move || telemetry.shutdown()).await })
         .await???;
     result?;
     Ok(())
@@ -272,7 +287,10 @@ pub async fn compose_api(
     let rate_limit_options = RateLimitOptions::from_config(&config.rate_limit)?;
     let redis = match deps.rate_limit_store {
         Some(_) => None,
-        None => RedisRateLimitStore::connect_if_enabled(&rate_limit_options).await?,
+        None => {
+            RedisRateLimitStore::connect_if_enabled(&rate_limit_options, config.startup.budget)
+                .await?
+        }
     };
     let store = deps
         .rate_limit_store
@@ -299,6 +317,7 @@ pub async fn compose_api(
             rate_limit: &rate_limit_options,
             rate_limit_store: redis,
             environment: config.environment,
+            startup_budget: config.startup.budget,
         };
         if let Some(router) =
             browser_session_router(&config.product.auth.browser_session, dependencies).await?
@@ -356,7 +375,12 @@ async fn mcp_caller_verifier(
     deps: &ApiDependencies,
 ) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
     if config.product.mcp.enabled {
-        return mcp_verifier(&config.product.auth, &config.product.mcp).await;
+        return mcp_verifier(
+            &config.product.auth,
+            &config.product.mcp,
+            config.startup.budget,
+        )
+        .await;
     }
     Ok(deps.verifier.clone())
 }
@@ -476,19 +500,20 @@ use std::{error::Error, sync::Arc, time::Duration};
 
 pub async fn auth_verifier(
     config: &AuthConfig,
+    startup_budget: Duration,
 ) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
     match config.provider {
         AuthProvider::Oidc => {
-            let mut oidc =
-                OidcConfig::new(&config.issuer, &config.audience)?.with_clock_skew(Duration::ZERO);
+            let mut oidc = OidcConfig::new(&config.issuer, &config.audience)?
+                .with_clock_skew(Duration::ZERO)
+                .with_startup_budget(startup_budget)?;
             if !config.authorized_parties.is_empty() {
                 oidc = oidc.with_allowed_clients(config.authorized_parties.clone())?;
             }
-            let verifier = match &config.jwks_uri {
-                Some(uri) => OidcVerifier::from_jwks_uri(oidc, uri)?,
-                None => OidcVerifier::discover(oidc).await?,
-            };
-            Ok(Arc::new(verifier))
+            if let Some(uri) = &config.jwks_uri {
+                oidc = oidc.with_jwks_uri(uri)?;
+            }
+            Ok(Arc::new(OidcVerifier::discover(oidc).await?))
         }
         AuthProvider::Clerk => {
             let verifier = match &config.jwks_uri {
@@ -517,6 +542,7 @@ pub async fn auth_verifier(
 pub async fn mcp_verifier(
     auth: &AuthConfig,
     config: &baukit_mcp::McpConfig,
+    startup_budget: Duration,
 ) -> Result<Arc<dyn IdentityVerifier>, Box<dyn Error>> {
     if auth.provider == AuthProvider::Clerk {
         let client_id = config
@@ -550,9 +576,10 @@ pub async fn mcp_verifier(
             "client_id"
         })
         .organization_claim("org_id");
-    let oidc = OidcConfig::new(&config.issuer, &config.resource_url)?
+    let mut oidc = OidcConfig::new(&config.issuer, &config.resource_url)?
         .with_clock_skew(Duration::ZERO)
-        .with_principal_claims(mapping);
+        .with_principal_claims(mapping)
+        .with_startup_budget(startup_budget)?;
     let jwks = config.jwks_uri.clone().or_else(|| match auth.provider {
         AuthProvider::Oidc => None,
         AuthProvider::Clerk => Some(format!(
@@ -564,11 +591,10 @@ pub async fn mcp_verifier(
             config.issuer.trim_end_matches('/')
         )),
     });
-    let verifier = match jwks {
-        Some(uri) => OidcVerifier::from_jwks_uri(oidc, uri)?,
-        None => OidcVerifier::discover(oidc).await?,
-    };
-    Ok(Arc::new(verifier))
+    if let Some(uri) = jwks {
+        oidc = oidc.with_jwks_uri(uri)?;
+    }
+    Ok(Arc::new(OidcVerifier::discover(oidc).await?))
 }
 
 pub fn mcp_policy(
@@ -736,6 +762,7 @@ pub struct BrowserSessionDependencies<'a> {
     pub rate_limit: &'a RateLimitOptions,
     pub rate_limit_store: Option<RedisRateLimitStore>,
     pub environment: Environment,
+    pub startup_budget: Duration,
 }
 
 /// Builds `/auth/session/*`, or `None` when the product does not enable it.
@@ -768,7 +795,8 @@ pub async fn browser_session_router(
     .with_idle_timeout(Duration::from_secs(settings.idle_timeout_seconds))?
     .with_absolute_timeout(Duration::from_secs(settings.absolute_timeout_seconds))?
     .with_insecure_local_cookie(settings.insecure_local_cookie)
-    .with_rate_limits(settings.rate_limits())?;
+    .with_rate_limits(settings.rate_limits())?
+    .with_startup_budget(dependencies.startup_budget)?;
     if let Some(internal_issuer) = &settings.internal_issuer {
         config = config.with_internal_issuer(internal_issuer)?;
     }
@@ -884,9 +912,11 @@ use uuid::Uuid;
 
 mod compose;
 mod config;
+mod probe;
 mod rate_limits;
 pub use compose::{ApiDependencies, ComposedApi, compose_api};
 pub use config::config_loader;
+pub use probe::{PROBE_READINESS_FLAG, probe_readiness};
 pub use rate_limits::{RateLimits, protect_routes, rate_limited};
 
 mod browser_session;

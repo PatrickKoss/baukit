@@ -457,6 +457,159 @@ class EmulatorReserveTests(unittest.TestCase):
         self.assertEqual(runner.budget.available(), 24)
 
 
+def minimum_budget(budget, minimums):
+    budget.require_minimums(minimums or {})
+    return budget
+
+
+class MinimumCoresTests(unittest.TestCase):
+    def runner(self, minimums, cores=12):
+        directory = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(directory, ignore_errors=True))
+        planned = gate.plan(STEPS, gate.Selection(True, []))
+        budget = minimum_budget(
+            gate.CoreBudget(cores, None, 1024, gate.EmulatorReserve(2)), minimums
+        )
+        return gate.Runner(planned, gate.RunContext([], directory, {}), budget=budget)
+
+    def step(self, runner, name):
+        return next(item.step for item in runner.planned if item.step.name == name)
+
+    def test_without_the_key_nothing_is_held(self):
+        runner = self.runner(None)
+        self.assertEqual(runner.budget.minimums, {})
+        self.assertEqual(runner.budget.held_for_minimums, 0)
+        runner.record("rust-clippy", 5, "passed")
+        self.assertEqual(runner.budget.held_for_minimums, 0)
+        self.assertEqual(runner.budget.acquire(12), 12)
+
+    def test_minimum_is_clamped_to_the_budget(self):
+        budget = minimum_budget(
+            gate.CoreBudget(4, None, 1024, gate.EmulatorReserve(2)), {"fuzz": 9}
+        )
+        self.assertEqual(budget.minimums, {"fuzz": 4})
+        self.assertEqual(budget.acquire(9, 9, minimum_step=True), 4)
+
+    def test_hold_starts_when_the_step_is_ready(self):
+        runner = self.runner({"rust-tests": 6})
+        self.assertEqual(runner.budget.held_for_minimums, 0)
+        runner.record("rust-clippy", 5, "passed")
+        self.assertEqual(runner.budget.held_for_minimums, 6)
+        self.assertEqual(runner.budget.acquire(12), 6)
+
+    def test_failed_dependency_holds_nothing(self):
+        runner = self.runner({"rust-tests": 6})
+        runner.record("rust-clippy", 5, "failed with exit 1")
+        self.assertEqual(runner.budget.held_for_minimums, 0)
+
+    def test_the_step_gets_its_minimum_and_the_hold_ends(self):
+        runner = self.runner({"mobile-unit": 6})
+        self.assertEqual(runner.budget.held_for_minimums, 6)
+        cores, drawn = runner.cores_for(self.step(runner, "mobile-unit"))
+        self.assertTrue(drawn)
+        self.assertGreaterEqual(cores, 6)
+        self.assertEqual(runner.budget.held_for_minimums, 0)
+        runner.release_cores(self.step(runner, "mobile-unit"), cores)
+        self.assertEqual(runner.budget.available(), 12)
+
+    def test_the_step_waits_for_its_minimum_while_others_progress(self):
+        budget = minimum_budget(
+            gate.CoreBudget(10, None, 1024, gate.EmulatorReserve(2)), {"fuzz": 6}
+        )
+        budget.hold_for_minimums(6)
+        self.assertEqual(budget.acquire(3), 3)
+        self.assertEqual(budget.acquire(10), 1)
+        other = []
+        blocked = threading.Thread(target=lambda: other.append(budget.acquire(1)))
+        blocked.start()
+        blocked.join(0.1)
+        self.assertEqual(other, [])
+        self.assertEqual(budget.acquire(8, 6, minimum_step=True), 6)
+        budget.hold_for_minimums(0)
+        budget.release(3)
+        blocked.join(1)
+        self.assertEqual(other, [1])
+
+    def test_a_late_minimum_step_waits_for_released_cores(self):
+        budget = minimum_budget(
+            gate.CoreBudget(8, None, 1024, gate.EmulatorReserve(2)), {"fuzz": 6}
+        )
+        self.assertEqual(budget.acquire(5), 5)
+        budget.hold_for_minimums(6)
+        granted = []
+        waiter = threading.Thread(
+            target=lambda: granted.append(budget.acquire(6, 6, minimum_step=True))
+        )
+        waiter.start()
+        waiter.join(0.1)
+        self.assertEqual(granted, [])
+        budget.release(5)
+        waiter.join(1)
+        self.assertEqual(granted, [6])
+
+    def test_hold_leaves_one_core_for_other_steps(self):
+        budget = minimum_budget(
+            gate.CoreBudget(4, None, 1024, gate.EmulatorReserve(2)), {"fuzz": 4}
+        )
+        budget.hold_for_minimums(4)
+        self.assertEqual(budget.acquire(4), 1)
+
+    def test_two_minimum_steps_never_wait_on_each_other(self):
+        runner = self.runner({"mobile-unit": 6, "rust-clippy": 6}, cores=8)
+        self.assertEqual(runner.budget.held_for_minimums, 12)
+        first = runner.cores_for(self.step(runner, "mobile-unit"))[0]
+        self.assertEqual(first, 6)
+        runner.release_cores(self.step(runner, "mobile-unit"), first)
+        self.assertEqual(runner.cores_for(self.step(runner, "rust-clippy"))[0], 6)
+        self.assertEqual(runner.budget.held_for_minimums, 0)
+
+    def test_the_emulator_reserve_still_applies_to_minimum_steps(self):
+        budget = minimum_budget(
+            gate.CoreBudget(10, None, 1024, gate.EmulatorReserve(4)), {"fuzz": 6}
+        )
+        budget.reserve(4)
+        budget.hold_for_minimums(6)
+        self.assertEqual(budget.acquire(10, 6, minimum_step=True), 6)
+        self.assertEqual(budget.acquire(4, 4, emulator=True), 4)
+
+    def test_pool_slots_stay_free_for_a_waiting_minimum(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pool = gate.CorePool(Path(directory), 8)
+            budget = minimum_budget(
+                gate.CoreBudget(8, None, 1024, gate.EmulatorReserve(2), pool), {"fuzz": 6}
+            )
+            budget.hold_for_minimums(6)
+            self.assertEqual(budget.acquire(8), 2)
+            granted = []
+            other = threading.Thread(target=lambda: granted.append(budget.acquire(1)))
+            other.start()
+            other.join(0.5)
+            self.assertEqual(granted, [])
+            self.assertEqual(budget.acquire(8, 6, minimum_step=True), 6)
+            budget.hold_for_minimums(0)
+            budget.release(2)
+            other.join(3)
+            self.assertEqual(granted, [1])
+            budget.release(7)
+            self.assertEqual(pool.available(), 8)
+
+    def test_settings_are_read_and_checked(self):
+        self.assertEqual(gate.min_cores({}), {})
+        self.assertEqual(
+            gate.min_cores({"quality": {"min_cores": {"rust-tests": 6}}}), {"rust-tests": 6}
+        )
+
+        def error(value):
+            return gate.min_cores_error({"quality": {"min_cores": value}}, STEPS)
+
+        self.assertIsNone(gate.min_cores_error({}, STEPS))
+        self.assertIsNone(error({"rust-tests": 6}))
+        self.assertIn("names unknown step gone", error({"gone": 2}))
+        self.assertIn("must be a positive integer, got 0", error({"rust-tests": 0}))
+        self.assertIn("must be a positive integer, got True", error({"rust-tests": True}))
+        self.assertIn("must be a table", error([1]))
+
+
 class WaitsForTests(unittest.TestCase):
     def waits(self, settings=None, steps=STEPS):
         return gate.step_waits(steps, gate.waits_for_settings(settings or {}))
@@ -556,6 +709,7 @@ class RunnerTests(unittest.TestCase):
                     "PATH": "/usr/bin:/bin",
                     "BAUKIT_GATE_CORES": "4",
                     "BAUKIT_GATE_DISK_FLOOR_GB": "0",
+                    "BAUKIT_GATE_CACHE": "off",
                 },
             )
             ran = (root / "ran").read_text().split("\n") if (root / "ran").exists() else []

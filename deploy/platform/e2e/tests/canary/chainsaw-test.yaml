@@ -1,0 +1,138 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/kyverno/chainsaw/v0.2.15/.schemas/json/test-chainsaw-v1alpha1.json
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: canary
+spec:
+  description: >-
+    The baukit-app chart with canary.enabled hands its API Deployment to Flagger. Flagger creates
+    echo-api-primary, and the ServiceMonitor labels its series rollout="primary" and the canary's
+    rollout="canary". A new pod template whose metrics stay healthy is promoted to the primary. The
+    echo-faulty image answers 500 and counts only 500s, so the error-percent gate fails twice and
+    Flagger rolls it back, leaving the primary on the healthy image.
+  namespaceTemplate:
+    metadata:
+      labels:
+        baukit.dev/ingress-backend: "true"
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/enforce-version: v1.37
+        pod-security.kubernetes.io/audit: restricted
+        pod-security.kubernetes.io/warn: restricted
+  timeouts:
+    assert: 4m
+    exec: 5m
+  steps:
+    - name: install-and-initialize
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              helm install echo ../../../../chart/baukit-app --namespace "$NAMESPACE" \
+                --values values.yaml --wait --timeout 4m
+        - assert:
+            resource:
+              apiVersion: flagger.app/v1beta1
+              kind: Canary
+              metadata:
+                name: echo-api
+              status:
+                phase: Initialized
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: echo-api-primary
+              spec:
+                selector:
+                  matchLabels:
+                    baukit.dev/workload: echo-api-primary
+              status:
+                readyReplicas: 1
+    - name: rollout-label
+      try:
+        - script:
+            timeout: 3m
+            content: |
+              set -eu
+              api=/api/v1/namespaces/observability/services/kube-prometheus-stack-prometheus:9090/proxy/api/v1
+              query="count(http_requests_total%7Bnamespace%3D%22$NAMESPACE%22,rollout%3D%22primary%22%7D)"
+              deadline=$(($(date +%s) + 150))
+              until kubectl get --raw "$api/query?query=$query" | grep -q '"result":\[{'; do
+                [ "$(date +%s)" -lt "$deadline" ] || {
+                  echo 'Prometheus has no rollout="primary" series for echo-api-primary' >&2
+                  kubectl get --raw "$api/query?query=$query" >&2 || true
+                  exit 1
+                }
+                sleep 5
+              done
+              echo 'primary series carry rollout="primary"'
+    - name: healthy-canary-promotes
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              helm upgrade echo ../../../../chart/baukit-app --namespace "$NAMESPACE" \
+                --values values.yaml --set podAnnotations.revision=healthy --wait --timeout 4m
+        - assert:
+            resource:
+              apiVersion: flagger.app/v1beta1
+              kind: Canary
+              metadata:
+                name: echo-api
+              status:
+                phase: Succeeded
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: echo-api-primary
+              spec:
+                template:
+                  metadata:
+                    annotations:
+                      revision: healthy
+      catch:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" get canary echo-api -o yaml
+              kubectl -n "$NAMESPACE" get events --field-selector involvedObject.kind=Canary
+    - name: failing-canary-rolls-back
+      try:
+        - script:
+            timeout: 5m
+            content: |
+              set -eu
+              helm upgrade echo ../../../../chart/baukit-app --namespace "$NAMESPACE" \
+                --values values.yaml --set podAnnotations.revision=healthy \
+                --set api.image.repository=localhost/baukit-e2e/echo-faulty --wait --timeout 4m
+        - assert:
+            resource:
+              apiVersion: flagger.app/v1beta1
+              kind: Canary
+              metadata:
+                name: echo-api
+              status:
+                phase: Failed
+        - assert:
+            resource:
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: echo-api
+              spec:
+                replicas: 0
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" get deployment echo-api-primary \
+                -o jsonpath='{.spec.template.spec.containers[0].image}'
+            check:
+              ($stdout): localhost/baukit-e2e/echo:local
+      catch:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" get canary echo-api -o yaml
+              kubectl -n "$NAMESPACE" get events --field-selector involvedObject.kind=Canary

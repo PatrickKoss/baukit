@@ -42,6 +42,8 @@ const HTTP_TOO_MANY_REQUESTS = 429;
 const HTTP_SERVER_ERROR = 500;
 /** How long a tab that waited for the refresh lock waits for the winner's token. */
 export const SESSION_HANDOFF_TIMEOUT_MS = 2000;
+/** The refresh POST is aborted after this long so a hanging backend cannot hold the refresh lock. */
+export const REFRESH_TIMEOUT_MS = 10_000;
 
 type SessionEndpoint = 'exchange' | 'refresh' | 'logout';
 
@@ -116,8 +118,9 @@ export class BrowserSessionClient {
 
   /**
    * Resolves the in-memory access token, refreshing it near expiry or when
-   * forced. A network failure rejects with a retryable `OidcError` and keeps
-   * the account hint; only a 401 signs out.
+   * forced. A retryable failure (network, timeout, 429, 5xx) keeps returning
+   * the current token while it has not expired; once it has, the call rejects
+   * with a retryable `OidcError` and keeps the account hint. Only a 401 signs out.
    */
   public getAccessToken(
     options: { readonly forceRefresh?: boolean } = {},
@@ -246,10 +249,34 @@ export class BrowserSessionClient {
         return current.accessToken;
       }
     }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+    }, REFRESH_TIMEOUT_MS);
+    try {
+      return await this.refresh(controller.signal);
+    } catch (error) {
+      return this.unexpiredTokenOr(error);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Keeps a still-valid token through a retryable refresh failure. */
+  private unexpiredTokenOr(error: unknown): string {
+    const current = this.token;
+    const retryable = error instanceof OidcError && error.retryable;
+    if (retryable && current !== undefined && current.expiresAt > this.environment.now()) {
+      return current.accessToken;
+    }
+    throw error;
+  }
+
+  private async refresh(signal: AbortSignal): Promise<string | undefined> {
     const revision = this.revision;
     let response: Response;
     try {
-      response = await this.post('refresh');
+      response = await this.post('refresh', undefined, signal);
     } catch {
       throw new OidcError('refresh_failed', { retryable: true });
     }
@@ -265,7 +292,9 @@ export class BrowserSessionClient {
         retryable: isRetryableStatus(response.status),
       });
     }
-    const session = await readIssuedSession(response);
+    const session = await readIssuedSession(response).catch((error: unknown) => {
+      throw signal.aborted ? new OidcError('refresh_failed', { retryable: true }) : error;
+    });
     if (this.revision !== revision) {
       return this.token?.accessToken;
     }
@@ -383,9 +412,10 @@ export class BrowserSessionClient {
     return token.expiresAt > this.environment.now() + window;
   }
 
-  private post(endpoint: SessionEndpoint, body?: object): Promise<Response> {
+  private post(endpoint: SessionEndpoint, body?: object, signal?: AbortSignal): Promise<Response> {
     return this.environment.fetch(`${this.sessionBaseUrl}/${endpoint}`, {
       method: 'POST',
+      ...(signal === undefined ? {} : { signal }),
       credentials: 'include',
       cache: 'no-store',
       headers:

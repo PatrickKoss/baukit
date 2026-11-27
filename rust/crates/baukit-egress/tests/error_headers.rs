@@ -58,7 +58,7 @@ async fn serve_registry() -> TestResult<u16> {
 fn client(options: EgressOptions) -> TestResult<GuardedClient> {
     let resolver =
         Arc::new(StaticResolver::new().with_host(HOST, [IpAddr::V4(Ipv4Addr::LOCALHOST)]));
-    Ok(GuardedClient::with_resolver(resolver, options)?)
+    Ok(GuardedClient::with_resolver("test", resolver, options)?)
 }
 
 fn options() -> EgressOptions {

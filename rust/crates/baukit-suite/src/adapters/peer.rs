@@ -27,7 +27,7 @@ impl ReqwestSuitePeerClient {
             EgressOptions::default()
         };
         Ok(Self {
-            client: GuardedClient::new(options)?,
+            client: GuardedClient::new("suite-peer", options)?,
         })
     }
     async fn signed(
@@ -124,6 +124,8 @@ impl SuitePeerClient for ReqwestSuitePeerClient {
         self.signed(peer, &path, call).await
     }
 }
+/// Wait before retrying a call the peer's concurrency limit refused.
+const SATURATED_RETRY: std::time::Duration = std::time::Duration::from_secs(1);
 fn endpoint(peer: &ActivePeer, path: &str) -> Result<Url, SuitePeerError> {
     let mut url = Url::parse(&peer.api_url).map_err(|_| SuitePeerError::InvalidResponse)?;
     url.set_path(&format!("{}{}", url.path().trim_end_matches('/'), path));
@@ -138,6 +140,12 @@ fn peer_error(e: &EgressError) -> SuitePeerError {
             code: "suite_peer_rejected".to_owned(),
         },
         EgressError::Transport(_) => SuitePeerError::Transport,
+        EgressError::CircuitOpen { retry_after } => SuitePeerError::Deferred {
+            retry_after: *retry_after,
+        },
+        EgressError::Saturated => SuitePeerError::Deferred {
+            retry_after: e.retry_class().retry_after().unwrap_or(SATURATED_RETRY),
+        },
         _ => SuitePeerError::InvalidResponse,
     }
 }

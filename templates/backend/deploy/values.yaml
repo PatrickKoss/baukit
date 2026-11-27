@@ -8,7 +8,6 @@ config:
     # Assumes one ingress hop (Traefik) in front of the API.
     RATE_LIMIT__TRUSTED_PROXY_HOPS: 1
 {% if context.worker %}    WORKER__CONCURRENCY: 5
-    WORKER__LEASE_DURATION_SECONDS: 900
     WORKER__JOB_TIMEOUT_SECONDS: 600
     WORKER__POLL_INTERVAL_MILLISECONDS: 250
 {% endif %}

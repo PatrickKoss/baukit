@@ -48,6 +48,14 @@ pub enum IdentityDeletionError {
     /// Invalid request or missing provider permission.
     #[error("identity deletion rejected permanently")]
     Permanent,
+    /// The provider's circuit is open or its client is saturated; no request was sent.
+    ///
+    /// The job runner defers the job by `retry_after` without consuming an attempt.
+    #[error("identity provider unavailable")]
+    Unavailable {
+        /// Time until the provider's client admits a call again.
+        retry_after: std::time::Duration,
+    },
 }
 
 /// Provider-neutral account deletion. An account the provider reports as missing is

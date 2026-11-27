@@ -10,6 +10,7 @@ use testcontainers::{
 };
 
 use crate::StartContainer as _;
+use crate::fault::{FaultError, PostgresFault, reserve_host_port};
 #[cfg(feature = "sqlx-postgres")]
 use crate::postgres_database::{
     PostgresAppRole, PostgresMigrationOwner, PostgresTestDatabase, PostgresTestDatabases,
@@ -38,6 +39,7 @@ pub struct PostgresTestContainer {
     #[cfg(feature = "sqlx-postgres")]
     databases: PostgresTestDatabases,
     container: Option<ContainerAsync<GenericImage>>,
+    host_port: Option<u16>,
 }
 
 impl PostgresTestContainer {
@@ -87,6 +89,20 @@ impl PostgresTestContainer {
         self.container.as_ref()
     }
 
+    /// Returns a handle that stops, restarts, pauses and resumes this container.
+    ///
+    /// Start the fixture with [`PostgresTestOptions::with_stable_host_port`] when the test
+    /// restarts it, so the connection URL stays valid.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FaultError::NoContainer`] when the fixture uses the server named by
+    /// [`EXTERNAL_DATABASE_URL_VAR`].
+    pub fn fault(&self) -> Result<PostgresFault<'_>, FaultError> {
+        let container = self.container.as_ref().ok_or(FaultError::NoContainer)?;
+        Ok(PostgresFault::new(container, POSTGRES_PORT, self.host_port))
+    }
+
     /// Splits the fixture into an owned URL and its lifetime guard.
     #[must_use]
     pub fn into_parts(self) -> (String, Option<ContainerAsync<GenericImage>>) {
@@ -112,6 +128,7 @@ impl fmt::Debug for PostgresTestContainer {
 pub struct PostgresTestOptions {
     image_name: String,
     image_tag: String,
+    stable_host_port: bool,
     #[cfg(feature = "sqlx-postgres")]
     app_role: Option<PostgresAppRole>,
     #[cfg(feature = "sqlx-postgres")]
@@ -125,6 +142,7 @@ impl Default for PostgresTestOptions {
         Self {
             image_name: POSTGRES_IMAGE_NAME.to_owned(),
             image_tag: POSTGRES_IMAGE_TAG.to_owned(),
+            stable_host_port: false,
             #[cfg(feature = "sqlx-postgres")]
             app_role: None,
             #[cfg(feature = "sqlx-postgres")]
@@ -150,6 +168,16 @@ impl PostgresTestOptions {
     pub fn with_image(mut self, name: impl Into<String>, tag: impl Into<String>) -> Self {
         self.image_name = name.into();
         self.image_tag = tag.into();
+        self
+    }
+
+    /// Publishes the server on a host port that survives [`PostgresFault::stop`] and
+    /// [`PostgresFault::start`].
+    ///
+    /// Without it Docker picks a new ephemeral port on every restart.
+    #[must_use]
+    pub const fn with_stable_host_port(mut self) -> Self {
+        self.stable_host_port = true;
         self
     }
 
@@ -206,20 +234,20 @@ impl PostgresTestOptions {
         self,
         external_url: Option<String>,
     ) -> Result<PostgresTestContainer, PostgresTestError> {
-        let (connection_url, container) = match external_url {
-            Some(url) => (url, None),
+        let (connection_url, container, host_port) = match external_url {
+            Some(url) => (url, None, None),
             None => {
-                let (url, container) = self.start_container().await?;
-                (url, Some(container))
+                let (url, container, port) = self.start_container().await?;
+                (url, Some(container), Some(port))
             }
         };
-        self.prepare(connection_url, container).await
+        self.prepare(connection_url, container, host_port).await
     }
 
     async fn start_container(
         &self,
-    ) -> Result<(String, ContainerAsync<GenericImage>), PostgresTestError> {
-        let container = GenericImage::new(self.image_name.clone(), self.image_tag.clone())
+    ) -> Result<(String, ContainerAsync<GenericImage>, u16), PostgresTestError> {
+        let request = GenericImage::new(self.image_name.clone(), self.image_tag.clone())
             .with_exposed_port(POSTGRES_PORT.tcp())
             .with_wait_for(WaitFor::message_on_stderr(
                 "database system is ready to accept connections",
@@ -230,14 +258,19 @@ impl PostgresTestOptions {
             .with_env_var("POSTGRES_USER", "postgres")
             .with_env_var("POSTGRES_PASSWORD", "postgres")
             .with_env_var("POSTGRES_DB", "postgres")
-            .with_labels(crate::container_labels())
-            .start_container()
-            .await?;
+            .with_labels(crate::container_labels());
+        let request = if self.stable_host_port {
+            request.with_mapped_port(reserve_host_port()?, POSTGRES_PORT.tcp())
+        } else {
+            request
+        };
+        let container = request.start_container().await?;
         let host = container.get_host().await?;
         let port = container.get_host_port_ipv4(POSTGRES_PORT).await?;
         Ok((
             format!("postgres://postgres:postgres@{host}:{port}/postgres"),
             container,
+            port,
         ))
     }
 
@@ -252,6 +285,7 @@ impl PostgresTestOptions {
         self,
         connection_url: String,
         container: Option<ContainerAsync<GenericImage>>,
+        host_port: Option<u16>,
     ) -> Result<PostgresTestContainer, PostgresTestError> {
         #[cfg(feature = "sqlx-postgres")]
         {
@@ -272,12 +306,14 @@ impl PostgresTestOptions {
                 owner_connection_url: urls.owner,
                 databases,
                 container,
+                host_port,
             })
         }
         #[cfg(not(feature = "sqlx-postgres"))]
         Ok(PostgresTestContainer {
             connection_url,
             container,
+            host_port,
         })
     }
 }
@@ -288,6 +324,9 @@ pub enum PostgresTestError {
     /// Testcontainers could not start or inspect the PostgreSQL container.
     #[error("could not start PostgreSQL test container: {0}")]
     Container(#[from] testcontainers::TestcontainersError),
+    /// No free host port could be reserved for a stable mapping.
+    #[error("could not reserve a host port for PostgreSQL: {0}")]
+    HostPort(#[from] std::io::Error),
     /// SQLx could not connect to the newly started PostgreSQL instance.
     #[cfg(feature = "sqlx-postgres")]
     #[error("could not connect to PostgreSQL test container: {0}")]

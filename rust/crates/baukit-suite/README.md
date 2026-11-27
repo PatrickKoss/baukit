@@ -67,9 +67,9 @@ Use `runtime` with a product-owned `SuitePeerClient` to omit the supplied delive
 
 ```toml
 # Domain and ports crates:
-baukit-suite = { version = "0.31", default-features = false }
+baukit-suite = { version = "0.32", default-features = false }
 # Product adapter crate:
-baukit-suite = { version = "0.31", features = ["http", "jobs", "delivery"] }
+baukit-suite = { version = "0.32", features = ["http", "jobs", "delivery"] }
 ```
 
 ## Product composition
@@ -197,6 +197,14 @@ let notifier = suite.notifier(); // Some when erasure_lookup was set
 # }
 ```
 
+Delivery jobs carry `suite_delivery_concurrency_key(peer_app)` as their
+`concurrency_key`. `suite.worker(store)` and `compose::default_worker_config()`
+set `WorkerConfig::max_per_key` to `SUITE_DELIVERY_MAX_PER_KEY` (1), so a
+hanging peer holds one worker slot while deliveries to other peers keep
+running. A product that builds its own config for `suite.worker_with` should
+start from `default_worker_config()` or set `max_per_key` the same way. The key
+needs `baukit-jobs` migration 0006.
+
 `build` validates `SuiteConfig` and fails without a cipher when peers are configured.
 `app_id` is also the metric prefix. `share_xp(false)` overrides the configuration for
 products that never emit XP. An applier that needs the outbox goes to
@@ -261,8 +269,13 @@ Use `SuiteConfig` as the product's `suite` configuration section. Call
 `Arc<dyn baukit_ratelimit::RateLimitStore>`; use Redis for multiple processes.
 
 Copy `SUITE_MIGRATION_SQL`, `SUITE_RUNTIME_MIGRATION_SQL`,
-`SUITE_LOCK_ORDER_MIGRATION_SQL` and `SUITE_RECORD_IDS_MIGRATION_SQL` after the jobs
-migrations for products adding suite tables. Keep applied suite migrations when
+`SUITE_LOCK_ORDER_MIGRATION_SQL`, `SUITE_RECORD_IDS_MIGRATION_SQL`,
+`SUITE_DELIVERY_PROBES_MIGRATION_SQL` and `SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL`
+after the jobs migrations for products adding suite tables. Products that already
+applied `003` add `006_suite_delivery_probes.sql` and `007_suite_validate_link_checks.sql`
+as new migrations. It drops the failed-job trigger and `suite_failed_delivery_jobs`,
+and schedules a probe one hour out for links that are already disabled. Keep applied
+suite migrations when
 their schema matches the shipped SQL, apart from product owner foreign keys.
 Keep the original filenames and SQLx migration history. Do not copy or run the
 crate's `001` and `002` again when their schema is already applied.
@@ -293,7 +306,9 @@ lock lets one replica run cleanup while the others skip the concurrent run.
 
 The crate archive includes `migrations/001_suite.sql` and
 `migrations/002_suite_runtime.sql`, `migrations/003_suite_lock_order.sql`,
-`migrations/004_platform.sql` and `migrations/005_suite_record_ids.sql`.
+`migrations/004_platform.sql`, `migrations/005_suite_record_ids.sql`,
+`migrations/006_suite_delivery_probes.sql` and
+`migrations/007_suite_validate_link_checks.sql`.
 These are the only embedded runtime files.
 Protocol fixtures ship with `baukit-test` under its `suite` feature; products
 provide their own peers and catalog at runtime.

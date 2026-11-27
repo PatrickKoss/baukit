@@ -9,6 +9,7 @@ use crate::error::is_valid_error_code;
 const DEFAULT_BODY_SIZE_LIMIT: usize = 2 * 1024 * 1024;
 const DEFAULT_CONCURRENCY_LIMIT: usize = 1_024;
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+const DEFAULT_QUEUE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Stable error codes for each JSON extractor rejection class.
 ///
@@ -105,6 +106,7 @@ pub struct HttpOptions {
     pub body_size_limit: usize,
     /// Maximum number of requests processed concurrently.
     pub concurrency_limit: usize,
+    pub(crate) queue_timeout: Duration,
     /// Whether browsers may send credentials to explicitly allowed origins.
     pub allow_credentials: bool,
     pub(crate) allowed_origins: Vec<HeaderValue>,
@@ -228,6 +230,24 @@ impl HttpOptions {
         &self.json_rejection_codes
     }
 
+    /// Bounds how long a request waits for a concurrency permit.
+    ///
+    /// A request that gets no permit in time is shed with `503 unavailable`,
+    /// `Retry-After: 1`, and one `http_requests_shed_total{reason="concurrency"}`
+    /// increment. The default is 1 second. Zero sheds as soon as every permit is
+    /// taken. The wait still counts against the request timeout.
+    #[must_use]
+    pub const fn with_queue_timeout(mut self, queue_timeout: Duration) -> Self {
+        self.queue_timeout = queue_timeout;
+        self
+    }
+
+    /// Returns how long a request waits for a concurrency permit.
+    #[must_use]
+    pub const fn queue_timeout(&self) -> Duration {
+        self.queue_timeout
+    }
+
     /// Sends `Strict-Transport-Security: max-age=<seconds>` on every response.
     ///
     /// Off by default. Requests whose `Host` is `localhost`, `*.localhost`,
@@ -274,6 +294,7 @@ impl HttpOptions {
             request_timeout: config.request_timeout,
             body_size_limit: config.body_size_limit,
             concurrency_limit: config.concurrency_limit,
+            queue_timeout: DEFAULT_QUEUE_TIMEOUT,
             allow_credentials: false,
             allowed_origins: parse_origins(&config.cors_allowed_origins, environment)?,
             additional_allowed_headers: Vec::new(),
@@ -305,6 +326,7 @@ impl Default for HttpOptions {
             request_timeout: DEFAULT_REQUEST_TIMEOUT,
             body_size_limit: DEFAULT_BODY_SIZE_LIMIT,
             concurrency_limit: DEFAULT_CONCURRENCY_LIMIT,
+            queue_timeout: DEFAULT_QUEUE_TIMEOUT,
             allow_credentials: false,
             allowed_origins: Vec::new(),
             additional_allowed_headers: Vec::new(),

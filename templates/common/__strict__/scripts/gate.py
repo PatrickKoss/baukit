@@ -28,6 +28,7 @@ from pathlib import Path
 
 from gate_disk import disk_error
 from gate_locks import (
+    POOL_POLL_SECONDS,
     CorePool,
     Need,
     ResourceLocks,
@@ -37,6 +38,17 @@ from gate_locks import (
     resources_for,
     unknown_resource_members,
 )
+from gate_results import (
+    CachedRun,
+    CacheRequest,
+    InputMap,
+    Machinery,
+    StepSpec,
+    cached_steps,
+    open_cache,
+    run_git,
+)
+from gate_results import settings_error as cache_settings_error
 from process_runner import run_process
 
 MODES = ("always", "selected", "affected")
@@ -84,6 +96,7 @@ class RunContext:
     log_directory: Path
     environment: dict[str, str]
     worker_caps: dict[str, int] = field(default_factory=dict)
+    cached: CachedRun = field(default_factory=CachedRun)
 
 
 @dataclass(frozen=True)
@@ -322,6 +335,8 @@ class CoreBudget:
         self.emulator_cores = min(self.cores, max(1, emulators.cores))
         self.emulator_steps = emulators.steps
         self.reserved = 0
+        self.minimums: dict[str, int] = {}
+        self.held_for_minimums = 0
         self.condition = threading.Condition()
 
     def reserve(self, cores: int) -> None:
@@ -329,6 +344,20 @@ class CoreBudget:
         with self.condition:
             self.reserved = min(self.cores - 1, max(0, cores))
             self.condition.notify_all()
+
+    def require_minimums(self, minimums: dict[str, int]) -> None:
+        """Set each named step's minimum cores, clamped to the budget."""
+        self.minimums = {name: min(self.cores, max(1, cores)) for name, cores in minimums.items()}
+
+    def hold_for_minimums(self, cores: int) -> None:
+        """Hold cores back from other steps while steps with a minimum wait for it."""
+        with self.condition:
+            self.held_for_minimums = max(0, cores)
+            self.condition.notify_all()
+
+    def held_back(self, minimum_step: bool) -> int:
+        held = self.reserved if minimum_step else self.reserved + self.held_for_minimums
+        return min(self.cores - 1, held)
 
     def share(self, lanes: int) -> int:
         cores = self.cores
@@ -344,20 +373,42 @@ class CoreBudget:
         weighted = -(-ceiling * seconds // total_seconds)
         return max(even, min(ceiling, weighted, max(1, self.available())))
 
-    def acquire(self, want: int, minimum: int = 1, *, emulator: bool = False) -> int:
+    def acquire(
+        self, want: int, minimum: int = 1, *, emulator: bool = False, minimum_step: bool = False
+    ) -> int:
+        """Steps with a configured minimum skip each other's holds, so two of them
+        never wait on cores held for the other."""
         want = min(self.cores, max(1, want))
         minimum = min(want, max(1, minimum))
         if self.pool is not None:
-            return self.pool.acquire(want, minimum)
+            return self.acquire_from_pool(want, minimum, emulator or minimum_step)
         with self.condition:
 
             def usable() -> int:
-                return self.free if emulator else self.free - self.reserved
+                return self.free if emulator else self.free - self.held_back(minimum_step)
 
             self.condition.wait_for(lambda: usable() >= minimum)
             granted = min(want, usable())
             self.free -= granted
             return granted
+
+    def acquire_from_pool(self, want: int, minimum: int, exempt: bool) -> int:
+        """Leave the cores held for waiting minimums in the shared pool; the emulator
+        reserve stays local to this gate, as before."""
+        pool = self.pool
+        if pool is None:
+            return 0
+        while not exempt:
+            with self.condition:
+                held = self.held_for_minimums
+                if held == 0:
+                    break
+                usable = pool.available() - min(self.cores - 1, held)
+                if usable >= minimum:
+                    want = min(want, usable)
+                    break
+                self.condition.wait(POOL_POLL_SECONDS)
+        return pool.acquire(want, minimum)
 
     def available(self) -> int:
         if self.pool is not None:
@@ -471,6 +522,23 @@ def emulator_cores(settings: dict, environment: dict[str, str]) -> int:
     return CORES_PER_EMULATOR * int(emulators)
 
 
+def min_cores(settings: dict) -> dict[str, int]:
+    return dict(settings.get("quality", {}).get("min_cores", {}))
+
+
+def min_cores_error(settings: dict, steps: list[Step]) -> str | None:
+    configured = settings.get("quality", {}).get("min_cores", {})
+    if not isinstance(configured, dict):
+        return "gate: quality.min_cores must be a table of step names to positive integers"
+    names = {step.name for step in steps}
+    for name, cores in configured.items():
+        if name not in names:
+            return f"gate: quality.min_cores names unknown step {name}"
+        if isinstance(cores, bool) or not isinstance(cores, int) or cores < 1:
+            return f"gate: quality.min_cores.{name} must be a positive integer, got {cores!r}"
+    return None
+
+
 def emulator_steps(settings: dict, environment: dict[str, str]) -> frozenset[str]:
     if environment.get("BAUKIT_QA_DEVICE_BROKER"):
         return frozenset()
@@ -559,6 +627,9 @@ class Runner:
         sharing: HostSharing | None = None,
     ):
         self.planned = planned
+        self.result_cache = context.cached.cache
+        self.cached = context.cached.passes
+        running = [item for item in planned if item.step.name not in self.cached]
         sharing = sharing or HostSharing()
         self.locks = sharing.locks
         self.resources = sharing.resources
@@ -571,7 +642,7 @@ class Runner:
             int(context.environment.get("BAUKIT_GATE_WORKERS", "1")), None, 0, EmulatorReserve(1)
         )
         self.light = light
-        self.open_lanes = set(heavy_lanes(planned, light))
+        self.open_lanes = set(heavy_lanes(running, light))
         self.command = context.command
         self.log_directory = context.log_directory
         self.environment = context.environment
@@ -586,9 +657,16 @@ class Runner:
         self.history_file = context.log_directory / "step-seconds.txt"
         self.history = read_expected_seconds(self.history_file)
         self.expected = {n: v for n, v in self.history.items() if n in self.names}
-        self.pending = {item.step.name for item in planned if not is_light(item.step, light)}
-        self.emulators_waiting = {name for name in self.names if name in self.budget.emulator_steps}
+        self.pending = {item.step.name for item in running if not is_light(item.step, light)}
+        self.emulators_waiting = {
+            item.step.name for item in running if item.step.name in self.budget.emulator_steps
+        }
         self.emulators_running = 0
+        self.minimums_waiting = {
+            item.step.name
+            for item in running
+            if item.step.name in self.budget.minimums and not is_light(item.step, light)
+        }
         self.started = time.monotonic()
         self.update_reserve()
 
@@ -607,10 +685,11 @@ class Runner:
             if status == "passed":
                 self.save_history(name, seconds)
             self.emulators_waiting.discard(name)
+            self.minimums_waiting.discard(name)
             self.update_reserve()
         self.done[name].set()
 
-    def emulator_ready(self, name: str) -> bool:
+    def step_ready(self, name: str) -> bool:
         step = next(item.step for item in self.planned if item.step.name == name)
         return (
             name not in self.status
@@ -625,9 +704,16 @@ class Runner:
     def update_reserve(self) -> None:
         """Reserve emulator cores once an emulator step's dependencies passed, before
         the steps that waited on the same dependencies wake up and drain the pool."""
-        ready = any(self.emulator_ready(name) for name in self.emulators_waiting)
+        ready = any(self.step_ready(name) for name in self.emulators_waiting)
         waiting = ready and self.emulators_running == 0
         self.budget.reserve(self.budget.emulator_cores if waiting else 0)
+        self.budget.hold_for_minimums(
+            sum(
+                self.budget.minimums[name]
+                for name in self.minimums_waiting
+                if self.step_ready(name)
+            )
+        )
 
     def save_history(self, name: str, seconds: int) -> None:
         self.history[name] = max(1, seconds)
@@ -688,9 +774,23 @@ class Runner:
             self.open_lanes.discard(lane)
         self.lane_seconds[lane] = round(time.monotonic() - started)
 
+    def pass_from_cache(self, lane: str, step: Step) -> None:
+        detail = self.cached[step.name].describe(time.time())
+        print(f"gate: [{lane}] {step.name} cached ({detail})", flush=True)
+        with self.lock:
+            self.status[step.name] = "passed"
+        self.done[step.name].set()
+
+    def remember_pass(self, step: Step, seconds: int, log: Path) -> None:
+        if self.result_cache is not None and self.result_cache.store(step.name, seconds, log):
+            print(f"gate: {step.name} pass stored in the result cache", flush=True)
+
     def run_steps(self, lane: str, steps: list[Step], log: Path) -> bool:
         failed = False
         for step in steps:
+            if step.name in self.cached:
+                self.pass_from_cache(lane, step)
+                continue
             if failed:
                 self.status[step.name] = NOT_RUN
                 self.done[step.name].set()
@@ -737,7 +837,17 @@ class Runner:
                 self.emulators_running += 1
                 self.update_reserve()
             return cores, True
+        minimum = self.budget.minimums.get(step.name)
+        if minimum is not None:
+            return self.minimum_cores(step, share, minimum), True
         return self.budget.acquire(share), True
+
+    def minimum_cores(self, step: Step, share: int, minimum: int) -> int:
+        cores = self.budget.acquire(max(share, minimum), minimum, minimum_step=True)
+        with self.lock:
+            self.minimums_waiting.discard(step.name)
+            self.update_reserve()
+        return cores
 
     def release_cores(self, step: Step, cores: int) -> None:
         self.budget.release(cores)
@@ -796,6 +906,7 @@ class Runner:
         )
         if passed:
             print(f"gate: [{lane}] {step.name} passed in {seconds} s", flush=True)
+            self.remember_pass(step, seconds, log)
             return True
         print(
             f"gate: [{lane}] {step.name} failed with exit {result.returncode} "
@@ -957,6 +1068,7 @@ def worker_budget(
         ),
         pool,
     )
+    budget.require_minimums(min_cores(settings))
     if pool is not None:
         extras.append(f"cores: {budget.cores} slots shared through {pool.directory}")
     workers = budget.share(len(lanes))
@@ -971,6 +1083,9 @@ def worker_budget(
         "for the emulators; "
         f"light: {', '.join(sorted(LIGHT_LANES | light))}"
     )
+    if budget.minimums:
+        minimums = ", ".join(f"{name} {cores}" for name, cores in sorted(budget.minimums.items()))
+        extras.append(f"workers: minimum cores, held back until the step starts: {minimums}")
     return budget
 
 
@@ -1058,6 +1173,61 @@ def host_sharing(
     return sharing
 
 
+def gate_machinery(arguments: argparse.Namespace) -> Machinery:
+    files = [Path(part) for part in shlex.split(arguments.script) if Path(part).is_file()]
+    files.extend(Path(__file__).resolve().parent.glob("*.py"))
+    runner_module = sys.modules[run_process.__module__].__file__
+    if runner_module:
+        files.append(Path(runner_module))
+    return Machinery(Path(arguments.settings), tuple(files))
+
+
+def result_cache(
+    arguments: argparse.Namespace,
+    planned: list[PlannedStep],
+    settings: dict,
+    environment: dict[str, str],
+    extras: list[str],
+) -> tuple[CachedRun, list[PlannedStep]]:
+    """Look up cached passes and return them with the steps that really run."""
+    request = CacheRequest(
+        [StepSpec(item.step.name, item.step.mode, item.step.tokens) for item in planned],
+        settings,
+        InputMap(
+            settings.get("quality", {}).get("affected", {}),
+            shared_paths(settings),
+            glob_pattern,
+            base_token,
+        ),
+        gate_machinery(arguments),
+        environment,
+        arguments.no_cache,
+    )
+    cache, line = open_cache(request, run_git)
+    extras.append(line)
+    passes = cached_steps(cache, {item.step.name: item.step.after for item in planned})
+    running = [item for item in planned if item.step.name not in passes]
+    environment["BAUKIT_GATE_STEPS"] = " ".join(item.step.name for item in running)
+    return CachedRun(cache, passes), running
+
+
+def mark_cached(planned: list[PlannedStep], cached: CachedRun) -> list[PlannedStep]:
+    now = time.time()
+    return [
+        PlannedStep(
+            item.step, f"{item.reason}; cached, {cached.passes[item.step.name].describe(now)}"
+        )
+        if item.step.name in cached.passes
+        else item
+        for item in planned
+    ]
+
+
+def print_cache_notes(cached: CachedRun) -> None:
+    for note in cached.cache.notes if cached.cache else []:
+        print(f"gate: {note}")
+
+
 def plan_or_disk_exit(
     plan_only: bool, settings: dict, planned: list[PlannedStep], environment: dict[str, str]
 ) -> int | None:
@@ -1084,6 +1254,8 @@ def run_command(arguments: argparse.Namespace) -> int:
         or fast_lane_wait_error(steps, resource_map(settings))
         or waits_for_error(steps, settings)
         or worker_caps_error(settings)
+        or min_cores_error(settings, steps)
+        or cache_settings_error(settings, [step.name for step in steps])
     )
     if name_error:
         print(name_error, file=sys.stderr)
@@ -1109,21 +1281,21 @@ def run_command(arguments: argparse.Namespace) -> int:
     environment["BAUKIT_GATE_MODE"] = mode
     environment["BAUKIT_GATE_BASE"] = arguments.affected or ""
     environment["BAUKIT_GATE_TOKENS"] = " ".join(sorted(selection.tokens))
-    environment["BAUKIT_GATE_STEPS"] = " ".join(item.step.name for item in planned)
     packages = rust_packages(arguments.cargo_workspace, mode, selection, changed, environment)
     extras = [packages] if packages else []
-    budget = worker_budget(planned, light, settings, environment, extras)
+    cached, running = result_cache(arguments, planned, settings, environment, extras)
+    budget = worker_budget(running, light, settings, environment, extras)
     extras.extend(cache_environment(environment))
-    sharing = host_sharing(planned, settings, environment, extras)
-    print_plan(mode, arguments.affected, selection, planned, extras)
-    if (stop := plan_or_disk_exit(arguments.plan, settings, planned, environment)) is not None:
+    sharing = host_sharing(running, settings, environment, extras)
+    print_plan(mode, arguments.affected, selection, mark_cached(planned, cached), extras)
+    if (stop := plan_or_disk_exit(arguments.plan, settings, running, environment)) is not None:
         return stop
     log_directory = prepare_log_directory(Path(arguments.log_dir))
     environment["BAUKIT_GATE_LOG_DIR"] = str(log_directory)
     started = time.monotonic()
     runner = Runner(
         planned,
-        RunContext([*script, "--step"], log_directory, environment, worker_caps(settings)),
+        RunContext([*script, "--step"], log_directory, environment, worker_caps(settings), cached),
         budget=budget,
         light=light,
         sharing=sharing,
@@ -1142,6 +1314,7 @@ def run_command(arguments: argparse.Namespace) -> int:
     )
     print("\n".join(report))
     print(f"gate: timings in {runner.timings_file}; lane logs in {log_directory}")
+    print_cache_notes(cached)
     if failures:
         print("gate: failed lanes: " + ", ".join(failures))
         return 1
@@ -1160,6 +1333,7 @@ def main(argv: list[str]) -> int:
     run.add_argument("--affected", metavar="BASE")
     run.add_argument("--cargo-workspace")
     run.add_argument("--plan", action="store_true")
+    run.add_argument("--no-cache", action="store_true")
     specs = commands.add_parser("check-specs")
     specs.add_argument("directory")
     arguments = parser.parse_args(argv)

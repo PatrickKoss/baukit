@@ -149,54 +149,6 @@ impl Validate for OpsConfig {
     }
 }
 
-/// Plain database connection and pool configuration.
-#[derive(Clone, Debug, Deserialize)]
-#[serde(default)]
-pub struct DatabaseConfig {
-    /// Database connection URL. Formatting the wrapper always redacts it.
-    pub url: Secret<String>,
-    /// Maximum number of connections in the pool.
-    pub max_connections: u32,
-    /// Minimum number of connections retained by the pool.
-    pub min_connections: u32,
-    /// Maximum time to wait for a connection, in integer seconds on input.
-    #[serde(with = "duration_seconds")]
-    pub acquire_timeout: Duration,
-}
-
-impl Default for DatabaseConfig {
-    fn default() -> Self {
-        Self {
-            url: Secret::new("postgres://localhost/app".to_owned()),
-            max_connections: 10,
-            min_connections: 1,
-            acquire_timeout: Duration::from_secs(5),
-        }
-    }
-}
-
-impl Validate for DatabaseConfig {
-    fn validate(&self) -> Result<(), ValidationErrors> {
-        let mut errors = Vec::new();
-        if self.url.expose().trim().is_empty() {
-            errors.push(ValidationError::new("url", "must not be empty"));
-        }
-        require_non_zero(self.max_connections, "max_connections", &mut errors);
-        if self.min_connections > self.max_connections {
-            errors.push(ValidationError::new(
-                "min_connections",
-                "must not exceed max_connections",
-            ));
-        }
-        require_non_zero(
-            self.acquire_timeout.as_secs(),
-            "acquire_timeout",
-            &mut errors,
-        );
-        validation_result(errors)
-    }
-}
-
 /// Resource identity values consumed by telemetry initialization.
 ///
 /// Deployment environment is carried by [`BaukitConfig::environment`]. Fields
@@ -277,10 +229,14 @@ pub struct ShutdownConfig {
     pub drain_timeout: Duration,
 }
 
+/// Fits the default 30 second request timeout plus a 3 second telemetry flush
+/// reserve, so `baukit_runtime::DrainBudget` accepts the defaults.
+const DEFAULT_DRAIN_TIMEOUT: Duration = Duration::from_secs(35);
+
 impl Default for ShutdownConfig {
     fn default() -> Self {
         Self {
-            drain_timeout: Duration::from_secs(30),
+            drain_timeout: DEFAULT_DRAIN_TIMEOUT,
         }
     }
 }
@@ -296,7 +252,7 @@ impl Validate for ShutdownConfig {
 /// Standard Baukit sections plus flattened, product-specific configuration.
 ///
 /// Product fields live at the top level beside `http`, `ops`, optional `database`,
-/// `rate_limit`, `telemetry`, and `shutdown`, while validation errors are prefixed with
+/// `rate_limit`, `telemetry`, `shutdown`, and `startup`, while validation errors are prefixed with
 /// `product.` to distinguish their ownership. Product types should use
 /// `#[serde(default)]` when their default field values should apply to omitted
 /// configuration keys.
@@ -320,6 +276,8 @@ pub struct BaukitConfig<T: Default> {
     pub telemetry: TelemetryConfig,
     /// Graceful shutdown settings.
     pub shutdown: ShutdownConfig,
+    /// Dependency wait budget at startup.
+    pub startup: StartupConfig,
     /// Product-owned extension fields, flattened into the top-level document.
     #[serde(flatten)]
     pub product: T,
@@ -335,6 +293,7 @@ impl<T: Default> Default for BaukitConfig<T> {
             rate_limit: RateLimitConfig::default(),
             telemetry: TelemetryConfig::default(),
             shutdown: ShutdownConfig::default(),
+            startup: StartupConfig::default(),
             product: T::default(),
         }
     }
@@ -350,6 +309,7 @@ struct StandardConfig {
     rate_limit: RateLimitConfig,
     telemetry: TelemetryConfig,
     shutdown: ShutdownConfig,
+    startup: StartupConfig,
 }
 
 impl<T> Validate for BaukitConfig<T>
@@ -362,6 +322,11 @@ where
         extend_validation(&mut errors, self.ops.validate(), Some("ops"));
         if let Some(database) = &self.database {
             extend_validation(&mut errors, database.validate(), Some("database"));
+            extend_validation(
+                &mut errors,
+                database.validate_request_timeout(self.http.request_timeout),
+                Some("database"),
+            );
         }
         extend_validation(
             &mut errors,
@@ -370,6 +335,7 @@ where
         );
         extend_validation(&mut errors, self.telemetry.validate(), Some("telemetry"));
         extend_validation(&mut errors, self.shutdown.validate(), Some("shutdown"));
+        extend_validation(&mut errors, self.startup.validate(), Some("startup"));
         extend_validation(&mut errors, self.product.validate(), Some("product"));
         validation_result(errors)
     }
@@ -589,6 +555,7 @@ impl ConfigLoader {
             rate_limit: standard.rate_limit,
             telemetry: standard.telemetry,
             shutdown: standard.shutdown,
+            startup: standard.startup,
             product,
         };
         loaded.validate()?;
@@ -702,6 +669,7 @@ where
             "rate_limit",
             "telemetry",
             "shutdown",
+            "startup",
         ] {
             table.remove(standard_key);
         }
@@ -799,9 +767,13 @@ fn extend_validation(
     }
 }
 
+mod database;
 mod http;
 
+pub use database::DatabaseConfig;
 pub use http::{DEFAULT_HSTS_MAX_AGE, HttpConfig};
+mod startup;
+pub use startup::StartupConfig;
 mod rate_limit;
 pub use rate_limit::{RateLimitConfig, RateLimitFailMode, RateLimitScopeConfig};
 mod redis_namespace;

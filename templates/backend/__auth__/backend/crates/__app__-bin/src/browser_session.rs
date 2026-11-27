@@ -143,6 +143,7 @@ pub struct BrowserSessionDependencies<'a> {
     pub rate_limit: &'a RateLimitOptions,
     pub rate_limit_store: Option<RedisRateLimitStore>,
     pub environment: Environment,
+    pub startup_budget: Duration,
 }
 
 /// Builds `/auth/session/*`, or `None` when the product does not enable it.
@@ -175,7 +176,8 @@ pub async fn browser_session_router(
     .with_idle_timeout(Duration::from_secs(settings.idle_timeout_seconds))?
     .with_absolute_timeout(Duration::from_secs(settings.absolute_timeout_seconds))?
     .with_insecure_local_cookie(settings.insecure_local_cookie)
-    .with_rate_limits(settings.rate_limits())?;
+    .with_rate_limits(settings.rate_limits())?
+    .with_startup_budget(dependencies.startup_budget)?;
     if let Some(internal_issuer) = &settings.internal_issuer {
         config = config.with_internal_issuer(internal_issuer)?;
     }

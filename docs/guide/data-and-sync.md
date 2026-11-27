@@ -17,7 +17,7 @@ says what a product may claim to the user about sync state.
 Enable the database feature on the backend crate that writes syncable rows:
 
 ```toml
-baukit-sync = { version = "0.31", features = ["sqlx-postgres"] }
+baukit-sync = { version = "0.32", features = ["sqlx-postgres"] }
 ```
 
 Take the version from the backend's other baukit pins. A crate that needs only the hybrid logical

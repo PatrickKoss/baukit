@@ -5,6 +5,8 @@ use std::{error::Error, time::Duration};
 use {{ context.app_crate }}_bin::AuthProvider;
 use {{ context.app_crate }}_bin::ProductConfig;
 use {{ context.app_crate }}_bin::auth_verifier;
+
+const STARTUP_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
 {% if context.mcp %}use {{ context.app_crate }}_bin::mcp_verifier;
 {% endif %}
 #[tokio::test]
@@ -30,7 +32,7 @@ async fn external_issuer_configuration_selects_the_verifier_end_to_end()
                 .local_file(file.path())
                 .without_dotenv()
                 .load()?;
-        let verifier = auth_verifier(&config.product.auth).await?;
+        let verifier = auth_verifier(&config.product.auth, STARTUP_BUDGET).await?;
         let claims = server
             .claims("user_123", "api", Duration::from_secs(300))?
             .claim("azp", "https://app.example")
@@ -75,7 +77,7 @@ async fn oidc_authorized_parties_restrict_rest_sessions_only_when_configured()
                 .local_file(file.path())
                 .without_dotenv()
                 .load()?;
-        let verifier = auth_verifier(&loaded.product.auth).await?;
+        let verifier = auth_verifier(&loaded.product.auth, STARTUP_BUDGET).await?;
         for azp in [
             None,
             Some("product-web"),
@@ -120,7 +122,7 @@ async fn clerk_accepts_tokens_without_azp_only_when_opted_in() -> Result<(), Box
                 .local_file(file.path())
                 .without_dotenv()
                 .load()?;
-        let verifier = auth_verifier(&loaded.product.auth).await?;
+        let verifier = auth_verifier(&loaded.product.auth, STARTUP_BUDGET).await?;
         let claims = server.claims("user_123", "api", Duration::from_secs(300))?;
         assert_eq!(
             verifier.verify(&server.mint(&claims)?).await.is_ok(),
@@ -181,7 +183,8 @@ async fn mcp_enforces_provider_token_binding_and_introspection_is_restricted()
                 .load()?;
         assert_eq!(loaded.product.mcp.issuer, config.issuer);
         assert_ne!(server.issuer(), loaded.product.mcp.issuer);
-        let verifier = mcp_verifier(&loaded.product.auth, &loaded.product.mcp).await?;
+        let verifier =
+            mcp_verifier(&loaded.product.auth, &loaded.product.mcp, STARTUP_BUDGET).await?;
         let claims = server
             .claims("user_123", &config.resource_url, Duration::from_secs(300))?
             .issuer(&config.issuer)
@@ -234,7 +237,7 @@ async fn clerk_mcp_accepts_dynamically_registered_clients_with_the_required_scop
         allowed_hosts: vec!["mcp.example".into()],
         ..Default::default()
     };
-    let verifier = mcp_verifier(&auth, &config).await?;
+    let verifier = mcp_verifier(&auth, &config, STARTUP_BUDGET).await?;
     let mut claims = server
         .claims("user_123", &config.resource_url, Duration::from_secs(300))?
         .issuer(&config.issuer)
@@ -335,7 +338,7 @@ async fn configured_provider_authenticates_the_product_route_with_the_same_ident
             "[auth]\nprovider = {provider:?}\nissuer = {issuer:?}\naudience = \"api\"\nclient_id = \"client_app\"\nauthorized_parties = [\"https://app.example\"]\njwks_uri = {:?}\n",
             server.jwks_url(),
         ))?;
-        let verifier = auth_verifier(&config.product.auth).await?;
+        let verifier = auth_verifier(&config.product.auth, STARTUP_BUDGET).await?;
         let app = router(
             ApiState {
                 items: ItemService::new(Arc::new(InMemoryItemRepository::new())),

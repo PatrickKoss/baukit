@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "strategy": "full_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 0,
+      "fraction": 0.5,
+      "expected_delay_ms": 500
+    },
+    {
+      "strategy": "full_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 1,
+      "fraction": 0.5,
+      "expected_delay_ms": 1000
+    },
+    {
+      "strategy": "full_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 3,
+      "fraction": 0.25,
+      "expected_delay_ms": 2000
+    },
+    {
+      "strategy": "full_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 5,
+      "fraction": 0.999,
+      "expected_delay_ms": 31968
+    },
+    {
+      "strategy": "full_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 6,
+      "fraction": 0.999,
+      "expected_delay_ms": 59940
+    },
+    {
+      "strategy": "full_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 40,
+      "fraction": 0.5,
+      "expected_delay_ms": 30000
+    },
+    {
+      "strategy": "full_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 0,
+      "fraction": 0.0,
+      "expected_delay_ms": 0
+    },
+    {
+      "strategy": "full_jitter",
+      "initial_ms": 250,
+      "max_ms": 30000,
+      "attempt": 2,
+      "fraction": 0.7,
+      "expected_delay_ms": 700
+    },
+    {
+      "strategy": "full_jitter",
+      "initial_ms": 5000,
+      "max_ms": 2000,
+      "attempt": 0,
+      "fraction": 0.5,
+      "expected_delay_ms": 1000
+    },
+    {
+      "strategy": "full_jitter",
+      "initial_ms": 100,
+      "max_ms": 300000,
+      "attempt": 12,
+      "fraction": 0.123456,
+      "expected_delay_ms": 37036
+    },
+    {
+      "strategy": "decorrelated_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 0,
+      "fraction": 0.9,
+      "expected_delay_ms": 1000
+    },
+    {
+      "strategy": "decorrelated_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 1,
+      "fraction": 0.5,
+      "expected_delay_ms": 2000
+    },
+    {
+      "strategy": "decorrelated_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 2,
+      "fraction": 0.5,
+      "expected_delay_ms": 5000
+    },
+    {
+      "strategy": "decorrelated_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 4,
+      "fraction": 0.75,
+      "expected_delay_ms": 45250
+    },
+    {
+      "strategy": "decorrelated_jitter",
+      "initial_ms": 1000,
+      "max_ms": 60000,
+      "attempt": 3,
+      "fraction": 0.0,
+      "expected_delay_ms": 1000
+    },
+    {
+      "strategy": "decorrelated_jitter",
+      "initial_ms": 200,
+      "max_ms": 10000,
+      "attempt": 3,
+      "fraction": 0.333,
+      "expected_delay_ms": 1931
+    }
+  ]
+}

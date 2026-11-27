@@ -46,7 +46,8 @@ fn default_layer_supplies_standard_values() {
     assert_eq!(config.http.hsts_max_age, None);
     assert_eq!(config.ops.port, 9090);
     assert!(config.database.is_none());
-    assert_eq!(config.shutdown.drain_timeout, Duration::from_secs(30));
+    assert_eq!(config.shutdown.drain_timeout, Duration::from_secs(35));
+    assert_eq!(config.startup.budget, Duration::from_secs(60));
     assert_eq!(config.product.feature_limit, 0);
 }
 
@@ -78,6 +79,7 @@ request_timeout = 12
 
 [database]
 url = "postgres://file-secret@localhost/file"
+statement_timeout = 11
 "#,
     )
     .expect("write local config");
@@ -99,6 +101,133 @@ url = "postgres://file-secret@localhost/file"
     );
     assert_eq!(database.max_connections, 10);
     assert_eq!(database.min_connections, 1);
+    assert_eq!(database.statement_timeout, Duration::from_secs(11));
+    assert_eq!(database.lock_timeout, Duration::from_secs(5));
+}
+
+#[test]
+fn database_session_timeouts_have_documented_defaults() {
+    let database = DatabaseConfig::default();
+    assert_eq!(database.statement_timeout, Duration::from_secs(29));
+    assert_eq!(database.lock_timeout, Duration::from_secs(5));
+    assert_eq!(
+        database.idle_in_transaction_session_timeout,
+        Duration::from_secs(60)
+    );
+    assert_eq!(database.max_lifetime, Duration::from_secs(30 * 60));
+    assert_eq!(database.idle_timeout, Duration::from_secs(10 * 60));
+
+    let config = BaukitConfig::<ProductConfig> {
+        database: Some(database),
+        ..BaukitConfig::default()
+    };
+    config
+        .validate()
+        .expect("defaults fit the default request timeout");
+}
+
+#[test]
+fn database_timeouts_must_be_non_zero() {
+    let database = DatabaseConfig {
+        statement_timeout: Duration::ZERO,
+        lock_timeout: Duration::ZERO,
+        idle_in_transaction_session_timeout: Duration::ZERO,
+        max_lifetime: Duration::ZERO,
+        idle_timeout: Duration::ZERO,
+        ..DatabaseConfig::default()
+    };
+    let errors = database.validate().expect_err("zero timeouts");
+    let paths: Vec<_> = errors.errors().iter().map(ValidationError::path).collect();
+    assert_eq!(
+        paths,
+        [
+            "statement_timeout",
+            "lock_timeout",
+            "idle_in_transaction_session_timeout",
+            "max_lifetime",
+            "idle_timeout",
+        ]
+    );
+}
+
+#[test]
+fn statement_timeout_must_stay_below_request_timeout() {
+    let mut config = BaukitConfig::<ProductConfig> {
+        database: Some(DatabaseConfig {
+            statement_timeout: Duration::from_secs(30),
+            ..DatabaseConfig::default()
+        }),
+        ..BaukitConfig::default()
+    };
+    let errors = config.validate().expect_err("statement timeout too long");
+    let paths: Vec<_> = errors.errors().iter().map(ValidationError::path).collect();
+    assert_eq!(paths, ["database.statement_timeout"]);
+
+    config.http.request_timeout = Duration::from_secs(31);
+    config
+        .validate()
+        .expect("statement timeout below request timeout");
+}
+
+#[test]
+fn database_timeouts_load_from_environment() {
+    run_env_helper(
+        "database_environment_helper",
+        &[
+            ("DB_APP__DATABASE__URL", "postgres://env@localhost/env"),
+            ("DB_APP__DATABASE__STATEMENT_TIMEOUT", "7"),
+            ("DB_APP__DATABASE__LOCK_TIMEOUT", "2"),
+            ("DB_APP__DATABASE__IDLE_IN_TRANSACTION_SESSION_TIMEOUT", "8"),
+            ("DB_APP__DATABASE__MAX_LIFETIME", "900"),
+            ("DB_APP__DATABASE__IDLE_TIMEOUT", "300"),
+        ],
+    );
+}
+
+#[test]
+fn database_environment_helper() {
+    if std::env::var_os("BAUKIT_CONFIG_ENV_HELPER").is_none() {
+        return;
+    }
+
+    let config = ConfigLoader::new("db-app", Environment::Staging)
+        .expect("valid loader")
+        .without_local_file()
+        .without_dotenv()
+        .load::<ProductConfig>()
+        .expect("valid database env config");
+    let database = config.database.expect("database section");
+    assert_eq!(database.statement_timeout, Duration::from_secs(7));
+    assert_eq!(database.lock_timeout, Duration::from_secs(2));
+    assert_eq!(
+        database.idle_in_transaction_session_timeout,
+        Duration::from_secs(8)
+    );
+    assert_eq!(database.max_lifetime, Duration::from_secs(900));
+    assert_eq!(database.idle_timeout, Duration::from_secs(300));
+}
+
+#[test]
+fn startup_budget_loads_from_environment() {
+    run_env_helper(
+        "startup_environment_helper",
+        &[("STARTUP_APP__STARTUP__BUDGET", "15")],
+    );
+}
+
+#[test]
+fn startup_environment_helper() {
+    if std::env::var_os("BAUKIT_CONFIG_ENV_HELPER").is_none() {
+        return;
+    }
+
+    let config = ConfigLoader::new("startup-app", Environment::Staging)
+        .expect("valid loader")
+        .without_local_file()
+        .without_dotenv()
+        .load::<ProductConfig>()
+        .expect("valid startup env config");
+    assert_eq!(config.startup.budget, Duration::from_secs(15));
 }
 
 #[test]
@@ -446,6 +575,7 @@ fn validation_aggregates_qualified_errors() {
     });
     config.telemetry.trace_sampling_ratio = 1.5;
     config.shutdown.drain_timeout = Duration::ZERO;
+    config.startup.budget = Duration::ZERO;
     config.product.feature_limit = 13;
 
     let errors = config.validate().expect_err("multiple invalid fields");
@@ -458,11 +588,12 @@ fn validation_aggregates_qualified_errors() {
             "database.min_connections",
             "telemetry.trace_sampling_ratio",
             "shutdown.drain_timeout",
+            "startup.budget",
             "product.feature_limit",
         ]
     );
     let rendered = errors.to_string();
-    assert!(rendered.contains("configuration validation failed (6 error(s))"));
+    assert!(rendered.contains("configuration validation failed (7 error(s))"));
     assert!(rendered.contains("http.port: must be non-zero"));
     assert!(rendered.contains("product.feature_limit: must not be unlucky"));
 }

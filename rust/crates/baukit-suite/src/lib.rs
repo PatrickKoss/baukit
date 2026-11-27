@@ -28,11 +28,16 @@
 //!
 //! Cleanup takes a transaction-scoped `pg_try_advisory_xact_lock` for the whole
 //! run before any owner locks. Another replica skips that run. Cleanup locks owners
-//! only for rows eligible for removal or failure accounting. Failed-job triggers
-//! only record job ids; they never lock links. The store accounts those records
-//! under the owner/link/job order before reading health, changing preferences,
-//! resetting a circuit or enqueueing work. Apply `SUITE_LOCK_ORDER_MIGRATION_SQL`
-//! after the runtime migration to install this behavior.
+//! only for rows eligible for removal.
+//!
+//! Each finished delivery attempt updates its link under the owner/link order.
+//! A failed attempt adds one to `consecutive_failures`; at
+//! [`domain::SUITE_CIRCUIT_FAILURES`] the link is disabled and probed after one
+//! hour, then after a delay that doubles up to a day. A delivered probe makes the
+//! link healthy again. Attempts the egress breaker refuses are deferred and not
+//! counted. Apply `SUITE_DELIVERY_PROBES_MIGRATION_SQL` and then
+//! `SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL` after the record ids migration to
+//! install this behavior.
 
 pub mod adapters;
 #[cfg(feature = "delivery")]
@@ -67,6 +72,16 @@ pub const SUITE_LOCK_ORDER_MIGRATION_SQL: &str =
 #[cfg(feature = "postgres")]
 pub const SUITE_RECORD_IDS_MIGRATION_SQL: &str =
     include_str!("../migrations/005_suite_record_ids.sql");
+/// Copy after `SUITE_RECORD_IDS_MIGRATION_SQL`. It drops the SQL failure accounting
+/// and adds the probe schedule for disabled links.
+#[cfg(feature = "postgres")]
+pub const SUITE_DELIVERY_PROBES_MIGRATION_SQL: &str =
+    include_str!("../migrations/006_suite_delivery_probes.sql");
+/// Copy after `SUITE_DELIVERY_PROBES_MIGRATION_SQL`. It validates the link checks that
+/// migration adds `NOT VALID`.
+#[cfg(feature = "postgres")]
+pub const SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL: &str =
+    include_str!("../migrations/007_suite_validate_link_checks.sql");
 
 // Compiles the README's examples so they cannot drift from the API.
 #[doc = include_str!("../README.md")]

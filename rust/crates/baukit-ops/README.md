@@ -71,15 +71,40 @@ of rotation. Register it with `register_diagnostic_fn_default` and read it on th
 Checks run concurrently and each carries its own timeout, so `/readyz` costs about as long as its
 slowest check rather than the sum. `DEFAULT_READINESS_TIMEOUT` is two seconds.
 
-## PostgreSQL pool instrumentation
+## PostgreSQL pool
 
-With the `sqlx-postgres` feature, use `baukit_ops::acquire` in place of `PgPool::acquire` and
+With the `sqlx-postgres` feature, build the pool with `baukit_ops::connect_pool(&database)` (or
+`connect_pool_lazy`) from a `baukit_config::DatabaseConfig` instead of a hand-built `PgPoolOptions`.
+It applies the pool size, acquire timeout, `max_lifetime` and `idle_timeout`, and sends
+`statement_timeout`, `lock_timeout` and `idle_in_transaction_session_timeout` as startup parameters,
+so every connection runs with them. A query that hits the statement timeout fails with SQLSTATE
+`57014` and its connection goes back to the pool. `pool_options` and `connect_options` return the
+two halves if you need to adjust them.
+
+Then use `baukit_ops::acquire` in place of `PgPool::acquire` and
 `baukit_ops::begin` in place of `PgPool::begin`, then pass `&mut *connection` to queries you would
 have run against `&PgPool`. Those record pool wait duration and acquisition timeouts.
 
 Queries handed a bare `&PgPool` bypass acquisition metrics. SQLx exposes no hook that can observe an
 implicit executor acquisition, so this is a real limitation rather than an oversight. The periodic
 pool gauges from `spawn_pool_metrics_sampler` are unaffected.
+
+## Waiting for PostgreSQL at startup
+
+`baukit_ops::connect_with_backoff(&database, config.startup.budget)` connects like `connect_pool`
+but retries while the server is not there yet: connection refused, DNS and other I/O errors, pool
+timeouts, and SQLSTATE `57P03`, `57P01` and `53300`. Wrong credentials, a missing database, TLS and
+URL errors fail on the first attempt. Each retry logs a warning with the attempt and the delay.
+After the budget (60 s by default, `startup.budget` in config) it returns
+`StartupError::BudgetExhausted` with the last error. Keep the budget inside the startup probe window.
+
+Migration binaries call `baukit_ops::connect_for_migrations(&database, config.startup.budget)`. It
+retries the same way and opens a single-connection pool that keeps `lock_timeout` but drops
+`statement_timeout` and `idle_in_transaction_session_timeout`, so a long migration step is not
+cancelled at the request limit. Run the migrator on the returned pool.
+
+Both use `baukit_resilience::startup::retry_within`, the shared loop, and log each retry with
+`tracing`. `StartupError` and `RetryAttempt` are re-exported here.
 
 ## Scope
 

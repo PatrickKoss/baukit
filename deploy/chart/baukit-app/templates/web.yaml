@@ -63,6 +63,7 @@ spec:
         {{- end }}
     spec:
       {{- include "baukit-app.podIdentity" (dict "root" . "process" "web") | nindent 6 }}
+      terminationGracePeriodSeconds: {{ .Values.web.terminationGracePeriodSeconds }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- with .Values.imagePullSecrets }}
@@ -79,6 +80,15 @@ spec:
             - name: http
               containerPort: {{ .Values.web.port }}
               protocol: TCP
+          {{- if .Values.web.startupProbe.enabled }}
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: {{ .Values.web.startupProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.web.startupProbe.timeoutSeconds }}
+            failureThreshold: {{ .Values.web.startupProbe.failureThreshold }}
+          {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -87,6 +97,10 @@ spec:
             httpGet:
               path: /healthz
               port: http
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: {{ include "baukit-app.webPreStopSeconds" . }}
           resources:
             {{- toYaml .Values.web.resources | nindent 12 }}
           volumeMounts:

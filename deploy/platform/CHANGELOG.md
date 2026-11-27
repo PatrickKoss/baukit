@@ -2,10 +2,18 @@
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
 - The Loki gateway and the e2e echo image move from `nginx/nginx-unprivileged:1.31.8-alpine` to `1.31.10-alpine`, which ships libxml2 2.13.9-r3 and fixes CVE-2026-86144. `image-findings.toml` allows CVE-2026-11979, CVE-2026-86138, CVE-2026-86139, CVE-2026-86140, CVE-2026-86142 and CVE-2026-86143 (libxml2, fixed in 2.13.9-r4 and -r5) until 2027-01-22, because no nginx-unprivileged build has the fix yet. The gateway loads no XML module.
+- e2e `api-disruption` gains step `traefik-rollout-under-load`: `kubectl rollout restart` rolls Traefik while the in-cluster loader runs, and the step expects zero failed requests, at least 100 OK ones, the old pod gone and a new pod Ready. helm-controller drift detection keeps the `restartedAt` annotation, because its server-side apply dry run preserves fields other managers own. Cleanup puts the annotation back and waits for the rollout.
+- The shared Postgres bootstrap owner `product_owner` gets `CONNECTION LIMIT 25` and baukit-config's default `statement_timeout` (29 s), `lock_timeout` (5 s) and `idle_in_transaction_session_timeout` (60 s) as role settings in `postInitApplicationSQL`, because PgBouncer in transaction mode cannot forward the client's startup options. `product-database.example.yaml` shows the same `ALTER ROLE` statements for every other tenant owner. CNPG runs `postInitApplicationSQL` only when it creates the cluster; recreate it or have the owner run the statements on itself once over a direct connection to `postgres-cluster-rw`. A role may set its own defaults, so nobody execs into `postgres` and Falco's `Baukit exec into protected platform namespace` stays quiet.
+- The pooler's `max_db_connections` drops from 20 to 12, so each owner keeps 13 direct connections for one worker pod, migrations and an operator. Only the API goes through the pooler.
+- The pooler ignores the `options` and `extra_float_digits` startup parameters and sets `query_timeout` 35 s and `idle_transaction_timeout` 60 s. The Keycloak owner gets `connectionLimit: 12`.
+- e2e `tenant-postgres` checks the owner's connection limit and that a session through the pooler gets the role's timeouts even when the client sends another `statement_timeout`.
+- e2e `canary`: the baukit-app chart with `canary.enabled` promotes a healthy pod template and rolls back the `echo-faulty` image, which answers 500. `run.sh` builds and imports `localhost/baukit-e2e/echo-faulty:local` next to the echo image.
+- e2e `ingress` sets `terminationGracePeriodSeconds: 11`. The chart refuses 10 since the drain budget change, so the suite could not install.
 
 ## [0.31.0] - 2026-11-26
-
 ## [0.30.6] - 2026-11-26
 
 ## [0.30.5] - 2026-11-26

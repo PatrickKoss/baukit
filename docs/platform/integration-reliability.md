@@ -2,19 +2,22 @@
 
 **Status:** Product-facing implementation recipe; the generic connector port is `baukit-integrations`.
 **Applies to:** Outbound provider calls, OAuth-backed connections, webhooks, imports, notifications, and client delivery queues.
-**Related:** [telemetry specification](./telemetry-spec.md), [offline readiness](./offline-readiness-contract.md), and [resource budgets](./resource-budgets-contract.md).
+**Related:** [resilience contract](./resilience-contract.md), [telemetry specification](./telemetry-spec.md), [offline readiness](./offline-readiness-contract.md), and [resource budgets](./resource-budgets-contract.md).
 
 Baukit supplies durable execution and operational contracts. Provider resources, OAuth models and recovery, webhook schemas and verification rules, cursor formats, credentials, normalized entities, and localized product UX remain product-local. A collection of providers in one domain is evidence for a shared connector *contract* but not for a shared connector *framework*. `baukit-integrations` owns the port shape, the retry vocabulary, and the scripted fake; the product-local list above stays product-local. See [ADR 0002](../adr/0002-integration-connector-contract.md) for the reasoning and [the crate README](../../rust/crates/baukit-integrations/README.md) for the API.
 
 ## 1. Outbound boundary
 
-Every outbound operation must set a finite timeout at the HTTP client or operation boundary. Classify its result explicitly into a closed product vocabulary such as:
+Every outbound operation must set a finite timeout at the HTTP client or operation boundary. The
+[resilience contract](./resilience-contract.md) owns the retry rules: who retries, how long to wait,
+which defaults apply, and how an open circuit maps to a job outcome. This page covers what a product
+adds on top. Classify its result explicitly into a closed product vocabulary such as:
 
 | Class | Typical handling |
 |---|---|
 | healthy | Commit the result and mark the job successful. |
-| rate-limited | Retry using a valid provider delay when present. |
-| unavailable | Retry with bounded runner backoff. |
+| rate-limited | Retry after the provider's delay, per the resilience contract. |
+| unavailable | Retry in the one retry layer of the call path, per the resilience contract. |
 | timed-out | Treat the outcome as unknown; reconcile or replay idempotently. |
 | revoked or terminal auth | Stop retrying and surface a stable reconnect/action code. |
 | invalid request or payload | Permanent failure; repair product input or mapping. |
@@ -83,7 +86,9 @@ fn classify_revoked() -> JobError {
 }
 ```
 
-`WorkerRunner` honors `JobError::retryable_after` instead of its exponential delay, but the persisted `max_attempts` cap remains authoritative. Without a hint, it uses `WorkerConfig.retry_initial` and `retry_max`.
+Backoff, `Retry-After` handling, deferrals and the mapping of `EgressError` with `egress_job_error`
+follow the [resilience contract](./resilience-contract.md#mapping-an-open-circuit-in-a-job-handler).
+The persisted `max_attempts` cap stays authoritative.
 
 Terminal work stays in the existing `failed` lifecycle state. `Job.failure_reason` is `JobFailureReason::Permanent` for a non-retryable handler result and `JobFailureReason::AttemptsExhausted` when retryable work or an expired final lease consumes the cap. `last_error` is bounded diagnostic text, not a machine classification or localized message. Do not introduce `dead_letter` as another state.
 
@@ -220,9 +225,9 @@ must use an allowlist or an outbound proxy that enforces them.
 
 `baukit_egress::GuardedClient` implements the address, redirect, proxy, time,
 and body rules above and keeps the URL out of its errors and telemetry. It
-classifies non-`2xx` statuses with `classify_http_status_with_options`, which retries `425`
-as `Unavailable`, and clamps the receiver's `Retry-After` to
-`EgressOptions::max_retry_after`, 300 seconds by default. A client built on
+classifies non-`2xx` statuses with `classify_http_status_with_options`, which treats `425`
+as `Unavailable`. Its `Retry-After` clamp, circuit breaker and bulkhead are in the
+[resilience contract](./resilience-contract.md#circuit-breaker-rust). A client built on
 `classify_http_status` directly gets the uncapped value and sets
 `RetryHeaderOptions::with_max_retry_after` itself.
 `fixtures/egress/address-policy-v1.json` pins the address decisions for any
