@@ -1,6 +1,8 @@
 // Drives a generated API past its concurrency limit. Passes when every shed response is a 503 with
-// Retry-After, admitted requests keep their p99 under ADMITTED_P99_MS, and the ops listener answers
-// /healthz throughout and after the load.
+// Retry-After and the ops listener answers /healthz throughout and after the load. The admitted p99
+// is checked by admitted_latency.py from the CSV samples, after correcting for wall clock steps the
+// `clock` scenario records.
+import { sleep } from "k6";
 import http from "k6/http";
 import { Counter, Rate, Trend } from "k6/metrics";
 
@@ -16,10 +18,10 @@ const PEAK_RPS = number("PEAK_RPS", 2000);
 const RAMP_SECONDS = number("RAMP_SECONDS", 10);
 const HOLD_SECONDS = number("HOLD_SECONDS", 20);
 const MAX_VUS = number("MAX_VUS", 400);
-// The 1 s queue timeout baukit-http sheds after, plus 500 ms for the handler.
-const ADMITTED_P99_MS = number("ADMITTED_P99_MS", 1500);
 const LIVENESS_AFTER_SECONDS = 5;
 const REQUEST_TIMEOUT = "10s";
+const CLOCK_TICK_SECONDS = 0.1;
+const MS_PER_SECOND = 1000;
 
 const ADMITTED = 200;
 const SHED = 503;
@@ -29,6 +31,7 @@ const shedResponses = new Counter("shed_responses");
 const shedWithoutRetryAfter = new Rate("shed_without_retry_after");
 const unexpectedStatus = new Rate("unexpected_status");
 const processUp = new Rate("process_up");
+const clockLag = new Trend("clock_lag", true);
 
 const params = {
   timeout: REQUEST_TIMEOUT,
@@ -50,6 +53,12 @@ export const options = {
         { target: PEAK_RPS, duration: `${HOLD_SECONDS}s` },
       ],
     },
+    clock: {
+      executor: "constant-vus",
+      exec: "clock",
+      vus: 1,
+      duration: `${RAMP_SECONDS + HOLD_SECONDS + LIVENESS_AFTER_SECONDS}s`,
+    },
     liveness: {
       executor: "constant-arrival-rate",
       exec: "liveness",
@@ -63,7 +72,6 @@ export const options = {
     shed_responses: ["count>0"],
     shed_without_retry_after: ["rate==0"],
     unexpected_status: ["rate==0"],
-    admitted_duration: [`p(99)<${ADMITTED_P99_MS}`],
     process_up: ["rate==1"],
   },
 };
@@ -84,4 +92,10 @@ export function overload() {
 export function liveness() {
   const response = http.get(`${OPS_URL}/healthz`, { timeout: REQUEST_TIMEOUT });
   processUp.add(response.status === ADMITTED);
+}
+
+export function clock() {
+  const started = Date.now();
+  sleep(CLOCK_TICK_SECONDS);
+  clockLag.add(Date.now() - started - CLOCK_TICK_SECONDS * MS_PER_SECOND);
 }
