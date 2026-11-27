@@ -524,6 +524,9 @@ behave. Later phases add test directories here.
   requests. A rollout of Traefik itself is not covered: locally it runs one replica.
   R1 stays `[~]` until a case rolls Traefik under the loop. With one replica and no hostPorts the
   surge pod can schedule, so the case runs locally too.
+  Note (reliability rel-traefik): step `traefik-rollout-under-load` in `e2e/tests/api-disruption/`
+  restarts the Traefik Deployment under the loop and expects zero failed requests, the old pod gone
+  and a new pod Ready. Cleanup restores the pod template annotation.
 - [x] **R2 CNPG** (F-03, F-07): `enablePDB: false` when `instances: 1` (documented in the README, with
   `nodeMaintenanceWindow` for multi-instance overlays). Scope the restore-test Role's delete and patch
   to `resourceNames: [postgres-cluster-restore-test]`. Give the restore test a Delete-policy
