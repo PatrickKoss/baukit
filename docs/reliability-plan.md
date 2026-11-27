@@ -967,3 +967,10 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
 - Merged main at 85df8ce9 (docs overhaul, PR #43). The reliability doc changes moved onto main's
   rewritten pages, `docs/guide/manifest.md` documents `[quality.cache]`, and every baukit pin in the
   docs reads 0.32.
+- The e53ae489 gate failed two checks from the main merge: the docs inventory wanted
+  `baukit-resilience` in `CLAUDE.md` and the guide index, and the affected-fixture check still
+  refused images for a crate change. Both fixed in 8824909c.
+- `docs/guide` now describes the 0.32 APIs. Checking it against the code found that the generated
+  worker built its `DrainBudget` from the 600 s job timeout, so it failed at startup against the
+  35 s or 45 s drain. The budget now checks `release_reserve`, and `worker_drain` tests the
+  defaults. Open: no gate starts the generated worker binary, which is how this went unnoticed.
