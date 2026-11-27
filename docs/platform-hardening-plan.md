@@ -515,7 +515,7 @@ behave. Later phases add test directories here.
 
 ## Phase R: reliability
 
-- [~] **R1 Traefik** (F-01, D7): a Deployment with 2 replicas where the node count allows (1 locally),
+- [x] **R1 Traefik** (F-01, D7): a Deployment with 2 replicas where the node count allows (1 locally),
   `type: LoadBalancer` through k3s ServiceLB, rolling update `maxUnavailable: 0, maxSurge: 1`, PDB,
   `platform-critical`, `install/upgrade.crds: CreateReplace`. The e2e `ingress/` test bumps a pod
   annotation and asserts the rollout completes with no failed requests from a curl loop.
@@ -527,6 +527,7 @@ behave. Later phases add test directories here.
   Note (reliability rel-traefik): step `traefik-rollout-under-load` in `e2e/tests/api-disruption/`
   restarts the Traefik Deployment under the loop and expects zero failed requests, the old pod gone
   and a new pod Ready. Cleanup restores the pod template annotation.
+  It passed on k3d on 2026-11-27 with 508 requests OK and 0 failed, so R1 is ticked again.
 - [x] **R2 CNPG** (F-03, F-07): `enablePDB: false` when `instances: 1` (documented in the README, with
   `nodeMaintenanceWindow` for multi-instance overlays). Scope the restore-test Role's delete and patch
   to `resourceNames: [postgres-cluster-restore-test]`. Give the restore test a Delete-policy

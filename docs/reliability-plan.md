@@ -472,7 +472,7 @@ FX tests come first in each phase where they apply: write the failing test, then
   Postgres and asserts `/healthz` 200, `/readyz` 503, API `503` with `Retry-After` within the queue
   timeout, and recovery after restart without a process restart. The worker template ships a test that
   pauses Postgres mid-job (WK1). Both run in every fixture flavor that has the component.
-- [~] **FX3 Platform e2e cases** (RL-88): the two missing hardening tests (rollout under a curl loop with
+- [x] **FX3 Platform e2e cases** (RL-88): the two missing hardening tests (rollout under a curl loop with
   zero failed requests; `kubectl drain --dry-run=server` with no blocking PDB), plus API pod kill under
   load with two replicas (zero 5xx at the edge beyond the shed budget), CNPG switchover with the app
   reconnecting, and a Flagger rollback (PL6). Each case runs inside `make platform-e2e` under the host
@@ -852,3 +852,17 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
     `[quality.affected]` map that `--affected` already trusts, plus shared, unmapped and gate files.
     Only a clean tree uses the cache. Steps that read advisory databases are never cached, entries
     expire, CI never caches, and `--no-cache` forces a real run. It ships in the same bundle.
+- FX3 done. Every case has passed on k3d:
+  - `node-drain` and `canary` (Flagger rollback) passed in the full e2e run on 7394b33d.
+  - `postgres-failover` passed on 7a9f7651.
+  - The `api-disruption` suite with the merged Traefik step passed on 2026-11-27:
+
+    | Step | OK | Failed |
+    |---|---|---|
+    | API rollout | 508 | 0 |
+    | Pod kill | 263 | 0, budget 20 |
+    | Traefik rollout | 508 | 0 |
+
+  - `kill_shed_budget` stays at 20. One run that shed nothing is not enough to tighten it, and the
+    budget is the measured cost of an EndpointSlice update plus Traefik's provider throttle.
+  - R1 in the hardening plan is ticked again.
