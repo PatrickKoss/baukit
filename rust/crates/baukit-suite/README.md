@@ -167,10 +167,11 @@ Use `SuiteConfig` as the product's `suite` configuration section. Call
 `Arc<dyn baukit_ratelimit::RateLimitStore>`; use Redis for multiple processes.
 
 Copy `SUITE_MIGRATION_SQL`, `SUITE_RUNTIME_MIGRATION_SQL`,
-`SUITE_LOCK_ORDER_MIGRATION_SQL`, `SUITE_RECORD_IDS_MIGRATION_SQL` and
-`SUITE_DELIVERY_PROBES_MIGRATION_SQL` after the jobs migrations for products adding
-suite tables. Products that already applied `003` add `006_suite_delivery_probes.sql`
-as a new migration. It drops the failed-job trigger and `suite_failed_delivery_jobs`,
+`SUITE_LOCK_ORDER_MIGRATION_SQL`, `SUITE_RECORD_IDS_MIGRATION_SQL`,
+`SUITE_DELIVERY_PROBES_MIGRATION_SQL` and `SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL`
+after the jobs migrations for products adding suite tables. Products that already
+applied `003` add `006_suite_delivery_probes.sql` and `007_suite_validate_link_checks.sql`
+as new migrations. It drops the failed-job trigger and `suite_failed_delivery_jobs`,
 and schedules a probe one hour out for links that are already disabled. Keep applied
 suite migrations when
 their schema matches the shipped SQL, apart from product owner foreign keys.
@@ -203,8 +204,9 @@ lock lets one replica run cleanup while the others skip the concurrent run.
 
 The crate archive includes `migrations/001_suite.sql` and
 `migrations/002_suite_runtime.sql`, `migrations/003_suite_lock_order.sql`,
-`migrations/004_platform.sql`, `migrations/005_suite_record_ids.sql` and
-`migrations/006_suite_delivery_probes.sql`.
+`migrations/004_platform.sql`, `migrations/005_suite_record_ids.sql`,
+`migrations/006_suite_delivery_probes.sql` and
+`migrations/007_suite_validate_link_checks.sql`.
 These are the only embedded runtime files.
 Protocol fixtures ship with `baukit-test` under its `suite` feature; products
 provide their own peers and catalog at runtime.

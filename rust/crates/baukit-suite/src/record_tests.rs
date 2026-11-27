@@ -9,6 +9,7 @@ use uuid::Uuid;
 use crate::{
     SUITE_DELIVERY_PROBES_MIGRATION_SQL, SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_MIGRATION_SQL,
     SUITE_RECORD_IDS_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL,
+    SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL,
     adapters::postgres::PostgresSuiteLinkStore,
     domain::{DeliveryHealth, EncryptedPayload, LinkRole, LinkStatus, RewardMode, SuiteLink},
     ports::SuiteLinkStore as _,
@@ -83,6 +84,7 @@ async fn migrate_to_current(pool: &PgPool) -> TestResult {
     for migration in [
         SUITE_RECORD_IDS_MIGRATION_SQL,
         SUITE_DELIVERY_PROBES_MIGRATION_SQL,
+        SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL,
     ] {
         sqlx::raw_sql(migration).execute(pool).await?;
     }

@@ -1,23 +1,27 @@
 # Job deferrals, heartbeats and concurrency keys
 
-`baukit-jobs` 0.32.0 adds two columns to `job_outbox`, widens the `JobStore` trait, and changes the
+`baukit-jobs` 0.32.0 adds two columns and an index to `job_outbox`, widens the `JobStore` trait, and changes the
 lease and shutdown defaults. A job can now wait for a dependency without spending an attempt, and a
 running attempt renews its lease instead of holding one long lease.
 
 ## SQL
 
-Apply both migrations, in this order, before you deploy the 0.32.0 binary:
+Apply the four migrations, in this order, before you deploy the 0.32.0 binary:
 
 | Migration | Constant | Template file | Change |
 | --- | --- | --- | --- |
-| `0005_baukit_jobs_deferrals.sql` | `POSTGRES_MIGRATION_0005_SQL` | `0011_baukit_jobs_deferrals.sql` | `deferrals INTEGER NOT NULL DEFAULT 0` |
-| `0006_baukit_jobs_concurrency_key.sql` | `POSTGRES_MIGRATION_0006_SQL` | `0012_baukit_jobs_concurrency_key.sql` | nullable `concurrency_key TEXT` and the partial index `job_outbox_running_key_idx` |
+| `0005_baukit_jobs_deferrals.sql` | `POSTGRES_MIGRATION_0005_SQL` | `0011_baukit_jobs_deferrals.sql` | `deferrals INTEGER NOT NULL DEFAULT 0` and its check, `NOT VALID` |
+| `0006_baukit_jobs_concurrency_key.sql` | `POSTGRES_MIGRATION_0006_SQL` | `0012_baukit_jobs_concurrency_key.sql` | nullable `concurrency_key TEXT` and its length check, `NOT VALID` |
+| `0007_baukit_jobs_validate_checks.sql` | `POSTGRES_MIGRATION_0007_SQL` | `0013_baukit_jobs_validate_checks.sql` | validates both checks |
+| `0008_baukit_jobs_running_key_index.sql` | `POSTGRES_MIGRATION_0008_SQL` | `0014_baukit_jobs_running_key_index.sql` | the partial index `job_outbox_running_key_idx`, built `CONCURRENTLY` |
 
 The template file names are the ones the auth and worker templates ship in `backend/migrations/`.
 Copy the files after your product's existing baukit-jobs migrations.
 
-Both are expand-only. A 0.31.x worker keeps running against the new columns and ignores them. `0006`
-builds its index without `CONCURRENTLY`, so it blocks writes to `job_outbox` while it builds.
+All four are expand-only. A 0.31.x worker keeps running against the new columns and ignores them.
+None of them blocks writes to `job_outbox` for longer than the 5 second lock timeout. `0008` starts with
+`-- no-transaction`, so sqlx runs it outside a transaction. If your migration runner does not read that
+marker, run the file on its own, outside a transaction.
 
 The `baukit-suite` delivery worker needs `0006` too, because it sets a concurrency key per peer app.
 

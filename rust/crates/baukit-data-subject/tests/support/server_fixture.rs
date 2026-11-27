@@ -565,6 +565,8 @@ async fn seed_database(pool: &PgPool) -> Result<(), Box<dyn Error>> {
         baukit_jobs::POSTGRES_MIGRATION_0004_SQL,
         baukit_jobs::POSTGRES_MIGRATION_0005_SQL,
         baukit_jobs::POSTGRES_MIGRATION_0006_SQL,
+        baukit_jobs::POSTGRES_MIGRATION_0007_SQL,
+        baukit_jobs::POSTGRES_MIGRATION_0008_SQL,
         baukit_erasure::POSTGRES_MIGRATION_SQL,
         baukit_erasure::POSTGRES_REONBOARDING_MIGRATION_SQL,
         POSTGRES_MIGRATION_SQL,

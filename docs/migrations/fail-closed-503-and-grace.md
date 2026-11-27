@@ -76,11 +76,14 @@ Delivery failures now count per attempt in the store, against `SUITE_CIRCUIT_FAI
 terminal job in a SQL trigger. A disabled link gets a probe delivery after 1 hour, then after a delay
 that doubles up to 24 hours. An open egress breaker defers the delivery and does not count.
 
-Apply `SUITE_DELIVERY_PROBES_MIGRATION_SQL` (`006_suite_delivery_probes.sql`) after `005`. It is not
+Apply `SUITE_DELIVERY_PROBES_MIGRATION_SQL` (`006_suite_delivery_probes.sql`) after `005`, then
+`SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL` (`007_suite_validate_link_checks.sql`). `006` is not
 expand-only. It drops the `suite_delivery_failed` trigger, the accounting functions and the
 `suite_failed_delivery_jobs` table that a 0.31.x binary queries, and adds `next_probe_at` and
-`failed_probes` to `suite_links`. Stop the 0.31.x processes that run suite deliveries, apply the
-migration, then start 0.32.0. Delivery jobs now carry a concurrency key, so apply `baukit-jobs` `0006`
+`failed_probes` to `suite_links`. It replaces the `consecutive_failures` check, which capped the counter
+at 20, with `consecutive_failures >= 0`. `006` adds the new checks `NOT VALID` and `007` validates them.
+Stop the 0.31.x processes that run suite deliveries, apply the
+migrations, then start 0.32.0. Delivery jobs now carry a concurrency key, so apply `baukit-jobs` `0006`
 first, as [job-deferrals-and-concurrency-keys.md](job-deferrals-and-concurrency-keys.md) says.
 
 For custom suite stores and direct calls to the domain functions:

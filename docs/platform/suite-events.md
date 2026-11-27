@@ -207,9 +207,9 @@ a product prefix or labels.
    `Validate` implementation. Call `validate_for(own_app, peers_json, cipher)`
    at startup. Active mode requires a credential cipher. URLs require HTTPS;
    `allow_loopback` permits HTTP only for localhost, 127.0.0.1 or ::1.
-3. For a product adding suite tables, copy the four suite SQL files after the
+3. For a product adding suite tables, copy the suite SQL files after the
    jobs migrations. Constants are
-   `baukit_suite::{SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL, SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_DELIVERY_PROBES_MIGRATION_SQL}`.
+   `baukit_suite::{SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL, SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_RECORD_IDS_MIGRATION_SQL, SUITE_DELIVERY_PROBES_MIGRATION_SQL, SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL}`.
    Keep applied suite migrations in products that already have these tables.
    For SLS, `0056_suite.sql` corresponds to `001_suite.sql` and
    `0059_suite_runtime.sql` corresponds to `002_suite_runtime.sql`.

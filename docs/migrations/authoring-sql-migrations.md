@@ -20,7 +20,9 @@ the rest.
 
 3. **Create indexes concurrently.** Use `CREATE INDEX CONCURRENTLY IF NOT EXISTS`. It cannot run in a
    transaction, so put it in its own file whose first line is `-- no-transaction`, the sqlx marker.
-   An index on a table created in the same file is exempt.
+   sqlx sends such a file as one query, and PostgreSQL runs a query with several statements as one
+   transaction block, so the file holds only the `CREATE INDEX` and no `SET`. Suppress squawk's
+   timeout rules there with a reason. An index on a table created in the same file is exempt.
 
 4. **Add constraints `NOT VALID`, then `VALIDATE`.** `ALTER TABLE ... ADD CONSTRAINT ... NOT VALID`
    takes a short lock and checks only new rows. A later statement or file runs
