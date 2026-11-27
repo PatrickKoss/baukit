@@ -110,7 +110,7 @@ pub struct SuiteSettings {
 }
 
 impl SuiteSettings {
-    /// Parses the payload catalog. `app_id` is also the metric prefix.
+    /// Parses the payload catalog.
     ///
     /// # Errors
     ///
@@ -354,7 +354,6 @@ impl PostgresSuiteBuilder {
             settings.catalog.clone(),
             identity.clone(),
             share_xp,
-            settings.app_id.clone(),
         ));
         let store = Arc::new(PostgresSuiteLinkStore::new(pool));
         let context = Arc::new(SuiteContext::new(
@@ -369,7 +368,6 @@ impl PostgresSuiteBuilder {
                 identities: identity,
             },
             SuiteServiceConfig {
-                metric_prefix: settings.app_id,
                 cipher: settings.cipher,
                 initial_replay_days: config.initial_replay_days,
                 share_xp,

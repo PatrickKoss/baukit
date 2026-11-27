@@ -1922,7 +1922,6 @@ fn make_context(pool: &PgPool, registry: Arc<PeerRegistry>) -> Arc<SuiteContext>
                 catalog,
                 identities.clone(),
                 true,
-                "test".into(),
             )),
             peer: Arc::new(ReqwestSuitePeerClient::new(true).expect("client")),
             limiter: Arc::new(InMemoryRateLimitStore::default()),
@@ -1930,7 +1929,6 @@ fn make_context(pool: &PgPool, registry: Arc<PeerRegistry>) -> Arc<SuiteContext>
             identities,
         },
         SuiteServiceConfig {
-            metric_prefix: "test".into(),
             cipher: Some(cipher()),
             initial_replay_days: 90,
             share_xp: true,
@@ -1948,7 +1946,6 @@ fn make_outbox(
         context.catalog.clone(),
         context.identities.clone(),
         share_xp,
-        "test".into(),
     )
 }
 fn module(

@@ -45,6 +45,7 @@ pub mod compose;
 pub mod config;
 pub mod domain;
 mod error_codes;
+pub mod metric_names;
 #[cfg(feature = "platform")]
 pub mod platform;
 pub mod ports;

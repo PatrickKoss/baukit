@@ -57,6 +57,7 @@ utoipa = { workspace = true, optional = true, features = ["uuid", "jiff_0_2"] }
 
 [dev-dependencies]
 proptest = "1.12.0"
+metrics-util.workspace = true
 baukit-core = { path = "../baukit-core", features = ["webhook-signature"] }
 baukit-suite = { path = ".", features = ["postgres", "http", "jobs", "delivery", "platform"] }
 baukit-test = { path = "../baukit-test", features = ["suite"] }

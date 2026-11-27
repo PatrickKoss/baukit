@@ -2,6 +2,7 @@ use jiff_sqlx::ToSqlx;
 use std::sync::Arc;
 
 use crate::domain::*;
+use crate::metric_names::SUITE_EMISSION_SKIPPED_TOTAL;
 use crate::ports::*;
 use async_trait::async_trait;
 use baukit_jobs::{NewJob, PostgresJobStore};
@@ -64,12 +65,7 @@ impl SuiteEmissionError {
     }
 }
 
-fn record_emission_skip(
-    metric_prefix: &str,
-    event_type: &str,
-    error: &SuiteStoreError,
-    kind: EmissionKind,
-) {
+fn record_emission_skip(event_type: &str, error: &SuiteStoreError, kind: EmissionKind) {
     let reason = EmissionSkipReason::from_error(error);
     tracing::warn!(
         event_type,
@@ -78,7 +74,7 @@ fn record_emission_skip(
         "Skipping suite emission"
     );
     if kind == EmissionKind::Live {
-        metrics::counter!(format!("{metric_prefix}_suite_emission_skipped_total"), "reason" => reason.as_str()).increment(1);
+        metrics::counter!(SUITE_EMISSION_SKIPPED_TOTAL, "reason" => reason.as_str()).increment(1);
     }
 }
 
@@ -86,7 +82,6 @@ fn record_emission_skip(
 pub struct PostgresSuiteEventOutbox {
     catalog: Arc<PayloadCatalog>,
     identities: Arc<dyn SuiteIdentitySource>,
-    metric_prefix: String,
     jobs: PostgresJobStore,
     registry: Arc<PeerRegistry>,
     share_xp: bool,
@@ -98,10 +93,9 @@ impl PostgresSuiteEventOutbox {
         catalog: Arc<PayloadCatalog>,
         identities: Arc<dyn SuiteIdentitySource>,
         share_xp: bool,
-        metric_prefix: String,
     ) -> Self {
         metrics::describe_counter!(
-            format!("{metric_prefix}_suite_emission_skipped_total"),
+            SUITE_EMISSION_SKIPPED_TOTAL,
             "Suite emissions skipped by reason"
         );
         for reason in [
@@ -109,13 +103,13 @@ impl PostgresSuiteEventOutbox {
             EmissionSkipReason::Timeout,
             EmissionSkipReason::Storage,
         ] {
-            metrics::counter!(format!("{metric_prefix}_suite_emission_skipped_total"), "reason" => reason.as_str()).increment(0);
+            metrics::counter!(SUITE_EMISSION_SKIPPED_TOTAL, "reason" => reason.as_str())
+                .increment(0);
         }
         Self {
             jobs: PostgresJobStore::new(pool),
             catalog,
             identities,
-            metric_prefix,
             registry,
             share_xp,
         }
@@ -150,12 +144,7 @@ impl PostgresSuiteEventOutbox {
                 .catalog
                 .validate(&event.event_type, event.payload.clone())
             {
-                record_emission_skip(
-                    &self.metric_prefix,
-                    &event.event_type,
-                    &invalid(error),
-                    kind,
-                );
+                record_emission_skip(&event.event_type, &invalid(error), kind);
                 continue;
             }
             let envelope = event.envelope_for_link(
@@ -267,12 +256,7 @@ impl SuiteEventOutbox for PostgresSuiteEventOutbox {
         self.enqueue_events(tx, owner, events)
             .await
             .map_err(|error| {
-                record_emission_skip(
-                    &self.metric_prefix,
-                    &error.event_type,
-                    &error.error,
-                    EmissionKind::Live,
-                );
+                record_emission_skip(&error.event_type, &error.error, EmissionKind::Live);
                 error.error
             })
     }

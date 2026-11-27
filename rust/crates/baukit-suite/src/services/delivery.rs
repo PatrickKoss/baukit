@@ -30,7 +30,7 @@ impl SuiteDeliveryService {
     ) -> Result<DeliveryAction, SuiteServiceError> {
         let link = self.context.store.find_link(job.link_id).await?;
         if let Some(action) = delivery_preflight(link.as_ref(), now) {
-            delivery_metric(&self.context.metric_prefix, action);
+            delivery_metric(action);
             return Ok(action);
         }
         let link = link.ok_or(SuiteStoreError::NotFound)?;
@@ -41,7 +41,7 @@ impl SuiteDeliveryService {
                 .claim_probe(link.user_id, link.id, now)
                 .await?
         {
-            delivery_metric(&self.context.metric_prefix, DeliveryAction::Disabled);
+            delivery_metric(DeliveryAction::Disabled);
             return Ok(DeliveryAction::Disabled);
         }
         let peer = self.context.active_peer(&link.peer_app)?;
@@ -70,7 +70,7 @@ impl SuiteDeliveryService {
             .await;
         let action = peer_action(&response);
         if let DeliveryAction::Deferred { .. } = action {
-            delivery_metric(&self.context.metric_prefix, action);
+            delivery_metric(action);
             return Ok(action);
         }
         if action == DeliveryAction::Delivered
@@ -86,7 +86,7 @@ impl SuiteDeliveryService {
                 .record_delivery(link.user_id, link.id, action, now)
                 .await?;
         }
-        delivery_metric(&self.context.metric_prefix, action);
+        delivery_metric(action);
         Ok(action)
     }
     /// # Errors

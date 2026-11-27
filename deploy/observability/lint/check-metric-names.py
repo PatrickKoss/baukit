@@ -52,6 +52,11 @@ SPEC_METRICS = (
     "egress_request_duration_seconds",
     "egress_circuit_state",
     "egress_circuit_transitions_total",
+    "push_notifications_total",
+    "suite_deliveries_total",
+    "suite_events_ingested_total",
+    "suite_emission_skipped_total",
+    "suite_cleanup_failures_total",
 )
 
 PROMETHEUS_BUILTINS = {"up"}

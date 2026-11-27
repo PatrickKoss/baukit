@@ -324,3 +324,63 @@ groups:
           summary: Outbound calls to a destination are slow
           description: 'The p95 time to response headers from {{ $labels.destination }} has exceeded 2s for ten minutes in {{ $labels.service }} in {{ $labels.namespace }}.'
           runbook_url: RUNBOOK_BASE_URL/egress-latency-high
+
+  - name: baukit-delivery-alerts
+    rules:
+      - alert: BaukitPushDeliveryFailing
+        expr: |
+          (
+            sum by (product, service, environment, namespace) (
+              rate(push_notifications_total{service!="", outcome=~"rejected|failed"}[15m])
+            )
+            /
+            sum by (product, service, environment, namespace) (
+              rate(push_notifications_total{service!=""}[15m])
+            )
+          ) > 0.1
+          and on (product, service, environment, namespace)
+          sum by (product, service, environment, namespace) (
+            rate(push_notifications_total{service!=""}[15m])
+          ) > 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Push notifications fail
+          description: 'More than 10% of push notifications from {{ $labels.service }} in {{ $labels.namespace }} were rejected by the provider or never sent for fifteen minutes.'
+          runbook_url: RUNBOOK_BASE_URL/push-delivery-failing
+
+      - alert: BaukitSuiteDeliveryFailing
+        expr: |
+          (
+            sum by (product, service, environment, namespace) (
+              rate(suite_deliveries_total{service!="", outcome=~"retry|rejected|unauthorized|disabled"}[15m])
+            )
+            /
+            sum by (product, service, environment, namespace) (
+              rate(suite_deliveries_total{service!=""}[15m])
+            )
+          ) > 0.1
+          and on (product, service, environment, namespace)
+          sum by (product, service, environment, namespace) (
+            rate(suite_deliveries_total{service!=""}[15m])
+          ) > 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Suite peer deliveries fail
+          description: 'More than 10% of suite event deliveries from {{ $labels.service }} in {{ $labels.namespace }} failed, were refused by the peer or hit a disabled link for fifteen minutes.'
+          runbook_url: RUNBOOK_BASE_URL/suite-delivery-failing
+
+      - alert: BaukitSuiteEmissionSkipped
+        expr: |
+          sum by (product, service, environment, namespace, reason) (
+            increase(suite_emission_skipped_total{service!=""}[15m])
+          ) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Suite events were dropped before the outbox
+          description: 'Suite events from {{ $labels.service }} in {{ $labels.namespace }} were not written to the outbox in the last 15 minutes ({{ $labels.reason }}). Peers never receive them.'
+          runbook_url: RUNBOOK_BASE_URL/suite-emission-skipped
