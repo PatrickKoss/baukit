@@ -440,7 +440,7 @@ them.
   timeout), and a chart-level retry middleware (`attempts: 2`, short initial interval) for connection
   errors. Baremetal runs two replicas as the README says. Check every field name against the pinned
   Traefik version before writing it.
-- [~] **PL4 Postgres pooling and durability** (RL-85): a CNPG `Pooler` (PgBouncer, transaction mode)
+- [x] **PL4 Postgres pooling and durability** (RL-85): a CNPG `Pooler` (PgBouncer, transaction mode)
   in the shared base, `max_connections` set explicitly, per-tenant `CONNECTION LIMIT` from the tenant
   component, and quorum synchronous replication on multi-instance overlays with the durability mode
   that keeps writes going when the replica is down (verify the field at the pinned CNPG version).
@@ -454,7 +454,7 @@ them.
   existing metric templates.
   Acceptance: an e2e case that rolls out a canary image returning 500s and asserts rollback, and one
   that promotes a healthy canary.
-- [~] **PL7 SLOs beyond availability** (RL-84, RL-90): latency SLI recording rules (share of requests
+- [x] **PL7 SLOs beyond availability** (RL-84, RL-90): latency SLI recording rules (share of requests
   under the route's target, from the histogram), a 1d/3d ticket tier for both SLIs, an edge SLI from
   `traefik_service_requests_total` that sees "all pods down", an error-budget panel, and alerts for MCP
   errors, outbox/push delivery failures and DB acquire p95. Every alert gets promtool tests and a
@@ -498,7 +498,7 @@ FX tests come first in each phase where they apply: write the failing test, then
   binary against Postgres, waits for readiness on the ops port, sends SIGTERM and asserts a clean exit
   inside the drain. The worker failed at startup on every default config in a 0.32.0 candidate and no
   gate noticed.
-- [ ] **FU2 Double-apply matches sqlx**: `check-migrations.py double-apply` sends a `-- no-transaction`
+- [x] **FU2 Double-apply matches sqlx**: `check-migrations.py double-apply` sends a `-- no-transaction`
   file as one query, the way sqlx does, so a `SET` next to `CREATE INDEX CONCURRENTLY` fails the check.
 - [ ] **FU3 Client leftovers from CL**: `delete-profile.ts` shares the app runtime so its cooldown
   reaches the banner, and the mobile renewal hook reports a renewal error only once it is terminal or
@@ -599,8 +599,8 @@ PL6; FX3, FX4; REL1-REL3.
 |---|---|---|
 | rel-fu-process | FU1 | briefed |
 | rel-fu-migrations | FU2 | briefed |
-| rel-pl7 | PL7 rest (push metrics, fixed suite metric names, alerts), PL4 rest (pool sizing in `local-footprint.md`) | briefed |
-| rel-fu-clients | FU3 | briefed |
+| rel-pl7 | PL7 rest (push metrics, fixed suite metric names, alerts), PL4 rest (pool sizing in `local-footprint.md`) | merged, verified (crate tests, metric-names, observability-rules, observability-tests, docs-links, baukit-check) |
+| rel-fu-clients | FU3 | round 2: shared cooldown in api-runtime, export of isTerminalRefreshError |
 
 ## Open questions
 
@@ -1004,3 +1004,17 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
 - REL1 done. PL6 done: the `canary` e2e suite passed in the full gate, with both the promotion and the
   rollback step. REL2 is with the product sessions.
 - Wave 4 starts on `task/reliability-w4` from ac42fd08: FU1 to FU3, and the rest of PL4 and PL7.
+- FU2 done in ccdfc88e. On postgres 18.7, a no-transaction file with a `SET` before
+  `CREATE INDEX CONCURRENTLY` passes with `psql -f` and fails with `psql -c`, the way it fails in sqlx.
+  The shipped `0008` index file still passes.
+- rel-pl7 merged (45edfd66). PL7 and PL4 are done.
+  - `push_notifications_total{outcome}` counts delivered, accepted, token_dead, rejected and failed.
+    Dead tokens have their own outcome so that uninstalls do not page.
+  - The suite counters have fixed names (`suite_deliveries_total`, `suite_events_ingested_total`,
+    `suite_emission_skipped_total`), and `metric_prefix` is gone. This is breaking.
+  - New alerts: `BaukitPushDeliveryFailing`, `BaukitSuiteDeliveryFailing` and
+    `BaukitSuiteEmissionSkipped`, each with promtool tests and a runbook.
+  - Push receipts settled later by `poll_pending_receipts` are not counted yet.
+- FU3 round 1: renewal errors stay quiet while the token is valid. The delete-profile cooldown needs a
+  package change, because `fetchSettings` builds a new `OriginCooldown` for every runtime, so round 2
+  adds a shared cooldown to `@baukit/api-runtime`.
