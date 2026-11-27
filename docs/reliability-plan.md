@@ -477,7 +477,7 @@ FX tests come first in each phase where they apply: write the failing test, then
   load with two replicas (zero 5xx at the edge beyond the shed budget), CNPG switchover with the app
   reconnecting, and a Flagger rollback (PL6). Each case runs inside `make platform-e2e` under the host
   locks and heavy-run slots.
-- [~] **FX4 Load smoke**: a short `k6` (pinned, digest) script in `deploy/smoke` that drives the
+- [x] **FX4 Load smoke**: a short `k6` (pinned, digest) script in `deploy/smoke` that drives the
   generated API past its concurrency limit and asserts shed responses are 503 with `Retry-After`, p99
   of admitted requests stays under the target, and the process stays up.
 
@@ -887,3 +887,25 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   stayed up. On the server every shed takes 1 to 2.5 s, against a 1 s queue timeout, and so do 41% of
   the 200s. Timers or wake-ups run late under 2500 connections, and k6 adds more on the same host.
   rel/fx4 measures the k6 timing split, the server layers and pinned-core runs, then fixes the cause.
+- FX4 done (rel/fx4 a6162640 plus 3ee506ab, merged). The 4.6 s tail was WSL's wall clock stepping
+  forward (0.9 to 3.6 s, about every 35 s, also with no load running). k6 times requests on the wall
+  clock, so every request in flight gains the step. An independent 70 s watcher saw two 0.9 s steps
+  with nothing else running.
+  - k6's time split puts the whole tail in `waiting`. k6 reuses connections after a shed. While the
+    clock stepped, `/healthz` stayed under 100 ms, and outside steps the server sheds at 1.00 to
+    1.02 s.
+  - The smoke now records `clock_lag` in a 1-VU scenario, and `admitted_latency.py` subtracts each
+    step from the admitted samples that span it. The 1500 ms bound is unchanged, and the checker
+    prints the raw p99 next to the corrected one. A k6 stall looks like a clock step and is
+    subtracted too, since it is a client delay. On a host without steps the correction does nothing.
+  - Three runs (release, LIMIT=1, 2500 VUs, 4000 rps): corrected p99 1020, 1006 and 1002 ms, raw
+    4169, 1008 and 1891 ms, 32510, 18314 and 10492 sheds, 0 unexpected statuses, the process up in
+    every check.
+  - Review fix 3ee506ab: k6 runs as the caller (`--user`), not into a 0777 temp dir.
+- rel/gate-cache round 2 merged (c86d89db, 40052c47, merge 9b93ab2e). The map gained vectors and
+  verus on `rust/crates/**`, the CLI-embedding steps on `lint/**`, `baukit-check.toml` and
+  `deploy/observability/lint/**`, rust on the template OpenAPI documents, and in the template
+  `backend/crates/**` selects fuzz and images. `scripts/test_gate_dependencies.py` derives
+  `include_*!` and Cargo path edges and fails on a missing one (checked by dropping verus).
+  Snapshots re-blessed after both merges, and only `strict.tree` changed. scripts-tests,
+  python-lint, shell-lint, cli-fmt, cli-clippy and cli-tests pass on the merged head.
