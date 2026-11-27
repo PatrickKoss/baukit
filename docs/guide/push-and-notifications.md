@@ -127,9 +127,11 @@ Each `PushOutcome` has a `PushDeliveryStatus`:
   later send can work.
 - `Accepted(PushTicketId)`: Expo took it and has no receipt yet. Never resend on it.
 
-A failure of the whole request is a `PushError`. `is_retryable` and `retry_after` tell a
-job when to try again. `PushError::Partial` means earlier chunks already went out. Its
-`completed_outcomes()` lists them, so resend only the messages without an outcome.
+A failed send returns a `PushSendError`. Its `error` is the `PushError` of the failing
+chunk, `outcomes` holds the results of the chunks Expo already accepted, and `unsent` holds
+the failing chunk and every chunk after it. Record `outcomes`, then retry only `unsent`, so
+nobody gets a notification twice. `is_retryable` and `retry_after` forward to `error` and tell a
+job when to try again.
 
 All Expo requests go through a `baukit-egress` `GuardedClient`, limited to the configured
 endpoint's scheme, host and port. [Call other services safely](outbound-and-limits.md)
@@ -169,7 +171,7 @@ hours) in the same job. The full handler is in the "Deferred receipts" section o
 A daily reminder must not go out twice when two workers run. Claim a `DeliveryClaim` keyed
 by owner, local date and `DeliveryKind` before sending. `claim` returns `None` when another
 worker holds it and a `ClaimToken` otherwise. If the send fails before anything went out,
-`release` the claim with that token. On `PushError::Partial`, keep the claim. Call
+`release` the claim with that token. On a `PushSendError` with `outcomes`, keep the claim. Call
 `DeliveryClaimStore::purge` from a recurring job, because claims grow by one row per owner,
 kind and day. Event-driven pushes need no claims.
 

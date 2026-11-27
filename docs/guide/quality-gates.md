@@ -52,6 +52,12 @@ Each lane writes its log and the timing table under the gate's output directory.
 of the gate guide, `docs/quality-gate.md`, rendered from
 `templates/common/__strict__/docs/quality-gate.md`, lists every step and cache.
 
+On a clean tree the gate skips a step that already passed on the same inputs and prints
+`cached (passed at <sha>, <age>)`. Passes are kept for `[quality.cache] max_age_days`, 7 by
+default. List steps that read data from outside the repository, such as `secret-scan` and `osv`,
+under `[quality.cache] never`. The cache is off in CI, with `--no-cache` and with
+`BAUKIT_GATE_CACHE=off`. `baukit doctor` requires `scripts/gate_results.py` and its test.
+
 ## Lanes
 
 Lanes run in parallel and split `BAUKIT_GATE_CORES` between them. A sample from a strict product
