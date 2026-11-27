@@ -924,3 +924,15 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   - the named APIs exist with the documented signatures.
 - Worktrees rel-fuzz, rel-cache, rel-fx4, rel-upgrade-guide and rel-merge are removed.
 - origin/main 5d192112 merged (10e39672): the Loki gateway and e2e echo image move to nginx-unprivileged 1.31.10-alpine. Six libxml2 CVEs that have no fixed build yet are allowlisted until 2027-01-22. The web template moves to the same index digest, with snapshots blessed (only `web/Dockerfile` and `CHANGELOG.md` changed). The first full gate stopped at the 120 GB disk floor and has been requeued on this head.
+- Full gate on 00d3fd27: red. Results:
+  - `postgres_outage` failed with `AlreadyInitialized` in fixtures 1, 2 and mcp. Both tests called
+    `TelemetryBuilder::init`, which is process-global. Fixed in e829a2dd: one `LazyLock` Prometheus
+    handle.
+  - The `migrations` step failed on squawk findings in jobs 0005 and 0006 and suite 006: no
+    timeouts, a non-concurrent index, a constraint without `NOT VALID`, and `ADD COLUMN` without
+    `IF NOT EXISTS`. rel-migrations is fixing them.
+  - The baukit-test watchdog test timed out. This branch does not touch it; it is rerun in the
+    re-gate.
+  - fuzz got 1 core and ran serially (2236 s, over budget). rel-fuzz-cores is fixing the core share.
+  - All other lanes are green: android, verus, platform-e2e, kani, vectors, cli, ts, fast, images and
+    models.
