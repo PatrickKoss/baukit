@@ -13,10 +13,15 @@ const LIMITED_WRAPPERS: [&str; 2] = ["rate_limited(", "protect_routes("];
 const BIN_CRATE_SUFFIX: &str = "-bin";
 const CLUSTER_IP: &str = "ClusterIP";
 const LOCAL_MARKER: &str = "local";
-const ORIGIN_KEY_MARKER: &str = "origin";
+const CORS_KEY_MARKERS: [&str; 3] = ["allowedorigin", "corsorigin", "apiorigin"];
+const SCHEMA_DOCUMENT_KEYS: [&str; 3] = ["openapi", "swagger", "$schema"];
 const NULL_ORIGIN: &str = "null";
 const HTTPS_SCHEME: &str = "https://";
-const TEST_DIRECTORIES: [&str; 4] = ["tests", "benches", "examples", "baukit-test"];
+const HTTP_SCHEME: &str = "http://";
+const LOOPBACK_HOSTS: [&str; 3] = ["localhost", "127.0.0.1", "[::1]"];
+const DEFAULT_SEPARATOR: &str = ":-";
+const TEST_DIRECTORIES: [&str; 5] = ["tests", "benches", "examples", "e2e", "baukit-test"];
+const TEST_CRATE_SUFFIX: &str = "-test-support";
 const TEST_MODULE: &str = "#[cfg(test)]";
 
 /// Production wiring the composed API depends on: client IPs reach the limiter, every merged
@@ -62,10 +67,9 @@ fn is_test_code(path: &Path) -> bool {
     name == "tests.rs"
         || name.ends_with("_tests.rs")
         || path.components().any(|component| {
-            component
-                .as_os_str()
-                .to_str()
-                .is_some_and(|name| TEST_DIRECTORIES.contains(&name))
+            component.as_os_str().to_str().is_some_and(|name| {
+                TEST_DIRECTORIES.contains(&name) || name.ends_with(TEST_CRATE_SUFFIX)
+            })
         })
 }
 
@@ -165,10 +169,19 @@ fn yaml_findings(shown: &str, text: &str) -> Vec<Finding> {
             format!("opsService.type is `{kind}`; the ops port must stay `ClusterIP`"),
         ));
     }
+    if is_schema_document(&document) {
+        return findings;
+    }
     let mut origins = Vec::new();
     yaml_origins(&document, false, &mut origins);
     findings.extend(origin_findings(shown, &origins));
     findings
+}
+
+fn is_schema_document(document: &Yaml) -> bool {
+    SCHEMA_DOCUMENT_KEYS
+        .iter()
+        .any(|key| document.get(key).is_some())
 }
 
 fn yaml_origins(value: &Yaml, under_origin_key: bool, origins: &mut Vec<String>) {
@@ -215,22 +228,82 @@ fn toml_origins(value: &toml::Value, under_origin_key: bool, origins: &mut Vec<S
     }
 }
 
+/// Matches CORS origin settings such as `allowedOrigins`, `cors_allowed_origins`,
+/// `HTTP__CORS_ALLOWED_ORIGINS` and `publicApiOrigin`, but not a bare `origin` field.
 fn is_origin_key(key: &str) -> bool {
-    key.to_ascii_lowercase().contains(ORIGIN_KEY_MARKER)
+    let normalized: String = key
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
+    CORS_KEY_MARKERS
+        .iter()
+        .any(|marker| normalized.contains(marker))
 }
 
 fn origin_findings(shown: &str, origins: &[String]) -> Vec<Finding> {
     let local = shown.to_ascii_lowercase().contains(LOCAL_MARKER);
     origins
         .iter()
-        .filter_map(|origin| origin_problem(origin, local))
+        .flat_map(|value| origin_list(value))
+        .filter_map(|origin| origin_problem(&origin, local))
         .map(|message| Finding::error(NAME, shown, message))
         .collect()
 }
 
+/// Splits a setting into origins: a JSON array string or a comma-separated list, each with
+/// `${VAR:-default}` resolved to its default.
+fn origin_list(value: &str) -> Vec<String> {
+    let Some(resolved) = resolve_defaults(value.trim()) else {
+        return Vec::new();
+    };
+    serde_json::from_str::<Vec<String>>(&resolved).unwrap_or_else(|_| {
+        resolved
+            .split(',')
+            .map(|item| item.trim().trim_matches(['"', '\'']).to_owned())
+            .collect()
+    })
+}
+
+/// Replaces every `${VAR:-default}` with its default. A whole value that is a bare `${VAR}` or
+/// `${VAR:?message}` is unset; inside a longer value such an interpolation resolves to nothing,
+/// which leaves the scheme and host to judge.
+fn resolve_defaults(value: &str) -> Option<String> {
+    let mut resolved = String::new();
+    let mut rest = value;
+    while let Some(start) = rest.find("${") {
+        let (before, interpolation) = rest.split_at(start);
+        let end = interpolation.find('}')?;
+        let default = interpolation[2..end]
+            .split_once(DEFAULT_SEPARATOR)
+            .map(|(_, default)| default);
+        let whole = before.is_empty() && end + 1 == interpolation.len();
+        if default.is_none() && whole {
+            return None;
+        }
+        resolved.push_str(before);
+        resolved.push_str(default.unwrap_or_default());
+        rest = &interpolation[end + 1..];
+    }
+    resolved.push_str(rest);
+    Some(resolved)
+}
+
+fn is_loopback(origin: &str) -> bool {
+    let Some(authority) = origin.strip_prefix(HTTP_SCHEME) else {
+        return false;
+    };
+    let authority = authority.trim_end_matches('/');
+    LOOPBACK_HOSTS.iter().any(|host| {
+        authority
+            .strip_prefix(host)
+            .is_some_and(|port| port.is_empty() || port.starts_with(':'))
+    })
+}
+
 fn origin_problem(origin: &str, local: bool) -> Option<String> {
     let trimmed = origin.trim();
-    if trimmed.is_empty() {
+    if trimmed.is_empty() || is_loopback(trimmed) {
         return None;
     }
     if trimmed.eq_ignore_ascii_case(NULL_ORIGIN) {
@@ -277,6 +350,8 @@ mod tests {
             .is_empty()
         );
         assert!(messages("rust/crates/baukit-test/src/jwt.rs", bad).is_empty());
+        assert!(messages("backend/crates/shop-test-support/src/lib.rs", bad).is_empty());
+        assert!(messages("e2e/fake-product/src/main.rs", bad).is_empty());
     }
 
     #[test]
@@ -319,10 +394,12 @@ mod tests {
         );
         let local = "[http]\ncors_allowed_origins = [\"http://localhost:5173\"]\n";
         assert!(messages("config/local.toml", local).is_empty());
+        let remote = "[http]\ncors_allowed_origins = [\"http://app.example.com\"]\n";
+        assert!(messages("config/local.toml", remote).is_empty());
         assert_eq!(
-            messages("config/production.toml", local),
+            messages("config/production.toml", remote),
             [
-                "security: config/production.toml: origin `http://localhost:5173` is not https; plain http origins belong only in local config"
+                "security: config/production.toml: origin `http://app.example.com` is not https; plain http origins belong only in local config"
             ]
         );
         assert_eq!(
@@ -334,5 +411,68 @@ mod tests {
                 "security: config/local.toml: origin `null` matches sandboxed and file:// pages; list real origins"
             ]
         );
+    }
+
+    #[test]
+    fn loopback_http_origins_pass_everywhere() {
+        for origin in [
+            "http://localhost:5173",
+            "http://127.0.0.1",
+            "http://[::1]:8080",
+        ] {
+            let config = format!("[http]\ncors_allowed_origins = [\"{origin}\"]\n");
+            assert!(messages("config/production.toml", &config).is_empty());
+        }
+        assert_eq!(
+            messages(
+                "config/production.toml",
+                "[http]\ncors_allowed_origins = [\"http://localhost.evil.com\"]\n"
+            ),
+            [
+                "security: config/production.toml: origin `http://localhost.evil.com` is not https; plain http origins belong only in local config"
+            ]
+        );
+    }
+
+    #[test]
+    fn compose_env_origins_resolve_their_default() {
+        let compose = "services:\n  api:\n    environment:\n      APP__HTTP__CORS_ALLOWED_ORIGINS: '[\"${APP_URL:-http://localhost:5173}\"]'\n";
+        assert!(messages("compose.yaml", compose).is_empty());
+        let remote = compose.replace("http://localhost:5173", "http://app.example.com");
+        assert_eq!(
+            messages("compose.yaml", &remote),
+            [
+                "security: compose.yaml: origin `http://app.example.com` is not https; plain http origins belong only in local config"
+            ]
+        );
+        assert!(
+            messages(
+                "compose.yaml",
+                &compose.replace(":-http://localhost:5173", "")
+            )
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn json_array_and_comma_separated_origins_are_judged_per_element() {
+        let json = "env:\n  HTTP__CORS_ALLOWED_ORIGINS: '[\"https://app.lab.example.de\"]'\n";
+        assert!(messages("deploy/gitops/testing/environment.yaml", json).is_empty());
+        let listed =
+            "env:\n  CORS__ALLOWED_ORIGINS: https://a.example.com, http://b.example.com,null\n";
+        assert_eq!(
+            messages("deploy/environment.yaml", listed),
+            [
+                "security: deploy/environment.yaml: origin `http://b.example.com` is not https; plain http origins belong only in local config",
+                "security: deploy/environment.yaml: origin `null` matches sandboxed and file:// pages; list real origins",
+            ]
+        );
+    }
+
+    #[test]
+    fn schema_fields_named_origin_are_not_cors_config() {
+        let openapi = "openapi: 3.0.1\ncomponents:\n  schemas:\n    Flow:\n      properties:\n        origin:\n          type: string\n      example:\n        origin: origin\n        allowedOrigins: origin\n";
+        assert!(messages("packages/sdk-go/api/openapi.yaml", openapi).is_empty());
+        assert!(messages("deploy/data.yaml", "flow:\n  origin: origin\n").is_empty());
     }
 }

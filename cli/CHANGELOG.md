@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- `baukit check` skips `vendor/` directories again inside a git work tree, so vendored upstream crates no longer trip `file-size`, `suppressions` and the other product rules. The `security` rule reads only CORS origin keys (`allowedOrigins`, `cors_allowed_origins`, `CORS__ALLOWED_ORIGINS`, `publicApiOrigin`), skips OpenAPI and JSON-schema documents, judges each element of a JSON-array or comma-separated value, resolves `${VAR:-default}` to its default and accepts `http://` for `localhost`, `127.0.0.1` and `[::1]` everywhere, as `baukit-http` does. Code under `e2e/` and in `*-test-support` crates counts as test code for the `axum::serve` check.
+- `baukit doctor` accepts an MCP router merged as `.merge(rate_limited(mcp_router(..), ..))` or `.merge(protect_routes(x, ..)?)`, the shape `baukit check security` asks for, so products no longer need a separate binding to satisfy both.
+
 ## [0.31.0] - 2026-11-26
 
 - New `baukit check security` rule. It fails when an `axum::serve` call lacks `into_make_service_with_connect_info`, a router is merged without `rate_limited` or `protect_routes`, an ops service is not `ClusterIP`, or a CORS origin is `null` or plain `http` outside local config.

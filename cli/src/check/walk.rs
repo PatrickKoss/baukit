@@ -7,14 +7,20 @@ use std::{
 use anyhow::{Context, Result};
 use ignore::WalkBuilder;
 
-const SKIPPED_DIRECTORIES: &[&str] = &[".git", "target", "node_modules", ".generated-fixture"];
+const SKIPPED_DIRECTORIES: &[&str] = &[
+    ".git",
+    "target",
+    "node_modules",
+    "vendor",
+    ".generated-fixture",
+];
 
 /// Lists every regular file under `root` that `keep` accepts, sorted.
 ///
 /// Inside a git work tree it lists the tracked files plus the untracked ones that are not
 /// ignored, so a force-added file under an ignored directory is still checked. Elsewhere it
-/// walks the tree honouring `.gitignore` files. Either way it skips symlinks and build, VCS and
-/// fixture directories.
+/// walks the tree honouring `.gitignore` files. Either way it skips symlinks and build, VCS,
+/// vendored and fixture directories.
 pub fn files(root: &Path, keep: impl Fn(&Path) -> bool) -> Result<Vec<PathBuf>> {
     let listed = match git_files(root) {
         Some(listed) => listed,
@@ -124,14 +130,7 @@ mod tests {
             fs::write(root.path().join(directory).join("a.rs"), "")?;
         }
         let listed = files(root.path(), |_| true)?;
-        assert_eq!(
-            listed,
-            vec![
-                root.path().join("a/b/vendor/a.rs"),
-                root.path().join("src/a.rs"),
-                root.path().join("vendor/y/a.rs"),
-            ]
-        );
+        assert_eq!(listed, vec![root.path().join("src/a.rs")]);
         Ok(())
     }
 
@@ -160,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn lists_force_added_ignored_files_and_vendor_in_a_git_repository() -> Result<()> {
+    fn lists_force_added_ignored_files_but_not_vendor_in_a_git_repository() -> Result<()> {
         let root = tempfile::tempdir()?;
         let git = |args: &[&str]| -> Result<()> {
             let status = Command::new("git")
@@ -185,14 +184,13 @@ mod tests {
             }
             fs::write(file, "")?;
         }
-        git(&["add", "-f", "ignored/forced.rs"])?;
+        git(&["add", "-f", "ignored/forced.rs", "deep/vendor/v.rs"])?;
         let listed = files(root.path(), |path| {
             path.extension().is_some_and(|ext| ext == "rs")
         })?;
         assert_eq!(
             listed,
             vec![
-                root.path().join("deep/vendor/v.rs"),
                 root.path().join("ignored/forced.rs"),
                 root.path().join("src/new.rs"),
             ]
