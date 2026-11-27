@@ -866,3 +866,19 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   - `kill_shed_budget` stays at 20. One run that shed nothing is not enough to tighten it, and the
     budget is the measured cost of an EndpointSlice update plus Traefik's provider throttle.
   - R1 in the hardening plan is ticked again.
+- rel/fuzz-parallel merged (bd401976, merge 14558078). `scripts/fuzz.sh` and the template's `step_fuzz`
+  run `BAUKIT_FUZZ_JOBS` targets at once, by default the step's `BAUKIT_GATE_WORKERS` share. A crash
+  no longer stops the other targets. The CI fuzz job gets 4 workers.
+  - There are 19 targets, not the 38 the bundling note assumed (`grep -c` counted each target twice).
+  - With 5 s per target, jobs=1 took 136 s and jobs=4 took 37 s. At the gate's 60 s per target the
+    lane drops from about 1160 s to about 310 s plus the build.
+  - Concurrent `cargo fuzz run` calls wait on the cargo lock, but each holder only re-checks the
+    finished build (0.14 to 0.43 s), so the fuzzing itself runs in parallel.
+- rel/gate-cache (b9bfb634) went back for round 2. The cache makes full gates trust
+  `[quality.affected]`, and the map misses real edges: vectors and verus run code in `rust/crates/**`,
+  the CLI embeds `lint/**` and `deploy/observability/lint/`. The agent fixes the map and adds a test
+  that derives `include_*!` and Cargo path edges and checks them against the cache inputs.
+- FX4 diagnosis so far: the idle 503s were a probe artifact (no migrations, so the repository check
+  failed). With migrations an idle API answers 200 in about 3 ms. The 4.6 s admitted p99 came from a
+  debug build under 2500 VUs on the same host as k6. The server sheds after its 1 s queue timeout, so
+  the extra time sits in front of the admission layer. Rerun against a release build.
