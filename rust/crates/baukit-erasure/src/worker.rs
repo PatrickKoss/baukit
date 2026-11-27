@@ -67,17 +67,34 @@ impl IdentityDeletionHandler {
             tracing::error!(job_id = %job.id, "identity deletion payload has no operation id");
             return error;
         };
-        match self.store.fail(operation_id).await {
-            Ok(_) => {
-                tracing::error!(
-                    job_id = %job.id,
-                    operation_id = %operation_id,
-                    "identity deletion payload rejected, operation failed",
-                );
-                error
-            }
-            Err(_) => JobError::retryable("erasure failure receipt unavailable"),
+        self.fail_operation(
+            job,
+            operation_id,
+            error,
+            "identity deletion payload rejected",
+        )
+        .await
+    }
+
+    /// Records a terminal failure without relying on the `erasure_job_failed` trigger,
+    /// which products may drop. A store failure is retryable while attempts remain.
+    async fn fail_operation(
+        &self,
+        job: &ClaimedJob,
+        operation_id: Uuid,
+        error: JobError,
+        reason: &'static str,
+    ) -> JobError {
+        if self.store.fail(operation_id).await.is_err() {
+            return JobError::retryable("erasure failure receipt unavailable");
         }
+        tracing::error!(
+            job_id = %job.id,
+            operation_id = %operation_id,
+            reason,
+            "identity deletion failed, operation failed",
+        );
+        error
     }
 }
 
@@ -105,14 +122,28 @@ impl JobHandler for IdentityDeletionHandler {
             match self.deleter.delete_account(&payload.subject).await {
                 Ok(()) => {}
                 Err(IdentityDeletionError::Retryable) => {
-                    return Err(JobError::retryable(
-                        "identity deletion temporarily unavailable",
-                    ));
+                    let error = JobError::retryable("identity deletion temporarily unavailable");
+                    if job.attempts < job.max_attempts {
+                        return Err(error);
+                    }
+                    return Err(self
+                        .fail_operation(
+                            job,
+                            payload.operation_id,
+                            error,
+                            "identity deletion attempts exhausted",
+                        )
+                        .await);
                 }
                 Err(IdentityDeletionError::Permanent) => {
-                    return Err(JobError::permanent(
-                        "identity deletion rejected permanently",
-                    ));
+                    return Err(self
+                        .fail_operation(
+                            job,
+                            payload.operation_id,
+                            JobError::permanent("identity deletion rejected permanently"),
+                            "identity deletion rejected permanently",
+                        )
+                        .await);
                 }
             }
             let mut transaction = self
