@@ -7,7 +7,7 @@ operation store and a durable worker.
 
 ```toml
 [dependencies]
-baukit-data-subject = { version = "=0.10.31", default-features = false }
+baukit-data-subject = { version = "0.31", default-features = false }
 serde_json = "1"
 ```
 
@@ -177,13 +177,31 @@ method. Add the separate `DataSubjectExportProduct` implementation to the
 product's existing adapter, here named `BillingProduct`, and enable it before
 constructing the store:
 
-```rust,no_run
+```rust
 use std::sync::Arc;
 use baukit_data_subject::{
     DataSubjectConfig, DataSubjectExportProduct, DataSubjectFuture, ExportCategory,
     LocalSubject,
 };
 use sqlx::PgConnection;
+# use baukit_data_subject::{DataSubjectProduct, ErasureReport, NormalizedIdentifier};
+# struct BillingProduct;
+# impl DataSubjectProduct for BillingProduct {
+#     fn resolve<'a>(
+#         &'a self,
+#         _connection: &'a mut PgConnection,
+#         _identifiers: &'a [NormalizedIdentifier],
+#     ) -> DataSubjectFuture<'a, Result<Vec<LocalSubject>, sqlx::Error>> {
+#         Box::pin(async { Ok(Vec::new()) })
+#     }
+#     fn erase<'a>(
+#         &'a self,
+#         _connection: &'a mut PgConnection,
+#         _subject: &'a LocalSubject,
+#     ) -> DataSubjectFuture<'a, Result<ErasureReport, sqlx::Error>> {
+#         Box::pin(async { Ok(ErasureReport::default()) })
+#     }
+# }
 
 impl DataSubjectExportProduct for BillingProduct {
     fn export<'a>(

@@ -82,3 +82,8 @@ pub const POSTGRES_MIGRATION_0003_SQL: &str =
 /// keys before switching producers to either deduplicated enqueue method.
 pub const POSTGRES_MIGRATION_0004_SQL: &str =
     include_str!("../migrations/0004_baukit_jobs_active_deduplication.sql");
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

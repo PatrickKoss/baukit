@@ -81,4 +81,4 @@ The mobile target uses Expo Router. `mobile/app/_layout.tsx` owns startup provid
    baukit doctor
    ```
 
-4. Fix reported toolchain or dependency problems; do not replace failed generation with handwritten scaffolding. Follow the matching release contracts in the Baukit checkout, especially `docs/platform/baukit-conventions.md`.
+4. Fix reported toolchain or dependency problems; do not replace failed generation with handwritten scaffolding. Follow the matching release contracts in the Baukit checkout, especially `docs/adr/0008-release-train-and-support-policy.md`.

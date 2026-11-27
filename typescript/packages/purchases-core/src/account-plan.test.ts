@@ -6,14 +6,14 @@ const entitlement = {
   mode: 'hub',
   suiteSubject: 'suite|a',
   tier: 'premium',
-  features: ['hebkit.export'],
+  features: ['alpha.export'],
   revision: 3,
   plansUrl: 'https://accounts.example.test/plans',
-  billing: { channel: 'app_store', soldBy: 'hebkit' },
+  billing: { channel: 'app_store', soldBy: 'alpha' },
 };
 const balance = {
   suiteSubject: 'suite|a',
-  wallet: 'hebkit',
+  wallet: 'alpha',
   revision: 0,
   total: 10,
   grant: { available: 0, expiresAt: null },

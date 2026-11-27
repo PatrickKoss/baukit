@@ -30,7 +30,7 @@ For a table pulled by offline clients, follow the generated product's `docs/sync
    parameters in camelCase. The generated `openapi_drift` test fails on any other property or
    parameter name and prints its JSON pointer.
 4. Add the handler to `ApiDoc`'s `paths(...)`; add new DTOs and error schemas to `components(schemas(...))`.
-5. Follow the contracts in the matching Baukit checkout: `docs/platform/baukit-conventions.md`, `docs/platform/telemetry-spec.md`, and `docs/platform/resource-budgets-contract.md`. Do not add endpoint-specific HTTP metrics; `baukit-http` records the standard RED metrics once.
+5. Follow the contracts in the matching Baukit checkout: `docs/adr/0012-http-wire-contract.md`, `docs/platform/telemetry-spec.md`, and `docs/platform/resource-budgets-contract.md`. Do not add endpoint-specific HTTP metrics; `baukit-http` records the standard RED metrics once.
 
 Use the field helpers that `baukit-http` exports:
 

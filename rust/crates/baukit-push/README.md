@@ -13,7 +13,8 @@ wired into `baukit_config::BaukitConfig`.
 
 ## The port
 
-```rust,ignore
+```rust
+# use baukit_push::{PushFuture, PushMessage};
 pub trait PushSender: Send + Sync {
     fn send<'a>(&'a self, batch: Vec<PushMessage>) -> PushFuture<'a>;
 }
@@ -133,6 +134,23 @@ the cap. `erase_owner_push_devices` takes any `PgExecutor` and runs inside the
 product's erasure transaction when the owner row stays or no foreign key
 exists.
 
+The reference migrations ship as constants. Apply them in this order:
+
+| File | Constant | What it adds |
+|---|---|---|
+| `0001_baukit_push_devices.sql` | `POSTGRES_PUSH_DEVICES_MIGRATION_SQL` | the `push_devices` table |
+| `0002_baukit_push_delivery_claims.sql` | `POSTGRES_PUSH_DELIVERY_CLAIMS_MIGRATION_SQL` | the `push_delivery_claims` table, see [daily delivery claims](#daily-delivery-claims) |
+| `0003_baukit_push_pending_receipts.sql` | `POSTGRES_PUSH_PENDING_RECEIPTS_MIGRATION_SQL` | the pending receipt table, see [deferred receipts](#deferred-receipts) |
+| `0004_baukit_push_pending_receipt_owners.sql` | `POSTGRES_PUSH_PENDING_RECEIPT_OWNERS_MIGRATION_SQL` | `owner_id` on pending receipts |
+| `0005_baukit_push_install_secrets.sql` | `POSTGRES_PUSH_INSTALL_SECRETS_MIGRATION_SQL` | the nullable `push_devices.install_secret_hash` column and a `NOT VALID` check that it is 32 bytes |
+| `0006_baukit_push_delivery_claim_ids.sql` | `POSTGRES_PUSH_DELIVERY_CLAIM_IDS_MIGRATION_SQL` | the nullable `push_delivery_claims.claim_id` column, so `release` deletes only the claim its token won |
+| `0007_baukit_push_validate_install_secret_hash.sql` | `POSTGRES_PUSH_VALIDATE_INSTALL_SECRET_HASH_MIGRATION_SQL` | validates the 0005 check in its own transaction, without blocking writes |
+
+None of 0005 to 0007 rewrites a table. A device row with a `NULL` install
+secret hash still moves to a new owner without a secret until the
+installation registers again with one. A claim made before 0006 has no
+`claim_id`, so `release` never deletes it and `purge` removes it later.
+
 ## Daily delivery claims
 
 A scheduled sender claims a `DeliveryClaim` keyed by owner, local date, and
@@ -143,7 +161,20 @@ chunks already went out: record its `outcomes` and keep the claim, because a
 retry would send those notifications twice. Event-driven senders do not need claims, which is why this is a
 separate `DeliveryClaimStore` port with its own table.
 
-```rust,ignore
+```rust
+# use baukit_push::{
+#     DeliveryClaim, DeliveryClaimStore, DeliveryKind, DeviceRegistry, PushMessage, PushSender,
+# };
+# use jiff::{Timestamp, civil::Date};
+# use uuid::Uuid;
+# async fn example(
+#     claims: &impl DeliveryClaimStore,
+#     registry: &impl DeviceRegistry,
+#     sender: &impl PushSender,
+#     owner_id: Uuid,
+#     local_date: Date,
+#     messages: Vec<PushMessage>,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 let claim = DeliveryClaim::new(owner_id, local_date, DeliveryKind::new("daily_reminder")?);
 let Some(token) = claims.claim(claim.clone(), Timestamp::now()).await? else {
     return Ok(());
@@ -162,6 +193,8 @@ match sender.send(messages).await {
         return Err(error.into());
     }
 }
+# Ok(())
+# }
 ```
 
 A `DeliveryKind` is 1 to 64 bytes of `[a-z0-9_.-]` starting with a letter or
@@ -234,7 +267,7 @@ Baukit ships no scheduler. Drive the poll from the product's job runner, for
 example a `baukit-jobs` handler that a `FixedUtcInterval` re-enqueues every few
 minutes:
 
-```rust,ignore
+```rust
 use std::num::NonZeroU32;
 
 use baukit_jobs::{ClaimedJob, JobCancellation, JobError, JobFuture, JobHandler};

@@ -29,6 +29,7 @@ active = [
   "prune-disabled",
   "psa-labels",
   "rules-selected",
+  "runbook-alert",
 ]
 
 [rules.pending]

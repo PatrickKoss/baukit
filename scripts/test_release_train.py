@@ -14,6 +14,7 @@ from pathlib import Path
 from process_runner import run_process
 from release_packages import cut_package_changelog
 
+INSTALL_PREFIX = "cargo install --git https://github.com/PatrickKoss/baukit --tag v"
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/release-train.sh"
 LOGGING_CARGO = '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_REPO_ROOT/cargo.calls"\n'
@@ -413,7 +414,6 @@ class ReleaseTrainFilesTest(unittest.TestCase):
                 "deploy/platform/CHANGELOG.md": "## [Unreleased]\n\n- Pending platform fix.\n",
                 "deploy/observability/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
                 "deploy/observability-platform/Chart.yaml": 'version: 0.7.0\nappVersion: "0.7.0"\n',
-                "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.0\n",
                 "cli/tests/snapshots/backend.tree": "0000  baukit.toml\n",
             }
             for relative, source in files.items():
@@ -545,6 +545,9 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
                 root, environment, "bash", "scripts/release-train.sh", "patch"
             )
             self.assertIn("Prepared v0.7.2", result.stdout)
+            self.assertIn(
+                "| Baukit | 0.7.2 |", (root / "docs/platform/compatibility-matrix.md").read_text()
+            )
             for path in (root / "typescript/packages").glob("*/CHANGELOG.md"):
                 source = path.read_text()
                 pending, history = source.split("## 0.7.2", 1)
@@ -698,7 +701,9 @@ class ReleaseTrainExampleLockfilesTest(unittest.TestCase):
             "deploy/platform/CHANGELOG.md": "## [Unreleased]\n\n- Pending platform fix.\n",
             "deploy/observability/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
             "deploy/observability-platform/Chart.yaml": 'version: 0.7.1\nappVersion: "0.7.1"\n',
-            "deploy/chart/baukit-app/README.md": "  - name: baukit-app\n    version: 0.7.1\n",
+            "README.md": f"{INSTALL_PREFIX}0.7.1 --locked baukit-cli\n",
+            "cli/README.md": f"{INSTALL_PREFIX}0.7.1 --locked baukit-cli\n",
+            "docs/platform/compatibility-matrix.md": "| Baukit | 0.7.1 |\n",
             "typescript/pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
             "examples/unrelated/package.json": json.dumps(
                 {

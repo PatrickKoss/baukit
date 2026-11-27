@@ -17,6 +17,7 @@ generated_flavors="backend web mobile mobile-pwa mobile-pwa-auth combined mcp au
 list_steps() {
   cat <<'STEPS'
 version-coherence fast - always -
+docs-links fast - always -
 example-lockfiles fast - always -
 rust-fmt fast - always -
 cli-fmt fast - always -
@@ -72,6 +73,7 @@ typescript_built() {
 }
 
 step_version_coherence() { scripts/check-version-coherence.py; }
+step_docs_links() { python3 scripts/check_docs_links.py; }
 step_example_lockfiles() { python3 scripts/check-example-lockfiles.py; }
 step_rust_fmt() { cargo fmt --manifest-path rust/Cargo.toml --all --check; }
 step_cli_fmt() { cargo fmt --manifest-path cli/Cargo.toml --all --check; }

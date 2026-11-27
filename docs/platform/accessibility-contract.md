@@ -1,6 +1,6 @@
 # Accessibility contract
 
-This contract is the Baukit baseline for generated web and React Native products. It defines behavior and evidence, not a component library. Products keep their components, navigation, copy, graphics, and visual design local.
+This contract is the Baukit baseline for generated web and React Native products. It defines behavior and evidence, not a component library. Products keep their components, copy, graphics, and visual design local. Application navigation comes from `@baukit/navigation`, as [ADR 0005](../adr/0005-shared-application-navigation.md) decided, and routing stays in the product.
 
 Where a requirement below has shared code, `@baukit/a11y-core` provides it and the export is named inline. React Native products import the package root; a plain React web app imports `@baukit/a11y-core/web`, which reaches no React Native code and needs none installed. Layout mode arithmetic lives in `@baukit/ui-tokens`.
 

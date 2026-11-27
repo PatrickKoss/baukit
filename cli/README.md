@@ -27,12 +27,12 @@ Run `corepack pnpm run build:sw` before exporting the Expo web app, then
 `corepack pnpm run build:sw:check` to check the worker artifact.
 
 Use `--auth oidc`, `--auth clerk` or `--auth workos` with any backend, web or
-mobile flavor. Each also supports `--backend --mcp`. Only OIDC includes the
-development Keycloak realm. Managed providers use their official web SDKs;
+mobile flavor. Each also supports `--backend --mcp`. Every `--auth` flavor includes the
+development Keycloak realm in `keycloak/realm.json`. Managed providers use their official web SDKs;
 mobile uses Clerk Expo or WorkOS AuthKit public-client PKCE. Generated READMEs
 describe client IDs, publishable keys and backend secret bindings.
 The generated backend's `docs/auth-providers.md` explains external OIDC issuers.
-See [remote MCP](../docs/remote-mcp.md) for each provider's OAuth client setup
+See the [MCP guide](../docs/guide/mcp.md) for each provider's OAuth client setup
 and token binding.
 
 Use `--port-offset N` when several generated products run on one development
@@ -44,7 +44,7 @@ offset.
 
 `openapi.consumers` lists generated TypeScript declarations. Raw schema copies
 remain product-owned until a second product needs them. The
-[raw OpenAPI mirror design](../docs/platform/openapi-mirrors.md) records the
+[raw OpenAPI mirror decision](../docs/adr/0031-openapi-mirrors.md) records the
 proposed manifest and strict-check behavior.
 
 Each frontend can have its own `pnpm-workspace.yaml`. A product can instead
@@ -111,8 +111,8 @@ Doctor checks identity where code consumes it. Analytics context names must matc
 named imports, including renamed bindings. Expo's slug can use a product's
 public name. Backend config consumers must agree on one namespace; authenticated
 backends use `app.name`. An unauthenticated backend can use a different config
-namespace, which its analytics context can also use. For example, SLS uses
-`sl` for packages and `heldengang` for config and analytics.
+namespace, which its analytics context can also use. For example, a product
+can use `sl` for packages and `quest` for config and analytics.
 
 A product needs a consumed identity source. Doctor accepts inline Expo config
 and backend `ConfigLoader::new` calls. It does not require
@@ -255,8 +255,8 @@ Debian slim.
 `BAUKIT_DESTINATION`, `LIMITS_FILE` and `GIT_COMMIT` remain available, including
 for builds of local-path fixtures from the Baukit repository root.
 
-See the [migration guide](../docs/migrations/backend-dockerfile-generation.md)
-for the existing product patterns.
+See the [`[backend.image]` reference](../docs/guide/manifest.md#backendimage)
+for every key and its validation.
 
 ## Doctor paths for existing products
 

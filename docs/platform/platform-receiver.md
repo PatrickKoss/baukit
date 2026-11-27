@@ -190,7 +190,7 @@ Mount `account_plan_router(plan)` under the API prefix. The authentication layer
 
 Gating fails closed. A failed read is `unavailable`, never a grant and never the free tier, so clients show a retry instead of a paywall. `NoEntitlements` from the hub is the free tier, as in `Entitlements`.
 
-`billing` comes from the ticket's claim. `PlatformTicketSource` asks for it with `includeBilling: true`, which needs the hub with Schlüsselbund C27. `GET /me/entitlement` always calls `refresh`, so every read carries the current claim and a web or store subscriber never sees a purchase offer. The cache does not keep `billing`, and `current` returns `null`, because request gating only checks feature keys. Read `billing` from `refresh`, never from `current`.
+`billing` comes from the ticket's claim. `PlatformTicketSource` asks for it with `includeBilling: true`, which needs a hub that issues the `billing` claim. `GET /me/entitlement` always calls `refresh`, so every read carries the current claim and a web or store subscriber never sees a purchase offer. The cache does not keep `billing`, and `current` returns `null`, because request gating only checks feature keys. Read `billing` from `refresh`, never from `current`.
 
 ### Organizations as subjects
 
@@ -217,7 +217,7 @@ Enable it with `HubAccountPlan::new(...)?.with_organizations(Arc::new(HubOrganiz
 
 ### Check feature keys against the hub catalog
 
-`fixtures/plans/v1/catalog.json` is a recorded copy of the hub plan catalog; its README names the hub commit. A product contract test copies it and calls `assert_feature_keys_match(catalog, "hebkit", HEBKIT_FEATURE_KEYS)`, which panics with both lists when the product declares a key the catalog lacks or the catalog grants a key the product never checks. A plan grants keys through `includedProducts` and, for business plans, `organizationProducts`; the helpers count both, so a key granted only to organizations, such as `hebkit.trainer`, must be declared too. `feature_key_drift` returns the same lists as `FeatureKeyDrift` for a custom assertion. Web and mobile code use `assertFeatureKeysMatch(catalog, productId, keys)`, `featureKeyDrift` and `catalogFeatureKeys` from `@baukit/suite-client` with the parsed JSON of the same file.
+`fixtures/plans/v1/catalog.json` is a recorded copy of the hub plan catalog; its README names the hub commit. A product contract test copies it and calls `assert_feature_keys_match(catalog, "example", EXAMPLE_FEATURE_KEYS)`, which panics with both lists when the product declares a key the catalog lacks or the catalog grants a key the product never checks. A plan grants keys through `includedProducts` and, for business plans, `organizationProducts`; the helpers count both, so a key granted only to organizations, such as `example.trainer`, must be declared too. `feature_key_drift` returns the same lists as `FeatureKeyDrift` for a custom assertion. Web and mobile code use `assertFeatureKeysMatch(catalog, productId, keys)`, `featureKeyDrift` and `catalogFeatureKeys` from `@baukit/suite-client` with the parsed JSON of the same file.
 
 ## Call the hub API
 
@@ -297,10 +297,10 @@ The balance `revision` counts `credits.changed` events. Plain reserve, settle an
 release calls do not emit one. On `PlatformEventKind::CreditsChanged`, call
 `balance` before the receipt transaction if the product caches balances.
 
-`CreditBalance` follows the bucketed balance of Schlüsselbund C21:
+`CreditBalance` follows the hub's bucketed balance:
 
 ```json
-{"suiteSubject":"suite-dev|alice","wallet":"heldengang","revision":3,"total":160,"grant":{"available":110,"expiresAt":1780272000},"packs":[{"available":50,"expiresAt":1804636800}]}
+{"suiteSubject":"suite-dev|alice","wallet":"example","revision":3,"total":160,"grant":{"available":110,"expiresAt":1780272000},"packs":[{"available":50,"expiresAt":1804636800}]}
 ```
 
 `total` is what a reserve can take now: `grant.available` plus every pack.
@@ -319,8 +319,8 @@ A hub before C21 sends `available`, `pools`, `grant.granted`, `grant.used` and
 `tier`, `features`, `paid_quantity` (`None` without a seat limit),
 `assigned_seats`, `revision`, and `sso_connection_active` and
 `directory_sync_active`, which say whether the organization has an active
-WorkOS SSO connection and directory sync. `name` is `None` from a hub before
-Schlüsselbund C16. Membership products have no seats, so `assigned_seats` is 0
+WorkOS SSO connection and directory sync. `name` is `None` from a hub that does not
+send it. Membership products have no seats, so `assigned_seats` is 0
 for them.
 An unknown or invisible organization returns `OrganizationError::NotFound`. A
 summary for another organization or product is `HubError::InvalidResponse`.
@@ -353,7 +353,7 @@ Each `OrganizationMember` has `suite_subject` and `account_role` (`owner`,
 `HubOrganizations::organizations_for_subject(suite_subject, cursor)` lists the
 organizations where one subject can use the calling product,
 `GET /platform/v1/accounts/{suiteSubject}/organizations?product=<caller>&cursor=<cursor>`.
-It needs the hub from Schlüsselbund C16 on. The client percent-encodes the
+It needs a hub that serves this route. The client percent-encodes the
 subject, so `suite-dev|alice` goes out as `suite-dev%7Calice`. Each
 `SubjectOrganization` has `organization_id` and the subject's `account_role`.
 Pages sort by organization ID and follow `next_cursor` like `members`. An
@@ -421,7 +421,7 @@ predates this change by more than two weeks. It needs neither WebCrypto Ed25519 
 Node globals, `atob`, `TextEncoder` or `TextDecoder`, so the same implementation can
 run on Hermes. Both languages run the hub's positive and negative ticket fixtures.
 
-Tickets may carry the optional `billing` claim from Schlüsselbund C18 (`c48f8af` or later): `{channel, soldBy?, manageUrl?}`. `channel` is `web`, `app_store`, `play_store`, `family`, `organization` or `promo`. `soldBy` names the product that sold a store plan and appears only for `app_store` and `play_store`. `manageUrl` is an absolute HTTP(S) URL and appears only for `web`. Both verifiers reject a ticket whose claim breaks these rules, has unknown fields or is `null`. `fixtures/entitlement-tickets/v1/billing-vectors.json` holds the shared vectors.
+Tickets may carry the optional `billing` claim: `{channel, soldBy?, manageUrl?}`. `channel` is `web`, `app_store`, `play_store`, `family`, `organization` or `promo`. `soldBy` names the product that sold a store plan and appears only for `app_store` and `play_store`. `manageUrl` is an absolute HTTP(S) URL and appears only for `web`. Both verifiers reject a ticket whose claim breaks these rules, has unknown fields or is `null`. `fixtures/entitlement-tickets/v1/billing-vectors.json` holds the shared vectors.
 
 ## Configure and deploy
 

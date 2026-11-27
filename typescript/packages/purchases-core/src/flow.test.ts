@@ -118,7 +118,7 @@ function entitlement(
 function balance(total: number, revision: number): CreditBalanceSnapshot {
   return {
     suiteSubject: SUBJECT,
-    wallet: 'hebkit',
+    wallet: 'alpha',
     revision,
     total,
     grant: { available: total, expiresAt: null },

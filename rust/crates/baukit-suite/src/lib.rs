@@ -67,3 +67,8 @@ pub const SUITE_LOCK_ORDER_MIGRATION_SQL: &str =
 #[cfg(feature = "postgres")]
 pub const SUITE_RECORD_IDS_MIGRATION_SQL: &str =
     include_str!("../migrations/005_suite_record_ids.sql");
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

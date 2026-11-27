@@ -24,6 +24,23 @@ telemetry.shutdown()?;
 # Ok::<(), baukit_telemetry::TelemetryError>(())
 ```
 
+## Exports
+
+| Item | What it is |
+|---|---|
+| `TelemetryBuilder` | `new(identity)`, then optional `filter`, `log_format`, `otlp_endpoint`, `sampling_ratio` and `sdk_disabled`, then `init()`. |
+| `Telemetry` | `prometheus_handle()` for the `/metrics` text, `is_otel_sdk_disabled()` and `shutdown()`. |
+| `TelemetryError` | Why `init` or `shutdown` failed, such as `AlreadyInitialized` or `MissingOtlpEndpoint`. |
+| `HTTP_DURATION_BUCKETS`, `DB_POOL_ACQUIRE_DURATION_BUCKETS`, `WORKER_DURATION_BUCKETS` | Histogram buckets, see below. |
+| `ServiceIdentity`, `ProcessKind`, `DeploymentEnvironment`, `LogFormat` | Re-exported from `baukit-core`. |
+| `tracing`, `metrics`, `opentelemetry`, `OpenTelemetrySpanExt`, `PrometheusHandle` | Re-exported upstream crates and types. |
+
+`filter` overrides `RUST_LOG`, and `otlp_endpoint` overrides
+`OTEL_EXPORTER_OTLP_ENDPOINT`. `sampling_ratio` defaults to `1.0` and is clamped
+to `0.0..=1.0`. A deployed process without an OTLP endpoint fails `init` with
+`MissingOtlpEndpoint` unless the SDK is disabled. With an endpoint set, call
+`init` inside the Tokio runtime.
+
 `tracing`, `metrics`, and `opentelemetry` are re-exported, so products emit ordinary spans and
 metrics with no Baukit wrapper in between. There is nothing to learn beyond the upstream crates.
 
@@ -49,6 +66,15 @@ service with a hundred thousand users is a hundred thousand series, and the fail
 out-of-memory Prometheus rather than as an obviously bad line of code. Request-scoped values belong on
 spans and log lines, where high cardinality is exactly what you want.
 
+## Redaction
+
+The JSON log output and the OTLP span export share one redaction pass. A field
+whose name contains `token`, `password`, `secret`, `cookie`, `authorization`,
+`email` or a similar marker, or has the word `key` or `session`, is replaced
+with `[REDACTED]`. String values are scrubbed for email addresses, bearer
+tokens, `code=` query parameters and assignments such as `password=...`. A
+field named `code` is kept, because baukit logs stable error codes there.
+
 ## Histogram buckets
 
 The crate owns the recorder, so it owns bucket configuration. `HTTP_DURATION_BUCKETS`,
@@ -71,3 +97,7 @@ of the OpenTelemetry SDK, so turning off trace export does not leave a process s
 The crate decides how signals are produced and where they go. It does not decide what a product
 measures. Process identity, deployment environment, and log-format vocabulary come from `baukit-core`
 and are re-exported here.
+
+See the [observability guide](../../../docs/guide/observability.md) for how a
+generated backend wires this crate, and
+[ADR 0029](../../../docs/adr/0029-observability-contract.md) for the contract.

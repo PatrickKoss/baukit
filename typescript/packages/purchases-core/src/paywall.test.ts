@@ -18,18 +18,18 @@ function plan(
     billing,
   };
 }
-const context = { productId: 'eigenruhe', feature: 'eigenruhe.studio' };
-const link = `${PLANS}?from=eigenruhe&feature=eigenruhe.studio`;
+const context = { productId: 'beta', feature: 'beta.studio' };
+const link = `${PLANS}?from=beta&feature=beta.studio`;
 
 describe('plansLink', () => {
-  it('adds the product and feature to the Schlüsselbund C17 plans URL', () => {
-    expect(plansLink(PLANS, { from: 'eigenruhe', feature: 'eigenruhe.studio' })).toBe(link);
-    expect(plansLink(PLANS, { from: 'hebkit' })).toBe(`${PLANS}?from=hebkit`);
+  it('adds the product and feature to the hub plans URL', () => {
+    expect(plansLink(PLANS, { from: 'beta', feature: 'beta.studio' })).toBe(link);
+    expect(plansLink(PLANS, { from: 'alpha' })).toBe(`${PLANS}?from=alpha`);
     expect(plansLink(PLANS)).toBe(PLANS);
-    expect(plansLink(`${PLANS}?lang=de`, { from: 'hebkit', feature: 'a b&c' })).toBe(
-      `${PLANS}?lang=de&from=hebkit&feature=a%20b%26c`,
+    expect(plansLink(`${PLANS}?lang=de`, { from: 'alpha', feature: 'a b&c' })).toBe(
+      `${PLANS}?lang=de&from=alpha&feature=a%20b%26c`,
     );
-    expect(plansLink(PLANS, { feature: 'eigenruhe.studio' })).toBe(PLANS);
+    expect(plansLink(PLANS, { feature: 'beta.studio' })).toBe(PLANS);
   });
 
   it('refuses a URL that is not HTTP(S)', () => {
@@ -54,11 +54,11 @@ describe('paywallFor', () => {
       manageUrl: link,
       soldBy: null,
     });
-    expect(paywallFor(plan({ channel: 'app_store', soldBy: 'hebkit' }), context)).toEqual({
+    expect(paywallFor(plan({ channel: 'app_store', soldBy: 'alpha' }), context)).toEqual({
       kind: 'manage',
       channel: 'app_store',
       manageUrl: null,
-      soldBy: 'hebkit',
+      soldBy: 'alpha',
     });
     expect(paywallFor(plan({ channel: 'play_store' }), context)).toEqual({
       kind: 'manage',

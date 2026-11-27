@@ -152,7 +152,7 @@ Enable the `pagination` feature to use `baukit_core::pagination` from domain and
 without depending on Axum:
 
 ```toml
-baukit-core = { version = "0.4", features = ["pagination"] }
+baukit-core = { version = "0.31", features = ["pagination"] }
 ```
 
 `PageParams` validates `limit` and carries the still-encoded cursor. `Page::from_rows` truncates an
@@ -179,7 +179,7 @@ Enable the `media-grants` feature to sign short-lived URLs for media that an edg
 from object storage:
 
 ```toml
-baukit-core = { version = "0.4", features = ["media-grants"] }
+baukit-core = { version = "0.31", features = ["media-grants"] }
 ```
 
 A grant is the query `expires=<unix seconds>&keyId=<id>&mode=playback&signature=<base64url>`. The
@@ -246,7 +246,7 @@ Enable the `webhook-signature` feature to sign outbound webhooks and verify them
 side:
 
 ```toml
-baukit-core = { version = "0.5", features = ["webhook-signature"] }
+baukit-core = { version = "0.31", features = ["webhook-signature"] }
 ```
 
 `webhook_signature::sign_webhook_hmac_sha256` signs the delivery with HMAC-SHA256 over the version

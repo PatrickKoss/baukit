@@ -61,3 +61,73 @@ cargo verus verify --manifest-path rust/verus/Cargo.toml
 
 A Verus release bump changes the `vstd` pin in `rust/verus/Cargo.toml`; `cargo verus new` prints
 the matching one.
+
+## Kani harnesses
+
+`python3 scripts/list-proofs.py` generates this table from the harness doc comments, and
+`make proofs-list` prints it. `scripts/ci-gate.sh --step kani` fails when a harness has no
+`Bounds:` sentence. The V-01 and V-02 rows are the equivalence harnesses in
+`rust/verus/equivalence` that tie each Verus twin to production code.
+
+| ID | Crate | Harness | Bounds |
+|---|---|---|---|
+| K-07 | baukit-auth | `well_formed_bytes_matches_the_token_shape` | inputs of 0 to 8 bytes, a 4-byte secret, unwind 9. |
+| K-05 | baukit-auth | `refresh_allowed_spaces_attempts_by_the_cooldown` | every non-zero `u64` cooldown, optional `u64` last attempt and `u64` now, no loops. |
+| K-06 | baukit-auth | `claims_time_valid_matches_exact_window` | every `i64` exp, nbf, now and skew, no loops. |
+| K-08 | baukit-auth | `constant_time_eq_matches_equality` | two byte strings of 0 to 8 bytes, unwind 9. |
+| K-13 | baukit-core | `check_expiry_bounds` | all `u64` triples, no loops. `Ok` implies `now < expires <= now + max_ahead` with the sum taken in `u128`. |
+| K-14 | baukit-core | `parse_expires_accepts_only_canonical_text` | ASCII strings of 0 to 4 bytes, unwind 8. An accepted expiry is non-empty decimal digits without a leading zero whose value matches the text. |
+| K-14 | baukit-core | `base64url_anchor_rejects_foreign_bytes` | ASCII strings of 0 to 4 bytes, unwind 8. Every accepted string is non-empty and uses only the base64url alphabet, so `\n`, `=` and `+` never pass; the round-trip check itself runs in the unit tests. |
+| K-24 | baukit-data-subject | `placement_keeps_every_part_within_the_limit` | part, record and limit below 2^20 bytes, no loops. |
+| K-03 | baukit-egress | `ipv4_public_matches_spec` | every `u32` address, no loops. |
+| K-03 | baukit-egress | `ipv6_public_matches_spec` | every `u128` address, unwind 17. |
+| K-03 | baukit-egress | `public_only_permits_matches_spec` | every `u32` address, no loops. |
+| K-04 | baukit-egress | `ipv4_mask_has_prefix_leading_ones` | prefix 0 to 32, no loops. |
+| K-04 | baukit-egress | `ipv6_mask_has_prefix_leading_ones` | prefix 0 to 128, no loops. |
+| K-23 | baukit-erasure | `deletion_outcome_ok_only_for_2xx_or_missing_404` | every `u16` status, both body answers, no loops. |
+| K-22 | baukit-erasure | `fence_matches_truth_table` | every fence row and `i64` login time, no loops. |
+| K-22 | baukit-erasure | `replay_matches_truth_table` | all four boolean inputs, no loops. |
+| K-18 | baukit-integrations | `token_length_gate_admits_only_43_characters` | inputs of 0 to 44 characters, no loops. |
+| K-17 | baukit-jobs | `stale_attempt_never_holds_the_lease` | two worker ids, attempts below 4, `u8` instants (the predicate is generic over the instant type, so this covers ordering without jiff's internals). Worker ids are 8 bytes, so the string compare unwinds at most 9 times. |
+| K-12 | baukit-ratelimit | `window_bounds_contain_now` | `now` is an `i16` and `duration` is `u8 + 1`, both widened to `i64`. Full `i64` and `i32`/`u16 + 1` each exceeded 10 minutes in CBMC. The proptest `window_properties::window_bounds_contain_now` samples all of `i64`. No loops. |
+| K-11 | baukit-ratelimit | `admit_keeps_tokens_in_bounds` | every `u64` input, no loops. |
+| K-01 | baukit-ratelimit | `forwarded_selection_ignores_client_controlled_entries` | lists of 0 to 6 IPv4 or unparseable entries, hops 0 to 4, unwind 8. |
+| K-02 | baukit-ratelimit | `forwarded_selection_is_peer_or_trusted_entry` | lists of 0 to 6 IPv4 or unparseable entries, hops 0 to 4, unwind 8. |
+| K-19 | baukit-ratelimit | `ip_bucket_groups_exactly_by_prefix` | every pair of 128-bit addresses, prefix 0 to 128, no loops. |
+| K-15 | baukit-suite | `signature_window_is_symmetric_without_overflow` | every `i64` timestamp and now, no loops. |
+| K-16 | baukit-suite | `native_scheme_is_own_or_opted_in_dev` | ASCII schemes of 0 to 7 bytes, own scheme of 0 to 3 bytes, unwind 8. |
+| K-21 | baukit-suite | `an_encoded_segment_cannot_leave_its_slot` | 3 bytes, unwind 12. |
+| K-21 | baukit-suite | `any_single_char_segment_stays_in_its_slot` | one char, unwind 12. |
+| K-20 | baukit-suite | `an_organization_subject_is_always_the_token_organization` | every optional token organization and named `u128` UUID, no loops. |
+| K-09 | baukit-sync | `now_step_advances_within_bound` | components within 4 of zero or their maximum, no loops. |
+| K-09 | baukit-sync | `observe_step_respects_drift_bound` | components within 4 of zero or their maximum, drift below 4, no loops. |
+| K-10 | baukit-sync | `encode_round_trips_and_compare_is_lexicographic` | components within 4 of zero or their maximum, no loops. |
+| V-02 | verus | `admit_equivalent_rate_zero` | rate 0; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`. |
+| V-02 | verus | `admit_equivalent_rate_one` | rate 1; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`. |
+| V-02 | verus | `admit_equivalent_rate_seven` | rate 7; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`. |
+| V-02 | verus | `admit_equivalent_rate_max` | rate `u64::MAX`; tokens, elapsed time, capacity and cost each `<= 15` or `u64::MAX`. |
+| V-01 | verus | `now_step_equivalent` | none, straight-line code over unconstrained `i64`. |
+| V-01 | verus | `observe_step_equivalent` | none, straight-line code over unconstrained `i64`. |
+| V-01 | verus | `codec_equivalent` | none, straight-line code over unconstrained `i64`. |
+
+## Known gaps
+
+- `scripts/migrations-old-binary.sh` runs the `[old_binary] tests` from `rust/migrations.toml`
+  against the previous release's binary. The list is empty because no published release read
+  `BAUKIT_TEST_DATABASE_URL` when it was added. Until it is filled, the double-apply and Postgres
+  suites cover the expand migrations, and no old binary runs against the new schema.
+- Suite receivers still accept live deliveries signed only with v1. They refuse `x-suite-replay`
+  without `x-suite-signature-v2`. Refusing every v1-only delivery waits until all peers send v2.
+  See `docs/migrations/suite-correctness-hardening.md`.
+- The pull page merge has no Kani equivalence harness. CBMC runs out of 8 GB on the production
+  `Uuid` compare and sort even for two one-row tables. `merge_matches_production` in
+  `rust/verus/equivalence/src/pull.rs` compares twin and production over 4096 proptest cases
+  instead. Verus proves V-03 itself without a bound.
+- K-12 runs at reduced width. `now` is an `i16` and `duration` a `u8 + 1`, because wider types
+  took more than 10 minutes in CBMC. The proptest `window_properties::window_bounds_contain_now`
+  samples the full `i64` range.
+- K-18 proves the length gate only. CBMC cannot bound the base64url decoder, so the
+  `oauth_state_parse` fuzz target checks canonical acceptance at 43 characters.
+- K-21 works per byte. The harnesses cover every 3-byte string and every single `char`. The
+  encoder maps bytes one at a time, so longer segments follow, and whole-segment proptests in
+  `baukit-suite` cover them directly.

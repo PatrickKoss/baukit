@@ -73,6 +73,92 @@ when a product wants a different report.
 delete actions, which catches the table someone added without `ON DELETE CASCADE` before a deletion
 request silently leaves rows behind.
 
+## Security probe suites
+
+The auth negative and cross-tenant suites walk a product's OpenAPI document and send real
+requests to every operation, so a new route is covered the day it is documented. They share these
+types from `security_probe.rs`:
+
+- `SecurityTarget::router(router)` calls the app in process through `oneshot`.
+  `SecurityTarget::base_url(url)` sends real HTTP, so the same suite can probe a deployed stack.
+- `OperationFixtures` holds the path values, request bodies and headers each operation needs.
+  `.path_value("itemId", id)` fills every path that names `itemId`,
+  `.body("put", "/items/{itemId}", json)` sets a JSON body by method and path template, and
+  `.header(name, value)` goes on every request, for example an `idempotency-key`.
+- `RouteExclusion` is a route left out of a probe. Every report prints its reason.
+
+Each suite has a `check_*` form returning a report or a typed error, and an `assert_*` form that
+prints the report and panics with every violation.
+
+### Auth negative suite
+
+`check_auth_negative_suite(document, target, fixtures, case)` sends every `InvalidCredential` to
+every secured operation and expects 401. `InvalidCredential::ALL` lists the cases in the order the
+suite sends them: missing, expired, other audience, unknown key, `alg: none`, wrong issuer, not
+yet valid, HS256 keyed with the published JWK, random `kid`, a duplicate `Authorization` header
+and a `Basic` header. A 401 for the missing token must carry `WWW-Authenticate`.
+
+The suite also sends one valid token per operation, and a 401 to it fails, so a verifier that
+rejects everything does not pass. `AuthNegativeCase::new(&issuer, audience)` mints the tokens
+from a `MockOidcServer`. An operation is secured when its own `security`, or the document's
+top-level one, lists a requirement and no empty one. Every other operation must be declared with
+`.public(method, path, reason)`, so an accidentally public route fails. `.exclude(method, path,
+reason)` skips a secured one. An exclusion or public entry that names no operation also fails.
+
+### Cross-tenant suite
+
+`check_cross_tenant_denied(document, target, fixtures, case)` calls every operation as principal
+B with principal A's ids from the fixtures. `CrossTenantCase::new(b_token)` sets B's token.
+
+- An operation with a path parameter must answer one of the denied statuses, 403 or 404 unless
+  `.denied_statuses(...)` replaces them.
+- No response body may contain a `.leak_marker(text)`, such as A's item title. Operations without
+  path parameters, such as lists, are called too and fail only on a leak.
+- With `.owner(a_token)`, A must reach each parameterized `GET`, and A re-reads the resource after
+  each denied mutation. A changed body fails.
+- A path parameter without a fixture value fails, so a new route needs a fixture or an
+  `.exclude(method, path, reason)`.
+
+This example seeds nothing itself. It takes Alice's item id and Bob's token from the test setup.
+It is `no_run` because it needs a running router and a `MockOidcServer`. The same code is the
+doc example on `check_cross_tenant_denied` in `src/cross_tenant.rs`, and the generated backend's
+`backend/tests/conformance.rs` runs both suites against the composed router.
+
+```rust,no_run
+# async fn product_test(
+#     router: axum::Router,
+#     document: serde_json::Value,
+#     issuer: &baukit_test::MockOidcServer,
+#     alice_item_id: &str,
+#     bob_token: String,
+# ) {
+use baukit_test::{
+    AuthNegativeCase, CrossTenantCase, OperationFixtures, SecurityTarget,
+    assert_auth_negative_suite, assert_cross_tenant_denied,
+};
+
+let target = SecurityTarget::router(router);
+let fixtures = OperationFixtures::new()
+    .path_value("itemId", alice_item_id)
+    .body("put", "/v1/items/{itemId}", serde_json::json!({"title": "bob"}))
+    .header("idempotency-key", "cross-tenant-probe");
+let case = CrossTenantCase::new(bob_token)
+    .leak_marker("alice's private title")
+    .exclude("get", "/v1/shares/{shareId}", "share links are readable by any signed-in user");
+assert_cross_tenant_denied(&document, &target, &fixtures, &case).await;
+assert_auth_negative_suite(&document, &target, &fixtures, &AuthNegativeCase::new(issuer, "api"))
+    .await;
+# }
+```
+
+### Pull conformance
+
+Pull SQL for sync tables is product code. `check_pull_conformance(&adapter)` drives a product
+`PullConformanceAdapter` through `create_owner`, `write` and `pull`. It stamps several rows with
+one revision across two tables, overwrites rows while a pull pages, pages one row per table at a
+time, and fails with a `PullConformanceError` when a page is out of `(revision, id)` order, paging
+never finishes, or the replica differs from the source. `assert_pull_conformance` panics instead.
+
 ## OpenAPI requests and responses
 
 `assert_response_matches_openapi` checks one response a test received against the operation it
