@@ -958,3 +958,5 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   - The template `baukit.toml` leaves the key unset, so product gates behave as before.
   - Merging this and rel/migrations makes the re-gate a full gate, because migrations are a shared
     path and gate.py is part of the cache key. It is queued on this head.
+- Full gate on 8fd055b8: fuzz finished in 400 s on its six-core minimum. Three lanes failed. The GitOps fixture check still expected one production replica, so it now checks the two-pod production contract. The kani and verus lanes reinstalled Kani into the shared `~/.kani` at the same time, so the gate now installs it once under a lock. Fixture-only scripts are mapped in `scripts/ci-gate.toml`, so a change to them no longer misses every cached step. Full gate requeued on 9760a6e2.
+- There is no 0.31.1. The product rollout fixes on main (PR #24, #40, #41 and #42) ship in 0.32.0, and their changelog lines sit in the `[0.32.0]` sections. PR #24 ships the template migration `0011_identity_erasure_operation_id_guard.sql`, so the template jobs copies move to `0012`–`0015`.
