@@ -489,7 +489,7 @@ FX tests come first in each phase where they apply: write the failing test, then
 - [ ] **REL2 Product adoption**: every product bumps, names its provider destinations (CB8), maps
   `CircuitOpen` to `deferred` in its provider job handlers, and runs its gate. Products that built their
   own retry loops around `GuardedClient` delete them.
-- [ ] **REL3 Correct the hardening plan**: R1 and R2 back to `[~]` until FX3 lands, R5 ticked or reopened
+- [x] **REL3 Correct the hardening plan**: R1 and R2 back to `[~]` until FX3 lands, R5 ticked or reopened
   with the real remaining gaps (off-node default, PITR test, dedicated-DB backup checks).
 
 ## Verification per change
@@ -816,3 +816,21 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
     disk.
 - Cargo warns about unused workspace dependencies `arc-swap`, `proptest` and
   `proptest-state-machine`. Main has the same warnings, so this is out of scope here.
+- Platform e2e on 7394b33d ran every suite: 17 passed, 2 failed.
+  - `postgres-failover` read `.spec.imageName`, which main's ImageCatalog left empty. It now reads
+    `.status.image`, like `tenant-postgres`.
+  - `falco` caught our PL4 `tenant-postgres` step. It set the owner's role timeouts with `kubectl exec`
+    into the platform primary, which fires the Critical exec rule, and the example told operators to
+    do the same. The owner now sets them on itself over a direct connection. A role may set its own
+    defaults.
+  - Both are fixed in 7a9f7651. A run of the three suites on that commit passed.
+  - The `api-disruption` numbers from the full run were lost, because each run overwrote the log. FX3
+    stays `[~]` until the full gate's e2e lane reports them against `kill_shed_budget` 20.
+- REL3 done:
+  - R1 is back to `[~]`, because nothing rolls Traefik itself under the loop.
+  - R2 has a passing `node-drain` run.
+  - R5 is ticked, because `backup-restore` passed. Off-node as the local default and a PITR test are
+    listed as gaps outside its scope.
+- The full ci-gate on 7a9f7651 is queued behind the other sessions' gates. It takes the heavy slot,
+  then `all_locks`, and runs `mise exec -- sh scripts/ci-gate.sh`, so the pinned squawk runs in the
+  `migrations` step.

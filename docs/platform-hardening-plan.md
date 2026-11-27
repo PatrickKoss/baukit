@@ -515,19 +515,22 @@ behave. Later phases add test directories here.
 
 ## Phase R: reliability
 
-- [x] **R1 Traefik** (F-01, D7): a Deployment with 2 replicas where the node count allows (1 locally),
+- [~] **R1 Traefik** (F-01, D7): a Deployment with 2 replicas where the node count allows (1 locally),
   `type: LoadBalancer` through k3s ServiceLB, rolling update `maxUnavailable: 0, maxSurge: 1`, PDB,
   `platform-critical`, `install/upgrade.crds: CreateReplace`. The e2e `ingress/` test bumps a pod
   annotation and asserts the rollout completes with no failed requests from a curl loop.
   Note (reliability FX3): no `ingress/` case did this. `e2e/tests/api-disruption/` now rolls two API
   replicas to a new image tag behind Traefik under an in-cluster request loop and expects zero failed
   requests. A rollout of Traefik itself is not covered: locally it runs one replica.
+  R1 stays `[~]` until a case rolls Traefik under the loop. With one replica and no hostPorts the
+  surge pod can schedule, so the case runs locally too.
 - [x] **R2 CNPG** (F-03, F-07): `enablePDB: false` when `instances: 1` (documented in the README, with
   `nodeMaintenanceWindow` for multi-instance overlays). Scope the restore-test Role's delete and patch
   to `resourceNames: [postgres-cluster-restore-test]`. Give the restore test a Delete-policy
   StorageClass on Hetzner. Add an e2e test that drains the node with `kubectl drain --dry-run=server`
   and asserts no PDB blocks it.
-  Note (reliability FX3): that test is `e2e/tests/node-drain/`, added by FX3.
+  Note (reliability FX3): that test is `e2e/tests/node-drain/`, added by FX3. It passed in the
+  2026-11-27 platform e2e on the reliability branch.
 - [x] **R3 HelmRelease standards** (F-40): apply the V5 conventions to every base. `driftDetection` lands
   as `mode: warn` first, then `enabled` after one clean e2e run with no drift events. Set explicit
   `timeout`s from measured install times. Add `test.enable` where the chart ships tests.
@@ -538,10 +541,14 @@ behave. Later phases add test directories here.
   - PDBs for every multi-replica platform workload.
   - kured gets `prometheusUrl` (skip reboot while non-info alerts fire), a notify URL from the
     overlay, and a reboot window.
-- [~] **R5 Backups that are known to work** (F-43): `immediate: true` on the ScheduledBackup. The restore
+- [x] **R5 Backups that are known to work** (F-43): `immediate: true` on the ScheduledBackup. The restore
   test checks a sentinel row, not just Ready. Document an off-node backup target for the local overlay
   (host bind mount or a second object store) in the base README. Add an e2e test that runs backup,
   deletes the cluster, restores and compares the sentinel.
+  `backup-restore` and `restore-test-cronjob` passed in the 2026-11-27 platform e2e, which was the
+  condition for ticking R5. Two gaps remain outside R5's scope. The off-node target is documented
+  (`postgres-cluster/README.md`, "Off-node backups for the local overlay") but not the local default.
+  No e2e restores to a point in time.
 - [x] **R6 Storage limits** (F-11): `retentionSize` for Prometheus at about 85% of the PVC; Loki
   `retention_period` plus compactor deletion; Tempo `max_block_bytes` / retention sized to its PVC;
   `BaukitPvcFillingUp` covered by kube-prometheus-stack defaults and tested in O4.
