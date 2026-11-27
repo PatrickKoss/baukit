@@ -263,7 +263,6 @@ async fn build_takes_share_xp_from_config_unless_overridden() -> TestResult {
         .replay(Arc::new(NoReplay))
         .build()?;
     assert!(configured.context.share_xp);
-    assert_eq!(configured.context.metric_prefix, APP_ID);
     let overridden = builder()?
         .identity(Arc::new(NoIdentity))
         .replay(Arc::new(NoReplay))

@@ -179,16 +179,16 @@ When the egress breaker for the peer is open, or its concurrency limit is
 full, the job is deferred for the breaker's delay. Nothing reaches the peer
 and the attempt does not count. Its outcome is `deferred`.
 
-Metrics use the product's configured prefix, with these suffixes and labels:
+Metric names are fixed. The scrape labels (`service`, `environment`) name the product.
 
 | Metric | Labels |
 | --- | --- |
-| `{prefix}_suite_events_ingested_total` | `outcome` |
-| `{prefix}_suite_deliveries_total` | `outcome` |
-| `{prefix}_suite_emission_skipped_total` | `reason` |
+| `suite_events_ingested_total` | `outcome` |
+| `suite_deliveries_total` | `outcome` |
+| `suite_emission_skipped_total` | `reason` |
 
 The cleanup runner counts failures in `suite_cleanup_failures_total`, without
-a product prefix or labels.
+labels.
 
 ## Adopt in a product
 
@@ -274,11 +274,11 @@ a product prefix or labels.
    `suite_payload_invalid`. Peers do not retry that rejection. The public
    `domain::validation` module exposes field validators for typed parsers.
 5. Construct `PostgresSuiteLinkStore::new(pool)` and
-   `PostgresSuiteEventOutbox::new(pool, registry, catalog, identities, share_xp, metric_prefix)`.
+   `PostgresSuiteEventOutbox::new(pool, registry, catalog, identities, share_xp)`.
    Put those stores, a `ReqwestSuitePeerClient::new(allow_loopback)`, limiter,
    replay source and identities into `SuiteDependencies`. Construct
    `SuiteContext::new(registry, catalog, dependencies, SuiteServiceConfig)`.
-   The service config carries the cipher, metric prefix, initial replay days
+   The service config carries the cipher, initial replay days
    and global XP switch. Build link, delivery and ingest services, then
    `SuiteModule`. Mount `PostgresSuite::router(api)` or
    `adapters::public_limit::limited_router(SuiteHttpState { api }, store, limit)` and

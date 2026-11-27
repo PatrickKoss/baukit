@@ -1,4 +1,5 @@
 use crate::error_codes::SuiteErrorCode;
+use crate::metric_names::{SUITE_DELIVERIES_TOTAL, SUITE_EVENTS_INGESTED_TOTAL};
 use std::{sync::Arc, time::Duration};
 
 use crate::domain::*;
@@ -106,7 +107,6 @@ pub struct SuiteContext {
     pub catalog: Arc<PayloadCatalog>,
     pub replay: Arc<dyn SuiteReplaySource>,
     pub identities: Arc<dyn SuiteIdentitySource>,
-    pub metric_prefix: String,
     cipher: SecretCipher,
     pub initial_replay_days: u32,
     pub share_xp: bool,
@@ -119,22 +119,23 @@ impl SuiteContext {
         config: SuiteServiceConfig,
     ) -> Self {
         metrics::describe_counter!(
-            format!("{}_suite_deliveries_total", config.metric_prefix),
+            SUITE_DELIVERIES_TOTAL,
             "Suite peer delivery attempts by outcome"
         );
         metrics::describe_counter!(
-            format!("{}_suite_events_ingested_total", config.metric_prefix),
+            SUITE_EVENTS_INGESTED_TOTAL,
             "Suite event ingestion by outcome"
         );
         for outcome in [
             "delivered",
             "retry",
+            "deferred",
             "rejected",
             "unauthorized",
             "revoked",
             "disabled",
         ] {
-            metrics::counter!(format!("{}_suite_deliveries_total", config.metric_prefix), "outcome" => outcome).increment(0);
+            metrics::counter!(SUITE_DELIVERIES_TOTAL, "outcome" => outcome).increment(0);
         }
         for outcome in [
             "granted",
@@ -144,7 +145,7 @@ impl SuiteContext {
             "rejected",
             "unauthorized",
         ] {
-            metrics::counter!(format!("{}_suite_events_ingested_total", config.metric_prefix), "outcome" => outcome).increment(0);
+            metrics::counter!(SUITE_EVENTS_INGESTED_TOTAL, "outcome" => outcome).increment(0);
         }
         Self {
             registry,
@@ -155,7 +156,6 @@ impl SuiteContext {
             limiter: dependencies.limiter,
             replay: dependencies.replay,
             identities: dependencies.identities,
-            metric_prefix: config.metric_prefix,
             cipher: SecretCipher::new(config.cipher),
             initial_replay_days: config.initial_replay_days,
             share_xp: config.share_xp,
@@ -204,7 +204,6 @@ pub struct SuiteDependencies {
 }
 
 pub struct SuiteServiceConfig {
-    pub metric_prefix: String,
     pub cipher: Option<CredentialCipher>,
     pub initial_replay_days: u32,
     pub share_xp: bool,
@@ -504,13 +503,58 @@ impl SuiteDeliveryRunner for SuiteDeliveryService {
     }
 }
 
-fn ingest_metric(prefix: &str, outcome: &'static str) {
-    metrics::counter!(format!("{prefix}_suite_events_ingested_total"),"outcome"=>outcome)
-        .increment(1);
+fn ingest_metric(outcome: &'static str) {
+    metrics::counter!(SUITE_EVENTS_INGESTED_TOTAL, "outcome" => outcome).increment(1);
 }
-fn delivery_metric(prefix: &str, action: DeliveryAction) {
+fn delivery_metric(action: DeliveryAction) {
     if let Some(outcome) = action.outcome() {
-        metrics::counter!(format!("{prefix}_suite_deliveries_total"),"outcome"=>outcome)
-            .increment(1);
+        metrics::counter!(SUITE_DELIVERIES_TOTAL, "outcome" => outcome).increment(1);
+    }
+}
+
+#[cfg(test)]
+mod metric_tests {
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    use super::*;
+
+    #[test]
+    fn delivery_and_ingest_counters_use_fixed_names() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        metrics::with_local_recorder(&recorder, || {
+            delivery_metric(DeliveryAction::Delivered);
+            delivery_metric(DeliveryAction::LinkMissing);
+            ingest_metric("granted");
+        });
+        let mut samples = snapshotter
+            .snapshot()
+            .into_vec()
+            .into_iter()
+            .map(|(key, _, _, value)| {
+                let labels = key
+                    .key()
+                    .labels()
+                    .map(|label| format!("{}={}", label.key(), label.value()))
+                    .collect::<Vec<_>>();
+                (key.key().name().to_owned(), labels, value)
+            })
+            .collect::<Vec<_>>();
+        samples.sort_by(|left, right| left.0.cmp(&right.0));
+        assert_eq!(
+            samples,
+            vec![
+                (
+                    "suite_deliveries_total".to_owned(),
+                    vec!["outcome=delivered".to_owned()],
+                    DebugValue::Counter(1)
+                ),
+                (
+                    "suite_events_ingested_total".to_owned(),
+                    vec!["outcome=granted".to_owned()],
+                    DebugValue::Counter(1)
+                ),
+            ]
+        );
     }
 }

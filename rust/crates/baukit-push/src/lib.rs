@@ -86,6 +86,7 @@ mod fake;
 mod install_secret;
 #[cfg(feature = "test-support")]
 mod memory;
+mod metrics;
 mod pending_receipt;
 mod port;
 #[cfg(feature = "sqlx-postgres")]
@@ -108,6 +109,7 @@ pub use install_secret::{
 };
 #[cfg(feature = "test-support")]
 pub use memory::{MemoryDeliveryClaimStore, MemoryDeviceRegistry, MemoryPendingReceiptStore};
+pub use metrics::PUSH_NOTIFICATIONS_TOTAL;
 pub use pending_receipt::{
     PendingReceipt, PendingReceiptStore, RECEIPT_POLL_DELAY, RECEIPT_RETENTION, ReceiptPoll,
     ReceiptPollError, accepted_receipts, poll_pending_receipts,

@@ -96,6 +96,8 @@ cut a longer job. The baukit-app chart wires that split with
 | PgBouncer `max_db_connections` per database | 12 | `postgres-cluster/pooler.yaml` |
 | Worker pool per pod, direct (`database.max_connections`) | 10 | `baukit-config` |
 | Tenant owner `connectionLimit` | 25 | `postgres-cluster/cluster.yaml`, `DatabaseRole` |
+| Keycloak owner `connectionLimit` | 12 | `keycloak/database.yaml` |
+| PostgreSQL `max_connections` | 150 | `postgres-cluster/cluster.yaml` |
 
 The owner's 25 connections split into 12 through the pooler and 13 direct: one
 worker pod at its default pool of 10, plus 3 for the migration Job and an
@@ -106,8 +108,9 @@ extra worker replica does: run a second worker only after lowering
 together stay at 10. Five tenants at 25 (125), Keycloak's 12, CNPG's own
 connections and the 3 superuser slots fit under 150. Through the pooler the
 owner role's `ALTER ROLE ... SET` timeouts replace the API's startup options
-(see "Timeouts through the pooler" in `postgres-cluster/README.md`). The pooler
-pod is not in the August sample above.
+(see "Timeouts through the pooler" in `postgres-cluster/README.md`). `deploy/platform/lint/test_postgres_tenant_isolation.py` reads these values from
+the manifests and fails when the budget no longer fits. The pooler pod is not in
+the August sample above.
 
 ## Testing-node sizing implication
 
