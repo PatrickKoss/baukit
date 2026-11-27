@@ -448,7 +448,7 @@ them.
   `local-footprint.md`.
 - [x] **PL5 Redis platform alerts** (RL-86): master down, Sentinel quorum lost, replication link down,
   evictions, memory near maxmemory, each with promtool tests and a runbook.
-- [~] **PL6 Flagger that can gate** (RL-83): add `baukit.dev/workload` to the chart selector (breaking,
+- [x] **PL6 Flagger that can gate** (RL-83): add `baukit.dev/workload` to the chart selector (breaking,
   fine per principle 8), relabel `rollout` in the ServiceMonitor from the pod's canary/primary label,
   and add an opt-in Canary plus TraefikService to the template with error-ratio and p95 gates from the
   existing metric templates.
@@ -483,14 +483,26 @@ FX tests come first in each phase where they apply: write the failing test, then
 
 ## Phase REL: release and adoption
 
-- [ ] **REL1 Release** with the new crate in the train: `scripts/check-version-coherence.py`, crates.io
+- [x] **REL1 Release** with the new crate in the train: `scripts/check-version-coherence.py`, crates.io
   publish order updated for `baukit-resilience` (before `baukit-egress` and `baukit-jobs`), npm for the
   TS packages, tag.
-- [ ] **REL2 Product adoption**: every product bumps, names its provider destinations (CB8), maps
+- [~] **REL2 Product adoption**: every product bumps, names its provider destinations (CB8), maps
   `CircuitOpen` to `deferred` in its provider job handlers, and runs its gate. Products that built their
   own retry loops around `GuardedClient` delete them.
 - [x] **REL3 Correct the hardening plan**: R1 and R2 back to `[~]` until FX3 lands, R5 ticked or reopened
   with the real remaining gaps (off-node default, PITR test, dedicated-DB backup checks).
+
+## Phase FU: follow-ups found while landing 0.32.0
+
+- [ ] **FU1 Start the generated processes**: a Docker-gated template test that runs the built worker
+  binary against Postgres, waits for readiness on the ops port, sends SIGTERM and asserts a clean exit
+  inside the drain. The worker failed at startup on every default config in a 0.32.0 candidate and no
+  gate noticed.
+- [ ] **FU2 Double-apply matches sqlx**: `check-migrations.py double-apply` sends a `-- no-transaction`
+  file as one query, the way sqlx does, so a `SET` next to `CREATE INDEX CONCURRENTLY` fails the check.
+- [ ] **FU3 Client leftovers from CL**: `delete-profile.ts` shares the app runtime so its cooldown
+  reaches the banner, and the mobile renewal hook reports a renewal error only once it is terminal or
+  the token has expired.
 
 ## Verification per change
 
@@ -580,6 +592,15 @@ PL6; FX3, FX4; REL1-REL3.
 | rel-docs | RC3 contract doc, crate and package changelogs | merged, numbers spot-checked against code |
 | rel-merge | merge origin/main (baukit 0.31.0) | merged after two rounds (61bf4792) |
 | orchestrator | REL1-REL3, Docker and fixture gates, platform e2e, full gate | Docker tests green on the merged head after one suite fix; platform e2e running |
+
+### Wave 4 (after 0.32.0)
+
+| Agent | Tasks | Status |
+|---|---|---|
+| rel-fu-process | FU1 | briefed |
+| rel-fu-migrations | FU2 | briefed |
+| rel-pl7 | PL7 rest (push metrics, fixed suite metric names, alerts), PL4 rest (pool sizing in `local-footprint.md`) | briefed |
+| rel-fu-clients | FU3 | briefed |
 
 ## Open questions
 
@@ -974,3 +995,12 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   worker built its `DrainBudget` from the 600 s job timeout, so it failed at startup against the
   35 s or 45 s drain. The budget now checks `release_reserve`, and `worker_drain` tests the
   defaults. Open: no gate starts the generated worker binary, which is how this went unnoticed.
+
+### 2026-11-28
+
+- 0.32.0 is out: PR #44 merged as ac42fd08, tag v0.32.0, GitHub release, npm and all crates on
+  crates.io. `baukit-resilience` was published by hand once, because trusted publishing cannot create
+  a crate, and the release job's re-run published the rest.
+- REL1 done. PL6 done: the `canary` e2e suite passed in the full gate, with both the promotion and the
+  rollback step. REL2 is with the product sessions.
+- Wave 4 starts on `task/reliability-w4` from ac42fd08: FU1 to FU3, and the rest of PL4 and PL7.
