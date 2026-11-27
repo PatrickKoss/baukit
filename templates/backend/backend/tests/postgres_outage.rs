@@ -1,4 +1,9 @@
-use std::{error::Error, path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    error::Error,
+    path::PathBuf,
+    sync::{Arc, LazyLock},
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -8,7 +13,7 @@ use axum::{
 use baukit_config::{DatabaseConfig, Secret};
 use baukit_ops::TrafficGate;
 use baukit_runtime::{DeploymentEnvironment, ProcessKind, ServiceInfo, build_info};
-use baukit_telemetry::{Telemetry, TelemetryBuilder};
+use baukit_telemetry::{PrometheusHandle, TelemetryBuilder};
 use baukit_test::{PostgresMigrationOwner, PostgresTestContainer, PostgresTestOptions};
 use sqlx::PgPool;
 use tower::ServiceExt as _;
@@ -55,20 +60,25 @@ fn service_info() -> ServiceInfo {
     )
 }
 
-fn telemetry() -> Result<Telemetry, Box<dyn Error>> {
-    Ok(
-        TelemetryBuilder::new(service_info().telemetry_identity().clone())
-            .filter("off")
-            .init()?,
-    )
+/// Telemetry installs process-global recorders, so every test in this binary shares one handle.
+static PROMETHEUS: LazyLock<Result<PrometheusHandle, String>> = LazyLock::new(|| {
+    TelemetryBuilder::new(service_info().telemetry_identity().clone())
+        .filter("off")
+        .init()
+        .map(|telemetry| telemetry.prometheus_handle().clone())
+        .map_err(|error| error.to_string())
+});
+
+fn prometheus_handle() -> Result<PrometheusHandle, Box<dyn Error>> {
+    Ok(PROMETHEUS.as_ref().map_err(Clone::clone)?.clone())
 }
 
-fn ops_router(pool: &PgPool, telemetry: &Telemetry) -> Result<Router, Box<dyn Error>> {
+fn ops_router(pool: &PgPool) -> Result<Router, Box<dyn Error>> {
     let service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
     let (router, _readiness) = operations_router(
         service,
         service_info().telemetry_identity().clone(),
-        telemetry.prometheus_handle().clone(),
+        prometheus_handle()?,
         TrafficGate::new(),
     )?;
     Ok(router)
@@ -100,8 +110,7 @@ async fn a_postgres_outage_fails_readiness_and_recovers_without_a_restart()
     let postgres = start_postgres().await?;
     let database = database_config(&postgres)?;
     let pool = baukit_ops::connect_with_backoff(&database, STARTUP_BUDGET).await?;
-    let telemetry = telemetry()?;
-    let ops = ops_router(&pool, &telemetry)?;
+    let ops = ops_router(&pool)?;
     let service = ItemService::new(Arc::new(PostgresItemRepository::new(pool.clone())));
     assert_eq!(status(&ops, "/readyz").await?, StatusCode::OK);
 
@@ -157,6 +166,5 @@ async fn the_api_waits_for_a_late_postgres_and_turns_ready() -> Result<(), Box<d
     postgres.fault()?.start().await?;
 
     let pool = connect.await??;
-    let telemetry = telemetry()?;
-    wait_for_ready(&ops_router(&pool, &telemetry)?).await
+    wait_for_ready(&ops_router(&pool)?).await
 }
