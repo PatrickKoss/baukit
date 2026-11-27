@@ -88,7 +88,7 @@ def lookup(data: dict, dotted: str) -> dict:
     return data
 
 
-def test_only(package: str, source: str) -> bool:
+def is_test_only(package: str, source: str) -> bool:
     return source.startswith(f"{package}/tests/")
 
 
@@ -264,13 +264,13 @@ class BuildInputTests(unittest.TestCase):
     def package_inputs(self, package: str) -> dict[str, bool]:
         """Each file the package's build reads, mapped to whether only its tests read it."""
         files = self.packages.files_of(package) if package != "rust" else ["rust/Cargo.toml"]
-        inputs = {path: test_only(package, path) for path in files}
+        inputs = {path: is_test_only(package, path) for path in files}
         for source in files:
             if not source.endswith(".rs"):
                 continue
             for target in include_targets(self.packages, source):
                 for path in self.packages.files_of(target) or [target]:
-                    inputs[path] = inputs.get(path, True) and test_only(package, source)
+                    inputs[path] = inputs.get(path, True) and is_test_only(package, source)
         for pattern in EXTRA_INPUTS.get(package, []):
             regex = self.glob(pattern)
             inputs.update({path: False for path in self.packages.files if regex.fullmatch(path)})
