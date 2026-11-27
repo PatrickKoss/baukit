@@ -44,28 +44,41 @@ fn source(
     ))
 }
 
-const RATE_LIMITED_MERGE: &str = ".merge(rate_limited(";
+const LIMITED_MERGES: [&str; 3] = [
+    ".merge(rate_limited(",
+    ".merge(protect_routes(",
+    ".merge(baukit_ratelimit::layers(",
+];
 
-/// Rewrites `.merge(rate_limited(x,limits))` to `.merge(x)` so the merge checks see the router.
+/// Rewrites `.merge(w(x, ..))` for each IP-limiting wrapper `w` in [`LIMITED_MERGES`] to
+/// `.merge(x)` so the merge checks see the router, also when `x` is a call.
 fn unwrap_rate_limited(code: &str) -> String {
     let mut output = String::with_capacity(code.len());
     let mut rest = code;
-    while let Some(start) = rest.find(RATE_LIMITED_MERGE) {
+    while let Some((start, wrapper)) = LIMITED_MERGES
+        .iter()
+        .filter_map(|wrapper| rest.find(wrapper).map(|start| (start, *wrapper)))
+        .min()
+    {
         let (before, call) = rest.split_at(start);
         output.push_str(before);
-        let arguments = &call[RATE_LIMITED_MERGE.len()..];
-        let binding_end = arguments
-            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.'))
-            .unwrap_or(arguments.len());
-        match block(arguments, '(', ')').map(str::len) {
-            Some(inner) if binding_end > 0 && arguments[inner + 1..].starts_with(')') => {
+        let arguments = &call[wrapper.len()..];
+        let wrapped = block(arguments, '(', ')').and_then(|inner| {
+            let first = top_level_parts(inner, ',').next()?;
+            let tail = &arguments[inner.len() + 1..];
+            let tried = usize::from(tail.starts_with('?'));
+            (!first.is_empty() && tail[tried..].starts_with(')'))
+                .then_some((first, inner.len() + tried))
+        });
+        match wrapped {
+            Some((first, inner)) => {
                 output.push_str(".merge(");
-                output.push_str(&arguments[..binding_end]);
+                output.push_str(first);
                 output.push(')');
                 rest = &arguments[inner + 2..];
             }
-            _ => {
-                output.push_str(RATE_LIMITED_MERGE);
+            None => {
+                output.push_str(wrapper);
                 rest = arguments;
             }
         }
@@ -340,7 +353,11 @@ fn returned_router_merged(
     for krate in crates {
         for path in &krate.sources {
             let text = crate::doctor_layout::read_text(path)?;
-            let code = production_symbols(&text);
+            let code = unwrap_rate_limited(
+                &production_symbols(&text)
+                    .split_whitespace()
+                    .collect::<String>(),
+            );
             for (name, _, body) in functions(&code) {
                 if !router.contains(body) || !returns_mcp_router(body) {
                     continue;
@@ -604,5 +621,35 @@ fn validate(config: &McpConfig) { config.validate(); }
             unwrap_rate_limited("api.merge(rate_limited("),
             "api.merge(rate_limited("
         );
+        assert_eq!(
+            unwrap_rate_limited(
+                "api.merge(rate_limited(mcp_router(&config,&state).await?,late)).merge(protect_routes(x,late,auth,limits)?)"
+            ),
+            "api.merge(mcp_router(&config,&state).await?).merge(x)"
+        );
+        assert_eq!(
+            unwrap_rate_limited("api.merge(protect_routes(mcp,late,auth))"),
+            "api.merge(mcp)"
+        );
+        assert_eq!(
+            unwrap_rate_limited(
+                "api.merge(baukit_ratelimit::layers(mcp,store,options)).merge(layers(other,options)).merge(baukit_http::layers(third,options))"
+            ),
+            "api.merge(mcp).merge(layers(other,options)).merge(baukit_http::layers(third,options))"
+        );
+    }
+
+    #[test]
+    fn wrapped_wrapper_result_counts_as_merged() {
+        let name = "mcp_router";
+        for code in [
+            "asyncfnrun(){letapi=api.merge(rate_limited(mcp_router(&config).await?,late));}",
+            "asyncfnrun(){letmcp=mcp_router(&config).await?;api.merge(rate_limited(mcp,late))}",
+        ] {
+            assert!(
+                called_result_merged(&unwrap_rate_limited(code), name),
+                "{code}"
+            );
+        }
     }
 }
