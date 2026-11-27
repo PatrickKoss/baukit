@@ -54,18 +54,26 @@ The `overload` scenario ramps an open request rate on `GET /items` from 50 to `P
 `RAMP_SECONDS`, then holds it for `HOLD_SECONDS`. An open rate keeps arriving while the API queues, so
 the queue fills and baukit-http sheds a request once it has waited longer than the 1 s queue timeout.
 A `liveness` scenario polls `/healthz` on the ops listener once a second for the whole run and five
-seconds after it.
+seconds after it. A `clock` scenario sleeps 100 ms in a loop and records in `clock_lag` how much
+longer the wall clock says each sleep took.
 
 | Threshold | Passes when |
 |---|---|
 | `shed_responses` | at least one 503 came back, so the run really went past the limit |
 | `shed_without_retry_after` | every 503 carried a numeric `Retry-After` header |
 | `unexpected_status` | every response was a 200 or a 503; a timeout, 429 or 500 fails |
-| `admitted_duration` | the p99 of the 200 responses stayed under `ADMITTED_P99_MS`, 1500 ms by default |
+| `admitted_duration` | the p99 of the 200 responses stayed under `ADMITTED_P99_MS`, 1500 ms by default; checked by `admitted_latency.py` after k6 exits |
 | `process_up` | every `/healthz` poll answered 200, during the load and after it |
 
 The 1500 ms target is the 1 s queue timeout plus 500 ms for the handler. An admitted request can wait
 the full queue timeout before it gets a permit, so a lower target would fail a healthy API.
+
+k6 times requests on the wall clock, so a clock step lands in every request in flight. Under load,
+WSL 2 steps the clock forward by about 3.6 s every 35 s, which pushed the raw p99 to 4.6 s while the
+API answered every request in about 1 s. k6 writes its samples to a CSV file, and `admitted_latency.py`
+treats a `clock_lag` above 250 ms as a step and subtracts it from each admitted request that spans
+it. It prints the corrected and the raw p99 and the steps it found. A real k6 stall also shows up as
+`clock_lag`, so a run with steps on a host without clock steps points at a starved k6, not at the API.
 
 ### Running it against a fixture
 
@@ -89,7 +97,7 @@ make load-smoke
 
 `make load-smoke` calls `run-load-smoke.sh`, which runs the k6 image pinned by version and digest in
 `deploy/tools.toml` with `docker run --network host`, so k6 reaches the API on `127.0.0.1`. Host
-networking reaches the host's loopback only on Linux. k6 exits 99 when a threshold fails.
+networking reaches the host's loopback only on Linux. The runner exits 99 when a threshold fails.
 
 The script passes these variables into the container only when they are set:
 
