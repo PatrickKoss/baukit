@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `docs/threat-model.md` is a starter threat model for this product. Fill every `TODO(owner)` row before the first release. `baukit doctor` now expects the file; a product that keeps its threat model elsewhere adds a `[doctor] waive` entry with the reason.
+
 ## [0.32.0] - 2026-11-27
 
 {% if context.auth_enabled and context.backend %}- `backend/migrations/0011_identity_erasure_operation_id_guard.sql` replaces `erasure_job_failed()` so a failed identity deletion job whose `operationId` is not a UUID no longer aborts the job's status update. Apply it after `0006_identity_erasure_reonboarding.sql`.

@@ -353,3 +353,19 @@ fn waivers_follow_declared_backend_file_paths() -> Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn missing_threat_model_is_reported_and_waivable() -> Result<()> {
+    const THREAT_MODEL: &str = "docs/threat-model.md";
+    let parent = tempfile::tempdir()?;
+    let root = generate_new(&options(parent.path()))?;
+    doctor(&root)?;
+    fs::remove_file(root.join(THREAT_MODEL))?;
+    let finding = format!("missing expected product file `{THREAT_MODEL}`");
+    let error = doctor(&root).expect_err("a missing threat model must fail");
+    assert!(error.to_string().contains(&finding), "{error:#}");
+    waive(&root, &[THREAT_MODEL])?;
+    let notes = doctor(&root)?;
+    assert!(notes.contains(&format!("note: waived {finding}: {REASON}")));
+    Ok(())
+}

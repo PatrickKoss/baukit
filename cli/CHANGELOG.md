@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- New products get `docs/threat-model.md`, a starter threat model with data classes, trust boundaries and threat rows for the capabilities the product has. Each pre-filled row names the generated test or check that covers it, and the rows the product must fill say `TODO(owner)`. `baukit doctor` expects the file in every product and accepts a `[doctor] waive` entry for it.
+
 ## [0.32.0] - 2026-11-27
 
 - New platform products get `backend/migrations/0016_platform.sql`, after the template migrations that now run through `0015`. The old number collided with `0013_baukit_jobs_concurrency_key.sql`. Existing products keep the path recorded in `baukit.toml`.
