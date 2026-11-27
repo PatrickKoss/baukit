@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.32.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.32.0 train.
+
 ## 0.31.0
 
 - Breaking: `ScopedPersistenceLifecycle.handleProfileErased`, `handleSessionExpired` and `blockIdentityMismatch` take the subject and do nothing while another subject is selected, so a stale signal cannot erase another account's partition.

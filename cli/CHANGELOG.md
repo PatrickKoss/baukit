@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
 - Strict products get `scripts/gate_results.py`, the gate's result cache, and `[quality.cache] never` in `baukit.toml`. `baukit doctor` requires `scripts/gate_results.py` and its test, and fails when `quality.cache.never` names a step the gate does not have.
 
 ## [0.31.0] - 2026-11-26

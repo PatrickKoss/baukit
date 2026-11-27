@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.32.0
+
+### Minor Changes
+
+- Release the coordinated baukit 0.32.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/type-guards@0.32.0
+
 ## 0.31.0
 
 - A refresh without an entitlement clears the held one.

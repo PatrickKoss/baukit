@@ -4,6 +4,8 @@ All notable changes to `baukit-egress` are documented here.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
 - Breaking: `GuardedClient::new` and `GuardedClient::with_resolver` take a destination name first. It labels the new `egress_*` metrics.
 - A circuit breaker per `(scheme, host, port)` is on by default (`with_circuit_breaker`, `without_circuit_breaker`), with `EgressError::CircuitOpen`. `429` and `5xx` with `Retry-After` hold the circuit for that delay.
 - `with_max_in_flight` caps requests in flight per `(scheme, host, port)` (default 32), with `EgressError::Saturated`.

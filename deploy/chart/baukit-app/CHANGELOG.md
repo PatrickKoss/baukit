@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
 - The API Deployment renders no `replicas` with `canary.enabled`, as it already did with `autoscaling.enabled`. A Helm upgrade used to scale the canary target back to `api.replicas` next to Flagger's primary.
 - Shared Postgres: `backing.postgres.shared.directUrlSecretRef` points the worker, migrate and seed processes at a direct `<clusterName>-rw` URL, and backing egress admits the API, and the other processes without that Secret, to the `<clusterName>-pooler-rw` pods (`backing.postgres.shared.poolerName`). Before, the chart allowed only the cluster pods, so an API URL to the pooler was blocked.
 - Breaking: the API and worker Deployment selectors and pod labels gain `baukit.dev/workload: <fullname>-<process>`, the label Flagger selects on and rewrites to `<fullname>-<process>-primary`. A selector is immutable, so delete both Deployments before upgrading. Services, PDBs and topology spread leave the label out, so they cover the `-primary` pods too.

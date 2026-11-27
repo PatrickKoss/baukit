@@ -4,6 +4,8 @@ All notable changes to `baukit-test` are documented here.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
 - Worker conformance accepts `worker_job_runs_total{outcome="cancelled"}`.
 - Fault fixtures: `PostgresTestContainer::fault` and `RedisTestContainer::fault` return `PostgresFault` and `RedisFault` handles that stop, start, pause and resume the container. `PostgresTestOptions::with_stable_host_port` and `start_redis_with_stable_port` keep the URL valid across restarts. `RedisSentinelTestContainer::master_fault` pauses the master like a partition.
 - Toxiproxy fixture: `start_toxiproxy` runs `ghcr.io/shopify/toxiproxy` pinned by digest. `Toxiproxy::proxy` and `proxy_container` return a `ToxiproxyProxy` that adds and removes `Toxic` latency, reset-peer and timeout faults or disables the link.

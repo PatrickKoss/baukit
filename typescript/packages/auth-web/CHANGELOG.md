@@ -2,8 +2,19 @@
 
 ## Unreleased
 
+## 0.32.0
+
 - The browser-session refresh POST aborts after `REFRESH_TIMEOUT_MS` (10,000 ms), so a hanging backend cannot hold the cross-tab refresh lock.
 - A retryable refresh failure (network, timeout, 429, 5xx) returns the current token while it has not expired, instead of rejecting.
+
+### Minor Changes
+
+- Release the coordinated baukit 0.32.0 train.
+
+### Patch Changes
+
+- Updated dependencies
+  - @baukit/type-guards@0.32.0
 
 ## 0.31.0
 

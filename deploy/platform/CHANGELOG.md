@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
 - e2e `api-disruption` gains step `traefik-rollout-under-load`: `kubectl rollout restart` rolls Traefik while the in-cluster loader runs, and the step expects zero failed requests, at least 100 OK ones, the old pod gone and a new pod Ready. helm-controller drift detection keeps the `restartedAt` annotation, because its server-side apply dry run preserves fields other managers own. Cleanup puts the annotation back and waits for the rollout.
 - The shared Postgres bootstrap owner `product_owner` gets `CONNECTION LIMIT 25` and baukit-config's default `statement_timeout` (29 s), `lock_timeout` (5 s) and `idle_in_transaction_session_timeout` (60 s) as role settings in `postInitApplicationSQL`, because PgBouncer in transaction mode cannot forward the client's startup options. `product-database.example.yaml` shows the same `ALTER ROLE` statements for every other tenant owner. CNPG runs `postInitApplicationSQL` only when it creates the cluster; recreate it or have the owner run the statements on itself once over a direct connection to `postgres-cluster-rw`. A role may set its own defaults, so nobody execs into `postgres` and Falco's `Baukit exec into protected platform namespace` stays quiet.
 - The pooler's `max_db_connections` drops from 20 to 12, so each owner keeps 13 direct connections for one worker pod, migrations and an operator. Only the API goes through the pooler.

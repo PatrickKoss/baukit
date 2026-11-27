@@ -4,6 +4,8 @@ All notable changes to `baukit-jobs` are documented here.
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-27
+
 - Add the `egress` feature with `egress_job_error`, which maps `EgressError::CircuitOpen` and `Saturated` to `JobError::deferred` and every other egress error to its retry class.
 - Breaking: add `migrations/0005_baukit_jobs_deferrals.sql` and `POSTGRES_MIGRATION_0005_SQL`. Products must apply it before upgrading; `Job` gains `deferrals`.
 - Breaking: `JobStore` gains `heartbeat`, `release(.., ReleaseReason, ..)` and `queue_depth`, and `oldest_pending_age` takes the runner's job types. The age now counts from `MIN(run_after)` of due pending rows of those types.
