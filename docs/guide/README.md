@@ -48,6 +48,7 @@ The guide shows how to do one task with baukit at a time. Each page links the cr
 | [`baukit-erasure`](../../rust/crates/baukit-erasure/README.md) | Transactional profile erasure, keyed receipts and fences, and durable identity account deletion. | [Privacy](privacy.md) |
 | [`baukit-data-subject`](../../rust/crates/baukit-data-subject/README.md) | Data-subject wire types, identifier normalization and Ed25519 DSSE receipts. | [Privacy](privacy.md) |
 | [`baukit-egress`](../../rust/crates/baukit-egress/README.md) | Outbound HTTP client that pins DNS answers to allowed addresses. | [Outbound HTTP and limits](outbound-and-limits.md) |
+| [`baukit-resilience`](../../rust/crates/baukit-resilience/README.md) | Circuit breaker, jittered backoff, deadlines and a stale-on-error cache. | [Outbound HTTP and limits](outbound-and-limits.md) |
 | [`baukit-ratelimit`](../../rust/crates/baukit-ratelimit/README.md) | Redis token buckets keyed by identity or client IP. | [Outbound HTTP and limits](outbound-and-limits.md) |
 | [`baukit-test`](../../rust/crates/baukit-test/README.md) | Docker PostgreSQL, Redis and Keycloak fixtures, a mock OIDC issuer and conformance suites. | [Backend](backend.md) |
 

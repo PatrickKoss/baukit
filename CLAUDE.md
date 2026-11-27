@@ -16,7 +16,7 @@ free of product-specific logic.
 ```text
 rust/crates/        baukit-auth, -config, -core, -credential-vault, -data-subject, -egress, -erasure,
                     -events, -http, -integrations, -jobs, -mcp, -openapi, -ops, -push, -ratelimit,
-                    -runtime, -suite, -sync, -telemetry, -test
+                    -resilience, -runtime, -suite, -sync, -telemetry, -test
 rust/fuzz           cargo-fuzz targets for decoders of untrusted bytes
 rust/verus          Verus proofs on twins of production kernels
 typescript/packages/ a11y-core, analytics-core, analytics-posthog-{web,native},
