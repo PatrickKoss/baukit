@@ -5,7 +5,7 @@ crates and packages your product uses.
 
 ## Upgrading from 0.31.x
 
-From 0.31.0, do [Upgrading from 0.31.0](#upgrading-from-0310) first. Then do these steps in this order. The `baukit-jobs` changes are expand-only, so a 0.31.x binary keeps running
+Do the steps in this order. The `baukit-jobs` changes are expand-only, so a 0.31.x binary keeps running
 against them. The suite probe migration is not: stop the 0.31.x suite delivery processes before you
 apply it.
 
@@ -13,8 +13,11 @@ apply it.
    - `baukit-jobs` `0005_baukit_jobs_deferrals.sql`, `0006_baukit_jobs_concurrency_key.sql`,
      `0007_baukit_jobs_validate_checks.sql`, then `0008_baukit_jobs_running_key_index.sql`, which
      runs outside a transaction. Expand-only. The auth and worker templates ship them as `0012` to
-     `0015`, after `0011_identity_erasure_operation_id_guard.sql` from 0.31.1. See
+     `0015`, after `0011_identity_erasure_operation_id_guard.sql`. See
      [job-deferrals-and-concurrency-keys.md](job-deferrals-and-concurrency-keys.md).
+   - `baukit-erasure` `0003_erasure_operation_id_guard.sql` after `0002`, shipped in the auth template as
+     `0011_identity_erasure_operation_id_guard.sql`. It only replaces a trigger function. See
+     [erasure-subject-rule.md](erasure-subject-rule.md).
    - `baukit-suite` `006_suite_delivery_probes.sql`, then `007_suite_validate_link_checks.sql`, after
      jobs `0008`. Not expand-only. See
      [fail-closed-503-and-grace.md](fail-closed-503-and-grace.md).
@@ -32,6 +35,8 @@ apply it.
    - [startup-budget-and-postgres-timeouts.md](startup-budget-and-postgres-timeouts.md): `DatabaseConfig`
      gains five timeouts, pools come from `baukit_ops::connect_with_backoff`, and
      `RedisRateLimitStore::connect_if_enabled` takes a startup budget.
+   - [erasure-subject-rule.md](erasure-subject-rule.md): erasure rejects subjects with control characters
+     at the call with `ErasureError::InvalidSubject`, and the worker fails operations itself.
    - [fail-closed-503-and-grace.md](fail-closed-503-and-grace.md): new variants on `RateLimitOutcome`,
      `IdentityDeletionError` and `RedisTestError`, `EntitlementError` from `Entitlements`,
      `PushSendError` from `PushSender::send`, and `HubClient::post_json` is gone.
@@ -51,12 +56,6 @@ apply it.
    `RedisTestContainer::fault`, `start_toxiproxy`) for your own outage tests. Strict products copy the
    gate result cache (`scripts/gate_results.py` and its test) and add `[quality.cache] never` to
    `baukit.toml`, as `templates/common/CHANGELOG.md` describes. `baukit doctor` requires both files.
-
-## Upgrading from 0.31.0
-
-- [erasure-subject-rule.md](erasure-subject-rule.md): erasure rejects subjects with control characters at the
-  call, and the worker fails operations itself. Copy the new `baukit-erasure`
-  `0003_erasure_operation_id_guard.sql` after 0002.
 
 ## Upgrading from 0.30.x
 
