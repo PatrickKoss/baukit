@@ -950,3 +950,11 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   - Follow-up, not blocking 0.32.0: `check-migrations.py double-apply` applies with `psql -f`
     statement by statement, so it would pass a `SET` plus `CONCURRENTLY` no-transaction file. The
     jobs Docker tests catch it through the sqlx Migrator.
+- rel/fuzz-cores merged (9c91192b): a new `[quality.min_cores]` setting, with `fuzz = 6` for baukit.
+  - Once a step with a minimum is ready, the gate holds that many cores back from ordinary steps,
+    always leaving one free. It sets the hold before the fast lane's waiters wake, works the way the
+    emulator reserve does, and leaves the shared pool's held slots free.
+  - 12 new `MinimumCoresTests`.
+  - The template `baukit.toml` leaves the key unset, so product gates behave as before.
+  - Merging this and rel/migrations makes the re-gate a full gate, because migrations are a shared
+    path and gate.py is part of the cache key. It is queued on this head.
