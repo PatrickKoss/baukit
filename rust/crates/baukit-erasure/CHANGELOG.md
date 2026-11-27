@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `ErasureService::preflight`, `erase` and `fence_as_operator_in_transaction` reject a subject that fails the 0.31.0 subject rule with the new `ErasureError::InvalidSubject`, before anything is written or queued. 0.31.0 queued it and the worker rejected it later.
+- The identity deletion worker sets the operation to `failed` when it rejects a payload whose `operationId` is readable, without relying on the `erasure_job_failed` trigger. A payload without a readable `operationId` is logged and dead-lettered. See `docs/migrations/erasure-subject-rule.md`.
+- The worker also sets the operation to `failed` on a permanent provider error and when a retryable error uses the last attempt. Operations reach a terminal state without the `erasure_job_failed` trigger. A final lease that expires without the handler returning still relies on the trigger.
+
+### Added
+
+- Migration `0003_erasure_operation_id_guard.sql` (`POSTGRES_OPERATION_ID_GUARD_MIGRATION_SQL`). It replaces `erasure_job_failed()` so a non-UUID `operationId` is skipped instead of raising, which used to abort the job's failure update and leave it running. Copy it after 0002.
+
 ## [0.32.0] - 2026-11-27
 
 - Breaking: `IdentityDeletionError` gains `Unavailable { retry_after }`. An open `keycloak-admin` circuit or a saturated client maps to it, and the worker defers the job with `JobError::deferred` instead of consuming an attempt.

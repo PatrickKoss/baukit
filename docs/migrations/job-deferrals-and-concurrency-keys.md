@@ -10,10 +10,10 @@ Apply the four migrations, in this order, before you deploy the 0.32.0 binary:
 
 | Migration | Constant | Template file | Change |
 | --- | --- | --- | --- |
-| `0005_baukit_jobs_deferrals.sql` | `POSTGRES_MIGRATION_0005_SQL` | `0011_baukit_jobs_deferrals.sql` | `deferrals INTEGER NOT NULL DEFAULT 0` and its check, `NOT VALID` |
-| `0006_baukit_jobs_concurrency_key.sql` | `POSTGRES_MIGRATION_0006_SQL` | `0012_baukit_jobs_concurrency_key.sql` | nullable `concurrency_key TEXT` and its length check, `NOT VALID` |
-| `0007_baukit_jobs_validate_checks.sql` | `POSTGRES_MIGRATION_0007_SQL` | `0013_baukit_jobs_validate_checks.sql` | validates both checks |
-| `0008_baukit_jobs_running_key_index.sql` | `POSTGRES_MIGRATION_0008_SQL` | `0014_baukit_jobs_running_key_index.sql` | the partial index `job_outbox_running_key_idx`, built `CONCURRENTLY` |
+| `0005_baukit_jobs_deferrals.sql` | `POSTGRES_MIGRATION_0005_SQL` | `0012_baukit_jobs_deferrals.sql` | `deferrals INTEGER NOT NULL DEFAULT 0` and its check, `NOT VALID` |
+| `0006_baukit_jobs_concurrency_key.sql` | `POSTGRES_MIGRATION_0006_SQL` | `0013_baukit_jobs_concurrency_key.sql` | nullable `concurrency_key TEXT` and its length check, `NOT VALID` |
+| `0007_baukit_jobs_validate_checks.sql` | `POSTGRES_MIGRATION_0007_SQL` | `0014_baukit_jobs_validate_checks.sql` | validates both checks |
+| `0008_baukit_jobs_running_key_index.sql` | `POSTGRES_MIGRATION_0008_SQL` | `0015_baukit_jobs_running_key_index.sql` | the partial index `job_outbox_running_key_idx`, built `CONCURRENTLY` |
 
 The template file names are the ones the auth and worker templates ship in `backend/migrations/`.
 Copy the files after your product's existing baukit-jobs migrations.

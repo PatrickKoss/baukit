@@ -19,6 +19,7 @@ pub async fn database()
         baukit_jobs::POSTGRES_MIGRATION_0008_SQL,
         POSTGRES_MIGRATION_SQL,
         baukit_erasure::POSTGRES_REONBOARDING_MIGRATION_SQL,
+        baukit_erasure::POSTGRES_OPERATION_ID_GUARD_MIGRATION_SQL,
         "CREATE TABLE profiles (subject TEXT PRIMARY KEY); INSERT INTO profiles VALUES ('alice'), ('bob');",
     ] {
         sqlx::raw_sql(migration).execute(&pool).await?;

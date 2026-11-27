@@ -56,19 +56,19 @@ const JOBS_MIGRATION_COPIES: &[(&str, &str)] = &[
         "0004_baukit_jobs_active_deduplication.sql",
     ),
     (
-        "0011_baukit_jobs_deferrals.sql",
+        "0012_baukit_jobs_deferrals.sql",
         "0005_baukit_jobs_deferrals.sql",
     ),
     (
-        "0012_baukit_jobs_concurrency_key.sql",
+        "0013_baukit_jobs_concurrency_key.sql",
         "0006_baukit_jobs_concurrency_key.sql",
     ),
     (
-        "0013_baukit_jobs_validate_checks.sql",
+        "0014_baukit_jobs_validate_checks.sql",
         "0007_baukit_jobs_validate_checks.sql",
     ),
     (
-        "0014_baukit_jobs_running_key_index.sql",
+        "0015_baukit_jobs_running_key_index.sql",
         "0008_baukit_jobs_running_key_index.sql",
     ),
 ];

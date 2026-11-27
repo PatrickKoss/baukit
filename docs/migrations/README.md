@@ -5,15 +5,15 @@ crates and packages your product uses.
 
 ## Upgrading from 0.31.x
 
-Do the steps in this order. The `baukit-jobs` changes are expand-only, so a 0.31.x binary keeps running
+From 0.31.0, do [Upgrading from 0.31.0](#upgrading-from-0310) first. Then do these steps in this order. The `baukit-jobs` changes are expand-only, so a 0.31.x binary keeps running
 against them. The suite probe migration is not: stop the 0.31.x suite delivery processes before you
 apply it.
 
 1. Add the new SQL migrations to your product and apply them before deploying the new binary:
    - `baukit-jobs` `0005_baukit_jobs_deferrals.sql`, `0006_baukit_jobs_concurrency_key.sql`,
      `0007_baukit_jobs_validate_checks.sql`, then `0008_baukit_jobs_running_key_index.sql`, which
-     runs outside a transaction. Expand-only. The auth and worker templates ship them as `0011` to
-     `0014`. See
+     runs outside a transaction. Expand-only. The auth and worker templates ship them as `0012` to
+     `0015`, after `0011_identity_erasure_operation_id_guard.sql` from 0.31.1. See
      [job-deferrals-and-concurrency-keys.md](job-deferrals-and-concurrency-keys.md).
    - `baukit-suite` `006_suite_delivery_probes.sql`, then `007_suite_validate_link_checks.sql`, after
      jobs `0008`. Not expand-only. See
@@ -51,6 +51,12 @@ apply it.
    `RedisTestContainer::fault`, `start_toxiproxy`) for your own outage tests. Strict products copy the
    gate result cache (`scripts/gate_results.py` and its test) and add `[quality.cache] never` to
    `baukit.toml`, as `templates/common/CHANGELOG.md` describes. `baukit doctor` requires both files.
+
+## Upgrading from 0.31.0
+
+- [erasure-subject-rule.md](erasure-subject-rule.md): erasure rejects subjects with control characters at the
+  call, and the worker fails operations itself. Copy the new `baukit-erasure`
+  `0003_erasure_operation_id_guard.sql` after 0002.
 
 ## Upgrading from 0.30.x
 
