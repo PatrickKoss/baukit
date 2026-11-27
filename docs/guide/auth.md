@@ -79,7 +79,12 @@ The MCP endpoint has its own verifier and does not read this list. See [the MCP 
 When the issuer, its JWKS or the token store is unreachable, verification fails as unavailable
 rather than as an invalid token. The Axum extractor then answers 503 with the code `unavailable`
 and `Retry-After: 5`, without `WWW-Authenticate`, so clients retry instead of signing in again. The [verification outages](../../rust/crates/baukit-auth/README.md#verification-outages)
-section of the README lists which failures count.
+section of the README lists which failures count. A key set the verifier fetched before stays
+usable for known key ids for one hour after a refresh fails (`with_jwks_stale_grace`).
+
+`OidcVerifier::discover` and `BrowserSessionState::discover` retry transient discovery failures
+for 60 s and then fail with `DiscoveryBudgetExhausted` or `BudgetExhausted`. The generated API
+passes `startup.budget`. `OidcConfig::with_jwks_uri` sets a static JWKS URL and skips discovery.
 
 ## Keep web refresh tokens on the server
 
