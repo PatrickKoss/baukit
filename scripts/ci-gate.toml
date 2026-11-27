@@ -86,6 +86,15 @@ migrations = 30
 # rust/crates/baukit-openapi/tests/naming.rs include_str!s the template OpenAPI documents.
 "templates/backend/**/openapi.json" = ["rust"]
 "agent-skills/**" = ["cli", "fixtures"]
+# Scripts only the generated-fixture gates run; scripts-tests covers their tests in the fast lane.
+"scripts/generated-fixture-gate.sh" = ["fixtures"]
+"scripts/check-gitops-fixture.py" = ["fixtures"]
+"scripts/check-deploy-values.py" = ["fixtures"]
+"scripts/check-production-bundle.test.mjs" = ["fixtures"]
+"scripts/check-web-headers.sh" = ["fixtures"]
+"scripts/web-session-stack.py" = ["fixtures"]
+"scripts/build-fixture-ts-packages.sh" = ["fixtures", "mcp-fixture"]
+"scripts/fixture-ts-packages.txt" = ["fixtures", "mcp-fixture"]
 # The CLI embeds lint/ (agent rules, Rust lint tables, ast-grep rules) into generated products.
 "lint/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
 "baukit-check.toml" = ["cli", "fixtures", "mcp-fixture", "native-android"]
