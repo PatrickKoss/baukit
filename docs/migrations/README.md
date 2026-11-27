@@ -3,6 +3,52 @@
 Each guide covers one breaking or behaviour change and says what a product has to do. Read the ones for the
 crates and packages your product uses.
 
+## Upgrading from 0.31.x
+
+Do the steps in this order. The `baukit-jobs` changes are expand-only, so a 0.31.x binary keeps running
+against them. The suite probe migration is not: stop the 0.31.x suite delivery processes before you
+apply it.
+
+1. Add the new SQL migrations to your product and apply them before deploying the new binary:
+   - `baukit-jobs` `0005_baukit_jobs_deferrals.sql`, then `0006_baukit_jobs_concurrency_key.sql`.
+     Expand-only. The auth and worker templates ship them as `0011` and `0012`. See
+     [job-deferrals-and-concurrency-keys.md](job-deferrals-and-concurrency-keys.md).
+   - `baukit-suite` `006_suite_delivery_probes.sql`, after jobs `0006`. Not expand-only. See
+     [fail-closed-503-and-grace.md](fail-closed-503-and-grace.md).
+   - On shared platform Postgres, set the session timeouts and connection limit on each owner role. See
+     [startup-budget-and-postgres-timeouts.md](startup-budget-and-postgres-timeouts.md).
+2. Change the code that the new Rust APIs break:
+   - [egress-circuit-breaker.md](egress-circuit-breaker.md): `GuardedClient::new` takes a destination name,
+     `EgressError` gains `CircuitOpen` and `Saturated`, and job handlers map them with `egress_job_error`.
+     Delete product retry loops around `GuardedClient`.
+   - [job-deferrals-and-concurrency-keys.md](job-deferrals-and-concurrency-keys.md): `JobStore` gains
+     `heartbeat`, `release` and `queue_depth`, `oldest_pending_age` takes job types, and
+     `RunnerError::LeaseLost` is gone.
+   - [http-overload-and-drain.md](http-overload-and-drain.md): build the shutdown token from a
+     `DrainBudget` and flush telemetry with `run_flush`.
+   - [startup-budget-and-postgres-timeouts.md](startup-budget-and-postgres-timeouts.md): `DatabaseConfig`
+     gains five timeouts, pools come from `baukit_ops::connect_with_backoff`, and
+     `RedisRateLimitStore::connect_if_enabled` takes a startup budget.
+   - [fail-closed-503-and-grace.md](fail-closed-503-and-grace.md): new variants on `RateLimitOutcome`,
+     `IdentityDeletionError` and `RedisTestError`, `EntitlementError` from `Entitlements`,
+     `PushSendError` from `PushSender::send`, and `HubClient::post_json` is gone.
+3. Check the configuration that changed defaults:
+   - [http-overload-and-drain.md](http-overload-and-drain.md): overload is shed with `503` after a 1 s
+     queue wait, `shutdown.drain_timeout` defaults to 35 s, and the `baukit-app` chart refuses grace
+     periods that leave no drain. Delete the API and worker Deployments once before the chart upgrade.
+   - [job-deferrals-and-concurrency-keys.md](job-deferrals-and-concurrency-keys.md): leases last 60 s and
+     renew, and `worker.lease_duration_seconds` is gone from the worker template.
+   - [startup-budget-and-postgres-timeouts.md](startup-budget-and-postgres-timeouts.md): a 60 s
+     `startup.budget`, and `statement_timeout` must stay below `http.request_timeout`.
+   - [fail-closed-503-and-grace.md](fail-closed-503-and-grace.md): a closed-mode rate-limit store error
+     answers `503` instead of `429`, the JWKS stale grace is 1 h, and entitlements serve a stale snapshot
+     until `grace_until`.
+4. Run the new tests. The backend template adds `tests/postgres_outage.rs`, the worker template
+   `tests/requeue_mount.rs`, and `baukit-test` adds fault fixtures (`PostgresTestContainer::fault`,
+   `RedisTestContainer::fault`, `start_toxiproxy`) for your own outage tests. Strict products copy the
+   gate result cache (`scripts/gate_results.py` and its test) and add `[quality.cache] never` to
+   `baukit.toml`, as `templates/common/CHANGELOG.md` describes. `baukit doctor` requires both files.
+
 ## Upgrading from 0.30.x
 
 Do the steps in this order. The database changes are expand-only, so the 0.30.x binary keeps running against the

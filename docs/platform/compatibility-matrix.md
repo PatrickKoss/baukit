@@ -5,6 +5,16 @@
 
 This table records the tested baseline. The committed lockfiles record exact resolutions. Third-party Rust manifests use caret requirements with tested minimums, so products can take compatible updates in their own lockfiles without a Baukit release. A requirement change must pass tests at the direct minimums and the newest compatible resolution. Internal `baukit-*` requirements stay exact because the crates release together.
 
+## v0.32.0
+
+Last verified release train: `v0.32.0` (minor train on top of `v0.31.0`), the reliability train. The new `baukit-resilience` crate joins the workspace, `baukit-runtime` depends on `hyper` 1.11.1 and `hyper-util` 0.1.21 directly (both already in the lockfile), the platform Postgres gains a PgBouncer pooler on `ghcr.io/cloudnative-pg/pgbouncer:1.26.1`, `deploy/tools.toml` pins `grafana/k6:2.4.0` for the load smoke, and `@baukit/api-runtime` gains `@types/node` 26.6.4 as a dev dependency. No other runtime dependency versions change. The full local gate result is recorded after the gate run.
+- BREAKING: `GuardedClient::new` takes a destination name, and the circuit breaker and the 32-request in-flight cap are on by default. Map `EgressError::CircuitOpen` and `Saturated` with `baukit_jobs::egress_job_error` in job handlers. See [egress-circuit-breaker.md](../migrations/egress-circuit-breaker.md).
+- BREAKING: `JobStore` gains `heartbeat`, `release` and `queue_depth`, and leases default to 60 s with renewal. See [job-deferrals-and-concurrency-keys.md](../migrations/job-deferrals-and-concurrency-keys.md).
+- BREAKING: `shutdown.drain_timeout` defaults to 35 s and must fit `DrainBudget`, overload is shed with `503` after 1 s, and the `baukit-app` chart adds `baukit.dev/workload` to the Deployment selectors, so delete the API and worker Deployments before upgrading. See [http-overload-and-drain.md](../migrations/http-overload-and-drain.md).
+- BREAKING: `DatabaseConfig` gains session timeouts and pool lifetimes, `startup` is a reserved config key, and shared Postgres owners carry the timeouts as role settings. See [startup-budget-and-postgres-timeouts.md](../migrations/startup-budget-and-postgres-timeouts.md).
+- BREAKING: closed-mode rate-limit store errors answer `503`, and auth, suite, erasure, push and `baukit-test` gain error variants or types. See [fail-closed-503-and-grace.md](../migrations/fail-closed-503-and-grace.md).
+- Expand-only SQL: jobs `0005` and `0006`. Suite `006` drops the 0.31.x failure accounting and is not expand-only. `docs/migrations/README.md` lists the order.
+
 ## v0.31.0
 
 Last verified release train: `v0.31.0` (minor train on top of `v0.30.6`), the correctness and verification train. No runtime dependency versions change. The full local gate passed on 2026-11-26 with Rust 1.95 MSRV, Node 26.10.0 and pnpm 12.9.1: every step except `platform-e2e`, which ran in CI on the merge commit. That includes all generated fixture flavors, the remote MCP fixture, both Android conformance runs, 19 fuzz targets, 38 Kani harnesses, three Verus proofs and 8 TLA+ models.
