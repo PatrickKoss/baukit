@@ -24,7 +24,8 @@ spec:
               client=e2e-failover-client
               as=system:serviceaccount:$ns:flux-reconciler
               recovery_seconds=240
-              image="$(kubectl -n postgres get cluster postgres-cluster -o jsonpath='{.spec.imageName}')"
+              image="$(kubectl -n postgres get cluster postgres-cluster -o jsonpath='{.status.image}')"
+              [ -n "$image" ] || { printf 'postgres-cluster reports no image in its status\n' >&2; exit 1; }
               node_ip="$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')"
 
               kubectl -n "$ns" --as="$as" apply -f - <<YAML

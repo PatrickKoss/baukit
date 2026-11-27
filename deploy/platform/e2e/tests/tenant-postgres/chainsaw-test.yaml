@@ -84,12 +84,6 @@ spec:
                 databaserole/e2e-iso-b-database databaserole/e2e-iso-b-owner database/e2e-iso-b; do
                 kubectl -n postgres wait "$object" --for=jsonpath='{.status.applied}'=true --timeout=3m
               done
-              # The role settings product-database.example.yaml tells the operator to apply.
-              primary="$(kubectl -n postgres get cluster postgres-cluster -o jsonpath='{.status.currentPrimary}')"
-              kubectl -n postgres exec "$primary" -c postgres -- psql -XtAq -v ON_ERROR_STOP=1 -d postgres \
-                -c "ALTER ROLE e2e_iso_a_owner SET statement_timeout = '29s'" \
-                -c "ALTER ROLE e2e_iso_a_owner SET lock_timeout = '5s'" \
-                -c "ALTER ROLE e2e_iso_a_owner SET idle_in_transaction_session_timeout = '60s'"
               kubectl -n postgres get secret e2e-iso-a-db -o json |
                 python3 -c 'import json,sys; s=json.load(sys.stdin); print(json.dumps({"apiVersion":"v1","kind":"Secret","metadata":{"name":"e2e-iso-a-db"},"type":s["type"],"data":s["data"]}))' |
                 kubectl -n "$ns" apply -f -
@@ -155,6 +149,11 @@ spec:
                         printf 'own database: %s\n' "\$out"
                         limit="\$(psql -XtAq -v ON_ERROR_STOP=1 -d e2e_iso_a -c 'select rolconnlimit from pg_roles where rolname = current_user')"
                         [ "\$limit" = 25 ] || { printf 'owner connection limit is %s, not 25\n' "\$limit"; exit 1; }
+                        # The owner sets its own timeouts directly, as product-database.example.yaml shows.
+                        psql -XtAq -v ON_ERROR_STOP=1 -d e2e_iso_a \
+                          -c "ALTER ROLE CURRENT_USER SET statement_timeout = '29s'" \
+                          -c "ALTER ROLE CURRENT_USER SET lock_timeout = '5s'" \
+                          -c "ALTER ROLE CURRENT_USER SET idle_in_transaction_session_timeout = '60s'"
                         # Through PgBouncer the startup options are dropped; the role's settings must arrive.
                         pooled="\$(PGHOST=postgres-cluster-pooler-rw.postgres PGOPTIONS='-c statement_timeout=1s' \
                           psql -XtAq -v ON_ERROR_STOP=1 -d e2e_iso_a -c 'show statement_timeout' -c 'show lock_timeout' -c 'show idle_in_transaction_session_timeout' | tr '\\n' ' ')"

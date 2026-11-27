@@ -103,8 +103,9 @@ baukit-config sends `statement_timeout` (29 s), `lock_timeout` (5 s) and
 cannot forward those to a shared server connection, so the pooler lists
 `options` in `ignore_startup_parameters` and the owner role carries the same
 values through `ALTER ROLE ... SET`. `cluster.yaml` sets them for the bootstrap
-owner in `postInitApplicationSQL`; every other tenant owner gets them once by
-hand, as `product-database.example.yaml` shows. An API that overrides a
+owner in `postInitApplicationSQL`; every other tenant owner sets them on itself
+once over a direct connection, as `product-database.example.yaml` shows, so
+nothing execs into the `postgres` namespace. An API that overrides a
 timeout in its config gets the role's value through the pooler. The worker and
 migrations run on direct connections to `postgres-cluster-rw`, where startup
 options still apply: the worker's `statement_timeout` follows its job timeout
