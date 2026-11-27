@@ -27,7 +27,7 @@ full = 10
 affected = 5
 
 [quality.affected]
-"backend/crates/**" = ["backend"]
+"backend/crates/**" = ["backend", "fuzz", "images"]
 "web/src/**" = ["web"]
 "web/e2e/**" = ["web-e2e"]
 "mobile/**" = ["mobile"]

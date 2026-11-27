@@ -37,6 +37,17 @@ from gate_locks import (
     resources_for,
     unknown_resource_members,
 )
+from gate_results import (
+    CachedRun,
+    CacheRequest,
+    InputMap,
+    Machinery,
+    StepSpec,
+    cached_steps,
+    open_cache,
+    run_git,
+)
+from gate_results import settings_error as cache_settings_error
 from process_runner import run_process
 
 MODES = ("always", "selected", "affected")
@@ -84,6 +95,7 @@ class RunContext:
     log_directory: Path
     environment: dict[str, str]
     worker_caps: dict[str, int] = field(default_factory=dict)
+    cached: CachedRun = field(default_factory=CachedRun)
 
 
 @dataclass(frozen=True)
@@ -559,6 +571,9 @@ class Runner:
         sharing: HostSharing | None = None,
     ):
         self.planned = planned
+        self.result_cache = context.cached.cache
+        self.cached = context.cached.passes
+        running = [item for item in planned if item.step.name not in self.cached]
         sharing = sharing or HostSharing()
         self.locks = sharing.locks
         self.resources = sharing.resources
@@ -571,7 +586,7 @@ class Runner:
             int(context.environment.get("BAUKIT_GATE_WORKERS", "1")), None, 0, EmulatorReserve(1)
         )
         self.light = light
-        self.open_lanes = set(heavy_lanes(planned, light))
+        self.open_lanes = set(heavy_lanes(running, light))
         self.command = context.command
         self.log_directory = context.log_directory
         self.environment = context.environment
@@ -586,8 +601,10 @@ class Runner:
         self.history_file = context.log_directory / "step-seconds.txt"
         self.history = read_expected_seconds(self.history_file)
         self.expected = {n: v for n, v in self.history.items() if n in self.names}
-        self.pending = {item.step.name for item in planned if not is_light(item.step, light)}
-        self.emulators_waiting = {name for name in self.names if name in self.budget.emulator_steps}
+        self.pending = {item.step.name for item in running if not is_light(item.step, light)}
+        self.emulators_waiting = {
+            item.step.name for item in running if item.step.name in self.budget.emulator_steps
+        }
         self.emulators_running = 0
         self.started = time.monotonic()
         self.update_reserve()
@@ -688,9 +705,23 @@ class Runner:
             self.open_lanes.discard(lane)
         self.lane_seconds[lane] = round(time.monotonic() - started)
 
+    def pass_from_cache(self, lane: str, step: Step) -> None:
+        detail = self.cached[step.name].describe(time.time())
+        print(f"gate: [{lane}] {step.name} cached ({detail})", flush=True)
+        with self.lock:
+            self.status[step.name] = "passed"
+        self.done[step.name].set()
+
+    def remember_pass(self, step: Step, seconds: int, log: Path) -> None:
+        if self.result_cache is not None and self.result_cache.store(step.name, seconds, log):
+            print(f"gate: {step.name} pass stored in the result cache", flush=True)
+
     def run_steps(self, lane: str, steps: list[Step], log: Path) -> bool:
         failed = False
         for step in steps:
+            if step.name in self.cached:
+                self.pass_from_cache(lane, step)
+                continue
             if failed:
                 self.status[step.name] = NOT_RUN
                 self.done[step.name].set()
@@ -796,6 +827,7 @@ class Runner:
         )
         if passed:
             print(f"gate: [{lane}] {step.name} passed in {seconds} s", flush=True)
+            self.remember_pass(step, seconds, log)
             return True
         print(
             f"gate: [{lane}] {step.name} failed with exit {result.returncode} "
@@ -1058,6 +1090,61 @@ def host_sharing(
     return sharing
 
 
+def gate_machinery(arguments: argparse.Namespace) -> Machinery:
+    files = [Path(part) for part in shlex.split(arguments.script) if Path(part).is_file()]
+    files.extend(Path(__file__).resolve().parent.glob("*.py"))
+    runner_module = sys.modules[run_process.__module__].__file__
+    if runner_module:
+        files.append(Path(runner_module))
+    return Machinery(Path(arguments.settings), tuple(files))
+
+
+def result_cache(
+    arguments: argparse.Namespace,
+    planned: list[PlannedStep],
+    settings: dict,
+    environment: dict[str, str],
+    extras: list[str],
+) -> tuple[CachedRun, list[PlannedStep]]:
+    """Look up cached passes and return them with the steps that really run."""
+    request = CacheRequest(
+        [StepSpec(item.step.name, item.step.mode, item.step.tokens) for item in planned],
+        settings,
+        InputMap(
+            settings.get("quality", {}).get("affected", {}),
+            shared_paths(settings),
+            glob_pattern,
+            base_token,
+        ),
+        gate_machinery(arguments),
+        environment,
+        arguments.no_cache,
+    )
+    cache, line = open_cache(request, run_git)
+    extras.append(line)
+    passes = cached_steps(cache, {item.step.name: item.step.after for item in planned})
+    running = [item for item in planned if item.step.name not in passes]
+    environment["BAUKIT_GATE_STEPS"] = " ".join(item.step.name for item in running)
+    return CachedRun(cache, passes), running
+
+
+def mark_cached(planned: list[PlannedStep], cached: CachedRun) -> list[PlannedStep]:
+    now = time.time()
+    return [
+        PlannedStep(
+            item.step, f"{item.reason}; cached, {cached.passes[item.step.name].describe(now)}"
+        )
+        if item.step.name in cached.passes
+        else item
+        for item in planned
+    ]
+
+
+def print_cache_notes(cached: CachedRun) -> None:
+    for note in cached.cache.notes if cached.cache else []:
+        print(f"gate: {note}")
+
+
 def plan_or_disk_exit(
     plan_only: bool, settings: dict, planned: list[PlannedStep], environment: dict[str, str]
 ) -> int | None:
@@ -1084,6 +1171,7 @@ def run_command(arguments: argparse.Namespace) -> int:
         or fast_lane_wait_error(steps, resource_map(settings))
         or waits_for_error(steps, settings)
         or worker_caps_error(settings)
+        or cache_settings_error(settings, [step.name for step in steps])
     )
     if name_error:
         print(name_error, file=sys.stderr)
@@ -1109,21 +1197,21 @@ def run_command(arguments: argparse.Namespace) -> int:
     environment["BAUKIT_GATE_MODE"] = mode
     environment["BAUKIT_GATE_BASE"] = arguments.affected or ""
     environment["BAUKIT_GATE_TOKENS"] = " ".join(sorted(selection.tokens))
-    environment["BAUKIT_GATE_STEPS"] = " ".join(item.step.name for item in planned)
     packages = rust_packages(arguments.cargo_workspace, mode, selection, changed, environment)
     extras = [packages] if packages else []
-    budget = worker_budget(planned, light, settings, environment, extras)
+    cached, running = result_cache(arguments, planned, settings, environment, extras)
+    budget = worker_budget(running, light, settings, environment, extras)
     extras.extend(cache_environment(environment))
-    sharing = host_sharing(planned, settings, environment, extras)
-    print_plan(mode, arguments.affected, selection, planned, extras)
-    if (stop := plan_or_disk_exit(arguments.plan, settings, planned, environment)) is not None:
+    sharing = host_sharing(running, settings, environment, extras)
+    print_plan(mode, arguments.affected, selection, mark_cached(planned, cached), extras)
+    if (stop := plan_or_disk_exit(arguments.plan, settings, running, environment)) is not None:
         return stop
     log_directory = prepare_log_directory(Path(arguments.log_dir))
     environment["BAUKIT_GATE_LOG_DIR"] = str(log_directory)
     started = time.monotonic()
     runner = Runner(
         planned,
-        RunContext([*script, "--step"], log_directory, environment, worker_caps(settings)),
+        RunContext([*script, "--step"], log_directory, environment, worker_caps(settings), cached),
         budget=budget,
         light=light,
         sharing=sharing,
@@ -1142,6 +1230,7 @@ def run_command(arguments: argparse.Namespace) -> int:
     )
     print("\n".join(report))
     print(f"gate: timings in {runner.timings_file}; lane logs in {log_directory}")
+    print_cache_notes(cached)
     if failures:
         print("gate: failed lanes: " + ", ".join(failures))
         return 1
@@ -1160,6 +1249,7 @@ def main(argv: list[str]) -> int:
     run.add_argument("--affected", metavar="BASE")
     run.add_argument("--cargo-workspace")
     run.add_argument("--plan", action="store_true")
+    run.add_argument("--no-cache", action="store_true")
     specs = commands.add_parser("check-specs")
     specs.add_argument("directory")
     arguments = parser.parse_args(argv)

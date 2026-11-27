@@ -47,6 +47,15 @@ and each CI job calls one of its steps with `scripts/ci-gate.sh --step NAME`.
 `scripts/ci-gate.toml` maps to changed paths, and `--plan` prints the selection
 without running it. Timings and lane logs land in `.ci-gate/`.
 
+On a clean tree the gate skips a step that already passed on the same inputs and
+prints `cached (passed at <sha>, <age>)`. A cached step passed for the same tracked
+files `--affected` would send to it, the same gate scripts and settings, and the same
+`BAUKIT_*` run settings, within the last 7 days. It did not run again, so host tool
+upgrades since then go unseen. `cargo-deny`, `osv`, `secret-scan`, `platform-images`
+and `migrations` never come from the cache (`[quality.cache] never` in
+`scripts/ci-gate.toml`). Pass `--no-cache` or set `BAUKIT_GATE_CACHE=off` to run every
+step; CI never uses the cache.
+
 `make ci` covers most of it (fmt, clippy `-D warnings`, tests, and cargo check
 for `rust/` and `cli/`, plus pnpm build/format/lint/test/check for
 `typescript/`, the `scripts/` tests, and both media-grant vector suites; the

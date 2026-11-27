@@ -7,7 +7,7 @@ PYTHONDONTWRITEBYTECODE=1
 export PYTHONDONTWRITEBYTECODE
 
 usage() {
-  echo "usage: sh scripts/quality-gate.sh [--affected BASE] [--plan]" >&2
+  echo "usage: sh scripts/quality-gate.sh [--affected BASE] [--plan] [--no-cache]" >&2
   exit 2
 }
 
@@ -199,6 +199,7 @@ step_scripts_tests() {
   python3 scripts/gate.test.py
   python3 scripts/gate_disk.test.py
   python3 scripts/gate_locks.test.py
+  python3 scripts/gate_results.test.py
 {% if context.web %}  python3 scripts/with-loopback-network.test.py
 {% endif %}}
 
@@ -675,7 +676,7 @@ case "${1:-}" in
     [ "$#" -eq 2 ] || usage
     "step_$(printf %s "$2" | tr - _)"
     ;;
-  "" | --affected | --plan)
+  "" | --affected | --plan | --no-cache)
     exec python3 scripts/gate.py run --script "sh scripts/quality-gate.sh" --settings baukit.toml \
       --log-dir "${BAUKIT_GATE_LOG_DIR:-.quality-gate}"{% if context.backend %} --cargo-workspace backend/Cargo.toml{% endif %} "$@"
     ;;

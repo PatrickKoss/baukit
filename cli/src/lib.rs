@@ -100,6 +100,8 @@ const EXPECTED_STRICT_FILES: &[&str] = &[
     "scripts/gate.test.py",
     "scripts/gate_locks.py",
     "scripts/gate_locks.test.py",
+    "scripts/gate_results.py",
+    "scripts/gate_results.test.py",
 ];
 
 const ENV_RECONCILIATION_FILES: &[&str] = &[

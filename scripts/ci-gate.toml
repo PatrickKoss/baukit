@@ -18,6 +18,12 @@ shared = [
   "renovate*.json",
 ]
 
+# gate.py skips a step that passed on the same inputs. These steps read data that changes
+# without a commit: advisory databases (cargo-deny, osv, trivy in platform-images), the
+# git history (secret-scan) and the last release tag (migrations), so they always run.
+[quality.cache]
+never = ["cargo-deny", "osv", "secret-scan", "platform-images", "migrations"]
+
 [quality.gate_budget_minutes]
 full = 30
 affected = 15
@@ -48,7 +54,9 @@ migrations = 30
 "osv-scanner.toml" = []
 "ruff.toml" = []
 "zizmor.yml" = ["workflows"]
-"rust/crates/**" = ["rust", "fixtures", "mcp-fixture", "fuzz", "kani"]
+# vectors runs generators in workspace crates; verus/equivalence path-depends on baukit-sync and
+# baukit-ratelimit, whose normal dependencies reach most crates.
+"rust/crates/**" = ["rust", "fixtures", "mcp-fixture", "fuzz", "kani", "vectors", "verus"]
 "rust/crates/*/migrations/**" = ["migrations"]
 "rust/migrations.toml" = ["migrations"]
 "scripts/check-migrations.py" = ["migrations"]
@@ -69,9 +77,12 @@ migrations = 30
 "scripts/fuzz.sh" = ["fuzz"]
 "cli/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
 "templates/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
+# rust/crates/baukit-openapi/tests/naming.rs include_str!s the template OpenAPI documents.
+"templates/backend/**/openapi.json" = ["rust"]
 "agent-skills/**" = ["cli", "fixtures"]
-"lint/**" = ["cli"]
-"baukit-check.toml" = ["cli"]
+# The CLI embeds lint/ (agent rules, Rust lint tables, ast-grep rules) into generated products.
+"lint/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
+"baukit-check.toml" = ["cli", "fixtures", "mcp-fixture", "native-android"]
 "typescript/**" = ["ts", "fixtures", "mcp-fixture", "android"]
 "examples/minimal-api/**" = ["examples-test"]
 "examples/expo-sqlite-conformance/**" = ["expo-sqlite"]
@@ -83,6 +94,8 @@ migrations = 30
 # these paths add only the lanes that render or run them beyond that.
 "deploy/platform/**" = ["platform-e2e", "platform-images"]
 "deploy/observability/**" = ["platform-e2e"]
+# cli/src/check/observability/promql.rs include_str!s the metric-name linter.
+"deploy/observability/lint/**" = ["cli", "fixtures", "mcp-fixture", "native-android"]
 "deploy/observability-platform/**" = ["platform-e2e"]
 "deploy/chart/**" = ["platform-e2e", "platform-images", "fixtures"]
 "deploy/media-grants/**" = []
