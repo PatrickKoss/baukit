@@ -847,3 +847,8 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   - `fuzz` was the critical path of a full gate (2305 s: 38 targets run one after another for 60 s
     each). rel-fuzz runs the targets in parallel within the lane's `BAUKIT_GATE_WORKERS`. The
     template gate gets the same change, so product gates get faster too.
+  - The user approved a gate step result cache (rel-cache). A step that passed for exactly the
+    same inputs is skipped and counts as passed. A step's inputs come from the same
+    `[quality.affected]` map that `--affected` already trusts, plus shared, unmapped and gate files.
+    Only a clean tree uses the cache. Steps that read advisory databases are never cached, entries
+    expire, CI never caches, and `--no-cache` forces a real run. It ships in the same bundle.
