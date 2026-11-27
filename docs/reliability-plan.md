@@ -936,3 +936,17 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   - fuzz got 1 core and ran serially (2236 s, over budget). rel-fuzz-cores is fixing the core share.
   - All other lanes are green: android, verus, platform-e2e, kani, vectors, cli, ts, fast, images and
     models.
+- rel/migrations merged (954cee90):
+  - jobs 0005 and 0006 set timeouts, rerun cleanly, and add their checks `NOT VALID`.
+  - New jobs 0007 validates those checks. New jobs 0008 (`-- no-transaction`) builds the running-key
+    index `CONCURRENTLY`. The templates ship them as 0013 and 0014.
+  - suite 006 replaces the 0..20 check with a `NOT VALID` `>= 0` check, and new suite 007 validates
+    it.
+  - Suppressions carry reasons: the integer counters, the suite cutover drops, and the timeouts in
+    the no-transaction file. sqlx sends that file as one query, which Postgres runs as one implicit
+    transaction, so a `SET` there makes `CONCURRENTLY` fail.
+  - The suite `UPDATE` stays: one row per linked app.
+  - lint, order and double-apply pass.
+  - Follow-up, not blocking 0.32.0: `check-migrations.py double-apply` applies with `psql -f`
+    statement by statement, so it would pass a `SET` plus `CONCURRENTLY` no-transaction file. The
+    jobs Docker tests catch it through the sqlx Migrator.
