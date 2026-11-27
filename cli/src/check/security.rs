@@ -9,10 +9,19 @@ const NAME: &str = "security";
 const SERVE_CALL: &str = "axum::serve(";
 const CONNECT_INFO: &str = "into_make_service_with_connect_info";
 const MERGE_CALL: &str = ".merge(";
-const LIMITED_WRAPPERS: [&str; 2] = ["rate_limited(", "protect_routes("];
+const LIMITED_WRAPPERS: [&str; 4] = [
+    "rate_limited(",
+    "protect_routes(",
+    "baukit_ratelimit::layers(",
+    "layers(",
+];
 const BIN_CRATE_SUFFIX: &str = "-bin";
 const CLUSTER_IP: &str = "ClusterIP";
 const LOCAL_MARKER: &str = "local";
+const COMPOSE_PREFIXES: [&str; 2] = ["compose", "docker-compose"];
+const YAML_EXTENSIONS: [&str; 2] = [".yaml", ".yml"];
+const E2E_DIRECTORY: &str = "e2e";
+const WORKFLOWS_DIRECTORY: &str = ".github/workflows/";
 const CORS_KEY_MARKERS: [&str; 3] = ["allowedorigin", "corsorigin", "apiorigin"];
 const SCHEMA_DOCUMENT_KEYS: [&str; 3] = ["openapi", "swagger", "$schema"];
 const NULL_ORIGIN: &str = "null";
@@ -243,12 +252,29 @@ fn is_origin_key(key: &str) -> bool {
 
 fn origin_findings(shown: &str, origins: &[String]) -> Vec<Finding> {
     let local = shown.to_ascii_lowercase().contains(LOCAL_MARKER);
+    let loopback_allowed = local || runs_on_own_host(shown);
     origins
         .iter()
         .flat_map(|value| origin_list(value))
-        .filter_map(|origin| origin_problem(&origin, local))
+        .filter_map(|origin| origin_problem(&origin, local, loopback_allowed))
         .map(|message| Finding::error(NAME, shown, message))
         .collect()
+}
+
+/// Compose stacks, e2e setups and CI workflows run on the developer's or runner's own host, so
+/// loopback origins are expected there; deployed config must not list them.
+fn runs_on_own_host(shown: &str) -> bool {
+    let path = Path::new(shown);
+    let name = walk::file_name(path);
+    let is_compose = COMPOSE_PREFIXES
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+        && YAML_EXTENSIONS.iter().any(|ext| name.ends_with(ext));
+    is_compose
+        || shown.starts_with(WORKFLOWS_DIRECTORY)
+        || path
+            .components()
+            .any(|component| component.as_os_str() == E2E_DIRECTORY)
 }
 
 /// Splits a setting into origins: a JSON array string or a comma-separated list, each with
@@ -301,9 +327,9 @@ fn is_loopback(origin: &str) -> bool {
     })
 }
 
-fn origin_problem(origin: &str, local: bool) -> Option<String> {
+fn origin_problem(origin: &str, local: bool, loopback_allowed: bool) -> Option<String> {
     let trimmed = origin.trim();
-    if trimmed.is_empty() || is_loopback(trimmed) {
+    if trimmed.is_empty() || (loopback_allowed && is_loopback(trimmed)) {
         return None;
     }
     if trimmed.eq_ignore_ascii_case(NULL_ORIGIN) {
@@ -359,13 +385,15 @@ mod tests {
         let source = [
             "let api = api.merge(rate_limited(mcp, limits));",
             "let api = api.merge(\n    protect_routes(x, late, auth, limits)?,\n);",
+            "let api = api.merge(baukit_ratelimit::layers(router, store, options));",
+            "let api = api.merge(layers(router, store, options));",
             "let api = api.merge(platform.router);",
         ]
         .join("\n");
         assert_eq!(
             messages("crates/shop-bin/src/compose.rs", &source),
             [
-                "security: crates/shop-bin/src/compose.rs:5: `.merge(x)` in a bin crate must wrap x in `rate_limited(` or `protect_routes(`"
+                "security: crates/shop-bin/src/compose.rs:7: `.merge(x)` in a bin crate must wrap x in `rate_limited(` or `protect_routes(`"
             ]
         );
         assert!(messages("crates/shop-api/src/lib.rs", &source).is_empty());
@@ -394,6 +422,12 @@ mod tests {
         );
         let local = "[http]\ncors_allowed_origins = [\"http://localhost:5173\"]\n";
         assert!(messages("config/local.toml", local).is_empty());
+        assert_eq!(
+            messages("config/production.toml", local),
+            [
+                "security: config/production.toml: origin `http://localhost:5173` is not https; plain http origins belong only in local config"
+            ]
+        );
         let remote = "[http]\ncors_allowed_origins = [\"http://app.example.com\"]\n";
         assert!(messages("config/local.toml", remote).is_empty());
         assert_eq!(
@@ -414,22 +448,45 @@ mod tests {
     }
 
     #[test]
-    fn loopback_http_origins_pass_everywhere() {
+    fn loopback_http_origins_pass_only_where_they_run_on_the_own_host() {
+        let config = |origin: &str| format!("[http]\ncors_allowed_origins = [\"{origin}\"]\n");
+        let values = |origin: &str| format!("browserSession:\n  allowedOrigins: [\"{origin}\"]\n");
         for origin in [
             "http://localhost:5173",
             "http://127.0.0.1",
             "http://[::1]:8080",
         ] {
-            let config = format!("[http]\ncors_allowed_origins = [\"{origin}\"]\n");
-            assert!(messages("config/production.toml", &config).is_empty());
+            assert!(messages("config/local.toml", &config(origin)).is_empty());
+            for path in [
+                "compose.yaml",
+                "deploy/compose.release.yaml",
+                "deploy/docker-compose.e2e.yml",
+                "e2e/stack.yaml",
+                ".github/workflows/e2e-mobile.yml",
+            ] {
+                assert!(messages(path, &values(origin)).is_empty(), "{path}");
+            }
+            let message = format!(
+                "origin `{origin}` is not https; plain http origins belong only in local config"
+            );
+            assert_eq!(
+                messages("config/production.toml", &config(origin)),
+                [format!("security: config/production.toml: {message}")]
+            );
+            for path in [
+                "deploy/values.yaml",
+                "deploy/gitops/testing/environment.yaml",
+            ] {
+                assert_eq!(
+                    messages(path, &values(origin)),
+                    [format!("security: {path}: {message}")]
+                );
+            }
         }
         assert_eq!(
-            messages(
-                "config/production.toml",
-                "[http]\ncors_allowed_origins = [\"http://localhost.evil.com\"]\n"
-            ),
+            messages("compose.yaml", &values("http://localhost.evil.com")),
             [
-                "security: config/production.toml: origin `http://localhost.evil.com` is not https; plain http origins belong only in local config"
+                "security: compose.yaml: origin `http://localhost.evil.com` is not https; plain http origins belong only in local config"
             ]
         );
     }

@@ -2,8 +2,8 @@
 
 ## [Unreleased]
 
-- `baukit check` skips `vendor/` directories again inside a git work tree, so vendored upstream crates no longer trip `file-size`, `suppressions` and the other product rules. The `security` rule reads only CORS origin keys (`allowedOrigins`, `cors_allowed_origins`, `CORS__ALLOWED_ORIGINS`, `publicApiOrigin`), skips OpenAPI and JSON-schema documents, judges each element of a JSON-array or comma-separated value, resolves `${VAR:-default}` to its default and accepts `http://` for `localhost`, `127.0.0.1` and `[::1]` everywhere, as `baukit-http` does. Code under `e2e/` and in `*-test-support` crates counts as test code for the `axum::serve` check.
-- `baukit doctor` accepts an MCP router merged as `.merge(rate_limited(mcp_router(..), ..))` or `.merge(protect_routes(x, ..)?)`, the shape `baukit check security` asks for, so products no longer need a separate binding to satisfy both.
+- `baukit check` skips `vendor/` directories again inside a git work tree, so vendored upstream crates no longer trip `file-size`, `suppressions` and the other product rules. The `security` rule reads only CORS origin keys (`allowedOrigins`, `cors_allowed_origins`, `CORS__ALLOWED_ORIGINS`, `publicApiOrigin`), skips OpenAPI and JSON-schema documents, judges each element of a JSON-array or comma-separated value, resolves `${VAR:-default}` to its default and accepts `http://` for `localhost`, `127.0.0.1` and `[::1]` in local config, compose files, `e2e/` and `.github/workflows/`. Helm values, gitops environments and non-local `config/*.toml` must not list a loopback origin. A merge wrapped in `baukit_ratelimit::layers(` or `layers(` counts as rate limited. Code under `e2e/` and in `*-test-support` crates counts as test code for the `axum::serve` check.
+- `baukit doctor` accepts an MCP router merged as `.merge(rate_limited(mcp_router(..), ..))` or `.merge(protect_routes(x, ..)?)` or `.merge(baukit_ratelimit::layers(x, ..))`, the shape `baukit check security` asks for, so products no longer need a separate binding to satisfy both.
 
 ## [0.31.0] - 2026-11-26
 

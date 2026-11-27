@@ -44,9 +44,14 @@ fn source(
     ))
 }
 
-const LIMITED_MERGES: [&str; 2] = [".merge(rate_limited(", ".merge(protect_routes("];
+const LIMITED_MERGES: [&str; 4] = [
+    ".merge(rate_limited(",
+    ".merge(protect_routes(",
+    ".merge(baukit_ratelimit::layers(",
+    ".merge(layers(",
+];
 
-/// Rewrites `.merge(rate_limited(x, limits))` and `.merge(protect_routes(x, ..))` to
+/// Rewrites `.merge(w(x, ..))` for each IP-limiting wrapper `w` in [`LIMITED_MERGES`] to
 /// `.merge(x)` so the merge checks see the router, also when `x` is a call.
 fn unwrap_rate_limited(code: &str) -> String {
     let mut output = String::with_capacity(code.len());
@@ -626,6 +631,12 @@ fn validate(config: &McpConfig) { config.validate(); }
         assert_eq!(
             unwrap_rate_limited("api.merge(protect_routes(mcp,late,auth))"),
             "api.merge(mcp)"
+        );
+        assert_eq!(
+            unwrap_rate_limited(
+                "api.merge(baukit_ratelimit::layers(mcp,store,options)).merge(layers(other,store,options))"
+            ),
+            "api.merge(mcp).merge(other)"
         );
     }
 
