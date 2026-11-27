@@ -1987,9 +1987,12 @@ mod common {
     }
     pub async fn postgres_database() -> Result<TestDatabase, Box<dyn Error>> {
         let database = postgres_database_before_probes().await?;
-        sqlx::raw_sql(SUITE_DELIVERY_PROBES_MIGRATION_SQL)
-            .execute(&database.pool)
-            .await?;
+        for migration in [
+            SUITE_DELIVERY_PROBES_MIGRATION_SQL,
+            SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL,
+        ] {
+            sqlx::raw_sql(migration).execute(&database.pool).await?;
+        }
         Ok(database)
     }
     pub async fn postgres_database_before_probes() -> Result<TestDatabase, Box<dyn Error>> {
@@ -2012,6 +2015,8 @@ mod common {
             baukit_jobs::POSTGRES_MIGRATION_0004_SQL,
             baukit_jobs::POSTGRES_MIGRATION_0005_SQL,
             baukit_jobs::POSTGRES_MIGRATION_0006_SQL,
+            baukit_jobs::POSTGRES_MIGRATION_0007_SQL,
+            baukit_jobs::POSTGRES_MIGRATION_0008_SQL,
             SUITE_MIGRATION_SQL,
             SUITE_RUNTIME_MIGRATION_SQL,
         ] {
@@ -4175,9 +4180,18 @@ async fn probes_migration_drops_sql_accounting_and_schedules_disabled_links() ->
             .bind(link).bind(owner).bind(peer).bind(Uuid::now_v7()).bind(vec![1u8]).bind(vec![2u8]).bind(health).bind(failures)
             .execute(&db.pool).await?;
     }
-    sqlx::raw_sql(SUITE_DELIVERY_PROBES_MIGRATION_SQL)
-        .execute(&db.pool)
-        .await?;
+    for migration in [
+        SUITE_DELIVERY_PROBES_MIGRATION_SQL,
+        SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL,
+    ] {
+        sqlx::raw_sql(migration).execute(&db.pool).await?;
+    }
+    let unvalidated: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pg_constraint WHERE conrelid = 'suite_links'::regclass AND contype = 'c' AND NOT convalidated",
+    )
+    .fetch_one(&db.pool)
+    .await?;
+    assert_eq!(unvalidated, 0, "007 validates every link check");
     let accounting: Option<String> =
         sqlx::query_scalar("SELECT to_regclass('suite_failed_delivery_jobs')::text")
             .fetch_one(&db.pool)

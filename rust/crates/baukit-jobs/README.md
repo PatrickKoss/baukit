@@ -14,9 +14,12 @@ Copy `migrations/0001_baukit_jobs.sql`,
 `migrations/0002_baukit_jobs_failure_reason.sql`,
 `migrations/0003_baukit_jobs_claim_by_type.sql`,
 `migrations/0004_baukit_jobs_active_deduplication.sql`,
-`migrations/0005_baukit_jobs_deferrals.sql`, and
-`migrations/0006_baukit_jobs_concurrency_key.sql` into the product's own
-migrations in that order. Do not point a production service at this crate
+`migrations/0005_baukit_jobs_deferrals.sql`,
+`migrations/0006_baukit_jobs_concurrency_key.sql`,
+`migrations/0007_baukit_jobs_validate_checks.sql`, and
+`migrations/0008_baukit_jobs_running_key_index.sql` into the product's own
+migrations in that order. `0008` starts with `-- no-transaction`, so sqlx runs
+it outside a transaction and builds the index concurrently. Do not point a production service at this crate
 directory and do not run schema changes during application startup. A product
 may add foreign keys or indexes in a later migration, but the lifecycle columns
 and constraints used by the claim query must remain compatible.
@@ -116,7 +119,8 @@ must add their own migration, without editing one they already applied.
 Products with migrations 0001 through 0004 applied add
 `migrations/0005_baukit_jobs_deferrals.sql` (also available as
 `POSTGRES_MIGRATION_0005_SQL`) as their next migration before upgrading. It
-adds `deferrals integer not null default 0`. Every claim and enqueue returns the
+adds `deferrals integer not null default 0`. Add `0006`, `0007` and `0008`
+after it. Every claim and enqueue returns the
 column, so the store fails without it. Code that constructs `Job` sets
 `deferrals`, usually to `0`.
 

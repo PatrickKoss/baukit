@@ -3,6 +3,7 @@ use crate::ports::*;
 pub use crate::{
     SUITE_DELIVERY_PROBES_MIGRATION_SQL, SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_MIGRATION_SQL,
     SUITE_RECORD_IDS_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL,
+    SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL,
 };
 use async_trait::async_trait;
 use jiff::{SignedDuration, Timestamp};

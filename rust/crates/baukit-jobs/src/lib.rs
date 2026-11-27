@@ -9,8 +9,9 @@
 //!
 //! Products must copy [`POSTGRES_MIGRATION_SQL`],
 //! [`POSTGRES_MIGRATION_0002_SQL`], [`POSTGRES_MIGRATION_0003_SQL`],
-//! [`POSTGRES_MIGRATION_0004_SQL`], [`POSTGRES_MIGRATION_0005_SQL`], and
-//! [`POSTGRES_MIGRATION_0006_SQL`] into their own ordered SQLx migrations.
+//! [`POSTGRES_MIGRATION_0004_SQL`], [`POSTGRES_MIGRATION_0005_SQL`],
+//! [`POSTGRES_MIGRATION_0006_SQL`], [`POSTGRES_MIGRATION_0007_SQL`], and
+//! [`POSTGRES_MIGRATION_0008_SQL`] into their own ordered SQLx migrations.
 //! The crate never runs migrations at process startup. Use
 //! [`PostgresJobStore::enqueue_in_transaction`] when a domain write and its
 //! job need to commit atomically. Likewise, a handler which writes PostgreSQL can
@@ -117,10 +118,25 @@ pub const POSTGRES_MIGRATION_0004_SQL: &str =
 pub const POSTGRES_MIGRATION_0005_SQL: &str =
     include_str!("../migrations/0005_baukit_jobs_deferrals.sql");
 
-/// Adds `concurrency_key` and the running-key index used by [`WorkerConfig::max_per_key`].
+/// Adds `concurrency_key`, used by [`WorkerConfig::max_per_key`].
 ///
 /// Apply this SQL as a new product-owned migration after
 /// [`POSTGRES_MIGRATION_0005_SQL`] before running this version. Every enqueue
 /// and claim reads or writes the column.
 pub const POSTGRES_MIGRATION_0006_SQL: &str =
     include_str!("../migrations/0006_baukit_jobs_concurrency_key.sql");
+
+/// Validates the `deferrals` and `concurrency_key` checks that 0005 and 0006 add `NOT VALID`.
+///
+/// Apply this SQL as a new product-owned migration after
+/// [`POSTGRES_MIGRATION_0006_SQL`].
+pub const POSTGRES_MIGRATION_0007_SQL: &str =
+    include_str!("../migrations/0007_baukit_jobs_validate_checks.sql");
+
+/// Builds the running-key index that keeps [`WorkerConfig::max_per_key`] counts cheap.
+///
+/// Apply this SQL as a new product-owned migration after
+/// [`POSTGRES_MIGRATION_0007_SQL`]. It starts with `-- no-transaction`, so sqlx
+/// runs it outside a transaction and the index builds concurrently.
+pub const POSTGRES_MIGRATION_0008_SQL: &str =
+    include_str!("../migrations/0008_baukit_jobs_running_key_index.sql");

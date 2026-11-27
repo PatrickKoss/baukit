@@ -10,10 +10,13 @@ against them. The suite probe migration is not: stop the 0.31.x suite delivery p
 apply it.
 
 1. Add the new SQL migrations to your product and apply them before deploying the new binary:
-   - `baukit-jobs` `0005_baukit_jobs_deferrals.sql`, then `0006_baukit_jobs_concurrency_key.sql`.
-     Expand-only. The auth and worker templates ship them as `0011` and `0012`. See
+   - `baukit-jobs` `0005_baukit_jobs_deferrals.sql`, `0006_baukit_jobs_concurrency_key.sql`,
+     `0007_baukit_jobs_validate_checks.sql`, then `0008_baukit_jobs_running_key_index.sql`, which
+     runs outside a transaction. Expand-only. The auth and worker templates ship them as `0011` to
+     `0014`. See
      [job-deferrals-and-concurrency-keys.md](job-deferrals-and-concurrency-keys.md).
-   - `baukit-suite` `006_suite_delivery_probes.sql`, after jobs `0006`. Not expand-only. See
+   - `baukit-suite` `006_suite_delivery_probes.sql`, then `007_suite_validate_link_checks.sql`, after
+     jobs `0008`. Not expand-only. See
      [fail-closed-503-and-grace.md](fail-closed-503-and-grace.md).
    - On shared platform Postgres, set the session timeouts and connection limit on each owner role. See
      [startup-budget-and-postgres-timeouts.md](startup-budget-and-postgres-timeouts.md).

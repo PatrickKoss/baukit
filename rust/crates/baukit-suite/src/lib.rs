@@ -35,8 +35,9 @@
 //! [`domain::SUITE_CIRCUIT_FAILURES`] the link is disabled and probed after one
 //! hour, then after a delay that doubles up to a day. A delivered probe makes the
 //! link healthy again. Attempts the egress breaker refuses are deferred and not
-//! counted. Apply `SUITE_DELIVERY_PROBES_MIGRATION_SQL` after the record ids
-//! migration to install this behavior.
+//! counted. Apply `SUITE_DELIVERY_PROBES_MIGRATION_SQL` and then
+//! `SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL` after the record ids migration to
+//! install this behavior.
 
 pub mod adapters;
 #[cfg(feature = "delivery")]
@@ -76,3 +77,8 @@ pub const SUITE_RECORD_IDS_MIGRATION_SQL: &str =
 #[cfg(feature = "postgres")]
 pub const SUITE_DELIVERY_PROBES_MIGRATION_SQL: &str =
     include_str!("../migrations/006_suite_delivery_probes.sql");
+/// Copy after `SUITE_DELIVERY_PROBES_MIGRATION_SQL`. It validates the link checks that
+/// migration adds `NOT VALID`.
+#[cfg(feature = "postgres")]
+pub const SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL: &str =
+    include_str!("../migrations/007_suite_validate_link_checks.sql");
