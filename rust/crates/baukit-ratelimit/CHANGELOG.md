@@ -4,6 +4,7 @@ All notable changes to `baukit-ratelimit` are documented here.
 
 ## [Unreleased]
 
+- Fixed: an outer rate-limit layer no longer overwrites the `RateLimit-*` headers an inner layer already set, so nested identity and IP layers report the identity quota.
 - Fixed: a quota with a very long period (such as `Duration::MAX`) keeps its full request capacity instead of admitting about one request.
 
 ## [0.31.0] - 2026-11-26
