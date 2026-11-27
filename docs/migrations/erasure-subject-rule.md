@@ -17,6 +17,13 @@ for `completed` or `failed` hung.
   the job. This no longer depends on the `erasure_job_failed` trigger. If the `operationId` is missing
   or not a UUID, the worker logs `identity deletion payload has no operation id` with the job id and
   dead-letters the job. No operation can be tied to that job, so none is updated.
+- The worker also fails the operation on a permanent provider error and when a retryable error uses the
+  last attempt. The trigger stays for products that have it, but operations no longer need it. A final
+  lease that expires without the handler returning is still failed only by the trigger.
+- New reference migration `0003_erasure_operation_id_guard.sql`, exported as
+  `POSTGRES_OPERATION_ID_GUARD_MIGRATION_SQL`. It replaces `erasure_job_failed()` with a version that
+  skips a non-UUID `operationId`. Before, the `::uuid` cast raised and aborted the job's failure update,
+  so the job never left `running`.
 
 ## What to do
 
@@ -26,6 +33,10 @@ If your subject can contain a control character, change how you build it. A comp
 new hashes. Erase or fence with the same format your session guards use, or old fences stop matching.
 
 Match on `ErasureError::InvalidSubject` if you map erasure errors yourself.
+
+Copy `POSTGRES_OPERATION_ID_GUARD_MIGRATION_SQL` into your migrations after the 0002 erasure migration.
+It only replaces the function and takes a 5 second lock timeout. A product that dropped the trigger can
+apply it anyway, because it does not recreate the trigger.
 
 ## Jobs already queued
 

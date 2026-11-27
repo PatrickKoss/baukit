@@ -939,3 +939,56 @@ async fn worker_dead_letters_a_payload_without_operation_id() -> Result<(), Box<
     assert!(fake.calls().is_empty());
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn worker_fails_operations_without_the_failure_trigger() -> Result<(), Box<dyn Error>> {
+    for failure in [
+        IdentityDeletionError::Permanent,
+        IdentityDeletionError::Retryable,
+    ] {
+        let (_container, pool, store, fake, service) = fixture().await?;
+        drop_failure_trigger(&pool).await?;
+        for _ in 0..3 {
+            fake.push_outcome(Err(failure));
+        }
+        let pending = service
+            .erase("alice", None, "no-trigger-failure-01", &Product)
+            .await?;
+        run_until(
+            store,
+            fake,
+            "alice",
+            pending.operation_id,
+            ErasureState::Failed,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Docker PostgreSQL"]
+async fn failure_trigger_ignores_a_non_uuid_operation_id() -> Result<(), Box<dyn Error>> {
+    let (_container, pool, _store, _fake, _service) = fixture().await?;
+    let job = PostgresJobStore::new(pool.clone())
+        .enqueue(baukit_jobs::NewJob::new(
+            baukit_erasure::IDENTITY_DELETE_JOB_TYPE,
+            serde_json::json!({"subject": "alice", "providerId": "test", "operationId": "not-a-uuid"}),
+            1,
+        ))
+        .await?
+        .job;
+    sqlx::query(
+        "UPDATE job_outbox SET status = 'failed', failure_reason = 'permanent' WHERE id = $1",
+    )
+    .bind(job.id)
+    .execute(&pool)
+    .await?;
+    let status: String = sqlx::query_scalar("SELECT status FROM job_outbox WHERE id = $1")
+        .bind(job.id)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(status, "failed");
+    Ok(())
+}

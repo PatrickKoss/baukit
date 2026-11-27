@@ -244,6 +244,9 @@ existing fences with the migration time. Subjects erased before the upgrade can
 re-onboard with any login whose `auth_time` is after the migration, once every
 erasure operation completes. Their pre-erasure sessions stay fenced.
 
+Copy `POSTGRES_OPERATION_ID_GUARD_MIGRATION_SQL` after 0002. It makes the
+`erasure_job_failed` trigger skip a non-UUID `operationId` instead of raising.
+
 Pass the verified `principal.authenticated_at()` to `guard_subject`, `is_fenced`,
 `reject_fenced_subject`, and `ErasureService::erase`. A fenced session passes
 only when its `auth_time` is present and strictly greater than `erased_at`, and
