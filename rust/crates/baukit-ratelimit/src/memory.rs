@@ -326,6 +326,28 @@ mod tests {
     }
 
     #[test]
+    fn never_refilling_quota_admits_its_full_capacity() {
+        let store = InMemoryRateLimitStore::new(8).expect("store");
+        let quota = Quota::new(100, Duration::MAX, 0).expect("quota");
+        let started = Instant::now();
+
+        for _ in 0..100 {
+            assert!(
+                store
+                    .check_at("id:a", quota, started)
+                    .expect("decision")
+                    .allowed
+            );
+        }
+        assert!(
+            !store
+                .check_at("id:a", quota, started)
+                .expect("decision")
+                .allowed
+        );
+    }
+
+    #[test]
     fn capacity_is_bounded_and_expired_entries_are_pruned() {
         let store = InMemoryRateLimitStore::new(1).expect("store");
         let quota = Quota::new(1, Duration::from_secs(1), 0).expect("quota");

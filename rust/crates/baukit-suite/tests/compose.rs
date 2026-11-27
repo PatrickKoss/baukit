@@ -189,6 +189,25 @@ async fn unavailable_limiter_rejects_public_routes_by_default() -> TestResult {
 }
 
 #[tokio::test]
+async fn public_routes_read_mock_connect_info() -> TestResult {
+    let suite = suite()?;
+    let router = suite
+        .router(suite.api())
+        .layer(axum::extract::connect_info::MockConnectInfo(
+            std::net::SocketAddr::from(([192, 0, 2, 1], 4000)),
+        ));
+    let statuses = statuses(
+        &router,
+        || post_without_peer("/suite/links/exchange"),
+        PUBLIC_LIMIT + 1,
+    )
+    .await?;
+    assert!(!statuses.contains(&StatusCode::INTERNAL_SERVER_ERROR));
+    assert_eq!(statuses.last(), Some(&StatusCode::TOO_MANY_REQUESTS));
+    Ok(())
+}
+
+#[tokio::test]
 async fn callback_and_revoke_share_the_public_ip_bucket() -> TestResult {
     let suite = suite()?;
     let router = suite.router(suite.api());

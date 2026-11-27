@@ -6,7 +6,7 @@ use std::{
 
 use axum::{
     Router,
-    extract::{ConnectInfo, Request, State},
+    extract::{ConnectInfo, Request, State, connect_info::MockConnectInfo},
     middleware::{self, Next},
     response::{IntoResponse as _, Response},
 };
@@ -102,16 +102,25 @@ pub fn limited_router(
         .merge(user_router(state))
 }
 
+/// The peer address the way axum's `ConnectInfo` extractor finds it, `MockConnectInfo` included.
+fn peer_address(request: &Request) -> Option<SocketAddr> {
+    let extensions = request.extensions();
+    extensions
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(peer)| *peer)
+        .or_else(|| {
+            extensions
+                .get::<MockConnectInfo<SocketAddr>>()
+                .map(|MockConnectInfo(peer)| *peer)
+        })
+}
+
 async fn limit_public_request(
     State(state): State<LimitState>,
     request: Request,
     next: Next,
 ) -> Response {
-    let Some(ConnectInfo(peer)) = request
-        .extensions()
-        .get::<ConnectInfo<SocketAddr>>()
-        .copied()
-    else {
+    let Some(peer) = peer_address(&request) else {
         tracing::error!(
             "suite public rate limit has no ConnectInfo<SocketAddr>; \
              serve the router with into_make_service_with_connect_info"
