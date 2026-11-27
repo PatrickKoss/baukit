@@ -28,7 +28,7 @@ import {
 import { Platform } from 'react-native';
 {% endif %}
 import type { ThemePreference } from './app-preferences';
-import { signInFeedback } from './auth-feedback';
+import { shouldReportRenewalError, signInFeedback } from './auth-feedback';
 {% if context.auth_oidc and context.pwa and not context.web %}import { apiBaseUrl } from './api-base-url';
 {% endif %}{% if context.auth_oidc %}import { appScheme } from './app-scheme';
 import { authStorage } from './auth-storage';
@@ -215,11 +215,14 @@ function useTokenRenewal(
     if (session === undefined) {
       return;
     }
+    const { expiresAt } = session;
     return scheduleTokenRenewal({
-      expiresAt: session.expiresAt,
+      expiresAt,
       renew: () => authClient.accessToken({ forceRefresh: true }),
       onError: (cause) => {
-        setError(safeAuthErrorMessage(cause));
+        if (shouldReportRenewalError(cause, expiresAt, Date.now())) {
+          setError(safeAuthErrorMessage(cause));
+        }
       },
     });
   }, [session, setError]);
