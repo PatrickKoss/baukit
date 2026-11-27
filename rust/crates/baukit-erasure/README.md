@@ -68,6 +68,12 @@ before the upgrade can re-onboard with any login whose `auth_time` is after the
 migration, once every erasure operation completes. Their pre-erasure sessions
 stay fenced.
 
+Copy `POSTGRES_OPERATION_ID_GUARD_MIGRATION_SQL` (0003) after 0002. It replaces
+`erasure_job_failed()` so a job payload whose `operationId` is not a UUID no
+longer aborts the job's failure update. The worker sets the operation to failed
+itself on a permanent error, a rejected payload or its last attempt, so the
+trigger is optional.
+
 Re-erasure upserts the fence and sets `erased_at` again. An application role
 with column privileges needs `GRANT UPDATE (erased_at) ON erasure_fences` in
 addition to its existing fence privileges, or the second erasure of a subject

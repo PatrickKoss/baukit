@@ -30,6 +30,10 @@ pub const POSTGRES_MIGRATION_SQL: &str = include_str!("../migrations/0001_erasur
 /// Reference migration to copy after 0001 erasure.
 pub const POSTGRES_REONBOARDING_MIGRATION_SQL: &str =
     include_str!("../migrations/0002_erasure_reonboarding.sql");
+/// Reference migration to copy after 0002. A non-UUID `operationId` in a failed job no longer
+/// aborts the job's status update.
+pub const POSTGRES_OPERATION_ID_GUARD_MIGRATION_SQL: &str =
+    include_str!("../migrations/0003_erasure_operation_id_guard.sql");
 /// Durable job identifier.
 pub const IDENTITY_DELETE_JOB_TYPE: &str = "identity.account.delete";
 /// Boxed asynchronous result used by erasure ports.
