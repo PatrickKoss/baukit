@@ -70,10 +70,19 @@ export function fetchSettings(options: ApiRuntimeOptions, baseUrl: string): Fetc
     requestIdFactory: options.requestIdFactory ?? createUuid,
     retry: normalizeRetryOptions(options.retry),
     requestTimeoutMs: normalizeRequestTimeout(options.requestTimeoutMs),
-    cooldown: options.cooldown === false ? null : new OriginCooldown(options.cooldown ?? {}, now),
+    cooldown: resolveCooldown(options.cooldown, now),
     now,
     options,
   };
+}
+
+function resolveCooldown(
+  cooldown: ApiRuntimeOptions['cooldown'],
+  now: () => number,
+): OriginCooldown | null {
+  if (cooldown === false) return null;
+  if (cooldown instanceof OriginCooldown) return cooldown;
+  return new OriginCooldown(cooldown ?? {}, now);
 }
 
 export async function runFetch(

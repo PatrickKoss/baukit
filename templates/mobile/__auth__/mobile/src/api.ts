@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import type { FetchImplementation } from '@baukit/api-runtime';
+import { OriginCooldown, type FetchImplementation } from '@baukit/api-runtime';
 
 import { createAuthenticatedApiRuntime } from './authenticated-api';
 import { apiSessionSubject } from './api-session';
@@ -23,11 +23,15 @@ const baseUrl =
     : __DEV__
       ? 'http://localhost:{{ context.api_host_port }}'
       : '';
+/** One cooldown for every runtime that calls this API, so a `Retry-After` from any of them blocks all. */
+export const apiCooldown = new OriginCooldown({}, Date.now);
+
 const api = createAuthenticatedApiRuntime({
   auth: authClient,
   sessionSubject: apiSessionSubject,
   baseUrl,
   environment: __DEV__ ? 'development' : 'production',
+  cooldown: apiCooldown,
 });
 const apiFetch = trackApiAvailability(api.fetch, apiAvailability);
 
