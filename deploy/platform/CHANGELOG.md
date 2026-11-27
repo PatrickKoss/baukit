@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The Loki gateway and the e2e echo image move from `nginx/nginx-unprivileged:1.31.8-alpine` to `1.31.10-alpine`, which ships libxml2 2.13.9-r3 and fixes CVE-2026-86144. `image-findings.toml` allows CVE-2026-11979, CVE-2026-86138, CVE-2026-86139, CVE-2026-86140, CVE-2026-86142 and CVE-2026-86143 (libxml2, fixed in 2.13.9-r4 and -r5) until 2027-01-22, because no nginx-unprivileged build has the fix yet. The gateway loads no XML module.
+
 ## [0.31.0] - 2026-11-26
 
 ## [0.30.6] - 2026-11-26
