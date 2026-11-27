@@ -114,11 +114,16 @@ ids = [
   "CVE-2026-97054",
 ]
 
-[images."docker.io/nginx/nginx-unprivileged@sha256:0ec17b0dac55776357d46d882bed7f3d504b0e4a0bc7379c7dbb74bd12b9d4da"]
-expires = 2027-01-16
-reason = "nginx/nginx-unprivileged:1.31.8-alpine (Loki gateway): no fixed upstream release exists as of 2026-11-21. CVE-2026-86144 is Alpine 3.24 libxml2 2.13.9-r2, fixed in 2.13.9-r3 (https://security.alpinelinux.org/vuln/CVE-2026-86144); the newest 1.31.9-alpine build still ships 2.13.9-r2 and nginx-unprivileged publishes no Alpine 3.23 variant. The gateway only proxies HTTP to Loki and loads no XML or XSLT module, so libxml2 is not on its request path. Recheck on the next nginx-unprivileged rebuild. Follow-up RF29."
+[images."docker.io/nginx/nginx-unprivileged@sha256:86628f2c9eaa5e84e3b98d25e26563c4a4f9b0ead9cf5656da4731d86e0621de"]
+expires = 2027-01-22
+reason = "nginx/nginx-unprivileged:1.31.10-alpine (Loki gateway): no fixed upstream release exists as of 2026-11-27. 1.31.10-alpine is the newest nginx-unprivileged build and 1.30.8-alpine ships the same packages. CVE-2026-11979, CVE-2026-86138, CVE-2026-86139, CVE-2026-86140, CVE-2026-86142 and CVE-2026-86143 are Alpine 3.24 libxml2 2.13.9-r3, fixed in 2.13.9-r4 (CVE-2026-11979 in 2.13.9-r5) (https://security.alpinelinux.org/srcpkg/libxml2). The gateway only proxies HTTP to Loki and loads no XML or XSLT module, so libxml2 is not on its request path, and CVE-2026-11979 sits in the xmlcatalog tool, which the gateway never runs. Recheck on the next nginx-unprivileged rebuild. Follow-up RF29."
 ids = [
-  "CVE-2026-86144",
+  "CVE-2026-11979",
+  "CVE-2026-86138",
+  "CVE-2026-86139",
+  "CVE-2026-86140",
+  "CVE-2026-86142",
+  "CVE-2026-86143",
 ]
 
 [images."docker.io/oliver006/redis_exporter:v1.97.0@sha256:f5f903fbe77571d455ede0453b084d6840bc62fc105efac001034421cab83b99"]
