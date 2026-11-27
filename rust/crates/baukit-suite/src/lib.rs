@@ -35,7 +35,7 @@
 //! [`domain::SUITE_CIRCUIT_FAILURES`] the link is disabled and probed after one
 //! hour, then after a delay that doubles up to a day. A delivered probe makes the
 //! link healthy again. Attempts the egress breaker refuses are deferred and not
-//! counted. Apply `SUITE_DELIVERY_PROBES_MIGRATION_SQL` after the lock order
+//! counted. Apply `SUITE_DELIVERY_PROBES_MIGRATION_SQL` after the record ids
 //! migration to install this behavior.
 
 pub mod adapters;
