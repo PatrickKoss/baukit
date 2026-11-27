@@ -193,7 +193,9 @@ async fn rate_limit_request(
     }
 
     let mut response = next.run(request).await;
-    if let Some((scope, decision)) = response_policy {
+    if let Some((scope, decision)) = response_policy
+        && !response.headers().contains_key(RATE_LIMIT_LIMIT)
+    {
         insert_rate_limit_headers(
             response.headers_mut(),
             scope.quota,
@@ -767,6 +769,84 @@ mod tests {
         .expect("JSON");
         assert_eq!(json["error"]["code"], "rate_limited");
         assert_eq!(json["error"]["details"]["retryAfter"], 60);
+    }
+
+    fn nested_identity_inside_ip(store: InMemoryRateLimitStore) -> Router {
+        let mut identity = RateLimitOptions::default();
+        identity.ip.enabled = false;
+        identity.identity.quota = Quota::new(2, Duration::from_secs(30), 0).expect("quota");
+        let mut ip = RateLimitOptions::default();
+        ip.identity.enabled = false;
+        ip.ip.quota = Quota::new(10, Duration::from_secs(60), 0).expect("quota");
+        let auth = AuthState::new(SubjectVerifier);
+        let inner = layers(
+            Router::new().route("/", get(|_principal: Principal| async { "ok" })),
+            store.clone(),
+            identity,
+        )
+        .with_state(auth.clone())
+        .layer(middleware::from_fn_with_state(auth, establish_principal));
+        layers(inner, store, ip)
+    }
+
+    #[tokio::test]
+    async fn nested_ip_layer_keeps_inner_identity_headers() {
+        let app = nested_identity_inside_ip(InMemoryRateLimitStore::default());
+
+        let response = app
+            .oneshot(authenticated_request("alice"))
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[RATE_LIMIT_LIMIT], "2");
+        assert_eq!(response.headers()[RATE_LIMIT_REMAINING], "1");
+    }
+
+    #[tokio::test]
+    async fn nested_identity_rejection_keeps_identity_headers() {
+        let app = nested_identity_inside_ip(InMemoryRateLimitStore::default());
+        for _ in 0..2 {
+            app.clone()
+                .oneshot(authenticated_request("alice"))
+                .await
+                .expect("response");
+        }
+
+        let response = app
+            .oneshot(authenticated_request("alice"))
+            .await
+            .expect("response");
+
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(response.headers()[RATE_LIMIT_LIMIT], "2");
+        assert_eq!(response.headers()[RATE_LIMIT_REMAINING], "0");
+        assert_eq!(response.headers()[RETRY_AFTER], "15");
+    }
+
+    #[tokio::test]
+    async fn ip_layer_sets_headers_only_when_none_exist() {
+        let mut options = RateLimitOptions::default();
+        options.identity.enabled = false;
+        options.ip.quota = Quota::new(10, Duration::from_secs(60), 0).expect("quota");
+        let bare = layers(
+            Router::new().route("/", get(|| async { "ok" })),
+            InMemoryRateLimitStore::default(),
+            options.clone(),
+        );
+        let preset = layers(
+            Router::new().route("/", get(|| async { ([(RATE_LIMIT_LIMIT, "7")], "ok") })),
+            InMemoryRateLimitStore::default(),
+            options,
+        );
+
+        let response = bare.oneshot(request_with_peer()).await.expect("response");
+        assert_eq!(response.headers()[RATE_LIMIT_LIMIT], "10");
+        assert_eq!(response.headers()[RATE_LIMIT_REMAINING], "9");
+
+        let response = preset.oneshot(request_with_peer()).await.expect("response");
+        assert_eq!(response.headers()[RATE_LIMIT_LIMIT], "7");
+        assert!(!response.headers().contains_key(RATE_LIMIT_REMAINING));
     }
 
     const APP_ORIGIN: &str = "https://app.example.com";
