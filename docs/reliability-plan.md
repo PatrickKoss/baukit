@@ -914,3 +914,12 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   gate is queued on fc0516fd behind the other sessions' gates. rel/upgrade-guide writes the 0.31.x
   upgrade section, its migration guides and the v0.32.0 compatibility matrix entry in parallel.
   Those are docs only, so an affected re-gate covers them after the merge.
+- rel/upgrade-guide merged (e41636c1, merge 51996cac): `docs/migrations/README.md` "Upgrading from
+  0.31.x" with five guides, and the v0.32.0 compatibility matrix entry. The gate sentence is still a
+  placeholder. Checked against the code:
+  - suite `006` drops the 0.31.x failure trigger and table, so it is a cutover, not expand-only;
+  - jobs `0006` builds its index without `CONCURRENTLY`;
+  - `RunnerError::LeaseLost` is gone;
+  - `DEFAULT_JWKS_STALE_GRACE` is private;
+  - the named APIs exist with the documented signatures.
+- Worktrees rel-fuzz, rel-cache, rel-fx4, rel-upgrade-guide and rel-merge are removed.
