@@ -161,7 +161,7 @@ examples/    minimal-api and the Expo conformance apps
 ```
 
 ```bash
-make toolchain          # mise: Node 26.10.0, Temurin 25.0.4, Rust 1.100.0, Kani, Verus and the linters
+make toolchain          # mise: Node 26.10.0, Temurin 25.0.4.1+1, Rust 1.100.0, Kani, Verus and the linters
 mise exec -- make ci    # fmt, clippy, tests, the TypeScript gates and make verify
 mise exec -- sh scripts/ci-gate.sh    # every CI job in parallel lanes
 ```
