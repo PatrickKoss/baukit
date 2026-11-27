@@ -151,8 +151,9 @@ pub fn default_affected(capabilities: &Capabilities) -> BTreeMap<String, Vec<Str
         add(document, &[]);
     }
     if capabilities.components.backend() {
-        add("backend/crates/**", &["backend"]);
-        add("backend/Cargo.toml", &["backend", "images"]);
+        // backend/fuzz path-depends on the crates, and the image builds them from source.
+        add("backend/crates/**", &["backend", "fuzz", "images"]);
+        add("backend/Cargo.toml", &["backend", "fuzz", "images"]);
         add("backend/Dockerfile", &["images"]);
         add("deploy/**", &[DEPLOY_VALUES_STEP]);
     }
@@ -665,7 +666,10 @@ mod tests {
     #[test]
     fn default_table_follows_capabilities() {
         let backend_only = default_affected(&capabilities(true, false, false));
-        assert_eq!(backend_only["backend/crates/**"], ["backend"]);
+        assert_eq!(
+            backend_only["backend/crates/**"],
+            ["backend", "fuzz", "images"]
+        );
         assert_eq!(backend_only["deploy/**"], ["deploy-values"]);
         assert!(!backend_only.contains_key("web/src/**"));
         assert!(!default_affected(&capabilities(false, true, false)).contains_key("deploy/**"));
