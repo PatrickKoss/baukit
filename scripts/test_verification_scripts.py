@@ -216,6 +216,22 @@ class DoubleApplyTest(unittest.TestCase):
             migrations.normalized_schema(first), migrations.normalized_schema("CREATE TABLE u ();")
         )
 
+    def test_no_transaction_file_goes_to_postgres_as_one_query(self) -> None:
+        sql = "-- no-transaction\nSET lock_timeout = '1s';\nCREATE INDEX CONCURRENTLY i ON t (c);\n"
+
+        args, stdin = migrations.psql_input(sql)
+
+        self.assertEqual(args, ["-c", sql])
+        self.assertIsNone(stdin)
+
+    def test_transactional_file_runs_in_one_transaction_from_stdin(self) -> None:
+        sql = "CREATE TABLE t ();\n"
+
+        args, stdin = migrations.psql_input(sql)
+
+        self.assertEqual(args, ["--single-transaction", "-f", "-"])
+        self.assertEqual(stdin, sql)
+
 
 class ModelsStepTest(unittest.TestCase):
     def test_models_step_hands_an_explicit_jar_to_models_check(self) -> None:

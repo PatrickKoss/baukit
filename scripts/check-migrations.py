@@ -131,9 +131,17 @@ def postgres(image: str) -> Iterator[str]:
         docker("rm", "-f", container)
 
 
+def psql_input(sql: str) -> tuple[list[str], str | None]:
+    """sqlx sends a no-transaction file as one simple query, which PostgreSQL runs as one
+    implicit transaction block. `psql -c` does the same; `psql -f` would split it into
+    statements and hide a CONCURRENTLY that fails next to another statement."""
+    if sql.lstrip().startswith(NO_TRANSACTION):
+        return ["-c", sql], None
+    return ["--single-transaction", "-f", "-"], sql
+
+
 def apply(container: str, path: Path) -> subprocess.CompletedProcess[str]:
-    sql = path.read_text(encoding="utf-8")
-    single = [] if sql.lstrip().startswith(NO_TRANSACTION) else ["--single-transaction"]
+    args, stdin = psql_input(path.read_text(encoding="utf-8"))
     return docker(
         "exec",
         "-i",
@@ -144,10 +152,8 @@ def apply(container: str, path: Path) -> subprocess.CompletedProcess[str]:
         "-q",
         "-v",
         "ON_ERROR_STOP=1",
-        *single,
-        "-f",
-        "-",
-        stdin=sql,
+        *args,
+        stdin=stdin,
     )
 
 
