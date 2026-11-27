@@ -834,3 +834,16 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
 - The full ci-gate on 7a9f7651 is queued behind the other sessions' gates. It takes the heavy slot,
   then `all_locks`, and runs `mise exec -- sh scripts/ci-gate.sh`, so the pinned squawk runs in the
   `migrations` step.
+- Gate throughput. Waiting for full gates is now the slowest part of this work, so the plan
+  changes:
+  - One full gate per bundle, not per change. The next bundle is rel-traefik (R1 Traefik rollout
+    case), rel-fuzz (gate speed) and the REL1 release-train commit for 0.32.0. Its full gate is also
+    the release gate.
+  - Changes in a bundle are checked on their own first, with `--step` lanes and targeted e2e
+    suites, which need no `all_locks`.
+  - The gate wrapper used to hold a heavy slot while it waited hours for `full-gate.lock`. That
+    left our own k3d e2e runs stuck behind it. It now takes the slot only once `full-gate.lock` is
+    free.
+  - `fuzz` was the critical path of a full gate (2305 s: 38 targets run one after another for 60 s
+    each). rel-fuzz runs the targets in parallel within the lane's `BAUKIT_GATE_WORKERS`. The
+    template gate gets the same change, so product gates get faster too.
