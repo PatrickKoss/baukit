@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+{% if context.quality_strict and context.backend %}- The `fuzz` step of `scripts/quality-gate.sh` runs up to `BAUKIT_FUZZ_JOBS` targets at once, by default the step's `BAUKIT_GATE_WORKERS` share. Each libFuzzer process uses one core, so before most of the share sat idle. Every target still runs for its full `BAUKIT_FUZZ_SECONDS`. Parallel targets write to their own log under `.quality-gate/fuzz-state/`, and the step prints each log whole when its target ends. A crash no longer stops the remaining targets: the step runs them all, then exits 1 and names every target that crashed. Copy `fuzz_target`, `print_fuzz_log`, `fuzz_worker` and `step_fuzz` from the template.
+{% endif %}
 ## [0.31.0] - 2026-11-26
 
 {% if context.auth_oidc and context.backend %}- `config/local.toml` sets `auth.authorized_parties` to this product's web, mobile and local client IDs. Access tokens from other clients now fail locally even with the backend audience. Set the same list in staging and production.
