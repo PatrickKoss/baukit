@@ -39,7 +39,8 @@ ensure_kubernetes_definitions() {
   if [[ ! -s $kubernetes_definitions ]]; then
     printf '==> fetching kubernetes-json-schema definitions %s\n' "$kubernetes_schema_commit" >&2
     mkdir -p "$cache_dir"
-    local download="$kubernetes_definitions.download"
+    local download
+    download=$(mktemp "$kubernetes_definitions.download.XXXXXX")
     if ! curl -fsSL --retry 3 -o "$download" "$kubernetes_definitions_url"; then
       rm -f -- "$download"
       printf 'ERROR: kubernetes-json-schema definitions are not cached and could not be fetched\n' >&2
