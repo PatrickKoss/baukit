@@ -960,3 +960,10 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
     path and gate.py is part of the cache key. It is queued on this head.
 - Full gate on 8fd055b8: fuzz finished in 400 s on its six-core minimum. Three lanes failed. The GitOps fixture check still expected one production replica, so it now checks the two-pod production contract. The kani and verus lanes reinstalled Kani into the shared `~/.kani` at the same time, so the gate now installs it once under a lock. Fixture-only scripts are mapped in `scripts/ci-gate.toml`, so a change to them no longer misses every cached step. Full gate requeued on 9760a6e2.
 - There is no 0.31.1. The product rollout fixes on main (PR #24, #40, #41 and #42) ship in 0.32.0, and their changelog lines sit in the `[0.32.0]` sections. PR #24 ships the template migration `0011_identity_erasure_operation_id_guard.sql`, so the template jobs copies move to `0012`–`0015`.
+- Full gate on 3392d28b: two lanes failed. The platform fixture still wrote `0013_platform.sql`, which
+  shared version 13 with the renumbered jobs migration. fded9811 moves it to `0016` and adds a unit test
+  that ties the platform number to the highest template migration. The `baukit-test` watchdog test
+  timed out starting Postgres while two full gates shared the host; it passes alone in 8 s.
+- Merged main at 85df8ce9 (docs overhaul, PR #43). The reliability doc changes moved onto main's
+  rewritten pages, `docs/guide/manifest.md` documents `[quality.cache]`, and every baukit pin in the
+  docs reads 0.32.

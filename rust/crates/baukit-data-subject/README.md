@@ -7,7 +7,7 @@ operation store and a durable worker.
 
 ```toml
 [dependencies]
-baukit-data-subject = { version = "0.31", default-features = false }
+baukit-data-subject = { version = "0.32", default-features = false }
 serde_json = "1"
 ```
 

@@ -40,7 +40,7 @@ Or add a crate to a service you already have:
 ```toml
 [dependencies]
 baukit-http = "0.32"
-baukit-ops = "0.31"
+baukit-ops = "0.32"
 ```
 
 ## What it looks like running

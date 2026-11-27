@@ -166,6 +166,20 @@ an existing manifest when it re-renders.
 | `timeout_minutes` | integer 1 to 360 | `90` |
 | `env` | table of `UPPER_SNAKE` name to string | `{}` |
 
+### `[quality.cache]`
+
+Settings for `scripts/gate_results.py`, the strict gate's result cache. `docs/quality-gate.md` in a
+generated product describes when it skips a step.
+
+| Key | Type | Default |
+| --- | --- | --- |
+| `never` | list of step names | `[]` |
+| `max_age_days` | integer 0 to 65535 | `7` |
+
+`never` lists steps that always run because they read data outside the tree. `baukit new` writes
+`secret-scan` and `osv`, plus `cargo-deny` and `migrations` when the product has a backend. Doctor
+rejects a name the product's gate does not list. A cached pass older than `max_age_days` runs again.
+
 ## `[gate]`
 
 ### `[gate.worker-caps]`
