@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+{% if context.auth_enabled and context.backend %}- `backend/migrations/0011_identity_erasure_operation_id_guard.sql` replaces `erasure_job_failed()` so a failed identity deletion job whose `operationId` is not a UUID no longer aborts the job's status update. Apply it after `0006_identity_erasure_reonboarding.sql`.
+{% endif %}
 ## [0.31.0] - 2026-11-26
 
 {% if context.auth_oidc and context.backend %}- `config/local.toml` sets `auth.authorized_parties` to this product's web, mobile and local client IDs. Access tokens from other clients now fail locally even with the backend audience. Set the same list in staging and production.
