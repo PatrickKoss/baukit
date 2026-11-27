@@ -447,3 +447,50 @@ pub(crate) fn validate_name(name: &str) -> Result<()> {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::Path};
+
+    use crate::{LAST_TEMPLATE_MIGRATION_VERSION, PLATFORM_MIGRATION_PATH};
+
+    fn migration_versions(directory: &Path, versions: &mut Vec<u64>) -> anyhow::Result<()> {
+        for entry in fs::read_dir(directory)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                migration_versions(&path, versions)?;
+                continue;
+            }
+            let in_migrations = path
+                .parent()
+                .is_some_and(|parent| parent.ends_with("backend/migrations"));
+            let version = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .filter(|name| name.ends_with(".sql"))
+                .and_then(|name| name.split('_').next())
+                .and_then(|prefix| prefix.parse::<u64>().ok());
+            if let (true, Some(version)) = (in_migrations, version) {
+                versions.push(version);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn platform_migration_follows_every_template_migration() -> anyhow::Result<()> {
+        let templates = Path::new(env!("CARGO_MANIFEST_DIR")).join("../templates");
+        let mut versions = Vec::new();
+        migration_versions(&templates, &mut versions)?;
+        assert_eq!(
+            versions.iter().max().copied(),
+            Some(LAST_TEMPLATE_MIGRATION_VERSION)
+        );
+        let platform = format!(
+            "backend/migrations/{:04}_platform.sql",
+            LAST_TEMPLATE_MIGRATION_VERSION + 1
+        );
+        assert_eq!(PLATFORM_MIGRATION_PATH, platform);
+        Ok(())
+    }
+}

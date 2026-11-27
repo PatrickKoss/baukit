@@ -156,8 +156,8 @@ Crates must go up in dependency order, because each one's internal
 
 ```text
 baukit-core, baukit-events, baukit-openapi, baukit-sync, baukit-config,
-baukit-runtime, baukit-telemetry, baukit-credential-vault, baukit-http,
-baukit-resilience, baukit-egress, baukit-jobs, baukit-ops, baukit-auth, baukit-erasure,
+baukit-runtime, baukit-telemetry, baukit-credential-vault, baukit-resilience,
+baukit-http, baukit-egress, baukit-jobs, baukit-ops, baukit-auth, baukit-erasure,
 baukit-data-subject, baukit-integrations,
 baukit-push, baukit-ratelimit, baukit-suite, baukit-mcp, baukit-test
 ```

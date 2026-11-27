@@ -374,7 +374,7 @@ above. Add the capability and next migration path to the product manifest:
 platform = true
 
 [platform]
-migration = "backend/migrations/0012_platform.sql"
+migration = "backend/migrations/0016_platform.sql"
 ```
 
 Generate a reference product with the same flags in an empty directory, then copy
