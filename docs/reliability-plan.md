@@ -257,8 +257,9 @@ them.
   panel in `baukit-service-overview.json`.
   Acceptance: `--step metric-names`, `--step observability-rules`, `--step observability-tests`.
 - [x] **CB3 Deferred job outcome** (D7): `JobError::deferred(delay)`; store method
-  `release(job_id, worker_id, run_after, consume_attempt: bool)` that resets to `pending`, decrements
-  `attempts` when not consuming, and increments `deferrals`. Migration adds `deferrals integer not null
+  `release(lease: &JobLease, run_after, reason: ReleaseReason, now)` that resets to `pending`. `Shutdown`
+  and `Deferred` give the attempt back, `DeferredPastCap` keeps it, and only `Deferred` increments
+  `deferrals`. Migration adds `deferrals integer not null
   default 0`. `WorkerConfig.max_deferrals` (default 100). A helper maps `EgressError` with
   `CircuitOpen`/`Saturated` to `deferred` and everything else to the existing classes.
   Acceptance: store conformance tests (memory and Postgres, `--include-ignored`) for deferral without
@@ -365,9 +366,9 @@ them.
   configuration errors and panics in the runner itself end `run`.
   Acceptance: a Postgres test that pauses the container for 10 s mid-run; the runner resumes, no
   in-flight attempt is aborted by the runner, readiness flips red and back.
-- [x] **WK2 Heartbeat and release** (RL-41): `heartbeat(job_id, worker_id, lease)` extends
+- [x] **WK2 Heartbeat and release** (RL-41): `heartbeat(lease: &JobLease, lease_for, now)` extends
   `locked_until` every lease/3 while the handler runs. On drain the runner stops claiming, signals
-  `JobCancellation`, waits up to the drain budget, and calls `release(.., consume_attempt: false)` for
+  `JobCancellation`, waits up to the drain budget, and calls `release(.., ReleaseReason::Shutdown, ..)` for
   every attempt still running. The default lease drops to 60 s now that it is renewed; the generated
   values drop the 900 s override.
   Acceptance: a test that SIGTERMs a worker during a 2 min job; another worker claims it within a few
@@ -577,8 +578,8 @@ PL6; FX3, FX4; REL1-REL3.
 | rel-tpl-backend | CB3 helper, WK5 suite key, CB8, IN2/IN4/IN5/IN6 wiring, migrations, CL6, FX2 | merged after three rounds; Docker and fixture gates pending |
 | rel-fx | FX3 platform e2e cases, FX4 k6 load smoke | merged; suites and the smoke not run yet |
 | rel-docs | RC3 contract doc, crate and package changelogs | merged, numbers spot-checked against code |
-| rel-merge | merge origin/main (baukit 0.31.0) | running |
-| orchestrator | REL1-REL3, Docker and fixture gates, platform e2e, full gate | Docker tests green on the pre-merge head |
+| rel-merge | merge origin/main (baukit 0.31.0) | merged after two rounds (61bf4792) |
+| orchestrator | REL1-REL3, Docker and fixture gates, platform e2e, full gate | Docker tests green on the merged head after one suite fix; platform e2e running |
 
 ## Open questions
 
@@ -790,3 +791,28 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   which the contract requires. rel-docs found the gap.
 - origin/main moved to 0.31.0 (183 commits) and conflicts in 69 files. rel-merge is resolving it.
   It keeps main's attempt-bound lease API and renumbers our migrations after main's.
+
+### 2026-11-27
+
+- rel-merge merged after two rounds.
+  - Round 1 moved the requeue `.merge` into baukit-ops, so main's bin-crate `security` rule could
+    no longer see it. I sent it back. The generated bin now merges the route through
+    `rate_limited` with an in-memory IP quota of 10 calls a minute, and `requeue_mount` checks the
+    429.
+  - The JWKS cache is main's, with our one-hour stale grace and main's 30 s cooldown. The migration
+    doc and the auth changelog now say one hour.
+  - Plan signatures for `release` and `heartbeat` now match the `&JobLease` API.
+  - The squawk lint has not run. No ci-gate step installs squawk, and the `mise exec` call was
+    denied. It waits for the user.
+- Docker run on the merged head (`--include-ignored`, all features): 1697 passed, 2 failed. Main's
+  vault v2 record tests in baukit-suite migrated only to 005, so the store's `next_probe_at` column
+  was missing. They now apply 006 as well (7394b33d), and baukit-suite passes 219 of 219.
+- Platform e2e on the merged head has not passed yet, and the runs so far say nothing about the
+  code:
+  - The first two runs failed because the snapshot copied untracked target directories I had left
+    in the build worktree. The 1.2 GB repo made Flux's `git-upload-pack` exceed its 1 m timeout. The
+    directories now live outside every worktree.
+  - The third run hit kubelet DiskPressure (under 20 GiB free) while other sessions' gates filled the
+    disk.
+- Cargo warns about unused workspace dependencies `arc-swap`, `proptest` and
+  `proptest-state-machine`. Main has the same warnings, so this is out of scope here.
