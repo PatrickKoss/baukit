@@ -1,10 +1,10 @@
 use std::{env, error::Error, io, net::SocketAddr, sync::Arc, time::Duration};
 
 use baukit_config::{BaukitConfig, Environment};
-use baukit_jobs::{JobHandler, PostgresJobStore, WorkerConfig, WorkerRunner};
+use baukit_jobs::{JobHandler, PostgresJobStore, WorkerRunner};
 use baukit_ops::{TrafficGate, spawn_pool_metrics_sampler};
 use baukit_runtime::{
-    DrainBudget, ProcessKind, RestartPolicy, ServiceInfo, ShutdownToken, TaskSupervisor, build_info,
+    ProcessKind, RestartPolicy, ServiceInfo, ShutdownToken, TaskSupervisor, build_info,
 };
 use baukit_telemetry::{Telemetry, TelemetryBuilder, tracing};
 use sqlx::PgPool;
@@ -13,6 +13,7 @@ use tokio::net::TcpListener;
 use {{ context.app_crate }}_bin::ProductConfig;
 use {{ context.app_crate }}_bin::config_loader;
 use {{ context.app_crate }}_bin::mount_requeue_route;
+use {{ context.app_crate }}_bin::worker_drain_budget;
 use {{ context.app_crate }}_bin::worker_operations_router;
 {% if context.platform or context.auth_enabled %}use {{ context.app_crate }}_worker::retention::RetentionJobHandler;
 {% else %}use {{ context.app_crate }}_worker::DemoJobHandler;
@@ -53,9 +54,9 @@ async fn run(config: BaukitConfig<ProductConfig>) -> Result<(), Box<dyn Error>> 
     let pool_metrics = spawn_pool_metrics_sampler(pool.clone(), POOL_METRICS_INTERVAL)?;
     let (runner, job_types) = build_runner(&config, &pool){% if context.platform or context.auth_enabled %}.await{% endif %}?;
 
-    let shutdown = ShutdownToken::with_budget(DrainBudget::new(
+    let shutdown = ShutdownToken::with_budget(worker_drain_budget(
         config.shutdown.drain_timeout,
-        job_timeout,
+        &config.product.worker.worker_config(),
     )?);
     let traffic_gate = TrafficGate::new();
     shutdown.on_drain({
@@ -121,12 +122,7 @@ fn init_telemetry(
     let runner = WorkerRunner::new(
         Arc::new(job_store(pool)),
         handler,
-        WorkerConfig {
-            concurrency: config.product.worker.concurrency,
-            poll_interval: Duration::from_millis(config.product.worker.poll_interval_milliseconds),
-            job_timeout: Duration::from_secs(config.product.worker.job_timeout_seconds),
-            ..WorkerConfig::default()
-        },
+        config.product.worker.worker_config(),
     )?{% if context.platform or context.auth_enabled %}
     .with_recurring(recurring)?{% endif %};
     Ok((runner, job_types))

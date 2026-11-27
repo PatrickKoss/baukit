@@ -1,16 +1,18 @@
 use std::{
     collections::BTreeMap,
     sync::{Arc, RwLock},
-};
+{% if context.worker %}    time::Duration,
+{% endif %}};
 
 use axum::Router;
 use baukit_config::{Validate{% if context.auth_enabled or context.worker %}, ValidationError{% endif %}, ValidationErrors};
-{% if context.worker %}use baukit_jobs::WorkerRunner;
+{% if context.worker %}use baukit_jobs::{WorkerConfig, WorkerRunner};
 {% endif %}use baukit_ops::{
     OpsRouter, PrometheusHandle, ReadinessError, ReadinessRegistry, RegistrationError,
     ServiceIdentity, TrafficGate,
 };
-
+{% if context.worker %}use baukit_runtime::{DrainBudget, DrainBudgetError};
+{% endif %}
 {% if context.auth_enabled %}use {{ context.app_crate }}_domain::InternalUser;
 use {{ context.app_crate }}_domain::Item;
 {% else %}use {{ context.app_crate }}_domain::Item;
@@ -204,6 +206,32 @@ impl Default for WorkerProductConfig {
             poll_interval_milliseconds: 250,
         }
     }
+}
+
+impl WorkerProductConfig {
+    /// Runner settings from this section, with `WorkerConfig` defaults for the rest.
+    pub fn worker_config(&self) -> WorkerConfig {
+        WorkerConfig {
+            concurrency: self.concurrency,
+            poll_interval: Duration::from_millis(self.poll_interval_milliseconds),
+            job_timeout: Duration::from_secs(self.job_timeout_seconds),
+            ..WorkerConfig::default()
+        }
+    }
+}
+
+/// Checks the drain against the runner's release reserve, not the job timeout,
+/// because the runner releases attempts that outlive the drain back to pending.
+///
+/// # Errors
+///
+/// Returns [`DrainBudgetError`] when the release reserve and the flush reserve
+/// do not fit in `drain_timeout`.
+pub fn worker_drain_budget(
+    drain_timeout: Duration,
+    worker: &WorkerConfig,
+) -> Result<DrainBudget, DrainBudgetError> {
+    DrainBudget::new(drain_timeout, worker.release_reserve)
 }
 
 impl Validate for WorkerProductConfig {
