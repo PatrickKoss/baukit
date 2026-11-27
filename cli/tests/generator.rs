@@ -6259,6 +6259,12 @@ fn authenticated_backends_copy_the_reonboarding_migration() -> anyhow::Result<()
                 "../../rust/crates/baukit-erasure/migrations/0002_erasure_reonboarding.sql"
             )
         );
+        assert_eq!(
+            fs::read(root.join("backend/migrations/0011_identity_erasure_operation_id_guard.sql"))?,
+            include_bytes!(
+                "../../rust/crates/baukit-erasure/migrations/0003_erasure_operation_id_guard.sql"
+            )
+        );
     }
     Ok(())
 }

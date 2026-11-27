@@ -89,6 +89,10 @@ pub enum ErasureError {
     /// Unsafe or incomplete service configuration.
     #[error("invalid erasure configuration")]
     Configuration,
+    /// The subject is not one well-formed provider path segment, see
+    /// [`crate::kernel::is_well_formed_subject`]. Nothing was written or queued.
+    #[error("invalid erasure subject")]
+    InvalidSubject,
     /// Database operation failed.
     #[error("erasure database operation failed")]
     Database(#[from] sqlx::Error),
@@ -106,6 +110,7 @@ impl ErasureError {
             Self::Conflict => "conflict",
             Self::ProfileErased => "profile_erased",
             Self::Configuration => "configuration",
+            Self::InvalidSubject => "invalid_subject",
             Self::Database(_) => "database",
             Self::Jobs(_) => "job_store",
             Self::Receipt(_) => "receipt",
@@ -368,6 +373,13 @@ impl PostgresErasureStore {
             .fetch_one(&mut **transaction).await?;
         Ok(serde_json::from_value(response)?)
     }
+    pub(crate) async fn fail(&self, operation_id: Uuid) -> Result<bool, ErasureError> {
+        let failed = sqlx::query("UPDATE erasure_operations SET state = 'failed', response = jsonb_build_object('status', 'failed', 'operationId', id) WHERE id = $1 AND state = 'pending'")
+            .bind(operation_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(failed.rows_affected() > 0)
+    }
 }
 fn keyed_hash(secret: &Secret<String>, domain: &[u8], input: &str) -> Vec<u8> {
     let key = hmac::Key::new(hmac::HMAC_SHA256, secret.expose().as_bytes());
@@ -500,7 +512,8 @@ impl ErasureService {
     ///
     /// # Errors
     ///
-    /// [`ErasureError::Configuration`] for an empty subject, [`ErasureError::Database`] or
+    /// [`ErasureError::Configuration`] for an empty subject, [`ErasureError::InvalidSubject`]
+    /// for any other subject the kernel rejects, [`ErasureError::Database`] or
     /// [`ErasureError::Jobs`] when writing the fence or queueing identity deletion fails, and
     /// [`ErasureError::Receipt`] when the outcome cannot be serialized or decoded.
     pub async fn fence_as_operator_in_transaction(
@@ -508,9 +521,7 @@ impl ErasureService {
         transaction: &mut Transaction<'_, Postgres>,
         subject: &str,
     ) -> Result<ErasureOutcome, ErasureError> {
-        if subject.is_empty() {
-            return Err(ErasureError::Configuration);
-        }
+        validate_subject(subject)?;
         self.store.lock_subject(transaction, subject).await?;
         let subject_hash = self.store.subject_hash(subject);
         let outcome = ErasureOutcome {
@@ -554,7 +565,8 @@ impl ErasureService {
     /// # Errors
     ///
     /// [`ErasureError::InvalidKey`] for a key that is not a 16 to 128 byte header value,
-    /// [`ErasureError::Configuration`] for an empty subject, [`ErasureError::Conflict`] when the
+    /// [`ErasureError::Configuration`] for an empty subject, [`ErasureError::InvalidSubject`] for
+    /// any other subject the kernel rejects, [`ErasureError::Conflict`] when the
     /// key belongs to another subject, [`ErasureError::ProfileErased`] for a fenced session, and
     /// [`ErasureError::Database`] or [`ErasureError::Receipt`] when the lookup fails or the
     /// stored response does not decode.
@@ -726,8 +738,15 @@ fn validate_request(subject: &str, key: &str) -> Result<(), ErasureError> {
     IdempotencyKeyRule::new(16, 128)
         .parse(&value)
         .map_err(|_| ErasureError::InvalidKey)?;
+    validate_subject(subject)
+}
+
+fn validate_subject(subject: &str) -> Result<(), ErasureError> {
     if subject.is_empty() {
         return Err(ErasureError::Configuration);
+    }
+    if !crate::kernel::is_well_formed_subject(subject) {
+        return Err(ErasureError::InvalidSubject);
     }
     Ok(())
 }

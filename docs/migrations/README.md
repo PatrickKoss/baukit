@@ -3,6 +3,12 @@
 Each guide covers one breaking or behaviour change and says what a product has to do. Read the ones for the
 crates and packages your product uses.
 
+## Upgrading from 0.31.0
+
+- [erasure-subject-rule.md](erasure-subject-rule.md): erasure rejects subjects with control characters at the
+  call, and the worker fails operations itself. Copy the new `baukit-erasure`
+  `0003_erasure_operation_id_guard.sql` after 0002.
+
 ## Upgrading from 0.30.x
 
 Do the steps in this order. The database changes are expand-only, so the 0.30.x binary keeps running against the
