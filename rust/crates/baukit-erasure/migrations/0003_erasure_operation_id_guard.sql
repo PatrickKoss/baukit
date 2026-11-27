@@ -1,5 +1,6 @@
 -- A non-UUID operationId no longer aborts the job's failure update.
 SET lock_timeout = '5s';
+SET statement_timeout = '1min';
 CREATE OR REPLACE FUNCTION erasure_job_failed() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.job_type = 'identity.account.delete' AND NEW.status = 'failed'
