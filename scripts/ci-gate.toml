@@ -24,6 +24,12 @@ shared = [
 [quality.cache]
 never = ["cargo-deny", "osv", "secret-scan", "platform-images", "migrations"]
 
+# The 0.32.0 gate started fuzz after the other lanes had drained the pool, so it got 1 core
+# and ran its 19 targets of 60 s one after another: 2236 s, the slowest lane. With 6 cores
+# the targets run in 4 rounds (about 240 s) and the build gets 6 jobs.
+[quality.min_cores]
+fuzz = 6
+
 [quality.gate_budget_minutes]
 full = 30
 affected = 15
