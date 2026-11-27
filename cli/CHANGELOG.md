@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Strict products get `scripts/gate_results.py`, the gate's result cache, and `[quality.cache] never` in `baukit.toml`. `baukit doctor` requires `scripts/gate_results.py` and its test, and fails when `quality.cache.never` names a step the gate does not have.
+
 ## [0.31.0] - 2026-11-26
 
 - New `baukit check security` rule. It fails when an `axum::serve` call lacks `into_make_service_with_connect_info`, a router is merged without `rate_limited` or `protect_routes`, an ops service is not `ClusterIP`, or a CORS origin is `null` or plain `http` outside local config.

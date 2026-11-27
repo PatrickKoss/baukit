@@ -18,6 +18,12 @@ shared = [
   "renovate*.json",
 ]
 
+# gate.py skips a step that passed on the same inputs. These steps read data that changes
+# without a commit: advisory databases (cargo-deny, osv, trivy in platform-images), the
+# git history (secret-scan) and the last release tag (migrations), so they always run.
+[quality.cache]
+never = ["cargo-deny", "osv", "secret-scan", "platform-images", "migrations"]
+
 [quality.gate_budget_minutes]
 full = 30
 affected = 15

@@ -556,6 +556,7 @@ class RunnerTests(unittest.TestCase):
                     "PATH": "/usr/bin:/bin",
                     "BAUKIT_GATE_CORES": "4",
                     "BAUKIT_GATE_DISK_FLOOR_GB": "0",
+                    "BAUKIT_GATE_CACHE": "off",
                 },
             )
             ran = (root / "ran").read_text().split("\n") if (root / "ran").exists() else []

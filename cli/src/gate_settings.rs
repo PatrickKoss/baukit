@@ -187,8 +187,10 @@ pub fn render_quality_extras(name: &str, capabilities: &Capabilities, strict: bo
     text.push_str("shared = []\n");
     let budget = GateBudgetMinutes::default();
     text.push_str(&format!(
-        "\n[quality.gate_budget_minutes]\nfull = {}\naffected = {}\n\n[quality.affected]\n",
-        budget.full, budget.affected
+        "\n[quality.gate_budget_minutes]\nfull = {}\naffected = {}\n\n{}\n[quality.affected]\n",
+        budget.full,
+        budget.affected,
+        cache::render_cache(capabilities)
     ));
     for (glob, tokens) in default_affected(capabilities) {
         let list = tokens
@@ -524,6 +526,11 @@ pub fn validate(
             failures.push(format!("quality.light names unknown lane or step `{name}`"));
         }
     }
+    cache::validate_never(
+        &quality.cache,
+        gate.map_or(&known, |gate| &gate.steps),
+        failures,
+    );
     deploy_values::validate_deploy_glob(quality, capabilities, gate, failures);
     validate_resources("resources", &quality.resources, &lanes_and_steps, failures);
     validate_resources(
@@ -547,7 +554,10 @@ pub fn validate(
     }
 }
 
+mod cache;
 mod deploy_values;
+
+pub use cache::CacheSettings;
 
 #[cfg(test)]
 mod tests {
@@ -672,11 +682,15 @@ mod tests {
     #[test]
     fn rendered_defaults_validate() {
         let caps = capabilities(true, true, true);
+        #[derive(Deserialize)]
+        struct Rendered {
+            quality: QualityManifest,
+        }
         let text = format!(
-            "profile = \"strict\"\n{}",
+            "[quality]\nprofile = \"strict\"\n{}",
             render_quality_extras("demo", &caps, true)
         );
-        let quality: QualityManifest = toml::from_str(&text).expect("quality parses");
+        let Rendered { quality } = toml::from_str(&text).expect("quality parses");
         assert_eq!(quality.gate_budget_minutes, GateBudgetMinutes::default());
         assert_eq!(
             quality.android_emulator_port,
@@ -685,6 +699,10 @@ mod tests {
         assert_eq!(quality.android_emulators, Some(2));
         assert_eq!(quality.gate_budget_minutes.full, 10);
         assert_eq!(quality.gate_budget_minutes.affected, 5);
+        assert_eq!(
+            quality.cache.never,
+            ["secret-scan", "osv", "cargo-deny", "migrations"]
+        );
         let mut failures = Vec::new();
         validate(&quality, &caps, None, &mut failures);
         assert!(failures.is_empty(), "{failures:?}");

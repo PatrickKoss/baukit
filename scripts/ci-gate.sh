@@ -5,7 +5,7 @@ repository_root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$repository_root"
 
 usage() {
-  echo "usage: scripts/ci-gate.sh [--affected BASE] [--plan] | --list-steps | --step NAME" >&2
+  echo "usage: scripts/ci-gate.sh [--affected BASE] [--plan] [--no-cache] | --list-steps | --step NAME" >&2
   exit 2
 }
 
@@ -355,7 +355,7 @@ case "${1:-}" in
     [ "$#" -eq 2 ] || usage
     "step_$(printf %s "$2" | tr - _)"
     ;;
-  "" | --affected | --plan)
+  "" | --affected | --plan | --no-cache)
     PYTHONPATH="templates/common/scripts${PYTHONPATH:+:$PYTHONPATH}" exec python3 templates/common/__strict__/scripts/gate.py run --name "Baukit gate" \
       --script "sh scripts/ci-gate.sh" --settings scripts/ci-gate.toml \
       --log-dir "${BAUKIT_GATE_LOG_DIR:-.ci-gate}" --cargo-workspace rust/Cargo.toml "$@"

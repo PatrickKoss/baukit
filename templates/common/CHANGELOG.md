@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [0.31.0] - 2026-11-26
+{% if context.quality_strict %}- `scripts/gate.py` skips a step that passed on the same inputs and prints `cached (passed at <sha>, <age>)`. The inputs are the tracked files `--affected` would send to the step, the gate scripts, `baukit.toml` and the run's `BAUKIT_*` settings. The cache works only on a clean tree, keeps passes for `[quality.cache] max_age_days` (7 by default) in `${XDG_CACHE_HOME:-$HOME/.cache}/baukit/gate-results/`, and never serves the steps in `[quality.cache] never`. It is off in CI, with `--no-cache`, with `BAUKIT_GATE_CACHE=off` and for a path dependency on baukit. Copy `scripts/gate.py`, `scripts/gate.test.py`, `scripts/gate_results.py`, `scripts/gate_results.test.py` and `scripts/quality-gate.sh` from the template, add `python3 scripts/gate_results.test.py` to `step_scripts_tests` in a forked `scripts/quality-gate.sh`, and add `[quality.cache]` with `never = ["secret-scan", "osv"{% if context.backend %}, "cargo-deny", "migrations"{% endif %}]` to `baukit.toml`, plus any product step that reads data from outside the repository. `gate.py` now needs `scripts/gate_results.py` next to it, and `baukit doctor` requires both files.
+
+{% endif %}## [0.31.0] - 2026-11-26
 
 {% if context.auth_oidc and context.backend %}- `config/local.toml` sets `auth.authorized_parties` to this product's web, mobile and local client IDs. Access tokens from other clients now fail locally even with the backend audience. Set the same list in staging and production.
 {% endif %}{% if context.auth_enabled and context.backend %}- `backend/migrations/0010_baukit_auth_browser_session_record_ids.sql` adds `baukit_auth_browser_sessions.record_id` for vault v2 session records. Apply it before deploying the backend built against this baukit release.

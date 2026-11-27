@@ -311,6 +311,12 @@ pub struct QualityManifest {
     pub creator_resources: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub ci: gate_settings::CiSettings,
+    #[serde(default, skip_serializing_if = "is_default_cache")]
+    pub cache: gate_settings::CacheSettings,
+}
+
+fn is_default_cache(cache: &gate_settings::CacheSettings) -> bool {
+    *cache == gate_settings::CacheSettings::default()
 }
 
 impl Default for QualityManifest {
@@ -333,6 +339,7 @@ impl Default for QualityManifest {
             shared_resources: BTreeMap::new(),
             creator_resources: BTreeMap::new(),
             ci: gate_settings::CiSettings::default(),
+            cache: gate_settings::CacheSettings::default(),
         }
     }
 }
