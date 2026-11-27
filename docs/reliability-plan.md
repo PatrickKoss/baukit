@@ -882,3 +882,8 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   failed). With migrations an idle API answers 200 in about 3 ms. The 4.6 s admitted p99 came from a
   debug build under 2500 VUs on the same host as k6. The server sheds after its 1 s queue timeout, so
   the extra time sits in front of the admission layer. Rerun against a release build.
+- FX4 correction: the release build gives the same admitted p99 (4.58 s, median 1.0 s), so the debug
+  build was not the cause. 21668 sheds, all 503 with Retry-After, 0 unexpected statuses, the process
+  stayed up. On the server every shed takes 1 to 2.5 s, against a 1 s queue timeout, and so do 41% of
+  the 200s. Timers or wake-ups run late under 2500 connections, and k6 adds more on the same host.
+  rel/fx4 measures the k6 timing split, the server layers and pinned-core runs, then fixes the cause.
