@@ -52,7 +52,7 @@ apply it.
      answers `503` instead of `429`, the JWKS stale grace is 1 h, and entitlements serve a stale snapshot
      until `grace_until`.
 4. Run the new tests. The backend template adds `tests/postgres_outage.rs`, the worker template
-   `tests/requeue_mount.rs`, and `baukit-test` adds fault fixtures (`PostgresTestContainer::fault`,
+   `tests/requeue_mount.rs` and `tests/worker_drain.rs` for `worker_drain_budget`, and `baukit-test` adds fault fixtures (`PostgresTestContainer::fault`,
    `RedisTestContainer::fault`, `start_toxiproxy`) for your own outage tests. Strict products copy the
    gate result cache (`scripts/gate_results.py` and its test) and add `[quality.cache] never` to
    `baukit.toml`, as `templates/common/CHANGELOG.md` describes. `baukit doctor` requires both files.
