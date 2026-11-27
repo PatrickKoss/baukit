@@ -9,11 +9,10 @@ const NAME: &str = "security";
 const SERVE_CALL: &str = "axum::serve(";
 const CONNECT_INFO: &str = "into_make_service_with_connect_info";
 const MERGE_CALL: &str = ".merge(";
-const LIMITED_WRAPPERS: [&str; 4] = [
+const LIMITED_WRAPPERS: [&str; 3] = [
     "rate_limited(",
     "protect_routes(",
     "baukit_ratelimit::layers(",
-    "layers(",
 ];
 const BIN_CRATE_SUFFIX: &str = "-bin";
 const CLUSTER_IP: &str = "ClusterIP";
@@ -386,15 +385,16 @@ mod tests {
             "let api = api.merge(rate_limited(mcp, limits));",
             "let api = api.merge(\n    protect_routes(x, late, auth, limits)?,\n);",
             "let api = api.merge(baukit_ratelimit::layers(router, store, options));",
-            "let api = api.merge(layers(router, store, options));",
             "let api = api.merge(platform.router);",
+            "let api = api.merge(layers(router, options));",
+            "let api = api.merge(baukit_http::layers(router, options));",
         ]
         .join("\n");
         assert_eq!(
             messages("crates/shop-bin/src/compose.rs", &source),
-            [
-                "security: crates/shop-bin/src/compose.rs:7: `.merge(x)` in a bin crate must wrap x in `rate_limited(` or `protect_routes(`"
-            ]
+            [6, 7, 8].map(|line| format!(
+                "security: crates/shop-bin/src/compose.rs:{line}: `.merge(x)` in a bin crate must wrap x in `rate_limited(` or `protect_routes(`"
+            ))
         );
         assert!(messages("crates/shop-api/src/lib.rs", &source).is_empty());
     }

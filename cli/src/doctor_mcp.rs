@@ -44,11 +44,10 @@ fn source(
     ))
 }
 
-const LIMITED_MERGES: [&str; 4] = [
+const LIMITED_MERGES: [&str; 3] = [
     ".merge(rate_limited(",
     ".merge(protect_routes(",
     ".merge(baukit_ratelimit::layers(",
-    ".merge(layers(",
 ];
 
 /// Rewrites `.merge(w(x, ..))` for each IP-limiting wrapper `w` in [`LIMITED_MERGES`] to
@@ -634,9 +633,9 @@ fn validate(config: &McpConfig) { config.validate(); }
         );
         assert_eq!(
             unwrap_rate_limited(
-                "api.merge(baukit_ratelimit::layers(mcp,store,options)).merge(layers(other,store,options))"
+                "api.merge(baukit_ratelimit::layers(mcp,store,options)).merge(layers(other,options)).merge(baukit_http::layers(third,options))"
             ),
-            "api.merge(mcp).merge(other)"
+            "api.merge(mcp).merge(layers(other,options)).merge(baukit_http::layers(third,options))"
         );
     }
 
