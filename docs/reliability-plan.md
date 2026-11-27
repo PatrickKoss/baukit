@@ -909,3 +909,8 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   `include_*!` and Cargo path edges and fails on a missing one (checked by dropping verus).
   Snapshots re-blessed after both merges, and only `strict.tree` changed. scripts-tests,
   python-lint, shell-lint, cli-fmt, cli-clippy and cli-tests pass on the merged head.
+- REL1 prepared: `scripts/release-train.sh minor` gave 0.32.0 (fc0516fd), and version coherence
+  passes. d7's validate.sh fetch-race fix is cherry-picked first (502617d6). The bundle's one full
+  gate is queued on fc0516fd behind the other sessions' gates. rel/upgrade-guide writes the 0.31.x
+  upgrade section, its migration guides and the v0.32.0 compatibility matrix entry in parallel.
+  Those are docs only, so an affected re-gate covers them after the merge.
