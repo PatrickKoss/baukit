@@ -923,3 +923,4 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
   - `DEFAULT_JWKS_STALE_GRACE` is private;
   - the named APIs exist with the documented signatures.
 - Worktrees rel-fuzz, rel-cache, rel-fx4, rel-upgrade-guide and rel-merge are removed.
+- origin/main 5d192112 merged (10e39672): the Loki gateway and e2e echo image move to nginx-unprivileged 1.31.10-alpine. Six libxml2 CVEs that have no fixed build yet are allowlisted until 2027-01-22. The web template moves to the same index digest, with snapshots blessed (only `web/Dockerfile` and `CHANGELOG.md` changed). The first full gate stopped at the 120 GB disk floor and has been requeued on this head.
