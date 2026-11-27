@@ -21,12 +21,13 @@ pub struct ScaledQuota {
 }
 
 impl ScaledQuota {
-    /// Converts a quota, clamping every value to [`MAX_SCALED`].
+    /// Converts a quota, shortening the period so `capacity * period_ms` fits in [`MAX_SCALED`].
     #[must_use]
     pub fn from_quota(quota: Quota) -> Self {
+        let max_period_ms = (MAX_SCALED / quota.capacity().max(1)).max(1);
         let period_ms = u64::try_from(quota.period().as_millis())
             .unwrap_or(u64::MAX)
-            .clamp(1, MAX_SCALED);
+            .clamp(1, max_period_ms);
         Self {
             rate: quota.requests_per_period().min(MAX_SCALED),
             capacity: quota.capacity().saturating_mul(period_ms).min(MAX_SCALED),
@@ -80,11 +81,20 @@ mod tests {
     }
 
     #[test]
-    fn huge_periods_clamp_instead_of_overflowing() {
+    fn huge_periods_keep_request_capacity() {
+        let quota = Quota::new(100, Duration::MAX, 0).expect("quota");
+        let scaled = ScaledQuota::from_quota(quota);
+        assert_eq!(scaled.cost, MAX_SCALED / 100);
+        assert_eq!(scaled.capacity / scaled.cost, 100);
+        assert!(scaled.capacity <= MAX_SCALED);
+    }
+
+    #[test]
+    fn huge_capacity_and_period_stay_within_max_scaled() {
         let quota = Quota::new(u64::MAX, Duration::MAX, 0).expect("quota");
         let scaled = ScaledQuota::from_quota(quota);
+        assert_eq!(scaled.cost, 1);
         assert_eq!(scaled.capacity, MAX_SCALED);
-        assert_eq!(scaled.cost, MAX_SCALED);
     }
 }
 
