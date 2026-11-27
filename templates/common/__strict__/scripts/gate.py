@@ -28,6 +28,7 @@ from pathlib import Path
 
 from gate_disk import disk_error
 from gate_locks import (
+    POOL_POLL_SECONDS,
     CorePool,
     Need,
     ResourceLocks,
@@ -334,6 +335,8 @@ class CoreBudget:
         self.emulator_cores = min(self.cores, max(1, emulators.cores))
         self.emulator_steps = emulators.steps
         self.reserved = 0
+        self.minimums: dict[str, int] = {}
+        self.held_for_minimums = 0
         self.condition = threading.Condition()
 
     def reserve(self, cores: int) -> None:
@@ -341,6 +344,20 @@ class CoreBudget:
         with self.condition:
             self.reserved = min(self.cores - 1, max(0, cores))
             self.condition.notify_all()
+
+    def require_minimums(self, minimums: dict[str, int]) -> None:
+        """Set each named step's minimum cores, clamped to the budget."""
+        self.minimums = {name: min(self.cores, max(1, cores)) for name, cores in minimums.items()}
+
+    def hold_for_minimums(self, cores: int) -> None:
+        """Hold cores back from other steps while steps with a minimum wait for it."""
+        with self.condition:
+            self.held_for_minimums = max(0, cores)
+            self.condition.notify_all()
+
+    def held_back(self, minimum_step: bool) -> int:
+        held = self.reserved if minimum_step else self.reserved + self.held_for_minimums
+        return min(self.cores - 1, held)
 
     def share(self, lanes: int) -> int:
         cores = self.cores
@@ -356,20 +373,42 @@ class CoreBudget:
         weighted = -(-ceiling * seconds // total_seconds)
         return max(even, min(ceiling, weighted, max(1, self.available())))
 
-    def acquire(self, want: int, minimum: int = 1, *, emulator: bool = False) -> int:
+    def acquire(
+        self, want: int, minimum: int = 1, *, emulator: bool = False, minimum_step: bool = False
+    ) -> int:
+        """Steps with a configured minimum skip each other's holds, so two of them
+        never wait on cores held for the other."""
         want = min(self.cores, max(1, want))
         minimum = min(want, max(1, minimum))
         if self.pool is not None:
-            return self.pool.acquire(want, minimum)
+            return self.acquire_from_pool(want, minimum, emulator or minimum_step)
         with self.condition:
 
             def usable() -> int:
-                return self.free if emulator else self.free - self.reserved
+                return self.free if emulator else self.free - self.held_back(minimum_step)
 
             self.condition.wait_for(lambda: usable() >= minimum)
             granted = min(want, usable())
             self.free -= granted
             return granted
+
+    def acquire_from_pool(self, want: int, minimum: int, exempt: bool) -> int:
+        """Leave the cores held for waiting minimums in the shared pool; the emulator
+        reserve stays local to this gate, as before."""
+        pool = self.pool
+        if pool is None:
+            return 0
+        while not exempt:
+            with self.condition:
+                held = self.held_for_minimums
+                if held == 0:
+                    break
+                usable = pool.available() - min(self.cores - 1, held)
+                if usable >= minimum:
+                    want = min(want, usable)
+                    break
+                self.condition.wait(POOL_POLL_SECONDS)
+        return pool.acquire(want, minimum)
 
     def available(self) -> int:
         if self.pool is not None:
@@ -481,6 +520,23 @@ def emulator_cores(settings: dict, environment: dict[str, str]) -> int:
         "android_emulators", DEFAULT_ANDROID_EMULATORS
     )
     return CORES_PER_EMULATOR * int(emulators)
+
+
+def min_cores(settings: dict) -> dict[str, int]:
+    return dict(settings.get("quality", {}).get("min_cores", {}))
+
+
+def min_cores_error(settings: dict, steps: list[Step]) -> str | None:
+    configured = settings.get("quality", {}).get("min_cores", {})
+    if not isinstance(configured, dict):
+        return "gate: quality.min_cores must be a table of step names to positive integers"
+    names = {step.name for step in steps}
+    for name, cores in configured.items():
+        if name not in names:
+            return f"gate: quality.min_cores names unknown step {name}"
+        if isinstance(cores, bool) or not isinstance(cores, int) or cores < 1:
+            return f"gate: quality.min_cores.{name} must be a positive integer, got {cores!r}"
+    return None
 
 
 def emulator_steps(settings: dict, environment: dict[str, str]) -> frozenset[str]:
@@ -606,6 +662,11 @@ class Runner:
             item.step.name for item in running if item.step.name in self.budget.emulator_steps
         }
         self.emulators_running = 0
+        self.minimums_waiting = {
+            item.step.name
+            for item in running
+            if item.step.name in self.budget.minimums and not is_light(item.step, light)
+        }
         self.started = time.monotonic()
         self.update_reserve()
 
@@ -624,10 +685,11 @@ class Runner:
             if status == "passed":
                 self.save_history(name, seconds)
             self.emulators_waiting.discard(name)
+            self.minimums_waiting.discard(name)
             self.update_reserve()
         self.done[name].set()
 
-    def emulator_ready(self, name: str) -> bool:
+    def step_ready(self, name: str) -> bool:
         step = next(item.step for item in self.planned if item.step.name == name)
         return (
             name not in self.status
@@ -642,9 +704,16 @@ class Runner:
     def update_reserve(self) -> None:
         """Reserve emulator cores once an emulator step's dependencies passed, before
         the steps that waited on the same dependencies wake up and drain the pool."""
-        ready = any(self.emulator_ready(name) for name in self.emulators_waiting)
+        ready = any(self.step_ready(name) for name in self.emulators_waiting)
         waiting = ready and self.emulators_running == 0
         self.budget.reserve(self.budget.emulator_cores if waiting else 0)
+        self.budget.hold_for_minimums(
+            sum(
+                self.budget.minimums[name]
+                for name in self.minimums_waiting
+                if self.step_ready(name)
+            )
+        )
 
     def save_history(self, name: str, seconds: int) -> None:
         self.history[name] = max(1, seconds)
@@ -768,7 +837,17 @@ class Runner:
                 self.emulators_running += 1
                 self.update_reserve()
             return cores, True
+        minimum = self.budget.minimums.get(step.name)
+        if minimum is not None:
+            return self.minimum_cores(step, share, minimum), True
         return self.budget.acquire(share), True
+
+    def minimum_cores(self, step: Step, share: int, minimum: int) -> int:
+        cores = self.budget.acquire(max(share, minimum), minimum, minimum_step=True)
+        with self.lock:
+            self.minimums_waiting.discard(step.name)
+            self.update_reserve()
+        return cores
 
     def release_cores(self, step: Step, cores: int) -> None:
         self.budget.release(cores)
@@ -989,6 +1068,7 @@ def worker_budget(
         ),
         pool,
     )
+    budget.require_minimums(min_cores(settings))
     if pool is not None:
         extras.append(f"cores: {budget.cores} slots shared through {pool.directory}")
     workers = budget.share(len(lanes))
@@ -1003,6 +1083,9 @@ def worker_budget(
         "for the emulators; "
         f"light: {', '.join(sorted(LIGHT_LANES | light))}"
     )
+    if budget.minimums:
+        minimums = ", ".join(f"{name} {cores}" for name, cores in sorted(budget.minimums.items()))
+        extras.append(f"workers: minimum cores, held back until the step starts: {minimums}")
     return budget
 
 
@@ -1171,6 +1254,7 @@ def run_command(arguments: argparse.Namespace) -> int:
         or fast_lane_wait_error(steps, resource_map(settings))
         or waits_for_error(steps, settings)
         or worker_caps_error(settings)
+        or min_cores_error(settings, steps)
         or cache_settings_error(settings, [step.name for step in steps])
     )
     if name_error:
