@@ -1,6 +1,60 @@
 //! One-call wiring of the PostgreSQL suite adapters for a product backend.
 //!
-//! ```ignore
+//! ```no_run
+//! # use std::sync::Arc;
+//! # use async_trait::async_trait;
+//! # use axum::Router;
+//! # use baukit_credential_vault::CredentialCipher;
+//! # use baukit_erasure::{ErasureFuture, ProductErasure};
+//! # use baukit_jobs::JobStore;
+//! # use baukit_ratelimit::RateLimitStore;
+//! # use baukit_suite::adapters::postgres::{PostgresSuiteEventOutbox, SuiteErasureOwnerLookup};
+//! # use baukit_suite::compose::{PostgresSuite, SuiteSettings};
+//! # use baukit_suite::config::SuiteConfig;
+//! # use baukit_suite::domain::SuiteEvent;
+//! # use baukit_suite::ports::{
+//! #     AppliedOutcome, SuiteApplyEvent, SuiteEventApplier, SuiteIdentity, SuiteIdentitySource, SuiteReplaySource,
+//! #     SuiteStoreError,
+//! # };
+//! # use jiff::civil::Date;
+//! # use sqlx::{PgConnection, PgPool};
+//! # use uuid::Uuid;
+//! # struct Config { suite: SuiteConfig }
+//! # struct ProductSuiteIdentitySource;
+//! # impl ProductSuiteIdentitySource { fn new(_: PgPool) -> Self { Self } }
+//! # #[async_trait]
+//! # impl SuiteIdentitySource for ProductSuiteIdentitySource {
+//! #     async fn identity(&self, _: Uuid) -> Result<SuiteIdentity, SuiteStoreError> { todo!() }
+//! #     async fn identity_in_transaction(&self, _: &mut PgConnection, _: Uuid) -> Result<SuiteIdentity, SuiteStoreError> { todo!() }
+//! # }
+//! # struct ProductSuiteReplaySource;
+//! # #[async_trait]
+//! # impl SuiteReplaySource for ProductSuiteReplaySource {
+//! #     async fn replay_since(&self, _: &mut PgConnection, _: Uuid, _: Date) -> Result<Vec<SuiteEvent>, SuiteStoreError> { todo!() }
+//! # }
+//! # struct ProductSuiteEventApplier;
+//! # #[async_trait]
+//! # impl SuiteEventApplier for ProductSuiteEventApplier {
+//! #     async fn apply(&self, _: &mut PgConnection, _: SuiteApplyEvent<'_>) -> Result<AppliedOutcome, SuiteStoreError> { todo!() }
+//! # }
+//! # struct ProductSuiteErasureOwnerLookup;
+//! # impl ProductSuiteErasureOwnerLookup { fn new(_: PgPool) -> Self { Self } }
+//! # #[async_trait]
+//! # impl SuiteErasureOwnerLookup for ProductSuiteErasureOwnerLookup {
+//! #     async fn owner(&self, _: &str) -> Result<Option<Uuid>, sqlx::Error> { todo!() }
+//! #     async fn owner_in_transaction(&self, _: &mut PgConnection, _: &str) -> Result<Option<Uuid>, sqlx::Error> { todo!() }
+//! #     async fn lock_owner_in_transaction(&self, _: &mut PgConnection, _: Uuid) -> Result<(), sqlx::Error> { todo!() }
+//! # }
+//! # struct PostgresProfileErasure;
+//! # impl ProductErasure for PostgresProfileErasure {
+//! #     fn erase<'a>(&'a self, _: &'a mut PgConnection, _: &'a str) -> ErasureFuture<'a, Result<(), sqlx::Error>> { todo!() }
+//! # }
+//! # struct PostgresRepository;
+//! # impl PostgresRepository { fn new(_: PgPool, _: Arc<PostgresSuiteEventOutbox>) -> Self { Self } }
+//! # fn wire<J: JobStore + 'static>(
+//! #     APP_ID: &str, PEERS_JSON: &str, CATALOG_JSON: &str, config: Config,
+//! #     cipher: Option<CredentialCipher>, pool: PgPool, limiter: Arc<dyn RateLimitStore>, job_store: J,
+//! # ) -> Result<(), Box<dyn std::error::Error>> {
 //! let settings = SuiteSettings::new(APP_ID, PEERS_JSON, CATALOG_JSON, &config.suite, cipher)?;
 //! let suite = PostgresSuite::builder(pool.clone(), settings, limiter)
 //!     .identity(Arc::new(ProductSuiteIdentitySource::new(pool.clone())))
@@ -14,6 +68,9 @@
 //! let repository = PostgresRepository::new(pool.clone(), suite.outbox.clone());
 //! let routes = Router::new().nest("/api/v1", suite.router(suite.api()));
 //! let worker = suite.worker(Arc::new(job_store))?;
+//! # let _ = (repository, routes, worker);
+//! # Ok(())
+//! # }
 //! ```
 
 use std::sync::Arc;
