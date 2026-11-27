@@ -207,13 +207,21 @@ run_kani_crate() {
     return 1
   fi
 }
+# The kani and verus lanes share ~/.kani. `cargo kani setup` reinstalls even when Kani is present,
+# so two lanes overwrite each other's bundle. Any other cargo kani call installs only when it is
+# missing or half-installed; the lock keeps two of those apart.
+kani_setup() {
+  lock="${XDG_CACHE_HOME:-$HOME/.cache}/baukit/kani-setup.lock"
+  mkdir -p "$(dirname "$lock")"
+  flock "$lock" cargo kani --version
+}
 run_kani() {
   if [ "$#" -eq 0 ]; then
     echo "kani: no crate has cfg(kani) harnesses"
     return 0
   fi
   # Idempotent; also installs the nightly toolchain Kani pins, which runner caches miss.
-  cargo kani setup
+  kani_setup
   kani_log=$(mktemp)
   for crate in "$@"; do
     run_kani_crate "$crate" "$kani_log" || { rm -f "$kani_log"; return 1; }
@@ -251,7 +259,7 @@ step_verus() {
   cargo clippy --locked --manifest-path rust/verus/Cargo.toml --all-targets -- -D warnings
   cargo clippy --locked --manifest-path rust/verus/equivalence/Cargo.toml --all-targets -- -D warnings
   cargo test --locked --manifest-path rust/verus/equivalence/Cargo.toml
-  cargo kani setup
+  kani_setup
   (cd rust/verus/equivalence && timeout "${BAUKIT_KANI_TIMEOUT_SECONDS:-1800}" cargo kani)
 }
 # Prints TLA2TOOLS_JAR, or installs the deploy/tools.toml pin and prints its path.
