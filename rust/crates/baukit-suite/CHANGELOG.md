@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- The public link rate limiter also reads axum's `MockConnectInfo<SocketAddr>`, as the `ConnectInfo` extractor does, so tests that add `MockConnectInfo` no longer need a `map_request` layer that inserts `ConnectInfo`.
+
 ## [0.31.0] - 2026-11-26
 
 - Breaking: link secrets and PKCE verifiers are sealed as credential-vault v2 records. Apply `migrations/005_suite_record_ids.sql` (`SUITE_RECORD_IDS_MIGRATION_SQL`) before deploying. `EncryptedPayload` gains `record_id: Option<Uuid>`; `None` opens through v1. See docs/migrations/boundary-hardening.md.
