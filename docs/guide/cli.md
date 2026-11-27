@@ -211,11 +211,20 @@ With no rule it runs all of them, in the order below. It prints one line per fin
 
 - `axum::serve` without `into_make_service_with_connect_info`, because the IP rate limiter then
   cannot see the client address.
-- `.merge(x)` in a crate whose name ends in `-bin` where `x` does not start with `rate_limited(`
-  or `protect_routes(`.
-- `opsService.type` set to anything but `ClusterIP`.
-- A CORS origin, any string under a key that contains `origin`, that is `null`, or that is not
-  `https://` in a file whose path does not contain `local`.
+- `.merge(x)` in a crate whose directory ends in `-bin` where `x` does not start with
+  `rate_limited(`, `protect_routes(` or `baukit_ratelimit::layers(`.
+- `opsService.type` in YAML set to anything but `ClusterIP`.
+- A CORS origin that is `null`. A CORS origin is a string under a key such as `allowedOrigins`,
+  `cors_allowed_origins` or `publicApiOrigin`. A bare `origin` key does not count, and YAML files
+  with a top-level `openapi`, `swagger` or `$schema` key are not checked for origins.
+- A CORS origin that does not start with `https://`, unless the file path contains `local`.
+  `http://localhost`, `http://127.0.0.1` and `http://[::1]`, with any port, also pass in compose
+  files, CI workflows and `e2e` directories.
+
+The rule splits JSON arrays and comma-separated lists and judges each origin, and it resolves
+`${VAR:-default}` to its default. Test code is skipped: `tests.rs`, `*_tests.rs`, `tests`,
+`benches`, `examples`, `e2e`, `baukit-test` and `*-test-support` directories, and everything after
+the first `#[cfg(test)]`.
 
 `lint/README.md` documents `baukit-check.toml`, every suppression key and the bulk-suppression
 forms. The [quality gates guide](quality-gates.md) shows where the gate runs these rules.
