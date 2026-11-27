@@ -78,8 +78,10 @@ shutdown
     .await???;
 ```
 
-A worker passes its job timeout instead of the request timeout, as
-`templates/worker/backend/crates/__app__-bin/src/bin/worker.rs` does.
+A worker passes `WorkerConfig::release_reserve` instead of the request timeout, not its job
+timeout: the runner puts attempts that outlive the drain back to pending, so the drain only has
+to fit that reserve. `worker_drain_budget` in the generated `backend/crates/<app>-bin/src/lib.rs`
+does this.
 
 ## The `baukit-app` chart
 

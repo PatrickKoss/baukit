@@ -137,7 +137,8 @@ an intermediate write in a long job.
 
 The generated `worker.rs` builds a `WorkerRunner` from a `PostgresJobStore`, the handler and a
 `WorkerConfig`, and runs it under a `baukit_runtime::TaskSupervisor` with the process
-`ShutdownToken` built from a `DrainBudget` of the drain timeout and the job timeout. On shutdown
+`ShutdownToken` built from `worker_drain_budget`, which checks the drain timeout against
+`release_reserve`, not the job timeout. On shutdown
 the runner stops claiming and cancels running attempts. It waits until `release_reserve` (5 s)
 before the drain deadline, then puts the unfinished ones back to pending without spending their
 attempt. A store error does not stop the runner. It backs off up to 30 s and reports through
@@ -257,9 +258,9 @@ worker:
 The chart defaults in `deploy/chart/baukit-app/values.yaml` set one replica, an ops port of 9090,
 a 60 second termination grace period, and startup, liveness and readiness probes. The chart sets
 `SHUTDOWN__DRAIN_TIMEOUT` to the grace period minus 15 s, 45 s by default, and fails to render
-when that comes out zero or less. The drain must still exceed the job timeout plus 3 s, or the
-worker stops at startup with a `DrainBudgetError`. With the 600 s default job timeout, raise
-`worker.terminationGracePeriodSeconds` or lower `worker.job_timeout_seconds`. The worker gets no Redis access unless you set `worker.redis.enabled: true`.
+when that comes out zero or less. The drain must exceed `release_reserve` plus the 3 s flush
+reserve, or the worker stops at startup with a `DrainBudgetError`. A job that runs longer than the
+drain goes back to pending and runs again on another pod, so keep handlers idempotent. The worker gets no Redis access unless you set `worker.redis.enabled: true`.
 `baukit generate dockerfile` builds the `worker` stage when `capabilities.worker` is true. See
 [deploying](deploying.md) for images and releases.
 
