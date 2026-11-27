@@ -1,7 +1,7 @@
 # TLA+ protocol models
 
-Each directory holds one model from Phase 6 of
-`docs/quality-security/F-correctness-verification.md`. A model abstracts a protocol that spans processes,
+Each directory holds one model. `docs/adr/0027-verification-strategy.md` says which tool covers which
+property, and `docs/verification.md` says how to run them. A model abstracts a protocol that spans processes,
 transactions, tabs or devices, where a unit test only ever sees one interleaving. TLC checks every
 interleaving of a small instance.
 

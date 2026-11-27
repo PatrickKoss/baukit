@@ -3,11 +3,17 @@
 Erase product rows and choose whether to delete the identity provider account.
 Pass an explicit `IdentityRetention` to `ErasureService::new`.
 
+## Identity retention
+
 Use `IdentityRetention::Retain` when several apps share one provider account,
 such as a Clerk instance with satellite domains:
 
 ```rust
+# use baukit_erasure::{ErasureError, ErasureService, IdentityRetention, PostgresErasureStore};
+# fn example(store: PostgresErasureStore) -> Result<ErasureService, ErasureError> {
 let service = ErasureService::new(store, IdentityRetention::Retain)?;
+# Ok(service)
+# }
 ```
 
 This mode commits product erasure, a completed receipt with `completedAt`, and
@@ -22,6 +28,14 @@ Use `IdentityRetention::Delete` when erasure should also delete the provider
 account:
 
 ```rust
+# use std::{sync::Arc, time::Duration};
+# use baukit_erasure::{
+#     ErasureError, ErasureService, IdentityAccountDeleter, IdentityRetention, PostgresErasureStore,
+# };
+# fn example(
+#     store: PostgresErasureStore,
+#     deleter: Arc<dyn IdentityAccountDeleter>,
+# ) -> Result<ErasureService, ErasureError> {
 let service = ErasureService::new(
     store,
     IdentityRetention::Delete {
@@ -31,6 +45,8 @@ let service = ErasureService::new(
         max_attempts: 12,
     },
 )?;
+# Ok(service)
+# }
 ```
 
 `ErasureService::erase` calls the product's `ProductErasure` implementation on
@@ -40,6 +56,8 @@ timeout. Keep `inline_timeout` short: the call holds a job row lock and one pool
 connection. Its budget includes token acquisition and deletion. Inline failure
 warnings contain the operation ID and error class without the subject.
 Success returns a completed receipt; failure returns durable acceptance.
+
+## Migrations
 
 Copy `POSTGRES_MIGRATION_SQL` into product migrations after the `baukit-jobs`
 migrations. Apply job migration 0004 before upgrading this crate. Copy
@@ -61,9 +79,21 @@ with column privileges needs `GRANT UPDATE (erased_at) ON erasure_fences` in
 addition to its existing fence privileges, or the second erasure of a subject
 fails.
 
+## Subject hash key
+
 Keep the hash key in `baukit_config::Secret<String>`.
 Use at least 32 random bytes and keep that key stable across deployments. Losing
 or replacing it breaks receipt authorization and fences.
+
+To rotate the subject hash key, build the store with
+`PostgresErasureStore::with_retired_keys(pool, new_key, vec![old_key])`. Lookups match
+both keys. Every locked access moves that subject's fence and operations to the new key.
+Call `rehash_subjects` with the erased subjects you know about, for example from the
+provider's audit log, then drop the old key. A subject that was never rehashed loses its
+fence when its old key goes. Idempotency keys stay readable under the old key until it is
+dropped, so keep it for at least the client retry window.
+
+## Identity deletion worker
 
 In delete mode, register `IdentityDeletionHandler` with a `WorkerRunner`.
 Permanent failures, exhausted attempts, timeouts and expired final leases mark
@@ -72,6 +102,11 @@ Alert on failed operations. Repair credentials or permissions, then reset the
 job's attempts and status to pending to rerun it. Never delete failed identity
 jobs through general retention cleanup. The fence remains active. Successful
 completion deletes the job payload in the same transaction as the receipt update.
+
+Call `ErasureService::probe_identity_provider` at startup and report it as readiness.
+It fails when the base URL or credentials are wrong, before any erasure runs.
+
+## Fences and guarded writes
 
 Call `reject_fenced_subject` after authentication for ordinary requests. Allow
 status lookup and same-key DELETE replay without resolving a profile. Profile
@@ -86,16 +121,7 @@ the check and a later write. Open product writes with
 `with_write_fence(WriteFence::new(store, subject, authenticated_at), next)` and open
 writes with `begin_fenced_write(&pool)`. Both hold the subject lock until commit.
 
-To rotate the subject hash key, build the store with
-`PostgresErasureStore::with_retired_keys(pool, new_key, vec![old_key])`. Lookups match
-both keys. Every locked access moves that subject's fence and operations to the new key.
-Call `rehash_subjects` with the erased subjects you know about, for example from the
-provider's audit log, then drop the old key. A subject that was never rehashed loses its
-fence when its old key goes. Idempotency keys stay readable under the old key until it is
-dropped, so keep it for at least the client retry window.
-
-Call `ErasureService::probe_identity_provider` at startup and report it as readiness.
-It fails when the base URL or credentials are wrong, before any erasure runs.
+## Re-onboarding
 
 A fenced subject is admitted only when its verified `auth_time` is present,
 strictly later than `erased_at`, and every operation for that subject is
@@ -134,10 +160,29 @@ completion. The verifier's clock leeway bounds future claims against the app
 clock, not against the database clock. Keep provider, app and database clocks
 synchronized.
 
+## Provider deleters
+
+Every deleter implements `IdentityAccountDeleter`. The `keycloak` feature
+exports `KeycloakAccountDeleter` and `KeycloakDeletionConfig`. The
+`api-providers` feature exports `ClerkAccountDeleter`, `WorkOsAccountDeleter`
+and their shared `ApiDeletionConfig`. Both features are on by default. A
+deleter returns `IdentityDeletionError::Retryable` or `Permanent`, and its
+errors never carry provider bodies, subjects or credentials.
+
 `KeycloakAccountDeleter` uses the backend confidential client's service account.
 Grant `realm-management/manage-users`, which allows more than deletion because
 Keycloak has no delete-only role. It uses HTTPS, bounded timeouts, no proxy and
 no redirects. Set `allow_local_http` only in local development.
 
-See [the erasure contract](../../../docs/platform/product-profile-erasure-contract.md)
+## Decision kernel
+
+`baukit_erasure::kernel` holds the dependency-free decisions that the adapters,
+tests and proofs share: `deletion_status_outcome` classifies a provider's
+answer, `is_well_formed_subject` checks a subject, `fence_rejects` decides
+whether a fence rejects a session, and `replay_decision` decides how a repeated
+key is handled.
+
+## See also
+
+See the [privacy guide](../../../docs/guide/privacy.md) for setup in a product, and [the erasure contract](../../../docs/platform/product-profile-erasure-contract.md)
 for HTTP responses and the product deletion inventory.

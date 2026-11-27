@@ -1,66 +1,61 @@
-# ADR 0001: Product experience package boundaries
+# ADR 0001: Product experience packages hold behavior, not design
 
 ## Status
-
-Accepted, 2026-08-20.
+Amended 2026-11-27.
 
 ## Context
 
-Fitness Tracker contains reusable behavior for localization, preferences,
-product-profile erasure, settings, responsive layout, and progress presentation.
-The useful boundary is the behavior that several products need, not Fitness
-Tracker's visual design or domain rules.
+A consumer product carried reusable behavior for localization, preferences, product-profile
+erasure, settings, responsive layout and progress display. The part several products need is the
+behavior. The visual design and the domain rules belong to that product.
 
-Baukit already keeps identity-scoped persistence in `@baukit/data-contracts`,
-backend conformance helpers in `baukit-test`, and token validation and compilation
-in `@baukit/ui-tokens`. The Product Experience work should extend those boundaries
-without turning Baukit into a product framework.
-
-The Expo components and progress models have only one active source application.
-Fitness Tracker's Wave 3 redesign is still changing their call sites. A second
-consumer is needed before Baukit can distinguish shared behavior from Fitness
-Tracker-specific choices.
+Baukit already kept identity-scoped persistence in `@baukit/data-contracts`, backend conformance
+helpers in `baukit-test`, and token validation in `@baukit/ui-tokens`. The new work had to extend
+those homes without turning baukit into a product framework. The UI components and progress models
+had one source product, so nothing showed which parts were shared and which were that product's taste.
 
 ## Decision
 
-- Add `@baukit/localization-core` for dependency-free locale preference
-  normalization, ordered locale resolution, recursive catalog key comparison,
-  localized code resolution, and explicit-locale number and date-time formatting.
-  The package contains behavior only. Products keep their localization library,
-  supported locales, fallback choice, copy, catalogs, and provider composition.
-- Add `@baukit/preferences-core` for dependency-free preference definitions,
-  normalization, optional wire-value codecs, optimistic persistence with
-  rollback, ordered side effects, and identity reset. The package contains
-  behavior only. Products keep their settings schema, database columns, storage
-  adapters, server synchronization, and migrations.
-- Keep the `eraseProductProfile` client sequence and
-  `ScopedPersistenceLifecycle.eraseActivePartition()` in
-  `@baukit/data-contracts`. Keep `ProductProfileErasureAdapter`,
-  `check_product_profile_erasure_conformance`, and the PostgreSQL foreign-key
-  audit in `baukit-test`. Products supply the HTTP and idempotency protocol,
-  schema-specific deletion, and external-processor adapters.
-- Defer `@baukit/ui-expo` and the progress presentation contract until Fitness
-  Tracker Wave 3 has settled and a second consumer, Leitbild or OpenDialog, has
-  proved the proposed component and progress models without Fitness imports.
-- Keep `@baukit/ui-tokens` limited to token schema, validation, and compilation.
-  It will not depend on React, React Native, or Expo.
-- Do not add a universal settings database, generate settings UI from backend
-  configuration, or standardize a gamification engine.
-- Products own brand tokens, copy, catalogs, storage schemas, migrations, screen
-  composition, and domain calculations. Baukit shares tested behavior, not a
-  visual preset.
+- `@baukit/localization-core` has no runtime dependencies. It holds locale preference
+  normalization, ordered locale resolution, catalog key comparison, typed catalog segments
+  (`defineCatalogSegment`), stable-code localization, civil date and time validation, zoned local
+  times with explicit gap and fold policies, and explicit-locale `Intl` formatter factories. The
+  `./vectors` export carries the shared zoned-time vectors. Products keep their localization
+  library, supported locales, fallback, copy and catalogs.
+- `@baukit/preferences-core` has no runtime dependencies. It holds preference definitions,
+  normalization, wire-value codecs, optimistic persistence with rollback, ordered side effects and
+  identity reset. Products keep their settings schema, storage adapters and server sync.
+- `@baukit/ui-tokens` holds the token schema, validation, a contrast checker, layout-mode arithmetic
+  over the product's own breakpoints, the compiler, and a `no-raw-color` ESLint rule under the
+  `./eslint` export. Its one runtime dependency is `@baukit/type-guards`. ESLint is an optional
+  peer. It does not depend on React, React Native or Expo.
+- There is no `@baukit/ui-expo` package and no shared progress model. Both wait for a second
+  consumer that can use the proposed models without importing the first product's code.
+- Baukit does not ship a universal settings database, settings UI generated from backend config, or
+  a gamification engine. Products own brand tokens, copy, storage schemas, migrations, screen
+  composition and domain calculations.
+
+Navigation moved out of this ADR into [ADR 0005](0005-shared-application-navigation.md).
+Product-profile erasure moved into [ADR 0025](0025-erasure-and-data-subject-requests.md).
+[ADR 0007](0007-toolkit-of-opt-in-units.md) states the general rule that a unit needs a second
+consumer.
+
+## Enforced by
+
+Nothing checks these package boundaries. A test that reads each `package.json` and fails when
+`@baukit/ui-tokens`, `@baukit/localization-core` or `@baukit/preferences-core` gains a React, React
+Native or Expo dependency would enforce the main rule.
 
 ## Consequences
 
-The first Product Experience packages stay small and usable by web, native, and
-non-React clients. Adding them does not move product data ownership or migration
-authority into Baukit.
+The packages stay small and usable from web, native and non-React clients. Products still write the
+glue for their storage, auth provider and UI. UI and progress code stays duplicated across products
+until a second consumer gives evidence for a stable contract.
 
-Products still write integration code for their storage, authentication provider,
-external processors, and UI. This is deliberate because those choices affect data
-retention, permissions, and product meaning.
+## History
 
-UI and progress code will remain duplicated for a while. Baukit will accept that
-cost until two products supply evidence for a stable contract. Any later Expo
-package will consume application-provided semantic tokens and copy, while
-`@baukit/ui-tokens` remains independent of UI runtimes.
+- 2026-08-20: accepted. The file entered this repository with baukit 0.1.0, commit `af6e2b4f`. It also kept the product-profile erasure
+  sequence in `@baukit/data-contracts` and `baukit-test`. That part now lives in ADR 0025.
+- 2026-10-03, commit `0157313f`: ADR 0005 replaced the navigation ownership part.
+- 2026-11-27: amended to the current scope of `@baukit/ui-tokens` and `@baukit/localization-core`,
+  and product names removed.

@@ -353,7 +353,7 @@ time. A custom verifier must also check the current token state before calling
 `Principal::from_api_token`; that constructor does not verify or revalidate a token.
 Keycloak introspection rejects PATs, so a policy accepting both kinds must branch
 before introspection and apply account checks to both. See the
-[MCP authentication guide](../../../docs/remote-mcp.md#personal-access-tokens)
+[MCP authentication guide](../../../docs/guide/mcp.md#personal-access-tokens)
 for wiring and subject mapping.
 
 ```rust
@@ -558,6 +558,117 @@ verified, but deciding what they allow is still the product's job. The only stor
 optional PostgreSQL token store, and it runs no migrations. `baukit-test` ships an
 `InMemoryApiTokenStore` and a `MockOidcServer` so services can test the whole path without a live
 provider.
+
+## Browser sessions
+
+The `browser-session` feature adds `baukit_auth::browser_session`, the
+backend-for-frontend from
+[ADR 0006](../../../docs/adr/0006-browser-token-handling.md). The browser never
+holds a refresh token. It runs the authorization code flow with PKCE, posts the
+code and verifier to the backend, and keeps only the short-lived access token
+in memory. Setup in a generated backend is in the
+[auth guide](../../../docs/guide/auth.md).
+
+`router(state)` builds three routes under `BROWSER_SESSION_PATH_PREFIX`
+(`/auth/session`):
+
+| Route | Does |
+|---|---|
+| `POST /auth/session/exchange` | Redeems `code`, `codeVerifier` and `redirectUri` at the IdP, stores the session and sets the cookie. |
+| `POST /auth/session/refresh` | Rotates the cookie and returns a new access token. |
+| `POST /auth/session/logout` | Deletes the family, revokes the refresh token at the IdP, clears the cookie, and returns `endSessionUrl` when the IdP has one, or `204` otherwise. |
+
+Exchange and refresh answer `accessToken`, `expiresAt`, `expiresIn` and
+`subject`. Every request must carry `X-Baukit-Session: 1`
+(`BROWSER_SESSION_HEADER`) and an `Origin` from the CORS allowlist, or it gets
+`403`. Every response carries `Cache-Control: no-store`.
+
+The cookie value is `<session id>.<secret>`, sent as
+`<name>=...; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=...`. The name
+gets the `__Host-` prefix, so `BrowserSessionConfig::new(.., "orders-session", ..)`
+sends `__Host-orders-session`. `with_insecure_local_cookie(true)` drops the
+prefix and `Secure`, and startup fails unless every allowed origin and the
+public API origin are `http://localhost` or `http://127.0.0.1`. Sessions idle
+out after 30 days and end after 90 days by default. Change that with
+`with_idle_timeout` and `with_absolute_timeout`.
+
+```rust,no_run
+# #[cfg(feature = "browser-session")]
+# async fn example(
+#     pool: sqlx::PgPool,
+#     cipher: baukit_credential_vault::CredentialCipher,
+#     limiter: std::sync::Arc<dyn baukit_auth::browser_session::BrowserSessionRateLimiter>,
+# ) -> Result<(), Box<dyn std::error::Error>> {
+use axum::Router;
+use baukit_auth::browser_session::{self, BrowserSessionConfig, BrowserSessionState};
+use baukit_http::HttpOptions;
+
+let mut http = HttpOptions::default().with_allowed_origins(["https://app.example.com"])?;
+http.allow_credentials = true;
+let config = BrowserSessionConfig::new(
+    "https://identity.example.com/realms/products",
+    "orders-web",
+    "orders-session",
+    "https://api.example.com",
+    cipher,
+)?
+.with_redirect_uris(["https://app.example.com/auth/callback"]);
+let state = BrowserSessionState::discover(config, &http, pool, limiter).await?;
+let _app: Router = Router::new().merge(browser_session::router(state));
+# Ok(())
+# }
+```
+
+This is the module example from `src/browser_session/mod.rs`. Pass the same
+`HttpOptions` to `baukit_http::layers`. `discover` fails when the allowlist is
+empty or `allow_credentials` is off. `baukit-ratelimit`'s `browser-session`
+feature has `StoreBrowserSessionRateLimiter`, which applies
+`AUTH_SESSION_IP_LIMIT` (30 per minute, burst 10, per client IP, all three
+routes) and `AUTH_SESSION_ID_LIMIT` (12 per minute, burst 4, per session id,
+refresh only).
+
+### Store and migrations
+
+Sessions live in PostgreSQL, in `baukit_auth_browser_sessions`. The refresh
+token, ID token and grace access token are sealed with the
+`baukit-credential-vault` cipher. Copy both reference migrations into the
+product, in order. Nothing migrates on startup.
+
+| File | Constant |
+|---|---|
+| `migrations/0002_baukit_auth_browser_sessions.sql` | `POSTGRES_BROWSER_SESSIONS_MIGRATION_SQL` |
+| `migrations/0003_baukit_auth_browser_session_record_ids.sql` | `POSTGRES_BROWSER_SESSION_RECORD_IDS_MIGRATION_SQL` |
+
+0003 adds the nullable vault v2 `record_id` column without a table rewrite.
+Rows from before it keep a `NULL` `record_id` and open through the v1 path.
+
+`purge_browser_sessions(executor, cutoff, limit)` deletes at most `limit` whole
+families that were revoked or expired before `cutoff`. Run it from a daily job.
+`erase_subject_browser_sessions(executor, subject)` deletes every session of one
+subject, for erasure or "sign out everywhere". It does not revoke the tokens
+at the IdP.
+
+### Refresh rules
+
+Each refresh rotates the row: it calls the IdP, inserts a successor with a new
+cookie secret and marks the old row rotated. The IdP call and the store run in
+a spawned task, so a client that disconnects mid-refresh cannot lose the
+rotated token. A failed commit retries up to 3 times with the new token. An
+IdP `invalid_grant` or an expired session revokes the family.
+
+A rotated cookie that comes back is handled by time since the rotation:
+
+- Within `GRACE_WINDOW` (10 seconds), it gets the successor's access token and
+  no new cookie. This covers parallel tabs that refresh at once.
+- After the grace window and within `LOST_RESPONSE_CAP` (5 minutes) of the
+  successor's creation, if the browser never used the successor, the backend
+  assumes the refresh response was lost. It rotates the successor and sends a
+  new cookie.
+- Otherwise it is reuse. The backend revokes the family, locally and at the
+  IdP, and answers `401`.
+
+The TLA+ model in `models/BffSessionFamily/` covers the rotation and grace
+rules. Its README lists the lost-response cases that still log a user out.
 
 ## ID tokens and secret comparisons
 

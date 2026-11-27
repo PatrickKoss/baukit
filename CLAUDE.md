@@ -14,22 +14,29 @@ free of product-specific logic.
 ## Layout
 
 ```text
-rust/crates/        baukit-auth, -config, -core, -credential-vault, -data-subject, -egress, -erasure, -events,
-                     -http, -integrations, -jobs, -mcp, -openapi, -ops, -push, -ratelimit,
-                     -runtime, -suite, -sync, -telemetry, -test
+rust/crates/        baukit-auth, -config, -core, -credential-vault, -data-subject, -egress, -erasure,
+                    -events, -http, -integrations, -jobs, -mcp, -openapi, -ops, -push, -ratelimit,
+                    -runtime, -suite, -sync, -telemetry, -test
+rust/fuzz           cargo-fuzz targets for decoders of untrusted bytes
+rust/verus          Verus proofs on twins of production kernels
 typescript/packages/ a11y-core, analytics-core, analytics-posthog-{web,native},
-                     api-runtime, auth-{native,node,web},
-                     data-contracts{,-dexie,-expo-sqlite}, events,
-                     integrations-client, localization-core, navigation,
-                     notifications-{core,expo}, preferences-core, pwa-web,
-                     suite-client, sync-client, ui-tokens
+                    api-runtime, auth-{native,node,web}, csp,
+                    data-contracts{,-dexie,-expo-sqlite}, eslint-config, events,
+                    integrations-client, localization-core, navigation,
+                    notifications-{core,expo}, preferences-core,
+                    purchases-{core,revenuecat}, pwa-web, suite-client,
+                    sync-client, type-guards, ui-tokens
 cli/                `baukit` CLI (scaffolds products from templates/)
 templates/          project templates consumed by the CLI
 deploy/             Helm chart, observability (dashboards, alerts, recording rules),
                     media-grants (njs edge verifier)
+deploy/platform     local k3d platform (make platform-up)
+deploy/observability-platform  Helm chart with alerts and dashboards for platform services
+models/             TLA+ models checked by models/check.sh
 fixtures/           shared cross-language test vectors
 agent-skills/       installable agent skills (make install-skills TARGET=<dir>)
 examples/           runnable examples
+docs/guide/         user guide; start at docs/guide/README.md
 ```
 
 Three separate workspaces: `rust/`, `cli/` (Rust), and `typescript/`

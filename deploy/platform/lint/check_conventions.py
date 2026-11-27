@@ -26,6 +26,7 @@ import image_digests
 
 LINT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = LINT_DIR.parents[2]
+RUNBOOK_DOC_URL = re.compile(r"runbook_url:\s*\S*/docs/runbooks/([a-z0-9-]+)/([a-z0-9-]+)")
 CRD_KIND_LINE = re.compile(r"^kind:[ \t]*['\"]?CustomResourceDefinition['\"]?[ \t]*$", re.MULTILINE)
 MONITOR_BLOCK_KEYS = {"servicemonitor", "podmonitor"}
 MONITOR_FLAG_KEYS = {
@@ -116,6 +117,7 @@ class Context:
     alerts: list[Alert] = field(default_factory=list)
     fired_alerts: set[str] = field(default_factory=set)
     runbook_slugs: set[str] = field(default_factory=set)
+    runbook_references: set[str] = field(default_factory=set)
     chart_values: dict[str, dict] = field(default_factory=dict)
     chart_dependencies: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     scraped_images: dict[str, str] = field(default_factory=dict)
@@ -474,6 +476,18 @@ def rule_alert_runbook(context: Context) -> Iterable[str]:
             )
 
 
+def alert_runbook_url(alert: Alert) -> str:
+    return str((alert.rule.get("annotations") or {}).get("runbook_url", "")).strip()
+
+
+def rule_runbook_alert(context: Context) -> Iterable[str]:
+    referenced = context.runbook_references | {
+        f"{alert.pack}/{runbook_slug(alert_runbook_url(alert))}" for alert in context.alerts
+    }
+    for slug in sorted(context.runbook_slugs - referenced):
+        yield f"docs/runbooks/{slug}.md has no alert whose runbook_url names it"
+
+
 def rule_alert_tested(context: Context) -> Iterable[str]:
     for alert in context.alerts:
         if alert.name not in context.fired_alerts:
@@ -794,6 +808,7 @@ RULES: dict[str, Rule] = {
     "exporters-scraped": rule_exporters_scraped,
     "alert-metadata": rule_alert_metadata,
     "alert-runbook": rule_alert_runbook,
+    "runbook-alert": rule_runbook_alert,
     "alert-tested": rule_alert_tested,
     "rules-selected": rule_rules_selected,
     "dashboards-selected": rule_dashboards_selected,
@@ -969,7 +984,9 @@ def pack_of(path: Path) -> str:
 
 def runbook_slugs(runbooks: Path) -> set[str]:
     return {
-        path.relative_to(runbooks).with_suffix("").as_posix() for path in runbooks.rglob("*.md")
+        path.relative_to(runbooks).with_suffix("").as_posix()
+        for path in runbooks.rglob("*.md")
+        if path.name != "README.md"
     }
 
 
@@ -1002,6 +1019,19 @@ def rule_pack_files(repo_root: Path) -> list[Path]:
         )
         for path in repo_root.glob(pattern)
     )
+
+
+def runbook_references(repo_root: Path) -> set[str]:
+    """Runbooks named by Loki ruler alerts and by chart values outside the rule packs."""
+    loki_rules = sorted(repo_root.glob("deploy/observability*/loki-rules/*.y*ml"))
+    references = {
+        f"{alert.pack}/{runbook_slug(alert_runbook_url(alert))}"
+        for alert in load_alerts(parse_files(loki_rules), {})
+    }
+    for path in sorted((repo_root / "deploy/platform").rglob("*.y*ml")):
+        text = path.read_text(encoding="utf-8")
+        references.update(f"{pack}/{slug}" for pack, slug in RUNBOOK_DOC_URL.findall(text))
+    return references
 
 
 def promtool_test_files(repo_root: Path) -> list[Path]:
@@ -1062,6 +1092,7 @@ def build_context(
         alerts=load_alerts({path: parsed[path] for path in packs}, universes),
         fired_alerts=fired_alerts({path: parsed[path] for path in tests}),
         runbook_slugs=runbook_slugs(repo_root / "docs/runbooks"),
+        runbook_references=runbook_references(repo_root),
         chart_values=chart_values,
         chart_dependencies={
             key: dependency_conditions(chart or {}) for key, chart in charts.items()

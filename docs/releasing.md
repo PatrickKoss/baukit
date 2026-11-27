@@ -75,10 +75,10 @@ convention for those files.
 3. Run **Release train** in GitHub Actions and choose `patch` or `minor`.
    Equivalently, from a clean local checkout with dependencies installed, run
    `scripts/release-train.sh patch` (or `minor`) and open a PR from its changes.
-4. On the generated release-PR branch, update
-   `docs/platform/compatibility-matrix.md` to the dependency and toolchain
-   versions actually tested by this train. This step is manual because the
-   values describe evidence, not merely lockfile contents.
+4. On the generated release-PR branch, refresh the baseline table in
+   `docs/platform/compatibility-matrix.md`: the Baukit row and every
+   dependency and toolchain version this train tested. Do not add a section
+   per release, because the CHANGELOGs record what changed.
 5. Review the generated package changelogs, the new sections in every crate
    changelog, the compatibility matrix, and CI. Merge the release PR.
 6. From the merged `main`, verify and push the unified annotated tag:

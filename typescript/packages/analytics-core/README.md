@@ -47,7 +47,7 @@ declare const transport: Transport<ProductEvent>; // for example, a PostHog adap
 const analytics = new AnalyticsClient<ProductEvent>({
   context: {
     schema_version: 1,
-    app: 'bauvisite',
+    app: 'orders',
     app_version: '1.0.0',
     platform: 'web',
     environment: 'production',
@@ -118,7 +118,7 @@ analytics.reset(); // logout: clear known identity and alias guard, rotate anony
 ```
 
 Only UUID-shaped user IDs are accepted. This cannot prove which system issued a UUID, so products
-must pass their internal user UUID—not an email, name, or provider subject. Switching directly
+must pass their internal user UUID, never an email, name or provider subject. Switching directly
 between known users is rejected; call `reset()` first. The alias guard is persisted and admits at
 most one alias command for an anonymous identity, including across client reconstruction. Traits
 are scrubbed with the same blocked-key and sensitive-value rules as event properties.

@@ -25,7 +25,7 @@
 //! };
 //!
 //! let identity = ServiceIdentity::new(
-//!     "fitness-tracker",
+//!     "orders",
 //!     ProcessKind::Api,
 //!     env!("CARGO_PKG_VERSION"),
 //!     option_env!("GIT_COMMIT").unwrap_or("unknown"),

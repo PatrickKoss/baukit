@@ -73,7 +73,7 @@ A variant cannot be combined with `BAUKIT_QA_BUILD=1`.
 
 ## Purchases
 
-`src/purchases.ts` builds one `PurchaseFlow` from `@baukit/purchases-core`. With `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` or `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` set it uses RevenueCat. Without them it uses the no-op port and the app behaves as before. `AppShell` provides the flow and resets it on sign-out. Call `purchaseFlow().identify(suiteSubject)` after sign-in and replace the standalone entitlement backend when the product joins the suite. Baukit's `docs/platform/mobile-purchases.md` has the full order.
+`src/purchases.ts` builds one `PurchaseFlow` from `@baukit/purchases-core`. With `EXPO_PUBLIC_REVENUECAT_IOS_API_KEY` or `EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY` set it uses RevenueCat. Without them it uses the no-op port and the app behaves as before. `AppShell` provides the flow and resets it on sign-out. Call `purchaseFlow().identify(suiteSubject)` after sign-in and replace the standalone entitlement backend when the product joins the suite. The `@baukit/purchases-core` README has the full order.
 
 ## Delete profile
 

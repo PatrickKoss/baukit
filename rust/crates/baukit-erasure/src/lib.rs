@@ -82,3 +82,8 @@ pub mod internals {
     pub use crate::store::REJECTED_SESSION_SQL;
     pub use crate::worker::parse_payload;
 }
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

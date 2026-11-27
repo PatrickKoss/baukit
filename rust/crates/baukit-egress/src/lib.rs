@@ -121,3 +121,8 @@ pub use policy::{
 pub use resolver::{
     ResolveError, ResolveFuture, Resolver, StaticResolver, SystemResolver, resolve_destination,
 };
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

@@ -1,4 +1,5 @@
 pub mod check;
+pub mod cli;
 mod components;
 mod dockerfile;
 mod doctor;

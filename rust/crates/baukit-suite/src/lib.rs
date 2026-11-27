@@ -82,3 +82,8 @@ pub const SUITE_DELIVERY_PROBES_MIGRATION_SQL: &str =
 #[cfg(feature = "postgres")]
 pub const SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL: &str =
     include_str!("../migrations/007_suite_validate_link_checks.sql");
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

@@ -67,9 +67,9 @@ Use `runtime` with a product-owned `SuitePeerClient` to omit the supplied delive
 
 ```toml
 # Domain and ports crates:
-baukit-suite = { version = "0.10.0", default-features = false }
+baukit-suite = { version = "0.31", default-features = false }
 # Product adapter crate:
-baukit-suite = { version = "0.10.0", features = ["http", "jobs", "delivery"] }
+baukit-suite = { version = "0.31", features = ["http", "jobs", "delivery"] }
 ```
 
 ## Product composition
@@ -79,6 +79,105 @@ peer client, delivery service and erasure adapter. A product supplies its four
 port implementations and catalog constants:
 
 ```rust
+# use std::sync::Arc;
+# use async_trait::async_trait;
+# use axum::Router;
+# use baukit_credential_vault::CredentialVaultConfig;
+# use baukit_erasure::{ErasureFuture, ProductErasure};
+# use baukit_jobs::PostgresJobStore;
+# use baukit_ratelimit::RateLimitStore;
+# use baukit_suite::{
+#     adapters::postgres::SuiteErasureOwnerLookup,
+#     compose::{PostgresSuite, SuiteSettings},
+#     config::SuiteConfig,
+#     domain::SuiteEvent,
+#     ports::{
+#         AppliedOutcome, SuiteApplyEvent, SuiteEventApplier, SuiteIdentity, SuiteIdentitySource,
+#         SuiteReplaySource, SuiteStoreError,
+#     },
+# };
+# use sqlx::{PgConnection, PgPool};
+# use uuid::Uuid;
+# const APP_ID: &str = "alpha";
+# const PEERS_JSON: &str = include_str!("../../../fixtures/suite-events/v1/peers.json");
+# const CATALOG_JSON: &str = include_str!("../../../fixtures/suite-events/v1/catalog.json");
+# struct Config { credential_vault: CredentialVaultConfig, suite: SuiteConfig }
+# struct ProductSuiteIdentitySource;
+# impl ProductSuiteIdentitySource { fn new(_pool: PgPool) -> Self { Self } }
+# #[async_trait]
+# impl SuiteIdentitySource for ProductSuiteIdentitySource {
+#     async fn identity(&self, _owner: Uuid) -> Result<SuiteIdentity, SuiteStoreError> {
+#         Err(SuiteStoreError::NotFound)
+#     }
+#     async fn identity_in_transaction(
+#         &self,
+#         _connection: &mut PgConnection,
+#         _owner: Uuid,
+#     ) -> Result<SuiteIdentity, SuiteStoreError> {
+#         Err(SuiteStoreError::NotFound)
+#     }
+# }
+# struct ProductSuiteReplaySource;
+# #[async_trait]
+# impl SuiteReplaySource for ProductSuiteReplaySource {
+#     async fn replay_since(
+#         &self,
+#         _connection: &mut PgConnection,
+#         _owner: Uuid,
+#         _since: jiff::civil::Date,
+#     ) -> Result<Vec<SuiteEvent>, SuiteStoreError> {
+#         Ok(Vec::new())
+#     }
+# }
+# struct ProductSuiteEventApplier;
+# #[async_trait]
+# impl SuiteEventApplier for ProductSuiteEventApplier {
+#     async fn apply(
+#         &self,
+#         _tx: &mut PgConnection,
+#         _event: SuiteApplyEvent<'_>,
+#     ) -> Result<AppliedOutcome, SuiteStoreError> {
+#         Err(SuiteStoreError::NotFound)
+#     }
+# }
+# struct ProductSuiteErasureOwnerLookup;
+# impl ProductSuiteErasureOwnerLookup { fn new(_pool: PgPool) -> Self { Self } }
+# #[async_trait]
+# impl SuiteErasureOwnerLookup for ProductSuiteErasureOwnerLookup {
+#     async fn owner(&self, _subject: &str) -> Result<Option<Uuid>, sqlx::Error> {
+#         Ok(None)
+#     }
+#     async fn owner_in_transaction(
+#         &self,
+#         _connection: &mut PgConnection,
+#         _subject: &str,
+#     ) -> Result<Option<Uuid>, sqlx::Error> {
+#         Ok(None)
+#     }
+#     async fn lock_owner_in_transaction(
+#         &self,
+#         _connection: &mut PgConnection,
+#         _owner: Uuid,
+#     ) -> Result<(), sqlx::Error> {
+#         Ok(())
+#     }
+# }
+# struct PostgresProfileErasure;
+# impl ProductErasure for PostgresProfileErasure {
+#     fn erase<'a>(
+#         &'a self,
+#         _connection: &'a mut PgConnection,
+#         _subject: &'a str,
+#     ) -> ErasureFuture<'a, Result<(), sqlx::Error>> {
+#         Box::pin(async { Ok(()) })
+#     }
+# }
+# fn example(
+#     config: Config,
+#     pool: PgPool,
+#     limiter: Arc<dyn RateLimitStore>,
+#     job_store: PostgresJobStore,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 let cipher = config.credential_vault.cipher()?;
 let settings = SuiteSettings::new(APP_ID, PEERS_JSON, CATALOG_JSON, &config.suite, cipher)?;
 let suite = PostgresSuite::builder(pool.clone(), settings, limiter)
@@ -93,6 +192,9 @@ let suite = PostgresSuite::builder(pool.clone(), settings, limiter)
 let routes = Router::new().nest("/api/v1", suite.router(suite.api()));
 let worker = suite.worker(Arc::new(job_store))?; // feature `jobs`
 let notifier = suite.notifier(); // Some when erasure_lookup was set
+# let _ = (routes, worker, notifier);
+# Ok(())
+# }
 ```
 
 Delivery jobs carry `suite_delivery_concurrency_key(peer_app)` as their
@@ -147,7 +249,7 @@ counts toward the circuit.
 
 Override `SuiteEventApplier::lock_owner(&mut PgConnection, owner)` when product
 writers lock an owner row. Ingest calls this hook after its suite advisory lock
-and before locking the link. For example, SLS uses `FOR NO KEY UPDATE` on `users`.
+and before locking the link. For example, a product can take `FOR NO KEY UPDATE` on its `users` row.
 Lock deleted and deactivated owners too and check that state in `apply`.
 A filter in `lock_owner` turns connection tests and duplicate redeliveries
 for those owners into a permanent 404 `suite_rejected`.

@@ -211,8 +211,8 @@ a product prefix or labels.
    jobs migrations. Constants are
    `baukit_suite::{SUITE_MIGRATION_SQL, SUITE_RUNTIME_MIGRATION_SQL, SUITE_LOCK_ORDER_MIGRATION_SQL, SUITE_RECORD_IDS_MIGRATION_SQL, SUITE_DELIVERY_PROBES_MIGRATION_SQL, SUITE_VALIDATE_LINK_CHECKS_MIGRATION_SQL}`.
    Keep applied suite migrations in products that already have these tables.
-   For SLS, `0056_suite.sql` corresponds to `001_suite.sql` and
-   `0059_suite_runtime.sql` corresponds to `002_suite_runtime.sql`.
+   A product that copied the suite SQL under its own numbers keeps the files
+   that correspond to `001_suite.sql` and `002_suite_runtime.sql`.
    Keep those product files and their SQLx migration history unchanged. Do not
    copy or run `001` and `002` again, and do not replace or renumber applied files.
    Add `003_suite_lock_order.sql` as a new product migration when upgrading
@@ -220,7 +220,7 @@ a product prefix or labels.
    `005_suite_record_ids.sql` (`SUITE_RECORD_IDS_MIGRATION_SQL`) the same way when
    upgrading past 0.30.6. It replaces the
    failure trigger with job-only accounting records and preserves the counters
-   already recorded. SLS keeps `0056`, `0059` and `0061` and adds this migration
+   already recorded. A product with its own numbered copies adds this migration
    after them. The crate exposes SQL constants; it does not run migrations.
    Compare their schema with the shipped SQL, keeping product owner foreign
    keys. Add a migration only for other differences.
@@ -258,7 +258,7 @@ a product prefix or labels.
    ```
 
    Override the default `SuiteEventApplier::lock_owner(connection, owner)`
-   hook when product writers lock the owner row. SLS uses
+   hook when product writers lock the owner row, for example with
    `SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE`. Lock deleted and
    deactivated owners too and check that state in `apply`. A filter in
    `lock_owner` turns connection tests and duplicate redeliveries for those
@@ -345,7 +345,7 @@ a product prefix or labels.
    Share this store with `SuiteLinkedMachine` so the native auth session and
    redirect handler announce the connection once. A later `load()` clears
    `completed`. This additive state field keeps the list state and completion
-   id together, so SLS can remove its B9 completion workaround.
+   id together.
    Register `suiteMessages`; validate intents with
    `createSuiteNativeIntentValidator(scheme)` and use `openSuitePeer` for
    native-to-web fallback. Product UI supplies event labels and mapping controls.
@@ -419,90 +419,14 @@ Configuration keys use the product prefix without renaming:
 | `IDENTITY_DOMAIN` | unset |
 | `IDENTITY_CLAIM` | `suite_sub` |
 
-Apply the ten steps above in every product. The following checklist records the
-product work identified in the reference snapshot. Confirm the current migration
-head and emit points in each product before adoption.
-
-| Product app id | Config prefix and API base | Product work |
-| --- | --- | --- |
-| `heldengang` | `HELDENGANG`, `/api/v1` | Replace the copied suite module. Keep applied migrations `0056`, `0059` and `0061`, including their owner foreign keys. Keep typed payloads, LifeGraph mappings, rewards and the mapping route. Implement replay from existing domain history. |
-| `eigenruhe` | `EIGENRUHE`, `/api/v1` | Replace hub publishing and its connection UI. Emit practice completion and check-ins from REST and sync transactions. Replay those rows. Keep the fitness-tracker connection. |
-| `hebkit` | `HEBKIT`, `/api/v1` | Replace the Tiefgang-specific sender and connection route. Emit first-party workouts and sleep, including imported sleep, at existing write points. Update closed job-type dispatch and replay both histories. |
-| `leitbild` | `LEITBILD`, `/api/v1` | Add a vault keyring. Run suite delivery independently of the AI worker. Emit new journal entries and completed program runs, excluding backfills. Supply replay and preserve the authorize query across login. |
-| `tiefgang` | `TIEFGANG`, `/api/v1` | Replace connection tokens and suite ingest. Keep custom webhooks. Emit terminal sessions and wrap the existing credit-rule engine as the applier. Replay session history. |
-| `redemut` | `REDEMUT`, `/v1` | Run the suite worker beside erasure in the API process. Emit newly appended events only. Group review replay by the user's local date. Keep issuer-aware account lookup and same-tab authorize login. |
-| `schlauzug` | `SCHLAUZUG`, `/v1` | Run suite jobs in the API process with PostgreSQL. Emit owned solo and room runs in their history transaction; guests do not emit. Replay run history and add same-tab login that preserves the query. |
+Apply the ten steps above in every product. Confirm the current migration head
+and emit points in each product before adoption.
 
 Every product must add owner foreign keys, erasure inventory coverage, deployment
 config, both suite pages, native intent routing where applicable, and its own
 applier tests. Host `/suite/authorize` with `Content-Security-Policy:
 frame-ancestors 'none'` and `Referrer-Policy: no-referrer`. The headless machine
 also refuses framed pages, but the product owns these hosting headers.
-
-## Agreed extraction changes
-
-| Change | Implementation |
-| --- | --- |
-| a. Generic apps and payloads | Validated string app ids and embedded peer metadata replace the app enum. Catalog field rules preserve integer, bounds, null, enum, date, timestamp, identifier and key checks. The 1,145 payload cases run as shared fixtures. `ValidatedPayload::deserialize<T>()` supports product types. |
-| b. UUID owners and erasure | Migrations omit product owner foreign keys. Products add the SQL above. Revokes run before the erasure transaction, bounded to 500 ms per link; the adapter deletes suite jobs and rows by owner inside it. |
-| c. Product replay | `SuiteReplaySource` supplies history on the existing connection. The generic outbox only stores and fans out validated events. |
-| d. Shared rate limits | `Arc<dyn RateLimitStore>` supplies the three protocol buckets. Unknown sources fail before storage and limiter access. |
-| e. Connection test | Every app emits `suite.connection.tested`; protocol fixtures use it. |
-| f. Product mapping metadata | Shared peers omit `mappableMetrics`. Products retain their mapping routes. |
-| g. Transaction arguments | Transactional ports accept `&mut PgConnection`. The jobs enqueue API accepts the same connection; callers can pass an existing SQLx transaction by dereference. |
-| h. Config loading | `SuiteConfig` implements `baukit_config::Validate`, preserves the environment keys and validates active peers, HTTPS, loopback exceptions and standalone mode. |
-
-## Extraction map
-
-The reference is the read-only SLS snapshot at `6a95ac2`. All paths below are
-relative to that snapshot; the `heldengang-` crate prefix is omitted.
-
-| SLS file | Baukit file | Product retains |
-| --- | --- | --- |
-| `domain/src/suite.rs`, `suite/link_protocol.rs` | `baukit-suite/src/domain/{mod,link_protocol}.rs` | Own app id and embedded peers |
-| `domain/src/suite/payloads.rs`, LifeGraph validation | `domain/{payloads,validation}.rs` and validator fixtures | Typed payloads, builders and event catalog |
-| `ports/src/suite.rs` | `baukit-suite/src/ports.rs` | Applier, replay source and identity implementations |
-| `services/src/suite/{link,delivery,ingest,erasure}.rs` | `baukit-suite/src/services/` | Rewards, mappings, product erasure and domain emits |
-| `postgres/src/suite.rs`, `suite/{outbox,rows}.rs` | `adapters/postgres/` | History queries and owner foreign keys |
-| `migrations/{0056_suite,0059_suite_runtime}.sql` | `baukit-suite/migrations/{001_suite,002_suite_runtime}.sql` | `0061` mappings and other product tables |
-| `api/src/v1/suite.rs` | `adapters/{http,http_support}.rs` | Principal middleware and mapping routes |
-| `worker/src/suite.rs`, `bin/src/compose/suite.rs` | `adapters/jobs.rs`, product wiring above | Runner ownership and deployment configuration |
-| `fixtures/suite-events/v1/` | `fixtures/suite-events/v1/` | Product catalog, peers and event docs |
-| `mobile/app/suite/{authorize,linked}.tsx`, `features/suite/*` | `suite-client/src/{authorize,linked,session,urls,navigation}.ts` | React pages, Expo/browser adapters and routing |
-| `features/settings/suite-*`, `localization/messages-suite.ts` | `suite-client/src/{api,connected,messages}.ts` | Product event labels and mapping settings |
-
-Shared protocol tests run against the generic catalog and real Axum router with
-Docker PostgreSQL. Product gameplay tests remain with their applier. The test kit's
-`suite` feature supplies fixture loading, a scripted receiver and an in-process
-second app. No suite capability is added to CLI templates in this extraction.
-
-## SLS bugs fixed
-
-The source paths below refer to snapshot `6a95ac2`.
-
-- `backend/crates/heldengang-api/src/v1/suite.rs:232` names the
-  envelope property `source` in OpenAPI, although the wire envelope uses
-  `sourceApp`. The shared schema uses `sourceApp` and has a regression test.
-- `backend/crates/heldengang-services/src/suite/link.rs:514` calls
-  replay while holding a transaction. The implementation at
-  `backend/crates/heldengang-postgres/src/suite/outbox.rs:425` acquires
-  another pool connection. This blocks a pool of size one. Replay and identity
-  queries now use the existing connection; an integration test uses a one-slot
-  pool.
-- `backend/crates/heldengang-postgres/src/suite.rs:359` locks a code
-  before exchange locks its owner at line 441. Erasure locks the owner in
-  `backend/crates/heldengang-postgres/src/profile_erasure.rs:30` before
-  deleting suite rows. These orders can deadlock. The adapter acquires
-  the suite owner advisory lock before either a code or request row. A concurrent
-  exchange, completion and erasure test verifies that erasure can delete those
-  rows while the link operation waits.
-- `backend/crates/heldengang-postgres/src/profile_erasure.rs:125`
-  deletes suite jobs before deleting links. Replay and test enqueue methods lock
-  only the link at `backend/crates/heldengang-postgres/src/suite/outbox.rs:337`
-  and line 386; disconnect does the same through `suite.rs:427`. They can commit
-  another job while erasure waits for that link, leaving an orphan after cleanup.
-  Shared link operations take the owner advisory lock first. Router tests race
-  replay, test and disconnect with erasure and check that no jobs remain.
 
 ## Error codes
 

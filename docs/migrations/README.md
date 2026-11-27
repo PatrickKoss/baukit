@@ -3,7 +3,7 @@
 Each guide covers one breaking or behaviour change and says what a product has to do. Read the ones for the
 crates and packages your product uses.
 
-## Upgrading from 0.31.x
+## Upgrading 0.31 to 0.32
 
 Do the steps in this order. The `baukit-jobs` changes are expand-only, so a 0.31.x binary keeps running
 against them. The suite probe migration is not: stop the 0.31.x suite delivery processes before you
@@ -57,7 +57,7 @@ apply it.
    gate result cache (`scripts/gate_results.py` and its test) and add `[quality.cache] never` to
    `baukit.toml`, as `templates/common/CHANGELOG.md` describes. `baukit doctor` requires both files.
 
-## Upgrading from 0.30.x
+## Upgrading 0.30 to 0.31
 
 Do the steps in this order. The database changes are expand-only, so the 0.30.x binary keeps running against the
 new schema.
@@ -91,4 +91,3 @@ new schema.
 
 - [authoring-sql-migrations.md](authoring-sql-migrations.md): how to write a migration that is safe on a database
   serving traffic.
-- [backend-dockerfile-generation.md](backend-dockerfile-generation.md): generated backend Dockerfiles.

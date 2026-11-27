@@ -24,6 +24,17 @@ Focus and selection are separate. Focus marks the next action. Selection marks t
 
 The web route focus controller from `@baukit/a11y-core/web` accepts a getter for the route heading. It retries while the heading mounts, stops if the user focuses another control, and restores the initiating control on exit. It is DOM-only. The generated mobile adapter calls it through Expo Router's focus lifecycle for Expo web and keeps native headings exposed with `accessibilityRole="header"`.
 
+## Back or replace
+
+A screen reached by a deep link has no history behind it. If its back control only calls the router's `back()`, the button does nothing. Resolve every back control on a directly reachable screen with `backOrReplace(navigation, fallbackDestination)`:
+
+1. If the router reports history, go back.
+2. Otherwise, replace the current entry with the fallback. Replace instead of push, so the next back press does not return to the screen the user left.
+
+The fallback is the screen's semantic parent. A detail screen falls back to its list, a nested form to the flow that owns it. Give each call site its own fallback.
+
+The generated web app has `web/src/back-or-replace.ts`. Its `canGoBack` is required, and `browserNavigation()` reads `history.length > 1`, calls `history.back()` and calls `location.replace()`. The generated mobile app has `mobile/src/back-or-replace.ts`. Its `canGoBack` is optional, and a missing `canGoBack` falls through to `replace`. `useBackOrReplace()` passes Expo Router's router. The `back-or-replace.test.ts` files next to them cover each branch. `e2e/tests/qa-route-state.spec.ts` loads deep links cold and requires a recovery control on screen.
+
 ## Reduced motion
 
 Read `{ reducedMotion, resolved }` from `useReducedMotionPreference()`. Do not start rail or sheet transitions before the preference resolves. When reduced motion is active, do not slide, scale, or spring between the compact bar and wide rail. Open sheets without spatial motion. Focus moves at the same logical point in both modes.

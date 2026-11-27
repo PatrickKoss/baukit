@@ -11,11 +11,11 @@ Every process sets, via `baukit-telemetry`:
 
 | Attribute | Example | Rule |
 |---|---|---|
-| `service.name` | `fitness-tracker-api` | `<product>-<process>`; process is one of `api`, `worker`, `migrate`, `seed`, `agent` |
+| `service.name` | `example-api` | `<product>-<process>`; process is one of `api`, `worker`, `migrate`, `seed`, `agent` |
 | `service.version` | `1.4.2` | Cargo package version |
 | `service.commit` (custom) | `a1b2c3d` | short git SHA, injected at build time |
 | `deployment.environment.name` | `production` | one of `local`, `testing`, `staging`, `production` |
-| `product` (custom) | `fitness-tracker` | product identity, stable across all its processes |
+| `product` (custom) | `example` | product identity, stable across all its processes |
 
 Kubernetes attributes (`k8s.namespace.name`, workload, pod, cluster) are added by the collector (Alloy) at collection time, never by the application.
 
@@ -34,14 +34,14 @@ Prometheus exposition on the operations listener at `/metrics`. The naming diver
 
 Rules:
 
-- The duration metric name is **singular** (`http_request_duration_seconds`). Fitness Tracker migrates from the plural name.
-- `status` is the raw numeric status code as a string (`"200"`, `"404"`). Status classes are derived in queries and recording rules, never stored as labels. Heldengang migrates from status classes.
+- The duration metric name is **singular** (`http_request_duration_seconds`).
+- `status` is the raw numeric status code as a string (`"200"`, `"404"`). Status classes are derived in queries and recording rules, never stored as labels.
 - `route` is always the matched route template (`/users/{id}`), never the raw path. Requests that match no route use `route="unmatched"`.
 - `method` is uppercase and bounded to known HTTP methods; anything else becomes `OTHER`.
 - Histogram buckets (seconds): `0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30`. The `30` bucket matches the default request timeout, so timed-out requests land below `+Inf`.
 - `http_requests_in_flight` counts requests that hold a concurrency permit. Requests waiting for one are not counted.
 - `http_requests_shed_total` counts requests that got no concurrency permit within the queue timeout and were answered with `503` and `Retry-After: 1`. Shed requests also appear in `http_requests_total` with `status="503"`.
-- Application-prefixed HTTP metric names (for example `sl_http_*`) are forbidden. Heldengang migrates.
+- Application-prefixed HTTP metric names (for example `sl_http_*`) are forbidden.
 
 ### 2.2 Build info
 
@@ -132,7 +132,7 @@ Each key lookup counts once: `fresh` and `stale` were served from the cache, `fe
 
 - JSON to stdout in deployed environments; human-readable format in local development. The switch follows `deployment.environment.name`.
 - Required fields: `timestamp` (RFC 3339), `level`, `message`, `target`, plus `trace_id`/`span_id` when inside a span and `request_id` when inside a request.
-- Loki labels are bounded to: `service`, `environment`, `namespace`, `level`. The label is **`service`**, not `service_name`; Fitness Tracker migrates. Everything else, including `trace_id` and `request_id`, stays in the log body as fields.
+- Loki labels are bounded to: `service`, `environment`, `namespace`, `level`. The label is **`service`**, not `service_name`. Everything else, including `trace_id` and `request_id`, stays in the log body as fields.
 - Scrubbed by default: `Authorization` headers, cookies, tokens, passwords, email addresses, request/response bodies, and provider payloads.
 
 ## 4. Traces
@@ -145,18 +145,10 @@ Each key lookup counts once: `fresh` and `stale` were served from the cache, `fe
 
 ## 5. Retention budgets (starting points)
 
-Metrics 30 days, logs 14 days, traces 7 days. Adjust from observed cost and incident value, per section 8.5 of the analysis.
+Metrics 30 days, logs 14 days, traces 7 days. Adjust them from observed cost and incident value.
 
 ## 6. Conformance
 
 - `baukit-test` ships a conformance test: boot the service, scrape `/metrics`, assert the section 2 names and labels exist, and assert no forbidden names (plural duration, app-prefixed HTTP metrics) appear.
 - Dashboards, recording rules, and alerts in `deploy/observability/` are linted in CI against the names in this file.
 - Changes to this specification are SemVer-relevant for `baukit-telemetry` and `baukit-http` and require a migration note in the release.
-
-## 7. Migration checklist for the existing apps
-
-| App | Required changes |
-|---|---|
-| Fitness Tracker | duration metric plural → singular; log label `service_name` → `service` |
-| OpenDialog | remove duplicate HTTP recording (custom RED middleware plus `axum-prometheus`); keep exactly one recorder |
-| Heldengang | drop app-prefixed HTTP metric names; status class → raw status code |

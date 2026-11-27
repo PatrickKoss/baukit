@@ -19,7 +19,7 @@ use axum::{Router, middleware, routing::get};
 use baukit_auth::{AuthState, IdentityVerifier, establish_principal};
 use baukit_ratelimit::{InMemoryRateLimitStore, RateLimitOptions, layers};
 
-# fn example(verifier: impl IdentityVerifier + 'static) {
+# fn example(verifier: impl IdentityVerifier + 'static) -> Router {
 let auth = AuthState::new(verifier);
 let app = layers(
     Router::new().route("/", get(|| async { "ok" })),
@@ -27,7 +27,7 @@ let app = layers(
     RateLimitOptions::default(),
 )
 .layer(middleware::from_fn_with_state(auth, establish_principal));
-# let _ = app;
+# app
 # }
 ```
 
@@ -88,7 +88,7 @@ connection setup instead of being partially applied.
 
 Several products can share one Redis. Set `rate_limit.redis_key_namespace`
 (`<PREFIX>__RATE_LIMIT__REDIS_KEY_NAMESPACE`) to a per-product value such as
-`leitbild:` and `RedisRateLimitStore::connect_if_enabled` prepends it to every
+`orders:` and `RedisRateLimitStore::connect_if_enabled` prepends it to every
 key of every store operation: token buckets, amount budgets, and amount
 releases, whichever crate built the key (`rate_limit.key_prefix`,
 `amount-budget:`, `suite:`, `mcp:`). The default is empty, which leaves existing

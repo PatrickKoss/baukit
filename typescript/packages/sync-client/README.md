@@ -50,10 +50,11 @@ therefore reports the last state committed to storage.
 
 ### Clock migration
 
-Redemut can replace its local HLC import with `@baukit/sync-client/hlc`. The existing
-`open(deviceId, storage, physicalClock)` call and `hlc-state` record remain compatible. No stored
-timestamp or state rewrite is needed. Redemut keeps its IndexedDB and SQLite adapters, device ID
-creation, merge rules, server compare-and-swap, and cursor protocol.
+A product with its own clock of the same encoding can switch its import to
+`@baukit/sync-client/hlc`. The `open(deviceId, storage, physicalClock)` call and the `hlc-state`
+record stay compatible, so no stored timestamp or state needs a rewrite. The product keeps its
+IndexedDB and SQLite adapters, device ID creation, merge rules, server compare-and-swap and cursor
+protocol.
 
 ## Scheduler
 

@@ -44,7 +44,7 @@ pub struct CreditPack {
     /// Unix seconds.
     pub expires_at: i64,
 }
-/// The bucketed balance of Schlüsselbund C21 and later.
+/// The bucketed balance that current hubs return.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreditBalance {

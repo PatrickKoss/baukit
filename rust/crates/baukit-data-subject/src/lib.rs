@@ -25,3 +25,8 @@ pub use validation::{
 
 /// The supported HTTP contract version.
 pub const CONTRACT_VERSION: &str = "1";
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;

@@ -284,7 +284,7 @@ struct TicketResponse {
 }
 
 /// `POST /platform/v1/entitlements/tickets` with service credentials and
-/// `includeBilling`, so the ticket carries the `billing` claim (Schlüsselbund C27).
+/// `includeBilling`, so the ticket carries the `billing` claim.
 pub struct PlatformTicketSource {
     hub: Arc<HubClient>,
 }

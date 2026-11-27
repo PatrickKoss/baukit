@@ -620,6 +620,7 @@ dependencies = [
  "baukit-config",
  "baukit-egress",
  "baukit-http",
+ "baukit-jobs",
  "baukit-push",
  "baukit-test",
  "jiff 1.0.0",

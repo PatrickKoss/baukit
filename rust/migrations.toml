@@ -1,5 +1,5 @@
 # Order in which a product applies baukit's reference migrations, as data for
-# scripts/check-migrations.py and docs/migrations/authoring.md. Crates apply in list order, each
+# scripts/check-migrations.py and docs/migrations/authoring-sql-migrations.md. Crates apply in list order, each
 # crate's files in file-name order. `after` names crates whose tables this crate's SQL touches;
 # the checker fails when a crate appears before one it names.
 schema = 1
@@ -37,7 +37,7 @@ after = ["baukit-jobs"]
 name = "baukit-suite"
 after = ["baukit-jobs"]
 
-# Files shipped before docs/migrations/authoring.md. squawk skips them and the double-apply
+# Files shipped before docs/migrations/authoring-sql-migrations.md. squawk skips them and the double-apply
 # check lets their second run fail, because sqlx checksums forbid editing them (F-58).
 # This list only shrinks: never add a new file to it.
 [shipped]

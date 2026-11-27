@@ -9,13 +9,19 @@ unapproved addresses and connects only to the DNS answers it checked.
 The crate is opt-in. It is not part of the generated backend template and is not
 wired into `baukit_config::BaukitConfig`.
 
-```rust,ignore
+```rust,no_run
 use baukit_egress::{EgressOptions, EgressRequest, GuardedClient};
+# use axum::http::HeaderMap;
+# use url::Url;
+# async fn example(url: Url, headers: HeaderMap, body: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
 
 let client = GuardedClient::new("provider", EgressOptions::default())?;
 let response = client
     .execute(EgressRequest::post(url).with_headers(headers).with_body(body))
     .await?;
+# let _ = response;
+# Ok(())
+# }
 ```
 
 The first argument names the destination for metrics (`hub`, `oidc`, `expo`, a
@@ -187,6 +193,14 @@ literals need brackets. Paths are unrestricted; credentials and fragments remain
 forbidden. `host()`, `port()` and `matches(&url)` expose the validated allowance.
 DNS pinning, disabled proxies and unfollowed redirects still apply.
 
+`AllowedEndpoint::new` and `AllowedEndpoint::from_url(&url)` are for hosts the
+operator configures. Never pass a tenant-supplied host to them. For a host or
+URL a tenant or end user supplies, use `AllowedEndpoint::tenant(host, port,
+allow_http)` or `AllowedEndpoint::tenant_from_url(&url)`. Those pass only
+public DNS answers and reject an IP literal that is not public, so a
+tenant-controlled DNS name cannot point inward. `origin()` returns which kind
+an endpoint is, `EndpointOrigin::OperatorInternal` or `EndpointOrigin::Tenant`.
+
 `AddressPolicy::PublicHttp` accepts HTTP and HTTPS to the same public addresses
 as `PublicOnly`. It checks literal addresses and every DNS answer before
 connecting. Private addresses and metadata remain blocked.
@@ -230,8 +244,17 @@ By default `execute` reads a `2xx` body up to `EgressOptions::max_response_bytes
 and fails with `ResponseTooLarge` above it. A webhook sender does not need the
 receiver's answer, so it drops the body unread:
 
-```rust,ignore
+```rust,no_run
 use baukit_egress::{EgressRequest, ResponseBody};
+# use baukit_egress::GuardedClient;
+# use axum::http::HeaderMap;
+# use url::Url;
+# async fn example(
+#     client: &GuardedClient,
+#     url: Url,
+#     headers: HeaderMap,
+#     body: Vec<u8>,
+# ) -> Result<(), Box<dyn std::error::Error>> {
 
 let request = EgressRequest::post(url)
     .with_headers(headers)
@@ -239,6 +262,8 @@ let request = EgressRequest::post(url)
     .with_response_body(ResponseBody::Discard);
 let delivered = client.execute(request).await?;
 assert!(delivered.body().is_empty());
+# Ok(())
+# }
 ```
 
 Any `2xx` then counts as delivered, whatever its size. The connection closes
@@ -247,9 +272,11 @@ way in both modes. Their bodies are read only when `with_error_body_limit` is en
 
 To read a product error code, opt in to bounded error bodies:
 
-```rust,ignore
+```rust,no_run
 use baukit_egress::{EgressError, EgressOptions, EgressRequest, GuardedClient};
 use axum::http::StatusCode;
+# use url::Url;
+# async fn example(url: Url, body: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
 
 let options = EgressOptions::default().with_error_body_limit(4096)?;
 let client = GuardedClient::new("provider", options)?;
@@ -264,6 +291,8 @@ match client.execute(EgressRequest::post(url).with_body(body)).await {
     }
     Err(error) => return Err(error.into()),
 }
+# Ok(())
+# }
 ```
 
 The limit must be nonzero and at most `max_response_bytes`. Both builders check that
@@ -280,7 +309,8 @@ out, the status and retry class are preserved and the captured body is `None`.
 
 ## Resolver port
 
-```rust,ignore
+```rust
+# use baukit_egress::ResolveFuture;
 pub trait Resolver: Send + Sync {
     fn resolve<'a>(&'a self, host: &'a str) -> ResolveFuture<'a>;
 }

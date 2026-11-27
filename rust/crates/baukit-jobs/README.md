@@ -5,7 +5,7 @@ worker runner. Products own job identifiers, JSON payload types, handlers, and
 migration order.
 
 Optional owner-scoped enqueue and erasure are not implemented. The accepted
-[durable job ownership design](../../../docs/platform/durable-job-ownership.md)
+[durable job ownership decision](../../../docs/adr/0021-job-ownership-keys-for-erasure.md)
 defines the compatibility and migration requirements for that later change.
 
 ## Migration
@@ -158,9 +158,11 @@ pending or running job of a type should exist for a key. For a domain mutation
 and enqueue that must commit together, call
 `enqueue_deduplicated_in_transaction(&mut transaction, job, dedupe_key)`.
 
-```rust,no_run
+```rust
 use baukit_jobs::NewJob;
 use serde_json::json;
+# use baukit_jobs::{EnqueueOutcome, PostgresJobStore, StoreError};
+# async fn example(jobs: PostgresJobStore) -> Result<EnqueueOutcome, StoreError> {
 
 let outcome = jobs
     .enqueue_deduplicated(
@@ -168,6 +170,8 @@ let outcome = jobs
         "resource:42",
     )
     .await?;
+# Ok(outcome)
+# }
 ```
 
 The key is scoped to `job_type`, must contain 1 to 500 characters, and cannot

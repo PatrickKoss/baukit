@@ -19,7 +19,7 @@ should. The clock orders timestamps. It does not choose which record wins.
 A backend that allocates revisions or purges tombstones enables the feature:
 
 ```toml
-baukit-sync = { version = "0.4", features = ["sqlx-postgres"] }
+baukit-sync = { version = "0.31", features = ["sqlx-postgres"] }
 ```
 
 A crate that only needs the clock uses the plain dependency and pulls in no database driver.
@@ -44,8 +44,8 @@ let state_to_persist = clock.snapshot();
 # Ok::<(), baukit_sync::hlc::HlcError>(())
 ```
 
-The encoding is `wall_time_ms * 1000 + counter + 1`. It matches Redemut's existing Rust and
-TypeScript clocks. The added one reserves zero as invalid. `compare` returns `None` if either input
+The encoding is `wall_time_ms * 1000 + counter + 1`. `@baukit/sync-client/hlc` uses the same
+encoding. The added one reserves zero as invalid. `compare` returns `None` if either input
 is invalid. A counter that reaches 1,000 moves the wall component forward by one millisecond and
 resets the counter to zero.
 
@@ -59,9 +59,9 @@ write failures remain the caller's errors because persistence stays outside this
 
 ### Clock migration
 
-Redemut can replace `redemut_services::hlc` with `baukit_sync::hlc`. Its stored integer timestamps
-and camel-case serialized state need no data migration. Keep the product's server
-compare-and-swap loop, last-writer-wins merge, and device tie-break in Redemut.
+A product with its own clock of the same encoding can switch to `baukit_sync::hlc` without a data
+migration. Stored integer timestamps and camel-case serialized state stay valid. The server
+compare-and-swap loop, last-writer-wins merge and device tie-break stay in the product.
 
 ## Why revisions use a counter
 

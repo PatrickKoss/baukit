@@ -140,3 +140,8 @@ pub const POSTGRES_MIGRATION_0007_SQL: &str =
 /// runs it outside a transaction and the index builds concurrently.
 pub const POSTGRES_MIGRATION_0008_SQL: &str =
     include_str!("../migrations/0008_baukit_jobs_running_key_index.sql");
+
+// Compiles the README's examples so they cannot drift from the API.
+#[doc = include_str!("../README.md")]
+#[cfg(doctest)]
+struct ReadmeDoctests;
