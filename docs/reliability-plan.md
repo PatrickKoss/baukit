@@ -494,13 +494,13 @@ FX tests come first in each phase where they apply: write the failing test, then
 
 ## Phase FU: follow-ups found while landing 0.32.0
 
-- [ ] **FU1 Start the generated processes**: a Docker-gated template test that runs the built worker
+- [x] **FU1 Start the generated processes**: a Docker-gated template test that runs the built worker
   binary against Postgres, waits for readiness on the ops port, sends SIGTERM and asserts a clean exit
   inside the drain. The worker failed at startup on every default config in a 0.32.0 candidate and no
   gate noticed.
 - [x] **FU2 Double-apply matches sqlx**: `check-migrations.py double-apply` sends a `-- no-transaction`
   file as one query, the way sqlx does, so a `SET` next to `CREATE INDEX CONCURRENTLY` fails the check.
-- [ ] **FU3 Client leftovers from CL**: `delete-profile.ts` shares the app runtime so its cooldown
+- [x] **FU3 Client leftovers from CL**: `delete-profile.ts` shares the app runtime so its cooldown
   reaches the banner, and the mobile renewal hook reports a renewal error only once it is terminal or
   the token has expired.
 
@@ -597,10 +597,10 @@ PL6; FX3, FX4; REL1-REL3.
 
 | Agent | Tasks | Status |
 |---|---|---|
-| rel-fu-process | FU1 | briefed |
-| rel-fu-migrations | FU2 | briefed |
+| rel-fu-process | FU1 | merged after two rounds (generated files only where a target compiles them) |
+| orchestrator | FU2 | merged (ccdfc88e) |
 | rel-pl7 | PL7 rest (push metrics, fixed suite metric names, alerts), PL4 rest (pool sizing in `local-footprint.md`) | merged, verified (crate tests, metric-names, observability-rules, observability-tests, docs-links, baukit-check) |
-| rel-fu-clients | FU3 | round 2: shared cooldown in api-runtime, export of isTerminalRefreshError |
+| rel-fu-clients | FU3 | merged after two rounds (shared cooldown in api-runtime, `isTerminalRefreshError` export) |
 
 ## Open questions
 
@@ -1018,3 +1018,14 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
 - FU3 round 1: renewal errors stay quiet while the token is valid. The delete-profile cooldown needs a
   package change, because `fetchSettings` builds a new `OriginCooldown` for every runtime, so round 2
   adds a shared cooldown to `@baukit/api-runtime`.
+- rel-fu-process merged after two rounds.
+  - `worker_process.rs` starts the worker binary with only environment config and the default job
+    timeout and drain, waits for `/readyz`, sends SIGTERM, and expects a clean exit inside the drain.
+    With the old `DrainBudget::new(drain, job_timeout)` it fails and prints the `DrainBudgetError`.
+  - `api_process.rs` does the same for the API in products without auth. With auth, readiness needs
+    an IdP.
+  - Round 2: the generator skips a non-empty template that renders to whitespace, so products do not
+    get test files that no target compiles.
+- FU3 round 2 merged. `@baukit/api-runtime` exports `OriginCooldown` and takes one as `cooldown`, so
+  the delete-profile runtime shares the app cooldown and a `Retry-After` from it opens the banner.
+  `@baukit/auth-native` exports `isTerminalRefreshError`.
