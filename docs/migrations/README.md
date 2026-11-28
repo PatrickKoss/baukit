@@ -3,6 +3,25 @@
 Each guide covers one breaking or behaviour change and says what a product has to do. Read the ones for the
 crates and packages your product uses.
 
+## Upgrading 0.32 to 0.33
+
+There are no SQL migrations.
+
+1. Change the code and queries that the suite rename breaks. See
+   [suite-fixed-metric-names.md](suite-fixed-metric-names.md): the three suite metrics lose the app-id
+   prefix, `SuiteServiceConfig` and `SuiteContext` drop `metric_prefix`, and
+   `PostgresSuiteEventOutbox::new` drops its last argument.
+2. Add `docs/threat-model.md`. `baukit doctor` now expects it in every product. Copy the starter from a
+   `baukit new` with your product's flags and fill every `TODO(owner)` row, or add a `[doctor] waive`
+   entry that says where your threat model lives.
+3. Pick up the new alerts `BaukitPushDeliveryFailing`, `BaukitSuiteDeliveryFailing` and
+   `BaukitSuiteEmissionSkipped` with the observability rules. `baukit-push` now emits
+   `push_notifications_total{outcome}`.
+4. Copy the client and test changes that `templates/common/CHANGELOG.md` lists for your flavor: the
+   quiet token renewal on mobile, the shared `apiCooldown` for profile deletion (needs the
+   `OriginCooldown` export of `@baukit/api-runtime`), and the process tests `tests/worker_process.rs`
+   and, without auth, `tests/api_process.rs`.
+
 ## Upgrading 0.31 to 0.32
 
 Do the steps in this order. The `baukit-jobs` changes are expand-only, so a 0.31.x binary keeps running

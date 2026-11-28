@@ -1029,3 +1029,6 @@ case under `deploy/platform/e2e/tests`). Nothing implemented yet.
 - FU3 round 2 merged. `@baukit/api-runtime` exports `OriginCooldown` and takes one as `cooldown`, so
   the delete-profile runtime shares the app cooldown and a `Retry-After` from it opens the banner.
   `@baukit/auth-native` exports `isTerminalRefreshError`.
+- Merged origin/main 760aa810 (the starter threat model, which `baukit doctor` now expects). Added
+  `docs/migrations/suite-fixed-metric-names.md` and the "Upgrading 0.32 to 0.33" steps. The release is
+  0.33.0, because the suite rename breaks products.
