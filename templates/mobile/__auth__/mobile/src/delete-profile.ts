@@ -2,7 +2,7 @@ import Constants from 'expo-constants';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import * as SQLite from 'expo-sqlite';
-import { createApiRuntime } from '@baukit/api-runtime';
+import { createApiRuntime, type FetchImplementation } from '@baukit/api-runtime';
 import {
   createProfileErasureClient,
   ProfileErasureKeyCleanupError,
@@ -11,6 +11,8 @@ import {
 import type { IdempotencyKeyStorage, StoredIdempotencyKey } from '@baukit/api-runtime/idempotency';
 import { eraseProductProfile } from '@baukit/data-contracts';
 
+import { apiCooldown } from './api';
+import { apiAvailability, trackApiAvailability } from './api-availability';
 import { authClient } from './auth';
 import { profileErasureMarker } from './erasure-marker';
 import { createAppPreferenceRecordStore } from './record-store';
@@ -47,6 +49,20 @@ function durableKeys(): IdempotencyKeyStorage {
   };
 }
 
+/** Opens the outage banner as soon as this runtime's own `Retry-After` starts the shared cooldown. */
+function trackCooldown(fetch: FetchImplementation, origin: string): FetchImplementation {
+  const tracked = trackApiAvailability(fetch, apiAvailability);
+  return async (input, init) => {
+    try {
+      return await tracked(input, init);
+    } catch (cause) {
+      const retryAt = apiCooldown.blockedUntil(origin);
+      if (retryAt !== null) apiAvailability.markUnavailable(retryAt);
+      throw cause;
+    }
+  };
+}
+
 export async function createDeleteProfileClient(subject: string): Promise<ProfileErasureClient> {
   const token = await authClient.accessToken();
   const configuredBaseUrl: unknown = Constants.expoConfig?.extra?.['apiBaseUrl'];
@@ -60,9 +76,10 @@ export async function createDeleteProfileClient(subject: string): Promise<Profil
     environment: __DEV__ ? 'development' : 'production',
     tokenProvider: () => Promise.resolve(token ?? null),
     retry: false,
+    cooldown: apiCooldown,
   });
   return createProfileErasureClient({
-    fetch: runtime.fetch,
+    fetch: trackCooldown(runtime.fetch, new URL(runtime.baseUrl).origin),
     account: subject,
     storage: durableKeys(),
     keyFactory: () => Crypto.randomUUID(),

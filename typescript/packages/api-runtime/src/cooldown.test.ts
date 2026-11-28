@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { OriginCooldown } from './cooldown.js';
+import { ApiUnavailableError, HttpError, MockFetch, createApiFetch } from './index.js';
 
 const ORIGIN = 'https://api.example.test';
 
@@ -58,5 +59,39 @@ describe('OriginCooldown', () => {
 
   it('rejects a jitter share above 100 percent', () => {
     expect(() => new OriginCooldown({ jitterPercent: 101 }, () => 0)).toThrow(/jitterPercent/);
+  });
+});
+
+describe('shared cooldown', () => {
+  const options = { baseUrl: `${ORIGIN}/v1`, environment: 'test', retry: false } as const;
+  const START = Date.UTC(2026, 0, 1);
+  const unavailable = (): Response =>
+    new Response(null, { status: 503, headers: { 'retry-after': '5' } });
+
+  it('makes a Retry-After seen by one runtime fail fast on another', async () => {
+    const cooldown = new OriginCooldown({}, () => START);
+    const first = new MockFetch().enqueue(unavailable());
+    const second = new MockFetch().enqueueJson({});
+    const erasure = createApiFetch({ ...options, fetch: first.fetch, cooldown, now: () => START });
+    const app = createApiFetch({ ...options, fetch: second.fetch, cooldown, now: () => START });
+
+    await expect(erasure('/me', { method: 'DELETE' })).rejects.toBeInstanceOf(HttpError);
+    const caught = await app('/items').catch((error: unknown) => error);
+
+    expect(caught).toBeInstanceOf(ApiUnavailableError);
+    expect(caught).toMatchObject({ retryAt: START + 5_000 });
+    expect(second.requests).toHaveLength(0);
+  });
+
+  it('keeps a cooldown per runtime by default', async () => {
+    const first = new MockFetch().enqueue(unavailable());
+    const second = new MockFetch().enqueueJson({});
+    const erasure = createApiFetch({ ...options, fetch: first.fetch, now: () => START });
+    const app = createApiFetch({ ...options, fetch: second.fetch, now: () => START });
+
+    await expect(erasure('/me', { method: 'DELETE' })).rejects.toBeInstanceOf(HttpError);
+
+    await expect(app('/items')).resolves.toHaveProperty('status', 200);
+    expect(second.requests).toHaveLength(1);
   });
 });

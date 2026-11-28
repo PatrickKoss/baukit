@@ -26,6 +26,7 @@ baukit-egress.workspace = true
 baukit-http.workspace = true
 jiff.workspace = true
 jiff-sqlx = { workspace = true, optional = true }
+metrics.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx = { workspace = true, optional = true }
@@ -39,6 +40,7 @@ uuid.workspace = true
 baukit-push = { path = ".", features = ["sqlx-postgres", "test-support"] }
 baukit-jobs = { path = "../baukit-jobs" }
 baukit-test = { path = "../baukit-test", features = ["sqlx-postgres"] }
+metrics-util.workspace = true
 tokio.workspace = true
 proptest = "1.12.0"
 tracing-subscriber.workspace = true

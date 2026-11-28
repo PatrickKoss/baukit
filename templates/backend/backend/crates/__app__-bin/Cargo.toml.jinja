@@ -89,6 +89,11 @@ path = "../../tests/postgres_integration.rs"
 [[test]]
 name = "postgres_outage"
 path = "../../tests/postgres_outage.rs"
+{% if not context.auth_enabled %}
+[[test]]
+name = "api_process"
+path = "../../tests/api_process.rs"
+{% endif -%}
 {% if context.worker %}
 [[test]]
 name = "requeue_mount"
@@ -97,6 +102,10 @@ path = "../../tests/requeue_mount.rs"
 [[test]]
 name = "worker_drain"
 path = "../../tests/worker_drain.rs"
+
+[[test]]
+name = "worker_process"
+path = "../../tests/worker_process.rs"
 
 [[test]]
 name = "worker_integration"

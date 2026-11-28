@@ -100,6 +100,7 @@ impl ExpoPushSender {
     /// egress client for it cannot be built.
     pub fn with_options(options: PushOptions) -> Result<Self, PushOptionsError> {
         let client = endpoint_client(&options)?;
+        crate::metrics::describe();
         Ok(Self { client, options })
     }
 
@@ -323,13 +324,17 @@ impl PushSender for ExpoPushSender {
             let mut outcomes = Vec::with_capacity(batch.len());
             for (index, chunk) in batch.chunks(batch_size).enumerate() {
                 match self.send_chunk(chunk).await {
-                    Ok(chunk_outcomes) => outcomes.extend(chunk_outcomes),
+                    Ok(chunk_outcomes) => {
+                        crate::metrics::record_outcomes(&chunk_outcomes);
+                        outcomes.extend(chunk_outcomes);
+                    }
                     Err(error) => {
-                        let unsent = batch
+                        let unsent: Vec<_> = batch
                             .iter()
                             .skip(index.saturating_mul(batch_size))
                             .cloned()
                             .collect();
+                        crate::metrics::record_failed(unsent.len());
                         return Err(PushSendError {
                             error,
                             outcomes,

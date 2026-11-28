@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `isTerminalRefreshError(cause)` is exported. It is true for a refresh the provider rejected for good, the case where `scheduleTokenRenewal` stops.
+
 ## 0.32.0
 
 - New `scheduleTokenRenewal({ expiresAt, renew })` renews 30 s before expiry, retries with full-jitter backoff from 1 s up to 60 s, and stops on a terminal refresh rejection. It returns a cancel function.

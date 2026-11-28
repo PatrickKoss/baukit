@@ -527,6 +527,7 @@ dependencies = [
  "baukit-egress",
  "baukit-http",
  "jiff 1.0.0",
+ "metrics",
  "serde",
  "serde_json",
  "thiserror",

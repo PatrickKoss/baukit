@@ -4,6 +4,8 @@ All notable changes to `baukit-push` are documented here.
 
 ## [Unreleased]
 
+- `ExpoPushSender::send` counts each notification in `push_notifications_total` by `outcome`: `delivered`, `accepted`, `token_dead`, `rejected`, or `failed` for notifications a failed request left unsent. The name is exported as `PUSH_NOTIFICATIONS_TOTAL`, and every outcome is registered at zero when the sender is built.
+
 ## [0.32.0] - 2026-11-27
 
 - Breaking: `PushSender::send` fails with `PushSendError` instead of `PushError`. A failing chunk no longer drops the tickets of the chunks Expo already accepted: the error carries their `outcomes` and the `unsent` messages, so a retry resends only those. It replaces `PushError::Partial` and `PushError::completed_outcomes` from 0.31.0.

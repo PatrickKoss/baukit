@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Breaking: metric names are fixed instead of prefixed with the app id. `{app_id}_suite_deliveries_total` is now `suite_deliveries_total`, `{app_id}_suite_events_ingested_total` is `suite_events_ingested_total` and `{app_id}_suite_emission_skipped_total` is `suite_emission_skipped_total`. `SuiteServiceConfig` and `SuiteContext` drop `metric_prefix`, and `PostgresSuiteEventOutbox::new` drops its last argument. Update queries and dashboards that used the old names. `suite_deliveries_total{outcome="deferred"}` is now registered at zero on startup.
+
 ## [0.32.0] - 2026-11-27
 
 - Delivery jobs carry the peer app as `concurrency_key` (`suite_delivery_concurrency_key`), and `default_worker_config` sets `max_per_key` to `SUITE_DELIVERY_MAX_PER_KEY` (1). Needs `baukit-jobs` migration 0006.

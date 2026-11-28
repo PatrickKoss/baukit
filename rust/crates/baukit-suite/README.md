@@ -206,7 +206,7 @@ start from `default_worker_config()` or set `max_per_key` the same way. The key
 needs `baukit-jobs` migration 0006.
 
 `build` validates `SuiteConfig` and fails without a cipher when peers are configured.
-`app_id` is also the metric prefix. `share_xp(false)` overrides the configuration for
+`share_xp(false)` overrides the configuration for
 products that never emit XP. An applier that needs the outbox goes to
 `suite.module_with(applier)` after the repository exists. Wrap `suite.module()` or
 `suite.delivery` for product decorators.

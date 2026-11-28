@@ -2235,12 +2235,12 @@ ids = [
 
 [images."postgres:14.25-alpine3.23@sha256:cbc8ffe87bbf8118c4a211ffa57801b0dbb6f7e13a381a1fea449d47fb1abe0c"]
 expires = 2027-01-16
-reason = "postgres:14.25-alpine3.23: no fixed upstream release exists as of 2026-11-21. 14.25 is the newest PostgreSQL 14 release, the major PostHog 1.43 supports; the Alpine 3.23 build carries no Alpine package findings, while the Alpine 3.24 build still ships libxml2 2.13.9-r2 (CVE-2026-86144, fixed in 2.13.9-r3), so the pin stays on alpine3.23 until a 3.24 rebuild takes the fix, and leaves Go standard library CVEs in the bundled gosu binary. Follow-up RF29."
+reason = "postgres:14.25-alpine3.23: no fixed upstream release exists as of 2026-11-28. 14.25 is the newest PostgreSQL 14 release, the major PostHog 1.43 supports. Both the Alpine 3.23 build (libxml2 2.13.9-r1) and the Alpine 3.24 build (libxml2 2.13.9-r2) carry CVE-2026-11979 and CVE-2026-86138 to CVE-2026-86144, which Alpine fixes in libxml2 2.13.9-r5, and no rebuild has taken it yet. The other ids are Go standard library CVEs in the bundled gosu binary. Follow-up RF29."
 ids = [
   "CVE-2025-61726",
   "CVE-2025-61729",
   "CVE-2025-68121",
-  "CVE-2026-111943",
+  "CVE-2026-11979",
   "CVE-2026-25679",
   "CVE-2026-27145",
   "CVE-2026-32280",
@@ -2262,8 +2262,15 @@ ids = [
   "CVE-2026-56862",
   "CVE-2026-78667",
   "CVE-2026-78669",
+  "CVE-2026-86138",
+  "CVE-2026-86139",
+  "CVE-2026-86140",
+  "CVE-2026-86142",
+  "CVE-2026-86143",
+  "CVE-2026-86144",
   "CVE-2026-97031",
   "CVE-2026-97054",
+  "CVE-2026-111943",
 ]
 
 [images."docker.io/adorsys/keycloak-config-cli:6.5.1-26.5.5@sha256:0955d98c8a341898b7aa177477edf8a1e90569ae50bbe7598141c1270b773274"]

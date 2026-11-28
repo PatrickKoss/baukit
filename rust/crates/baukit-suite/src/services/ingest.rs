@@ -197,14 +197,11 @@ impl SuiteIngestService {
     ) -> Result<IngestResult, SuiteServiceError> {
         let result = self.ingest_inner(id, h, body, now).await;
         if let Err(error) = &result {
-            ingest_metric(
-                &self.context.metric_prefix,
-                if matches!(error, SuiteServiceError::SignatureInvalid) {
-                    "unauthorized"
-                } else {
-                    "rejected"
-                },
-            );
+            ingest_metric(if matches!(error, SuiteServiceError::SignatureInvalid) {
+                "unauthorized"
+            } else {
+                "rejected"
+            });
         }
         result
     }
@@ -280,7 +277,7 @@ impl SuiteIngestService {
             .record_inbound_in_transaction(&mut tx, &inbound)
             .await?;
         self.context.store.commit_transaction(tx).await?;
-        ingest_metric(&self.context.metric_prefix, outcome_label(outcome.outcome));
+        ingest_metric(outcome_label(outcome.outcome));
         Ok(IngestResult {
             duplicate: false,
             outcome: outcome.into(),
@@ -318,7 +315,7 @@ impl SuiteIngestService {
             .record_received_in_transaction(&mut tx, link.user_id, link.id, now)
             .await?;
         self.context.store.commit_transaction(tx).await?;
-        ingest_metric(&self.context.metric_prefix, metric_outcome);
+        ingest_metric(metric_outcome);
         Ok(result)
     }
     /// Runs the product applier and rejects a replay that granted a reward.

@@ -1,0 +1,113 @@
+rule_files:
+  - ../alerts/baukit.rules.yml
+evaluation_interval: 1m
+tests:
+  - name: rejected and unsent pushes fire BaukitPushDeliveryFailing after 15m
+    interval: 1m
+    input_series:
+      - series: 'push_notifications_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",outcome="delivered"}'
+        values: '0+60x40'
+      - series: 'push_notifications_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",outcome="rejected"}'
+        values: '0+5x40'
+      - series: 'push_notifications_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",outcome="failed"}'
+        values: '0+10x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BaukitPushDeliveryFailing
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: BaukitPushDeliveryFailing
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              namespace: fixture
+              severity: warning
+            exp_annotations:
+              summary: Push notifications fail
+              description: 'More than 10% of push notifications from fixture-api in fixture were rejected by the provider or never sent for fifteen minutes.'
+              runbook_url: RUNBOOK_BASE_URL/push-delivery-failing
+
+  - name: dead tokens and low traffic keep BaukitPushDeliveryFailing quiet
+    interval: 1m
+    input_series:
+      - series: 'push_notifications_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",outcome="accepted"}'
+        values: '0+60x40'
+      - series: 'push_notifications_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",outcome="token_dead"}'
+        values: '0+30x40'
+      - series: 'push_notifications_total{product="fixture",service="fixture-worker",environment="test",namespace="fixture",instance="10.0.0.2:9000",job="fixture-worker",outcome="failed"}'
+        values: '0+0.3x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: BaukitPushDeliveryFailing
+        exp_alerts: []
+
+  - name: failing peer deliveries fire BaukitSuiteDeliveryFailing after 15m
+    interval: 1m
+    input_series:
+      - series: 'suite_deliveries_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",outcome="delivered"}'
+        values: '0+6x40'
+      - series: 'suite_deliveries_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",outcome="retry"}'
+        values: '0+2x40'
+      - series: 'suite_deliveries_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",outcome="unauthorized"}'
+        values: '0+1x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: BaukitSuiteDeliveryFailing
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: BaukitSuiteDeliveryFailing
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              namespace: fixture
+              severity: warning
+            exp_annotations:
+              summary: Suite peer deliveries fail
+              description: 'More than 10% of suite event deliveries from fixture-api in fixture failed, were refused by the peer or hit a disabled link for fifteen minutes.'
+              runbook_url: RUNBOOK_BASE_URL/suite-delivery-failing
+
+  - name: deferred and revoked deliveries keep BaukitSuiteDeliveryFailing quiet
+    interval: 1m
+    input_series:
+      - series: 'suite_deliveries_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",outcome="delivered"}'
+        values: '0+6x40'
+      - series: 'suite_deliveries_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",outcome="deferred"}'
+        values: '0+6x40'
+      - series: 'suite_deliveries_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",outcome="revoked"}'
+        values: '0+3x40'
+      - series: 'suite_deliveries_total{product="fixture",service="fixture-worker",environment="test",namespace="fixture",instance="10.0.0.2:9000",job="fixture-worker",outcome="rejected"}'
+        values: '0+0.3x40'
+    alert_rule_test:
+      - eval_time: 35m
+        alertname: BaukitSuiteDeliveryFailing
+        exp_alerts: []
+
+  - name: a skipped emission fires BaukitSuiteEmissionSkipped
+    interval: 1m
+    input_series:
+      - series: 'suite_emission_skipped_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",reason="storage"}'
+        values: '0x10 1x20'
+      - series: 'suite_emission_skipped_total{product="fixture",service="fixture-api",environment="test",namespace="fixture",instance="10.0.0.1:9000",job="fixture-api",reason="invalid"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: BaukitSuiteEmissionSkipped
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: BaukitSuiteEmissionSkipped
+        exp_alerts:
+          - exp_labels:
+              product: fixture
+              service: fixture-api
+              environment: test
+              namespace: fixture
+              reason: storage
+              severity: warning
+            exp_annotations:
+              summary: Suite events were dropped before the outbox
+              description: 'Suite events from fixture-api in fixture were not written to the outbox in the last 15 minutes (storage). Peers never receive them.'
+              runbook_url: RUNBOOK_BASE_URL/suite-emission-skipped

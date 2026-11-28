@@ -128,6 +128,25 @@ Each key lookup counts once: `fresh` and `stale` were served from the cache, `fe
 
 `destination` is the name passed to `GuardedClient::new` (`oidc`, `idp`, `hub`, `suite-peer`, `expo`, `keycloak-admin`, `mcp-introspection`, or a product provider name), never a host. `status` is the numeric response status, or `none` when no response arrived. Each call to `execute` or `execute_stream` adds one `egress_requests_total` sample, including calls refused by an open circuit or a full in-flight cap. `egress_request_duration_seconds` measures the time to the response headers of requests that were sent and uses the HTTP buckets from 2.1. `egress_circuit_state` is the worst state across the `(scheme, host, port)` breakers of one destination. A breaker reports open until the next call moves it to half-open, so a destination nobody calls keeps reporting open.
 
+### 2.10 Push (owned by `baukit-push`)
+
+| Metric | Type | Labels |
+|---|---|---|
+| `push_notifications_total` | counter | `outcome` (`delivered`, `accepted`, `token_dead`, `rejected`, `failed`) |
+
+`ExpoPushSender::send` adds one sample per notification per call. `accepted` is with the provider and waiting for its receipt, `token_dead` is a `DeviceNotRegistered` rejection, `rejected` is any other provider refusal, and `failed` counts the notifications left unsent by a failed provider request. Receipts settled later by `poll_pending_receipts` are not counted. Tokens, owners and device ids are never labels.
+
+### 2.11 Suite events (owned by `baukit-suite`)
+
+| Metric | Type | Labels |
+|---|---|---|
+| `suite_deliveries_total` | counter | `outcome` (`delivered`, `retry`, `deferred`, `rejected`, `unauthorized`, `revoked`, `disabled`) |
+| `suite_events_ingested_total` | counter | `outcome` (`granted`, `no_rule`, `capped`, `duplicate`, `rejected`, `unauthorized`) |
+| `suite_emission_skipped_total` | counter | `reason` (`invalid`, `timeout`, `storage`) |
+| `suite_cleanup_failures_total` | counter | none |
+
+The names are fixed. The product comes from the scrape labels (`service`, `environment`), not from a name prefix. `suite_deliveries_total` counts each peer delivery attempt, and `deferred` means an open egress breaker held it back. `suite_emission_skipped_total` counts live events that never reached the jobs outbox. `suite_cleanup_failures_total` counts hourly cleanup runs that hit a storage error.
+
 ## 3. Logs
 
 - JSON to stdout in deployed environments; human-readable format in local development. The switch follows `deployment.environment.name`.
