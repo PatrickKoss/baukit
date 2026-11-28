@@ -355,6 +355,9 @@ pub(crate) fn render_directory(
             name.truncate(name.len() - ".jinja".len());
         }
         let mut output = environment.render_str(source, context!(context))?;
+        if !source.is_empty() && output.trim().is_empty() {
+            continue;
+        }
         if name.ends_with("Cargo.toml") && context.app_crate != context.app_name {
             output = output.replace(
                 &format!("{}-", context.app_crate),
@@ -479,10 +482,57 @@ mod generator_tests {
         DirEntry::Dir(Dir::new("__pycache__", PYTHON_CACHE_ENTRIES)),
     ];
     static TEMPLATE: Dir<'_> = Dir::new("", TEMPLATE_ENTRIES);
+    static CONDITIONAL_ENTRIES: &[DirEntry<'_>] = &[
+        DirEntry::File(File::new(
+            "skipped.rs.jinja",
+            b"{% if context.quality_strict %}fn main() {}{% endif %}\n",
+        )),
+        DirEntry::File(File::new(".gitkeep", b"")),
+    ];
+    static CONDITIONAL_TEMPLATE: Dir<'_> = Dir::new("", CONDITIONAL_ENTRIES);
+
+    #[test]
+    fn templates_rendering_to_whitespace_are_skipped_but_empty_sources_are_kept()
+    -> anyhow::Result<()> {
+        let mut rendered = BTreeMap::new();
+
+        render_directory(
+            &CONDITIONAL_TEMPLATE,
+            &Environment::new(),
+            &test_context()?,
+            &mut rendered,
+            false,
+        )?;
+
+        assert_eq!(
+            rendered,
+            BTreeMap::from([(PathBuf::from(".gitkeep"), Vec::new())])
+        );
+        Ok(())
+    }
 
     #[test]
     fn embedded_python_cache_artifacts_do_not_reach_the_generated_tree() -> anyhow::Result<()> {
-        let context = TemplateContext {
+        let context = test_context()?;
+        let mut rendered = BTreeMap::new();
+
+        render_directory(
+            &TEMPLATE,
+            &Environment::new(),
+            &context,
+            &mut rendered,
+            false,
+        )?;
+
+        assert_eq!(
+            rendered,
+            BTreeMap::from([(PathBuf::from("kept.txt"), b"cache-test".to_vec())])
+        );
+        Ok(())
+    }
+
+    fn test_context() -> anyhow::Result<TemplateContext> {
+        Ok(TemplateContext {
             app_name: "cache-test".to_owned(),
             app_crate: "cache_test".to_owned(),
             app_env: "CACHE_TEST".to_owned(),
@@ -538,21 +588,6 @@ mod generator_tests {
                 realm: "cache-test".to_owned(),
             },
             postgres_owner_create_role: false,
-        };
-        let mut rendered = BTreeMap::new();
-
-        render_directory(
-            &TEMPLATE,
-            &Environment::new(),
-            &context,
-            &mut rendered,
-            false,
-        )?;
-
-        assert_eq!(
-            rendered,
-            BTreeMap::from([(PathBuf::from("kept.txt"), b"cache-test".to_vec())])
-        );
-        Ok(())
+        })
     }
 }
