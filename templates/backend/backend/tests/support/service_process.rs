@@ -1,4 +1,4 @@
-use std::{
+{% if not context.auth_enabled or context.worker %}use std::{
     error::Error,
     fmt,
     io::{BufRead as _, BufReader},
@@ -148,3 +148,4 @@ impl Drop for ServiceProcess {
         }
     }
 }
+{% endif -%}

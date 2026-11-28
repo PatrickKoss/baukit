@@ -1,4 +1,4 @@
-#[path = "support/service_process.rs"]
+{% if not context.auth_enabled %}#[path = "support/service_process.rs"]
 mod service_process;
 
 use std::{error::Error, path::PathBuf, time::Duration};
@@ -41,3 +41,4 @@ async fn api_binary_starts_with_defaults_and_drains_on_sigterm() -> Result<(), B
     drop(fixture);
     Ok(())
 }
+{% endif -%}
