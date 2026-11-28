@@ -9,6 +9,8 @@ The output is `docs/threat-model.md`. Every row names a control and a test that 
 
 Read `baukit.toml`, `CLAUDE.md`, `backend/`, `web/`, `mobile/`, the OpenAPI document, and the existing `docs/threat-model.md` first. Update the existing file in place. Keep row IDs stable so tasks and commits can cite them.
 
+`baukit new` generates a starter `docs/threat-model.md` with rows for the capabilities the product was created with. Start from it, not from a blank page: check each pre-filled row against the code, replace every `TODO(owner)`, and add rows for what the product added since. Products created before the starter existed write the file from scratch.
+
 ## 1. Inventory data classes
 
 List each class once, with where it lives. Check every store, including the ones nobody thinks of:

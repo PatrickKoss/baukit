@@ -2,9 +2,11 @@
 
 ## [Unreleased]
 
+- `docs/threat-model.md` is a starter threat model for this product. Fill every `TODO(owner)` row before the first release. `baukit doctor` now expects the file; a product that keeps its threat model elsewhere adds a `[doctor] waive` entry with the reason.
 {% if context.mobile and context.auth_enabled %}- The mobile app shows a token renewal error only when the renewal is terminal or the current token has expired. A transient failure while the token is still valid no longer flashes an error. Copy `shouldReportRenewalError` from `mobile/src/auth-feedback.ts` and its call in `useTokenRenewal` in `mobile/src/auth.ts`.
 {% endif %}{% if context.auth_enabled and (context.mobile or context.web) %}- A `503` with `Retry-After` from the profile deletion call now starts the app-wide cooldown and opens the outage banner, like any other API call. `src/api.ts` exports one `apiCooldown` that both runtimes share. Copy `apiCooldown` and its use from `src/api.ts`, `src/authenticated-api.ts` and `src/delete-profile.ts` in each client app. This needs `@baukit/api-runtime` with the `OriginCooldown` export.
 {% endif %}
+
 ## [0.32.0] - 2026-11-27
 
 {% if context.auth_enabled and context.backend %}- `backend/migrations/0011_identity_erasure_operation_id_guard.sql` replaces `erasure_job_failed()` so a failed identity deletion job whose `operationId` is not a UUID no longer aborts the job's status update. Apply it after `0006_identity_erasure_reonboarding.sql`.
