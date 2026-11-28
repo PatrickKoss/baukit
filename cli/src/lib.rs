@@ -93,6 +93,7 @@ const EXPECTED_COMMON_FILES: &[&str] = &[
     "scripts/osv-resolved-lock.test.py",
     "scripts/repo-lint.test.py",
     "scripts/rust-toolchain-pin.test.py",
+    "docs/threat-model.md",
 ];
 
 const EXPECTED_STRICT_FILES: &[&str] = &[
