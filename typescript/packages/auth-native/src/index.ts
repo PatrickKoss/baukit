@@ -23,7 +23,7 @@ export {
   type AppearanceState,
 } from './authorization-state.js';
 export { OidcError, safeAuthErrorMessage, type OidcErrorCode } from './oidc-errors.js';
-export { normalizeIssuer } from './oidc-support.js';
+export { isTerminalRefreshError, normalizeIssuer } from './oidc-support.js';
 export { scheduleTokenRenewal, type TokenRenewalOptions } from './token-renewal.js';
 
 import type {

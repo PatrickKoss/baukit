@@ -1,4 +1,4 @@
-import type { FetchImplementation } from '@baukit/api-runtime';
+import { OriginCooldown, type FetchImplementation } from '@baukit/api-runtime';
 
 import { createAuthenticatedApiRuntime } from './authenticated-api';
 import { apiSessionSubject } from './api-session';
@@ -16,11 +16,15 @@ export interface CurrentUser {
   readonly subject: string;
 }
 
+/** One cooldown for every runtime that calls this API, so a `Retry-After` from any of them blocks all. */
+export const apiCooldown = new OriginCooldown({}, Date.now);
+
 const api = createAuthenticatedApiRuntime({
   auth: authClient,
   sessionSubject: apiSessionSubject,
   baseUrl: apiBaseUrl,
   environment: import.meta.env.MODE,
+  cooldown: apiCooldown,
 });
 const apiFetch = trackApiAvailability(api.fetch, apiAvailability);
 

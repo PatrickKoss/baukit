@@ -185,7 +185,7 @@ describe('useAuth', () => {
     expect(result.current.announcement).toBe('Your session expired. Sign in again to continue.');
   });
 
-  it('refreshes the token shortly before it expires and reports a failed refresh', async () => {
+  it('keeps a transient renewal failure silent while the token is still valid', async () => {
     jest.useFakeTimers();
     const expiresInMs = REFRESH_LEAD_MS + 10_000;
     client.initialize.mockResolvedValue(session({ expiresAt: Date.now() + expiresInMs }));
@@ -197,7 +197,33 @@ describe('useAuth', () => {
 
     await act(() => jest.advanceTimersByTimeAsync(1));
     expect(client.accessToken.mock.calls).toHaveLength(1);
+    expect(result.current.error).toBeUndefined();
+  });
+
+  it('reports a transient renewal failure once the token has expired', async () => {
+    jest.useFakeTimers();
+    client.initialize.mockResolvedValue(session({ expiresAt: Date.now() - 1 }));
+    client.accessToken.mockRejectedValue(new OidcError('refresh_failed', { retryable: true }));
+    const { result } = await renderAuth();
+
+    await act(() => jest.advanceTimersByTimeAsync(0));
+
+    expect(client.accessToken.mock.calls).toHaveLength(1);
     expect(result.current.error).toBe('OIDC token refresh failed.');
+  });
+
+  it('reports a terminal renewal failure before expiry and stops renewing', async () => {
+    jest.useFakeTimers();
+    const expiresInMs = REFRESH_LEAD_MS + 10_000;
+    client.initialize.mockResolvedValue(session({ expiresAt: Date.now() + expiresInMs }));
+    client.accessToken.mockRejectedValue(new OidcError('refresh_failed', { retryable: false }));
+    const { result } = await renderAuth();
+
+    await act(() => jest.advanceTimersByTimeAsync(expiresInMs - REFRESH_LEAD_MS));
+    expect(result.current.error).toBe('OIDC token refresh failed.');
+
+    await act(() => jest.advanceTimersByTimeAsync(10 * 60_000));
+    expect(client.accessToken.mock.calls).toHaveLength(1);
   });
 
   it('passes the app appearance to the login page and clears earlier feedback', async () => {

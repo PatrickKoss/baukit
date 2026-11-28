@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- `OriginCooldown` is exported, and `cooldown` accepts an instance. Runtimes given the same instance share one cooldown; the default stays per runtime.
+
 ## 0.32.0
 
 - Breaking: each attempt times out after `requestTimeoutMs` (default 30,000 ms, `false` disables it). A timeout rejects with a retryable `NetworkError`.

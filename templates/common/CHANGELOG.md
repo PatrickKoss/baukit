@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+{% if context.mobile and context.auth_enabled %}- The mobile app shows a token renewal error only when the renewal is terminal or the current token has expired. A transient failure while the token is still valid no longer flashes an error. Copy `shouldReportRenewalError` from `mobile/src/auth-feedback.ts` and its call in `useTokenRenewal` in `mobile/src/auth.ts`.
+{% endif %}
 ## [0.32.0] - 2026-11-27
 
 {% if context.auth_enabled and context.backend %}- `backend/migrations/0011_identity_erasure_operation_id_guard.sql` replaces `erasure_job_failed()` so a failed identity deletion job whose `operationId` is not a UUID no longer aborts the job's status update. Apply it after `0006_identity_erasure_reonboarding.sql`.

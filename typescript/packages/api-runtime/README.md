@@ -161,6 +161,17 @@ createApiFetch({
 
 Pass `cooldown: false` to turn it off. `now` is the clock for cooldowns and `Retry-After` dates.
 
+Each runtime keeps its own cooldown. To share one between runtimes that call the same API, for
+example an app runtime and a separate erasure runtime with different auth handling, create one
+`OriginCooldown` and pass it to both. A `Retry-After` seen by either then blocks both. A shared
+instance uses its own clock, not the runtime's `now`.
+
+```ts
+const cooldown = new OriginCooldown({}, Date.now);
+const app = createApiRuntime({ ...environment, cooldown });
+const erasure = createApiRuntime({ ...environment, cooldown, retry: false });
+```
+
 ## Idempotent mutations
 
 `@baukit/api-runtime/idempotency` keeps one `Idempotency-Key` per account, operation, and body until the outcome is definite or the key expires. The server half is `baukit-http`'s `IdempotencyKeyRule`, and the protocol is [replay-safe mutations](../../../docs/platform/replay-safe-mutations.md).

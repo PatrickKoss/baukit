@@ -3,7 +3,7 @@
 import createClient from 'openapi-fetch';
 import type { Client, ClientOptions } from 'openapi-fetch';
 
-import type { CooldownOptions } from './cooldown.js';
+import type { CooldownOptions, OriginCooldown } from './cooldown.js';
 import type { ApiError, HttpError } from './errors.js';
 import { fetchSettings, runFetch } from './fetch.js';
 
@@ -20,7 +20,7 @@ export {
 } from './sign-in-session.js';
 
 export { IDEMPOTENCY_KEY_HEADER, REQUEST_ID_HEADER } from './headers.js';
-export type { CooldownOptions } from './cooldown.js';
+export { OriginCooldown, type CooldownOptions } from './cooldown.js';
 export {
   ApiError,
   ApiUnavailableError,
@@ -140,8 +140,11 @@ export interface ApiRuntimeOptions extends ApiEnvironmentConfig {
   readonly retry?: RetryOptions | false;
   /** Per-attempt timeout in milliseconds, combined with the caller's signal. Defaults to 30,000. */
   readonly requestTimeoutMs?: number | false;
-  /** Per-origin fail-fast cooldown. On by default; `false` disables it. */
-  readonly cooldown?: CooldownOptions | false;
+  /**
+   * Per-origin fail-fast cooldown. On by default and private to this runtime; pass one
+   * `OriginCooldown` to several runtimes to share it, or `false` to disable it.
+   */
+  readonly cooldown?: CooldownOptions | OriginCooldown | false;
   /** Epoch-millisecond clock for cooldowns and `Retry-After` dates. Defaults to `Date.now`. */
   readonly now?: () => number;
 }
